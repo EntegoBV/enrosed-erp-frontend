@@ -80,6 +80,7 @@ import { productSalesUnit } from '../products/product-sales-unit';
 import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { containerName } from './container-name';
 
 /**
  * Landed-cost calculation of a container.
@@ -1382,7 +1383,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
       @if (auctionOpen()) {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
-                                      [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                      [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                       (funding)="jumpToSection('purchase-partner-section')" (closed)="auctionOpen.set(false)" />
       }
@@ -1768,6 +1769,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `]
 })
 export class PurchaseEditor {
+  /** One name for the container in sales texts: alias, else number. */
+  readonly containerName = containerName;
   readonly desktop = inject(DesktopViewport);
   readonly pdfOpen = signal(false);
   /** The container as an offer: the sheet that picks the customer and opens the new quote. */

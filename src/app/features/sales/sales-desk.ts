@@ -80,9 +80,9 @@ interface JourneyStep {
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="commercialEditable()"
                        (titleChange)="patch({ number: $event })">
-        @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
-            @if (data.order.partnerPurchaseOrderId) {
-          <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" title="Partnercontainer openen">Partner {{ data.order.partnerSharePct | num }} %</a>
+        @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'deze container' }}</a>.</p> }
+        @if (data.order.partnerPurchaseOrderId) {
+          <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [title]="'Partnercontainer openen' + (containerNumber() ? ' · inkooporder ' + containerNumber() : '')">@if (containerLabel(); as name) { {{ name }} · }Partner {{ data.order.partnerSharePct | num }} %</a>
         }
         @if (canEdit() && documentDirty() && !transportSaving()) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
@@ -265,7 +265,7 @@ interface JourneyStep {
         </header>
 
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
-        <app-sales-advance-invoices [order]="data.order" />
+        <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
         @if (pendingRevision(); as revision) {
@@ -814,9 +814,9 @@ interface JourneyStep {
                         <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                         @if (isSettlement(data.order)) {
-                          <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                          <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                         } @else {
-                          <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
+                          <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze container' }}</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
                           <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                           <div class="desk-partner__actions">
                             <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>

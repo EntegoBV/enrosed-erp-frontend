@@ -16,6 +16,9 @@ export interface SalesContainerGroup {
   key: string;
   purchaseOrderId: number;
   customerId: number | null;
+  /** Our own name for the container (alias, else number, else 'Inkoop #id'): the one label the header shows. */
+  purchaseOrderName: string;
+  /** The PO number when known (live, else the cargo snapshot): small print when it differs from the name. */
   purchaseOrderNumber: string | null;
   rows: SalesOrderView[];
   summary: {
@@ -76,7 +79,7 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
     let group = groups.get(key);
     if (!group) {
       group = { kind: 'PARTNER_CONTAINER', key, purchaseOrderId: purchaseOrderId!, customerId: row.order.customerId,
-        purchaseOrderNumber: null, rows: [], summary: { count: 0, totalEur: 0, draftCount: 0, draftEur: 0,
+        purchaseOrderName: `Inkoop #${purchaseOrderId}`, purchaseOrderNumber: null, rows: [], summary: { count: 0, totalEur: 0, draftCount: 0, draftEur: 0,
           issuedCount: 0, inactiveCount: 0, statuses: [], receivedEur: 0, remainingEur: 0, creditEur: 0, attentionCount: 0, containerPieces: null } };
       groups.set(key, group); entries.push(group);
     }
@@ -111,7 +114,12 @@ export function groupSalesInvoices(rows: readonly SalesOrderView[], needsAttenti
       else statuses.set(status.label, { ...status, count: 1,
         concept: row.order.status === 'CONCEPT', inactive: INACTIVE.has(row.order.status) });
     }
-    group.purchaseOrderNumber = contents.find(contents => contents!.purchaseOrderNumber?.trim())?.purchaseOrderNumber ?? null;
+    // The server's live name wins over the frozen cargo snapshot, which an older backend is left with.
+    const live = (pick: (row: SalesOrderView) => string | null | undefined): string | null =>
+      group.rows.map(row => pick(row)?.trim()).find(value => !!value) ?? null;
+    const snapshotNumber = contents.map(contents => contents!.purchaseOrderNumber?.trim()).find(value => !!value) ?? null;
+    group.purchaseOrderNumber = live(row => row.partnerContainerNumber) ?? snapshotNumber;
+    group.purchaseOrderName = live(row => row.partnerContainerName) ?? group.purchaseOrderNumber ?? `Inkoop #${group.purchaseOrderId}`;
     /* A credit note takes its total back off the container's invoiced sum. */
     const signed = (row: SalesOrderView): number => (row.order.docType === 'CREDITNOTA' ? -row.priced.totals.total : row.priced.totals.total);
     group.summary = {

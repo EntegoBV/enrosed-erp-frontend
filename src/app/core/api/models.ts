@@ -1961,6 +1961,9 @@ export interface SalesOrderView {
   creditNotes?: CreditNoteLink[];
   /** Invoices: Σ totalInclVat of ISSUED live credit notes, positive. */
   creditedEur?: number;
+  /** The linked container's live name (alias ('Herkenbare naam') trimmed, else its number, else 'Inkoop #id') and number; absent on an older backend. */
+  partnerContainerName?: string | null;
+  partnerContainerNumber?: string | null;
 }
 
 /** A live credit note of an invoice. */
@@ -2502,6 +2505,8 @@ export interface PartnerCreditProposal {
   overFinancingInclVatEur: number;
   suggestedAdvanceInvoiceId: number | null;
   advances: { invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number }[];
+  /** The container's display name (alias, else number); absent on an older backend. */
+  containerName?: string | null;
 }
 
 /** GET /api/sales-orders/{invoiceId}/credit-note-proposal: caps, suggestions from the receipt, VAT. Read-only. */
@@ -2523,7 +2528,8 @@ export interface CreditNoteProposal {
   freightEur: number;
   freightAlreadyCredited: boolean;
   extraLines: { description: string; quantity: number; unitPriceEur: number; totalEur: number }[];
-  container: { purchaseOrderId: number; number: string; received: boolean; missingPieces: number; damagedPieces: number } | null;
+  /** containerName: the display name (alias, else number); absent on an older backend. */
+  container: { purchaseOrderId: number; number: string; containerName?: string | null; received: boolean; missingPieces: number; damagedPieces: number } | null;
   /** Only for PARTNER_ADVANCE originals. */
   partnerShortfall: PartnerCreditProposal | null;
 }

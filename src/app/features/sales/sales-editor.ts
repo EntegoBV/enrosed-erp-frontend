@@ -56,6 +56,7 @@ import {
 } from './sales-list-swipe';
 import { salesLineSections } from './sales-product-line-groups';
 import { SalesPdfSheet } from './sales-pdf-sheet';
+import { containerNumberHint, containerPhrase, linkedPurchaseOrderId, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
 
 /**
  * Sales order and quote.
@@ -245,7 +246,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
         </section>
 
-        <app-sales-advance-invoices [order]="data.order" />
+        <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
         @if (!data.fulfillment && !isPartnerDocument(data.order) && !isCreditNoteDoc()) {
@@ -1017,7 +1018,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             @if (isClaimDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
               <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">{{ isCreditNoteDoc() ? 'Creditnota e-mailen…' : 'Factuur e-mailen…' }}</button>
             }
-            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
+            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'deze container' }}</a>.</p> }
             @if (advanceAgreement(); as agreement) {
               <p class="hint">De opgeslagen betaalafspraak staat bovenaan. De slotfactuur volgt na de veiling.</p>
             } @else if (isCreditNoteDoc()) {
@@ -1027,9 +1028,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                 @if (isSettlement(data.order)) {
-                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                 } @else {
-                  <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
+                  <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze container' }}</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                   <div class="desk-partner__actions">
                     <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
@@ -2277,7 +2278,14 @@ export class SalesEditor {
   readonly settlementOpen = signal(false);
   /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
   readonly partnerContainer = signal<PurchaseOrderView | null>(null);
-  readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
+  /** Our own name for the linked container (alias, else number): the loaded partner container first, else the server's live name. */
+  readonly containerLabel = computed(() => salesContainerName(this.view(), this.partnerContainer()?.order));
+  /** The PO number beside that name, only when it differs. */
+  readonly containerNumber = computed(() => containerNumberHint(this.containerLabel(), salesContainerNumber(this.view(), this.partnerContainer()?.order)));
+  readonly containerId = computed(() => linkedPurchaseOrderId(this.view()?.order));
+  readonly containerPhrase = containerPhrase;
+  /** The settlement's reference: our container name, as the partner's auction statement should read it. */
+  readonly partnerReference = computed(() => this.partnerContainer() ? this.containerLabel() : null);
   /** Inspection and other costs the container keeps apart from the piece price, per piece, for the settlement preview. */
   readonly separateUnitEur = computed(() => this.partnerContainer()?.reconciliation ? 0 : separateCostPerPiece(this.partnerContainer()?.costing.totals));
 

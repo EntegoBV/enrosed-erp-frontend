@@ -19,7 +19,7 @@ export function advanceInvoicePurchaseId(order: SalesOrder): number | null {
   template: `
     @if (purchaseOrderId(); as purchaseId) {
       <section class="advance-invoices" aria-label="Voorschotfacturen van deze container">
-        <header><div><span>Partnercontainer</span><h2>Voorschotfacturen</h2></div><a [routerLink]="['/purchasing', purchaseId]" [queryParams]="{ section: 'payments' }">Betaalafspraken beheren <span aria-hidden="true">↗</span></a></header>
+        <header><div><span>Partnercontainer@if (containerName()) { · {{ containerName() }} }</span><h2>Voorschotfacturen</h2></div><a [routerLink]="['/purchasing', purchaseId]" [queryParams]="{ section: 'payments' }">Betaalafspraken beheren <span aria-hidden="true">↗</span></a></header>
         <p>Elke termijn heeft een eigen factuur. Concepten zijn nog niet uitgegeven of verstuurd. De slotfactuur volgt na de veiling.</p>
         @if (loading()) { <p role="status">Factuurtermijnen laden…</p> }
         @else if (error()) { <p role="alert">{{ error() }} <button class="linklike" type="button" (click)="load(purchaseId)">Opnieuw proberen</button></p> }
@@ -48,6 +48,8 @@ export function advanceInvoicePurchaseId(order: SalesOrder): number | null {
 })
 export class SalesAdvanceInvoices implements OnDestroy {
   readonly order = input.required<SalesOrder>();
+  /** Our own name for the container (alias, else number), when the host knows it. */
+  readonly containerName = input<string | null>(null);
   readonly purchaseOrderId = computed(() => advanceInvoicePurchaseId(this.order()));
   readonly documentId = computed(() => this.order().id);
   readonly schedule = signal<PartnerAdvanceSchedule | null>(null);

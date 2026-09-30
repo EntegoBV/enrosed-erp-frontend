@@ -884,7 +884,7 @@ type DeskRow =
       @if (auctionOpen()) {
         @if (view(); as data) {
           <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
-                                        [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                        [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                         [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                         (funding)="openPartner()" (closed)="auctionOpen.set(false)" />
         }

@@ -48,6 +48,7 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
+import { containerName } from './container-name';
 
 type PurchaseWorkspaceSectionId =
   | 'purchase-overview'
@@ -776,7 +777,7 @@ type PurchaseWorkspaceSectionId =
             }
             @if (auctionOpen()) {
               <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
-                                            [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                            [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                             (funding)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (closed)="auctionOpen.set(false)" />
             }
@@ -934,6 +935,8 @@ type PurchaseWorkspaceSectionId =
   `],
 })
 export class PurchaseView {
+  /** One name for the container in sales texts: alias, else number. */
+  readonly containerName = containerName;
   readonly pdfOpen = signal(false);
   readonly quoteOpen = signal(false);
   readonly quoteLinesOf = quoteLinesOf;

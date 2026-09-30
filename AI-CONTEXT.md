@@ -512,6 +512,30 @@ handelen' and never 'Betaling open' for a credit note; dashboard, settings
 `so-credit*`, `partner-shortage`, `fin-credit-row`, `fin-offset-row`); the
 desk and editor style arrays did not grow.
 
+### Container name in Verkoop (sales round 2026-09-30, G1)
+One rule for naming a container everywhere in Verkoop: the purchase order's
+alias ('Herkenbare naam') trimmed, else its number, else 'Inkoop #id'. The
+pure, node-tested `features/purchasing/container-name.ts` holds it:
+`containerName(po, fallbackId)`, `containerNumberHint(name, number)` (the PO
+number as title/small print only when it differs), `containerPhrase(name)`
+('container PO-…', but 'container/2026/002' as it is: never the word twice),
+`linkedPurchaseOrderId(order)` (source ?? partner, like the backend) and
+`salesContainerName/Number(view, livePo?)` (loaded PO first, then the
+server's `partnerContainerName`/`partnerContainerNumber` on SalesOrderView,
+then the advance cargo snapshot, then 'Inkoop #id'). The server also sends
+`containerName` on the credit-note proposal's container and on the partner
+credit proposal; every field is optional so an older backend still works.
+Used by: the Verkoop list group header (`purchaseOrderName`, PO number as
+title) and search (name and number, regular container sales too), the
+container menu, the advance contents link, `SalesEditor.containerLabel` /
+`containerNumber` (desk tag '<naam> · Partner 50 %', partner-section links,
+'Reguliere verkoop uit <naam>', the advance-invoices subtitle) and
+`partnerReference` (auction sheet 'voor <containerPhrase>'; the purchase
+screens pass `containerName(order)` too), the phone view hero ('· <naam>' or
+'· uit <naam>' linking to the container) and the credit-note sheet (proposal
+name; no invented `PO-<id>`). Inkoop keeps its own alias || number display.
+Stored lines and notes of issued documents are never rewritten.
+
 ### Prospects & outreach (2026-09-28)
 - `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
   the phone menu links to "Prospects & groothandels". The page keeps search,

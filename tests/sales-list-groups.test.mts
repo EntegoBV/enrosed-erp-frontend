@@ -65,6 +65,7 @@ test('draft advances retain every cent and count the repeated container cargo on
   assert.equal(result.summary.receivedEur, 0);
   assert.equal(result.summary.containerPieces, 8540, 'Two advance snapshots do not mean 17,080 pieces');
   assert.equal(result.purchaseOrderNumber, 'PO-45');
+  assert.equal(result.purchaseOrderName, 'PO-45', 'An older backend names the group after the snapshot number');
   rows[1].advanceContents!.totals.pieces = 9000;
   assert.equal(group(rows).summary.containerPieces, null, 'Different snapshots cannot invent a combined cargo quantity');
   rows.forEach(row => { row.advanceContents = null; });
@@ -235,6 +236,24 @@ test('searching the displayed container reference retains its matching invoices 
   assert.deepEqual(Array.from(screen.rows(), (row: SalesOrderView) => row.order.id), [3], 'A snapshot for another PO never supplies the reference');
   screen.query.set('po-45'); screen.filter.set('UITGEREIKT');
   assert.equal(screen.groupedRows().length, 0, 'Container search never bypasses the existing document filters');
+});
+
+test('the group carries our own container name and the live PO number, over the frozen snapshot', () => {
+  const named = (id: number, changes: any = {}) => Object.assign(invoice(id, 10), { partnerContainerName: 'container/2026/002', partnerContainerNumber: 'PO-2026-011', ...changes });
+  const result = group([invoice(1, 5), named(2)]);
+  assert.equal(result.purchaseOrderName, 'container/2026/002');
+  assert.equal(result.purchaseOrderNumber, 'PO-2026-011', 'A renamed PO shows its live number, not the snapshot');
+  const bare = invoice(3, 5); bare.advanceContents = null;
+  assert.equal(group([bare]).purchaseOrderName, 'Inkoop #45', 'Without any name the purchase id is the label');
+  const screen = listHarness([named(1), invoice(2, 20, { partnerPurchaseOrderId: 46 }), invoice(3, 30, { purpose: 'STANDARD', partnerPurchaseOrderId: null, sourcePurchaseOrderId: 47 })]);
+  (screen.all() as SalesOrderView[])[2].partnerContainerName = 'voor Frans';
+  screen.switchScope('ALL');
+  screen.query.set('container/2026/002');
+  assert.deepEqual(Array.from(screen.rows(), (row: SalesOrderView) => row.order.id), [1]);
+  screen.query.set('po-2026-011');
+  assert.deepEqual(Array.from(screen.rows(), (row: SalesOrderView) => row.order.id), [1], 'The PO number still finds a named container');
+  screen.query.set('voor frans');
+  assert.deepEqual(Array.from(screen.rows(), (row: SalesOrderView) => row.order.id), [3], 'A regular sale is found by its container name too');
 });
 
 test('the Angular template remains valid after sharing the individual document row', () => {

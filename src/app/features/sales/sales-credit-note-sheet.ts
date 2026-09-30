@@ -111,7 +111,7 @@ const round4 = (value: number): number => Math.round(value * 10000) / 10000;
                     <div class="cn-line__product" role="cell">
                       @if (line.photoUrl) { <img class="cn-line__photo" [appAuthSrc]="line.photoUrl" alt="" /> } @else { <span class="cn-line__photo cn-line__photo--empty" aria-hidden="true">◈</span> }
                       <span class="cn-line__copy"><strong>{{ line.productName }}</strong>@if (line.sku) { <small>{{ line.sku }}</small> }
-                        @if (line.suggestedQuantity > 0 && p.container) { <em class="cn-tag cn-tag--warn">{{ line.suggestedQuantity | num }} te weinig ontvangen ({{ p.container.number }})</em> }
+                        @if (line.suggestedQuantity > 0 && p.container) { <em class="cn-tag cn-tag--warn">{{ line.suggestedQuantity | num }} te weinig ontvangen ({{ containerLabel() }})</em> }
                         @if (line.alreadyCreditedQuantity > 0) { <em class="cn-tag">{{ line.alreadyCreditedQuantity | num }} al gecrediteerd{{ line.suggestedQuantity > 0 && line.alreadyCreditedQuantity >= line.suggestedQuantity ? ' voor dit tekort' : '' }}{{ creditedBy() ? ' (' + creditedBy() + ')' : '' }}</em> }
                       </span>
                     </div>
@@ -232,6 +232,11 @@ export class SalesCreditNoteSheet {
   readonly advanceMode = computed(() => this.proposal()?.purpose === 'PARTNER_ADVANCE');
   readonly settlementMode = computed(() => this.proposal()?.purpose === 'PARTNER_SETTLEMENT');
   readonly customerName = computed(() => this.customers().find((customer) => customer.id === this.proposal()?.customerId)?.company ?? '');
+  /** Our own container name (alias, else number) from the proposal; never an invented 'PO-<id>'. */
+  readonly containerLabel = computed(() => {
+    const container = this.proposal()?.container;
+    return container?.containerName?.trim() || this.partnerProposal()?.containerName?.trim() || container?.number?.trim() || '';
+  });
   readonly priceEditable = computed(() => this.reason() === 'PRICE_CORRECTION');
   readonly lines = computed<SheetLine[]>(() => (this.proposal()?.lines ?? []).map((line) => {
     const max = Math.max(0, line.invoicedQuantity - line.alreadyCreditedQuantity);
@@ -317,9 +322,9 @@ export class SalesCreditNoteSheet {
     if (advance) {
       const partner = this.partnerProposal() ?? proposal.partnerShortfall;
       const short = (partner?.missingPieces ?? 0) + (partner?.damagedPieces ?? 0);
-      const container = proposal.container?.number ?? `PO-${partner?.purchaseOrderId ?? ''}`;
+      const container = this.containerLabel();
       const over = partner?.overFinancingEur ?? 0;
-      this.amounts.set([{ description: `Voorschot te veel gefinancierd · ${container} (${short} stuks minder ontvangen)`, amountEur: over > 0 ? round2(over) : null, amountText: over > 0 ? round2(over).toFixed(2) : undefined }]);
+      this.amounts.set([{ description: `Voorschot te veel gefinancierd${container ? ' · ' + container : ''} (${short} stuks minder ontvangen)`, amountEur: over > 0 ? round2(over) : null, amountText: over > 0 ? round2(over).toFixed(2) : undefined }]);
     } else {
       this.amounts.set([]);
     }

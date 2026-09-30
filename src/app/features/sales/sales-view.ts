@@ -17,6 +17,7 @@ import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
+import { containerNumberHint, linkedPurchaseOrderId, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
@@ -194,6 +195,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <span aria-hidden="true"> · </span>
                 @if (isCreditNote()) { {{ creditReason() }}@if (data.creditedInvoiceNumber) { <span aria-hidden="true"> · </span>op factuur <a class="sales-hero__link" [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a> } }
                 @else { {{ countryName() }} }
+                @if (containerId(); as purchaseId) {
+                  <span aria-hidden="true"> · </span>{{ isPartnerDocument(data.order) ? '' : 'uit ' }}<a class="sales-hero__link" [routerLink]="['/purchasing', purchaseId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() }}</a>
+                }
                 @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
                   <span aria-hidden="true"> · </span>uit offerte <a class="sales-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">{{ data.sourceQuoteNumber }}</a>
                 }
@@ -322,7 +326,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           }
         </section>
 
-        <app-sales-advance-invoices [order]="data.order" />
+        <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
@@ -1200,6 +1204,10 @@ export class SalesView {
   readonly customerAuthoredMessage = customerMessageIsReadOnly;
   readonly customerNote = originalCustomerMessage;
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
+  /** Our own name for the linked container (alias, else number), from the server's live field or the cargo snapshot. */
+  readonly containerLabel = computed(() => salesContainerName(this.view()));
+  readonly containerNumber = computed(() => containerNumberHint(this.containerLabel(), salesContainerNumber(this.view())));
+  readonly containerId = computed(() => linkedPurchaseOrderId(this.view()?.order));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
   readonly isAdvanceInvoice = isAdvanceInvoice;

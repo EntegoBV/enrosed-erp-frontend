@@ -294,7 +294,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                   <span class="sales-container__identity">
                     <span class="sales-container__eyebrow">Partnercontainer</span>
                     <strong>{{ customerName(entry.rows[0]) }}</strong>
-                    <span class="sales-container__meta">{{ entry.purchaseOrderNumber || 'Inkoop #' + entry.purchaseOrderId }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
+                    <span class="sales-container__meta" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
                     <span class="sales-container__badges">
                       @for (status of entry.summary.statuses; track status.label) {
                         <span [class]="'so-status-mini so-status-mini--' + status.cls"
@@ -1127,12 +1127,21 @@ export class SalesList {
     const websiteOnly = this.websiteOnly();
     const needle = this.query().toLowerCase().trim();
     const documents = this.inTab();
-    const purchaseNames = new Map<number, string>();
+    // A container is found by our own name and by its PO number: the server's live fields, else the advance's cargo snapshot.
+    const containerOf = (row: SalesOrderView): number | null =>
+      (isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : row.order.sourcePurchaseOrderId) ?? null;
+    const purchaseNames = new Map<number, Set<string>>();
     for (const row of documents) {
-      const purchaseId = isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : null;
+      const purchaseId = containerOf(row);
+      if (purchaseId == null) continue;
       const contents = row.advanceContents;
-      if (purchaseId != null && contents?.purchaseOrderId === purchaseId && contents.purchaseOrderNumber?.trim()
-          && !purchaseNames.has(purchaseId)) purchaseNames.set(purchaseId, contents.purchaseOrderNumber);
+      const names = [row.partnerContainerName, row.partnerContainerNumber,
+        contents?.purchaseOrderId === purchaseId ? contents.purchaseOrderNumber : null]
+        .map((name) => name?.trim() ?? '').filter((name) => !!name);
+      if (!names.length) continue;
+      const known = purchaseNames.get(purchaseId) ?? new Set<string>();
+      names.forEach((name) => known.add(name));
+      purchaseNames.set(purchaseId, known);
     }
     const docs = this.docTab() === 'FACTUUR' ? this.docsFilter() : 'all';
     return documents.filter((row) => {
@@ -1145,9 +1154,10 @@ export class SalesList {
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
       if (!needle) return true;
-      const purchaseId = isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : null;
+      const purchaseId = containerOf(row);
+      const names = purchaseId != null ? purchaseNames.get(purchaseId) : undefined;
       const container = purchaseId != null
-        ? purchaseNames.get(purchaseId) ?? `Inkoop #${purchaseId}`
+        ? names ? [...names].join(' ') : `Inkoop #${purchaseId}`
         : '';
       return (this.customerName(row) + ' ' + row.order.number + ' ' + container + ' ' + (row.creditedInvoiceNumber ?? '') + ' ' + (row.creditNotes ?? []).map((note) => note.number).join(' '))
         .toLowerCase()
