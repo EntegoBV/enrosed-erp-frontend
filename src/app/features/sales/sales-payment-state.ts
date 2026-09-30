@@ -8,6 +8,17 @@ export function isAdvanceDocument(order: Pick<SalesOrder, 'purpose' | 'partnerPu
   return salesPurpose(order) === 'PARTNER_ADVANCE';
 }
 
+/**
+ * An invoice that carries no goods: a partner advance, or a regular
+ * voorschotfactuur on a quote (advanceBilling stage ADVANCE, the same test as
+ * isAdvanceBillingInvoice). It goes issue → send → receipts: the server
+ * refuses to ship an invoice without product lines, so there is no shipping
+ * step and no packing slip.
+ */
+export function skipsShipping(view: Pick<SalesOrderView, 'order' | 'advanceBilling'>): boolean {
+  return isAdvanceDocument(view.order) || (view.advanceBilling?.stage === 'ADVANCE' && view.order.docType === 'FACTUUR');
+}
+
 export function isPartnerDocument(order: Pick<SalesOrder, 'purpose' | 'partnerPurchaseOrderId' | 'partnerSettlement'>): boolean {
   return salesPurpose(order) !== 'STANDARD';
 }

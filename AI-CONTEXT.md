@@ -587,6 +587,62 @@ while untouched), switching advance re-caps, and the invoice caps as small
 print. Description 'Voorschot te veel gefinancierd · <naam> (108 stuks niet
 ontvangen)'; damaged pieces stay in the basis and are not counted in it.
 
+### Voorschotfacturen and slotfactuur for regular sales (sales round 2026-09-30, G4)
+A regular STANDARD quote (typically a whole container for a French customer)
+can be billed in advances: POST `/sales-orders/{quoteId}/advance-invoice`
+{ percentage | amountEur, dueDate? } (`SalesApi.createAdvanceInvoice`) makes
+a CONCEPT F-series invoice with one line 'Voorschot 30 % · offerte …'; the
+existing 'Factuur maken' (`createInvoiceFrom`) becomes the slotfactuur, with a
+server-owned negative line 'Voorschotfactuur F-… van dd/mm/jjjj' per issued
+advance (VAT on the balance). Purpose stays STANDARD: never add a SalesPurpose
+value (`!== 'STANDARD'` means partner in dozens of places). JSON (all optional):
+`advanceBilling` { stage ADVANCE|FINAL, quoteId, quoteNumber, percentage,
+amountExclEur } on those invoices, `advanceInvoices[]` on the quote (id,
+number, status, invoiceDate, percentage, amountExclEur, totalInclVatEur,
+paidAt, receivedEur, remainingEur, receipts[{ receivedOn, amountEur }]),
+`advanceDeductions[]` on the slotfactuur (frozen, with `paidOn` and receipts).
+The pure, node-tested `sales-advance-billing.ts` holds the rules the UI can
+know: base = quote total excl. btw, live advances, remaining, `advancePreview`
+(pct half-up to cents or amount, VAT 0 under a legal mention, the cap message),
+`advanceInvoiceBlock` (regular open quote, freight known, not split, not yet
+invoiced), `advancePaymentState` ('Betaald op dd/mm/jjjj' from the last
+receipt / 'Deels betaald' / 'Open' / concept), `deductionPaidText`,
+`finalInvoicePlan` (guard 'Reik eerst voorschotfactuur … uit of verwijder
+ze.', balance, negative), `invoiceConfirmOptions(view, escapeHtml)` (the one
+confirm for desk, phone view and editor: ordinary or 'Slotfactuur maken' with
+the deductions; the sales-advance-agreement harness lists it as a global),
+`invoiceActionLabel`, `billingKind`/`billingTag` ('Voorschotfactuur · offerte
+…', 'Slotfactuur · offerte …') and `isDeductionLine`. Components (styles in
+`src/styles/sales-advance-billing.scss`, `adv-*`, so desk/editor style arrays
+did not grow): `app-sales-advance-billing` (card on a regular quote once sent,
+accepted, from a container or advanced: list with pills, totals, the guard,
+'Voorschotfactuur maken…', 'Slotfactuur maken'), `app-sales-advance-invoice-
+sheet` (page level; chips 30 % · 50 % · Eigen % · Bedrag, vervaldatum, preview,
+'Conceptvoorschotfactuur maken' then opens the new invoice) and
+`app-sales-advance-deductions` (on the slotfactuur: desk main flow, phone view
+above Totalen, editor step 4). `SalesEditor.extraLineLocked` keeps the
+deduction lines read-only (desk table and phone editor; set/remove refuse
+them). Advance invoices hide the minimum-order notice. The container's
+`app-purchase-sales-links` names 'Voorschotfactuur 30 %' / 'Slotfactuur' with
+their status; the Verkoop list and the hero eyebrows use `billingKind`.
+Review fixes: a voorschotfactuur is the server's (an update puts its line and
+freight back): `SalesEditor.advanceLocked` turns off products, lines (every
+extra line is `extraLineLocked`), customer/country, order discount and
+shipping (`canEditShipping`), with 'Het bedrag van een voorschotfactuur staat
+vast; verwijder dit concept en maak een nieuw voorschot vanuit de offerte'.
+It has no goods: `skipsShipping(view)` (sales-payment-state.ts: partner
+advance or advanceBilling ADVANCE) replaces `!isAdvance(order)` in every
+shipping step (phone next step, desk KPI/action/`invoiceNextStep`, packing
+slip, Verkoop todo) and the lifecycle uses `advanceInvoiceJourney`.
+`finalInvoicePlan` deducts `amountExclEur − creditedExclEur` per issued
+advance (optional field on `advanceInvoices[]`, Σ excl. btw of its issued
+credit notes) and skips a fully credited one, as the server does; without the
+field (older backend) the amounts read 'vóór creditnota's' (`creditsKnown`).
+The card needs `advanceInvoices` to be an array (older backend: no card) and,
+once the quote has its slotfactuur (`quoteSettlement`), links it with its
+status and shows nothing left to invoice; `advanceInvoiceBlock` names the
+slotfactuur before the archive.
+
 ### Prospects & outreach (2026-09-28)
 - `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
   the phone menu links to "Prospects & groothandels". The page keeps search,

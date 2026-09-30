@@ -38,6 +38,10 @@ import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-s
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
+import { billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice } from './sales-advance-billing';
+import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
+import { SalesAdvanceDeductions } from './sales-advance-deductions';
+import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 
 type RailTab = 'order' | 'delivery' | 'check' | 'status' | 'payments';
@@ -66,7 +70,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -84,6 +88,7 @@ interface JourneyStep {
         @if (data.order.partnerPurchaseOrderId) {
           <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [title]="'Partnercontainer openen' + (containerNumber() ? ' · inkooporder ' + containerNumber() : '')">@if (containerLabel(); as name) { {{ name }} · }Partner {{ data.order.partnerSharePct | num }} %</a>
         }
+        @if (billingTag(); as tag) { <a class="desk-partner-tag" [routerLink]="['/sales', billingQuoteId()]" title="Offerte openen">{{ tag }}</a> }
         @if (canEdit() && documentDirty() && !transportSaving()) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
@@ -100,7 +105,7 @@ interface JourneyStep {
         @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
           <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
                   [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoice(data)">
-            {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+            {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
           </button>
         }
         @if (isCreditNoteDoc() && creditStep()?.key === 'refund') {
@@ -117,7 +122,7 @@ interface JourneyStep {
           </button>
         } @else if (!isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="makeInvoice(data)">
-            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
           </button>
         }
       </app-page-header>
@@ -233,12 +238,12 @@ interface JourneyStep {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="railTab.set('status')">
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
-                <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
+                <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : skipsShipping(data) ? 'voorschot · geen levering' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
               </button>
             } @else if (data.order.status === 'GEACCEPTEERD') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
                 <small>Volgende stap</small>
-                <strong>{{ advanceAgreement() ? 'Voorschotten beheren' : 'Factuur maken' }} ›</strong>
+                <strong>{{ advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken') }} ›</strong>
                 <span>getekend door {{ data.order.signedByName || 'de klant' }}</span>
               </button>
             } @else if (sendIssues().length) {
@@ -266,6 +271,8 @@ interface JourneyStep {
 
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
+        <app-sales-advance-billing [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
+        <app-sales-advance-deductions [view]="data" />
         <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
         @if (pendingRevision(); as revision) {
@@ -350,6 +357,7 @@ interface JourneyStep {
               </button>
             </div>
             @if (isCreditNoteDoc() && commercialEditable() && data.creditedInvoiceNumber) { <p class="desk-lines-locked"><span aria-hidden="true">↩</span>Alleen regels van {{ data.creditedInvoiceNumber }}, hoogstens de gefactureerde aantallen en prijzen.</p> }
+            @if (advanceLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ advanceLockNote }}</p> }
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
@@ -570,26 +578,26 @@ interface JourneyStep {
                     <td class="c-product">
                       <div class="desk-extra">
                         <span class="desk-extra__mark" aria-hidden="true">＋</span>
-                        @if (commercialEditable()) {
+                        @if (commercialEditable() && !extraLineLocked(extra)) {
                           <input class="input desk-cell desk-extra__what" type="text" maxlength="120"
                                  placeholder="Omschrijving, bv. montage ter plaatse"
                                  [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
                                  [ngModel]="extra.description"
                                  (ngModelChange)="setExtraLine(i, { description: $event })" />
                         } @else {
-                          <span class="desk-product__copy"><strong>{{ extra.description }}</strong><small>{{ isCreditNoteDoc() ? 'bedrag zonder product' : 'eigen regel · buiten de staffels' }}</small></span>
+                          <span class="desk-product__copy"><strong>{{ extra.description }}</strong><small>{{ advanceLocked() ? 'voorschotbedrag · staat vast' : extraLineLocked(extra) ? 'voorschot verrekend · staat vast' : isCreditNoteDoc() ? 'bedrag zonder product' : 'eigen regel · buiten de staffels' }}</small></span>
                         }
                       </div>
                     </td>
                     <td class="c-qty num">
-                      @if (commercialEditable()) {
+                      @if (commercialEditable() && !extraLineLocked(extra)) {
                         <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="decimal"
                                [attr.aria-label]="'Aantal regel ' + (i + 1)"
                                [ngModel]="extra.quantity" (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
                       } @else { <b>{{ extra.quantity | num }}</b> }
                     </td>
                     <td class="c-price">
-                      @if (commercialEditable()) {
+                      @if (commercialEditable() && !extraLineLocked(extra)) {
                         <input class="input num right desk-cell" type="number" step="0.01" inputmode="decimal" placeholder="prijs"
                                [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
                                [ngModel]="extra.unitPriceEur"
@@ -602,7 +610,7 @@ interface JourneyStep {
                     <td class="c-delivery"><small class="muted">{{ isCreditNoteDoc() ? 'bedrag' : 'eigen regel' }}</small></td>
                     @if (commercialEditable()) {
                       <td class="c-act">
-                        <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button>
+                        @if (!extraLineLocked(extra)) { <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button> }
                       </td>
                     }
                   </tr>
@@ -644,7 +652,7 @@ interface JourneyStep {
               </button>
               }
               <button type="button" role="tab" [class.on]="railTab() === 'check'" [attr.aria-selected]="railTab() === 'check'" (click)="railTab.set('check')">
-                Prijs @if (!isCreditNoteDoc() && !isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                Prijs @if (!isCreditNoteDoc() && !isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
               @if (isClaimDoc()) { <button type="button" role="tab" [class.on]="railTab() === 'payments'" [attr.aria-selected]="railTab() === 'payments'" (click)="railTab.set('payments')">{{ isCreditNoteDoc() ? 'Afhandeling' : 'Betalingen' }} @if (isCreditNoteDoc() && creditStep()?.key === 'apply' || creditStep()?.key === 'refund') { <i class="desk-tabs__dot" aria-hidden="true"></i> }</button> }
               <button type="button" role="tab" [class.on]="railTab() === 'status'" [attr.aria-selected]="railTab() === 'status'" (click)="railTab.set('status')">
@@ -660,7 +668,7 @@ interface JourneyStep {
                     <p class="desk-form__group">Klant &amp; document</p>
                     <div class="field">
                       <label class="req" for="sd-customer">Klant</label>
-                      <select class="select" id="sd-customer" [disabled]="financiallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
+                      <select class="select" id="sd-customer" [disabled]="financiallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.customerId" (ngModelChange)="setCustomer(+$event)">
                         @for (customer of customers(); track customer.id) {
                           <option [ngValue]="customer.id">{{ customer.company }}</option>
                         }
@@ -672,7 +680,7 @@ interface JourneyStep {
                     <div class="desk-form__duo">
                       <div class="field">
                         <label class="req" for="sd-country">Land van levering</label>
-                        <select class="select" id="sd-country" [disabled]="financiallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
+                        <select class="select" id="sd-country" [disabled]="financiallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.countryCode" (ngModelChange)="patch({ countryCode: $event })">
                           @for (country of countries(); track country.code) {
                             <option [ngValue]="country.code">{{ country.name }}</option>
                           }
@@ -852,7 +860,7 @@ interface JourneyStep {
                       <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal <small>@if (isAdvance(data.order)) { Voorschot = financiering } @else { {{ isPartnerDocument(data.order) ? 'gerealiseerd resultaat' : 'winst' }} {{ displayedProfit(data) >= 0 ? '+' : '' }}{{ displayedProfit(data) | eur: 0 }} }</small></span><b>{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</b></div>
                     </div>
 
-                    @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+                    @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
                       <div class="desk-minimum" [class.desk-minimum--ok]="data.priced.validation.meetsMinimum" role="status">
                         <span>Minimumorder {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
                         <b>@if (data.priced.validation.meetsMinimum) { ✓ bereikt } @else { nog − {{ data.priced.validation.shortfall | eur: 0 }} }</b>
@@ -860,7 +868,7 @@ interface JourneyStep {
                       </div>
                     }
 
-                    @if (canEdit()) {
+                    @if (canEdit() && !advanceLocked()) {
                       <p class="desk-form__group">Korting op het order</p>
                       <div class="desk-form__duo">
                         <div class="field">
@@ -962,7 +970,7 @@ interface JourneyStep {
                         @if (canCreateCreditNote()) {
                           <button class="desk-action" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openCreditSheet()"><i aria-hidden="true">↩</i><span><b>Creditnota maken</b><small>Te weinig geleverd, schade, retour of prijscorrectie</small></span></button>
                         }
-                        @if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
+                        @if (!skipsShipping(data) && !data.order.goodsShippedAt) {
                           <button class="desk-action" type="button" [disabled]="invoiceBusy()" (click)="openShipSheet(data)"><i aria-hidden="true">▤</i><span><b>Bestelling verzonden</b><small>Punt de voorraad af</small></span></button>
                         }
                         @if (data.order.status !== 'BETAALD') {
@@ -979,7 +987,7 @@ interface JourneyStep {
                           </button>
                         }
                         @if (advanceAgreement() || canCreateInvoice(data)) {
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : 'Factuur maken zonder versturen' }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : dirty() ? 'Sla de wijzigingen eerst op' : 'Maak een conceptfactuur en archiveer de offerte. Er gaat geen e-mail uit.' }}</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : dirty() ? 'Sla de wijzigingen eerst op' : invoiceActionLabel(data, '') ? 'De volledige offerte min de uitgereikte voorschotfacturen. Er gaat geen e-mail uit.' : 'Maak een conceptfactuur en archiveer de offerte. Er gaat geen e-mail uit.' }}</small></span></button>
                         }
                         @if (customerPortalLink(); as portalLink) {
                           @if (portalLink.available && portalLink.url) {
@@ -1100,6 +1108,9 @@ interface JourneyStep {
       }
       @if (creditSheetOpen()) {
         <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" />
+      }
+      @if (advanceSheetOpen()) {
+        <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" />
       }
       @if (offsetOpen()) {
         <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" />
@@ -1371,7 +1382,7 @@ export class SalesDesk extends SalesEditor {
     super.warnBeforeUnload(event);
   }
   readonly financiallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
-  readonly commercialEditable = computed(() => this.canEdit() && !this.financiallyLocked());
+  readonly commercialEditable = computed(() => this.canEdit() && !this.financiallyLocked() && !this.advanceLocked());
   openSplit(): void { if (this.dirty() || this.saving() || this.sending() || this.invoiceBusy() || this.splitBlockReason(this.view())) return; this.splitOpen.set(true); }
   closeSplit(): void { this.splitOpen.set(false); this.splitBusy.set(false); if (!this.dirty()) void this.reloadLatestOrder(); }
   splitSaved(result: SalesSplitResult): void {
@@ -1441,7 +1452,8 @@ export class SalesDesk extends SalesEditor {
         .map((step) => ({ label: step.label, state: step.state }));
     }
     if (this.isInvoiceDoc()) {
-      if (isAdvanceDocument(order)) {
+      /* A voorschotfactuur has no goods either: issue, send, receipts. */
+      if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
         return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
       }
       return invoiceJourney(order, this.view()?.paymentSummary?.status);
@@ -1483,7 +1495,7 @@ export class SalesDesk extends SalesEditor {
   invoiceNextStep(data: SalesOrderView): string {
     if (data.order.status === 'CONCEPT') return 'Factuur versturen';
     if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
-    if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
+    if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bestelling verzenden';
     if (data.order.status !== 'BETAALD') return 'Betaling registreren';
     return 'Afgerond ✓';
   }
@@ -1513,12 +1525,9 @@ export class SalesDesk extends SalesEditor {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    this.ui.confirm({
-      title: 'Factuur maken zonder versturen',
-      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> komt in een nieuwe conceptfactuur. `
-        + 'De offerte wordt gearchiveerd en blijft gekoppeld aan de factuur. Er wordt geen e-mail verstuurd.',
-      confirmLabel: 'Conceptfactuur maken',
-    }, () => { void this.createInvoice(data); });
+    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
+    this.ui.confirm(confirm, () => { void this.createInvoice(data); });
   }
 
   private async createInvoice(data: SalesOrderView): Promise<void> {
@@ -1636,6 +1645,8 @@ export class SalesDesk extends SalesEditor {
 
   documentLabel(order: SalesOrder): string {
     if (this.advanceAgreement()) return 'Offerte met betaalplan';
+    const billing = this.view()?.order.id === order.id ? billingKind(this.view()) : null;
+    if (billing) return billing;
     return salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
   }
   creditNoteNumbers(data: SalesOrderView): string { return (data.creditNotes ?? []).map((note) => note.number).join(', '); }

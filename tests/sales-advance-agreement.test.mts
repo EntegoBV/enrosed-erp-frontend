@@ -7,6 +7,7 @@ import { computed, signal } from '@angular/core';
 import { cents, shouldRecalculateLegacySchedule } from '../src/app/features/purchasing/partner-advance-schedule-state.ts';
 import { isPartnerDocument } from '../src/app/features/sales/sales-payment-state.ts';
 import { canCreateInvoiceFromQuote } from '../src/app/features/sales/sales-invoice-actions.ts';
+import { invoiceConfirmOptions } from '../src/app/features/sales/sales-advance-billing.ts';
 
 /** Run the production guards with actual Angular signals, without HTTP or a browser. */
 async function productionMembers(file: string, className: string, names: string[]) {
@@ -47,12 +48,13 @@ function quote(snapshot = true) { return { order: { id: 9, number: 'O-9', docTyp
 
 function makeHarness(javascript: string, className: string, snapshot = true) {
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports, advanceAgreementFor, isPartnerDocument, canCreateInvoiceFromQuote, computed, signal, Intl,
+  vm.runInNewContext(javascript, { exports, advanceAgreementFor, isPartnerDocument, canCreateInvoiceFromQuote, invoiceConfirmOptions, computed, signal, Intl,
     escapeHtml: (value: string) => value, messageOf: () => 'Error', localStorage: { setItem() {} } });
   const screen = new exports[className]();
   const routes: unknown[] = [];
   const api: unknown[] = [];
   let confirmation: (() => void) | null = null;
+  const confirmed: unknown[] = [], toasts: string[] = [];
   const router = { navigate: async (...args: unknown[]) => { routes.push(args); return true; } };
   Object.assign(screen, {
     view: signal(quote(snapshot)), quote: signal(quote(snapshot)), invoiceBusy: signal(false), documentMutationBusy: signal(false), busy: signal(false),
@@ -61,9 +63,9 @@ function makeHarness(javascript: string, className: string, snapshot = true) {
     router, routerNav: router,
     sales: { createInvoiceFrom: async (id: number) => { api.push(id); return { order: { id: 22, number: 'F-22' } }; },
       duplicateOrder: async (id: number) => { api.push(id); return { order: { id: 23 } }; } },
-    ui: { confirm: (_options: unknown, fn: () => void) => { confirmation = fn; }, toast() {} },
+    ui: { confirm: (options: unknown, fn: () => void) => { confirmation = fn; confirmed.push(options); }, toast: (text: string) => { toasts.push(text); } },
   });
-  return { screen, routes, api, get confirmation() { return confirmation; } };
+  return { screen, routes, api, confirmed, toasts, get confirmation() { return confirmation; } };
 }
 
 test('only active, uninvoiced quotations can create a draft invoice directly', () => {
@@ -107,6 +109,27 @@ for (const [name, javascript, open, create] of [
     state.screen.view.set({ ...quote(false), order: { ...quote(false).order, id: 99 } });
     await state.screen[create](quote(false));
     assert.equal(state.api.length, 0, 'A stale confirmation cannot convert the previous route');
+  });
+
+  test(`${name} turns a quote with advances into the slotfactuur and refuses while an advance is a concept`, async () => {
+    const state = makeHarness(javascript, name, false);
+    const issued = { id: 31, number: 'F-2026-0031', status: 'BETAALD', invoiceDate: '2026-04-03', percentage: 30, amountExclEur: 9000,
+      totalInclVatEur: 9000, paidAt: '2026-04-05T10:00:00Z', receivedEur: 9000, remainingEur: 0, receipts: [{ receivedOn: '2026-04-05', amountEur: 9000 }] };
+    const withAdvance = { ...quote(false), order: { ...quote(false).order, purpose: 'STANDARD' }, priced: { totals: { total: 30000 } }, advanceInvoices: [issued] };
+    state.screen.view.set(withAdvance);
+    state.screen[open](withAdvance);
+    assert.ok(state.confirmation);
+    assert.equal((state.confirmed[0] as any).title, 'Slotfactuur maken');
+    assert.match((state.confirmed[0] as any).message, /F-2026-0031 · € 9\.000,00 excl\. btw · betaald op 05\/04\/2026/);
+    await state.screen[create](withAdvance);
+    assert.deepEqual(state.api, [9], 'The slotfactuur is the ordinary conversion endpoint');
+    const concept = makeHarness(javascript, name, false);
+    const pending = { ...withAdvance, advanceInvoices: [{ ...issued, status: 'CONCEPT', receivedEur: 0, remainingEur: 9000, receipts: [] }] };
+    concept.screen.view.set(pending);
+    concept.screen[open](pending);
+    assert.equal(concept.confirmation, null);
+    assert.deepEqual(concept.toasts, ['Reik eerst voorschotfactuur F-2026-0031 uit of verwijder ze.']);
+    assert.equal(concept.api.length, 0);
   });
 
   if (name !== 'SalesView') {

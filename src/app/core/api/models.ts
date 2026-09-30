@@ -1966,6 +1966,61 @@ export interface SalesOrderView {
   /** The linked container's live name (alias ('Herkenbare naam') trimmed, else its number, else 'Inkoop #id') and number; absent on an older backend. */
   partnerContainerName?: string | null;
   partnerContainerNumber?: string | null;
+  /** Regular sales paid in advance: this invoice is an advance on a quote (ADVANCE) or its slotfactuur (FINAL); null otherwise. */
+  advanceBilling?: SalesAdvanceBilling | null;
+  /** On a regular quote: its advance invoices (concepts included, deleted ones never). */
+  advanceInvoices?: SalesAdvanceInvoice[];
+  /** On a slotfactuur: the advances it deducts, frozen at creation, with their payment dates. */
+  advanceDeductions?: SalesAdvanceDeduction[];
+}
+
+export type SalesAdvanceStage = 'ADVANCE' | 'FINAL';
+export interface SalesAdvanceBilling {
+  stage: SalesAdvanceStage;
+  quoteId: number;
+  quoteNumber: string | null;
+  /** The advance's share of the quote, when it was made as a percentage. */
+  percentage: number | null;
+  /** The advance (or, on a slotfactuur, the deducted) amount excl. VAT. */
+  amountExclEur: number;
+}
+/** One receipt on an advance: the Brussels date it was received and the amount. */
+export interface SalesAdvanceReceipt { receivedOn: string; amountEur: number }
+export interface SalesAdvanceInvoice {
+  id: number;
+  number: string;
+  status: QuoteStatus;
+  invoiceDate: string;
+  percentage: number | null;
+  amountExclEur: number;
+  totalInclVatEur: number;
+  paidAt: string | null;
+  receivedEur: number;
+  remainingEur: number;
+  receipts: SalesAdvanceReceipt[];
+  /**
+   * Σ excl. VAT of the issued live credit notes on this advance: the
+   * slotfactuur deducts amountExclEur minus this. Absent on an older backend
+   * (then the slotfactuur preview reads 'vóór creditnota's').
+   */
+  creditedExclEur?: number | null;
+}
+export interface SalesAdvanceDeduction {
+  advanceInvoiceId: number;
+  number: string;
+  invoiceDate: string;
+  exclEur: number;
+  vatEur: number;
+  inclEur: number;
+  /** The last receipt's date once the advance is fully paid, else null. */
+  paidOn: string | null;
+  receipts: SalesAdvanceReceipt[];
+}
+/** POST /api/sales-orders/{quoteId}/advance-invoice: a percentage of the quote total excl. VAT, or an amount. */
+export interface SalesAdvanceInvoiceRequest {
+  percentage?: number;
+  amountEur?: number;
+  dueDate?: string | null;
 }
 
 /** A live credit note of an invoice. */

@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { parseTemplate } from '@angular/compiler';
 import { advanceInvoiceJourney, invoiceJourney } from '../src/app/features/sales/sales-invoice-journey.ts';
 import { isAdvanceDocument } from '../src/app/features/sales/sales-payment-state.ts';
+import { isAdvanceBillingInvoice } from '../src/app/features/sales/sales-advance-billing.ts';
 import type { SalesOrder } from '../src/app/core/api/models.ts';
 
 const order = (status: SalesOrder['status'], sentAt: string | null = null): SalesOrder => ({
@@ -71,7 +72,7 @@ for (const [file, className] of [['sales-view', 'SalesView'], ['sales-desk', 'Sa
 
   test(`${className} uses the same real-state journey for a never-issued partner invoice`, () => {
     const exports: any = {};
-    vm.runInNewContext(javascript, { exports, isAdvanceDocument, advanceInvoiceJourney, invoiceJourney });
+    vm.runInNewContext(javascript, { exports, isAdvanceDocument, isAdvanceBillingInvoice, advanceInvoiceJourney, invoiceJourney });
     const screen = new exports[className]();
     for (const status of ['CONCEPT', 'UITGEREIKT', 'BETAALD', 'GEANNULEERD'] as const) {
       const draft = order(status);
@@ -84,6 +85,14 @@ for (const [file, className] of [['sales-view', 'SalesView'], ['sales-desk', 'Sa
     const partial = className === 'SalesView' ? screen.journey(issued) : screen.journey();
     assert.equal(partial[2].label, 'Voorschot deels ontvangen');
     assert.equal(partial[2].state, 'now');
+    /* A regular voorschotfactuur has no goods either: no 'Bestelling verzonden' step; its slotfactuur keeps it. */
+    const regular = { ...order('UITGEREIKT'), purpose: 'STANDARD', partnerPurchaseOrderId: null, goodsShippedAt: null } as SalesOrder;
+    screen.view = () => ({ order: regular, advanceBilling: { stage: 'ADVANCE', quoteId: 41 } });
+    assert.deepEqual(className === 'SalesView' ? screen.journey(regular) : screen.journey(), advanceInvoiceJourney(regular));
+    screen.view = () => ({ order: regular, advanceBilling: { stage: 'FINAL', quoteId: 41 } });
+    const final = className === 'SalesView' ? screen.journey(regular) : screen.journey();
+    assert.deepEqual(final, invoiceJourney(regular));
+    assert.equal(final[2].label, 'Bestelling verzonden');
   });
 
   test(`${className} lifecycle template parses with accessible current-step indication`, () => {

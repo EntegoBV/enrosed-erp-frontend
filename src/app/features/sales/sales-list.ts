@@ -29,6 +29,7 @@ import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
 import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-credit-note';
 import { salesDocumentKind } from './partner-settlement';
+import { billingKind, isAdvanceBillingInvoice } from './sales-advance-billing';
 import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
@@ -989,7 +990,7 @@ export class SalesList {
       return items.length ? items : null;
     }
     const fullyCredited = this.fullyCredited(row);
-    const task = this.todo(row.order, row.awaitingResend, fullyCredited);
+    const task = this.todo(row.order, row.awaitingResend, fullyCredited, isAdvanceBillingInvoice(row));
     if (task) items.push(task);
     /* An overdue invoice already reads "Betaling opvolgen"; no second label. A fully credited one has nothing left to chase. */
     if (!fullyCredited && this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');
@@ -1228,7 +1229,8 @@ export class SalesList {
   }
 
   documentLabel(order: SalesOrder): string {
-    return salesDocumentKind(order, this.all().find((row) => row.order.id === order.id)?.settlement?.finalSettlement);
+    const row = this.all().find((item) => item.order.id === order.id);
+    return billingKind(row) ?? salesDocumentKind(order, row?.settlement?.finalSettlement);
   }
 
   startSwipe(event: PointerEvent, row: SalesOrderView): void {
@@ -1486,13 +1488,13 @@ export class SalesList {
       default: return '◉';
     }
   }
-  /** What we still must do with this document, or nothing. */
-  todo = (order: SalesOrder, awaitingResend = false, fullyCredited = false): string | null => {
+  /** What we still must do with this document, or nothing. A voorschotfactuur (noGoods) has nothing to ship. */
+  todo = (order: SalesOrder, awaitingResend = false, fullyCredited = false, noGoods = false): string | null => {
     if (order.docType === 'CREDITNOTA') return null;
     if ((order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (order.status === 'CONCEPT' || fullyCredited) return null;
       if (this.overdue(order)) return 'Betaling opvolgen';
-      if (!isAdvanceDocument(order) && !order.goodsShippedAt) return 'Bestelling nog te verzenden';
+      if (!isAdvanceDocument(order) && !noGoods && !order.goodsShippedAt) return 'Bestelling nog te verzenden';
       return null;
     }
     return actionNeeded(order, awaitingResend);
