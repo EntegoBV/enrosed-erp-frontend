@@ -10,7 +10,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { CREDIT_REASON_CHOICES, creditDraftTotals, creditReasonLabel, creditRequestFrom, euro } from './sales-credit-note';
+import { CREDIT_REASON_CHOICES, creditDraftTotals, creditReasonLabel, creditRequestFrom, euro, partnerCreditPrefill } from './sales-credit-note';
 
 interface SheetLine {
   productId: number;
@@ -57,27 +57,39 @@ const round4 = (value: number): number => Math.round(value * 10000) / 10000;
           <header class="cn-head">
             <h3>{{ advanceMode() ? 'Creditnota op voorschot ' + p.invoiceNumber : 'Creditnota op ' + p.invoiceNumber }}</h3>
             @if (customerName()) { <p class="cn-head__who">{{ customerName() }}</p> }
-            <p class="cn-head__cap">Gefactureerd {{ p.invoiceTotalInclVatEur | eur }} incl. btw · nog te crediteren {{ p.maxCreditInclVatEur | eur }}</p>
+            @if (!advanceMode()) { <p class="cn-head__cap">Gefactureerd {{ p.invoiceTotalInclVatEur | eur }} incl. btw · nog te crediteren {{ p.maxCreditInclVatEur | eur }} incl. btw</p> }
           </header>
           }
 
           <!-- The partner block stays on screen when one advance's proposal fails to load: another advance can be picked, or the same one retried. -->
           @if (partnerProposal(); as pp) {
-            <section class="cn-block cn-block--partner" aria-label="Voorschotfactuur">
+            <section class="cn-block cn-block--partner" aria-label="Voorstel voor de voorschotfactuur">
+              @let fill = prefill();
+              @if (fill.state === 'ok') {
+                <p class="cn-proposal"><b>Voorstel: {{ fill.amountEur | eur }} excl. btw terug aan {{ customerName() || 'de partner' }}</b>@if (proposalVatPct() > 0) { <span>{{ proposalInclEur() | eur }} incl. btw ({{ proposalVatPct() | num }} %)</span> }</p>
+              } @else if (fill.state === 'pending') {
+                <p class="cn-proposal cn-proposal--pending" role="status"><b>Er staat al een conceptcreditnota {{ pendingLabel() }} van {{ (pp.pendingCreditEur ?? 0) | eur }} excl. btw; maak geen tweede.</b>
+                  @for (note of pendingNotes(); track note.id) { <button class="linklike cn-proposal__link" type="button" (click)="openPending(note.id)">{{ note.number }} openen ›</button> }</p>
+              } @else if (fill.state === 'none' && fill.wantedEur > 0) {
+                <p class="cn-hint cn-hint--warn">Op deze voorschotfactuur is geen ruimte meer voor het voorstel van {{ fill.wantedEur | eur }} excl. btw; kies een andere voorschotfactuur.</p>
+              } @else if (fill.state === 'none') {
+                <p class="cn-hint">Geen voorstel: het gefinancierde deel past bij wat ontvangen werd. Vul zelf een bedrag in als er toch iets terug moet.</p>
+              }
+              <p class="cn-partner__explain">Gefinancierd {{ pp.issuedAdvanceEur - pp.creditedAdvanceEur | eur }} excl. btw · afgesproken deel na ontvangst {{ pp.agreedShareEur | eur }} ({{ pp.financingPct | num }} % van {{ pp.actualBasisEur | eur }}) · verschil {{ pp.overFinancingEur | eur }}@if (pp.missingPieces > 0) { · {{ pp.missingPieces | num }} {{ pp.missingPieces === 1 ? 'stuk' : 'stuks' }} minder ontvangen }@if (pp.damagedPieces > 0) { · {{ pp.damagedPieces | num }} beschadigd (blijven in de basis) }</p>
+              @if (fill.restEur > 0) { <p class="cn-hint cn-hint--warn">Nog {{ fill.restEur | eur }} excl. btw past niet op deze voorschotfactuur@if (pp.advances.length > 1) {; maak daarvoor een tweede creditnota op een andere voorschotfactuur}.</p> }
               @if (pp.advances.length > 1) {
-                <label class="field"><span>Voorschotfactuur</span>
+                <label class="field"><span>Op voorschotfactuur</span>
                   <select class="select" [ngModel]="advanceId()" (ngModelChange)="pickAdvance(+$event)" [disabled]="busy()">
                     @for (advance of pp.advances; track advance.invoiceId) {
-                      <option [ngValue]="advance.invoiceId">{{ advance.number }} · nog {{ advance.maxCreditInclVatEur | eur }} te crediteren</option>
+                      <option [ngValue]="advance.invoiceId">{{ advance.number }} · nog {{ advance.maxCreditInclVatEur | eur }} incl. btw te crediteren@if (advance.openEur != null) { · {{ advance.openEur > 0 ? 'open ' + euro(advance.openEur) : 'betaald' }} }</option>
                     }
                   </select>
                 </label>
               }
-              <p class="cn-partner__explain">Gefinancierd {{ pp.issuedAdvanceEur - pp.creditedAdvanceEur | eur }} · afgesproken deel na ontvangst {{ pp.agreedShareEur | eur }} ({{ pp.financingPct | num }} % van {{ pp.actualBasisEur | eur }}) · verschil {{ pp.overFinancingEur | eur }}@if (pp.missingPieces + pp.damagedPieces > 0) { · {{ pp.missingPieces + pp.damagedPieces | num }} stuks minder ontvangen ({{ pp.missingPieces | num }} ontbreken · {{ pp.damagedPieces | num }} beschadigd) }</p>
-              @if (proposal(); as p) { <p class="cn-hint">hoogstens {{ p.maxCreditInclVatEur | eur }} incl. btw op deze voorschotfactuur</p> }
               @if (pp.settlementExists) { <p class="cn-hint cn-hint--warn">De afrekening verrekent het voorschot al; het voorstel is daarom nul. Maak een creditnota op de afrekening vanuit die factuur.</p> }
               @else if (!pp.received) { <p class="cn-hint cn-hint--warn">Tekorten worden pas na ontvangst berekend; vul het bedrag zelf in.</p> }
-              <p class="cn-hint">Werkelijke externe kost volgens nacalculatie {{ pp.forecastExternalEur | eur }} · alleen ter informatie</p>
+              @if (proposal(); as p) { <p class="cn-hint cn-small">Voorschotfactuur {{ p.invoiceNumber }}: gefactureerd {{ p.invoiceTotalInclVatEur | eur }} incl. btw · hoogstens {{ p.maxCreditInclVatEur | eur }} incl. btw te crediteren op deze voorschotfactuur</p> }
+              <p class="cn-hint cn-small">Werkelijke externe kost volgens nacalculatie {{ pp.forecastExternalEur | eur }} · alleen ter informatie</p>
               @if (loadError()) {
                 <div class="cn-error cn-error--retry" role="alert"><span>{{ loadError() }}</span>@if (retryAdvanceId() !== null) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="retryAdvance()">Opnieuw proberen</button> }</div>
               }
@@ -149,7 +161,7 @@ const round4 = (value: number): number => Math.round(value * 10000) / 10000;
           }
 
           <section class="cn-block" aria-label="Bedragen zonder product">
-            <h4>{{ advanceMode() ? 'Bedrag' : 'Bedrag zonder product' }}</h4>
+            <h4>{{ advanceMode() ? 'Bedrag excl. btw' : 'Bedrag zonder product' }}@if (advanceMode() && prefilledUntouched()) { <span class="cn-opt">voorstel</span> }</h4>
             @for (amount of amounts(); track $index; let i = $index) {
               <div class="cn-amount">
                 <input class="input cn-amount__what" type="text" maxlength="120" placeholder="Omschrijving" [attr.aria-label]="'Omschrijving bedrag ' + (i + 1)"
@@ -232,6 +244,8 @@ export class SalesCreditNoteSheet {
   readonly advanceMode = computed(() => this.proposal()?.purpose === 'PARTNER_ADVANCE');
   readonly settlementMode = computed(() => this.proposal()?.purpose === 'PARTNER_SETTLEMENT');
   readonly customerName = computed(() => this.customers().find((customer) => customer.id === this.proposal()?.customerId)?.company ?? '');
+  /** Concept advance credit notes already made for this shortage: id and number, for the link. */
+  readonly pendingNotes = signal<{ id: number; number: string }[]>([]);
   /** Our own container name (alias, else number) from the proposal; never an invented 'PO-<id>'. */
   readonly containerLabel = computed(() => {
     const container = this.proposal()?.container;
@@ -250,6 +264,22 @@ export class SalesCreditNoteSheet {
     return creditDraftTotals(this.advanceMode() ? [] : this.lines(), this.amounts().map((row) => ({ amountEur: row.amountEur ?? 0 })), freight, p?.vatRatePct ?? 0, p?.vatExempt ?? true);
   });
   readonly canSubmit = computed(() => !!this.proposal() && !this.busy() && !this.loading() && this.totals().count > 0);
+  /** The VAT of the chosen advance: its credit note follows it. */
+  readonly proposalVatPct = computed(() => { const p = this.proposal(); return !p || p.vatExempt || !(p.vatRatePct > 0) ? 0 : p.vatRatePct; });
+  /** The partner's share after receipt on the chosen advance: what the amount field starts with. */
+  readonly prefill = computed(() => partnerCreditPrefill(this.partnerProposal(), this.advanceId(), this.containerLabel(), this.proposalVatPct()));
+  readonly proposalInclEur = computed(() => {
+    const fill = this.prefill(), partner = this.partnerProposal();
+    if (fill.amountEur == null) return 0;
+    if (partner?.suggestedCreditInclVatEur != null && this.advanceId() === partner.suggestedAdvanceInvoiceId && fill.amountEur === partner.suggestedCreditEur) return partner.suggestedCreditInclVatEur;
+    return round2(fill.amountEur + round2(fill.amountEur * this.proposalVatPct() / 100));
+  });
+  readonly pendingLabel = computed(() => (this.partnerProposal()?.pendingCreditNumbers ?? []).join(', ') || '');
+  /** The amount field still holds the proposal as it was prefilled. */
+  readonly prefilledUntouched = computed(() => {
+    const amount = this.prefill().amountEur, rows = this.amounts();
+    return amount != null && rows.length === 1 && rows[0].amountEur === amount;
+  });
   /** 'CN-2026-0001' when other credit notes already took pieces, for the muted tag. */
   readonly creditedBy = computed(() => {
     const names = this.existingNotes();
@@ -302,7 +332,27 @@ export class SalesCreditNoteSheet {
     this.existingNotes.set([]);
     void this.sales.order(id).then((invoice) => { if (version === this.version) this.existingNotes.set((invoice.creditNotes ?? []).map((note) => note.number)); }).catch(() => undefined);
     if (proposal.purpose === 'PARTNER_ADVANCE' && !this.partnerProposal() && proposal.partnerShortfall) this.partnerProposal.set(proposal.partnerShortfall);
-    this.prefill(proposal);
+    this.loadPendingNotes(version);
+    this.fillDraft(proposal);
+  }
+
+  /** The concept credit notes behind 'maak geen tweede', found among the container's documents. */
+  private loadPendingNotes(version: number): void {
+    const partner = this.partnerProposal();
+    const numbers = partner?.pendingCreditNumbers ?? [];
+    this.pendingNotes.set([]);
+    if (!partner || !numbers.length) return;
+    void this.sourcing.partnerFinancing(partner.purchaseOrderId).then((financing) => {
+      if (version !== this.version) return;
+      this.pendingNotes.set(financing.documents
+        .filter((doc) => doc.docType === 'CREDITNOTA' && doc.status === 'CONCEPT' && numbers.includes(doc.number))
+        .map((doc) => ({ id: doc.id, number: doc.number })));
+    }).catch(() => undefined);
+  }
+
+  openPending(id: number): void {
+    this.closed.emit();
+    void this.router.navigate(['/sales', id]);
   }
 
   /**
@@ -311,7 +361,7 @@ export class SalesCreditNoteSheet {
    * such; what earlier credit notes already took for it is left out, so a
    * second sheet on the same invoice never proposes the same shortage twice.
    */
-  private prefill(proposal: CreditNoteProposal): void {
+  private fillDraft(proposal: CreditNoteProposal): void {
     const advance = proposal.purpose === 'PARTNER_ADVANCE';
     this.reason.set(advance ? 'PARTNER_SHORTFALL' : proposal.suggestedReason);
     this.quantities.set(Object.fromEntries(proposal.lines.map((line) => [line.productId, Math.max(0, line.suggestedQuantity - line.alreadyCreditedQuantity)])));
@@ -320,11 +370,9 @@ export class SalesCreditNoteSheet {
     this.creditFreight.set(false);
     this.note.set('');
     if (advance) {
-      const partner = this.partnerProposal() ?? proposal.partnerShortfall;
-      const short = (partner?.missingPieces ?? 0) + (partner?.damagedPieces ?? 0);
-      const container = this.containerLabel();
-      const over = partner?.overFinancingEur ?? 0;
-      this.amounts.set([{ description: `Voorschot te veel gefinancierd${container ? ' · ' + container : ''} (${short} stuks minder ontvangen)`, amountEur: over > 0 ? round2(over) : null, amountText: over > 0 ? round2(over).toFixed(2) : undefined }]);
+      // The partner's share on this advance, never more than it can take; a pending concept is not proposed twice.
+      const fill = this.prefill();
+      this.amounts.set([{ description: fill.description, amountEur: fill.amountEur, amountText: fill.amountEur != null ? fill.amountEur.toFixed(2) : undefined }]);
     } else {
       this.amounts.set([]);
     }

@@ -563,6 +563,30 @@ only when a term is fixed AND the draft adds or changes terms
 only unused terms are dropped (before a settlement), the old ≤ agreed rule
 stays. The quote sheet's locked note points to Termijnen aanpassen.
 
+### Partner advance credit note prefilled (sales round 2026-09-30, G3)
+The credit-note sheet in advance mode leads with the partner's share after
+receipt. `partnerCreditPrefill(partner, advanceId, containerName, vatPct)` in
+sales-credit-note.ts → { amountEur, restEur, wantedEur, description, state
+ok|pending|none|not-received|settlement }: the server's per-advance
+`suggestedCreditEur` wins; an older backend gets wanted = max(0,
+overFinancingEur − (pendingCreditEur ?? 0)) capped by the room excl. btw
+(maxCreditInclVatEur × 100 / (100 + btw), rounded down). Two meanings sit
+side by side on purpose: `overFinancingEur` stays issued-only (the 'Tekort na
+ontvangst' card and its concept link rely on it) while the suggestion
+subtracts concept credit notes (`pendingCreditEur`/`pendingCreditNumbers`),
+so a second sheet never proposes the same shortage twice. Never recompute the
+amount from `shortValueEur` (half cents). The server's target advance is the
+latest unpaid one that can absorb the credit. Sheet: 'Voorstel: € x excl. btw
+terug aan <partner>' (+ incl. btw when btw > 0), the reasoning line
+(gefinancierd excl. btw · afgesproken deel na ontvangst (pct van basis) ·
+verschil · stuks minder ontvangen), 'Nog € x past niet op deze
+voorschotfactuur' for the rest, the pending state 'Er staat al een
+conceptcreditnota … maak geen tweede.' with a link (ids from the container's
+partner financing documents), the amount field prefilled ('voorstel' tag
+while untouched), switching advance re-caps, and the invoice caps as small
+print. Description 'Voorschot te veel gefinancierd · <naam> (108 stuks niet
+ontvangen)'; damaged pieces stay in the basis and are not counted in it.
+
 ### Prospects & outreach (2026-09-28)
 - `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
   the phone menu links to "Prospects & groothandels". The page keeps search,

@@ -2505,10 +2505,24 @@ export interface PartnerCreditProposal {
   /** max(0, issued − credited − pct × actual basis); 0 before receipt or once a settlement exists. */
   overFinancingEur: number;
   overFinancingInclVatEur: number;
+  /** The target: the latest unpaid advance that can absorb the credit (older backend: the largest room). */
   suggestedAdvanceInvoiceId: number | null;
-  advances: { invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number }[];
+  advances: {
+    invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number;
+    /** Appended (absent on an older backend): the advance's VAT rate, its room excl. VAT (rounded down to cents), what is still to be paid on it, and min(wanted, room). */
+    vatRatePct?: number; maxCreditEur?: number; openEur?: number; suggestedCreditEur?: number;
+  }[];
   /** The container's display name (alias, else number); absent on an older backend. */
   containerName?: string | null;
+  /** Appended (absent on an older backend). Σ excl. VAT of live CONCEPT advance credit notes of this container, and their numbers. */
+  pendingCreditEur?: number;
+  pendingCreditNumbers?: string[];
+  /** On the target advance: max(0, overFinancing − pending) capped by its room, excl. and incl. VAT; the part that does not fit. */
+  suggestedCreditEur?: number;
+  suggestedCreditInclVatEur?: number;
+  remainingCreditEur?: number;
+  /** Value of the missing pieces at the ordered basis: informative only, never the proposal. */
+  shortValueEur?: number;
 }
 
 /** GET /api/sales-orders/{invoiceId}/credit-note-proposal: caps, suggestions from the receipt, VAT. Read-only. */

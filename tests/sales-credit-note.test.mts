@@ -4,8 +4,9 @@ import type { SalesOrderView, SalesPayment, SalesPaymentSummary } from '../src/a
 import {
   CREDIT_REASON_CHOICES, canCreateCreditNote, creditDraftTotals, creditNoteJourney, creditNoteKind, creditNoteNextStep,
   creditNoteSettlement, creditNoteStatusLabel, creditReasonLabel, creditRequestFrom, euro, isClaimDocument, isCreditNote,
-  isDeadCreditNote, isOffsetPayment, signedClaim,
+  isDeadCreditNote, isOffsetPayment, signedClaim, partnerCreditPrefill,
 } from '../src/app/features/sales/sales-credit-note.ts';
+import type { PartnerCreditProposal } from '../src/app/core/api/models.ts';
 
 const row = (input: Partial<SalesPayment>): SalesPayment => ({ id: 1, salesOrderId: 55, amountEur: -100, receivedAt: '2026-09-25T10:00:00Z', timeZone: 'Europe/Brussels',
   reference: null, recordedAt: '2026-09-25T10:00:00Z', actor: 'emre', offsetOrderId: null, offsetPaymentId: null, ...input });
@@ -137,4 +138,56 @@ test('signed claims: invoices add, credit notes subtract, quotes claim nothing',
   assert.equal(signedClaim({ order: { docType: 'OFFERTE' }, priced: { totals: { totalInclVat: 100 } } } as unknown as SalesOrderView), 0);
   assert.equal(euro(1240), '€ 1.240,00');
   assert.equal(euro(-296.45), '− € 296,45');
+});
+
+/* His container: financed € 8.020,64 excl. btw at 0 % (verlegd), agreed share after receipt € 7.991,49 = 50 % of € 15.982,97, 108 pieces missing. */
+const partner = (changes: Partial<PartnerCreditProposal> = {}): PartnerCreditProposal => ({
+  purchaseOrderId: 12, received: true, settlementExists: false, missingPieces: 108, damagedPieces: 0,
+  issuedAdvanceEur: 8020.64, creditedAdvanceEur: 0, actualBasisEur: 15982.97, forecastExternalEur: 13093.47, financingPct: 50,
+  agreedShareEur: 7991.49, overFinancingEur: 29.15, overFinancingInclVatEur: 29.15, suggestedAdvanceInvoiceId: 10,
+  advances: [{ invoiceId: 10, number: 'container/2026/010', totalInclVatEur: 8020.64, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 8020.64 }],
+  ...changes,
+});
+
+test('his figures prefill € 29,15 excl. btw with the container name and the missing pieces', () => {
+  const fill = partnerCreditPrefill(partner({ pendingCreditEur: 0, suggestedCreditEur: 29.15, suggestedCreditInclVatEur: 29.15, remainingCreditEur: 0,
+    advances: [{ invoiceId: 10, number: 'container/2026/010', totalInclVatEur: 8020.64, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 8020.64,
+      vatRatePct: 0, maxCreditEur: 8020.64, openEur: 0, suggestedCreditEur: 29.15 }] }), 10, 'container/2026/002', 0);
+  assert.deepEqual(fill, { amountEur: 29.15, restEur: 0, wantedEur: 29.15, description: 'Voorschot te veel gefinancierd · container/2026/002 (108 stuks niet ontvangen)', state: 'ok' });
+  assert.equal(partnerCreditPrefill(partner(), 10, 'container/2026/002', 0).amountEur, 29.15, 'An older backend without suggestions gets the same cents');
+});
+
+test('a pending concept credit note is never proposed twice', () => {
+  const fill = partnerCreditPrefill(partner({ pendingCreditEur: 29.15, pendingCreditNumbers: ['CN-2026-0004'], suggestedCreditEur: 0,
+    advances: [{ invoiceId: 10, number: 'container/2026/010', totalInclVatEur: 8020.64, alreadyCreditedInclVatEur: 29.15, maxCreditInclVatEur: 7991.49,
+      vatRatePct: 0, maxCreditEur: 7991.49, openEur: 0, suggestedCreditEur: 0 }] }), 10, 'container/2026/002', 0);
+  assert.equal(fill.state, 'pending'); assert.equal(fill.amountEur, null);
+  assert.equal(partnerCreditPrefill(partner({ pendingCreditEur: 29.15 }), 10, 'x', 0).state, 'pending', 'An older server path subtracts the pending concept too');
+  const partly = partnerCreditPrefill(partner({ overFinancingEur: 50, pendingCreditEur: 29.15 }), 10, 'x', 0);
+  assert.equal(partly.state, 'ok'); assert.equal(partly.amountEur, 20.85, 'Only what the concept does not cover yet');
+});
+
+test('an older server caps the wanted credit by the advance room excl. btw, rounded down', () => {
+  const fill = partnerCreditPrefill(partner({ overFinancingEur: 7000, advances: [{ invoiceId: 10, number: 'F', totalInclVatEur: 7260, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 7260 }] }), 10, 'PO-1', 21);
+  assert.equal(fill.amountEur, 6000); assert.equal(fill.restEur, 1000);
+  const odd = partnerCreditPrefill(partner({ overFinancingEur: 100, advances: [{ invoiceId: 10, number: 'F', totalInclVatEur: 50, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 50 }] }), 10, '', 21);
+  assert.equal(odd.amountEur, 41.32, '50 / 1,21 = 41,3223 rounds down'); assert.equal(odd.restEur, 58.68);
+  assert.equal(odd.description, 'Voorschot te veel gefinancierd (108 stuks niet ontvangen)');
+});
+
+test('switching advance takes that advance\'s own suggestion and re-caps', () => {
+  const both = partner({ overFinancingEur: 5500, suggestedAdvanceInvoiceId: 11, suggestedCreditEur: 3600, remainingCreditEur: 1900, advances: [
+    { invoiceId: 10, number: 'A', totalInclVatEur: 2400, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 2400, vatRatePct: 0, maxCreditEur: 2400, openEur: 0, suggestedCreditEur: 2400 },
+    { invoiceId: 11, number: 'B', totalInclVatEur: 3600, alreadyCreditedInclVatEur: 0, maxCreditInclVatEur: 3600, vatRatePct: 0, maxCreditEur: 3600, openEur: 3600, suggestedCreditEur: 3600 }] });
+  assert.deepEqual([partnerCreditPrefill(both, 11, 'c', 0).amountEur, partnerCreditPrefill(both, 11, 'c', 0).restEur], [3600, 1900]);
+  assert.deepEqual([partnerCreditPrefill(both, 10, 'c', 0).amountEur, partnerCreditPrefill(both, 10, 'c', 0).restEur], [2400, 3100]);
+  assert.equal(partnerCreditPrefill(both, 99, 'c', 0).amountEur, null, 'An unknown advance proposes nothing');
+});
+
+test('before receipt or once a settlement exists nothing is proposed', () => {
+  assert.equal(partnerCreditPrefill(partner({ received: false, overFinancingEur: 0 }), 10, 'c', 0).state, 'not-received');
+  assert.equal(partnerCreditPrefill(partner({ settlementExists: true, overFinancingEur: 0 }), 10, 'c', 0).state, 'settlement');
+  assert.equal(partnerCreditPrefill(partner({ overFinancingEur: 0 }), 10, 'c', 0).state, 'none');
+  assert.equal(partnerCreditPrefill(null, 10, 'c', 0).state, 'none');
+  assert.equal(partnerCreditPrefill(partner({ missingPieces: 1 }), 10, 'c', 0).description, 'Voorschot te veel gefinancierd · c (1 stuk niet ontvangen)');
 });
