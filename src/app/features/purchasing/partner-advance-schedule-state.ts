@@ -6,19 +6,22 @@ export interface AdvanceScheduleDraft {
   mode: 'PERCENT' | 'AMOUNT';
   value: number;
   dueDate: string;
-  /** A FIXED term: its invoice was issued, sent, paid or credited. It stays exactly as it is. */
+  /** A FIXED term: its invoice is no longer a concept, has payment history or a live credit note. It stays exactly as it is. */
   locked: boolean;
   fixedAmountEur?: number;
-  /** A never-issued concept invoice on an open term: it follows the new split (same number), but the term cannot go. */
+  /** A concept invoice on an open term, also one issued and reopened: it follows the new split (same number), but the term cannot go. */
   conceptNumber?: string | null;
+  /** The concept was issued or sent before and reopened ('heropend'). */
+  conceptReopened?: boolean;
 }
 
 export const cents = (value: number): number => Math.round(value * 100) / 100;
 
 /**
- * A term is FIXED when its invoice exists and is not a never-issued concept.
- * The server says so in `invoiceFixed`; an older backend does not, and then
- * any invoice fixes the term, as before.
+ * A term is FIXED when its invoice is no longer a concept, has payment history
+ * or a live credit note; a concept, also one issued and reopened, is not. The
+ * server alone decides, in `invoiceFixed`; an older backend does not send it,
+ * and then any invoice fixes the term, as before.
  */
 export function scheduleRowFixed(row: Pick<PartnerAdvanceScheduleRow, 'invoiceId' | 'invoiceFixed'>): boolean {
   if (row.invoiceId == null) return false;
@@ -31,8 +34,49 @@ export function scheduleDraft(rows: readonly PartnerAdvanceScheduleRow[]): Advan
     return { id: row.id, label: row.label, mode: row.percentage == null ? 'AMOUNT' : 'PERCENT',
       value: row.percentage ?? row.amountEur, dueDate: row.dueDate ?? '', locked: fixed,
       ...(fixed ? { fixedAmountEur: row.amountEur } : {}),
-      ...(!fixed && row.invoiceId != null ? { conceptNumber: row.invoiceNumber ?? '' } : {}) };
+      ...(!fixed && row.invoiceId != null ? { conceptNumber: row.invoiceNumber ?? '' } : {}),
+      ...(!fixed && row.invoiceId != null && row.invoiceReopened === true ? { conceptReopened: true } : {}) };
   });
+}
+
+type ConceptRow = Pick<PartnerAdvanceScheduleRow, 'invoiceId' | 'invoiceNumber' | 'invoiceStatus' | 'invoiceFixed' | 'invoiceReopened'>;
+
+/**
+ * The line under a saved term whose invoice is a concept, or null. A concept
+ * that follows a new split says so, 'heropend' when it was issued before
+ * (never 'nog niet uitgegeven' then); a fixed concept says why. Without
+ * `withNumber` the number is left out, for a screen that shows it just above.
+ */
+export function scheduleConceptNote(row: ConceptRow, withNumber = true): string | null {
+  if (row.invoiceId == null || row.invoiceStatus !== 'CONCEPT') return null;
+  const concept = withNumber && row.invoiceNumber ? `Concept ${row.invoiceNumber}` : 'Concept';
+  if (row.invoiceFixed === true) return `${concept} · staat vast (betaalhistoriek of creditnota)`;
+  if (row.invoiceFixed !== false) return concept;
+  if (row.invoiceReopened === true) return `${concept} · heropend · volgt de nieuwe verdeling`;
+  if (row.invoiceReopened === false) return `${concept} · nog niet uitgegeven · volgt de nieuwe verdeling`;
+  return `${concept} · volgt de nieuwe verdeling`;
+}
+
+/** The head of a term in the editor: fixed, a concept that follows the split, or still to invoice. */
+export function scheduleDraftStatus(row: Pick<AdvanceScheduleDraft, 'locked' | 'conceptNumber' | 'conceptReopened'>): string {
+  if (row.locked) return 'Gefactureerd · staat vast';
+  if (row.conceptNumber == null) return 'Nog te factureren';
+  const number = row.conceptNumber ? ` ${row.conceptNumber}` : '';
+  return row.conceptReopened ? `Concept${number} · heropend · volgt de nieuwe verdeling`
+    : `Nog te factureren · concept${number} · volgt de nieuwe verdeling`;
+}
+
+/**
+ * The one-click '1/3 · 1/3 · 1/3': exactly one fixed term that is a third of
+ * the agreed amount, nothing reserved outside the plan, and at most two
+ * concept terms to carry the two new thirds (an open or reopened concept
+ * '2/3 na productie' among them).
+ */
+export function thirdsResplitAvailable(rows: readonly AdvanceScheduleDraft[], agreedEur: number, reservedOutsideEur = 0): boolean {
+  const fixed = rows.filter((row) => row.locked);
+  return agreedEur > 0 && !(reservedOutsideEur > 0) && fixed.length === 1
+    && Math.abs(scheduleRowAmount(fixed[0], agreedEur) - cents(agreedEur / 3)) < .005
+    && rows.filter((row) => !row.locked && row.conceptNumber != null).length <= 2;
 }
 
 /** Only recreating an unused legacy plan may adopt the current purchase basis. */
@@ -158,6 +202,7 @@ export function resplitRemainder(rows: readonly AdvanceScheduleDraft[], agreedEu
       label: resplitLabel(previous?.label, labels[index], fixed.length + index + 1),
       mode: 'AMOUNT', value, dueDate: previous?.dueDate ?? '', locked: false,
       ...(previous?.conceptNumber != null ? { conceptNumber: previous.conceptNumber } : {}),
+      ...(previous?.conceptReopened ? { conceptReopened: true } : {}),
     };
   });
   return [...fixed, ...split];

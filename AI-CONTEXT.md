@@ -537,12 +537,28 @@ name; no invented `PO-<id>`). Inkoop keeps its own alias || number display.
 Stored lines and notes of issued documents are never rewritten.
 
 ### Partner advance plan: re-split the rest (sales round 2026-09-30, G2)
-A term is FIXED when its invoice was issued, sent, paid or credited: the
-server sends `invoiceFixed` on PartnerAdvanceScheduleRow;
-`scheduleRowFixed(row)` falls back to 'has an invoiceId' for an older
-backend. Only fixed terms are `locked` in `scheduleDraft`; a term with a
-never-issued concept is editable (label, amount, due date: the server revises
-that concept in place, same number) but never removable (`conceptNumber`).
+A term is FIXED only when its invoice is no longer a concept, has payment
+history or a live credit note (2026-10-01: an issued-then-reopened concept is
+NOT fixed; Verhoeven BV's container/2026/009). The server alone decides:
+`invoiceFixed` on PartnerAdvanceScheduleRow, `invoiceReopened` for a concept
+issued before; `scheduleRowFixed(row)` falls back to 'has an invoiceId' for an
+older backend, and no screen keeps its own 'was issued' or 'has a number'
+rule. Only fixed terms are `locked` in `scheduleDraft`; a term with a
+concept (`conceptNumber`, `conceptReopened`) is editable (label, amount, due
+date: the server revises that concept in place, same number) but never
+removable. Wording: `scheduleConceptNote(row, withNumber?)` ('Concept {nr} ·
+heropend · volgt de nieuwe verdeling', 'nog niet uitgegeven' only when the
+server says it never was, '· staat vast (betaalhistoriek of creditnota)'),
+`scheduleDraftStatus(row)` for the editor heads, `thirdsResplitAvailable`
+for the one-click '1/3 · 1/3 · 1/3' (€ 54.435,82: 18.145,27 fixed + 18.145,28
++ 18.145,27). The sales 'Voorschotfacturen' block (desk/editor/view) uses the
+same note, reloads on a status change and links 'Termijnen aanpassen' to
+`/purchasing/{id}?section=payments&terms=edit`, which opens the editor once
+and then drops `terms` from the URL (replaceUrl). On the purchase order the
+'Alle offertes & facturen' list takes a concept's note from the plan card
+(viewChild), else just 'Concept'; the partner panel shows no extra suffix.
+Deleting a reopened term stays refused by the server (409 "... het nummer
+blijft bestaan. Pas de verdeling aan via Termijnen aanpassen ...").
 Pure helpers in partner-advance-schedule-state.ts: `resplitRemainder(rows,
 agreed, outside, parts, labels?)` keeps fixed terms (id, amount), splits the
 rest into `parts` AMOUNT terms in cents (last takes the residual cent),

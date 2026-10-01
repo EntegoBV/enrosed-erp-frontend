@@ -1831,8 +1831,10 @@ export interface PartnerAdvanceScheduleRow {
   invoiceId: number | null;
   invoiceNumber: string | null;
   invoiceStatus: QuoteStatus | null;
-  /** True when the invoice is issued, sent, paid or credited: the term stays as it is. A never-issued concept is not fixed and follows a new split. Absent on an older backend. */
+  /** True when the invoice is no longer a concept, has payment history or a live credit note: the term stays as it is. A concept is not fixed and follows a new split, also one that was issued and reopened. Absent on an older backend. */
   invoiceFixed?: boolean;
+  /** The concept was issued or sent before and reopened: it keeps its number and cannot be deleted. Absent on an older backend. */
+  invoiceReopened?: boolean;
   receivedEur: number;
   remainingEur: number;
 }

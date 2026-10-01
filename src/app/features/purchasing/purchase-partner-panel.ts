@@ -82,7 +82,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
               <li>
                 <a class="po-partner__doc" [routerLink]="['/sales', deal.order.id]">
                   <b>{{ deal.order.number }}</b>
-                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.status === 'CONCEPT' ? ' · nog niet uitgegeven' : deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
+                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.status === 'CONCEPT' ? '' : deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
                 </a>
                 <span class="po-partner__amount">@if (deal.advanceAgreement) { Betaalafspraken } @else { {{ deal.priced.totals.total | eur }} }</span>
                 <button class="po-partner__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" title="Koppeling verwijderen" (click)="unlink.emit(deal)">×</button>

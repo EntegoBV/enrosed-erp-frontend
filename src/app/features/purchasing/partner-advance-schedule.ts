@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { PartnerAdvanceSchedule as Schedule, SalesOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
-import { AdvanceScheduleDraft, cents, remainderRequest, resplitRemainder, scheduleDraft, scheduleDraftChanges, schedulePreset, scheduleRemainder, scheduleRequest, scheduleRowAmounts, scheduleRowFixed } from './partner-advance-schedule-state';
+import { AdvanceScheduleDraft, cents, remainderRequest, resplitRemainder, scheduleConceptNote, scheduleDraft, scheduleDraftChanges, scheduleDraftStatus, schedulePreset, scheduleRemainder, scheduleRequest, scheduleRowAmounts, scheduleRowFixed, thirdsResplitAvailable } from './partner-advance-schedule-state';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { Ui } from '../../shared/ui';
 
@@ -45,7 +45,7 @@ import { Ui } from '../../shared/ui';
             }
           }
           @for (row of draft(); track $index; let index = $index) {
-            <article class="plan-editor" [class.plan-editor--fixed]="row.locked"><div class="plan-editor__head"><b>Termijn {{ index + 1 }}</b><span>{{ row.locked ? 'Gefactureerd · staat vast' : row.conceptNumber != null ? 'Nog te factureren · concept ' + row.conceptNumber + ' · volgt de nieuwe verdeling' : 'Nog te factureren' }}</span></div>
+            <article class="plan-editor" [class.plan-editor--fixed]="row.locked"><div class="plan-editor__head"><b>Termijn {{ index + 1 }}</b><span>{{ draftStatus(row) }}</span></div>
               <label class="field plan-name"><span>Wanneer betaalt de partner?</span><input class="input" [value]="row.label" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" maxlength="160" placeholder="Bij start productie" (input)="patch(index, { label: $any($event.target).value })" /></label>
               <label class="field"><span>Berekenen als</span><select class="select" [value]="row.mode" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" (change)="patch(index, { mode: $any($event.target).value })"><option value="PERCENT">% van partnerbedrag</option><option value="AMOUNT">Bedrag in EUR</option></select></label>
               <label class="field"><span>{{ row.mode === 'PERCENT' ? 'Percentage' : 'Bedrag (EUR)' }}</span><input class="input" type="number" min="0.01" [max]="row.mode === 'PERCENT' ? 100 : plan.agreedAmountEur" step="0.01" [value]="row.value" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" (input)="patch(index, { value: +$any($event.target).value })" /></label>
@@ -63,13 +63,13 @@ import { Ui } from '../../shared/ui';
         } @else {
           @for (row of plan.rows; track row.id; let index = $index) {
             <article class="plan-row"><div><small class="plan-label">TERMIJN {{ index + 1 }}</small><b>{{ row.label }}</b><small>{{ row.percentage == null ? 'Vast bedrag' : (row.percentage | num) + '% van partnerbedrag' }} · {{ row.dueDate ? 'vervalt ' + (row.dueDate | dateNl) : 'geen vervaldatum' }}</small>
-              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a>@if (row.invoiceStatus === 'CONCEPT') { <small>{{ row.invoiceFixed === true ? 'Concept · staat vast (eerder uitgegeven, verstuurd of betaald)' : row.invoiceFixed === false ? 'Concept · nog niet uitgegeven · volgt een nieuwe verdeling' : 'Concept · nog niet uitgegeven' }}</small> } @else { <small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> } }
+              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a>@if (conceptNote(row, false); as note) { <small>{{ note }}</small> } @else { <small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> } }
               @else { <small>{{ plan.invoicingBlocked ? 'Ongebruikte termijn · afrekening al begonnen' : 'Nog niet gefactureerd' }}</small> }
             </div><div class="plan-actions"><b>{{ row.amountEur | eur }}</b>@if (!row.invoiceId && !plan.invoicingBlocked) { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || loading() || !canCreateInvoice()" (click)="makeInvoice(row.id)">Conceptfactuur maken</button> } @else if (row.invoiceId) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="openInvoice.emit(row.invoiceId)">{{ row.invoiceStatus === 'CONCEPT' ? 'Factuur bekijken & uitgeven' : 'Betalingen bekijken' }}</button> }</div></article>
           } @empty { <div class="plan-empty"><b>{{ plan.invoicingBlocked ? 'Voorschotplanning afgesloten' : plan.agreedAmountEur <= 0 ? 'Geen voorschot afgesproken' : 'Hoe betaalt de partner zijn bijdrage?' }}</b><p>{{ plan.invoicingBlocked ? 'De veilingafrekening is begonnen. Bekijk de bestaande documenten en ontvangsten hieronder.' : plan.agreedAmountEur <= 0 ? 'Er is geen voorschotfactuur nodig. Bewaar de partnerafspraak op de container; de afrekening volgt na de veiling.' : 'Bijvoorbeeld 30% bij start productie en 70% na productie. Een eigen verdeling kan ook.' }}</p>@if (!plan.invoicingBlocked && plan.agreedAmountEur > 0) { <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="edit()">Voorschottermijnen instellen</button> }</div> }
           @if (plan.unallocatedEur > 0 && plan.rows.length) { <p class="plan-copy">{{ plan.unallocatedEur | eur }} van de partnerfinanciering is nog niet aan een factuurtermijn toegewezen.</p> }
           @if (plan.rows.length) { <p class="plan-copy">Na het maken controleer en geef je de factuur uit. De werkelijke ontvangst noteer je apart bij de factuur.</p> }
-          @if (fixedRows().length && openRowCount() && !plan.invoicingBlocked) { <p class="plan-copy">Nog niet gefactureerde termijnen kun je opnieuw verdelen, bijv. 1/3 · 1/3 · 1/3, via Termijnen aanpassen. Gefactureerde termijnen blijven ongewijzigd.</p> }
+          @if (fixedRows().length && openRowCount() && !plan.invoicingBlocked) { <p class="plan-copy">Termijnen zonder factuur of met een concept (ook een heropende factuur) kun je opnieuw verdelen, bijv. 1/3 · 1/3 · 1/3, via Termijnen aanpassen. Uitgegeven of betaalde termijnen blijven ongewijzigd.</p> }
         }
       } @else if (loading()) { <p class="plan-copy">Factuurtermijnen laden…</p> }
     </section>
@@ -106,7 +106,7 @@ export class PartnerAdvanceSchedule {
   readonly error = signal('');
   readonly statusLabel = STATUS_LABEL;
   readonly hasInvoices = computed(() => (this.schedule()?.reservedOutsideScheduleEur ?? 0) > 0 || (this.schedule()?.rows.some((row) => row.invoiceId != null) ?? false));
-  /** Saved terms whose invoice was issued, sent, paid or credited: they never change. */
+  /** Saved terms the server calls fixed (no longer a concept, paid or credited): they never change. A reopened concept is not one. */
   readonly fixedRows = computed(() => this.schedule()?.rows.filter(scheduleRowFixed) ?? []);
   readonly openRowCount = computed(() => (this.schedule()?.rows.length ?? 0) - this.fixedRows().length);
   readonly draftFixed = computed(() => this.draft().filter((row) => row.locked));
@@ -114,14 +114,10 @@ export class PartnerAdvanceSchedule {
   readonly remainderMode = computed(() => this.draftFixed().length > 0 || (this.schedule()?.reservedOutsideScheduleEur ?? 0) > 0);
   readonly remainder = computed(() => scheduleRemainder(this.draft(), this.schedule()?.agreedAmountEur ?? 0, this.schedule()?.reservedOutsideScheduleEur ?? 0));
   readonly thirdLabels = ['1/3 na productie', '1/3 bij aankomst'];
-  /** One fixed term that is exactly a third: the rest becomes two more thirds in one click. */
-  readonly thirdsAvailable = computed(() => {
-    const agreed = this.schedule()?.agreedAmountEur ?? 0;
-    const fixed = this.draftFixed();
-    return agreed > 0 && fixed.length === 1 && Math.abs((fixed[0].fixedAmountEur ?? 0) - cents(agreed / 3)) < .005
-      && !((this.schedule()?.reservedOutsideScheduleEur ?? 0) > 0)
-      && this.draft().filter((row) => !row.locked && row.conceptNumber != null).length <= 2;
-  });
+  /** One fixed term that is exactly a third (e.g. paid 1/3 + an open or reopened concept 2/3): two more thirds in one click. */
+  readonly thirdsAvailable = computed(() => thirdsResplitAvailable(this.draft(), this.schedule()?.agreedAmountEur ?? 0, this.schedule()?.reservedOutsideScheduleEur ?? 0));
+  readonly draftStatus = scheduleDraftStatus;
+  readonly conceptNote = scheduleConceptNote;
   /** 'Termijn 1 is al gefactureerd (F-…) en blijft ongewijzigd.' */
   readonly fixedIntro = computed(() => {
     const rows = this.draft();
@@ -138,15 +134,30 @@ export class PartnerAdvanceSchedule {
   readonly unallocated = computed(() => cents((this.schedule()?.agreedAmountEur ?? 0) - (this.schedule()?.reservedOutsideScheduleEur ?? 0) - this.allocated()));
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly router = inject(Router, { optional: true });
+  /** ?terms=edit, from an advance invoice: Termijnen aanpassen opens once the plan is in. */
+  private editRequested = this.route?.snapshot.queryParamMap.get('terms') === 'edit';
   private version = 0;
   constructor() { effect(() => { const id = this.purchaseOrderId(); this.documents(); void this.load(id); }); }
   async load(id = this.purchaseOrderId()): Promise<void> {
     const version = ++this.version; this.loading.set(true); this.error.set('');
-    try { const plan = await this.sourcing.partnerAdvanceSchedule(id); if (version === this.version) this.schedule.set(plan); }
+    try { const plan = await this.sourcing.partnerAdvanceSchedule(id); if (version === this.version) { this.schedule.set(plan); this.openRequestedEdit(plan); } }
     catch (failure) { if (version === this.version) this.error.set(messageOf(failure, 'Factuurtermijnen laden mislukt')); }
     finally { if (version === this.version) this.loading.set(false); }
   }
   edit(): void { this.draft.set(scheduleDraft(this.schedule()?.rows ?? [])); this.error.set(''); this.editing.set(true); }
+  /**
+   * Once: the flag leaves the URL (section=payments stays), so a later reload, a rail tab switch
+   * that recreates this card, a browser reload or history navigation never reopens the editor.
+   */
+  private openRequestedEdit(plan: Schedule): void {
+    if (!this.editRequested) return;
+    this.editRequested = false;
+    if (this.route && this.router && this.route.snapshot.queryParamMap.get('terms') === 'edit')
+      void this.router.navigate([], { relativeTo: this.route, queryParams: { terms: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (!this.editing() && plan.rows.length && !plan.invoicingBlocked) this.edit();
+  }
   preset(value: '30_70' | 'THIRDS' | 'FULL'): void { if (!this.hasInvoices() && !this.schedule()?.invoicingBlocked && !this.busy()) this.draft.set(schedulePreset(value, this.schedule()?.agreedAmountEur ?? 0)); }
   add(): void { if (this.schedule()?.invoicingBlocked || this.busy()) return; this.draft.update((rows) => [...rows, { label: '', mode: 'AMOUNT', value: Math.max(0, this.unallocated()), dueDate: '', locked: false }]); }
   /** A split never drops a term with a concept invoice, and each part must be at least a cent. */
