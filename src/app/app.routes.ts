@@ -80,6 +80,12 @@ export const routes: Routes = [
       import('./features/customers/customer-list').then((m) => m.CustomerList),
   },
   {
+    path: 'klantlogins',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/login-requests/login-requests-page').then((m) => m.LoginRequestsPage),
+  },
+  {
     path: 'purchasing',
     canActivate: [authGuard],
     loadComponent: () =>

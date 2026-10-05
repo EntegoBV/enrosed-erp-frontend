@@ -59,7 +59,7 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
                     [class.sidebar__group--current]="groupCurrent('verkoop')">
               <app-icon class="sidebar__group-icon" name="sales" [size]="16" />
               <span class="sidebar__group-label">Verkoop</span>
-              @if (!groupOpen('verkoop') && openWork(); as n) {
+              @if (!groupOpen('verkoop') && openWork() + openLoginRequests(); as n) {
                 <span class="sidebar__group-count">{{ n }}</span>
               }
               <span class="sidebar__group-chev" aria-hidden="true"
@@ -79,6 +79,10 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
               </a>
               <a class="sidebar__link" routerLink="/customers" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
+              </a>
+              <a class="sidebar__link" routerLink="/klantlogins" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Login-aanvragen
+                @if (openLoginRequests(); as n) { <span class="sidebar__count">{{ n }}</span> }
               </a>
               <a class="sidebar__link" routerLink="/prospects" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Prospects
@@ -289,7 +293,12 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
           </a>
           <a class="tabbar__item" routerLink="/more" routerLinkActive="active"
              [class.active]="moreRoute()" [attr.aria-current]="moreRoute() ? 'page' : null">
-            <span class="tabbar__icon"><app-icon name="more" /></span> Meer
+            <span class="tabbar__icon">
+              <app-icon name="more" />
+              @if (openLoginRequests(); as n) {
+                <span class="tabbar__count">{{ n > 9 ? '9+' : n }}</span>
+              }
+            </span> Meer
           </a>
         </nav>
       }
@@ -377,6 +386,7 @@ export class App {
    */
   readonly openWork = this.work.actionCount;
   readonly openRevisions = this.work.revisionCount;
+  readonly openLoginRequests = this.work.loginRequestCount;
 
   /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
   readonly bare = computed(() => {
@@ -431,7 +441,7 @@ export class App {
 
   readonly moreRoute = computed(() => {
     const url = this.url();
-    return ['/more', '/analyses', '/customers', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
+    return ['/more', '/analyses', '/customers', '/klantlogins', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
       .some((path) => url.startsWith(path));
   });
 

@@ -377,6 +377,12 @@ export class SalesApi {
     return firstValueFrom(this.http.get<NotificationFeed>(api('/api/notifications')));
   }
 
+  /** Website login requests waiting for approval; counted beside the bell, not in its feed. */
+  loginRequestSummary(): Promise<{ pending: number; intakeFull: boolean; intakeFullSources?: string[] }> {
+    return firstValueFrom(this.http.get<{ pending: number; intakeFull: boolean; intakeFullSources?: string[] }>(
+      api('/api/login-requests/summary')));
+  }
+
   /* ------------------------------------------------------------ portaal */
 
   /** @param language language the customer picked; empty for their own. */

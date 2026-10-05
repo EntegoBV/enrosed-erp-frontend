@@ -9,6 +9,7 @@ import {
 test('the current ERP page opens the matching desktop menu section', () => {
   assert.equal(sidebarGroupForUrl('/sales/24/edit'), 'verkoop');
   assert.equal(sidebarGroupForUrl('/prospects/24?status=NEW'), 'verkoop');
+  assert.equal(sidebarGroupForUrl('/klantlogins?open=12'), 'verkoop');
   assert.equal(sidebarGroupForUrl('/purchasing/46/edit'), 'inkoop');
   assert.equal(sidebarGroupForUrl('/products/57/edit?tab=media'), 'producten');
   assert.equal(sidebarGroupForUrl('/stock-locations'), 'producten');

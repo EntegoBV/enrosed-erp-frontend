@@ -4,6 +4,7 @@ import { Auth } from '../../core/api/auth';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { THEMES, Theme } from '../../core/platform/theme';
+import { WorkQueue } from '../../core/api/work-queue';
 
 @Component({
   selector: 'app-more-page',
@@ -90,7 +91,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
           <span class="more-group__copy"><strong>Verkoop</strong>
-            <small>Klanten · Prospects · Landen &amp; vracht</small></span>
+            <small>Klanten · Login-aanvragen · Prospects · Landen &amp; vracht</small></span>
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
@@ -98,6 +99,15 @@ import { THEMES, Theme } from '../../core/platform/theme';
             <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
             <div class="list-item__body"><div class="list-item__title">Klanten</div>
               <div class="list-item__meta">Contacten, voorwaarden en nieuwe orders</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/klantlogins">
+            <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
+            <div class="list-item__body"><div class="list-item__title">Login-aanvragen</div>
+              <div class="list-item__meta">Aanvragen van de website goedkeuren</div></div>
+            @if (work.loginRequestCount() > 0) {
+              <span class="badge badge--gold">{{ work.loginRequestCount() }}</span>
+            }
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" routerLink="/prospects">
@@ -344,6 +354,13 @@ export class MorePage {
   readonly theme = inject(Theme);
   readonly themes = THEMES;
   private readonly router = inject(Router);
+  readonly work = inject(WorkQueue);
+
+  constructor() {
+    /* Not forced: shares a request that is already under way. */
+    void this.work.refresh();
+  }
+
   currentThemeLabel(): string {
     return THEMES.find((option) => option.key === this.theme.current())?.label ?? '';
   }

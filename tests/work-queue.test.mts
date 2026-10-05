@@ -56,3 +56,75 @@ test('dismissing an alert does not remove a still-pending proposal from its page
     assert.equal(queue.revisionCount(), 0);
   } finally { injector.destroy(); }
 });
+
+type LoginSummary = { pending: number; intakeFull: boolean; intakeFullSources?: string[] };
+
+function queueWithSummary(summary: () => Promise<LoginSummary>, notifications = async () => ({ items: [] as AppNotification[] })) {
+  const injector = createEnvironmentInjector([
+    { provide: SalesApi, useValue: { notifications, loginRequestSummary: summary } },
+  ], null!);
+  return { queue: runInInjectionContext(injector, () => new WorkQueue()), injector };
+}
+
+test('the login request summary sets the count and names the full intake route', async () => {
+  const { queue, injector } = queueWithSummary(async () => ({ pending: 2, intakeFull: true, intakeFullSources: ['QUOTE'] }));
+  try {
+    await queue.refresh();
+    assert.equal(queue.loginRequestCount(), 2);
+    assert.equal(queue.loginIntakeFull(), true);
+    assert.deepEqual(queue.loginIntakeFullSources(), ['QUOTE']);
+    assert.equal(queue.error(), null);
+    assert.equal(queue.loading(), false);
+  } finally { injector.destroy(); }
+});
+
+test('a summary without intake routes leaves an empty list', async () => {
+  const { queue, injector } = queueWithSummary(async () => ({ pending: 1, intakeFull: true }));
+  try {
+    await queue.refresh();
+    assert.equal(queue.loginRequestCount(), 1);
+    assert.equal(queue.loginIntakeFull(), true);
+    assert.deepEqual(queue.loginIntakeFullSources(), []);
+  } finally { injector.destroy(); }
+});
+
+test('a failing summary keeps the previous login request values and raises no feed error', async () => {
+  let fail = false;
+  const { queue, injector } = queueWithSummary(async () => {
+    if (fail) throw new Error('offline');
+    return { pending: 2, intakeFull: true, intakeFullSources: ['ORDER_SCREEN'] };
+  });
+  try {
+    await queue.refresh();
+    fail = true;
+    await queue.refresh(true);
+    assert.equal(queue.loginRequestCount(), 2);
+    assert.equal(queue.loginIntakeFull(), true);
+    assert.deepEqual(queue.loginIntakeFullSources(), ['ORDER_SCREEN']);
+    assert.equal(queue.error(), null);
+  } finally { injector.destroy(); }
+});
+
+test('a failing feed does not reset the login request count', async () => {
+  let fail = false;
+  const { queue, injector } = queueWithSummary(
+    async () => ({ pending: 3, intakeFull: false, intakeFullSources: [] }),
+    async () => { if (fail) throw new Error('offline'); return { items: [notification('VOORSTEL', 42)] }; });
+  try {
+    await queue.refresh();
+    fail = true;
+    await queue.refresh(true);
+    assert.equal(queue.loginRequestCount(), 3);
+    assert.equal(queue.items().length, 1);
+    assert.notEqual(queue.error(), null);
+  } finally { injector.destroy(); }
+});
+
+test('a backend without the summary leaves the count at zero', async () => {
+  const { queue, injector } = await queueWith([notification('VOORSTEL', 42)]);
+  try {
+    assert.equal(queue.loginRequestCount(), 0);
+    assert.equal(queue.loginIntakeFull(), false);
+    assert.equal(queue.error(), null);
+  } finally { injector.destroy(); }
+});

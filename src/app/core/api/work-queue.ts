@@ -25,6 +25,10 @@ export class WorkQueue {
   readonly items = signal<AppNotification[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  /** Website login requests waiting for approval, and whether an intake list is full. */
+  readonly loginRequestCount = signal(0);
+  readonly loginIntakeFull = signal(false);
+  readonly loginIntakeFullSources = signal<string[]>([]);
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;
@@ -73,6 +77,15 @@ export class WorkQueue {
     } finally {
       if (version === this.refreshVersion) this.loading.set(false);
     }
+    /* Separate from the feed on purpose: neither call may hide or reset the other. */
+    try {
+      const summary = await this.sales.loginRequestSummary();
+      if (version === this.refreshVersion) {
+        this.loginRequestCount.set(summary.pending);
+        this.loginIntakeFull.set(summary.intakeFull === true);
+        this.loginIntakeFullSources.set(Array.isArray(summary.intakeFullSources) ? summary.intakeFullSources : []);
+      }
+    } catch { /* older backend, missing stub method or network: keep the last values */ }
   }
 
   dismiss(item: AppNotification): void {
