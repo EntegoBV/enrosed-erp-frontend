@@ -1,5 +1,5 @@
 import type {
-  CreditNoteRequest, CreditReason, QuoteStatus, SalesOrder, SalesOrderView, SalesPayment, SalesPaymentSummary,
+  CreditNoteRequest, CreditReason, PartnerCreditProposal, QuoteStatus, SalesOrder, SalesOrderView, SalesPayment, SalesPaymentSummary,
 } from '../../core/api/models';
 
 /*
@@ -242,4 +242,51 @@ export function euro(value: number): string {
   const abs = Math.abs(finite(value));
   const text = abs.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${finite(value) < 0 ? '− ' : ''}€ ${text}`;
+}
+
+export interface PartnerCreditPrefill {
+  /** Excl. VAT, prefilled in the amount field; null when there is nothing to propose. */
+  amountEur: number | null;
+  /** The part of the wanted credit that does not fit on this advance, excl. VAT. */
+  restEur: number;
+  /** The whole credit the container still wants: over-financing minus concept credit notes already made for it. */
+  wantedEur: number;
+  description: string;
+  state: 'ok' | 'pending' | 'none' | 'not-received' | 'settlement';
+}
+
+const floor2 = (value: number): number => Math.floor(value * 100 + 1e-7) / 100;
+
+/**
+ * The partner's share after a short delivery, as the amount of a credit note
+ * on one advance. The server's per-advance suggestion wins; an older backend
+ * gets the same rule here: wanted = max(0, over-financing − pending concept
+ * credits), capped by the advance's room excl. VAT (room incl. VAT × 100 /
+ * (100 + VAT), rounded down). Never recomputed from the missing pieces'
+ * value: the server's cents are the proposal.
+ */
+export function partnerCreditPrefill(
+  partner: PartnerCreditProposal | null | undefined,
+  advanceId: number | null | undefined,
+  containerName: string | null | undefined,
+  vatRatePct: number | null | undefined,
+): PartnerCreditPrefill {
+  const missing = Math.max(0, Math.round(finite(partner?.missingPieces)));
+  const container = (containerName ?? '').trim();
+  const description = `Voorschot te veel gefinancierd${container ? ` · ${container}` : ''}${missing > 0 ? ` (${missing} ${missing === 1 ? 'stuk' : 'stuks'} niet ontvangen)` : ''}`;
+  const empty = (state: PartnerCreditPrefill['state'], wantedEur = 0): PartnerCreditPrefill => ({ amountEur: null, restEur: 0, wantedEur, description, state });
+  if (!partner) return empty('none');
+  if (!partner.received) return empty('not-received');
+  if (partner.settlementExists) return empty('settlement');
+  const pending = round2(Math.max(0, finite(partner.pendingCreditEur)));
+  const wanted = round2(Math.max(0, finite(partner.overFinancingEur) - pending));
+  const option = partner.advances.find((advance) => advance.invoiceId === advanceId);
+  if (!option) return empty(wanted > 0 ? 'none' : pending > 0 ? 'pending' : 'none', wanted);
+  const vat = finite(option.vatRatePct ?? vatRatePct);
+  const room = Number.isFinite(option.maxCreditEur)
+    ? Math.max(0, finite(option.maxCreditEur))
+    : floor2(Math.max(0, finite(option.maxCreditInclVatEur)) * 100 / (100 + Math.max(0, vat)));
+  const amount = round2(Math.max(0, Number.isFinite(option.suggestedCreditEur) ? Math.min(finite(option.suggestedCreditEur), room) : Math.min(wanted, room)));
+  if (amount <= 0) return empty(pending > 0 && wanted <= 0 ? 'pending' : 'none', wanted);
+  return { amountEur: amount, restEur: round2(Math.max(0, wanted - amount)), wantedEur: wanted, description, state: 'ok' };
 }

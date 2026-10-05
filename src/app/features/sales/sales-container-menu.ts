@@ -12,10 +12,10 @@ import { STATUS_LABEL } from './quote-status';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, RouterLink, EurPipe],
   template: `
-    <app-sheet [title]="reviewing() ? 'Container verwijderen' : 'Partnercontainer ' + (container().purchaseOrderNumber || '#' + container().purchaseOrderId)" [wide]="reviewing()" (closed)="close()">
+    <app-sheet [title]="reviewing() ? 'Container verwijderen' : 'Partnercontainer ' + (container().purchaseOrderName || '#' + container().purchaseOrderId)" [wide]="reviewing()" (closed)="close()">
       <div body>
         @if (!reviewing()) {
-          <p class="container-menu__who">{{ customerName() }} · {{ container().purchaseOrderNumber || 'Inkoop #' + container().purchaseOrderId }}</p>
+          <p class="container-menu__who">{{ customerName() }} · {{ container().purchaseOrderName || 'Inkoop #' + container().purchaseOrderId }}@if (container().purchaseOrderNumber && container().purchaseOrderNumber !== container().purchaseOrderName) { · inkooporder {{ container().purchaseOrderNumber }} }</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/purchasing', container().purchaseOrderId]" [queryParams]="{ section: 'payments' }" (click)="close()"><i aria-hidden="true">›</i><span><b>Container openen</b><small>Inkooporder en alle voorschotfacturen</small></span></a>
             <button class="desk-action desk-action--danger" type="button" [disabled]="externalBusy()" (click)="check()"><i aria-hidden="true">×</i><span><b>Container verwijderen…</b><small>Controleer de inkooporder en gekoppelde voorschotfacturen</small></span></button>
@@ -24,7 +24,7 @@ import { STATUS_LABEL } from './quote-status';
           @if (checking()) { <p class="container-menu__loading" role="status">Container en gekoppelde facturen controleren…</p> }
           @if (error()) { <div class="container-menu__error" role="alert"><span>{{ error() }}</span><button class="btn btn--sm" type="button" [disabled]="checking() || deleting()" (click)="check()">Opnieuw controleren</button></div> }
           @if (preview(); as data) {
-            <p class="container-menu__intro"><b>{{ data.number }}</b> en de {{ data.invoices.length }} gekoppelde {{ data.invoices.length === 1 ? 'voorschotfactuur worden' : 'voorschotfacturen worden' }} samen tijdelijk verwijderd.</p>
+            <p class="container-menu__intro"><b>{{ deletionLabel(data.number) }}</b> en de {{ data.invoices.length }} gekoppelde {{ data.invoices.length === 1 ? 'voorschotfactuur worden' : 'voorschotfacturen worden' }} samen tijdelijk verwijderd.</p>
             <p class="container-menu__scope">Dit is de volledige factuurlijst van de container, ook wanneer je zoekopdracht of filter minder facturen toont.</p>
             <ol class="container-menu__invoices" aria-label="Gekoppelde voorschotfacturen">
               @for (invoice of data.invoices; track invoice.id) {
@@ -58,6 +58,12 @@ export class SalesContainerMenu implements OnDestroy {
   readonly preview = signal<PartnerContainerDeletionPreview | null>(null);
   readonly error = signal('');
   private readonly api = inject(PartnerContainerDeletionApi);
+
+  /** 'container/2026/002 (PO-2026-011)' when our own name differs from the PO number the server checked. */
+  deletionLabel(number: string): string {
+    const name = this.container().purchaseOrderName?.trim();
+    return name && name !== number && name !== `Inkoop #${this.container().purchaseOrderId}` ? `${name} (${number})` : number;
+  }
   private version = 0;
   private destroyed = false;
 

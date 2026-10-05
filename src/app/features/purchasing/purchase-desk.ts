@@ -16,6 +16,7 @@ import { PurchaseNacalcWorkbench } from './purchase-nacalc-workbench';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
+import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { keyContext } from '../../shared/key-context';
@@ -64,7 +65,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -95,7 +96,7 @@ type DeskRow =
               <h1>{{ supplierName() }}</h1>
               <p>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
                 · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</p>
-              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
+              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (isReceived() && data.order.receivedOn) { · ontvangen {{ data.order.receivedOn | dateNl }} } @else if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
               @for (step of statusSteps; track step.value; let last = $last) {
@@ -156,13 +157,13 @@ type DeskRow =
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="booking()" (click)="bookStock()">
                 <small>Volgende stap</small>
                 <strong>{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</strong>
-                <span>de stuks staan nog niet in de voorraad</span>
+                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad }</span>
               </button>
             } @else {
               <div class="desk-kpi desk-kpi--total">
                 <small>Status</small>
                 <strong>Afgerond ✓</strong>
-                <span>ontvangen en bijgeboekt</span>
+                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · bijgeboekt } @else { ontvangen en bijgeboekt }</span>
               </div>
             }
           </div>
@@ -192,14 +193,15 @@ type DeskRow =
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
-                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" />
+                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
             } @else if (mainView() === 'nacalc') {
               <app-purchase-nacalc-workbench [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
                 [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [saving]="saving()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [orderId]="data.order.id"
                 (openPayments)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)"
                 (save)="save()" (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()"
-                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()" />
+                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()"
+                (credit)="requestCredit($event)" />
             } @else {
             <div class="desk-table-bar">
               <div>
@@ -463,7 +465,7 @@ type DeskRow =
                       <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
                       <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
                       <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
-                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
+                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : isCif() ? 'CIF, zeevracht via de leverancier' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
                     </dl>
                   } @else {
                   <div class="desk-form">
@@ -481,8 +483,11 @@ type DeskRow =
                           <label for="dk-expected">Verwacht op <span class="opt"></span></label>
                           <app-date-field fieldId="dk-expected" [value]="data.order.expectedArrival ?? ''" (valueChange)="patch({ expectedArrival: $event || null })" />
                         </div>
-                      } @else if (data.order.receivedOn) {
-                        <div class="field"><label>Ontvangen op</label><div class="input desk-readonly">{{ data.order.receivedOn | dateNl }}</div></div>
+                      } @else {
+                        <div class="field">
+                          <label for="dk-received">Ontvangen op</label>
+                          <app-date-field fieldId="dk-received" [value]="data.order.receivedOn ?? ''" (valueChange)="$event && patch({ receivedOn: $event })" />
+                        </div>
                       }
                     </div>
                     <div class="field">
@@ -537,14 +542,15 @@ type DeskRow =
                     <div class="field">
                       <span class="label">Prijsbasis en munt van de leverancier</span>
                       <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
-                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="!isDdp() && !isCif()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isCif()" (click)="setOrderBasis('CIF')">CIF</button>
                         <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
                         <span class="po-basis__sep" aria-hidden="true"></span>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
                       </div>
-                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
+                      <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
                   }
@@ -559,7 +565,7 @@ type DeskRow =
                     <div class="desk-rates">
                       <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
                       <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
-                      <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : 'EXW' }}</b></div>
+                      <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : isCif() ? 'CIF' : 'EXW' }}</b></div>
                     </div>
                     @if (!isDdp()) {
                       <dl class="desk-facts">
@@ -596,7 +602,7 @@ type DeskRow =
                           <input class="input num right" id="dk-freight" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.freightUsd" (ngModelChange)="patch({ freightUsd: +$event })" />
                           <span class="input-affix__suffix">USD</span>
                         </div>
-                        <span class="hint">{{ costLabels().seaFreightRoute }}@if (latestFreightReference(); as reference) { · laatste notering <b>{{ reference.usdPerContainer | cur: 'USD' }}</b> ({{ reference.quotedOn | dateNl }}) }</span>
+                        <span class="hint">{{ costLabels().seaFreightRoute }}@if (isCif()) { · betaald aan de leverancier (CIF) } @else if (latestFreightReference(); as reference) { · laatste notering <b>{{ reference.usdPerContainer | cur: 'USD' }}</b> ({{ reference.quotedOn | dateNl }}) }</span>
                       </div>
                       <div class="field">
                         <label for="dk-origin">{{ costLabels().originCostsLabel }}</label>
@@ -878,7 +884,7 @@ type DeskRow =
       @if (auctionOpen()) {
         @if (view(); as data) {
           <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
-                                        [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                        [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                         [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                         (funding)="openPartner()" (closed)="auctionOpen.set(false)" />
         }
@@ -1044,16 +1050,20 @@ type DeskRow =
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
-          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
+          [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
-          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+      }
+      @if (crediting(); as credit) {
+        <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"
+          [busy]="payingBusy()" (submit)="submitCredit($event)" (cancel)="closeCredit()" />
       }
       @if (settling(); as settle) {
         @if (settlePayee(); as payee) {
@@ -1073,6 +1083,11 @@ type DeskRow =
       @if (receiving(); as draft) {
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
+            <div class="field">
+              <label for="dk-rc-date">Ontvangen op</label>
+              <app-date-field fieldId="dk-rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
+              <span class="hint">Standaard vandaag; pas aan als de container eerder binnenkwam.</span>
+            </div>
             <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals besteld, dan hoef je niets te wijzigen.</p>
             @if (receiveSummary(); as summary) {
               <div class="receive-preview" aria-label="Voorbeeld van de ontvangstsamenvatting">

@@ -36,13 +36,15 @@ import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
 import {
-  PAYEE_LABEL, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due, type PurchasePaymentAction, type PurchaseSettleRequest,
+  PAYEE_LABEL, SUPPLIER_CREDIT_REASON_LABEL, creditOffsetTargets, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due,
+  type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
+import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type SupplierCreditSubmit } from './purchase-supplier-credit-sheet';
 import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
-  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
@@ -78,6 +80,7 @@ import { productSalesUnit } from '../products/product-sales-unit';
 import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { containerName } from './container-name';
 
 /**
  * Landed-cost calculation of a container.
@@ -104,6 +107,13 @@ interface ReceiveDraft {
   /** Note the open balance as a final payment while receiving. */
   finalPayment: boolean;
   note: string;
+  /** The day the container came in (ISO); today unless the buyer corrects it. */
+  receivedOn?: string;
+}
+
+/** Today on this device as yyyy-mm-dd: the day the buyer sees, not the UTC one. */
+function localIsoDay(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 /** The container's price basis: DDP when every line says so, EXW otherwise. */
@@ -114,7 +124,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -351,10 +361,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                         (valueChange)="patch({ expectedArrival: $event || null })" />
                         <span class="hint">De producten tonen dit als "te verwachten" tot de container binnen is.</span>
                       </div>
-                    } @else if (data.order.receivedOn) {
+                    } @else {
                       <div class="field">
-                        <label>Ontvangen op</label>
-                        <div class="input" style="background:var(--surface-2)">{{ data.order.receivedOn | dateNl }}</div>
+                        <label for="po-received">Ontvangen op</label>
+                        <app-date-field fieldId="po-received" [value]="data.order.receivedOn ?? ''"
+                                        (valueChange)="$event && patch({ receivedOn: $event })" />
+                        <span class="hint">Corrigeer als de container op een andere dag binnenkwam.</span>
                       </div>
                     }
                     <div class="field">
@@ -443,14 +455,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <div class="field">
                       <span class="label">Prijsbasis en munt van de leverancier</span>
                       <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
-                        <button type="button" class="fin-chip" [class.on]="!isDdp()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="!isDdp() && !isCif()" (click)="setOrderBasis('EXW')">EXW</button>
+                        <button type="button" class="fin-chip" [class.on]="isCif()" (click)="setOrderBasis('CIF')">CIF</button>
                         <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
                         <span class="po-basis__sep" aria-hidden="true"></span>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
                         <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
                       </div>
-                      <span class="hint">{{ isDdp() ? 'Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij.' : 'Af fabriek: wij regelen zeevracht, invoerrechten en transport.' }} De stukprijzen staan in {{ orderCurrency() }}.</span>
+                      <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
                 </div>
@@ -776,7 +789,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         </div>
                         <span class="hint">
                           {{ costLabels().seaFreightRoute }}
-                          @if (latestFreightReference(); as reference) {
+                          @if (isCif()) {
+                            · betaald aan de leverancier (CIF)
+                          } @else if (latestFreightReference(); as reference) {
                             · laatste eigen notering:
                             <b>{{ reference.usdPerContainer | cur: 'USD' }}</b>
                             · {{ reference.quotedOn | dateNl }}
@@ -1134,7 +1149,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 (openPayee)="openPayee($event)" (pay)="requestPayment($event)" (settle)="requestSettle($event)"
                 (openPayments)="jumpToSection('purchase-payments-section')" (openPartner)="jumpToSection('purchase-partner-section')"
                 (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="jumpToSection('purchase-actions-section')"
-                (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" />
+                (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" (credit)="requestCredit($event)" />
             </section>
 
             <!-- Money out, per payee: the supplier for the goods in its planned
@@ -1149,7 +1164,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
-                (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')" />
+                (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
+                (credit)="requestCredit($event)" />
             </section>
 
             <!-- Money in: a partner who co-finances the container. -->
@@ -1367,7 +1383,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
       @if (auctionOpen()) {
         <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
-                                      [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                      [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                       (funding)="jumpToSection('purchase-partner-section')" (closed)="auctionOpen.set(false)" />
       }
@@ -1437,16 +1453,20 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (paymentPlanOrder(); as agreement) {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
-          [agreedEur]="supplierOwed()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
+          [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
-          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)"
+          [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+      }
+      @if (crediting(); as credit) {
+        <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"
+          [busy]="payingBusy()" (submit)="submitCredit($event)" (cancel)="closeCredit()" />
       }
       @if (settling(); as settle) {
         @if (settlePayee(); as payee) {
@@ -1527,6 +1547,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
              what was paid, and decide whether the shelf gets it now. -->
         <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
           <div body>
+            <div class="field">
+              <label for="rc-date">Ontvangen op</label>
+              <app-date-field fieldId="rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
+              <span class="hint">Standaard vandaag; pas aan als de container eerder binnenkwam.</span>
+            </div>
             <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals
               besteld, dan hoef je niets te wijzigen.</p>
             @if (receiveSummary(); as summary) {
@@ -1744,6 +1769,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   `]
 })
 export class PurchaseEditor {
+  /** One name for the container in sales texts: alias, else number. */
+  readonly containerName = containerName;
   readonly desktop = inject(DesktopViewport);
   readonly pdfOpen = signal(false);
   /** The container as an offer: the sheet that picks the customer and opens the new quote. */
@@ -2107,6 +2134,8 @@ export class PurchaseEditor {
 
   /** What the supplier is owed: goods, plus the sea freight when it is in the price. */
   readonly supplierOwed = computed(() => this.reconciliationStream('SUPPLIER')?.plannedEur ?? this.view()?.payable?.supplierEur ?? this.view()?.costing.totals.goodsEur ?? 0);
+  /** What the plan's percentages split: the goods only; a CIF supplier's sea freight is its own term. */
+  readonly planAgreedEur = computed(() => Math.max(0, Math.round((this.supplierOwed() - (this.view()?.payable?.supplierFreightEur ?? 0)) * 100) / 100));
   readonly logisticsOwed = computed(() => this.reconciliationStream('LOGISTICS')?.plannedEur ?? this.view()?.payable?.logisticsEur ?? 0);
   paymentsTo(payee: Payee): PurchasePayment[] {
     return (this.payments() ?? []).filter((payment) => (payment.payee ?? 'SUPPLIER') === payee);
@@ -2316,7 +2345,9 @@ export class PurchaseEditor {
   removePayment(payment: PurchasePayment): void {
     if (this.payingBusy() || this.paymentStateLoading() || this.view()?.order.id !== payment.orderId) return;
     this.ui.confirm(
-      { title: 'Betaling verwijderen', message: `Betaling van <b>${payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}</b> verwijderen?`,
+      { title: 'Betaling verwijderen', message: `Betaling van <b>${payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })}</b> verwijderen?`
+          + (this.view()?.creditOffsets?.some(offset => offset.paymentId === payment.id)
+            ? ' Het verrekende tegoed staat daarna weer open op de container waar het genoteerd is.' : ''),
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         if (this.payingBusy() || this.view()?.order.id !== payment.orderId) return;
@@ -2365,6 +2396,11 @@ export class PurchaseEditor {
   });
 
   /** The stored payment the sheet corrects, to warn when it moves to another payee. */
+  /** The payment being edited offsets a credit of another container: the sheet locks its amount, currency and payee. */
+  readonly payingCreditOffset = computed(() => {
+    const id = this.paying()?.id;
+    return id ? this.view()?.creditOffsets?.find(offset => offset.paymentId === id) ?? null : null;
+  });
   readonly payingOriginal = computed(() => {
     const id = this.paying()?.id;
     const stored = id ? (this.payments() ?? []).find(payment => payment.id === id) : undefined;
@@ -2503,6 +2539,109 @@ export class PurchaseEditor {
         if (failure) { this.ui.toast(messageOf(failure, 'Afrekening ongedaan maken mislukt'), 'err'); return; }
         this.settling.set(null);
         this.ui.toast('Afrekening ongedaan gemaakt', 'ok');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+
+  /* ---- Tegoed leverancier: what the supplier owes back ----------- */
+  readonly crediting = signal<SupplierCreditSheetAction | null>(null);
+  /** Offset only: the other ordered containers of this supplier; null while they load. */
+  readonly creditTargets = signal<PurchaseOrderView[] | null>(null);
+  readonly creditSupplierOpen = computed(() => this.paymentLedger()?.payees.find(item => item.payee === 'SUPPLIER')?.openEur ?? 0);
+
+  /** Every credit write also rewrites the order's diary on the server: save first, like a payment. */
+  requestCredit(action: SupplierCreditAction): void {
+    if (action.kind === 'open-offset') {
+      if (action.credit.offsetOrderId != null) void this.router.navigate(['/purchasing', action.credit.offsetOrderId], { queryParams: { section: 'ledger' } });
+      return;
+    }
+    this.whenSaved(() => this.openCredit(action));
+  }
+
+  openCredit(action: SupplierCreditAction): void {
+    const data = this.view();
+    if (!data || this.payingBusy() || this.paymentStateLoading() || this.paymentStateError() || this.paymentPlanBusy() || this.dirty()) return;
+    if (action.kind === 'add') { this.crediting.set(action); return; }
+    if (action.kind === 'remove') { this.removeCredit(action.credit); return; }
+    if (action.kind === 'undo-refund') { this.undoRefund(action.credit); return; }
+    if (action.kind === 'open-offset') return;
+    if (action.kind === 'offset') void this.loadCreditTargets(data.order.id, data.order.supplierId);
+    this.crediting.set({ kind: action.kind, credit: action.credit });
+  }
+
+  closeCredit(): void { if (!this.payingBusy()) this.crediting.set(null); }
+
+  private async loadCreditTargets(orderId: number, supplierId: number): Promise<void> {
+    this.creditTargets.set(null);
+    try {
+      const views = await this.sourcing.purchaseOrders();
+      if (this.view()?.order.id === orderId) this.creditTargets.set(creditOffsetTargets(views, { id: orderId, supplierId }));
+    } catch (failure: unknown) {
+      if (this.view()?.order.id !== orderId) return;
+      this.creditTargets.set([]);
+      this.ui.toast(messageOf(failure, 'Containers van deze leverancier laden mislukt'), 'err');
+    }
+  }
+
+  async submitCredit(submission: SupplierCreditSubmit): Promise<void> {
+    const data = this.view();
+    if (!data || this.payingBusy() || this.dirty()) return;
+    const id = data.order.id;
+    this.payingBusy.set(true);
+    try {
+      switch (submission.kind) {
+        case 'add': await this.sourcing.addSupplierCredit(id, submission.body); break;
+        case 'edit': case 'refund': await this.sourcing.updateSupplierCredit(id, submission.creditId, submission.body); break;
+        case 'offset': await this.sourcing.offsetSupplierCredit(id, submission.creditId, submission.body); break;
+      }
+      if (this.view()?.order.id !== id) return;
+      await this.refreshPaymentState(id);
+      if (this.view()?.order.id !== id) return;
+      this.crediting.set(null);
+      this.ui.toast(submission.kind === 'offset' ? `Tegoed verrekend met ${submission.targetNumber}`
+        : submission.kind === 'add' ? 'Tegoed leverancier genoteerd' : submission.kind === 'edit' ? 'Tegoed aangepast' : 'Terugbetaling genoteerd', 'ok');
+    } catch (failure: unknown) {
+      if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, 'Tegoed bewaren mislukt'), 'err');
+    } finally {
+      this.payingBusy.set(false);
+    }
+  }
+
+  private removeCredit(credit: PurchaseSupplierCredit): void {
+    this.creditConfirm(credit, {
+      title: 'Tegoed verwijderen',
+      message: `Tegoed van <b>${formatEur(credit.amountEur)}</b> (${escapeHtml(SUPPLIER_CREDIT_REASON_LABEL[credit.reason] ?? '')}) verwijderen? De eindkost van de leverancier stijgt dan weer.`,
+      confirmLabel: 'Verwijderen', danger: true,
+    }, id => this.sourcing.deleteSupplierCredit(id, credit.id), 'Tegoed verwijderd', 'Verwijderen mislukt');
+  }
+
+  private undoRefund(credit: PurchaseSupplierCredit): void {
+    this.creditConfirm(credit, {
+      title: 'Terugbetaling ongedaan maken',
+      message: `De terugbetaling van <b>${formatEur(credit.amountEur)}</b> ongedaan maken? Het tegoed staat daarna weer open.`,
+      confirmLabel: 'Openzetten',
+    }, id => this.sourcing.updateSupplierCredit(id, credit.id, { status: 'OPEN' }), 'Tegoed staat weer open', 'Ongedaan maken mislukt');
+  }
+
+  private creditConfirm(
+    credit: PurchaseSupplierCredit, options: { title: string; message: string; confirmLabel: string; danger?: boolean },
+    write: (orderId: number) => Promise<unknown>, done: string, failed: string,
+  ): void {
+    const data = this.view();
+    if (!data || !(data.supplierCredits ?? []).some(item => item.id === credit.id)) return;
+    const id = data.order.id;
+    this.ui.confirm(options, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== id) return;
+      this.payingBusy.set(true);
+      try {
+        await write(id);
+        if (this.view()?.order.id !== id) return;
+        await this.refreshPaymentState(id);
+        if (this.view()?.order.id === id) this.ui.toast(done, 'ok');
+      } catch (failure: unknown) {
+        if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, failed), 'err');
       } finally {
         this.payingBusy.set(false);
       }
@@ -2932,6 +3071,7 @@ export class PurchaseEditor {
       bookStock: true,
       finalPayment: false,
       note: '',
+      receivedOn: localIsoDay(),
     });
   }
 
@@ -2991,7 +3131,7 @@ export class PurchaseEditor {
       }
       const result = await this.sourcing.receivePurchaseOrder(data.order.id, {
         lines, bookStock: draft.bookStock, paidTotalEur: (supplierPaidCents / 100) || null,
-        receivedOn: null, note: draft.note || null,
+        receivedOn: draft.receivedOn || null, note: draft.note || null,
       });
       ++this.previewVersion;
       this.view.set(result);
@@ -3678,9 +3818,18 @@ export class PurchaseEditor {
     }));
   }
 
-  /** EXW or DDP is how the supplier quotes the whole container, never one line. */
-  setOrderBasis(basis: 'EXW' | 'DDP'): void {
-    this.enqueue((order) => ({ ...order, lines: order.lines.map((line) => ({ ...line, priceBasis: basis })) }));
+  /**
+   * EXW, CIF or DDP is how the supplier quotes the whole container, never one
+   * line. CIF keeps the lines EXW and lets the supplier invoice the sea
+   * freight (freightViaSupplier); EXW and DDP clear that flag again.
+   */
+  setOrderBasis(basis: 'EXW' | 'CIF' | 'DDP'): void {
+    const priceBasis = basis === 'DDP' ? 'DDP' : 'EXW';
+    this.enqueue((order) => ({
+      ...order,
+      ...(basis === 'CIF' ? { freightViaSupplier: true } : order.freightViaSupplier ? { freightViaSupplier: null } : {}),
+      lines: order.lines.map((line) => ({ ...line, priceBasis })),
+    }));
   }
 
   /** Current product-card price; this is a master-data reference, not payment history. */
@@ -3753,6 +3902,8 @@ export class PurchaseEditor {
   setPriceBasis(productId: number, basis: 'EXW' | 'DDP'): void {
     this.enqueue((order) => ({
       ...order,
+      // DDP already includes the sea freight: a CIF flag would be ignored, so it goes.
+      ...(basis === 'DDP' && order.freightViaSupplier ? { freightViaSupplier: null } : {}),
       lines: order.lines.map((line) => ({ ...line, priceBasis: basis })),
     }));
   }
@@ -3761,6 +3912,8 @@ export class PurchaseEditor {
     const lines = this.view()?.order.lines ?? [];
     return lines.length > 0 && lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP');
   });
+  /** CIF: EXW lines, and the supplier invoices the sea freight (and origin costs). */
+  readonly isCif = computed(() => !this.isDdp() && !!this.view()?.order.freightViaSupplier);
 
   private setLine(productId: number, patch: Partial<PurchaseOrderLine>): void {
     this.enqueue((order) => ({

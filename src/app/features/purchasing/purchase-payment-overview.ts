@@ -10,7 +10,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
-  type PurchasePaymentAction, type PurchaseSettleRequest,
+  type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, proofLine, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
@@ -157,6 +157,13 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                         <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
                       </button>
                     }
+                    @for (credit of item.credits; track credit.id) {
+                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
+                        <span class="ios-cell__lead"></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">Tegoed leverancier · {{ credit.reasonLabel }}</span><span class="ios-cell__sub">genoteerd {{ credit.notedOn | dateNl }}</span></span>
+                        <span class="ios-cell__trail"><span class="ios-cell__value wk-amount--in">− {{ credit.amountEur | eur }}</span><span class="ios-cell__meta" [class]="tone(credit.tone)">{{ credit.statusLabel }}</span></span>
+                      </button>
+                    }
                   }
                 }
               </div>
@@ -214,7 +221,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
       <app-purchase-payee-sheet [payee]="item" [mode]="mode()" [busy]="busy()" [dirty]="dirty()" [supplierName]="supplierName()" [planLabel]="planLabel()"
         (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)" (proof)="afterPayeeSheet(proof, $event)"
         (download)="download.emit($event)" (settle)="afterPayeeSheet(settle, $event)" (undoSettle)="afterPayeeSheet(undoSettle, $event)"
-        (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" />
+        (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" (credit)="afterPayeeSheet(credit, $event)" />
     }
     @if (detail(); as row) {
       <app-sheet title="Betaling" variant="ios" (closed)="detail.set(null)">
@@ -243,8 +250,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               </div>
             } @else { <p class="ios-section__foot">Geen bewijs toegevoegd</p> }
           </section>
+          @if (mode() === 'read') { <p class="ios-section__foot">Aanpassen of afrekenen kan in Bewerken.</p> }
         </div>
-        <div foot style="display:contents"><button class="btn" type="button" (click)="detail.set(null)">Sluiten</button></div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="detail.set(null)">Sluiten</button>
+          @if (mode() === 'read') { <button class="btn btn--primary" type="button" (click)="detail.set(null); openEditor.emit()">Bewerken</button> }
+        </div>
       </app-sheet>
     }
     @if (payeeMenu()) {
@@ -280,6 +291,10 @@ export class PurchasePaymentOverview {
   readonly save = output<void>();
   readonly refresh = output<void>();
   readonly openCosts = output<void>();
+  /** Read view: 'Bewerken' on a payment's detail opens the editor on Betalingen. */
+  readonly openEditor = output<void>();
+  /** Tegoed leverancier (editor): note one, or act on an existing one. */
+  readonly credit = output<SupplierCreditAction>();
 
   readonly openPayee = signal<PayeeLedger['payee'] | null>(null);
   readonly detail = signal<LedgerRow | null>(null);
@@ -399,6 +414,7 @@ export class PurchasePaymentOverview {
     switch (todo.kind) {
       case 'pay': return PAYEE_ICON[todo.payee];
       case 'settle': return 'tick';
+      case 'credit': return 'receipt';
       case 'proof': return 'clip';
       default: return 'alert';
     }
@@ -421,7 +437,7 @@ export class PurchasePaymentOverview {
     switch (todo.kind) {
       case 'pay': this.add.emit({ payee: todo.payee, amount: todo.amountEur, label: todo.label, due: todo.due }); break;
       case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
-      case 'incomplete': this.openPayee.set(todo.payee); break;
+      case 'incomplete': case 'credit': this.openPayee.set(todo.payee); break;
       case 'proof': this.setFilter('NO_PROOF'); break;
     }
   }

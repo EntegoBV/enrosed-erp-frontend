@@ -283,3 +283,14 @@ test('receiving with a final payment stores the supplier total including it, the
   await plain.editor.confirmReceive();
   assert.equal(plain.calls.find(call => call.type === 'RECEIVE').body.paidTotalEur, 300);
 });
+
+test('receiving sends the receipt date chosen in the sheet, and none when it was cleared', async () => {
+  const { editor, calls } = setup();
+  editor.receiving.set({ lines: [], bookStock: false, finalPayment: false, note: '', receivedOn: '2026-09-12' });
+  await editor.confirmReceive();
+  assert.equal(calls.find(call => call.type === 'RECEIVE').body.receivedOn, '2026-09-12');
+  const cleared = setup();
+  cleared.editor.receiving.set({ lines: [], bookStock: false, finalPayment: false, note: '', receivedOn: '' });
+  await cleared.editor.confirmReceive();
+  assert.equal(cleared.calls.find(call => call.type === 'RECEIVE').body.receivedOn, null, 'the server then stamps today');
+});

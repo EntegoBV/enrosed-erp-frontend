@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { PartnerAdvanceSchedule as Schedule, SalesOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
-import { AdvanceScheduleDraft, cents, scheduleDraft, schedulePreset, scheduleRequest, scheduleRowAmounts } from './partner-advance-schedule-state';
+import { AdvanceScheduleDraft, cents, remainderRequest, resplitRemainder, scheduleConceptNote, scheduleDraft, scheduleDraftChanges, scheduleDraftStatus, schedulePreset, scheduleRemainder, scheduleRequest, scheduleRowAmounts, scheduleRowFixed, thirdsResplitAvailable } from './partner-advance-schedule-state';
 import { STATUS_LABEL } from '../sales/quote-status';
+import { Ui } from '../../shared/ui';
 
 @Component({
   selector: 'app-partner-advance-schedule',
@@ -16,7 +17,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
   template: `
     <section class="advance-plan" aria-label="Afzonderlijke voorschotfacturen">
       <header><h4><span class="step">2</span> Voorschotfacturen</h4>
-        @if (schedule()?.rows?.length && !editing()) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="edit()">Aanpassen</button> }
+        @if (schedule()?.rows?.length && !editing()) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="edit()">Termijnen aanpassen</button> }
       </header>
       @if (error()) { <p class="plan-error" role="alert">{{ error() }}</p> }
       @if (schedule(); as plan) {
@@ -25,33 +26,50 @@ import { STATUS_LABEL } from '../sales/quote-status';
         @if (plan.invoicingBlocked) { <p class="plan-copy">De veilingafrekening is al begonnen. Nieuwe voorschotfacturen zijn daarom niet meer mogelijk. Eventuele ongebruikte termijnen kun je verwijderen via Termijnen aanpassen; bestaande facturen en betalingen blijven beschikbaar.</p> }
         @if (plan.reservedOutsideScheduleEur > 0) { <p class="plan-copy"><b>{{ plan.reservedOutsideScheduleEur | eur }}</b> is al gefactureerd of gepland buiten deze termijnen. Dit bedrag telt mee in het partnerbedrag; verdeel alleen het restant.</p> }
         @if (editing()) {
-          @if (!plan.invoicingBlocked) { <p class="plan-label">Kies een verdeling</p><div class="plan-presets" role="group" aria-label="Factuurtermijnen kiezen">
-            <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('30_70')">30% / 70%</button>
-            <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('THIRDS')">1/3 / 2/3</button>
-            <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('FULL')">100%</button>
-            <button class="btn btn--sm" type="button" (click)="add()">+ Eigen termijn</button>
-          </div> }
+          @if (draftFixed().length && !plan.invoicingBlocked) { <p class="plan-copy plan-copy--lead">{{ fixedIntro() }} Verdeel alleen het resterende bedrag van <b>{{ remainder().restEur | eur }}</b>.</p> }
+          @if (!plan.invoicingBlocked) {
+            @if (remainderMode()) {
+              <p class="plan-label">Resterend bedrag opnieuw verdelen</p><div class="plan-presets" role="group" aria-label="Resterend bedrag opnieuw verdelen">
+                @if (thirdsAvailable()) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="resplit(2, thirdLabels)">1/3 · 1/3 · 1/3</button> }
+                <button class="btn btn--sm" type="button" [disabled]="busy() || !canResplit(2)" (click)="resplit(2)">Rest in 2 termijnen</button>
+                <button class="btn btn--sm" type="button" [disabled]="busy() || !canResplit(3)" (click)="resplit(3)">Rest in 3 termijnen</button>
+                <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="add()">+ Eigen termijn</button>
+              </div>
+            } @else {
+              <p class="plan-label">Kies een verdeling</p><div class="plan-presets" role="group" aria-label="Factuurtermijnen kiezen">
+                <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('30_70')">30% / 70%</button>
+                <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('THIRDS')">1/3 / 2/3</button>
+                <button class="btn btn--sm" type="button" [disabled]="hasInvoices()" (click)="preset('FULL')">100%</button>
+                <button class="btn btn--sm" type="button" (click)="add()">+ Eigen termijn</button>
+              </div>
+            }
+          }
           @for (row of draft(); track $index; let index = $index) {
-            <article class="plan-editor"><div class="plan-editor__head"><b>Termijn {{ index + 1 }}</b><span>{{ row.locked ? 'Factuur aangemaakt' : 'Nog te factureren' }}</span></div>
+            <article class="plan-editor" [class.plan-editor--fixed]="row.locked"><div class="plan-editor__head"><b>Termijn {{ index + 1 }}</b><span>{{ draftStatus(row) }}</span></div>
               <label class="field plan-name"><span>Wanneer betaalt de partner?</span><input class="input" [value]="row.label" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" maxlength="160" placeholder="Bij start productie" (input)="patch(index, { label: $any($event.target).value })" /></label>
               <label class="field"><span>Berekenen als</span><select class="select" [value]="row.mode" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" (change)="patch(index, { mode: $any($event.target).value })"><option value="PERCENT">% van partnerbedrag</option><option value="AMOUNT">Bedrag in EUR</option></select></label>
               <label class="field"><span>{{ row.mode === 'PERCENT' ? 'Percentage' : 'Bedrag (EUR)' }}</span><input class="input" type="number" min="0.01" [max]="row.mode === 'PERCENT' ? 100 : plan.agreedAmountEur" step="0.01" [value]="row.value" [disabled]="row.locked || busy() || !!plan.invoicingBlocked" (input)="patch(index, { value: +$any($event.target).value })" /></label>
               <div class="field"><span>Vervaldatum (optioneel)</span>@if (row.locked || plan.invoicingBlocked) { <span>{{ row.dueDate | dateNl }}</span> } @else { <app-date-field [value]="row.dueDate" (valueChange)="patch(index, { dueDate: $event })" /> }</div>
-              <div class="plan-row-result"><b>{{ amount(row) | eur }} <small>excl. btw</small></b>@if (row.locked) { <small>Factuur bestaat; termijn vastgezet</small> } @else { <button class="linklike" type="button" [disabled]="busy()" (click)="remove(index)">Termijn verwijderen</button> }</div>
+              <div class="plan-row-result"><b>{{ amount(row) | eur }} <small>excl. btw</small></b>@if (row.locked) { <small>Factuur uitgegeven; termijn blijft ongewijzigd</small> } @else if (row.conceptNumber != null) { <small>Conceptfactuur blijft bij deze termijn</small> } @else { <button class="linklike" type="button" [disabled]="busy()" (click)="remove(index)">Termijn verwijderen</button> }</div>
             </article>
           }
-          <p class="plan-total"><b>{{ allocated() | eur }} ingepland</b><span [class.plan-error]="unallocated() < 0">{{ unallocated() | eur }} nog te verdelen</span></p>
-          <div class="plan-presets"><button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="save()">{{ busy() ? 'Bewaren…' : 'Factuurtermijnen bewaren' }}</button><button class="btn btn--sm" type="button" [disabled]="busy()" (click)="editing.set(false)">Annuleren</button></div>
+          @if (draftFixed().length) {
+            <p class="plan-total"><b>{{ remainder().fixedEur | eur }} gefactureerd · {{ remainder().openEur | eur }} opnieuw verdeeld</b><span [class.plan-error]="remainder().leftEur !== 0">{{ remainder().leftEur | eur }} nog te verdelen</span></p>
+          } @else {
+            <p class="plan-total"><b>{{ allocated() | eur }} ingepland</b><span [class.plan-error]="unallocated() < 0">{{ unallocated() | eur }} nog te verdelen</span></p>
+          }
+          <div class="plan-presets"><button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="save()">{{ busy() ? 'Bewaren…' : draftFixed().length ? 'Nieuwe verdeling bewaren' : 'Factuurtermijnen bewaren' }}</button><button class="btn btn--sm" type="button" [disabled]="busy()" (click)="editing.set(false)">Annuleren</button></div>
           @if (!hasInvoices() && !plan.invoicingBlocked) { <p class="plan-copy">Is het inkooptotaal incl. aparte kosten of het financieringspercentage veranderd? <button class="linklike" type="button" [disabled]="busy()" (click)="recalculate()">Afgesproken bedrag opnieuw berekenen</button>. Bewaar eerst eventuele wijzigingen aan de container.</p> }
         } @else {
           @for (row of plan.rows; track row.id; let index = $index) {
             <article class="plan-row"><div><small class="plan-label">TERMIJN {{ index + 1 }}</small><b>{{ row.label }}</b><small>{{ row.percentage == null ? 'Vast bedrag' : (row.percentage | num) + '% van partnerbedrag' }} · {{ row.dueDate ? 'vervalt ' + (row.dueDate | dateNl) : 'geen vervaldatum' }}</small>
-              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a>@if (row.invoiceStatus === 'CONCEPT') { <small>Concept · nog niet uitgegeven</small> } @else { <small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> } }
+              @if (row.invoiceId) { <a [routerLink]="['/sales', row.invoiceId]">{{ row.invoiceNumber }} · {{ row.invoiceStatus ? statusLabel[row.invoiceStatus] : 'status onbekend' }} ›</a>@if (conceptNote(row, false); as note) { <small>{{ note }}</small> } @else { <small>{{ row.receivedEur | eur }} netto ontvangen · {{ row.remainingEur | eur }} open (incl. btw)</small> } }
               @else { <small>{{ plan.invoicingBlocked ? 'Ongebruikte termijn · afrekening al begonnen' : 'Nog niet gefactureerd' }}</small> }
             </div><div class="plan-actions"><b>{{ row.amountEur | eur }}</b>@if (!row.invoiceId && !plan.invoicingBlocked) { <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || loading() || !canCreateInvoice()" (click)="makeInvoice(row.id)">Conceptfactuur maken</button> } @else if (row.invoiceId) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="openInvoice.emit(row.invoiceId)">{{ row.invoiceStatus === 'CONCEPT' ? 'Factuur bekijken & uitgeven' : 'Betalingen bekijken' }}</button> }</div></article>
           } @empty { <div class="plan-empty"><b>{{ plan.invoicingBlocked ? 'Voorschotplanning afgesloten' : plan.agreedAmountEur <= 0 ? 'Geen voorschot afgesproken' : 'Hoe betaalt de partner zijn bijdrage?' }}</b><p>{{ plan.invoicingBlocked ? 'De veilingafrekening is begonnen. Bekijk de bestaande documenten en ontvangsten hieronder.' : plan.agreedAmountEur <= 0 ? 'Er is geen voorschotfactuur nodig. Bewaar de partnerafspraak op de container; de afrekening volgt na de veiling.' : 'Bijvoorbeeld 30% bij start productie en 70% na productie. Een eigen verdeling kan ook.' }}</p>@if (!plan.invoicingBlocked && plan.agreedAmountEur > 0) { <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="edit()">Voorschottermijnen instellen</button> }</div> }
           @if (plan.unallocatedEur > 0 && plan.rows.length) { <p class="plan-copy">{{ plan.unallocatedEur | eur }} van de partnerfinanciering is nog niet aan een factuurtermijn toegewezen.</p> }
           @if (plan.rows.length) { <p class="plan-copy">Na het maken controleer en geef je de factuur uit. De werkelijke ontvangst noteer je apart bij de factuur.</p> }
+          @if (fixedRows().length && openRowCount() && !plan.invoicingBlocked) { <p class="plan-copy">Termijnen zonder factuur of met een concept (ook een heropende factuur) kun je opnieuw verdelen, bijv. 1/3 · 1/3 · 1/3, via Termijnen aanpassen. Uitgegeven of betaalde termijnen blijven ongewijzigd.</p> }
         }
       } @else if (loading()) { <p class="plan-copy">Factuurtermijnen laden…</p> }
     </section>
@@ -62,7 +80,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
     .plan-empty{padding:16px;margin-top:14px;border-radius:12px;background:var(--surface-2)}.plan-empty>b{font-size:14px}.plan-empty p{font-size:13px;line-height:1.6;color:var(--muted);margin:8px 0 14px}.plan-empty .btn{width:100%}
     .plan-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:15px;border:1px solid var(--line);border-radius:12px;margin:12px 0;background:var(--surface)}.plan-editor__head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding-bottom:11px;border-bottom:1px solid var(--line);font-size:13px}.plan-editor__head span{font-size:11px;color:var(--muted)}.plan-name,.plan-row-result{grid-column:1/-1}.field{min-width:0}.field>span{font-size:12px;font-weight:650}.input,.select{min-width:0;min-height:44px;font-size:14px}.plan-row-result,.plan-total{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:13px}.plan-row-result{padding-top:8px}.plan-row-result>b{font-size:17px}.plan-row-result small{font-size:11px;color:var(--muted);font-weight:400}.plan-row-result .linklike{min-height:44px;font-size:12px}
     .plan-row{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;padding:15px;border:1px solid var(--line);border-radius:12px;margin:12px 0}.plan-row>div{display:grid;gap:7px;min-width:0}.plan-row b{font-size:14px;overflow-wrap:anywhere}.plan-row small{font-size:12px;color:var(--muted);line-height:1.5}.plan-row .plan-label{margin:0;color:var(--rose-dark);font-size:10px;letter-spacing:.04em}.plan-row a{font-size:13px;color:var(--rose-dark);overflow-wrap:anywhere}.plan-actions{display:flex!important;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px;gap:10px}.plan-actions>b{font-size:18px;font-variant-numeric:tabular-nums}.plan-actions .btn{font-size:12px}
-    .plan-error{color:var(--danger);font-size:13px;line-height:1.6}.plan-total{padding:13px;border-radius:10px;background:var(--rose-soft);line-height:1.5}.plan-total>span{color:var(--muted);font-size:12px}
+    .plan-copy--lead{color:var(--ink-2)}.plan-editor--fixed{background:var(--surface-2)}.plan-error{color:var(--danger);font-size:13px;line-height:1.6}.plan-total{padding:13px;border-radius:10px;background:var(--rose-soft);line-height:1.5}.plan-total>span{color:var(--muted);font-size:12px}
     @container advance-plan (max-width:360px){.plan-editor{grid-template-columns:1fr;padding:12px;gap:12px}.input,.select{font-size:16px}.plan-presets>.btn{flex-basis:40%}.plan-actions .btn{width:100%}}
     @container advance-plan (min-width:600px){.plan-empty{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:24px;align-items:center}.plan-empty>b{grid-column:1}.plan-empty p{grid-column:1;margin-bottom:0}.plan-empty .btn{grid-column:2;grid-row:1/3;width:auto}}
     @media(max-width:420px){.advance-plan{padding:14px}}
@@ -88,29 +106,85 @@ export class PartnerAdvanceSchedule {
   readonly error = signal('');
   readonly statusLabel = STATUS_LABEL;
   readonly hasInvoices = computed(() => (this.schedule()?.reservedOutsideScheduleEur ?? 0) > 0 || (this.schedule()?.rows.some((row) => row.invoiceId != null) ?? false));
+  /** Saved terms the server calls fixed (no longer a concept, paid or credited): they never change. A reopened concept is not one. */
+  readonly fixedRows = computed(() => this.schedule()?.rows.filter(scheduleRowFixed) ?? []);
+  readonly openRowCount = computed(() => (this.schedule()?.rows.length ?? 0) - this.fixedRows().length);
+  readonly draftFixed = computed(() => this.draft().filter((row) => row.locked));
+  /** Once something is fixed or reserved outside the plan, only the remainder is re-split; whole-plan presets would drop it. */
+  readonly remainderMode = computed(() => this.draftFixed().length > 0 || (this.schedule()?.reservedOutsideScheduleEur ?? 0) > 0);
+  readonly remainder = computed(() => scheduleRemainder(this.draft(), this.schedule()?.agreedAmountEur ?? 0, this.schedule()?.reservedOutsideScheduleEur ?? 0));
+  readonly thirdLabels = ['1/3 na productie', '1/3 bij aankomst'];
+  /** One fixed term that is exactly a third (e.g. paid 1/3 + an open or reopened concept 2/3): two more thirds in one click. */
+  readonly thirdsAvailable = computed(() => thirdsResplitAvailable(this.draft(), this.schedule()?.agreedAmountEur ?? 0, this.schedule()?.reservedOutsideScheduleEur ?? 0));
+  readonly draftStatus = scheduleDraftStatus;
+  readonly conceptNote = scheduleConceptNote;
+  /** 'Termijn 1 is al gefactureerd (F-…) en blijft ongewijzigd.' */
+  readonly fixedIntro = computed(() => {
+    const rows = this.draft();
+    const fixed = rows.map((row, index) => ({ row, index })).filter(({ row }) => row.locked);
+    if (!fixed.length) return '';
+    const numbers = fixed.map(({ row }) => this.schedule()?.rows.find((saved) => saved.id === row.id)?.invoiceNumber).filter((number): number is string => !!number);
+    const terms = fixed.map(({ index }) => index + 1);
+    const list = terms.length === 1 ? `${terms[0]}` : `${terms.slice(0, -1).join(', ')} en ${terms.at(-1)}`;
+    const which = numbers.length ? ` (${numbers.join(', ')})` : '';
+    return terms.length === 1 ? `Termijn ${list} is al gefactureerd${which} en blijft ongewijzigd.` : `Termijnen ${list} zijn al gefactureerd${which} en blijven ongewijzigd.`;
+  });
   readonly amounts = computed(() => scheduleRowAmounts(this.draft(), this.schedule()?.agreedAmountEur ?? 0));
   readonly allocated = computed(() => cents(this.amounts().reduce((total, amount) => total + amount, 0)));
   readonly unallocated = computed(() => cents((this.schedule()?.agreedAmountEur ?? 0) - (this.schedule()?.reservedOutsideScheduleEur ?? 0) - this.allocated()));
   private readonly sourcing = inject(SourcingApi);
+  private readonly ui = inject(Ui);
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly router = inject(Router, { optional: true });
+  /** ?terms=edit, from an advance invoice: Termijnen aanpassen opens once the plan is in. */
+  private editRequested = this.route?.snapshot.queryParamMap.get('terms') === 'edit';
   private version = 0;
   constructor() { effect(() => { const id = this.purchaseOrderId(); this.documents(); void this.load(id); }); }
   async load(id = this.purchaseOrderId()): Promise<void> {
     const version = ++this.version; this.loading.set(true); this.error.set('');
-    try { const plan = await this.sourcing.partnerAdvanceSchedule(id); if (version === this.version) this.schedule.set(plan); }
+    try { const plan = await this.sourcing.partnerAdvanceSchedule(id); if (version === this.version) { this.schedule.set(plan); this.openRequestedEdit(plan); } }
     catch (failure) { if (version === this.version) this.error.set(messageOf(failure, 'Factuurtermijnen laden mislukt')); }
     finally { if (version === this.version) this.loading.set(false); }
   }
   edit(): void { this.draft.set(scheduleDraft(this.schedule()?.rows ?? [])); this.error.set(''); this.editing.set(true); }
+  /**
+   * Once: the flag leaves the URL (section=payments stays), so a later reload, a rail tab switch
+   * that recreates this card, a browser reload or history navigation never reopens the editor.
+   */
+  private openRequestedEdit(plan: Schedule): void {
+    if (!this.editRequested) return;
+    this.editRequested = false;
+    if (this.route && this.router && this.route.snapshot.queryParamMap.get('terms') === 'edit')
+      void this.router.navigate([], { relativeTo: this.route, queryParams: { terms: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (!this.editing() && plan.rows.length && !plan.invoicingBlocked) this.edit();
+  }
   preset(value: '30_70' | 'THIRDS' | 'FULL'): void { if (!this.hasInvoices() && !this.schedule()?.invoicingBlocked && !this.busy()) this.draft.set(schedulePreset(value, this.schedule()?.agreedAmountEur ?? 0)); }
   add(): void { if (this.schedule()?.invoicingBlocked || this.busy()) return; this.draft.update((rows) => [...rows, { label: '', mode: 'AMOUNT', value: Math.max(0, this.unallocated()), dueDate: '', locked: false }]); }
+  /** A split never drops a term with a concept invoice, and each part must be at least a cent. */
+  canResplit(parts: number): boolean {
+    const concepts = this.draft().filter((row) => !row.locked && row.conceptNumber != null).length;
+    return parts >= concepts && this.remainder().restEur >= parts * .01;
+  }
+  resplit(parts: number, labels: readonly string[] = []): void {
+    const plan = this.schedule();
+    if (!plan || plan.invoicingBlocked || this.busy()) return;
+    this.draft.set(resplitRemainder(this.draft(), plan.agreedAmountEur, plan.reservedOutsideScheduleEur ?? 0, parts, labels));
+    this.error.set('');
+  }
   patch(index: number, change: Partial<AdvanceScheduleDraft>): void { if (this.schedule()?.invoicingBlocked || this.busy()) return; this.draft.update((rows) => rows.map((row, i) => i === index && !row.locked ? { ...row, ...change } : row)); this.error.set(''); }
-  remove(index: number): void { this.draft.update((rows) => rows.filter((row, i) => i !== index || row.locked)); }
+  remove(index: number): void { this.draft.update((rows) => rows.filter((row, i) => i !== index || row.locked || row.conceptNumber != null)); }
   amount(row: AdvanceScheduleDraft): number { return this.amounts()[this.draft().indexOf(row)] ?? 0; }
   async save(): Promise<void> {
     if (this.busy()) return;
-    let body; try { body = scheduleRequest(this.draft(), this.schedule()?.agreedAmountEur ?? 0, this.schedule()?.reservedOutsideScheduleEur ?? 0, !!this.schedule()?.rows.length); } catch (failure) { this.error.set((failure as Error).message); return; }
+    const agreed = this.schedule()?.agreedAmountEur ?? 0, outside = this.schedule()?.reservedOutsideScheduleEur ?? 0;
+    // With a fixed term a new split must spread the whole agreed amount; dropping unused terms or a plan without a fixed term may leave less.
+    const resplit = this.draftFixed().length > 0 && scheduleDraftChanges(this.draft(), this.schedule()?.rows ?? []);
+    let body; try { body = resplit ? remainderRequest(this.draft(), agreed, outside) : scheduleRequest(this.draft(), agreed, outside, !!this.schedule()?.rows.length); } catch (failure) { this.error.set((failure as Error).message); return; }
     this.busy.set(true); this.error.set('');
-    try { this.schedule.set(await this.sourcing.savePartnerAdvanceSchedule(this.purchaseOrderId(), body)); this.editing.set(false); this.saved.emit(); }
+    try {
+      this.schedule.set(await this.sourcing.savePartnerAdvanceSchedule(this.purchaseOrderId(), body)); this.editing.set(false); this.saved.emit();
+      if (resplit) this.ui.toast('Voorschotplan aangepast · gefactureerde termijnen ongewijzigd');
+    }
     catch (failure) { this.error.set(messageOf(failure, 'Factuurtermijnen bewaren mislukt')); }
     finally { this.busy.set(false); }
   }

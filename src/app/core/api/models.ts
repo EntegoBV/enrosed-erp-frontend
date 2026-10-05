@@ -1109,8 +1109,13 @@ export interface ReceiptVarianceFilters {
 export type PaymentTerms = 'THIRDS' | 'THIRD_TWO_THIRDS_SHIPPED' | 'THIRD_TWO_THIRDS_ARRIVED' | 'HALF_HALF' | 'HALF_HALF_ARRIVED'
   | 'DEPOSIT_30_70' | 'DEPOSIT_30_70_ARRIVED' | 'DEPOSIT_30_40_30' | 'FULL_UPFRONT' | 'FULL_ON_ARRIVAL' | 'CUSTOM';
 
-/** One instalment of a payment plan: a share of the goods value and when it falls due. */
-export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'ARRIVED'; }
+/**
+ * One instalment of a payment plan: a share of the goods value and when it
+ * falls due. FREIGHT never comes from a plan: the server adds it as the
+ * supplier term 'Zeevracht (CIF)' when the supplier invoices the sea freight
+ * (freightViaSupplier), due like SHIPPED.
+ */
+export interface Instalment { label: string; share: number; due: 'ORDERED' | 'SHIPPED' | 'FREIGHT' | 'ARRIVED'; }
 
 export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: Instalment[] }[] = [
   { value: 'THIRDS', label: '1/3 · 1/3 · 1/3 (bestelling, vertrek, aankomst)', instalments: [
@@ -1182,6 +1187,70 @@ export interface PurchasePaymentWrite {
   amountEur?: number | null;
 }
 
+/** Why the supplier owes us money back: short delivery, damage, a price difference or something else. */
+export type SupplierCreditReason = 'SHORTAGE' | 'DAMAGE' | 'PRICE' | 'OTHER';
+/** Tegoed open, verrekend on another container of the same supplier, or terugbetaald by the supplier. */
+export type SupplierCreditStatus = 'OPEN' | 'OFFSET' | 'REFUNDED';
+
+/** A credit the supplier owes on a container ('Tegoed leverancier'); always the Leverancier payee. */
+export interface PurchaseSupplierCredit {
+  id: number;
+  notedOn: string;
+  amount: number;
+  currency: Currency;
+  /** At the order rate, or the actual euro when given (a refund may carry the bank amount). */
+  amountEur: number;
+  reason: SupplierCreditReason;
+  note: string | null;
+  status: SupplierCreditStatus;
+  /** The day it was refunded or offset. */
+  settledOn: string | null;
+  offsetOrderId: number | null;
+  offsetOrderNumber: string | null;
+  /** The supplier payment on the other container that offsets this credit. */
+  offsetPaymentId: number | null;
+  recordedAt: string;
+  actor: string | null;
+}
+
+/** On a target container: which of its payments is a credit offset from another container. */
+export interface PurchaseCreditOffset {
+  creditId: number;
+  sourceOrderId: number;
+  sourceOrderNumber: string | null;
+  paymentId: number;
+  amountEur: number;
+}
+
+/** POST …/supplier-credits. */
+export interface SupplierCreditWrite {
+  notedOn: string;
+  amount: number;
+  currency: Currency;
+  /** The actual euro, for USD/CNY only; omitted: the order rate. */
+  amountEur?: number | null;
+  reason: SupplierCreditReason;
+  note?: string | null;
+}
+
+/** PUT …/supplier-credits/{id}: amount, currency, reason and note only while OPEN; REFUNDED needs settledOn. */
+export interface SupplierCreditUpdate {
+  amount?: number;
+  currency?: Currency;
+  amountEur?: number | null;
+  reason?: SupplierCreditReason;
+  note?: string | null;
+  status?: Exclude<SupplierCreditStatus, 'OFFSET'>;
+  settledOn?: string | null;
+}
+
+/** POST …/supplier-credits/{id}/offset: a supplier payment on another container of the same supplier. */
+export interface SupplierCreditOffsetWrite {
+  targetOrderId: number;
+  paidOn: string;
+  instalmentDue?: Instalment['due'] | null;
+}
+
 /** One payment on a container as the bank saw it, with the container it went to. */
 export interface PurchasePaymentRow {
   id: number;
@@ -1218,6 +1287,8 @@ export interface Payable {
   enrosedEur: number;
   freightInSupplierPrice: boolean;
   ddp: boolean;
+  /** CIF: origin costs + sea freight in the supplier's Afspraak (0 otherwise); optional while the backend rolls out. */
+  supplierFreightEur?: number;
 }
 
 /** Pieces on the water for one product. */
@@ -1298,6 +1369,8 @@ export interface PurchaseOrder {
   shippedOn?: string | null;
   /** Container / bill-of-lading number or a carrier tracking link. */
   trackingReference?: string | null;
+  /** CIF: the supplier arranges and invoices the sea freight (and origin costs); null = no. Ignored when every line is DDP. */
+  freightViaSupplier?: boolean | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }
@@ -1383,6 +1456,10 @@ export interface PurchaseOrderView {
   receiptReports?: ReceiptReport[];
   /** Recorded container outflows against the agreed budget; read-only, never changes product prices. */
   reconciliation?: PurchaseReconciliation | null;
+  /** Credits the supplier owes on this container; optional while the backend rolls out. */
+  supplierCredits?: PurchaseSupplierCredit[];
+  /** Payments on this container that offset a credit of another container. */
+  creditOffsets?: PurchaseCreditOffset[];
 }
 
 export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';
@@ -1402,6 +1479,8 @@ export interface PurchaseReconciliationStream {
   explicitlySettled: boolean;
   finalized: boolean;
   paymentCount: number;
+  /** SUPPLIER only: every credit of the order, any status; the forecast is paid + remaining − credit. */
+  creditEur?: number;
 }
 
 export interface PurchaseReconciliationTotals {
@@ -1424,6 +1503,9 @@ export interface PurchaseReconciliationTotals {
   forecastPricingUnitEur: number | null;
   receiptRecorded: boolean;
   legacyPaidTotalEur: number | null;
+  /** Credits of the supplier: all of them, and the part still open (neither refunded nor offset). */
+  supplierCreditEur?: number;
+  supplierCreditOpenEur?: number;
 }
 
 export interface PurchaseReconciliationLine {
@@ -1445,6 +1527,8 @@ export interface PurchaseReconciliationLine {
   forecastExternalUnitEur: number | null;
   forecastPricingUnitEur: number | null;
   allocationBasis: string;
+  /** The supplier credit allocated to this line (missing value, damaged value or goods value). */
+  creditEur?: number;
 }
 
 export interface PurchaseReconciliation {
@@ -1747,6 +1831,10 @@ export interface PartnerAdvanceScheduleRow {
   invoiceId: number | null;
   invoiceNumber: string | null;
   invoiceStatus: QuoteStatus | null;
+  /** True when the invoice is no longer a concept, has payment history or a live credit note: the term stays as it is. A concept is not fixed and follows a new split, also one that was issued and reopened. Absent on an older backend. */
+  invoiceFixed?: boolean;
+  /** The concept was issued or sent before and reopened: it keeps its number and cannot be deleted. Absent on an older backend. */
+  invoiceReopened?: boolean;
   receivedEur: number;
   remainingEur: number;
 }
@@ -1877,6 +1965,64 @@ export interface SalesOrderView {
   creditNotes?: CreditNoteLink[];
   /** Invoices: Σ totalInclVat of ISSUED live credit notes, positive. */
   creditedEur?: number;
+  /** The linked container's live name (alias ('Herkenbare naam') trimmed, else its number, else 'Inkoop #id') and number; absent on an older backend. */
+  partnerContainerName?: string | null;
+  partnerContainerNumber?: string | null;
+  /** Regular sales paid in advance: this invoice is an advance on a quote (ADVANCE) or its slotfactuur (FINAL); null otherwise. */
+  advanceBilling?: SalesAdvanceBilling | null;
+  /** On a regular quote: its advance invoices (concepts included, deleted ones never). */
+  advanceInvoices?: SalesAdvanceInvoice[];
+  /** On a slotfactuur: the advances it deducts, frozen at creation, with their payment dates. */
+  advanceDeductions?: SalesAdvanceDeduction[];
+}
+
+export type SalesAdvanceStage = 'ADVANCE' | 'FINAL';
+export interface SalesAdvanceBilling {
+  stage: SalesAdvanceStage;
+  quoteId: number;
+  quoteNumber: string | null;
+  /** The advance's share of the quote, when it was made as a percentage. */
+  percentage: number | null;
+  /** The advance (or, on a slotfactuur, the deducted) amount excl. VAT. */
+  amountExclEur: number;
+}
+/** One receipt on an advance: the Brussels date it was received and the amount. */
+export interface SalesAdvanceReceipt { receivedOn: string; amountEur: number }
+export interface SalesAdvanceInvoice {
+  id: number;
+  number: string;
+  status: QuoteStatus;
+  invoiceDate: string;
+  percentage: number | null;
+  amountExclEur: number;
+  totalInclVatEur: number;
+  paidAt: string | null;
+  receivedEur: number;
+  remainingEur: number;
+  receipts: SalesAdvanceReceipt[];
+  /**
+   * Σ excl. VAT of the issued live credit notes on this advance: the
+   * slotfactuur deducts amountExclEur minus this. Absent on an older backend
+   * (then the slotfactuur preview reads 'vóór creditnota's').
+   */
+  creditedExclEur?: number | null;
+}
+export interface SalesAdvanceDeduction {
+  advanceInvoiceId: number;
+  number: string;
+  invoiceDate: string;
+  exclEur: number;
+  vatEur: number;
+  inclEur: number;
+  /** The last receipt's date once the advance is fully paid, else null. */
+  paidOn: string | null;
+  receipts: SalesAdvanceReceipt[];
+}
+/** POST /api/sales-orders/{quoteId}/advance-invoice: a percentage of the quote total excl. VAT, or an amount. */
+export interface SalesAdvanceInvoiceRequest {
+  percentage?: number;
+  amountEur?: number;
+  dueDate?: string | null;
 }
 
 /** A live credit note of an invoice. */
@@ -2416,8 +2562,24 @@ export interface PartnerCreditProposal {
   /** max(0, issued − credited − pct × actual basis); 0 before receipt or once a settlement exists. */
   overFinancingEur: number;
   overFinancingInclVatEur: number;
+  /** The target: the latest unpaid advance that can absorb the credit (older backend: the largest room). */
   suggestedAdvanceInvoiceId: number | null;
-  advances: { invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number }[];
+  advances: {
+    invoiceId: number; number: string; totalInclVatEur: number; alreadyCreditedInclVatEur: number; maxCreditInclVatEur: number;
+    /** Appended (absent on an older backend): the advance's VAT rate, its room excl. VAT (rounded down to cents), what is still to be paid on it, and min(wanted, room). */
+    vatRatePct?: number; maxCreditEur?: number; openEur?: number; suggestedCreditEur?: number;
+  }[];
+  /** The container's display name (alias, else number); absent on an older backend. */
+  containerName?: string | null;
+  /** Appended (absent on an older backend). Σ excl. VAT of live CONCEPT advance credit notes of this container, and their numbers. */
+  pendingCreditEur?: number;
+  pendingCreditNumbers?: string[];
+  /** On the target advance: max(0, overFinancing − pending) capped by its room, excl. and incl. VAT; the part that does not fit. */
+  suggestedCreditEur?: number;
+  suggestedCreditInclVatEur?: number;
+  remainingCreditEur?: number;
+  /** Value of the missing pieces at the ordered basis: informative only, never the proposal. */
+  shortValueEur?: number;
 }
 
 /** GET /api/sales-orders/{invoiceId}/credit-note-proposal: caps, suggestions from the receipt, VAT. Read-only. */
@@ -2439,7 +2601,8 @@ export interface CreditNoteProposal {
   freightEur: number;
   freightAlreadyCredited: boolean;
   extraLines: { description: string; quantity: number; unitPriceEur: number; totalEur: number }[];
-  container: { purchaseOrderId: number; number: string; received: boolean; missingPieces: number; damagedPieces: number } | null;
+  /** containerName: the display name (alias, else number); absent on an older backend. */
+  container: { purchaseOrderId: number; number: string; containerName?: string | null; received: boolean; missingPieces: number; damagedPieces: number } | null;
   /** Only for PARTNER_ADVANCE originals. */
   partnerShortfall: PartnerCreditProposal | null;
 }

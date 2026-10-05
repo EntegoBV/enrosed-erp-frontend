@@ -9,7 +9,9 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import type { NacalcPayeeRow, NacalcTone, PurchaseNacalc } from './purchase-nacalc-metrics';
-import { PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest } from './purchase-payment-ledger';
+import {
+  PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
+} from './purchase-payment-ledger';
 import { formatEur, todoCopy } from './purchase-payment-menus';
 
 /**
@@ -50,7 +52,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
               </span>
             </div>
             @if (!concept) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald + open</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.paidEur | eur }} + {{ head.openEur | eur }}</span></span></div>
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald + open@if (head.creditEur > 0) { − tegoed }</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.paidEur | eur }} + {{ head.openEur | eur }}@if (head.creditEur > 0) { − {{ head.creditEur | eur }} }</span></span></div>
             }
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per stuk</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.unitEur !== null) { {{ head.unitEur | eur: 4 }} } @else { — }</span></span></div>
@@ -117,11 +119,21 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                 @if (receipt.missing > 0 || receipt.damaged > 0) {
                   <div class="ios-cell ios-cell--tall"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Verlies op inkoopwaarde</span><span class="ios-cell__sub">goederenwaarde bij ontvangst, excl. transport</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (receipt.lossEur === null) { — } @else { {{ receipt.lossEur | eur }} }</span>
-                      @if (receipt.supplierFact; as fact) { <span class="ios-cell__meta">{{ fact.kind === 'settled-lower' ? 'leverancier afgerekend met ' + eur(fact.amountEur) + ' minder' : fact.kind === 'open' ? 'nog ' + eur(fact.amountEur) + ' open bij de leverancier' : 'leverancier volledig betaald · verlies blijft bij Enrosed' }}</span> }</span></div>
+                      @if (receipt.supplierFact; as fact) { <span class="ios-cell__meta">{{ fact.kind === 'settled-lower' ? 'leverancier afgerekend met ' + eur(fact.amountEur) + ' minder' : fact.kind === 'open' ? 'nog ' + eur(fact.amountEur) + ' open bij de leverancier' : receipt.credit ? 'leverancier volledig betaald' : 'leverancier volledig betaald · noteer een tegoed' }}</span> }</span></div>
                 }
                 @if (receipt.unvaluedPieces > 0) {
                   <a class="ios-cell" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }"><span class="ios-cell__body"><span class="ios-cell__title">{{ receipt.unvaluedPieces | num }} stuks zonder inkoopwaarde</span><span class="ios-cell__sub">tellen niet mee · waarde vastleggen</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
                 }
+              }
+              @if (receipt.credit; as credit) {
+                <button class="ios-cell ios-cell--tall" type="button" (click)="openPayee.emit('SUPPLIER')">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Tegoed leverancier</span><span class="ios-cell__sub">{{ credit.openEur > 0 ? eur(credit.openEur) + ' nog te ontvangen' : 'terugbetaald of verrekend' }} · verlaagt de eindkost</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong wk-amount--in">− {{ credit.totalEur | eur }}</span></span>
+                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                </button>
+              }
+              @if (!receipt.clean || receipt.credit) {
+                <button class="ios-cell ios-cell--action" type="button" [disabled]="busy() || (mode() === 'edit' && dirty())" (click)="credit.emit({ kind: 'add' })">Tegoed noteren…</button>
               }
               @if (receipt.later; as later) {
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Na uitpakken: @if (later.damaged) { {{ later.damaged | num }} beschadigd }@if (later.damaged && later.missing) { / }@if (later.missing) { {{ later.missing | num }} te weinig }</span><span class="ios-cell__sub">niet in de kostprijs verwerkt</span></span></div>
@@ -162,6 +174,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                     <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>minder betaald · afgerekend</dt><dd>{{ ex.savingsEur | eur }}</dd></div>
                     <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>meer betaald · afgerekend</dt><dd>{{ ex.overrunsEur | eur }}</dd></div>
                     <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>bijkomend</dt><dd>{{ ex.additionalEur | eur }}</dd></div>
+                    @if (head.creditEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>tegoed leverancier</dt><dd>{{ head.creditEur | eur }}</dd></div> }
                     @if (ex.fxEur !== 0) { <div class="is-sub"><dt>koersverschil · zit al in betaald</dt><dd>{{ signed(ex.fxEur) }}</dd></div> }
                     @if (ex.openEur > 0) { <div class="is-sub"><dt>nog open · blijft in de eindkost tot afrekening</dt><dd>{{ ex.openEur | eur }}</dd></div> }
                   </dl>
@@ -273,6 +286,8 @@ export class PurchaseNacalcOverview {
   readonly applyCosts = output<void>();
   readonly refresh = output<void>();
   readonly refreshPartner = output<void>();
+  /** 'Tegoed noteren…': the editor opens the sheet, the read view opens the editor. */
+  readonly credit = output<SupplierCreditAction>();
 
   readonly pdfBusy = signal(false);
   readonly round = Math.round;
@@ -325,7 +340,7 @@ export class PurchaseNacalcOverview {
     if (row.agreedEur === null || row.status.kind === 'UNBUDGETED') return `${formatEur(row.paidEur)} · zonder afspraak`;
     const agreed = `afgesproken ${formatEur(row.agreedEur)}`;
     const eindkost = row.eindkostEur === row.agreedEur ? '' : ` → eindkost ${formatEur(row.eindkostEur)}`;
-    return agreed + eindkost + (row.ddpNote ? ' · DDP' : '');
+    return agreed + eindkost + (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · zeevracht via de leverancier (CIF)' : '');
   }
 
   productSub(row: PurchaseNacalc['products'][number], received: boolean): string {
@@ -347,6 +362,7 @@ export class PurchaseNacalcOverview {
       case 'review': return read ? 'Afrekenen in bewerken ›' : `${verb}: ${formatEur(todo.amountEur)} te veel betaald aan ${PAYEE_LABEL[todo.payee]}`;
       case 'budget': return read ? 'Afrekenen in bewerken ›' : `${verb}: ${PAYEE_LABEL[todo.payee]} betaald zonder afspraak`;
       case 'incomplete': return `${verb}: betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`;
+      case 'credit': return `Tegoed open bij ${PAYEE_LABEL[todo.payee]} · ${formatEur(todo.amountEur)} ›`;
       default: return todoCopy(todo, this.mode()).title;
     }
   }
@@ -355,7 +371,7 @@ export class PurchaseNacalcOverview {
     switch (todo.kind) {
       case 'pay': this.pay.emit({ payee: todo.payee, amount: todo.amountEur, label: todo.label, due: todo.due }); break;
       case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
-      case 'incomplete': this.openPayee.emit(todo.payee); break;
+      case 'incomplete': case 'credit': this.openPayee.emit(todo.payee); break;
     }
   }
 

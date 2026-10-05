@@ -17,7 +17,7 @@ import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
-import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, withPaymentState } from './sales-payment-state';
+import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -56,6 +56,11 @@ import {
 } from './sales-list-swipe';
 import { salesLineSections } from './sales-product-line-groups';
 import { SalesPdfSheet } from './sales-pdf-sheet';
+import { containerNumberHint, containerPhrase, linkedPurchaseOrderId, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
+import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoiceConfirmOptions, isAdvanceBillingInvoice, isDeductionLine, isFinalBillingInvoice } from './sales-advance-billing';
+import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
+import { SalesAdvanceDeductions } from './sales-advance-deductions';
+import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 
 /**
  * Sales order and quote.
@@ -67,7 +72,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -138,6 +143,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 {{ data.order.countryCode || 'Nog geen leverland' }}
                 · {{ data.order.incoterm || 'Geen incoterm' }}
               </div>
+              @if (billingTag(); as tag) { <a class="adv-tag" [routerLink]="['/sales', billingQuoteId()]">{{ tag }}</a> }
             </div>
             <button class="history-button" type="button" (click)="toggleHistory()"
                     [attr.aria-expanded]="historyOpen()" aria-controls="quote-history">
@@ -201,7 +207,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
 
-          @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+          @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
             <!-- The country's minimum rides with the totals, in view the
                  whole time you build; green the moment it is met. -->
             <div class="hero-min" [class.hero-min--ok]="data.priced.validation.meetsMinimum" role="status">
@@ -245,7 +251,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           }
         </section>
 
-        <app-sales-advance-invoices [order]="data.order" />
+        <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
+        <app-sales-advance-billing [view]="data" variant="ios" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoiceFromEditor(data)" />
         <app-sales-document-note [notes]="mobileCustomerAuthoredMessage(data) ? mobileCustomerNote(data) : data.order.notes" [fromCustomer]="mobileCustomerAuthoredMessage(data)" />
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
         @if (!data.fulfillment && !isPartnerDocument(data.order) && !isCreditNoteDoc()) {
@@ -469,7 +476,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
-                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.customerId"
+                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.customerId"
                         (ngModelChange)="setCustomer(+$event)">
                   @for (customer of customers(); track customer.id) {
                     <option [ngValue]="customer.id">{{ customer.company }}</option>
@@ -480,7 +487,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
-                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc()" [ngModel]="data.order.countryCode"
+                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.countryCode"
                           (ngModelChange)="patch({ countryCode: $event })">
                     @for (country of countries(); track country.code) {
                       <option [ngValue]="country.code">{{ country.name }}</option>
@@ -868,6 +875,8 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 }
               </section>
             }
+            } @else if (advanceLocked()) {
+              <p class="adv-lock" role="note">{{ data.order.status === 'CONCEPT' ? advanceLockNote : 'Een voorschotfactuur heeft geen productregels; ze factureert alleen het voorschotbedrag.' }}</p>
             } @else {
               <div class="products-empty">
                 <div class="products-empty__art" aria-hidden="true"><span>＋</span></div>
@@ -893,25 +902,25 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                     <input class="input extra-line__what" type="text" maxlength="120"
                            placeholder="Omschrijving, bv. montage ter plaatse"
                            [attr.aria-label]="'Omschrijving regel ' + (i + 1)"
-                           [disabled]="!mobileCommercialEditable()"
+                           [disabled]="!mobileCommercialEditable() || extraLineLocked(extra)"
                            [ngModel]="extra.description"
                            (ngModelChange)="setExtraLine(i, { description: $event })" />
                     <input class="input num extra-line__qty" type="number" min="0" step="1" inputmode="decimal"
                            [attr.aria-label]="'Aantal regel ' + (i + 1)"
-                           [disabled]="!mobileCommercialEditable()"
+                           [disabled]="!mobileCommercialEditable() || extraLineLocked(extra)"
                            [ngModel]="extra.quantity"
                            (ngModelChange)="setExtraLine(i, { quantity: +$event })" />
                     <div class="input-affix extra-line__price">
                       <input class="input num" type="number" step="0.01" inputmode="decimal"
                              placeholder="Prijs per stuk"
                              [attr.aria-label]="'Prijs per stuk regel ' + (i + 1)"
-                             [disabled]="!mobileCommercialEditable()"
+                             [disabled]="!mobileCommercialEditable() || extraLineLocked(extra)"
                              [ngModel]="extra.unitPriceEur"
                              (ngModelChange)="setExtraLine(i, { unitPriceEur: $event === '' || $event === null ? null : +$event })" />
                       <span class="input-affix__suffix">EUR</span>
                     </div>
                     <strong class="num extra-line__total">{{ extraLineTotal(extra) | eur }}</strong>
-                    <button class="other-cost__remove" type="button" [disabled]="!mobileCommercialEditable()"
+                    <button class="other-cost__remove" type="button" [disabled]="!mobileCommercialEditable() || extraLineLocked(extra)"
                             [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))"
                             (click)="removeExtraLine(i)">×</button>
                   </div>
@@ -1012,12 +1021,13 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
             </div>
           </div>
           <div class="card__body">
+            <app-sales-advance-deductions [view]="data" />
             <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" />
             <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
             @if (isClaimDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
               <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">{{ isCreditNoteDoc() ? 'Creditnota e-mailen…' : 'Factuur e-mailen…' }}</button>
             }
-            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]">deze container</a>.</p> }
+            @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'deze container' }}</a>.</p> }
             @if (advanceAgreement(); as agreement) {
               <p class="hint">De opgeslagen betaalafspraak staat bovenaan. De slotfactuur volgt na de veiling.</p>
             } @else if (isCreditNoteDoc()) {
@@ -1027,9 +1037,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                 @if (isSettlement(data.order)) {
-                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze partnercontainer</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
                 } @else {
-                  <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]">deze container</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
+                  <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze container' }}</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                   <div class="desk-partner__actions">
                     <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
@@ -1097,7 +1107,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
                 <span>Goederen</span>
                 <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
-              @if (!isPartnerDocument(data.order) && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
+              @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
                 <!-- The minimum is a goods matter, so its line lives here. -->
                 <div class="receipt-min receipt-min--goods">
                   <div class="receipt-min__row">
@@ -1131,7 +1141,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               }
               <!-- The one commercial lever at check time: an order discount
                    for a fair or a deal, as a percentage or an amount. -->
-              @if (canEdit() && !isCreditNoteDoc()) {
+              @if (canEdit() && !isCreditNoteDoc() && !advanceLocked()) {
                 @if (!orderDiscountOpen()) {
                   <button class="receipt-korting__add" type="button"
                           (click)="orderDiscountOpen.set(true)">
@@ -1283,7 +1293,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
               @if (canCreateInvoice(data)) {
                 <button class="btn" type="button" [disabled]="invoiceConversionBusy() || dirty() || saving() || sending()"
                         [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoiceFromEditor(data)">
-                  {{ invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+                  {{ invoiceConversionBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
                 </button>
               }
               <button class="btn btn--primary" type="button"
@@ -1332,7 +1342,7 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
           } @else if (!dirty() && !isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="invoiceConversionBusy() || saving()" (click)="makeInvoiceFromEditor(data)">
-              {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : 'Factuur maken' }}
+              {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken') }}
             </button>
           } @else if (!dirty() && !isInvoiceDoc()
                      && canReopen(data)) {
@@ -1443,6 +1453,9 @@ import { SalesPdfSheet } from './sales-pdf-sheet';
       @if (view(); as data) {
         <app-partner-link-sheet [order]="data.order" (closed)="partnerLinkOpen.set(false)" (linked)="applyPartner($event)" />
       }
+    }
+    @if (advanceSheetOpen()) {
+      @if (view(); as data) { <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" /> }
     }
     @if (picking()) {
         <app-product-picker
@@ -2066,7 +2079,7 @@ export class SalesEditor {
   readonly mobileSplitBusy = signal(false);
   readonly mobileSplitBlockReason = salesSplitBlockReason;
   readonly mobileFinanciallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
-  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked());
+  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked() && !this.advanceLocked());
   readonly mobileCustomerAuthoredMessage = customerMessageIsReadOnly;
   readonly mobileCustomerNote = originalCustomerMessage;
 
@@ -2094,6 +2107,8 @@ export class SalesEditor {
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
+  /** A partner advance or a regular voorschotfactuur: no goods, so no shipping step. */
+  readonly skipsShipping = skipsShipping;
   readonly isAdvanceInvoice = isAdvanceInvoice;
   readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
@@ -2143,12 +2158,37 @@ export class SalesEditor {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    this.ui.confirm({
-      title: 'Factuur maken zonder versturen',
-      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> komt in een nieuwe conceptfactuur. `
-        + 'De offerte wordt gearchiveerd en blijft gekoppeld aan de factuur. Er wordt geen e-mail verstuurd.',
-      confirmLabel: 'Conceptfactuur maken',
-    }, () => { void this.createDraftInvoice(data); });
+    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
+    this.ui.confirm(confirm, () => { void this.createDraftInvoice(data); });
+  }
+
+  /* ---- voorschotfacturen and the slotfactuur of a regular quote (desk and phone) ---- */
+  readonly advanceSheetOpen = signal(false);
+  /** 'Voorschotfactuur · offerte OF-…' or 'Slotfactuur · offerte OF-…' on those invoices. */
+  readonly billingTag = computed(() => billingTag(this.view()));
+  readonly billingQuoteId = computed(() => this.view()?.advanceBilling?.quoteId ?? null);
+  readonly invoiceActionLabel = invoiceActionLabel;
+
+  openAdvanceSheet(): void {
+    const data = this.view();
+    if (!data || this.dirty() || this.saving() || this.sending() || this.documentMutationBusy() || advanceInvoiceBlock(data)) return;
+    this.advanceSheetOpen.set(true);
+  }
+
+  /**
+   * A regular voorschotfactuur is the server's: its one amount line, no
+   * products, no freight or discount of its own (an update puts the made
+   * advance back). To change it, delete the concept and make a new advance.
+   */
+  readonly advanceLocked = computed(() => isAdvanceBillingInvoice(this.view()));
+  readonly advanceLockNote = 'Het bedrag van een voorschotfactuur staat vast; verwijder dit concept en maak een nieuw voorschot vanuit de offerte om het te wijzigen.';
+
+  /** A slotfactuur's 'Voorschotfactuur F-… van …' line and every line of a voorschotfactuur are the server's: never edited or removed here. */
+  extraLineLocked(line: SalesExtraLine | null | undefined): boolean {
+    const data = this.view();
+    if (!line) return false;
+    return isAdvanceBillingInvoice(data) || (isFinalBillingInvoice(data) && isDeductionLine(line.description, data?.advanceDeductions));
   }
 
   private async createDraftInvoice(data: SalesOrderView): Promise<void> {
@@ -2277,7 +2317,14 @@ export class SalesEditor {
   readonly settlementOpen = signal(false);
   /** The partner container itself: its number for the settlement text, its costing for the cost per piece. */
   readonly partnerContainer = signal<PurchaseOrderView | null>(null);
-  readonly partnerReference = computed(() => this.partnerContainer()?.order.number ?? null);
+  /** Our own name for the linked container (alias, else number): the loaded partner container first, else the server's live name. */
+  readonly containerLabel = computed(() => salesContainerName(this.view(), this.partnerContainer()?.order));
+  /** The PO number beside that name, only when it differs. */
+  readonly containerNumber = computed(() => containerNumberHint(this.containerLabel(), salesContainerNumber(this.view(), this.partnerContainer()?.order)));
+  readonly containerId = computed(() => linkedPurchaseOrderId(this.view()?.order));
+  readonly containerPhrase = containerPhrase;
+  /** The settlement's reference: our container name, as the partner's auction statement should read it. */
+  readonly partnerReference = computed(() => this.partnerContainer() ? this.containerLabel() : null);
   /** Inspection and other costs the container keeps apart from the piece price, per piece, for the settlement preview. */
   readonly separateUnitEur = computed(() => this.partnerContainer()?.reconciliation ? 0 : separateCostPerPiece(this.partnerContainer()?.costing.totals));
 
@@ -2647,6 +2694,8 @@ export class SalesEditor {
     if (this.advanceAgreement()) return 'Offerte met betaalplan';
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
+    const billing = billingKind(this.view());
+    if (billing) return billing;
     const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
     return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
   });
@@ -2893,7 +2942,7 @@ export class SalesEditor {
   readonly canEditShipping = computed(() => {
     const data = this.view();
     return !!data && this.canEditTerms() && !data.invoicedAsId && !data.order.paidAt
-      && !data.order.signedByName && !data.order.goodsShippedAt
+      && !data.order.signedByName && !data.order.goodsShippedAt && !isAdvanceBillingInvoice(data)
       && (data.order.docType !== 'FACTUUR' || data.order.status === 'CONCEPT');
   });
 
@@ -3414,7 +3463,7 @@ export class SalesEditor {
   }
 
   setExtraLine(index: number, changes: Partial<SalesExtraLine>): void {
-    if (!this.canEdit()) return;
+    if (!this.canEdit() || this.extraLineLocked(this.view()?.order.extraLines?.[index])) return;
     this.enqueue((order) => ({
       ...order,
       extraLines: (order.extraLines ?? []).map((line, i) => (i === index ? { ...line, ...changes } : line)),
@@ -3422,7 +3471,7 @@ export class SalesEditor {
   }
 
   removeExtraLine(index: number): void {
-    if (!this.canEdit()) return;
+    if (!this.canEdit() || this.extraLineLocked(this.view()?.order.extraLines?.[index])) return;
     this.enqueue((order) => ({
       ...order,
       extraLines: (order.extraLines ?? []).filter((_, i) => i !== index),

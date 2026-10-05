@@ -226,6 +226,73 @@ cijfers'.
   after a failed request (`documentsFailed`), never "no proof". Rows with
   `appMenuTrigger` and their own `(click)` skip `$event.defaultPrevented`,
   the click that trails a long press.
+- A supplier term is never a dead end (containers round 2026-09-29, F1): a
+  term paid to the cent with a tied payment and no flag has `canConfirm`
+  (kept apart from `canSettle`, which `pickScope` uses for the default term)
+  and every term carries `paymentIds` (tied payments, newest first).
+  `termMenuItems`/`termHasMenu` in purchase-payment-menus.ts build the one
+  term menu for the desk ⋯ and the phone payee sheet (editor only): 'Betaling
+  noteren voor deze termijn' (open), 'Termijn afrekenen' (canSettle or
+  canConfirm), 'Afrekening ongedaan maken' (per term, `undoSettle({ payee:
+  'SUPPLIER', due })`) and 'Betaling aanpassen…' (newest tied payment); paid
+  rows keep no text button. The settle sheet's TERM warning relinks the
+  newest supplier payment WITHOUT a term (`relinkPayment`: a whole-supplier
+  settle strips the term and undo keeps it null); a GROUP settle already
+  prefers a term-less carrier (`settleCarriers`). The phone read view's
+  'Betaling' detail has 'Bewerken' (→ `/purchasing/:id/edit?section=ledger`)
+  and says 'Aanpassen of afrekenen kan in Bewerken.' The server's PUT payment
+  has no settle guard: this was UI only.
+- Tegoed leverancier (2026-09-29, F3): money the supplier owes back (short
+  delivery, damage, price) lives in its own server entity, never as a
+  negative payment. `view.supplierCredits` (reason SHORTAGE/DAMAGE/PRICE/OTHER
+  = Tekort/Schade/Prijsverschil/Andere, status OPEN/REFUNDED/OFFSET = 'Tegoed
+  open'/'Terugbetaald dd/mm'/'Verrekend met INK-…') feeds `ledgerCredits`;
+  the supplier payee carries `credits`, `creditEur` (server stream.creditEur
+  first) and `creditOpenEur`, the summary's forecast is paid + open − credit
+  (as the server's), Betaald/Open/Afspraak never move, and an open credit is
+  a 'credit' todo. Endpoints (all return the order view; the host just calls
+  `refreshPaymentState`): POST/PUT/DELETE `/purchase-orders/:id/supplier-credits`
+  and POST `…/:creditId/offset` (a normal supplier payment 'Verrekend tegoed
+  INK-…' on another ordered container of the same supplier, `creditOffsetTargets`
+  from the purchase list, optional term). `app-purchase-supplier-credit-sheet`
+  (page level in editor and desk, `crediting`) does add/edit (date, reason
+  segments, amount + currency with the receipt value as proposal via
+  `supplierCreditPrefill`, 'Afgeschreven in euro', note), refund (date +
+  euro) and offset; remove and 'Terugbetaling ongedaan maken' are confirms;
+  every write goes through `requestCredit` (whenSaved). The PUT bodies come
+  from `supplierCreditEditBody` (euro field starts empty and goes along only
+  when typed for USD/CNY, else the server keeps the stored euro or takes the
+  order rate for a new amount/currency; note always sent, '' clears it) and
+  `supplierCreditRefundBody` (a EUR refund of another sum sends it as amount
+  and amountEur, the server requires them equal). An untouched euro proposal
+  empties when the Munt turns USD/CNY. Desk: sub rows under
+  Leverancier in 'Per ontvanger' with a ⋯ (`creditMenuItems`), 'Tegoed
+  noteren…' in the payee ⋯; phone: rows under Leverancier and a section in
+  the payee sheet (menus in the editor only). A target's offset payment
+  (`view.creditOffsets`, `LedgerRow.creditOffset`) locks amount, currency and
+  payee in the payment sheet and cannot be moved; deleting it reopens the
+  credit. Nacalculatie: reason 'credit' after 'open', 'Tegoed leverancier −
+  € x' under the supplier's eindkost, a CREDIT bridge row between Open and
+  the eindkost, the receipt block's credit line and 'Tegoed noteren…' (the
+  read view opens `/purchasing/:id/edit?section=credit`), ' · tegoed € x
+  open' after the state sentence. Kosten & bank does not show credits yet.
+- CIF (2026-09-29, F4): 'Prijsbasis en munt van de leverancier' has EXW |
+  CIF | DDP chips; CIF = EXW lines + `order.freightViaSupplier = true`, EXW
+  and DDP clear a set flag to null (never write false over null: the server
+  refuses a CIF toggle once Leverancier or Douane & transport is settled).
+  `purchaseCif(view)` (flag and not DDP) drives the words: supplier basis
+  'Goederen + zeevracht (CIF) · plan' and composition Goederen + Lokale kosten
+  China + Zeevracht, Douane & transport 'invoerrechten en lokale kosten
+  aankomst · zeevracht via de leverancier (CIF)' with only duty + arrival, the
+  bridge 'Leverancier · goederen + zeevracht'. The server adds the supplier
+  term FREIGHT 'Zeevracht (CIF)' (payable.supplierFreightEur); it is in every
+  Due union/Record, due 'bij vertrek' like SHIPPED (reached() in
+  purchase-instalment-state.ts and finance/payables.ts), ordered ORDERED,
+  SHIPPED, FREIGHT, ARRIVED, and reaches the payment sheet's term picker and
+  quick-fill chips, the Nacalculatie term rows and Kosten & bank through the
+  server's supplierInstalments. The payment plan sheet splits the goods only
+  (`planAgreedEur` = supplier Afspraak − supplierFreightEur) and never warns
+  about a FREIGHT term dropping out of a plan.
 - Nacalculatie (round 2, superseded by round 3 below; `app-purchase-payment-result` and
   `purchase-payment-result-rows.ts` are gone): it always showed the
   equation Enrosed kost + minder betaald − meer betaald − bijkomend = Enrosed
@@ -445,6 +512,153 @@ handelen' and never 'Betaling open' for a credit note; dashboard, settings
 `so-credit*`, `partner-shortage`, `fin-credit-row`, `fin-offset-row`); the
 desk and editor style arrays did not grow.
 
+### Container name in Verkoop (sales round 2026-09-30, G1)
+One rule for naming a container everywhere in Verkoop: the purchase order's
+alias ('Herkenbare naam') trimmed, else its number, else 'Inkoop #id'. The
+pure, node-tested `features/purchasing/container-name.ts` holds it:
+`containerName(po, fallbackId)`, `containerNumberHint(name, number)` (the PO
+number as title/small print only when it differs), `containerPhrase(name)`
+('container PO-…', but 'container/2026/002' as it is: never the word twice),
+`linkedPurchaseOrderId(order)` (source ?? partner, like the backend) and
+`salesContainerName/Number(view, livePo?)` (loaded PO first, then the
+server's `partnerContainerName`/`partnerContainerNumber` on SalesOrderView,
+then the advance cargo snapshot, then 'Inkoop #id'). The server also sends
+`containerName` on the credit-note proposal's container and on the partner
+credit proposal; every field is optional so an older backend still works.
+Used by: the Verkoop list group header (`purchaseOrderName`, PO number as
+title) and search (name and number, regular container sales too), the
+container menu, the advance contents link, `SalesEditor.containerLabel` /
+`containerNumber` (desk tag '<naam> · Partner 50 %', partner-section links,
+'Reguliere verkoop uit <naam>', the advance-invoices subtitle) and
+`partnerReference` (auction sheet 'voor <containerPhrase>'; the purchase
+screens pass `containerName(order)` too), the phone view hero ('· <naam>' or
+'· uit <naam>' linking to the container) and the credit-note sheet (proposal
+name; no invented `PO-<id>`). Inkoop keeps its own alias || number display.
+Stored lines and notes of issued documents are never rewritten.
+
+### Partner advance plan: re-split the rest (sales round 2026-09-30, G2)
+A term is FIXED only when its invoice is no longer a concept, has payment
+history or a live credit note (2026-10-01: an issued-then-reopened concept is
+NOT fixed; Verhoeven BV's container/2026/009). The server alone decides:
+`invoiceFixed` on PartnerAdvanceScheduleRow, `invoiceReopened` for a concept
+issued before; `scheduleRowFixed(row)` falls back to 'has an invoiceId' for an
+older backend, and no screen keeps its own 'was issued' or 'has a number'
+rule. Only fixed terms are `locked` in `scheduleDraft`; a term with a
+concept (`conceptNumber`, `conceptReopened`) is editable (label, amount, due
+date: the server revises that concept in place, same number) but never
+removable. Wording: `scheduleConceptNote(row, withNumber?)` ('Concept {nr} ·
+heropend · volgt de nieuwe verdeling', 'nog niet uitgegeven' only when the
+server says it never was, '· staat vast (betaalhistoriek of creditnota)'),
+`scheduleDraftStatus(row)` for the editor heads, `thirdsResplitAvailable`
+for the one-click '1/3 · 1/3 · 1/3' (€ 54.435,82: 18.145,27 fixed + 18.145,28
++ 18.145,27). The sales 'Voorschotfacturen' block (desk/editor/view) uses the
+same note, reloads on a status change and links 'Termijnen aanpassen' to
+`/purchasing/{id}?section=payments&terms=edit`, which opens the editor once
+and then drops `terms` from the URL (replaceUrl). On the purchase order the
+'Alle offertes & facturen' list takes a concept's note from the plan card
+(viewChild), else just 'Concept'; the partner panel shows no extra suffix.
+Deleting a reopened term stays refused by the server (409 "... het nummer
+blijft bestaan. Pas de verdeling aan via Termijnen aanpassen ...").
+Pure helpers in partner-advance-schedule-state.ts: `resplitRemainder(rows,
+agreed, outside, parts, labels?)` keeps fixed terms (id, amount), splits the
+rest into `parts` AMOUNT terms in cents (last takes the residual cent),
+reuses the open terms' ids/labels/due dates in order, never drops a concept
+term and replaces share-like labels ('2/3 na productie') with the given ones
+or strips the share; `scheduleRemainder` gives fixed / re-split / left;
+`remainderRequest` requires Σ = agreed ('Verdeel het resterende voorschot
+volledig: nog € X te verdelen.'). `app-partner-advance-schedule`: header
+'Termijnen aanpassen'; with a fixed term (or a reservation outside the plan)
+the presets become 'Resterend bedrag opnieuw verdelen' (Rest in 2 / 3
+termijnen, + Eigen termijn, and '1/3 · 1/3 · 1/3' when exactly one fixed term
+is a third), rows read 'Gefactureerd · staat vast' / 'Nog te factureren'
+('· concept … · volgt de nieuwe verdeling'), the intro names the fixed terms,
+the total line reads '€ A gefactureerd · € B opnieuw verdeeld · € C nog te
+verdelen', save 'Nieuwe verdeling bewaren' + toast. `remainderRequest` is used
+only when a term is fixed AND the draft adds or changes terms
+(`scheduleDraftChanges`, the server's rule too); without a fixed term, or when
+only unused terms are dropped (before a settlement), the old ≤ agreed rule
+stays. The quote sheet's locked note points to Termijnen aanpassen.
+
+### Partner advance credit note prefilled (sales round 2026-09-30, G3)
+The credit-note sheet in advance mode leads with the partner's share after
+receipt. `partnerCreditPrefill(partner, advanceId, containerName, vatPct)` in
+sales-credit-note.ts → { amountEur, restEur, wantedEur, description, state
+ok|pending|none|not-received|settlement }: the server's per-advance
+`suggestedCreditEur` wins; an older backend gets wanted = max(0,
+overFinancingEur − (pendingCreditEur ?? 0)) capped by the room excl. btw
+(maxCreditInclVatEur × 100 / (100 + btw), rounded down). Two meanings sit
+side by side on purpose: `overFinancingEur` stays issued-only (the 'Tekort na
+ontvangst' card and its concept link rely on it) while the suggestion
+subtracts concept credit notes (`pendingCreditEur`/`pendingCreditNumbers`),
+so a second sheet never proposes the same shortage twice. Never recompute the
+amount from `shortValueEur` (half cents). The server's target advance is the
+latest unpaid one that can absorb the credit. Sheet: 'Voorstel: € x excl. btw
+terug aan <partner>' (+ incl. btw when btw > 0), the reasoning line
+(gefinancierd excl. btw · afgesproken deel na ontvangst (pct van basis) ·
+verschil · stuks minder ontvangen), 'Nog € x past niet op deze
+voorschotfactuur' for the rest, the pending state 'Er staat al een
+conceptcreditnota … maak geen tweede.' with a link (ids from the container's
+partner financing documents), the amount field prefilled ('voorstel' tag
+while untouched), switching advance re-caps, and the invoice caps as small
+print. Description 'Voorschot te veel gefinancierd · <naam> (108 stuks niet
+ontvangen)'; damaged pieces stay in the basis and are not counted in it.
+
+### Voorschotfacturen and slotfactuur for regular sales (sales round 2026-09-30, G4)
+A regular STANDARD quote (typically a whole container for a French customer)
+can be billed in advances: POST `/sales-orders/{quoteId}/advance-invoice`
+{ percentage | amountEur, dueDate? } (`SalesApi.createAdvanceInvoice`) makes
+a CONCEPT F-series invoice with one line 'Voorschot 30 % · offerte …'; the
+existing 'Factuur maken' (`createInvoiceFrom`) becomes the slotfactuur, with a
+server-owned negative line 'Voorschotfactuur F-… van dd/mm/jjjj' per issued
+advance (VAT on the balance). Purpose stays STANDARD: never add a SalesPurpose
+value (`!== 'STANDARD'` means partner in dozens of places). JSON (all optional):
+`advanceBilling` { stage ADVANCE|FINAL, quoteId, quoteNumber, percentage,
+amountExclEur } on those invoices, `advanceInvoices[]` on the quote (id,
+number, status, invoiceDate, percentage, amountExclEur, totalInclVatEur,
+paidAt, receivedEur, remainingEur, receipts[{ receivedOn, amountEur }]),
+`advanceDeductions[]` on the slotfactuur (frozen, with `paidOn` and receipts).
+The pure, node-tested `sales-advance-billing.ts` holds the rules the UI can
+know: base = quote total excl. btw, live advances, remaining, `advancePreview`
+(pct half-up to cents or amount, VAT 0 under a legal mention, the cap message),
+`advanceInvoiceBlock` (regular open quote, freight known, not split, not yet
+invoiced), `advancePaymentState` ('Betaald op dd/mm/jjjj' from the last
+receipt / 'Deels betaald' / 'Open' / concept), `deductionPaidText`,
+`finalInvoicePlan` (guard 'Reik eerst voorschotfactuur … uit of verwijder
+ze.', balance, negative), `invoiceConfirmOptions(view, escapeHtml)` (the one
+confirm for desk, phone view and editor: ordinary or 'Slotfactuur maken' with
+the deductions; the sales-advance-agreement harness lists it as a global),
+`invoiceActionLabel`, `billingKind`/`billingTag` ('Voorschotfactuur · offerte
+…', 'Slotfactuur · offerte …') and `isDeductionLine`. Components (styles in
+`src/styles/sales-advance-billing.scss`, `adv-*`, so desk/editor style arrays
+did not grow): `app-sales-advance-billing` (card on a regular quote once sent,
+accepted, from a container or advanced: list with pills, totals, the guard,
+'Voorschotfactuur maken…', 'Slotfactuur maken'), `app-sales-advance-invoice-
+sheet` (page level; chips 30 % · 50 % · Eigen % · Bedrag, vervaldatum, preview,
+'Conceptvoorschotfactuur maken' then opens the new invoice) and
+`app-sales-advance-deductions` (on the slotfactuur: desk main flow, phone view
+above Totalen, editor step 4). `SalesEditor.extraLineLocked` keeps the
+deduction lines read-only (desk table and phone editor; set/remove refuse
+them). Advance invoices hide the minimum-order notice. The container's
+`app-purchase-sales-links` names 'Voorschotfactuur 30 %' / 'Slotfactuur' with
+their status; the Verkoop list and the hero eyebrows use `billingKind`.
+Review fixes: a voorschotfactuur is the server's (an update puts its line and
+freight back): `SalesEditor.advanceLocked` turns off products, lines (every
+extra line is `extraLineLocked`), customer/country, order discount and
+shipping (`canEditShipping`), with 'Het bedrag van een voorschotfactuur staat
+vast; verwijder dit concept en maak een nieuw voorschot vanuit de offerte'.
+It has no goods: `skipsShipping(view)` (sales-payment-state.ts: partner
+advance or advanceBilling ADVANCE) replaces `!isAdvance(order)` in every
+shipping step (phone next step, desk KPI/action/`invoiceNextStep`, packing
+slip, Verkoop todo) and the lifecycle uses `advanceInvoiceJourney`.
+`finalInvoicePlan` deducts `amountExclEur − creditedExclEur` per issued
+advance (optional field on `advanceInvoices[]`, Σ excl. btw of its issued
+credit notes) and skips a fully credited one, as the server does; without the
+field (older backend) the amounts read 'vóór creditnota's' (`creditsKnown`).
+The card needs `advanceInvoices` to be an array (older backend: no card) and,
+once the quote has its slotfactuur (`quoteSettlement`), links it with its
+status and shows nothing left to invoice; `advanceInvoiceBlock` names the
+slotfactuur before the archive.
+
 ### Prospects & outreach (2026-09-28)
 - `/prospects` and `/prospects/:id` are staff-only routes under Verkoop;
   the phone menu links to "Prospects & groothandels". The page keeps search,
@@ -491,6 +705,16 @@ desk and editor style arrays did not grow.
   landed costs with confirm dialog.
 - Purchase figures are always shown to staff (no privacy mode since
   fd979b4); the PDF sheet picks the internal or supplier variant.
+- Receipt date (2026-09-29, F2): both 'Container ontvangen' sheets open with
+  an 'Ontvangen op' date field (device-local today, `ReceiveDraft.receivedOn`)
+  and send it as `receivedOn`; the server refuses a future date or one before
+  the order date (409, shown as toast) and corrects `receivedOn` through the
+  normal order PUT on a received order, so both edit forms show an editable
+  'Ontvangen op' (a cleared field never patches null). The list puts the date
+  under the 'Ontvangen' pill (`.po-row-date`, not in the ellipsed meta line)
+  and in the row menu; the desk hero meta says 'ontvangen dd/mm/jjjj' instead
+  of 'verwacht …' and the last KPI tile carries it; the phone read view adds
+  it to the hero line and an 'Ontvangen op' fact tile.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in

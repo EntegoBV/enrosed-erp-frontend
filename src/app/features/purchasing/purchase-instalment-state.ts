@@ -23,8 +23,9 @@ export interface PurchaseInstalmentState {
 export function purchaseInstalmentState(
   view: PurchaseOrderView, plan: readonly Instalment[], payments: readonly PurchasePayment[] | null,
 ): PurchaseInstalmentState[] {
+  // The CIF 'Zeevracht (CIF)' term falls due with the departure, like SHIPPED; a copy of this lives in finance/payables.ts.
   const reached = (due: Instalment['due']) => due === 'ORDERED' ? view.order.status !== 'CONCEPT'
-    : due === 'SHIPPED' ? ['ONDERWEG', 'ONTVANGEN'].includes(view.order.status) : view.order.status === 'ONTVANGEN';
+    : due === 'SHIPPED' || due === 'FREIGHT' ? ['ONDERWEG', 'ONTVANGEN'].includes(view.order.status) : view.order.status === 'ONTVANGEN';
   if (view.reconciliation?.supplierInstalments) {
     if (!view.reconciliation.supplierInstalments.some(term => term.plannedEur > 0)) return [];
     return view.reconciliation.supplierInstalments.map(term => ({

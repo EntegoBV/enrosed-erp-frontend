@@ -18,6 +18,13 @@
 .cn-partner__explain { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .cn-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .cn-hint--warn { color: var(--warn); font-weight: 650; }
+/* the partner proposal leads the advance mode; the invoice caps are small print below it */
+.cn-proposal { display: grid; gap: 3px; margin: 0; font-variant-numeric: tabular-nums; }
+.cn-proposal b { font-size: 16px; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+.cn-proposal span { color: var(--ink-2); font-size: 12.5px; }
+.cn-proposal--pending b { font-size: 13.5px; color: var(--warn); }
+.cn-proposal__link { justify-self: start; min-height: 44px; font-size: 13px; font-weight: 650; }
+.cn-small { font-size: 11px; }
 .cn-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 12.5px; line-height: 1.5; }
 .cn-error--retry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .cn-error--retry .btn { margin: 0; }

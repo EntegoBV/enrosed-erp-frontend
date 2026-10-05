@@ -17,9 +17,14 @@ import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
+import { containerNumberHint, linkedPurchaseOrderId, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
+import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoiceConfirmOptions, isAdvanceBillingInvoice, liveAdvances } from './sales-advance-billing';
+import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
+import { SalesAdvanceDeductions } from './sales-advance-deductions';
+import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
-import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
+import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -61,7 +66,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -106,6 +111,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
       @if (splitOpen()) { <app-sales-split-sheet [view]="data" [externalBusy]="invoiceBusy() || sendingQuote()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
       @if (creditSheetOpen()) { <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" /> }
+      @if (advanceSheetOpen()) { <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" /> }
       @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
       @if (returnSheet(); as ret) {
         <app-sheet title="Goederen terug in voorraad" variant="ios" (closed)="returnSheet.set(null)">
@@ -194,11 +200,17 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <span aria-hidden="true"> · </span>
                 @if (isCreditNote()) { {{ creditReason() }}@if (data.creditedInvoiceNumber) { <span aria-hidden="true"> · </span>op factuur <a class="sales-hero__link" [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }}</a> } }
                 @else { {{ countryName() }} }
+                @if (containerId(); as purchaseId) {
+                  <span aria-hidden="true"> · </span>{{ isPartnerDocument(data.order) ? '' : 'uit ' }}<a class="sales-hero__link" [routerLink]="['/purchasing', purchaseId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() }}</a>
+                }
                 @if (data.order.sourceQuoteId && data.sourceQuoteNumber) {
                   <span aria-hidden="true"> · </span>uit offerte <a class="sales-hero__link" [routerLink]="['/sales', data.order.sourceQuoteId]">{{ data.sourceQuoteNumber }}</a>
                 }
                 @if (data.invoicedAs && data.invoicedAsId) {
                   <span aria-hidden="true"> · </span>{{ data.invoiceStatus === 'CONCEPT' ? 'factuur in concept' : 'factuur' }} <a class="sales-hero__link" [routerLink]="['/sales', data.invoicedAsId]">{{ data.invoicedAs }}</a>
+                }
+                @if (data.advanceBilling?.stage === 'ADVANCE' && billingQuoteId()) {
+                  <span aria-hidden="true"> · </span>voorschot op offerte <a class="sales-hero__link" [routerLink]="['/sales', billingQuoteId()]">{{ data.advanceBilling?.quoteNumber || 'bekijken' }}</a>
                 }
               </p>
             </div>
@@ -322,7 +334,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           }
         </section>
 
-        <app-sales-advance-invoices [order]="data.order" />
+        <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
+        <app-sales-advance-billing [view]="data" variant="ios" [blocked]="invoiceBusy() || sendingQuote()" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
 
@@ -660,6 +673,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           </div>
 
           <aside class="sales-side erp-workspace__rail" id="sales-control" aria-label="Totalen en acties">
+            <app-sales-advance-deductions [view]="data" />
             <section class="totals-card erp-workspace__decision">
               @if (advanceAgreement()) {
                 <header><span class="section-kicker">Controle</span><h2>Voorschotafspraken</h2></header>
@@ -710,7 +724,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                             (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
-                  } @else if ((!isAdvance(data.order) && !data.order.goodsShippedAt)) {
+                  } @else if (!skipsShipping(data) && !data.order.goodsShippedAt) {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="openShipSheet(data)">Bestelling verzonden</button>
                   } @else if (data.order.status !== 'BETAALD') {
@@ -718,8 +732,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   } @else {
                     <button class="btn btn--primary btn--block" type="button"
-                            (click)="openPdfSheet(isAdvance(data.order) ? 'DOCUMENT' : 'PACKING_SLIP')">
-                      {{ isAdvance(data.order) ? 'Factuur instellen' : 'Pakbon instellen' }}
+                            (click)="openPdfSheet(skipsShipping(data) ? 'DOCUMENT' : 'PACKING_SLIP')">
+                      {{ skipsShipping(data) ? 'Factuur instellen' : 'Pakbon instellen' }}
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
@@ -730,13 +744,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (canCreateInvoice(data)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()"
                             (click)="makeInvoice(data)">
-                      {{ invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+                      {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
                     </button>
                   }
                 } @else if (data.order.status === 'GEACCEPTEERD') {
                   <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                           (click)="makeInvoice(data)">
-                    {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : 'Factuur maken zonder versturen' }}
+                    {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
                   </button>
                 } @else {
                   <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
@@ -784,7 +798,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
                   }
-                  @if (data.order.status !== 'BETAALD' && (!isAdvance(data.order) && !data.order.goodsShippedAt)) {
+                  @if (data.order.status !== 'BETAALD' && !skipsShipping(data) && !data.order.goodsShippedAt) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markPaid(data)">Betaling registreren</button>
                   }
@@ -792,7 +806,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
                   }
-                  @if (!isAdvance(data.order) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
+                  @if (!skipsShipping(data) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
                   <button class="btn btn--block" type="button"
                           (click)="openPdfSheet('PACKING_SLIP')">
                     Pakbon instellen
@@ -1200,8 +1214,14 @@ export class SalesView {
   readonly customerAuthoredMessage = customerMessageIsReadOnly;
   readonly customerNote = originalCustomerMessage;
   readonly advanceAgreement = computed(() => advanceAgreementFor(this.view()));
+  /** Our own name for the linked container (alias, else number), from the server's live field or the cargo snapshot. */
+  readonly containerLabel = computed(() => salesContainerName(this.view()));
+  readonly containerNumber = computed(() => containerNumberHint(this.containerLabel(), salesContainerNumber(this.view())));
+  readonly containerId = computed(() => linkedPurchaseOrderId(this.view()?.order));
   readonly isPartnerDocument = isPartnerDocument;
   readonly isAdvance = isAdvanceDocument;
+  /** A partner advance or a regular voorschotfactuur: no goods, so no shipping step or packing slip. */
+  readonly skipsShipping = skipsShipping;
   readonly isAdvanceInvoice = isAdvanceInvoice;
   readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
@@ -1382,7 +1402,7 @@ export class SalesView {
     if (this.pendingRevision()) return true;
     if (data.order.docType === 'CREDITNOTA') return !!this.creditStep()?.label;
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      return data.order.status === 'CONCEPT' || (!this.isAdvance(data.order) && !data.order.goodsShippedAt)
+      return data.order.status === 'CONCEPT' || (!this.skipsShipping(data) && !data.order.goodsShippedAt)
         || data.order.status !== 'BETAALD';
     }
     return data.order.status === 'CONCEPT' || data.order.status === 'GEACCEPTEERD';
@@ -1402,13 +1422,13 @@ export class SalesView {
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
       if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
-      if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bestelling verzenden';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bestelling verzenden';
       if (data.order.status !== 'BETAALD') return 'Betaling registreren';
       return 'Order afgerond';
     }
     if (data.order.status === 'CONCEPT') return data.order.sentAt
       ? 'Nieuwe versie naar de klant' : 'Offerte naar de klant';
-    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data) ? 'Voorschotfacturen beheren' : 'Factuur maken';
+    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data) ? 'Voorschotfacturen beheren' : invoiceActionLabel(data, 'Factuur maken');
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
       return 'Reactie van de klant volgen';
     }
@@ -1426,15 +1446,16 @@ export class SalesView {
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
-      if ((!this.isAdvance(data.order) && !data.order.goodsShippedAt)) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
       if (data.order.status !== 'BETAALD') return 'Leg de betaling vast zodra het bedrag ontvangen is.';
-      return 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
+      return this.skipsShipping(data) ? 'Factuur en betaling zijn verwerkt.' : 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
     }
     if (data.order.status === 'CONCEPT') return advanceAgreementFor(data)
       ? 'Controleer de afspraken. De voorschotfacturen maak je per termijn bij het betaalplan.'
       : 'Verstuur deze offerte of maak meteen een conceptfactuur. Bij omzetting wordt de offerte gearchiveerd; er gaat geen e-mail uit.';
     if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data)
       ? 'Maak per afgesproken termijn een voorschotfactuur op de inkooporder. De slotfactuur volgt na verkoop.'
+      : liveAdvances(data).length ? 'De slotfactuur neemt de offerte over en trekt de uitgereikte voorschotfacturen af; de btw volgt het saldo.'
       : 'Bevries deze afspraken in een nieuwe verkoopfactuur.';
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
       return 'De klantlink blijft actief. Open Beheren alleen als je een nieuwe versie wilt voorbereiden.';
@@ -1448,6 +1469,8 @@ export class SalesView {
     if (this.advanceAgreement()) return 'Offerte met betaalplan';
     const order = this.view()?.order;
     if (!order) return 'Verkoopofferte';
+    const billing = billingKind(this.view());
+    if (billing) return billing;
     const kind = salesDocumentKind(order, this.view()?.settlement?.finalSettlement);
     return kind === 'Offerte' ? 'Verkoopofferte' : kind === 'Verkoopfactuur' ? 'Factuur' : kind;
   });
@@ -1547,7 +1570,8 @@ export class SalesView {
   journey(order: SalesOrder) {
     if (order.docType === 'CREDITNOTA') return creditNoteJourney(order, this.view()?.paymentSummary?.status, this.creditSettlement());
     if ((order.docType ?? 'OFFERTE') !== 'FACTUUR') return this.quoteJourney(order.status);
-    if (isAdvanceDocument(order)) {
+    /* A voorschotfactuur has no goods either: issue, send, receipts. */
+    if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
     return invoiceJourney(order, this.view()?.paymentSummary?.status);
@@ -1565,12 +1589,20 @@ export class SalesView {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    this.ui.confirm({
-      title: 'Factuur maken zonder versturen',
-      message: `De inhoud van <b>${escapeHtml(data.order.number)}</b> komt in een nieuwe conceptfactuur. `
-        + 'De offerte wordt gearchiveerd en blijft gekoppeld aan de factuur. Er wordt geen e-mail verstuurd.',
-      confirmLabel: 'Conceptfactuur maken',
-    }, () => { void this.createInvoice(data); });
+    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
+    this.ui.confirm(confirm, () => { void this.createInvoice(data); });
+  }
+
+  /* ---- voorschotfacturen and the slotfactuur of a regular quote ---- */
+  readonly advanceSheetOpen = signal(false);
+  readonly billingTag = computed(() => billingTag(this.view()));
+  readonly billingQuoteId = computed(() => this.view()?.advanceBilling?.quoteId ?? null);
+  readonly invoiceActionLabel = invoiceActionLabel;
+  openAdvanceSheet(): void {
+    const data = this.view();
+    if (!data || this.invoiceBusy() || this.sendingQuote() || advanceInvoiceBlock(data)) return;
+    this.advanceSheetOpen.set(true);
   }
 
   private async createInvoice(data: SalesOrderView): Promise<void> {

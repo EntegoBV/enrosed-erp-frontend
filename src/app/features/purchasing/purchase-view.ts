@@ -48,6 +48,7 @@ import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
+import { containerName } from './container-name';
 
 type PurchaseWorkspaceSectionId =
   | 'purchase-overview'
@@ -108,6 +109,7 @@ type PurchaseWorkspaceSectionId =
                 {{ data.order.orderDate | dateNl }}
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
                 <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
+                @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) { <span aria-hidden="true"> · </span>ontvangen {{ data.order.receivedOn | dateNl }} }
               </p>
             </div>
             @if (desktop.active()) {
@@ -192,6 +194,12 @@ type PurchaseWorkspaceSectionId =
               <span>Lossen op</span>
               <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
             </div>
+            @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) {
+              <div class="overview-fact">
+                <span>Ontvangen op</span>
+                <strong>{{ data.order.receivedOn | dateNl }}</strong>
+              </div>
+            }
             <div class="overview-fact overview-fact--total">
               <span>Totaal geland</span>
               <strong>{{ data.costing.totals.totalEur | eur }}</strong>
@@ -665,7 +673,7 @@ type PurchaseWorkspaceSectionId =
                 (openPartner)="scrollToCard('purchase-partner-section', 'purchase-payments-section')"
                 (openReports)="scrollToCard('purchase-reports-section', 'purchase-files-section')"
                 (applyCosts)="scrollToCard('purchase-actions-section', 'purchase-actions-section')"
-                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" />
+                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" (credit)="noteCreditInEditor()" />
             </section>
 
             <!-- Money out, per payee: supplier, forwarder and customs, inspection,
@@ -675,7 +683,7 @@ type PurchaseWorkspaceSectionId =
                      aria-labelledby="purchase-payments-title">
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
                 [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()"
-                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()"
+                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
                 (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
             </section>
 
@@ -769,7 +777,7 @@ type PurchaseWorkspaceSectionId =
             }
             @if (auctionOpen()) {
               <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
-                                            [purchaseOrderId]="data.order.id" [reference]="data.order.number" [sourceId]="auctionSourceId()"
+                                            [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                             [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                             (funding)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (closed)="auctionOpen.set(false)" />
             }
@@ -927,6 +935,8 @@ type PurchaseWorkspaceSectionId =
   `],
 })
 export class PurchaseView {
+  /** One name for the container in sales texts: alias, else number. */
+  readonly containerName = containerName;
   readonly pdfOpen = signal(false);
   readonly quoteOpen = signal(false);
   readonly quoteLinesOf = quoteLinesOf;
@@ -1157,6 +1167,20 @@ export class PurchaseView {
     return data ? purchaseNacalc({ view: data, ledger: this.paymentLedger(), summary: this.nacalcSummary(),
       partner: partner === 'loading' || partner === 'error' ? null : partner }) : null;
   });
+
+  /** Correcting or settling a payment happens in the editor: open it on Betalingen. */
+  editPayments(): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'ledger' } });
+  }
+
+  /** Credits are noted in the editor: it opens on the Tegoed noteren sheet. */
+  noteCreditInEditor(): void {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'credit' } });
+  }
 
   /** Settling happens in the editor: open it on the Nacalculatie. */
   settleInEditor(): void {

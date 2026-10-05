@@ -7,6 +7,7 @@ import { messageOf } from '../../core/api/errors';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { SalesReceipts } from '../sales/sales-receipts';
 import { PartnerAdvanceSchedule } from './partner-advance-schedule';
+import { scheduleConceptNote } from './partner-advance-schedule-state';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { creditNoteStatusLabel } from '../sales/sales-credit-note';
 
@@ -75,7 +76,7 @@ import { creditNoteStatusLabel } from '../sales/sales-credit-note';
                 @if (doc.docType === 'CREDITNOTA') {
                   <article class="is-credit"><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>Creditnota op {{ creditedNumber(doc, summary) }} · {{ creditStatus(doc) }}</small><b>− {{ absEur(doc.invoiceTotalEur) | eur }} <small>incl. btw</small></b>@if (doc.status !== 'CONCEPT') { <small>{{ offsetOf(doc) | eur }} verrekend · {{ doc.creditEur | eur }} tegoed</small> } @else { <small>Concept · nog niet uitgereikt</small> }</div><a class="btn btn--sm" [routerLink]="['/sales', doc.id]">Tegoed afhandelen</a></article>
                 } @else {
-                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small>@if (doc.docType === 'FACTUUR') { <b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b> } @else { <small>Betaalafspraken · afrekening volgt later</small> }@if (doc.docType === 'FACTUUR') { @if (doc.status === 'CONCEPT') { <small>Concept · nog niet uitgegeven</small> } @else { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> } }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
+                <article><div><a [routerLink]="['/sales', doc.id]">{{ doc.number }}</a><small>{{ doc.purpose === 'PARTNER_SETTLEMENT' ? 'Veilingafrekening' : doc.docType === 'FACTUUR' ? 'Voorschotfactuur' : 'Voorschotofferte' }} · {{ statusLabel[doc.status] }}</small>@if (doc.docType === 'FACTUUR') { <b>{{ doc.invoiceTotalEur | eur }} <small>incl. btw</small></b> } @else { <small>Betaalafspraken · afrekening volgt later</small> }@if (doc.docType === 'FACTUUR') { @if (doc.status === 'CONCEPT') { <small>{{ conceptNote(doc) }}</small> } @else { <small>{{ doc.receivedEur | eur }} netto ontvangen · {{ doc.remainingEur | eur }} open</small> } }@if (doc.creditEur > 0) { <small>{{ doc.creditEur | eur }} credit</small> }</div>@if (doc.docType === 'FACTUUR') { <button class="btn btn--sm" type="button" [disabled]="opening()" (click)="open(doc.id)">Betalingen bekijken</button> }</article>
                 }
               } @empty { <p class="partner-money__hint">Nog geen partnerdocumenten gekoppeld.</p> }</div>
             </details>
@@ -158,6 +159,12 @@ export class PurchasePartnerPayments {
   private readonly sourcing = inject(SourcingApi);
   private readonly sales = inject(SalesApi);
   private readonly selectedInvoice = viewChild<ElementRef<HTMLElement>>('selectedInvoice');
+  private readonly plan = viewChild(PartnerAdvanceSchedule);
+  /** What the plan says about each term's concept: reopened or never issued only when the server says so. */
+  private readonly conceptNotes = computed(() => new Map((this.plan()?.schedule()?.rows ?? []).flatMap((row) =>
+    row.invoiceId == null ? [] : [[row.invoiceId, scheduleConceptNote({ ...row, invoiceStatus: 'CONCEPT' }, false)] as const])));
+  /** A concept in the document list: the plan's note for a term, else just 'Concept' (it may have been issued and reopened). */
+  conceptNote(doc: PartnerFinancingDocument): string { return this.conceptNotes().get(doc.id) ?? 'Concept'; }
   private version = 0;
   constructor() { effect(() => { const order = this.order(); this.docs(); if (order.partnerCustomerId != null) void this.load(order.id); }); }
   async load(id = this.order().id): Promise<void> {

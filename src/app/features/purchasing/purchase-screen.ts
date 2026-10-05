@@ -16,7 +16,7 @@ import { PurchaseView } from './purchase-view';
  * ?section=payment-result the Nacalculatie (the desk's third main view, the
  * phone's Kosten stop; both roots carry id purchase-payment-result), and
  * ?section=pay&payee=…&due=… opens the payment sheet once the payments have
- * loaded.
+ * loaded, and ?section=credit the Tegoed noteren sheet.
  */
 @Component({
   selector: 'app-purchase-screen',
@@ -52,7 +52,7 @@ export class PurchaseScreen {
   private openedPaymentsSection = '';
   private pendingPaymentsFocus: { screen: object; id: string; section: string; fallback: HTMLElement | null } | null = null;
   private readonly paymentPayees = ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER'] as const;
-  private readonly paymentDues = ['ORDERED', 'SHIPPED', 'ARRIVED'] as const;
+  private readonly paymentDues = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'] as const;
   private openedPaymentKey = '';
   /** The editor opened for a quick payment goes back to the read view once its sheet closes. */
   private returnAfterPayment: { editor: PurchaseEditor; id: string } | null = null;
@@ -142,6 +142,7 @@ export class PurchaseScreen {
   private openRequestedPayment(): void {
     const section = this.section();
     const id = this.id();
+    if (section === 'credit') { this.openRequestedCredit(id); return; }
     if (section !== 'pay') {
       this.openedPaymentKey = '';
       return;
@@ -174,6 +175,29 @@ export class PurchaseScreen {
         // later sheet opened there must not navigate away.
         this.returnAfterPayment = editor.paying() !== null ? { editor, id } : null;
       }
+    });
+  }
+
+  /** ?section=credit: the Tegoed noteren sheet on Betalingen, once the payments are in; the read view sends it to the editor. */
+  private openRequestedCredit(id: string): void {
+    const desk = this.desk();
+    const editor = this.editor();
+    const screen = desk ?? editor;
+    if (!screen) {
+      if (!this.viewer() || this.openedPaymentKey === 'credit-edit|' + id) return;
+      this.openedPaymentKey = 'credit-edit|' + id;
+      untracked(() => void this.router.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'credit' }, replaceUrl: true }));
+      return;
+    }
+    const key = 'credit|' + id;
+    if (screen.view()?.order.id !== Number(id) || screen.payments() === null || screen.paymentStateLoading()
+      || screen.paymentStateError() || this.openedPaymentKey === key) return;
+    this.openedPaymentKey = key;
+    untracked(() => {
+      if (desk) desk.mainView.set('payments');
+      else editor?.jumpToSection('purchase-payments-section', undefined, false);
+      screen.requestCredit({ kind: 'add' });
+      void this.router.navigate(this.mode() === 'edit' ? ['/purchasing', id, 'edit'] : ['/purchasing', id], { replaceUrl: true });
     });
   }
 

@@ -338,8 +338,8 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (!websiteCategoryMode) {
         <div [class.settings-section--folded]="folded('website')" class="card settings-section" id="website">
-          <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Offerteaanvraag</h2></div>
-          <div class="card__body"><app-website-quote-settings /></div>
+          <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Prijzen</h2></div>
+          <div class="card__body"><app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" /></div>
         </div>
       }
 
@@ -1388,6 +1388,11 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   );
   /** Phone: the one section that is unfolded; desktop shows them all. */
   readonly openSection = signal<string>(this.websiteCategoryMode ? 'categories' : 'company');
+  /** A saved price switch queues a website rebuild; refresh every status on the page. */
+  refreshWebsiteSync(): void {
+    this.websiteSyncRefresh.update((value) => value + 1);
+  }
+
   folded(section: string): boolean {
     return !this.desktop.active() && this.openSection() !== section;
   }

@@ -22,7 +22,7 @@ export type { NacalcKind, NacalcTone } from './purchase-payment-result-metrics';
  */
 
 export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' | 'settled-higher' | 'review' | 'additional'
-  | 'unbudgeted' | 'incomplete' | 'legacy';
+  | 'unbudgeted' | 'incomplete' | 'legacy' | 'credit';
 
 export interface NacalcHeadline {
   kind: NacalcKind;
@@ -41,6 +41,9 @@ export interface NacalcHeadline {
   reviewEur: number;
   additionalEur: number;
   fxEur: number;
+  /** Tegoed leverancier: every credit (it lowers the eindkost) and the part still to receive. */
+  creditEur: number;
+  creditOpenEur: number;
   unitEur: number | null;
   unitQuantity: number;
   unitBasis: UnitCostBasis;
@@ -77,6 +80,8 @@ export interface NacalcPayeeRow {
   tone: string;
   basis: string;
   ddpNote: boolean;
+  /** Douane & transport of a CIF container: the sea freight is paid to the supplier. */
+  cifNote: boolean;
   legacy: boolean;
   legacyEur: number;
   agreedEur: number | null;
@@ -90,6 +95,9 @@ export interface NacalcPayeeRow {
   reason: NacalcReason;
   reasonLabel: string;
   fxEur: number;
+  /** Leverancier only: the credits that lower its eindkost, and what is still to receive of them. */
+  creditEur: number;
+  creditOpenEur: number;
   status: PayeeStatus;
   action: 'add' | 'settle' | null;
   actionLabel: 'Noteer ›' | 'Afrekenen…' | 'Nakijken…' | null;
@@ -118,6 +126,8 @@ export interface NacalcReceipt {
   unitUsableEur: number | null;
   unitDeltaEur: number | null;
   supplierFact: { kind: 'settled-lower' | 'open' | 'paid-full'; amountEur: number } | null;
+  /** Tegoed leverancier noted on this container: in total and still to receive. */
+  credit: { totalEur: number; openEur: number; count: number } | null;
   later: { count: number; damaged: number; missing: number; products: string[] } | null;
   clean: boolean;
 }
@@ -206,6 +216,7 @@ export const NACALC_REASON_LABEL: Readonly<Record<NacalcReason, string>> = {
   unbudgeted: 'betaald zonder afspraak',
   incomplete: 'bedragen onvolledig',
   legacy: 'historisch betaald bij ontvangst · niet in het logboek',
+  credit: 'tegoed leverancier',
 };
 
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -214,6 +225,21 @@ const cents = (value: number | null | undefined): number => Number.isFinite(valu
 const euro = (value: number): number => value / 100;
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 const sum = (values: readonly number[]): number => values.reduce((total, value) => total + value, 0);
+
+/**
+ * The supplier's credits in cents: the server totals first, the supplier
+ * stream next, the credits themselves as a fallback for an older response.
+ */
+export function supplierCreditCents(view: Pick<PurchaseOrderView, 'reconciliation' | 'supplierCredits'>): { total: number; open: number; count: number } {
+  const credits = view.supplierCredits ?? [];
+  const totals = view.reconciliation?.totals;
+  const stream = view.reconciliation?.streams.find(item => item.payee === 'SUPPLIER');
+  const total = totals?.supplierCreditEur != null ? cents(totals.supplierCreditEur)
+    : stream?.creditEur != null ? cents(stream.creditEur) : sum(credits.map(credit => cents(credit.amountEur)));
+  const open = totals?.supplierCreditOpenEur != null ? cents(totals.supplierCreditOpenEur)
+    : sum(credits.filter(credit => credit.status === 'OPEN').map(credit => cents(credit.amountEur)));
+  return { total, open, count: credits.length };
+}
 
 /** The whole story, or null while the server report is missing: nothing is guessed from budget minus paid. */
 export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | null {
@@ -224,7 +250,8 @@ export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | nul
   const costing = view.costing.totals;
   const kind = summary.kind;
   const concept = kind === 'concept';
-  const receipt = totals.receiptRecorded ? receiptBlock(view, totals) : null;
+  const credit = supplierCreditCents(view);
+  const receipt = totals.receiptRecorded ? receiptBlock(view, totals, credit) : null;
   const payees = concept ? [] : ledger ? ledger.visible
     .filter(item => item.payee !== 'OTHER' || item.paymentCount > 0)
     .map(item => payeeRow(item, report.streams.find(stream => stream.payee === item.payee), totals, view)) : null;
@@ -241,7 +268,7 @@ export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | nul
     kind,
     label: summary.label,
     pill: summary.pill,
-    sentence: stateSentence(kind, payees, report.streams, summary),
+    sentence: stateSentence(kind, payees, report.streams, summary) + (kind !== 'concept' && credit.open > 0 ? ` · tegoed ${eur(euro(credit.open))} open` : ''),
     eindkostEur: euro(forecast),
     begrootEur: euro(begroot),
     paidEur: euro(cents(totals.paidEur)),
@@ -253,6 +280,8 @@ export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | nul
     reviewEur: summary.reviewEur,
     additionalEur: summary.additionalCostsEur,
     fxEur,
+    creditEur: euro(credit.total),
+    creditOpenEur: euro(credit.open),
     unitEur,
     unitQuantity: totals.unitCostQuantity ?? 0,
     unitBasis: totals.unitCostBasis ?? 'ORDERED',
@@ -305,7 +334,7 @@ export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | nul
       fxEur,
     },
     partner: partnerBlock(view, totals, receipt, input.partner ?? null),
-    notes: clientNotes(view, receipt, input.partner ?? null, report.notes),
+    notes: clientNotes(view, receipt, input.partner ?? null, report.notes, credit.total),
   };
 }
 
@@ -353,6 +382,7 @@ function payeeRow(
   const fx = sum(rows.map(row => cents(paymentFxEur(row, rates))));
   const reason = nacalcReason(item, stream, totals);
   const ddpNote = item.payee === 'SUPPLIER' && !!view.payable?.ddp;
+  const cifNote = item.payee === 'LOGISTICS' && !!view.order.freightViaSupplier && !view.payable?.ddp;
   const separateApart = cents(view.costing.totals.separateCostsEur) > 0 && !view.costing.totals.separateCostsInPiecePrice;
   let basis = item.basis;
   if (ddpNote) basis = (basis.startsWith('Goederen') ? 'Goederen DDP' + basis.slice('Goederen'.length) : basis) + ' · transport en invoerrechten in de DDP-prijs';
@@ -368,6 +398,7 @@ function payeeRow(
     tone: item.tone,
     basis,
     ddpNote,
+    cifNote,
     legacy,
     legacyEur: legacy ? euro(cents(totals.legacyPaidTotalEur)) : 0,
     agreedEur: item.agreedEur,
@@ -376,11 +407,13 @@ function payeeRow(
     openEur: item.openEur,
     dueNowEur: item.dueNowEur,
     laterEur: item.laterEur,
-    eindkostEur: stream ? euro(cents(stream.forecastEur)) : euro(cents(item.paidEur) + cents(item.openEur)),
+    eindkostEur: stream ? euro(cents(stream.forecastEur)) : euro(cents(item.paidEur) + cents(item.openEur) - cents(item.creditEur)),
     verschilEur: other ? item.paidEur : stream ? euro(cents(stream.varianceEur)) : 0,
     reason: reason.reason,
     reasonLabel: reason.label,
     fxEur: euro(fx),
+    creditEur: item.creditEur,
+    creditOpenEur: item.creditOpenEur,
     status: item.status,
     action,
     actionLabel,
@@ -426,10 +459,11 @@ function termRow(term: LedgerTerm): NacalcTermRow {
 /**
  * One reason word per payee, in this order: bijkomend, onvolledig, betaald
  * zonder afspraak, te veel betaald, historisch, deels afgerekend, nog open,
- * minder or meer betaald · afgerekend, geen verschil.
+ * tegoed leverancier, minder or meer betaald · afgerekend, geen verschil.
  */
 export function nacalcReason(
-  item: PayeeLedger, stream: PurchaseReconciliationStream | undefined, totals: Pick<PurchaseReconciliationTotals, 'legacyPaidTotalEur'>,
+  item: Pick<PayeeLedger, 'payee' | 'status' | 'paymentCount' | 'openEur' | 'lowerEur' | 'higherEur' | 'dueNowEur' | 'next'>
+    & Partial<Pick<PayeeLedger, 'creditEur' | 'creditOpenEur'>>, stream: PurchaseReconciliationStream | undefined, totals: Pick<PurchaseReconciliationTotals, 'legacyPaidTotalEur'>,
 ): { reason: NacalcReason; label: string } {
   const word = (reason: NacalcReason, label = NACALC_REASON_LABEL[reason]) => ({ reason, label });
   if (item.payee === 'OTHER') return word('additional');
@@ -448,6 +482,11 @@ export function nacalcReason(
     if (item.dueNowEur > 0) return word('open', `nog ${eur(item.openEur)} open · nu te betalen`);
     const moment = item.next && !item.next.now && item.next.when !== 'later' ? item.next.when : null;
     return word('open', moment ? `nog ${eur(item.openEur)} open · later ${moment}` : `nog ${eur(item.openEur)} open`);
+  }
+  const credit = cents(item.creditEur);
+  if (credit > 0) {
+    const toReceive = cents(item.creditOpenEur);
+    return word('credit', `tegoed leverancier − ${eur(euro(credit))}` + (toReceive > 0 ? ` · ${eur(euro(toReceive))} te ontvangen` : ''));
   }
   if (item.status.kind === 'SETTLED_LOWER') return word('settled-lower');
   if (item.status.kind === 'SETTLED_HIGHER') return word('settled-higher');
@@ -487,7 +526,7 @@ export function paymentFxEur(
   return euro(cents(row.amountEur) - Math.round(row.amount * rate * 100));
 }
 
-function receiptBlock(view: PurchaseOrderView, totals: PurchaseReconciliationTotals): NacalcReceipt {
+function receiptBlock(view: PurchaseOrderView, totals: PurchaseReconciliationTotals, credit: { total: number; open: number; count: number }): NacalcReceipt {
   const variance = view.receiptVariance;
   const lines = view.reconciliation?.lines ?? [];
   const missing = variance?.missingPieces ?? sum(lines.map(line => Math.max(0, line.orderedQuantity - line.receivedQuantity)));
@@ -536,6 +575,7 @@ function receiptBlock(view: PurchaseOrderView, totals: PurchaseReconciliationTot
     unitUsableEur: unitUsable,
     unitDeltaEur: unitUsable !== null && unitOrdered !== null ? round4(unitUsable - unitOrdered) : null,
     supplierFact,
+    credit: credit.total > 0 || credit.count > 0 ? { totalEur: euro(credit.total), openEur: euro(credit.open), count: credit.count } : null,
     later,
     clean: missing + damaged + over === 0 && !later,
   };
@@ -579,6 +619,11 @@ export function nacalcBridge(view: PurchaseOrderView, summary: PurchaseNacalcSum
   rows.push({ key: 'BUDGET', label: 'Afspraak extern', amountEur: euro(begroot), note: 'op bestelde aantallen en orderkoersen', op: '=' });
   rows.push({ key: 'PAID', label: 'Betaald', amountEur: euro(cents(totals.paidEur)), note: null, op: '' });
   rows.push({ key: 'OPEN', label: 'Open', amountEur: euro(cents(totals.remainingEur)), note: null, op: '+' });
+  const credit = supplierCreditCents(view);
+  if (credit.total > 0) {
+    rows.push({ key: 'CREDIT', label: 'Tegoed leverancier', amountEur: euro(credit.total),
+      note: credit.open > 0 ? `waarvan ${eur(euro(credit.open))} nog te ontvangen` : 'terugbetaald of verrekend', op: '−' });
+  }
   rows.push({ key: 'FORECAST', label: summary.kind === 'final' ? 'Eindkost' : 'Verwachte eindkost', amountEur: euro(cents(totals.forecastExternalEur)), note: null, op: '=' });
   if (summary.reviewEur > 0) rows.push({ key: 'REVIEW', label: 'waarvan te veel betaald · nakijken', amountEur: summary.reviewEur, note: null, op: '' });
   if (summary.additionalCostsEur > 0) rows.push({ key: 'ADDITIONAL', label: 'waarvan bijkomende kosten', amountEur: summary.additionalCostsEur, note: null, op: '' });
@@ -619,8 +664,13 @@ function partnerBlock(
 }
 
 /** The server's notes verbatim, then what the client adds and the server does not say yet. */
-function clientNotes(view: PurchaseOrderView, receipt: NacalcReceipt | null, financing: PartnerFinancing | null, server: readonly string[]): string[] {
+function clientNotes(
+  view: PurchaseOrderView, receipt: NacalcReceipt | null, financing: PartnerFinancing | null, server: readonly string[], creditCents = 0,
+): string[] {
   const notes = [...server];
+  if (creditCents > 0 && !server.some(note => /[Tt]egoed/.test(note))) {
+    notes.push('Een tegoed van de leverancier verlaagt de eindkost van de leverancier, ook zolang het nog open staat; Betaald en Open blijven zoals ze zijn.');
+  }
   if (!server.some(note => /USD of CNY/.test(note))) {
     notes.push('Betalingen in USD of CNY tellen tegen hun geboekte eurobedrag (orderkoers, of het afgeschreven bankbedrag als dat is ingevuld).');
   }

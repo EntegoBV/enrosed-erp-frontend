@@ -8,6 +8,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { auctionLineSplit, auctionTotals } from './partner-settlement';
 import { partialSettlementPreview } from './partner-settlement-progress';
+import { containerPhrase } from '../purchasing/container-name';
 
 /** One product of the container as it appears on the partner's statement. */
 export interface AuctionSheetLine {
@@ -32,7 +33,7 @@ export interface AuctionSheetLine {
   template: `
     <app-sheet [title]="finalBatch() ? 'Resterende container afrekenen' : 'Deelveiling afrekenen'" (closed)="closed.emit()">
       <div body class="as">
-        <p class="as__intro">Vul per product in wat het netto op de veiling opbracht, na veilingkosten, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor container {{ reference() }} }.
+        <p class="as__intro">Vul per product in wat het netto op de veiling opbracht, na veilingkosten, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor {{ phrase(reference()) }} }.
           Elke afrekening bevat alleen de stuks van deze veiling, hun externe kost en ons winst- of verliesaandeel. Het bijbehorende voorschot wordt evenredig verrekend; de laatste afrekening neemt het resterende saldo mee.</p>
         @if (customerId() === null) {
           <div class="field">
@@ -182,8 +183,9 @@ export class AuctionSettlementSheet {
   readonly customerId = input<number | null>(null);
   readonly customerName = input('');
   readonly purchaseOrderId = input<number | null>(null);
-  /** The container's number, for the invoice text. */
+  /** Our own name for the container (alias, else number), for the invoice text. */
   readonly reference = input<string | null>(null);
+  readonly phrase = containerPhrase;
   /** The cost document the partner paid, when there is one. */
   readonly sourceId = input<number | null>(null);
   readonly costSharePct = input(100);

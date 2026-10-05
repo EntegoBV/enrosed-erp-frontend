@@ -12,7 +12,7 @@ import { CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import type { NacalcPayeeRow, NacalcReason, NacalcTone, PurchaseNacalc } from './purchase-nacalc-metrics';
-import type { Due, LedgerTone, PaymentLedger, PurchaseSettleRequest } from './purchase-payment-ledger';
+import type { Due, LedgerTone, PaymentLedger, PurchaseSettleRequest, SupplierCreditAction } from './purchase-payment-ledger';
 import { formatEur } from './purchase-payment-menus';
 
 type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: MenuPoint; row: NacalcPayeeRow };
@@ -61,7 +61,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
           <div class="wk-strip__item nc-cell nc-cell--grand">
             <span class="wk-strip__label">{{ head.label }} <span class="wk-pill nc-pill" [class]="pillClass(head.pill.tone)">{{ head.pill.label }}</span></span>
             <span class="wk-strip__value">{{ head.eindkostEur | eur }}</span>
-            <small class="nc-strip__sub">@if (concept) { volgens de calculatie · nog niets betaald } @else if (head.kind === 'final') { betaald {{ head.paidEur | eur }} · alles afgerekend } @else { betaald {{ head.paidEur | eur }} + open {{ head.openEur | eur }} }</small>
+            <small class="nc-strip__sub">@if (concept) { volgens de calculatie · nog niets betaald } @else if (head.kind === 'final') { betaald {{ head.paidEur | eur }} · alles afgerekend } @else { betaald {{ head.paidEur | eur }} + open {{ head.openEur | eur }} }@if (!concept && head.creditEur > 0) { − tegoed {{ head.creditEur | eur }} }</small>
           </div>
           <span class="wk-strip__op nc-op" aria-hidden="true">=</span>
           <div class="wk-strip__item nc-cell">
@@ -142,7 +142,8 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                             @if (row.legacy) { <span class="wk-td__sub">historisch {{ row.legacyEur | eur }} bij ontvangst</span> }</span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (row.agreedEur === null) { — } @else { {{ row.openEur | eur }} }
                             @if (row.dueNowEur > 0 && row.laterEur > 0) { <span class="wk-td__sub" data-nc-hide="mid">{{ row.dueNowEur | eur }} nu · {{ row.laterEur | eur }} later</span> }</span>
-                          <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ row.eindkostEur | eur }}</span>
+                          <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ row.eindkostEur | eur }}
+                            @if (row.creditEur > 0) { <span class="wk-td__sub wk-amount--in">Tegoed leverancier − {{ row.creditEur | eur }}</span> }</span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0 || row.reason === 'review'" [class.wk-amount--muted]="row.verschilEur === 0 && row.reason !== 'review'">
                             @if (row.reason === 'incomplete') { — } @else { {{ signed(row.verschilEur) }} }
                             <span class="wk-td__sub nc-reason" data-nc-hide="mid">{{ row.reasonLabel }}</span>
@@ -224,14 +225,24 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                         <p class="nc-muted">
                           @switch (fact.kind) {
                             @case ('settled-lower') { Leverancier afgerekend met {{ fact.amountEur | eur }} minder betaald. }
-                            @case ('open') { Nog {{ fact.amountEur | eur }} open bij de leverancier — reken lager af als je de tekorten verrekent. }
-                            @default { De leverancier is volledig betaald; het verlies van {{ fact.amountEur | eur }} blijft bij Enrosed. Een terugbetaling kan hier nog niet worden genoteerd; verreken het op de volgende order. }
+                            @case ('open') { Nog {{ fact.amountEur | eur }} open bij de leverancier — reken lager af als je de tekorten verrekent, of noteer een tegoed. }
+                            @default {
+                              @if (receipt.credit) { De leverancier is volledig betaald; het verlies op inkoopwaarde was {{ fact.amountEur | eur }}. }
+                              @else { De leverancier is volledig betaald; het verlies van {{ fact.amountEur | eur }} blijft bij Enrosed tenzij de leverancier het terugbetaalt of verrekent: noteer het als tegoed. }
+                            }
                           }
                         </p>
                       }
                       @if (receipt.over > 0) {
                         <p class="nc-muted">{{ receipt.over | num }} stuks meer dan besteld: de leverancier kan @if (receipt.overValueEur === null) { ≈ — } @else { ≈ {{ receipt.overValueEur | eur }} } extra factureren ({{ receipt.over | num }} × inkoopwaarde). Noteer die betaling als Leverancier en reken dan hoger af.</p>
                       }
+                    }
+                    @if (receipt.credit; as credit) {
+                      <p class="nc-muted nc-credit">Tegoed leverancier {{ credit.totalEur | eur }} genoteerd@if (credit.openEur > 0) { · <span class="wk-amount--warn">{{ credit.openEur | eur }} nog te ontvangen</span> } @else { · terugbetaald of verrekend } · verlaagt de eindkost.
+                        <button class="wk-link" type="button" (click)="openPayments.emit('SUPPLIER')">Bekijken ›</button></p>
+                    }
+                    @if (!receipt.clean || receipt.credit) {
+                      <p class="nc-muted"><button class="wk-btn wk-btn--sm" type="button" [disabled]="!actionable()" (click)="credit.emit({ kind: 'add' })">Tegoed noteren…</button></p>
                     }
                     @if (receipt.later; as later) {
                       <p class="nc-muted nc-later">Na uitpakken gemeld: @if (later.damaged) { {{ later.damaged | num }} beschadigd }@if (later.damaged && later.missing) { / }@if (later.missing) { {{ later.missing | num }} te weinig } ({{ later.products.join(', ') }}) · uit voorraad genomen, niet in de kostprijs verwerkt.
@@ -318,6 +329,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                     <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>minder betaald · afgerekend</dt><dd [class.wk-amount--in]="ex.savingsEur > 0">{{ ex.savingsEur | eur }}</dd></div>
                     <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>meer betaald · afgerekend</dt><dd [class.wk-amount--warn]="ex.overrunsEur > 0">{{ ex.overrunsEur | eur }}</dd></div>
                     <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>bijkomend</dt><dd [class.wk-amount--warn]="ex.additionalEur > 0">{{ ex.additionalEur | eur }}</dd></div>
+                    @if (head.creditEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>tegoed leverancier</dt><dd class="wk-amount--in">{{ head.creditEur | eur }}</dd></div> }
                     @if (ex.fxEur !== 0) { <div class="is-sub"><dt>koersverschil · zit al in betaald</dt><dd>{{ signed(ex.fxEur) }}</dd></div> }
                     @if (ex.openEur > 0) { <div class="is-sub"><dt>nog open · blijft in de eindkost tot afrekening</dt><dd>{{ ex.openEur | eur }}</dd></div> }
                   </dl>
@@ -430,6 +442,8 @@ export class PurchaseNacalcWorkbench {
   readonly openReports = output<void>();
   readonly applyCosts = output<void>();
   readonly openCosts = output<void>();
+  /** 'Tegoed noteren…' in the Ontvangst block. */
+  readonly credit = output<SupplierCreditAction>();
 
   readonly menu = signal<MenuState | null>(null);
   readonly pdfBusy = signal(false);
@@ -452,7 +466,7 @@ export class PurchaseNacalcWorkbench {
 
   tone(tone: LedgerTone): string { return tone === 'warn' ? 'tone-warn' : tone === 'ok' ? 'tone-ok' : ''; }
   /** Next to the status pill only a reason that says more than the pill does: how much is open, what is historic, what has no agreement. */
-  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional'; }
+  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional' || reason === 'credit'; }
   pillClass(tone: NacalcTone): string { return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : ''; }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
   toggle(payee: Payee): void {
@@ -519,6 +533,7 @@ export class PurchaseNacalcWorkbench {
       { id: 'payments', label: `Betalingen van ${row.label} ›`, iconName: 'list' },
       ...(row.canUndoSettle ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
       ...(row.payee === 'SUPPLIER' && row.terms.length && !row.termsMixed ? [{ id: 'terms', label: 'Termijnen ›', iconName: 'calendar' }] : []),
+      ...(row.payee === 'SUPPLIER' ? [{ id: 'credit', label: 'Tegoed noteren…', iconName: 'receipt', disabled: busy }] : []),
       ...(row.payee === 'LOGISTICS' || row.payee === 'SEPARATE' ? [{ id: 'costs', label: 'Bedrag in Kosten aanpassen ›', iconName: 'pencil' }] : []),
     ];
   }
@@ -540,6 +555,7 @@ export class PurchaseNacalcWorkbench {
     switch (item.id) {
       case 'undo': this.undoSettle.emit({ payee: open.row.payee }); break;
       case 'terms': this.expanded.update(set => new Set([...set, open.row.payee])); break;
+      case 'credit': this.credit.emit({ kind: 'add' }); break;
       case 'costs': this.openCosts.emit(); break;
       default: this.openPayments.emit(open.row.payee);
     }

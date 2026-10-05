@@ -1,6 +1,7 @@
 import type { ContextMenuItem } from '../../shared/context-menu';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger, type PurchaseSettleRequest,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, type LedgerCredit, type LedgerRow, type LedgerTerm, type LedgerTodo, type PayeeLedger,
+  type PaymentLedger, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
 
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -16,7 +17,7 @@ export function formatEur(value: number): string {
  * cell all read the same three strings; the read view only asks for a proof.
  */
 export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { title: string; detail: string; action: string } {
-  const action = { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', proof: 'Toon' }[todo.kind];
+  const action = { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', credit: 'Bekijken', proof: 'Toon' }[todo.kind];
   switch (todo.kind) {
     case 'pay': return { title: todo.label, action,
       detail: `${formatEur(todo.amountEur)} · nu te betalen${todo.due ? ' · ' + PAYEE_LABEL[todo.payee] : ''}` };
@@ -24,6 +25,8 @@ export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { ti
     case 'review': return { title: `Te veel betaald aan ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} meer dan afgesproken` };
     case 'budget': return { title: `Betaald zonder afspraak: ${PAYEE_LABEL[todo.payee]}`, action, detail: `${formatEur(todo.amountEur)} betaald zonder bedrag in Kosten` };
     case 'incomplete': return { title: `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`, action, detail: 'Controleer het bedrag van deze betaling' };
+    case 'credit': return { title: `Tegoed open bij ${PAYEE_LABEL[todo.payee]}`, action,
+      detail: `${formatEur(todo.amountEur)} te ontvangen · terugbetaling of verrekening` };
     case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`, action,
       detail: mode === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt' };
   }
@@ -44,9 +47,67 @@ export function payeeRowMenuItems(payee: PayeeLedger, busy: boolean): ContextMen
     { id: 'add', label: 'Betaling noteren', iconName: 'plus', disabled: busy },
     ...(payee.canSettle ? [{ id: 'settle', label: 'Afrekenen…', iconName: 'tick', disabled: busy }] : []),
     ...(payee.canUndoSettle ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
-    ...(payee.payee === 'SUPPLIER' ? [{ id: 'plan', label: 'Betaalplan wijzigen', iconName: 'calendar', disabled: busy }] : []),
+    ...(payee.payee === 'SUPPLIER' ? [{ id: 'plan', label: 'Betaalplan wijzigen', iconName: 'calendar', disabled: busy },
+      { id: 'credit', label: 'Tegoed noteren…', iconName: 'receipt', disabled: busy }] : []),
     { id: 'show', label: 'Toon betalingen', iconName: 'list', divider: true },
   ];
+}
+
+/** A supplier term that still takes money: it shows 'Noteer' and its open amount. */
+export function termOpen(term: LedgerTerm): boolean {
+  return term.openEur > 0 && !term.settled;
+}
+
+/**
+ * Whether a term row offers its ⋯ menu (desk) or opens one on a tap (phone
+ * editor): something to pay, to settle or confirm, to undo, or a tied payment
+ * to correct. A paid term stays reachable this way, so a payment entered
+ * wrongly, or a settlement undone, never leaves the row without a way out.
+ */
+export function termHasMenu(term: LedgerTerm): boolean {
+  return termOpen(term) || term.canSettle || term.canConfirm || term.canUndo || term.paymentIds.length > 0;
+}
+
+/** The menu of one supplier term, the same on the desk and in the phone payee sheet. */
+export function termMenuItems(term: LedgerTerm, busy: boolean): ContextMenuItem[] {
+  return [
+    ...(termOpen(term) ? [{ id: 'add', label: 'Betaling noteren voor deze termijn', iconName: 'plus', disabled: busy }] : []),
+    ...(term.canSettle || term.canConfirm ? [{ id: 'settle', label: 'Termijn afrekenen', iconName: 'tick', disabled: busy }] : []),
+    ...(term.canUndo ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
+    ...(term.paymentIds.length ? [{ id: 'edit', label: 'Betaling aanpassen…', iconName: 'pencil', disabled: busy }] : []),
+  ];
+}
+
+/** The payment 'Betaling aanpassen…' opens from a term: the newest one tied to it. */
+export function termPayment(term: LedgerTerm, rows: readonly LedgerRow[]): LedgerRow | null {
+  const id = term.paymentIds[0];
+  return id === undefined ? null : rows.find(row => row.id === id) ?? null;
+}
+
+/**
+ * The payment to link to a term when the settle sheet finds none tied to it:
+ * the newest one of the payee without a term (a whole-supplier settlement
+ * strips it), else the newest payment at all.
+ */
+export function relinkPayment(payee: Pick<PayeeLedger, 'rows'>): LedgerRow | null {
+  return payee.rows.find(row => row.due === null) ?? payee.rows[0] ?? null;
+}
+
+/**
+ * The menu of one supplier credit: an open one is refunded, offset on
+ * another container, corrected or removed; a refunded one can be opened
+ * again; an offset one is undone on the other container (its payment).
+ */
+export function creditMenuItems(credit: LedgerCredit, busy: boolean): ContextMenuItem[] {
+  if (credit.status === 'OPEN') return [
+    { id: 'refund', label: 'Terugbetaald noteren…', iconName: 'bank', disabled: busy },
+    { id: 'offset', label: 'Verrekenen met…', iconName: 'exchange', disabled: busy },
+    { id: 'edit', label: 'Aanpassen…', iconName: 'pencil', disabled: busy },
+    { id: 'remove', label: 'Verwijderen', iconName: 'trash', danger: true, divider: true, disabled: busy },
+  ];
+  if (credit.status === 'REFUNDED') return [{ id: 'undo-refund', label: 'Terugbetaling ongedaan maken', iconName: 'restore', disabled: busy }];
+  return credit.credit.offsetOrderId != null
+    ? [{ id: 'open-offset', label: `Naar ${credit.credit.offsetOrderNumber ?? 'de andere container'} ›`, iconName: 'purchase' }] : [];
 }
 
 /** The menu of one payment. Only the desk moves a payment to another payee from here; the phone does it in the sheet. */
@@ -59,7 +120,8 @@ export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy:
     ...proofs.map(proof => ({ id: 'open:' + proof.id, iconName: 'document',
       label: proofs.length === 1 ? 'Bewijs openen' : 'Bewijs openen · ' + proof.originalFilename })),
   ];
-  if (options.move) {
+  // A verrekend tegoed stays with the supplier: its amount and payee belong to the credit on the other container.
+  if (options.move && !row.creditOffset) {
     PAYEE_ORDER.filter(payee => payee !== row.payee).forEach((payee, index) => items.push({
       id: 'move:' + payee, label: 'Verplaatsen naar ' + PAYEE_LABEL[payee], iconName: PAYEE_ICON[payee], divider: index === 0, disabled: busy,
     }));

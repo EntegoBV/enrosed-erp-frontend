@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { Currency, Payee } from '../../core/api/models';
+import type { Currency, Payee, PurchaseCreditOffset } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
@@ -8,7 +8,7 @@ import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
-import { DUE_MOMENT, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due } from './purchase-payment-ledger';
+import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due } from './purchase-payment-ledger';
 import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
 
@@ -45,9 +45,12 @@ let nextSheetId = 0;
       <div body class="pay-sheet" [attr.inert]="busy() ? '' : null">
         <div class="pay-sheet__who">
           <span class="pay-sheet__label">Aan wie?</span>
-          <app-segmented label="Aan wie?" [variant]="desk() ? 'desk' : 'ios'" [options]="payees"
+          <app-segmented label="Aan wie?" [variant]="desk() ? 'desk' : 'ios'" [options]="payeeOptions()"
                          [value]="pay.payee" (changed)="payeeChange.emit($any($event))" />
         </div>
+        @if (creditOffset(); as offset) {
+          <p class="pay-sheet__note" role="note">Verrekend tegoed{{ offset.sourceOrderNumber ? ' van ' + offset.sourceOrderNumber : '' }}: bedrag, munt en ontvanger horen bij dat tegoed. Verwijder deze betaling om de verrekening ongedaan te maken.</p>
+        }
         @if (moved(); as text) { <p class="pay-sheet__note pay-sheet__note--warn" role="status">{{ text }}</p> }
         @if (!pay.id && pay.payee === 'SUPPLIER' && chips().length) {
           <div class="pay-sheet__chips" role="group" aria-label="Snel invullen">
@@ -63,9 +66,9 @@ let nextSheetId = 0;
           <div class="field pay-sheet__amount">
             <label [for]="ids + '-amount'">Bedrag</label>
             <div class="input-affix">
-              <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+              <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset()"
                      [ngModel]="pay.amountInput" (ngModelChange)="amountInput.emit($event)" />
-              <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy()" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
+              <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy() || !!creditOffset()" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
                 <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
               </select>
             </div>
@@ -87,7 +90,7 @@ let nextSheetId = 0;
             <div class="field span-2 pay-sheet__bank">
               <label [for]="ids + '-eur'">Afgeschreven in euro <span class="opt"></span></label>
               <div class="input-affix">
-                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset()"
                        [placeholder]="rateEur() > 0 ? rateText() : ''" [ngModel]="pay.amountEurInput ?? ''" (ngModelChange)="amountEurInput.emit($event)" />
                 <span class="input-affix__suffix">EUR</span>
               </div>
@@ -142,6 +145,8 @@ export class PurchasePaymentSheet {
   readonly loading = input(false);
   readonly proofSlots = input(5);
   readonly groupLabel = input('Leverancier');
+  /** Editing a payment that offsets a credit of another container: amount, currency and payee stay as the credit set them. */
+  readonly creditOffset = input<PurchaseCreditOffset | null>(null);
   readonly patch = output<Partial<PurchasePaymentDraft>>();
   readonly amountInput = output<string>();
   readonly amountEurInput = output<string>();
@@ -153,6 +158,8 @@ export class PurchasePaymentSheet {
   readonly ids = `payment-sheet-${++nextSheetId}`;
   readonly desk = computed(() => this.viewport.active());
   readonly payees: SegmentOption[] = PAYEE_ORDER.map(payee => ({ id: payee, label: PAYEE_SHORT[payee], ariaLabel: PAYEE_LABEL[payee] }));
+  readonly payeeOptions = computed<SegmentOption[]>(() => this.creditOffset()
+    ? this.payees.map(option => ({ ...option, disabled: option.id !== this.draft().payee })) : this.payees);
   /** Open by default when the payment already counts for a term or settles something. */
   readonly scopeOpen = linkedSignal<number | null, boolean>({
     source: () => this.draft().id ?? null,
@@ -161,7 +168,7 @@ export class PurchasePaymentSheet {
   readonly scopeSummary = computed(() => {
     const pay = this.draft();
     const due = pay.payee === 'SUPPLIER' ? pay.instalmentDue : null;
-    const term = due ? this.instalmentOptions().find(option => option.due === due)?.label ?? 'termijn ' + DUE_MOMENT[due] : null;
+    const term = due ? this.instalmentOptions().find(option => option.due === due)?.label ?? (due === 'FREIGHT' ? FREIGHT_TERM_LABEL : 'termijn ' + DUE_MOMENT[due]) : null;
     return `${term ? 'Telt voor ' + term : 'Automatisch'} · ${!pay.settles ? 'niet afgerekend' : due ? 'rekent termijn af' : 'rekent alles af'}`;
   });
   /** The order-rate estimate as a typable placeholder, e.g. 18.450,00. */

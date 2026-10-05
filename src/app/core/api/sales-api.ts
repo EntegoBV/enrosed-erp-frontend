@@ -8,7 +8,7 @@ import {
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, SalesPayment, SalesPaymentRequest, IncomingPaymentRow, SalesPurpose, SalesPaymentPlan, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
   SalesSplitEligibility, SalesSplitRequest, SalesSplitPreview, SalesSplitCommitRequest, SalesSplitResult,
-  CreditNoteProposal, CreditNoteRequest,
+  CreditNoteProposal, CreditNoteRequest, SalesAdvanceInvoiceRequest,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -139,7 +139,12 @@ export class SalesApi {
     return firstValueFrom(this.http.post<SalesOrderView>(api('/api/sales-orders/auction-settlement'), body));
   }
 
-  /** Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. */
+  /** A concept voorschotfactuur on a regular quote: a percentage of its total excl. VAT, or an amount. Nothing is sent. */
+  createAdvanceInvoice(quoteId: number, body: SalesAdvanceInvoiceRequest): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/advance-invoice`), body));
+  }
+
+  /** Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. With advances it is the slotfactuur. */
   createInvoiceFrom(quoteId: number): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice`), {}));

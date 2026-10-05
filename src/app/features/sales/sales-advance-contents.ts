@@ -5,6 +5,7 @@ import type { Product, PurchaseOrderView, SalesOrderView } from '../../core/api/
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, WeekNlPipe } from '../../shared/pipes';
 import { advanceContentsFor, advanceContentsSummary, advanceProductPhoto } from './sales-advance-contents-state';
+import { containerNumberHint, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
 import { advancePurchasePricing } from './sales-advance-pricing';
 
 @Component({
@@ -14,7 +15,7 @@ import { advancePurchasePricing } from './sales-advance-pricing';
   template: `
     <section class="advance-contents" [attr.aria-label]="mode() === 'products' ? 'Productinhoud van de partnercontainer' : 'Levering van de partnercontainer'">
       <header><div><span>Partnercontainer</span><h2>{{ mode() === 'products' ? 'Producten & prijzen' : 'Transport & levering' }}</h2></div>
-        @if (view().order.partnerPurchaseOrderId; as purchaseId) { <a [routerLink]="['/purchasing', purchaseId]">{{ contents()?.purchaseOrderNumber || 'Inkooporder bekijken' }} <span aria-hidden="true">↗</span></a> }
+        @if (view().order.partnerPurchaseOrderId; as purchaseId) { <a [routerLink]="['/purchasing', purchaseId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'Inkooporder bekijken' }} <span aria-hidden="true">↗</span></a> }
       </header>
       @if (contents(); as contents) {
         @if (mode() === 'products') {
@@ -97,6 +98,9 @@ export class SalesAdvanceContents {
   readonly pricingLoading = signal(false);
   readonly pricingError = signal(false);
   readonly pricing = computed(() => advancePurchasePricing(this.view(), this.purchase()));
+  /** Our own container name: the loaded purchase order when there is one, else the server's live name, else the snapshot. */
+  readonly containerLabel = computed(() => salesContainerName(this.view(), this.purchase()?.order));
+  readonly containerNumber = computed(() => containerNumberHint(this.containerLabel(), salesContainerNumber(this.view(), this.purchase()?.order)));
 
   constructor() {
     effect(onCleanup => {

@@ -1,0 +1,78 @@
+// Voorschotfacturen and the slotfactuur of regular sales (sales round 2026-09-30, G4):
+// the quote card, the create sheet, the slotfactuur's deductions block and the container's list.
+// Everything is scoped under adv-*; kit classes are never restyled here.
+
+/* ============================================================ the cards */
+.adv-card { display: grid; gap: 12px; min-width: 0; margin: 14px 0; padding: 16px; border: 1px solid var(--rose-line); border-radius: 16px; background: var(--rose-soft); }
+.adv-card--final { background: var(--surface); border-color: var(--line); }
+.adv-card__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 14px; }
+.adv-card__head > div { display: grid; gap: 3px; min-width: 0; }
+.adv-card__head span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; overflow-wrap: anywhere; }
+.adv-card__head h2 { margin: 0; font-size: 17px; }
+.adv-card__head .btn { min-height: 44px; }
+.adv-card__link { display: inline-flex; align-items: center; min-height: 44px; color: var(--rose-dark); font-size: 12px; font-weight: 650; }
+.adv-card__copy, .adv-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.adv-note--warn { color: var(--warn); font-weight: 650; }
+.adv-card__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.adv-card__actions .btn { min-height: 44px; }
+
+.adv-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.adv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 16px; min-height: 44px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none; transition: border-color .15s, background .15s; }
+.adv-row:hover, .adv-row:focus-visible { border-color: var(--rose); background: var(--surface-2); }
+.adv-row__who, .adv-row__money { display: grid; gap: 3px; min-width: 0; }
+.adv-row__who b { font-size: 13px; overflow-wrap: anywhere; }
+.adv-row small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.adv-row__money { text-align: right; font-variant-numeric: tabular-nums; }
+.adv-row__money b { font-size: 14px; white-space: nowrap; }
+
+.adv-pill { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.adv-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.adv-pill--ok { background: var(--ok-soft); color: var(--ok); }
+.adv-pill--warn { background: var(--warn-soft); color: var(--warn); }
+.adv-pill--rose { background: var(--rose-soft); color: var(--rose-dark); }
+
+.adv-sum { display: grid; gap: 6px; margin: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.adv-sum > div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.adv-sum dt { color: var(--muted); font-size: 12px; }
+.adv-sum dt small { display: block; font-size: 10px; }
+.adv-sum dd { margin: 0; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adv-sum__rest dt { color: var(--ink); font-weight: 650; }
+.adv-sum__rest dd { font-size: 15px; }
+
+@media (max-width: 520px) {
+  .adv-card { padding: 13px; }
+  .adv-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .adv-row .adv-pill { grid-column: 1 / -1; }
+}
+
+/* ============================================================ the create sheet */
+.adv-sheet { display: grid; gap: 16px; min-width: 0; }
+.adv-sheet__lead { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.adv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.adv-chip { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.adv-chip--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+.adv-chip:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+.adv-field { display: grid; gap: 6px; min-width: 0; }
+.adv-field > span { font-size: 12px; font-weight: 650; }
+.adv-field .input { min-height: 44px; }
+.adv-opt { color: var(--muted); font-weight: 500; }
+.adv-hint { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
+.adv-preview { display: grid; gap: 7px; margin: 0; padding: 13px 14px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); font-variant-numeric: tabular-nums; }
+.adv-preview > div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.adv-preview dt { color: var(--ink-2); font-size: 12.5px; }
+.adv-preview dt small { color: var(--muted); font-size: 11px; }
+.adv-preview dd { margin: 0; font-size: 13.5px; font-weight: 650; white-space: nowrap; }
+.adv-preview__total { padding-top: 7px; border-top: 1px solid var(--rose-line); }
+.adv-preview__total dt, .adv-preview__total dd { color: var(--rose-dark); font-size: 15px; font-weight: 750; }
+.adv-preview__rest dt, .adv-preview__rest dd { color: var(--muted); font-size: 12px; font-weight: 500; }
+.adv-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 12.5px; line-height: 1.5; }
+.adv-error--foot { flex-basis: 100%; }
+.sheet--ios .adv-field .input { font-size: 16px; }
+
+/* ============================================================ the header tag of an advance / slotfactuur */
+.adv-tag { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 11px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.adv-tag:hover, .adv-tag:focus-visible { background: var(--surface-2); }
+
+/* ============================================================ a voorschotfactuur's fixed amount (desk and phone editor) */
+.adv-lock { margin: 0; padding: 12px 13px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); color: var(--ink-2); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.adv-lock--desk { margin: 8px 16px 0; }

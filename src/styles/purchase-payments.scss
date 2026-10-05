@@ -79,6 +79,11 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-comp-row--caption>.wk-td,.pw-comp-row--link>.wk-td{grid-column:2/-1;padding-left:36px;color:var(--muted);font-size:12px}
 .pw-comp-row--caption>.wk-td.wk-amount--warn{color:var(--warn)}
 .pw-comp-row--link .wk-link{margin-left:6px}
+/* Tegoed leverancier: what and where it stands across the name columns, the credit before the ⋯ */
+.pw-credit-row>.pw-credit__label{grid-column:2/-3;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;min-width:0;padding-left:36px}
+.pw-credit__what{display:grid;min-width:0}.pw-credit__what .wk-td__sub{white-space:normal;overflow-wrap:anywhere}
+.pw-credit-row>.pw-credit__amount{grid-column:-3/-2;color:var(--ok)}
+.pw-credit-row>.pw-credit__actions{grid-column:-2/-1}
 .pw-divider{margin-top:10px;border-top:1px solid var(--line)}
 .pw-status-link{display:block;margin-top:2px;font-size:11.5px;text-align:left}
 .pw-payees .wk-td--wrap .pw-status-sub{white-space:normal;overflow:visible}
