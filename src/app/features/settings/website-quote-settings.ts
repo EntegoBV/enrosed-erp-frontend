@@ -1,17 +1,19 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { SalesApi, WebsiteQuoteSettings as QuoteSettings } from '../../core/api/sales-api';
 import { messageOf } from '../../core/api/errors';
 import { Ui } from '../../shared/ui';
+import { WebsiteSyncStatus } from './website-sync-status';
 
 @Component({
   selector: 'app-website-quote-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [WebsiteSyncStatus],
   template: `
     <div class="quote-setting" [attr.aria-busy]="loading() || saving()">
       <div class="quote-setting__row">
         <div>
-          <h3 id="quote-prices-label">Prijzen tonen bij offerteaanvraag</h3>
-          <p id="quote-prices-description">Toon stukprijzen, kortingen, bezorgkosten en totalen tijdens het samenstellen van een aanvraag op de website.</p>
+          <h3 id="quote-prices-label">Prijzen tonen op de website</h3>
+          <p id="quote-prices-description">Geldt voor de productpagina’s en het offerte- en bestelscherm. Staat dit uit, dan ziet een bezoeker nergens op de website een prijs.</p>
         </div>
         <button class="quote-setting__switch" type="button" role="switch"
                 aria-labelledby="quote-prices-label" aria-describedby="quote-prices-description"
@@ -30,8 +32,8 @@ import { Ui } from '../../shared/ui';
         } @else if (settings(); as current) {
           <b>{{ current.pricesVisible ? 'Prijzen zichtbaar' : 'Prijzen verborgen' }}</b>
           <span>{{ current.pricesVisible
-            ? 'Bezoekers zien een indicatieve prijs bij hun selectie.'
-            : 'Bezoekers kiezen producten en aantallen. De prijs volgt in jullie offerte.' }}</span>
+            ? 'Bezoekers zien prijzen op de productpagina’s en in het offerte- en bestelscherm.'
+            : 'Bezoekers zien geen bedragen. Bij elk product staat dat de prijs op aanvraag is. De prijs volgt in jullie offerte.' }}</span>
         }
       </p>
       @if (error(); as failure) {
@@ -40,7 +42,8 @@ import { Ui } from '../../shared/ui';
           <button class="btn btn--sm" type="button" [disabled]="loading() || saving()" (click)="load()">Opnieuw laden</button>
         </div>
       }
-      <p class="quote-setting__hint">Geldt voor alle websitetalen. Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen. Wijzigingen worden meteen opgeslagen.</p>
+      <p class="quote-setting__hint">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. Daarna wordt de website automatisch opnieuw opgebouwd. Dat duurt enkele minuten. Hieronder zie je wanneer de website is bijgewerkt. Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</p>
+      <app-website-sync-status [refreshKey]="syncRefreshKey()" />
     </div>
   `,
   styles: `
@@ -72,6 +75,12 @@ export class WebsiteQuoteSettings {
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  /** Host counter, so a rebuild queued elsewhere on the page also refreshes this status. */
+  readonly refreshKey = input(0);
+  /** Emits after a saved change; the backend has queued a website rebuild by then. */
+  readonly saved = output<void>();
+  private readonly ownRefresh = signal(0);
+  readonly syncRefreshKey = computed(() => this.refreshKey() + this.ownRefresh());
 
   constructor() { void this.load(); }
 
@@ -96,7 +105,11 @@ export class WebsiteQuoteSettings {
     try {
       const saved = this.checked(await this.sales.saveWebsiteQuoteSettings({ pricesVisible: !current.pricesVisible }));
       this.settings.set(saved);
-      this.ui.toast(saved.pricesVisible ? 'Prijzen zichtbaar bij offerteaanvraag' : 'Prijzen verborgen bij offerteaanvraag', 'ok');
+      this.ui.toast(saved.pricesVisible
+        ? 'Prijzen zichtbaar op de website. De website wordt bijgewerkt.'
+        : 'Prijzen verborgen op de website. De website wordt bijgewerkt.', 'ok');
+      this.ownRefresh.update((value) => value + 1);
+      this.saved.emit();
     } catch (failure) {
       this.error.set(messageOf(failure, 'Opslaan kon niet worden bevestigd. Laad de instelling opnieuw.'));
     } finally {

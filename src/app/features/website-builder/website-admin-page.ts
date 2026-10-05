@@ -69,7 +69,7 @@ import { WebsiteTranslationQueue } from './website-translation-queue';
         </a>
         <a class="workspace-card" routerLink="/settings" [queryParams]="{ sectie: 'website' }">
           <span aria-hidden="true">07</span>
-          <div><b>Offerteaanvraag</b><small>Kies of bezoekers prijzen zien bij het samenstellen van hun offerteaanvraag.</small></div>
+          <div><b>Prijzen op de website</b><small>Kies of bezoekers prijzen zien op de productpagina’s en in het offerte- en bestelscherm.</small></div>
           <strong>Prijsweergave instellen →</strong>
         </a>
       </section>

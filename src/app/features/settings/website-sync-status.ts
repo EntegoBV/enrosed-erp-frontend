@@ -22,17 +22,19 @@ interface WebsiteRebuildCopy {
 
 const POLL_DELAY_MS = 8_000;
 const MAX_POLL_WINDOW_MS = 5 * 60_000;
+// A page can show the status more than once; each heading needs its own id.
+let nextTitleId = 0;
 
 @Component({
   selector: 'app-website-sync-status',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
-    <section class="website-sync" aria-labelledby="website-sync-title"
+    <section class="website-sync" [attr.aria-labelledby]="titleId"
              [attr.aria-busy]="loading() || retrying()">
       <div class="website-sync__heading">
         <div>
-          <h3 id="website-sync-title">Website synchronisatie</h3>
+          <h3 [id]="titleId">Website synchronisatie</h3>
           <p>Opgeslagen betekent nog niet automatisch zichtbaar op de website.</p>
         </div>
         @if (status(); as current) {
@@ -131,6 +133,7 @@ export class WebsiteSyncStatus {
   private refreshPending = false;
   private pollStartedAt: number | null = null;
 
+  readonly titleId = `website-sync-title-${nextTitleId++}`;
   readonly refreshKey = input(0);
   readonly status = signal<WebsiteRebuildStatus | null>(null);
   readonly loading = signal(false);
