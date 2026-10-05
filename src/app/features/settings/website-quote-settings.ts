@@ -3,6 +3,7 @@ import { SalesApi, WebsiteQuoteSettings as QuoteSettings } from '../../core/api/
 import { messageOf } from '../../core/api/errors';
 import { Ui } from '../../shared/ui';
 import { WebsiteSyncStatus } from './website-sync-status';
+import { WebsiteSyncStore } from './website-sync-store';
 
 @Component({
   selector: 'app-website-quote-settings',
@@ -42,8 +43,8 @@ import { WebsiteSyncStatus } from './website-sync-status';
           <button class="btn btn--sm" type="button" [disabled]="loading() || saving()" (click)="load()">Opnieuw laden</button>
         </div>
       }
-      <p class="quote-setting__hint">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. Daarna wordt de website automatisch opnieuw opgebouwd. Dat duurt enkele minuten. Hieronder zie je wanneer de website is bijgewerkt. Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</p>
-      <app-website-sync-status [refreshKey]="syncRefreshKey()" />
+      <p class="quote-setting__hint">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. {{ rebuildHint() }} Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</p>
+      <app-website-sync-status compact [refreshKey]="syncRefreshKey()" />
     </div>
   `,
   styles: `
@@ -71,16 +72,20 @@ import { WebsiteSyncStatus } from './website-sync-status';
 export class WebsiteQuoteSettings {
   private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
+  private readonly sync = inject(WebsiteSyncStore);
   readonly settings = signal<QuoteSettings | null>(null);
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   /** Host counter, so a rebuild queued elsewhere on the page also refreshes this status. */
   readonly refreshKey = input(0);
-  /** Emits after a saved change; the backend has queued a website rebuild by then. */
+  /** Emits after a save; the backend queues a website rebuild when the value changed. */
   readonly saved = output<void>();
   private readonly ownRefresh = signal(0);
   readonly syncRefreshKey = computed(() => this.refreshKey() + this.ownRefresh());
+  readonly rebuildHint = computed(() => this.sync.status()?.status === 'NOT_CONFIGURED'
+    ? 'De website wordt nu nog niet automatisch opnieuw opgebouwd. Hieronder staat wat daarvoor nodig is.'
+    : 'Na een wijziging wordt de website automatisch opnieuw opgebouwd. Dat duurt enkele minuten. Hieronder zie je wanneer de website is bijgewerkt.');
 
   constructor() { void this.load(); }
 
@@ -105,9 +110,10 @@ export class WebsiteQuoteSettings {
     try {
       const saved = this.checked(await this.sales.saveWebsiteQuoteSettings({ pricesVisible: !current.pricesVisible }));
       this.settings.set(saved);
+      // Only the saved fact: whether a rebuild follows is for the status below to say.
       this.ui.toast(saved.pricesVisible
-        ? 'Prijzen zichtbaar op de website. De website wordt bijgewerkt.'
-        : 'Prijzen verborgen op de website. De website wordt bijgewerkt.', 'ok');
+        ? 'Prijzen zichtbaar op de website.'
+        : 'Prijzen verborgen op de website.', 'ok');
       this.ownRefresh.update((value) => value + 1);
       this.saved.emit();
     } catch (failure) {

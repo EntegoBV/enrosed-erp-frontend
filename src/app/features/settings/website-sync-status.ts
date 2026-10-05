@@ -2,17 +2,16 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  booleanAttribute,
   computed,
   effect,
   inject,
   input,
-  signal,
   untracked,
 } from '@angular/core';
-import { CatalogApi } from '../../core/api/catalog-api';
-import { messageOf } from '../../core/api/errors';
 import { WebsiteRebuildStatus } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
+import { WebsiteSyncStore } from './website-sync-store';
 
 interface WebsiteRebuildCopy {
   label: string;
@@ -20,8 +19,6 @@ interface WebsiteRebuildCopy {
   tone: 'muted' | 'pending' | 'ok' | 'danger';
 }
 
-const POLL_DELAY_MS = 8_000;
-const MAX_POLL_WINDOW_MS = 5 * 60_000;
 // A page can show the status more than once; each heading needs its own id.
 let nextTitleId = 0;
 
@@ -30,7 +27,8 @@ let nextTitleId = 0;
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
-    <section class="website-sync" [attr.aria-labelledby]="titleId"
+    <section class="website-sync" [class.website-sync--compact]="compact()"
+             [attr.aria-labelledby]="titleId"
              [attr.aria-busy]="loading() || retrying()">
       <div class="website-sync__heading">
         <div>
@@ -117,6 +115,11 @@ let nextTitleId = 0;
     .sync-state--error { color: var(--danger); }
     .sync-actions { display: flex; flex: none; gap: 6px; }
     .sync-actions .btn, .sync-state .btn { min-height: 48px; }
+    .website-sync--compact { margin-bottom: 0; }
+    .website-sync--compact h3 { font-size: 15px; }
+    .website-sync--compact p, .website-sync--compact .sync-summary small,
+    .website-sync--compact .sync-state small, .website-sync--compact .sync-state { font-size: 13px; }
+    .website-sync--compact .sync-summary b, .website-sync--compact .sync-state b { font-size: 13px; }
 
     @media (max-width: 560px) {
       .website-sync__heading, .sync-summary, .sync-state { align-items: stretch; flex-direction: column; }
@@ -127,18 +130,17 @@ let nextTitleId = 0;
   `,
 })
 export class WebsiteSyncStatus {
-  private readonly catalog = inject(CatalogApi);
-  private readonly destroyRef = inject(DestroyRef);
-  private pollTimer: ReturnType<typeof setTimeout> | null = null;
-  private refreshPending = false;
-  private pollStartedAt: number | null = null;
+  private readonly store = inject(WebsiteSyncStore);
 
   readonly titleId = `website-sync-title-${nextTitleId++}`;
   readonly refreshKey = input(0);
-  readonly status = signal<WebsiteRebuildStatus | null>(null);
-  readonly loading = signal(false);
-  readonly retrying = signal(false);
-  readonly loadError = signal<string | null>(null);
+  /** Smaller type and no bottom margin, for use inside another setting. */
+  readonly compact = input(false, { transform: booleanAttribute });
+  // Shared with every other panel on screen, so they cannot disagree.
+  readonly status = this.store.status;
+  readonly loading = this.store.loading;
+  readonly retrying = this.store.retrying;
+  readonly loadError = this.store.loadError;
   readonly translationPending = computed(() => this.isTranslationPending(this.status()));
   readonly copy = computed(() => this.statusCopy(this.status()));
 
@@ -148,66 +150,20 @@ export class WebsiteSyncStatus {
   });
 
   constructor() {
+    this.store.attach();
     effect(() => {
       this.refreshKey();
-      untracked(() => void this.load());
+      untracked(() => this.store.refresh());
     });
-    this.destroyRef.onDestroy(() => this.clearPoll());
+    inject(DestroyRef).onDestroy(() => this.store.detach());
   }
 
-  async load(manual = true): Promise<void> {
-    if (this.loading() || this.retrying()) {
-      this.refreshPending = true;
-      return;
-    }
-    if (manual) this.pollStartedAt = Date.now();
-    this.loading.set(true);
-    this.loadError.set(null);
-    this.clearPoll();
-    try {
-      const status = await this.catalog.websiteRebuildStatus();
-      if (this.destroyRef.destroyed) return;
-      this.status.set(status);
-      this.schedulePoll(status);
-    } catch (failure: unknown) {
-      if (!this.destroyRef.destroyed) {
-        this.loadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
-      }
-    } finally {
-      if (!this.destroyRef.destroyed) {
-        this.loading.set(false);
-        if (this.refreshPending) {
-          this.refreshPending = false;
-          void this.load();
-        }
-      }
-    }
+  load(): Promise<void> {
+    return this.store.load();
   }
 
-  async retry(): Promise<void> {
-    if (this.loading() || this.retrying()) return;
-    this.retrying.set(true);
-    this.pollStartedAt = Date.now();
-    this.loadError.set(null);
-    this.clearPoll();
-    try {
-      const status = await this.catalog.retryWebsiteRebuild();
-      if (this.destroyRef.destroyed) return;
-      this.status.set(status);
-      this.schedulePoll(status);
-    } catch (failure: unknown) {
-      if (!this.destroyRef.destroyed) {
-        this.loadError.set(messageOf(failure, 'Website-update opnieuw starten mislukt.'));
-      }
-    } finally {
-      if (!this.destroyRef.destroyed) {
-        this.retrying.set(false);
-        if (this.refreshPending) {
-          this.refreshPending = false;
-          void this.load();
-        }
-      }
-    }
+  retry(): Promise<void> {
+    return this.store.retry();
   }
 
   statusMoment(current: WebsiteRebuildStatus): { label: string; value: string } | null {
@@ -281,31 +237,5 @@ export class WebsiteSyncStatus {
     if (current?.status !== 'FAILED_OR_STALE' || !current.lastError) return false;
     return /missing required translation|translation entry|invalid public website copy|vertal|ontbrekende?\s+taal/i
       .test(current.lastError);
-  }
-
-  private schedulePoll(status: WebsiteRebuildStatus): void {
-    // Hook acceptance is not the same as a live website. Keep polling while
-    // Vercel builds so the badge can move from TRIGGERED to LIVE without a
-    // manual refresh; the five-minute window still bounds background work.
-    const pollable = status.status === 'QUEUED'
-      || status.status === 'TRIGGERED'
-      || !!status.nextAttemptAt;
-    if (!pollable) {
-      this.pollStartedAt = null;
-      return;
-    }
-    this.pollStartedAt ??= Date.now();
-    if (Date.now() - this.pollStartedAt >= MAX_POLL_WINDOW_MS) return;
-    const nextAttempt = status.nextAttemptAt ? Date.parse(status.nextAttemptAt) : Number.NaN;
-    const delay = Number.isNaN(nextAttempt)
-      ? POLL_DELAY_MS
-      : Math.min(60_000, Math.max(2_000, nextAttempt - Date.now() + 1_000));
-    this.pollTimer = setTimeout(() => void this.load(false), delay);
-  }
-
-  private clearPoll(): void {
-    if (this.pollTimer === null) return;
-    clearTimeout(this.pollTimer);
-    this.pollTimer = null;
   }
 }
