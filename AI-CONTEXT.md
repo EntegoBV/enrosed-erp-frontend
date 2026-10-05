@@ -692,6 +692,54 @@ slotfactuur before the archive.
   tests in `tests/prospect-state.test.mts`. Errors use `messageOf`; pending
   edits/imports prevent accidental navigation. No prospect data is public.
 
+### Login-aanvragen and Websitelogin (2026-10-05)
+Website visitors ask for a login (form, tick box in the quote request, or a
+"new link" request); staff decide here. A logged-in customer sees prices in
+the website's bestelscherm even when 'Prijzen tonen op de website' is off.
+The ERP never calls `/api/v1/public/account` and never sees a password.
+- `core/api/login-request-api.ts` is the whole staff client:
+  `/api/login-requests` (list per status, detail, approve, reject) and
+  `/api/customer-logins` (per customer, give, new link, withdraw). The
+  pending count comes through `SalesApi.loginRequestSummary()` because
+  `WorkQueue` injects only that client; it sets `loginRequestCount`,
+  `loginIntakeFull` and `loginIntakeFullSources` in a try block of its own,
+  so a failing summary never empties the bell feed and the reverse.
+- Route `/klantlogins` (`LOGIN_REQUESTS_PATH`), under Verkoop. It must not
+  start with `/login`, `/offerte` or `/voorwaarden`: the shell renders those
+  bare. Counts sit on the sidebar link, the folded Verkoop group, the Meer
+  tab and row, and a dashboard row; login requests are not in the bell feed.
+- `features/login-requests`: `LoginRequestsPage` (segments Open / Goedgekeurd
+  / Afgewezen on `?status=`, `?open=<id>`, 'Meer laden' per 50, the red
+  'lijst is vol' alerts, one wide sheet) on classic global classes, not the
+  workspace kit. Every rule is in the pure, node-tested
+  `login-request-state.ts`: `defaultChoice` (the customer that already holds
+  an INVITED/ACTIVE login for the e-mail wins and is locked; else the
+  lowest-id customer with the same e-mail; a VAT-only match is never
+  preselected, VAT numbers are public), `needsMismatchConfirm` (a freely
+  chosen customer with another e-mail needs a second confirm, sent as
+  `confirmEmailMismatch`), `applicantEntries` / `newLinkMarker` (later
+  requests for the same e-mail are kept beside the first, up to five),
+  `existingAccountAlert`, `newLinkAlert` (a NEW_LINK request ignores the
+  body; a withdrawn login cannot get a link there), `linkLine`. Binding a
+  login to a customer is a human decision: do not add defaults.
+- Customer sheet: `app-customer-login-block` (`customer-login-block.ts`,
+  block 'Websitelogin', only for a saved customer) loads
+  `logins(customerId)` and acts at once, apart from the sheet's Opslaan:
+  no login → e-mail input (prefilled from the customer) + 'Login geven en
+  link sturen' behind a confirm; INVITED / ACTIVE → 'Nieuwe link sturen' and
+  'Login intrekken' (confirm); DISABLED → 'Login opnieuw geven' (the same
+  invitation call). Wording per status lives in the pure, node-tested
+  `customer-login-state.ts` (`loginRowText`, `loginActions`, `linkToast`,
+  `loginBadge`). The login keeps its own e-mail: editing the customer's
+  e-mail does not move it.
+- Link lifetime is never hardcoded: screens print `linkExpiresAt` /
+  `invitation.expiresAt` from the server. A mail failure never undoes the
+  approval or the login: the answer has `invitation.sent: false`, the toast
+  is an error and `lastLinkError` shows as a warning until a link leaves.
+- `tests/work-queue.test.mts` imports the real injectables and only runs
+  through the esbuild bundle its header names; in the plain node run it is
+  one of the known failing files.
+
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.
 - List → **read-only view first** (stepper without Onderweg, products
