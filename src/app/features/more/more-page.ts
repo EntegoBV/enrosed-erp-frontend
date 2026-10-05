@@ -92,6 +92,9 @@ import { WorkQueue } from '../../core/api/work-queue';
           <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
           <span class="more-group__copy"><strong>Verkoop</strong>
             <small>Klanten · Login-aanvragen · Prospects · Landen &amp; vracht</small></span>
+          @if (work.loginRequestCount() > 0) {
+            <span class="badge badge--gold" [attr.aria-label]="work.loginRequestCount() + ' login-aanvragen wachten'">{{ work.loginRequestCount() }}</span>
+          }
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">

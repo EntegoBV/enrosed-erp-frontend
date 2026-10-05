@@ -75,6 +75,18 @@ export function loginActions(status: CustomerLoginStatus): LoginAction[] {
   ];
 }
 
+/**
+ * The hints under the buttons of one login. Next to a second button a hint
+ * names the button it belongs to: directly under the red Login intrekken,
+ * "Voor een vergeten wachtwoord" would read as if it described withdrawing.
+ */
+export function loginHints(actions: readonly LoginAction[]): string[] {
+  return actions.filter((action) => action.hint).map((action) => {
+    const hint = action.hint ?? '';
+    return actions.length > 1 ? action.label + ': ' + hint.charAt(0).toLowerCase() + hint.slice(1) : hint;
+  });
+}
+
 /** A mail that did not leave is an error toast: the login exists, the link did not arrive. */
 export function linkToast(email: string, invitation: Pick<LoginInvitation, 'sent' | 'expiresAt'>): LinkToast {
   if (!invitation.sent) {

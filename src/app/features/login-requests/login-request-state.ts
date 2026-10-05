@@ -15,6 +15,8 @@ import type {
 /** Must not start with /login, /offerte or /voorwaarden: the shell renders those bare. */
 export const LOGIN_REQUESTS_PATH = '/klantlogins';
 export const LOGIN_REQUEST_PAGE_SIZE = 50;
+/** The server keeps at most this much of the internal note on a rejected request. */
+export const REJECT_NOTE_MAX = 500;
 
 export type LoginRequestSegment = 'open' | 'goedgekeurd' | 'afgewezen';
 
@@ -96,6 +98,57 @@ export function subtitle(count: number): string {
 /** A full page means there may be a next one. */
 export function hasMore(lastPageLength: number, pageSize: number = LOGIN_REQUEST_PAGE_SIZE): boolean {
   return lastPageLength >= pageSize;
+}
+
+/**
+ * The list from page 0 up to the last page asked for, each row once.
+ *
+ * Meer laden fetches these pages again instead of only the next one: the
+ * open list shrinks while colleagues decide, and a next page by offset
+ * alone would then skip as many waiting requests as were decided.
+ */
+export function mergePages<T extends { id: number }>(
+  pages: readonly (readonly T[])[], pageSize: number = LOGIN_REQUEST_PAGE_SIZE,
+): { rows: T[]; pages: number; more: boolean } {
+  const rows: T[] = [];
+  const seen = new Set<number>();
+  let used = 0;
+  let more = false;
+  for (const page of pages) {
+    used += 1;
+    for (const row of page) {
+      if (!seen.has(row.id)) { seen.add(row.id); rows.push(row); }
+    }
+    more = hasMore(page.length, pageSize);
+    if (!more) break;
+  }
+  return { rows, pages: Math.max(used, 1), more };
+}
+
+/** The filled parts of a list line; an empty contact or country leaves no loose separator. */
+export function filledParts(parts: readonly (string | null | undefined)[]): string[] {
+  return parts.map((part) => (part ?? '').trim()).filter((part) => part.length > 0);
+}
+
+/** Meta line 1 of a list row: contact and e-mail. */
+export function rowContactParts(row: Pick<LoginRequest, 'contactName' | 'email'>): string[] {
+  return filledParts([row.contactName, row.email]);
+}
+
+/** Meta line 2 of a list row: country, source, received and how often it was asked again. */
+export function rowFactParts(
+  row: Pick<LoginRequest, 'source' | 'salesOrderNumber' | 'createdAt' | 'repeatCount'>, country: string,
+): string[] {
+  return filledParts([
+    country, sourceLabel(row), dateText(row.createdAt),
+    row.repeatCount > 0 ? row.repeatCount + '× opnieuw gevraagd' : null,
+  ]);
+}
+
+/** The internal note sent with a rejection: trimmed, at most what the server keeps, null when empty. */
+export function rejectNote(text: string | null | undefined): string | null {
+  const note = (text ?? '').trim().slice(0, REJECT_NOTE_MAX).trim();
+  return note || null;
 }
 
 /** One sentence per intake route that is full; the general one for a backend that names no route. */
@@ -183,6 +236,34 @@ export function defaultChoice(detail: LoginRequestDetail): LoginChoice | null {
   return sameEmail ? choiceOf(sameEmail) : null;
 }
 
+/**
+ * The choice after the sheet was loaded again without being reopened, for
+ * instance after a refused approval. A login given meanwhile fixes the
+ * choice to its customer, and a matched customer that is no longer a match
+ * is dropped; a searched customer or a new customer stays as chosen.
+ */
+export function reconcileChoice(
+  detail: LoginRequestDetail, choice: LoginChoice | null, fromSearch: boolean,
+): LoginChoice | null {
+  if (detail.request.status !== 'PENDING' || detail.request.source === 'NEW_LINK') return null;
+  if (choiceLocked(detail)) return defaultChoice(detail);
+  if (!choice || choice.kind === 'new' || fromSearch) return choice;
+  const match = detail.matches.find((entry) => entry.customerId === choice.customerId);
+  return match ? choiceOf(match) : null;
+}
+
+/**
+ * The logins a match row names in a blue badge: working ones only, since a
+ * withdrawn login does not count as having a login, and not the login the
+ * chip "heeft deze login" on the same row already stands for.
+ */
+export function matchLoginBadges(
+  match: Pick<LoginRequestMatch, 'matchedOn' | 'logins'>, existingAccountId: number | null | undefined,
+): LoginRequestMatch['logins'] {
+  return (match.logins ?? []).filter((login) => login.status !== 'DISABLED'
+    && !(match.matchedOn.includes('LOGIN') && login.id === existingAccountId));
+}
+
 export function choiceOf(match: Pick<LoginRequestMatch, 'customerId' | 'company' | 'email'>): LoginChoice {
   return { kind: 'customer', customerId: match.customerId, company: match.company, email: match.email ?? null };
 }
@@ -195,10 +276,22 @@ export function olderCustomerPreselected(detail: LoginRequestDetail): boolean {
     && choice.customerId !== detail.request.customerId;
 }
 
-/** Case and surrounding whitespace do not count; a customer without e-mail always differs. */
+/**
+ * Case and surrounding spaces, tabs and line ends do not count; a customer
+ * without e-mail always differs.
+ *
+ * Deliberately not String.trim(): that also drops a non-breaking space or a
+ * byte-order mark, which the server's own comparison keeps. The screen
+ * would then see no mismatch, send no confirm and get a refusal it has no
+ * button for. Asking once too often is harmless, not asking is a dead end.
+ */
 export function emailMismatch(requestEmail: string | null | undefined, customerEmail: string | null | undefined): boolean {
-  const customer = (customerEmail ?? '').trim().toLowerCase();
-  return !customer || customer !== (requestEmail ?? '').trim().toLowerCase();
+  const customer = normalEmail(customerEmail);
+  return !customer || customer !== normalEmail(requestEmail);
+}
+
+function normalEmail(value: string | null | undefined): string {
+  return (value ?? '').replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '').toLowerCase();
 }
 
 /**

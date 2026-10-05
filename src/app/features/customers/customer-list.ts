@@ -25,7 +25,7 @@ function blank(countryCode: string): Customer {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock],
   template: `
-    <app-page-header title="Klanten" [subtitle]="filtered().length + ' klanten'">
+    <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Nieuw
       </button>

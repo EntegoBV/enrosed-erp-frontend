@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type {
   CustomerLogin, LoginRequest, LoginRequestDetail, LoginRequestLaterSubmission, LoginRequestMatch,
 } from '../src/app/core/api/login-request-api.ts';
 import {
-  LOGIN_REQUESTS_PATH, LOGIN_REQUEST_PAGE_SIZE, applicantEntries, canApprove, choiceLocked, choiceOf, dateText,
-  defaultChoice, draftFromLater, draftFromRequest, emailMismatch, existingAccountAlert, hasMore, intakeFullTexts,
-  linkLine, loginStatusLabel, matchReasonLabel, needsMismatchConfirm, newLinkAlert, newLinkMarker,
-  olderCustomerPreselected, rejectMessage, segmentToStatus, sourceLabel, statusBadge, subtitle,
+  LOGIN_REQUESTS_PATH, LOGIN_REQUEST_PAGE_SIZE, REJECT_NOTE_MAX, applicantEntries, canApprove, choiceLocked,
+  choiceOf, dateText, defaultChoice, draftFromLater, draftFromRequest, emailMismatch, existingAccountAlert,
+  filledParts, hasMore, intakeFullTexts, linkLine, loginStatusLabel, matchLoginBadges, matchReasonLabel, mergePages,
+  needsMismatchConfirm, newLinkAlert, newLinkMarker, olderCustomerPreselected, reconcileChoice, rejectMessage,
+  rejectNote, rowContactParts, rowFactParts, segmentToStatus, sourceLabel, statusBadge, subtitle,
 } from '../src/app/features/login-requests/login-request-state.ts';
 
 const request = (changes: Partial<LoginRequest> = {}): LoginRequest => ({
@@ -89,10 +91,90 @@ test('decided and new-link requests have no choice to preselect', () => {
 });
 
 test('e-mail comparison ignores case and surrounding whitespace; an empty customer e-mail differs', () => {
-  assert.equal(emailMismatch('an@bloemen.example', '  AN@Bloemen.Example '), false);
+  assert.equal(emailMismatch('an@bloemen.example', '  AN@Bloemen.Example \t\n'), false);
+  assert.equal(emailMismatch(' An@Bloemen.example ', 'an@bloemen.example'), false);
   assert.equal(emailMismatch('an@bloemen.example', 'jan@bloemen.example'), true);
   assert.equal(emailMismatch('an@bloemen.example', ''), true);
   assert.equal(emailMismatch('an@bloemen.example', null), true);
+});
+
+test('e-mail comparison is never looser than the server: a non-breaking space or a byte-order mark differs', () => {
+  /* String.trim() would drop these; the server keeps them and would refuse an approval without the confirm. */
+  assert.equal(emailMismatch('an@bloemen.example', 'an@bloemen.example\u00a0'), true);
+  assert.equal(emailMismatch('an@bloemen.example', '\ufeffan@bloemen.example'), true);
+  assert.equal(emailMismatch('an@bloemen.example', '\u00a0'), true);
+});
+
+test('a reloaded sheet locks onto the customer of a login that was given meanwhile', () => {
+  const d = detail([match(345, ['LOGIN'], 'boekhouding@rozen.example'), match(20, ['EMAIL'])], account('ACTIVE'));
+  for (const chosen of [{ kind: 'new' } as const, choiceOf(match(20, ['EMAIL'])), null]) {
+    assert.equal(customerId(reconcileChoice(d, chosen, false)), 345);
+    assert.equal(customerId(reconcileChoice(d, chosen, true)), 345);
+  }
+});
+
+test('a reloaded sheet drops a matched customer that is no longer a match and keeps the other choices', () => {
+  const d = detail([match(20, ['EMAIL'], 'nieuw@bloemen.example')]);
+  assert.equal(reconcileChoice(d, choiceOf(match(30, ['VAT'])), false), null);
+  /* The match that is still there is taken from the fresh detail, with its e-mail of now. */
+  assert.deepEqual(reconcileChoice(d, choiceOf(match(20, ['EMAIL'])), false),
+    { kind: 'customer', customerId: 20, company: 'Klant 20', email: 'nieuw@bloemen.example' });
+  const searched = { kind: 'customer', customerId: 99, company: 'Gezocht BV', email: null } as const;
+  assert.deepEqual(reconcileChoice(d, searched, true), searched);
+  assert.deepEqual(reconcileChoice(d, { kind: 'new' }, false), { kind: 'new' });
+  assert.equal(reconcileChoice(d, null, false), null);
+  assert.equal(reconcileChoice(detail([match(20, ['EMAIL'])], null, { status: 'APPROVED' }), { kind: 'new' }, false), null);
+});
+
+test('a match row names working logins only, and not the login its own chip stands for', () => {
+  const logins = [
+    { id: 7, email: 'an@bloemen.example', status: 'ACTIVE' as const },
+    { id: 8, email: 'jan@bloemen.example', status: 'INVITED' as const },
+    { id: 9, email: 'oud@bloemen.example', status: 'DISABLED' as const },
+  ];
+  assert.deepEqual(matchLoginBadges({ matchedOn: ['LOGIN', 'EMAIL'], logins }, 7).map((login) => login.id), [8]);
+  assert.deepEqual(matchLoginBadges({ matchedOn: ['EMAIL'], logins }, 7).map((login) => login.id), [7, 8]);
+  assert.deepEqual(matchLoginBadges({ matchedOn: ['VAT'], logins }, null).map((login) => login.id), [7, 8]);
+  assert.deepEqual(matchLoginBadges({ matchedOn: ['VAT'], logins: [] }, null), []);
+});
+
+test('the pages of the list merge into one list without doubles and say whether more may follow', () => {
+  const rows = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({ id: from + index }));
+  const full = mergePages([rows(1, 50), rows(51, 50)]);
+  assert.equal(full.rows.length, 100);
+  assert.equal(full.more, true);
+  assert.equal(full.pages, 2);
+  /* The list moved between two calls: a row on both pages shows once, in its first place. */
+  const moved = mergePages([rows(1, 50), rows(50, 14)]);
+  assert.deepEqual(moved.rows.map((row) => row.id), rows(1, 63).map((row) => row.id));
+  assert.equal(moved.more, false);
+  /* A short page ends the list; what was asked beyond it does not count as loaded. */
+  const short = mergePages([rows(1, 20), []]);
+  assert.equal(short.rows.length, 20);
+  assert.equal(short.pages, 1);
+  assert.equal(short.more, false);
+  assert.deepEqual(mergePages([]), { rows: [], pages: 1, more: false });
+  assert.equal(mergePages([rows(1, 2)], 2).more, true);
+});
+
+test('a list line leaves out what is empty instead of showing a loose separator', () => {
+  assert.deepEqual(filledParts(['a', null, ' ', undefined, 'b ']), ['a', 'b']);
+  assert.deepEqual(rowContactParts(request()), ['An Peeters', 'an@bloemen.example']);
+  assert.deepEqual(rowContactParts(request({ contactName: null })), ['an@bloemen.example']);
+  assert.deepEqual(rowFactParts(request({ createdAt: '2026-10-05T12:00:00Z' }), 'België'),
+    ['België', 'Loginformulier', '05/10/2026']);
+  assert.deepEqual(
+    rowFactParts(request({ createdAt: '2026-10-05T12:00:00Z', source: 'QUOTE', salesOrderNumber: 'ENR-2026-0901', repeatCount: 7 }), ''),
+    ['Offerteaanvraag ENR-2026-0901', '05/10/2026', '7× opnieuw gevraagd']);
+});
+
+test('the note of a rejection is optional, trimmed and no longer than the server keeps', () => {
+  assert.equal(rejectNote(''), null);
+  assert.equal(rejectNote('   '), null);
+  assert.equal(rejectNote(null), null);
+  assert.equal(rejectNote('  Geen bloemist  '), 'Geen bloemist');
+  assert.equal(REJECT_NOTE_MAX, 500);
+  assert.equal(rejectNote('x'.repeat(600))?.length, 500);
 });
 
 test('a freely chosen customer with another e-mail needs the explicit confirm', () => {
@@ -244,4 +326,9 @@ test('the page route keeps the ERP shell: it starts with none of the bare or wor
   for (const prefix of ['/login', '/offerte', '/voorwaarden', '/website', '/files', '/costs']) {
     assert.equal(LOGIN_REQUESTS_PATH.startsWith(prefix), false, prefix);
   }
+  /* The constant only guards something when the real route is that path. */
+  const routes = readFileSync(new URL('../src/app/app.routes.ts', import.meta.url), 'utf8');
+  assert.equal(routes.includes("path: '" + LOGIN_REQUESTS_PATH.slice(1) + "'"), true, 'route in app.routes.ts');
+  const shell = readFileSync(new URL('../src/app/app.ts', import.meta.url), 'utf8');
+  assert.equal(shell.includes('routerLink="' + LOGIN_REQUESTS_PATH + '"'), true, 'sidebar link in app.ts');
 });

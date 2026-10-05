@@ -722,6 +722,16 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
   `existingAccountAlert`, `newLinkAlert` (a NEW_LINK request ignores the
   body; a withdrawn login cannot get a link there), `linkLine`. Binding a
   login to a customer is a human decision: do not add defaults.
+- The sheet's answers belong to the request they were sent for: an approve,
+  reject or new link only closes or reloads the sheet when `openId()` is
+  still that request, and `open()` clears choice, form and note, so staff
+  can close a sheet and open another one while a call is under way. A
+  reload of the same sheet goes through `reconcileChoice` (a login given
+  meanwhile fixes the choice). The list is always fetched from page 0 up to
+  the loaded page and replaced (`mergePages`), never appended by offset: the
+  open list shrinks while colleagues decide. `emailMismatch` is on purpose
+  not looser than the server (no `trim()`): a missing confirm is a dead end.
+  Rejecting takes an optional internal note (`rejectNote`, 500 characters).
 - Customer sheet: `app-customer-login-block` (`customer-login-block.ts`,
   block 'Websitelogin', only for a saved customer) loads
   `logins(customerId)` and acts at once, apart from the sheet's Opslaan:

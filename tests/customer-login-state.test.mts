@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CustomerLogin } from '../src/app/core/api/login-request-api.ts';
 import {
-  linkToast, loginActions, loginBadge, loginDate, loginRowText,
+  linkToast, loginActions, loginBadge, loginDate, loginHints, loginRowText,
 } from '../src/app/features/customers/customer-login-state.ts';
 
 const login = (status: CustomerLogin['status'], changes: Partial<CustomerLogin> = {}): CustomerLogin => ({
@@ -68,6 +68,15 @@ test('an active login explains that the current password keeps working', () => {
   assert.equal(actions[0].hint,
     'Voor een vergeten wachtwoord. Het huidige wachtwoord blijft werken tot de klant een nieuw kiest.');
   assert.equal(actions[1].hint, null);
+});
+
+test('next to a second button a hint names the button it belongs to', () => {
+  assert.deepEqual(loginHints(loginActions('ACTIVE')), [
+    'Nieuwe link sturen: voor een vergeten wachtwoord. Het huidige wachtwoord blijft werken tot de klant een nieuw kiest.',
+  ]);
+  assert.deepEqual(loginHints(loginActions('INVITED')), []);
+  assert.deepEqual(loginHints(loginActions('DISABLED')),
+    ['De klant kiest dan een nieuw wachtwoord; het oude werkt niet meer.']);
 });
 
 test('a withdrawn login can only be given again', () => {

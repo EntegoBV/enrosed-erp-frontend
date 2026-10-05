@@ -105,18 +105,44 @@ test('a failing summary keeps the previous login request values and raises no fe
   } finally { injector.destroy(); }
 });
 
-test('a failing feed does not reset the login request count', async () => {
+test('a failing feed neither resets the login request count nor keeps the summary from being read', async () => {
   let fail = false;
+  let pending = 3;
   const { queue, injector } = queueWithSummary(
-    async () => ({ pending: 3, intakeFull: false, intakeFullSources: [] }),
+    async () => ({ pending, intakeFull: false, intakeFullSources: [] }),
     async () => { if (fail) throw new Error('offline'); return { items: [notification('VOORSTEL', 42)] }; });
   try {
     await queue.refresh();
-    fail = true;
-    await queue.refresh(true);
     assert.equal(queue.loginRequestCount(), 3);
+    fail = true;
+    pending = 5;
+    await queue.refresh(true);
+    /* 5, not 3: the summary is still fetched when the feed fails. */
+    assert.equal(queue.loginRequestCount(), 5);
     assert.equal(queue.items().length, 1);
     assert.notEqual(queue.error(), null);
+  } finally { injector.destroy(); }
+});
+
+test('a summary that a newer refresh has overtaken does not overwrite the newer count', async () => {
+  const answers: ((summary: LoginSummary) => void)[] = [];
+  const { queue, injector } = queueWithSummary(() => new Promise<LoginSummary>((resolve) => answers.push(resolve)));
+  const asked = async (count: number) => {
+    for (let turn = 0; turn < 50 && answers.length < count; turn++) await Promise.resolve();
+    assert.equal(answers.length, count, 'summary calls under way');
+  };
+  try {
+    const first = queue.refresh(true);
+    await asked(1);
+    const second = queue.refresh(true);
+    await asked(2);
+    answers[1]({ pending: 5, intakeFull: true, intakeFullSources: ['QUOTE'] });
+    await second;
+    answers[0]({ pending: 3, intakeFull: false, intakeFullSources: [] });
+    await first;
+    assert.equal(queue.loginRequestCount(), 5);
+    assert.equal(queue.loginIntakeFull(), true);
+    assert.deepEqual(queue.loginIntakeFullSources(), ['QUOTE']);
   } finally { injector.destroy(); }
 });
 

@@ -4,7 +4,7 @@ import { messageOf } from '../../core/api/errors';
 import { CustomerLogin, LoginRequestApi } from '../../core/api/login-request-api';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui, escapeHtml } from '../../shared/ui';
-import { LoginAction, linkToast, loginActions, loginBadge, loginRowText } from './customer-login-state';
+import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowText } from './customer-login-state';
 
 /**
  * The website login of one customer, on the customer sheet: its status, a
@@ -53,9 +53,7 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginRowText } from '
                       [disabled]="busy()" (click)="run(action, login)">{{ action.label }}</button>
             }
           </div>
-          @for (action of actions(login); track action.key) {
-            @if (action.hint) { <span class="hint">{{ action.hint }}</span> }
-          }
+          @for (hint of hints(login); track hint) { <span class="hint">{{ hint }}</span> }
         </div>
       } @empty {
         <p class="cl-none">Deze klant heeft geen login.</p>
@@ -85,7 +83,8 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginRowText } from '
     .cl-grant { margin-bottom: 0; }
     .cl-error { align-items: center; justify-content: space-between; }
     .cl-error .btn { flex: none; }
-    .hint { font-size: 12px; color: var(--muted); }
+    /* --muted is too faint for 12 px on the tinted block. */
+    .hint { font-size: 12px; color: var(--ink-2); }
   `,
 })
 export class CustomerLoginBlock {
@@ -124,6 +123,10 @@ export class CustomerLoginBlock {
 
   actions(login: CustomerLogin): LoginAction[] {
     return loginActions(login.status);
+  }
+
+  hints(login: CustomerLogin): string[] {
+    return loginHints(loginActions(login.status));
   }
 
   reload(): void {
@@ -187,6 +190,8 @@ export class CustomerLoginBlock {
       this.ui.toast(toast.text, toast.kind);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, fallback), 'err');
+      /* A refusal often means a colleague changed or withdrew the login meanwhile: show what the server has now. */
+      if (customerId === this.customerId()) this.reload();
     } finally {
       this.busy.set(false);
     }

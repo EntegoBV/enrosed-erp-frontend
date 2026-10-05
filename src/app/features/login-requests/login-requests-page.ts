@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -18,10 +18,11 @@ import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
 import {
-  LoginChoice, LoginRequestSegment, NewCustomerDraft, applicantEntries, canApprove, choiceLocked, choiceOf,
-  dateText, defaultChoice, draftFromLater, draftFromRequest, existingAccountAlert, hasMore, intakeFullTexts,
-  linkLine, loginStatusLabel, matchReasonLabel, needsMismatchConfirm, newLinkAlert, newLinkMarker,
-  olderCustomerPreselected, rejectMessage, segmentToStatus, sourceLabel, statusBadge, subtitle,
+  LoginChoice, LoginRequestSegment, NewCustomerDraft, REJECT_NOTE_MAX, applicantEntries, canApprove, choiceLocked,
+  choiceOf, dateText, defaultChoice, draftFromLater, draftFromRequest, existingAccountAlert, intakeFullTexts,
+  linkLine, loginStatusLabel, matchLoginBadges, matchReasonLabel, mergePages, needsMismatchConfirm, newLinkAlert,
+  newLinkMarker, olderCustomerPreselected, reconcileChoice, rejectMessage, rejectNote, rowContactParts,
+  rowFactParts, segmentToStatus, sourceLabel, statusBadge, subtitle,
 } from './login-request-state';
 
 const SEGMENTS: SegmentOption[] = [
@@ -47,6 +48,12 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
     <app-page-header title="Login-aanvragen" [subtitle]="subtitle()" />
 
     <div class="content">
+      @if (work.loginIntakeFull()) {
+        @for (text of intakeFull(); track text) {
+          <div class="alert alert--danger" role="alert"><span class="alert__icon">!</span><div>{{ text }}</div></div>
+        }
+      }
+
       <div class="alert alert--info">
         <span class="alert__icon">ℹ</span>
         <div>
@@ -56,17 +63,12 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
         </div>
       </div>
 
-      @if (work.loginIntakeFull()) {
-        @for (text of intakeFull(); track text) {
-          <div class="alert alert--danger" role="alert"><span class="alert__icon">!</span><div>{{ text }}</div></div>
-        }
-      }
-
       <app-segmented class="lr-segments mt-12" label="Status van de aanvragen" [variant]="desktop.active() ? 'desk' : 'ios'"
                      [options]="segments" [value]="segment()" (changed)="pickSegment($event)" />
 
       @if (error()) {
         <div class="alert alert--danger lr-error mt-12" role="alert">
+          <span class="alert__icon">!</span>
           <div>Login-aanvragen konden niet geladen worden. Controleer de verbinding.</div>
           <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="reload()">Opnieuw proberen</button>
         </div>
@@ -79,10 +81,11 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
               <button class="list-item lr-row" type="button" (click)="open(row.id, row)">
                 <div class="list-item__body">
                   <div class="list-item__title">{{ row.companyName }}</div>
-                  <div class="list-item__meta">{{ row.contactName }} · {{ row.email }}</div>
-                  <div class="list-item__meta">
-                    {{ country(row.companyCountryCode) }} · {{ source(row) }} · {{ row.createdAt | dateNl }}
-                    @if (row.repeatCount > 0) { · {{ row.repeatCount }}× opnieuw gevraagd }
+                  <div class="list-item__meta list-item__meta--wrap lr-meta">
+                    @for (part of contactParts(row); track $index) { <span>{{ part }}</span> }
+                  </div>
+                  <div class="list-item__meta list-item__meta--wrap lr-meta">
+                    @for (part of factParts(row); track $index) { <span>{{ part }}</span> }
                   </div>
                   @if (row.hasExistingLogin && row.source !== 'NEW_LINK' || row.previouslyRejected
                     || applicants(row).length || marker(row)) {
@@ -207,8 +210,8 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                 <dl class="lr-facts mt-12">
                   <dt>Klant</dt><dd>{{ d.existingAccount?.customerCompany || d.request.customerCompany || d.request.companyName }}</dd>
                   <dt>Login</dt>
-                  <dd>
-                    {{ d.existingAccount?.email || d.request.email }}
+                  <dd class="lr-login">
+                    <span>{{ d.existingAccount?.email || d.request.email }}</span>
                     @if (d.existingAccount; as account) {
                       <span class="badge" [class]="loginBadge(account)">{{ loginStatus(account) }}</span>
                     } @else {
@@ -239,7 +242,7 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                           @for (reason of match.matchedOn; track reason) {
                             <span class="badge badge--neutral">{{ reasonLabel(reason) }}</span>
                           }
-                          @for (login of match.logins; track login.id) {
+                          @for (login of loginBadges(match); track login.id) {
                             <span class="badge badge--blue">heeft al een login ({{ login.email }})</span>
                           }
                         </span>
@@ -255,15 +258,25 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                       <div class="lr-nested">
                         <input class="input" type="search" aria-label="Andere klant zoeken"
                                placeholder="Zoek op bedrijf, contact, stad of BTW-nummer…"
-                               [ngModel]="query()" (ngModelChange)="query.set($event)" />
-                        @for (customer of searchResults(); track customer.id) {
-                          <label class="lr-choice" [class.lr-choice--on]="isChosen(customer.id)">
-                            <input type="radio" name="lr-search" [checked]="isChosen(customer.id)" (change)="chooseCustomer(customer)" />
-                            <span><b>{{ customerLine(customer) }}</b>
-                              <small>{{ customer.email || 'geen e-mailadres' }}</small></span>
-                          </label>
-                        } @empty {
-                          @if (query().trim()) { <span class="hint">Geen klant gevonden.</span> }
+                               [ngModel]="query()" (ngModelChange)="setQuery($event ?? '')" />
+                        @if (customersState() === 'failed') {
+                          <div class="alert alert--danger lr-error" role="alert">
+                            <span class="alert__icon">!</span>
+                            <div>Klanten konden niet geladen worden. Controleer de verbinding.</div>
+                            <button class="btn btn--sm" type="button" (click)="loadCustomers()">Opnieuw proberen</button>
+                          </div>
+                        } @else {
+                          @for (customer of searchResults(); track customer.id) {
+                            <label class="lr-choice" [class.lr-choice--on]="isChosen(customer.id)">
+                              <input type="radio" name="lr-search" [checked]="isChosen(customer.id)" (change)="chooseCustomer(customer)" />
+                              <span><b>{{ customerLine(customer) }}</b>
+                                <small>{{ customer.email || 'geen e-mailadres' }}</small></span>
+                            </label>
+                          } @empty {
+                            @if (query().trim()) {
+                              <span class="hint" role="status">{{ customersState() === 'ready' ? 'Geen klant gevonden.' : 'Klanten laden…' }}</span>
+                            }
+                          }
                         }
                       </div>
                     }
@@ -320,14 +333,20 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                       van deze klant en stuurt aanvragen in naam van deze klant.</div>
                   </div>
                 }
-                @if (!choice()) { <p class="hint lr-hint">Kies eerst een klant</p> }
-
                 <p class="hint lr-hint">
                   Na goedkeuren krijgt {{ d.request.email }} een mail in het {{ language(d.request.language) }} met een
                   link om zelf een wachtwoord te kiezen. De link werkt één keer en is beperkt geldig; na het
                   versturen zie je tot wanneer. Jullie zien of typen nooit een wachtwoord.
                 </p>
               }
+
+              <div class="field lr-note">
+                <label for="lr-note">Notitie bij afwijzen <span class="opt"></span></label>
+                <input class="input" id="lr-note" type="text" autocomplete="off" [maxLength]="noteMax"
+                       [ngModel]="note()" (ngModelChange)="note.set($event ?? '')" />
+                <span class="hint">Alleen voor intern gebruik; staat daarna bij de afgewezen aanvraag. De aanvrager
+                  krijgt geen bericht.</span>
+              </div>
             } @else if (d.request.status === 'APPROVED') {
               <div class="section-title">Beslissing</div>
               <dl class="lr-facts">
@@ -339,8 +358,8 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                 }
                 @if (d.existingAccount; as account) {
                   <dt>Login</dt>
-                  <dd>
-                    {{ account.email }}
+                  <dd class="lr-login">
+                    <span>{{ account.email }}</span>
                     <span class="badge" [class]="loginBadge(account)">{{ loginStatus(account) }}</span>
                     @if (linkText(account); as line) { <span class="lr-line">{{ line }}</span> }
                   </dd>
@@ -355,10 +374,6 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
                 }
                 @if (account.status === 'DISABLED') {
                   <p class="hint lr-hint">Deze login is ingetrokken. Geef de login opnieuw bij de klant (Klanten, blok Websitelogin).</p>
-                } @else if (d.request.accountId) {
-                  <button class="btn btn--primary mt-12" type="button" [disabled]="busy()" (click)="sendLink(d)">
-                    {{ busy() ? 'Bezig…' : 'Nieuwe link sturen' }}
-                  </button>
                 }
               }
             } @else {
@@ -371,6 +386,7 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
             }
           } @else if (detailError()) {
             <div class="alert alert--danger lr-error" role="alert">
+              <span class="alert__icon">!</span>
               <div>{{ detailError() }}</div>
               <button class="btn btn--sm" type="button" (click)="reloadDetail()">Opnieuw proberen</button>
             </div>
@@ -386,16 +402,23 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
               <button class="btn" type="button" (click)="close()">Sluiten</button>
               @if (d.request.source === 'NEW_LINK') {
                 <button class="btn btn--primary" type="button" [disabled]="busy() || !linkAlert().canSend" (click)="approve(d)">
-                  {{ busy() ? 'Bezig…' : 'Nieuwe link sturen' }}
+                  {{ busyHere() ? 'Bezig…' : 'Nieuwe link sturen' }}
                 </button>
               } @else {
-                <button class="btn btn--primary lr-foot__main" type="button" [disabled]="busy() || !approvable()" (click)="approve(d)">
-                  {{ busy() ? 'Bezig…' : 'Goedkeuren en link sturen' }}
+                @if (!choice()) { <span class="hint lr-foot__hint" id="lr-approve-hint">Kies eerst een klant</span> }
+                <button class="btn btn--primary lr-foot__main" type="button" [disabled]="busy() || !approvable()"
+                        [attr.aria-describedby]="choice() ? null : 'lr-approve-hint'" (click)="approve(d)">
+                  {{ busyHere() ? 'Bezig…' : 'Goedkeuren en link sturen' }}
                 </button>
               }
             } @else {
               <span class="spacer"></span>
               <button class="btn" type="button" (click)="close()">Sluiten</button>
+              @if (resendable(d)) {
+                <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="sendLink(d)">
+                  {{ busyHere() ? 'Bezig…' : 'Nieuwe link sturen' }}
+                </button>
+              }
             }
           } @else {
             <span class="spacer"></span>
@@ -410,18 +433,24 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
     .lr-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
     .lr-row:last-child { border-bottom: 0; }
     .lr-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-    .lr-error { align-items: center; justify-content: space-between; }
+    /* On a phone the row is too narrow for one line: the e-mail address and the date are what staff decide on. */
+    .lr-meta span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: top; }
+    .lr-meta span:not(:last-child)::after { content: '·'; margin: 0 0.35em; }
+    .lr-error { align-items: center; }
+    .lr-error > div { flex: 1; min-width: 0; }
     .lr-error .btn { flex: none; }
     .lr-more { display: flex; justify-content: center; margin-top: 12px; }
     .lr-facts { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); gap: 6px 14px; font-size: 13.5px; }
     .lr-facts dt { color: var(--muted); }
     .lr-facts dd { min-width: 0; overflow-wrap: anywhere; }
-    .lr-facts .badge { margin-left: 6px; }
+    .lr-login { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+    .lr-login > span:first-child { min-width: 0; }
     .lr-message { white-space: pre-line; }
-    .lr-line { display: block; margin-top: 3px; color: var(--ink-2); font-size: 12.5px; }
+    .lr-line { flex-basis: 100%; color: var(--ink-2); font-size: 12.5px; }
     .lr-later { display: grid; gap: 8px; justify-items: start; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
     .lr-later h3 { font-size: 13.5px; font-weight: 650; }
     .lr-later .lr-facts { width: 100%; }
+    .lr-later .btn { max-width: 100%; height: auto; white-space: normal; text-align: left; }
     .lr-choices { display: grid; gap: 8px; }
     .lr-choice { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 12px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; font-size: 13.5px; }
@@ -432,12 +461,16 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
     .lr-nested { display: grid; gap: 8px; margin-left: 12px; padding-left: 12px; border-left: 2px solid var(--line); }
     .lr-nested.form-grid { gap: 0 12px; }
     .lr-foot { display: flex; flex: 1; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    /* Why the approve button is off, next to that button instead of somewhere in the scrolling body. */
+    .lr-foot__hint { order: -1; flex-basis: 100%; text-align: right; font-size: 12.5px; color: var(--ink-2); }
     @media (max-width: 679px) {
       /* The long approve label gets a row of its own; three buttons side by side cut it off at 375 px. */
-      .lr-foot__main { flex-basis: 100%; }
+      .lr-foot__main { order: 2; flex-basis: 100%; }
+      .lr-foot__hint { order: 1; text-align: center; }
       .lr-foot .spacer { display: none; }
     }
     .lr-hint { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    .lr-note { margin: 16px 0 0; }
   `,
 })
 export class LoginRequestsPage {
@@ -446,11 +479,14 @@ export class LoginRequestsPage {
   private readonly ui = inject(Ui);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly changes = inject(ChangeDetectorRef);
   readonly work = inject(WorkQueue);
   readonly desktop = inject(DesktopViewport);
 
   readonly segments = SEGMENTS;
   readonly languages = LANGUAGES;
+  readonly noteMax = REJECT_NOTE_MAX;
 
   readonly segment = signal<LoginRequestSegment>('open');
   readonly rows = signal<LoginRequest[]>([]);
@@ -458,7 +494,8 @@ export class LoginRequestsPage {
   readonly loadingMore = signal(false);
   readonly error = signal(false);
   readonly more = signal(false);
-  private page = 0;
+  /** How many pages of the current segment are on screen. */
+  private pages = 1;
   /** Drops the answer of a list call that a newer one has overtaken. */
   private listVersion = 0;
 
@@ -468,16 +505,24 @@ export class LoginRequestsPage {
   readonly detail = signal<LoginRequestDetail | null>(null);
   readonly detailError = signal<string | null>(null);
   private detailVersion = 0;
+  /** True from opening a sheet until its first detail arrived: that load starts from the preselection. */
+  private freshSheet = false;
 
   readonly choice = signal<LoginChoice | null>(null);
   readonly searching = signal(false);
   readonly query = signal('');
   readonly draft = signal<NewCustomerDraft>(EMPTY_DRAFT);
-  private readonly customers = signal<Customer[] | null>(null);
+  /** The optional internal note for a rejection. */
+  readonly note = signal('');
+  private readonly customers = signal<Customer[]>([]);
+  /** "Geen klant gevonden" is only true once the customers are there. */
+  readonly customersState = signal<'idle' | 'loading' | 'failed' | 'ready'>('idle');
   private readonly countries = signal<Country[]>([]);
   /** The request an action runs on; guards a double tap. */
   private readonly busyId = signal<number | null>(null);
   readonly busy = computed(() => this.busyId() !== null);
+  /** The running action belongs to the sheet that is open now. */
+  readonly busyHere = computed(() => this.busyId() !== null && this.busyId() === this.openId());
 
   readonly subtitle = computed(() => subtitle(this.work.loginRequestCount()));
   readonly intakeFull = computed(() => intakeFullTexts(this.work.loginIntakeFullSources()));
@@ -507,7 +552,7 @@ export class LoginRequestsPage {
     const needle = this.query().toLowerCase().trim();
     if (!needle) return [];
     const matched = new Set(this.matchRows().map((match) => match.customerId));
-    return (this.customers() ?? [])
+    return this.customers()
       .filter((customer) => customer.id !== null && !matched.has(customer.id)
         && [customer.company, customer.contact, customer.city, customer.vatNumber]
           .join(' ').toLowerCase().includes(needle))
@@ -563,16 +608,33 @@ export class LoginRequestsPage {
   }
 
   /** Back to the first page of the current segment. */
-  async reload(): Promise<void> {
+  reload(): Promise<void> {
+    return this.loadPages(1, false);
+  }
+
+  loadMore(): Promise<void> {
+    if (this.loadingMore() || this.loading()) return Promise.resolve();
+    return this.loadPages(this.pages + 1, true);
+  }
+
+  /**
+   * Loads the list from page 0 up to the given number of pages and replaces
+   * the rows. Also for Meer laden and after an action: the open list
+   * shrinks while requests are decided, so the next page by offset alone
+   * would skip waiting requests and leave decided rows on screen.
+   */
+  private async loadPages(count: number, appending: boolean): Promise<void> {
     const version = ++this.listVersion;
-    this.loading.set(true);
+    (appending ? this.loadingMore : this.loading).set(true);
     this.error.set(false);
     try {
-      const rows = await this.api.list(segmentToStatus(this.segment()), 0);
+      const status = segmentToStatus(this.segment());
+      const merged = mergePages(await Promise.all(
+        Array.from({ length: Math.max(count, 1) }, (_, page) => this.api.list(status, page))));
       if (version !== this.listVersion) return;
-      this.page = 0;
-      this.rows.set(rows);
-      this.more.set(hasMore(rows.length));
+      this.pages = merged.pages;
+      this.rows.set(merged.rows);
+      this.more.set(merged.more);
     } catch {
       if (version === this.listVersion) this.error.set(true);
     } finally {
@@ -583,31 +645,19 @@ export class LoginRequestsPage {
     }
   }
 
-  async loadMore(): Promise<void> {
-    if (this.loadingMore() || this.loading()) return;
-    const version = ++this.listVersion;
-    this.loadingMore.set(true);
-    this.error.set(false);
-    try {
-      const rows = await this.api.list(segmentToStatus(this.segment()), this.page + 1);
-      if (version !== this.listVersion) return;
-      this.page += 1;
-      const known = new Set(this.rows().map((row) => row.id));
-      this.rows.update((list) => [...list, ...rows.filter((row) => !known.has(row.id))]);
-      this.more.set(hasMore(rows.length));
-    } catch {
-      if (version === this.listVersion) this.error.set(true);
-    } finally {
-      if (version === this.listVersion) this.loadingMore.set(false);
-    }
-  }
-
   /* ---------------------------------------------------------------- sheet */
 
   open(id: number, row: LoginRequest | null): void {
     this.openId.set(id);
     this.openRow.set(row);
     this.detail.set(null);
+    /* A sheet never starts from what was chosen or typed in another request's sheet. */
+    this.choice.set(null);
+    this.searching.set(false);
+    this.query.set('');
+    this.draft.set(EMPTY_DRAFT);
+    this.note.set('');
+    this.freshSheet = true;
     void this.loadDetail(true);
   }
 
@@ -638,11 +688,19 @@ export class LoginRequestsPage {
       const detail = await this.api.detail(id);
       if (version !== this.detailVersion) return;
       this.detail.set(detail);
-      if (reset || detail.request.status !== 'PENDING') {
+      if (reset || this.freshSheet || detail.request.status !== 'PENDING') {
+        this.freshSheet = false;
         this.choice.set(defaultChoice(detail));
         this.searching.set(false);
         this.query.set('');
         this.draft.set(draftFromRequest(detail.request));
+      } else {
+        /* Same sheet, fresh facts: a choice the new detail no longer allows must not stay behind unseen. */
+        this.choice.set(reconcileChoice(detail, this.choice(), this.searching()));
+        if (choiceLocked(detail)) {
+          this.searching.set(false);
+          this.query.set('');
+        }
       }
     } catch (failure) {
       if (version !== this.detailVersion) return;
@@ -664,10 +722,27 @@ export class LoginRequestsPage {
   chooseSearch(): void {
     this.searching.set(true);
     this.choice.set(null);
-    if (this.customers() === null) {
-      void this.sales.customers().then(
-        (customers) => this.customers.set(customers),
-        (failure) => this.ui.toast(messageOf(failure, 'Klanten konden niet geladen worden'), 'err'));
+    void this.loadCustomers();
+  }
+
+  async loadCustomers(): Promise<void> {
+    if (this.customersState() === 'loading' || this.customersState() === 'ready') return;
+    this.customersState.set('loading');
+    try {
+      this.customers.set(await this.sales.customers());
+      this.customersState.set('ready');
+    } catch {
+      this.customersState.set('failed');
+    }
+  }
+
+  /** A searched customer that the new query no longer shows is no longer the choice. */
+  setQuery(query: string): void {
+    this.query.set(query);
+    const choice = this.choice();
+    if (this.searching() && choice?.kind === 'customer'
+      && !this.searchResults().some((customer) => customer.id === choice.customerId)) {
+      this.choice.set(null);
     }
   }
 
@@ -719,9 +794,16 @@ export class LoginRequestsPage {
     }, () => void this.sendApproval(request, { customerId: choice.customerId, newCustomer: null, confirmEmailMismatch: true }));
   }
 
+  /**
+   * The answer of an action belongs to the request it was started for. Staff
+   * may have closed that sheet and opened another one meanwhile, so the sheet
+   * is only closed or loaded again when it still shows that request.
+   */
   private async sendApproval(request: LoginRequest, body: ApproveLoginRequest): Promise<void> {
     if (this.busy()) return;
     this.busyId.set(request.id);
+    const index = this.rowIndex(request.id);
+    let closed = false;
     try {
       const result = await this.api.approve(request.id, body);
       if (result.invitation.sent) {
@@ -729,18 +811,19 @@ export class LoginRequestsPage {
           ? this.linkSentText(result.account, result.invitation)
           : 'Goedgekeurd. De link is verstuurd naar ' + result.account.email + ' en geldig tot '
             + dateText(result.invitation.expiresAt));
-        this.close();
+        closed = this.closeIfOpen(request.id);
       } else {
         /* The approval stands; the sheet stays open in its decided state, which has the retry button. */
         this.ui.toast('Goedgekeurd, maar de mail is niet vertrokken. Stuur de link opnieuw met Nieuwe link sturen.', 'err');
-        await this.loadDetail(false);
+        await this.reloadIfOpen(request.id);
       }
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Goedkeuren mislukt'), 'err');
-      await this.loadDetail(false);
+      await this.reloadIfOpen(request.id);
     } finally {
       this.busyId.set(null);
       await this.afterAction();
+      if (closed) this.focusList(index);
     }
   }
 
@@ -750,22 +833,27 @@ export class LoginRequestsPage {
     this.ui.confirm({
       title: 'Aanvraag afwijzen', message: rejectMessage(request.companyName, request.repeatCount),
       confirmLabel: 'Afwijzen', danger: true,
-    }, () => void this.sendReject(request));
+    }, () => {
+      if (this.openId() === request.id) void this.sendReject(request, rejectNote(this.note()));
+    });
   }
 
-  private async sendReject(request: LoginRequest): Promise<void> {
+  private async sendReject(request: LoginRequest, note: string | null): Promise<void> {
     if (this.busy()) return;
     this.busyId.set(request.id);
+    const index = this.rowIndex(request.id);
+    let closed = false;
     try {
-      await this.api.reject(request.id, null);
+      await this.api.reject(request.id, note);
       this.ui.toast('Aanvraag afgewezen');
-      this.close();
+      closed = this.closeIfOpen(request.id);
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Afwijzen mislukt'), 'err');
-      await this.loadDetail(false);
+      await this.reloadIfOpen(request.id);
     } finally {
       this.busyId.set(null);
       await this.afterAction();
+      if (closed) this.focusList(index);
     }
   }
 
@@ -782,18 +870,65 @@ export class LoginRequestsPage {
       this.ui.toast(messageOf(failure, 'Link sturen mislukt'), 'err');
     } finally {
       this.busyId.set(null);
-      await this.loadDetail(false);
+      await this.reloadIfOpen(detail.request.id);
       await this.afterAction();
     }
+  }
+
+  private closeIfOpen(requestId: number): boolean {
+    if (this.openId() !== requestId) return false;
+    this.close();
+    return true;
+  }
+
+  private async reloadIfOpen(requestId: number): Promise<void> {
+    if (this.openId() === requestId) await this.loadDetail(false);
+  }
+
+  private rowIndex(requestId: number): number {
+    return Math.max(this.rows().findIndex((row) => row.id === requestId), 0);
+  }
+
+  /**
+   * A decided row leaves the list, and the keyboard focus the sheet handed
+   * back to it would fall to the top of the document. It goes to the row
+   * that took its place, or to the segments when the list is empty.
+   */
+  private focusList(index: number): void {
+    if (this.openId() !== null) return;
+    this.changes.detectChanges();
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const host = this.host.nativeElement;
+    const rows = host.querySelectorAll<HTMLElement>('.lr-row');
+    (rows[Math.min(index, rows.length - 1)] ?? host.querySelector<HTMLElement>('app-segmented button'))?.focus();
   }
 
   private linkSentText(account: CustomerLogin, invitation: LoginInvitation): string {
     return 'Nieuwe link verstuurd naar ' + account.email + ', geldig tot ' + dateText(invitation.expiresAt);
   }
 
-  /** Every action moves the count and the lists. */
+  /** Every action moves the count and the lists; the pages that were loaded stay loaded. */
   private async afterAction(): Promise<void> {
-    await Promise.all([this.work.refresh(true), this.reload()]);
+    await Promise.all([this.work.refresh(true), this.loadPages(this.pages, false)]);
+  }
+
+  /** The decided sheet offers a new link while its login is not withdrawn. */
+  resendable(detail: LoginRequestDetail): boolean {
+    return detail.request.status === 'APPROVED' && detail.request.accountId !== null
+      && !!detail.existingAccount && detail.existingAccount.status !== 'DISABLED';
+  }
+
+  contactParts(row: LoginRequest): string[] {
+    return rowContactParts(row);
+  }
+
+  factParts(row: LoginRequest): string[] {
+    return rowFactParts(row, countryName(row.companyCountryCode));
+  }
+
+  loginBadges(match: LoginRequestMatch): LoginRequestMatch['logins'] {
+    return matchLoginBadges(match, this.detail()?.existingAccount?.id);
   }
 
   /* ---------------------------------------------------------------- texts */

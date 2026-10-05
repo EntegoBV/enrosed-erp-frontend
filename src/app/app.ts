@@ -81,7 +81,8 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
               </a>
               <a class="sidebar__link" routerLink="/klantlogins" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Login-aanvragen
+                <app-icon class="sidebar__icon" name="customers" [size]="18" />
+                <span class="sidebar__text">Login-aanvragen</span>
                 @if (openLoginRequests(); as n) { <span class="sidebar__count">{{ n }}</span> }
               </a>
               <a class="sidebar__link" routerLink="/prospects" routerLinkActive="active">
@@ -291,7 +292,7 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
              [class.active]="catalogRoute()" [attr.aria-current]="catalogRoute() ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="products" /></span> Producten
           </a>
-          <a class="tabbar__item" routerLink="/more" routerLinkActive="active"
+          <a class="tabbar__item" routerLink="/more"
              [class.active]="moreRoute()" [attr.aria-current]="moreRoute() ? 'page' : null">
             <span class="tabbar__icon">
               <app-icon name="more" />
