@@ -23,7 +23,9 @@ import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { channelCode, channelLabel } from './sales-channels';
 import {
-  STATUS_LABEL, actionNeeded, isWebsiteQuoteRequest, statusClass, statusOf,
+  STATUS_LABEL, actionNeeded, cancelledByCustomer, countsAsNewWebsiteItem, customerCanStillChange, customerRevised,
+  isWebOrder, isWebOrderConflict, isWebsiteQuoteRequest, statusClass, statusOf, webOrderDeletable, webOrderInProcessing,
+  webOrderRevision,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
@@ -124,8 +126,17 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                   [class.website-filter--active]="websiteOnly()"
                   [attr.aria-pressed]="websiteOnly()"
                   (click)="websiteOnly.set(!websiteOnly())">
-            <span>Websiteaanvragen</span>
+            <span>Website</span>
             <b>{{ websiteRequests().length }}</b>
+          </button>
+        }
+        @if (docTab() === 'OFFERTE' && ordersToTake().length) {
+          <button class="website-filter" type="button"
+                  [class.website-filter--active]="toTakeOnly()"
+                  [attr.aria-pressed]="toTakeOnly()"
+                  (click)="toTakeOnly.set(!toTakeOnly())">
+            <span>In verwerking te nemen</span>
+            <b>{{ ordersToTake().length }}</b>
           </button>
         }
         @if (filtersOpen()) {
@@ -167,6 +178,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                  [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
                  [class.swipe--dragging]="draggingOrderId() === row.order.id"
                  [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
+            @if (canArchive(row)) {
             <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
                     [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
                     [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ')
@@ -176,6 +188,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
               </svg>
               <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
             </button>
+            }
             <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
                appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
                (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
@@ -231,7 +244,12 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                 </div>
               </div>
               <div class="list-item__end list-item__end--stacked">
-                @if (websiteRequest(row.order)) {
+                @if (webOrder(row)) {
+                  <span class="so-source-mini">Websitebestelling</span>
+                  @if (webOrderPill(row); as pill) {
+                    <span [class]="'so-status-mini so-status-mini--' + pill.cls"><i aria-hidden="true"></i>{{ pill.label }}</span>
+                  }
+                } @else if (websiteRequest(row.order)) {
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
                 <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
@@ -263,7 +281,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
               </div>
               <span class="list-item__chev">›</span>
             </a>
-            @if (canDelete(row.order)) {
+            @if (canDelete(row)) {
               <button class="swipe__delete" type="button"
                       [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
                       [attr.aria-busy]="deletingOrderId() === row.order.id"
@@ -403,9 +421,10 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
               <i aria-hidden="true">›</i>
               <span><b>Openen</b><small>Bekijken of bewerken</small></span>
             </a>
-            @if (!partner(menuRow.order) && !menuRow.fulfillment) {
+            @if (!partner(menuRow.order) && !menuRow.fulfillment && !webOrder(menuRow)) {
               <button class="desk-action" type="button" [disabled]="!!splitBlockReason(menuRow)" (click)="openSplit(menuRow)"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ splitBlockReason(menuRow) || 'Verplaats producten naar een latere levering' }}</small></span></button>
             }
+            @if (canArchive(menuRow)) {
             <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
                     (click)="toggleArchive(menuRow)">
               <i aria-hidden="true">▤</i>
@@ -414,7 +433,8 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                 <small>{{ menuRow.order.archivedAt ? 'Terug naar de werklijst' : 'Uit de werklijst, naar het tabblad Archief' }}</small>
               </span>
             </button>
-            @if (canDelete(menuRow.order)) {
+            }
+            @if (canDelete(menuRow)) {
               <button class="desk-action desk-action--danger" type="button"
                       [disabled]="deletingOrderId() !== null || containerDeletingId() !== null" (click)="rowMenu.set(null); remove(menuRow)">
                 <i aria-hidden="true">×</i>
@@ -907,6 +927,8 @@ export class SalesList {
   }
   readonly newDocType = signal<'OFFERTE' | 'FACTUUR'>('OFFERTE');
   readonly websiteOnly = signal(false);
+  /** Only the website orders the customer can still change: the ones waiting for "In verwerking nemen". */
+  readonly toTakeOnly = signal(false);
 
   /** One row shows an action at a time; a committed delete still asks for confirmation. */
   readonly openRow = signal<{ id: number; side: RowSwipeSide } | null>(null);
@@ -938,6 +960,7 @@ export class SalesList {
     /* Quote statuses and invoice statuses are different vocabularies. */
     this.filter.set('');
     this.websiteOnly.set(false);
+    this.toTakeOnly.set(false);
     this.outstandingOnly.set(false);
     this.docsFilter.set('all');
     this.openRow.set(null);
@@ -948,6 +971,7 @@ export class SalesList {
   switchScope(scope: SalesScope): void {
     this.businessScope.set(scope);
     this.websiteOnly.set(false);
+    this.toTakeOnly.set(false);
     this.openRow.set(null);
     this.expandedGroups.set(new Set());
     this.rememberNavigation();
@@ -1126,6 +1150,7 @@ export class SalesList {
     const status = this.filter();
     const customer = this.customerFilter();
     const websiteOnly = this.websiteOnly();
+    const toTakeOnly = this.toTakeOnly();
     const needle = this.query().toLowerCase().trim();
     const documents = this.inTab();
     // A container is found by our own name and by its PO number: the server's live fields, else the advance's cargo snapshot.
@@ -1153,7 +1178,8 @@ export class SalesList {
           || (credit ? invoiceReceivable(row).creditEur <= 0 : invoiceReceivable(row).remainingEur <= 0))) return false;
       if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
-      if (websiteOnly && !isWebsiteQuoteRequest(row.order)) return false;
+      if (websiteOnly && !countsAsNewWebsiteItem(row)) return false;
+      if (toTakeOnly && !customerCanStillChange(row)) return false;
       if (!needle) return true;
       const purchaseId = containerOf(row);
       const names = purchaseId != null ? purchaseNames.get(purchaseId) : undefined;
@@ -1197,7 +1223,7 @@ export class SalesList {
 
   readonly activeFilterCount = computed(() =>
     (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
-      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0) + (this.docTab() === 'FACTUUR' && this.docsFilter() !== 'all' ? 1 : 0));
+      + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.toTakeOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0) + (this.docTab() === 'FACTUUR' && this.docsFilter() !== 'all' ? 1 : 0));
 
   readonly activeStatusLabel = computed(() =>
     this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
@@ -1211,6 +1237,7 @@ export class SalesList {
     this.filter.set('');
     this.customerFilter.set('');
     this.websiteOnly.set(false);
+    this.toTakeOnly.set(false);
     this.outstandingOnly.set(false);
     this.docsFilter.set('all');
     this.rememberNavigation();
@@ -1224,8 +1251,18 @@ export class SalesList {
     return this.customerById().get(row.order.customerId)?.company ?? 'Geen klant';
   }
 
-  canDelete(order: SalesOrder): boolean {
-    return isSwipeDeletableSalesDocument(order);
+  /** A website order stays until it is cancelled or declined: the customer sees it under their orders. */
+  canDelete(row: SalesOrderView): boolean {
+    return isSwipeDeletableSalesDocument(row.order) && webOrderDeletable(row);
+  }
+
+  /**
+   * Archiving is a staff change: on an order the customer can still change it
+   * would take the order into processing and mail the customer. That happens
+   * only through the button on the document.
+   */
+  canArchive(row: SalesOrderView): boolean {
+    return !customerCanStillChange(row);
   }
 
   documentLabel(order: SalesOrder): string {
@@ -1273,7 +1310,7 @@ export class SalesList {
     }
     event.preventDefault();
     event.stopPropagation();
-    this.swipeOffset.set(clampRowSwipeOffset(active.startOffset + dx, true, this.canDelete(row.order)));
+    this.swipeOffset.set(clampRowSwipeOffset(active.startOffset + dx, this.canArchive(row), this.canDelete(row)));
   }
 
   finishSwipe(event: PointerEvent, row: SalesOrderView): void {
@@ -1329,7 +1366,7 @@ export class SalesList {
       this.wheelTotal = 0;
     }, 250);
     /* Scrolling right slides the row left onto the bin; the other way onto the archive. */
-    const offset = clampRowSwipeOffset(-this.wheelTotal, true, this.canDelete(row.order));
+    const offset = clampRowSwipeOffset(-this.wheelTotal, this.canArchive(row), this.canDelete(row));
     if (rowSwipeDecision(offset).action === 'commit') {
       this.wheelOrderId = null;
       this.wheelTotal = 0;
@@ -1371,7 +1408,7 @@ export class SalesList {
 
   /** Off the working list into the archive drawer, or back; the document itself stays as it is. */
   async toggleArchive(row: SalesOrderView): Promise<void> {
-    if (this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
+    if (!this.canArchive(row) || this.archivingOrderId() !== null || this.containerDeletingId() !== null) return;
     const id = row.order.id;
     const toArchive = !row.order.archivedAt;
     const label = this.documentLabel(row.order);
@@ -1379,12 +1416,14 @@ export class SalesList {
     this.openRow.set(null);
     this.archivingOrderId.set(id);
     try {
+      const revision = webOrderRevision(row);
       const updated = toArchive
-        ? await this.sales.archiveOrder(id) : await this.sales.unarchiveOrder(id);
+        ? await this.sales.archiveOrder(id, revision) : await this.sales.unarchiveOrder(id, revision);
       this.all.update((rows) => rows.map((candidate) => candidate.order.id === id ? updated : candidate));
       this.ui.toast(toArchive ? `${label} ${row.order.number} gearchiveerd` : `${label} ${row.order.number} terug op de lijst`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt'), 'err');
+      this.reloadAfterWebOrderConflict(failure);
     } finally {
       this.archivingOrderId.set(null);
     }
@@ -1401,7 +1440,7 @@ export class SalesList {
 
   remove(row: SalesOrderView): void {
     const order = row.order;
-    if (!this.canDelete(order) || this.deletingOrderId() !== null || this.containerDeletingId() !== null
+    if (!this.canDelete(row) || this.deletingOrderId() !== null || this.containerDeletingId() !== null
         || this.ui.confirmRequest() !== null) return;
     const label = this.documentLabel(order);
     const customer = this.customerName(row);
@@ -1423,7 +1462,7 @@ export class SalesList {
         if (this.deletingOrderId() !== null || this.containerDeletingId() !== null) return;
         this.deletingOrderId.set(order.id);
         try {
-          await this.sales.deleteOrder(order.id);
+          await this.sales.deleteOrder(order.id, webOrderRevision(row));
           this.all.update((orders) =>
             orders.filter((candidate) => candidate.order.id !== order.id));
           this.openRow.set(null);
@@ -1431,6 +1470,7 @@ export class SalesList {
           this.ui.toast(`${label} verwijderd`);
         } catch (failure: unknown) {
           this.ui.toast(messageOf(failure, `${label} verwijderen mislukt`), 'err');
+          this.reloadAfterWebOrderConflict(failure);
         } finally {
           if (this.deletingOrderId() === order.id) this.deletingOrderId.set(null);
         }
@@ -1462,6 +1502,11 @@ export class SalesList {
     this.swipeOffset.set(0);
   }
 
+  /** The customer changed or cancelled the order after this list loaded: the rows are stale, fetch them again. */
+  private reloadAfterWebOrderConflict(failure: unknown): void {
+    if (isWebOrderConflict(failure)) void this.load();
+  }
+
   label = (status: QuoteStatus) => STATUS_LABEL[status];
   statusOf = statusOf;
   readonly channelCode = channelCode;
@@ -1472,12 +1517,26 @@ export class SalesList {
   readonly openWork = this.work.actions;
 
   /** The order marker remains visible in filters and rows, independent of a
-      personally dismissed bell item. */
+      personally dismissed bell item. What still waits for a first look:
+      website requests, and website orders nobody took into processing yet. */
   readonly websiteRequests = computed(() => this.all().filter((row) =>
     !row.order.archivedAt && !row.invoicedAsId
-    && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && isWebsiteQuoteRequest(row.order)));
+    && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && countsAsNewWebsiteItem(row)));
+  /** Website orders the customer can still change; staff take them with the button on the document. */
+  readonly ordersToTake = computed(() => this.all().filter((row) =>
+    !row.order.archivedAt && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && customerCanStillChange(row)));
   readonly attentionCount = computed(() => this.openWork().length);
   readonly websiteRequest = isWebsiteQuoteRequest;
+  readonly webOrder = isWebOrder;
+
+  /** Where a website order stands between the customer and us; one pill, the first that applies. */
+  webOrderPill(row: SalesOrderView): { label: string; cls: string } | null {
+    if (cancelledByCustomer(row)) return { label: 'Door klant geannuleerd', cls: 'danger' };
+    if (customerRevised(row)) return { label: 'Door klant gewijzigd', cls: 'blue' };
+    if (customerCanStillChange(row)) return { label: 'Klant kan nog wijzigen', cls: 'gold' };
+    if (webOrderInProcessing(row)) return { label: 'In verwerking', cls: 'neutral' };
+    return null;
+  }
 
   workIcon(kind: string): string {
     switch (kind) {

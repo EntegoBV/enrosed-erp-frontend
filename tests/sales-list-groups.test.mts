@@ -180,7 +180,7 @@ function listHarness(rows: SalesOrderView[]) {
     isWebsiteQuoteRequest: () => false });
   const screen = new exports.SalesList();
   Object.assign(screen, { all: signal(rows), docTab: signal('FACTUUR'), businessScope: signal('ALL'),
-    query: signal(''), filter: signal(''), customerFilter: signal(''), websiteOnly: signal(false), outstandingOnly: signal(false),
+    query: signal(''), filter: signal(''), customerFilter: signal(''), websiteOnly: signal(false), toTakeOnly: signal(false), outstandingOnly: signal(false),
     attention: () => null, customerName: (row: SalesOrderView) => `Customer ${row.order.customerId}`,
     openRow: signal(null), rememberNavigation() {},
   });

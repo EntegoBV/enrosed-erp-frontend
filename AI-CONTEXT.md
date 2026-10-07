@@ -750,6 +750,59 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
   through the esbuild bundle its header names; in the plain node run it is
   one of the known failing files.
 
+### Websitebestellingen (2026-10-08)
+A logged-in customer places an order on the website; staff confirm it here.
+The document is an ordinary quote whose view carries a `webOrder` block
+(and `delivery`, the address of that order) beside `order`. The block is the
+only key: the `[WEBSITE_AANVRAAG]` note marker also sits on legacy requests
+and on copies. Without the blocks (older backend) every screen is as before.
+- `quote-status.ts` holds the pure helpers (`isWebOrder`,
+  `customerCanStillChange`, `customerRevised`, `cancelledByCustomer`,
+  `webOrderInProcessing`, `webOrderRevision`, `webOrderDeletable`,
+  `webOrderTermsState`, `webOrderInvoiceable`, `webOrderMailDue`,
+  `webOrderMailRepeatable`, `countsAsNewWebsiteItem`, `isWebOrderConflict`).
+- **Read-only until taken.** While `customerCanStillChange` the customer may
+  still change or cancel on the website, so desk, phone editor and read view
+  offer no editing, transport, Versturen, invoice, advance invoice, split,
+  Archiveren or Verwijderen; PDF, Nieuwe kopie and `Bestelling annuleren`
+  stay. `In verwerking nemen` (confirm sheet, `takeIntoProcessing`) ends it
+  and mails the customer. Any other staff mutation takes the order too, on
+  the server; that is why nothing else is offered before the button.
+- **Revision.** Every mutating call of `SalesApi` takes `webOrderRevision`
+  as its last argument and must get `webOrderRevision(view)` of the copy
+  that screen shows, never the work queue's. A stale copy gets 409
+  `WEB_ORDER_CHANGED`: on a save the sentence lands in the save alert with
+  `Laatste versie laden` (no `Opnieuw opslaan`); on every other action it
+  is a toast and the screen reloads by itself. The list reloads its rows.
+- **Wording.** A web order never shows request wording: `Websitebestelling`,
+  `Bestelling annuleren`, and so on in every state. `webOrderNotice` in
+  `sales-invoice-actions.ts` is the single source of the banner and the
+  compare line per `termsState`; `canCreateInvoiceFromQuote` allows an
+  invoice without sending only for a taken order with `ORDER_EQUAL` or
+  `APPROVED`, otherwise the send action reads `Versturen ter goedkeuring`.
+  A customer-cancelled order cannot be reopened (`sales-reopen.ts`). No
+  `Order splitsen` and no partner link on a web order.
+- `sales-web-order-note.ts` (`app-sales-web-order-note`) shows the delivery
+  or pickup block, who ordered, the customer's cancellation and the state of
+  the customer mail with `Opnieuw sturen`; a derived invoice carries only
+  the delivery block. Staff cannot edit that address.
+- **List.** Badge `Websitebestelling` on every web order, with one pill
+  under it: `Door klant geannuleerd`, `Door klant gewijzigd`, `Klant kan nog
+  wijzigen` or `In verwerking`. The chip `Website` counts and filters what
+  waits for a first look (`countsAsNewWebsiteItem`: legacy requests and web
+  orders not yet in processing); the chip `In verwerking te nemen`
+  (`toTakeOnly`) shows when a row has `customerCanStillChange`. A row offers
+  no delete unless `webOrderDeletable` and no archive (swipe or menu) while
+  the customer can still change: one swipe would take the order and mail
+  the customer. The list endpoint leaves `orderedTotalExclVat` null and
+  `differences` empty; only the document itself has them.
+- **Dashboard.** 'Nieuwe websiteaanvragen en -bestellingen' uses the same
+  `countsAsNewWebsiteItem`, so an order in processing is no longer "nieuw".
+- Members of `SalesDesk`, `SalesEditor`, `SalesView` and `SalesList.todo`
+  are run in isolation by node tests with a fixed set of globals; a new free
+  function on such a path breaks them, so those members read `view.webOrder`
+  inline.
+
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.
 - List → **read-only view first** (stepper without Onderweg, products
