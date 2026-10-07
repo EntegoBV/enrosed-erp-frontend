@@ -9,6 +9,7 @@ import { DateField } from '../../shared/date-field';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { AdvanceChoice, advanceBaseExcl, advancePreview, remainingToInvoiceExcl } from './sales-advance-billing';
+import { isWebOrderConflict, webOrderRevision } from './quote-status';
 
 type Mode = 'P30' | 'P50' | 'PCT' | 'AMOUNT';
 
@@ -69,6 +70,8 @@ export class SalesAdvanceInvoiceSheet {
   readonly view = input.required<SalesOrderView>();
   readonly closed = output<void>();
   readonly created = output<SalesOrderView>();
+  /** The customer changed or cancelled the website order meanwhile; the host reloads its view. */
+  readonly conflict = output<void>();
 
   readonly desktop = inject(DesktopViewport);
   private readonly sales = inject(SalesApi);
@@ -109,13 +112,20 @@ export class SalesAdvanceInvoiceSheet {
     if (this.busy() || !request) return;
     this.busy.set(true); this.submitError.set('');
     try {
-      const invoice = await this.sales.createAdvanceInvoice(this.view().order.id, request);
+      const invoice = await this.sales.createAdvanceInvoice(this.view().order.id, request, webOrderRevision(this.view()));
       this.ui.toast(`${invoice.order.number} aangemaakt · voorschot, niet verstuurd`);
       /* Both outputs fire while the sheet is alive; the navigation may unmount the host. */
       this.created.emit(invoice);
       this.closed.emit();
       await this.router.navigate(['/sales', invoice.order.id]);
     } catch (failure: unknown) {
+      if (isWebOrderConflict(failure)) {
+        /* Nothing was written and the figures in this sheet are stale: the host shows the latest version. */
+        this.ui.toast(messageOf(failure, 'Voorschotfactuur maken mislukt'), 'err');
+        this.conflict.emit();
+        this.closed.emit();
+        return;
+      }
       this.submitError.set(messageOf(failure, 'Voorschotfactuur maken mislukt'));
     } finally {
       this.busy.set(false);

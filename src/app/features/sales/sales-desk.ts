@@ -4,6 +4,7 @@ import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
+import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -70,7 +71,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -94,7 +95,7 @@ interface JourneyStep {
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         }
-        @if (!isCreditNoteDoc() && !splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()">Order splitsen</button> }
+        @if (!isCreditNoteDoc() && !isWebOrder() && !splitBlockReason(data)) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()">Order splitsen</button> }
         <button class="btn btn--sm" type="button" (click)="openPdfSheet()">PDF</button>
         @if (canCreateCreditNote()) { <button class="btn btn--sm" type="button" [disabled]="dirty() || saving() || sending() || invoiceBusy()" [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="openCreditSheet()">Creditnota maken</button> }
         @if (isCreditNoteDoc() && data.order.status === 'CONCEPT') {
@@ -112,14 +113,19 @@ interface JourneyStep {
           <!-- The settlement is the next step; undoing the document is not. -->
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="noteRefund()">{{ creditStep()!.label }}</button>
         }
-        @if (canReopen(data)) {
+        @if (webOrderOpen()) {
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openTake()">In verwerking nemen</button>
+        } @else if (canReopen(data)) {
           <button class="btn btn--sm" [class.btn--primary]="!isCreditNoteDoc()" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
         } @else if (!isClaimDoc() && (data.order.status === 'CONCEPT'
                    || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="sending() || dirty()"
                   [title]="dirty() ? 'Sla eerst op' : ''" (click)="openSend()">
-            {{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}
+            {{ sendLabel(data) }}
           </button>
+        } @else if (!isClaimDoc() && data.order.status === 'GEACCEPTEERD' && invoiceBlockedByOrder(data)) {
+          <!-- The approved figures moved: the way on is a new copy sent for approval, not an invoice. -->
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">Nieuwe kopie</button>
         } @else if (!isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="makeInvoice(data)">
             {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
@@ -132,7 +138,7 @@ interface JourneyStep {
         <header class="desk-hero">
           <div class="desk-hero__top">
             <div class="desk-hero__who">
-              <span class="desk-hero__eyebrow">{{ documentLabel(data.order) }}@if (websiteRequest(data.order)) { · websiteaanvraag }</span>
+              <span class="desk-hero__eyebrow">{{ documentLabel(data.order) }}@if (isWebOrder()) { · websitebestelling } @else if (websiteRequest(data.order)) { · websiteaanvraag }</span>
               <h1>{{ customerName() }}</h1>
               <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
                 · {{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</p>
@@ -230,7 +236,13 @@ interface JourneyStep {
               <span>{{ data.priced.totals.vatLegalMention ? 'btw verlegd' : 'excl. btw · ' + ((data.priced.totals.totalInclVat) | eur: (isPartnerDocument(data.order) ? 2 : 0)) + ' incl.' }}@if (data.creditedEur) { · {{ data.creditedEur | eur }} gecrediteerd }</span>
               }
             </button>
-            @if (allProductsUnavailable()) {
+            @if (webOrderOpen()) {
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openTake()">
+                <small>Volgende stap</small>
+                <strong>In verwerking nemen ›</strong>
+                <span>de klant kan nog wijzigen</span>
+              </button>
+            } @else if (allProductsUnavailable()) {
               <button class="desk-kpi desk-kpi--go" type="button" (click)="railTab.set('status')">
                 <small>Beschikbaarheid</small><strong>Geen leverbare producten</strong><span>Herstel een product om verder te gaan</span>
               </button>
@@ -239,6 +251,12 @@ interface JourneyStep {
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
                 <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : skipsShipping(data) ? 'voorschot · geen levering' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
+              </button>
+            } @else if (data.order.status === 'GEACCEPTEERD' && invoiceBlockedByOrder(data)) {
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy()" (click)="duplicate()">
+                <small>Volgende stap</small>
+                <strong>Nieuwe kopie ›</strong>
+                <span>ter goedkeuring versturen</span>
               </button>
             } @else if (data.order.status === 'GEACCEPTEERD') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
@@ -255,7 +273,7 @@ interface JourneyStep {
             } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()">
                 <small>Volgende stap</small>
-                <strong>{{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }} ›</strong>
+                <strong>{{ sendLabel(data) }} ›</strong>
                 <span>{{ dirty() ? 'slaat eerst op' : (data.awaitingResend ? 'de klant wacht op de nieuwe versie' : 'klaar voor de klant') }}</span>
               </button>
             } @else {
@@ -271,9 +289,23 @@ interface JourneyStep {
 
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
-        <app-sales-advance-billing [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
+        <app-sales-advance-billing [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy() || invoiceBlockedByOrder(data)" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
         <app-sales-advance-deductions [view]="data" />
-        <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
+        <!-- The customer's message and what the website order adds to it share a row on a wide desk. -->
+        <div class="desk-notes">
+          <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
+          @if (data.webOrder || data.delivery) { <app-sales-web-order-note class="desk-web-note" [view]="data" (changed)="adopt($event)" /> }
+        </div>
+
+        @if (webOrderNotice(); as notice) {
+          <div class="desk-attention desk-attention--order" role="status">
+            <b>↗</b>
+            <span><strong>Websitebestelling</strong> · {{ notice.lead }}
+              @for (line of notice.lines; track line.text) { <small [class.desk-attention__gold]="line.gold">{{ line.text }}</small> }
+            </span>
+            @if (websiteRequest(data.order)) { <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button> }
+          </div>
+        }
 
         @if (pendingRevision(); as revision) {
           <div class="desk-attention" role="status">
@@ -281,7 +313,7 @@ interface JourneyStep {
             <span><strong>De klant vraagt een wijziging</strong> · {{ revision.lines.length }} gewijzigde {{ revision.lines.length === 1 ? 'regel' : 'regels' }}@if (revision.proposedBy) { · {{ revision.proposedBy }} }</span>
             <button class="linklike" type="button" (click)="railTab.set('status')">Beoordelen ›</button>
           </div>
-        } @else if (websiteRequest(data.order)) {
+        } @else if (websiteRequest(data.order) && !isWebOrder()) {
           <div class="desk-attention" role="status">
             <b>↗</b>
             <span><strong>Websiteaanvraag</strong> · controleer producten en dozen, klant en btw ({{ vatLabel(data.priced.totals.vatTreatment) }}), levering en vracht vóór het versturen</span>
@@ -298,8 +330,8 @@ interface JourneyStep {
           <div class="alert alert--warn desk-alert" role="alert">
             <span class="alert__icon">!</span>
             <div class="grow"><b>Nog niet opgeslagen</b><div class="small">{{ saveError() }}</div></div>
-            <button class="btn btn--sm" type="button" [disabled]="saving()" (click)="reloadLatestOrder()">Serverversie laden</button>
-            <button class="btn btn--sm btn--primary" type="button" [disabled]="saving() || !dirty()" (click)="save()">Opnieuw opslaan</button>
+            <button class="btn btn--sm" [class.btn--primary]="saveConflict()" type="button" [disabled]="saving()" (click)="reloadLatestOrder()">{{ saveConflict() ? 'Laatste versie laden' : 'Serverversie laden' }}</button>
+            @if (!saveConflict()) { <button class="btn btn--sm btn--primary" type="button" [disabled]="saving() || !dirty()" (click)="save()">Opnieuw opslaan</button> }
           </div>
         } @else if (previewError()) {
           <div class="alert alert--warn desk-alert" role="alert">
@@ -323,7 +355,7 @@ interface JourneyStep {
             <span><b>Deze creditnota staat vast.</b> Bedragen veranderen niet meer; het tegoed handel je af bij Afhandeling.</span>
             <button class="btn btn--sm" type="button" (click)="railTab.set('payments')">Afhandeling ›</button>
           </div>
-        } @else if (!canEdit()) {
+        } @else if (!canEdit() && !webOrderOpen()) {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
             <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer. {{ canEditTerms() ? 'Transport en leverweken kun je aanpassen zolang de offerte nog openstaat; transport wordt automatisch opgeslagen.' : 'Deze offerte is afgesloten; transport kan niet meer worden aangepast.' }}</span>
@@ -833,7 +865,7 @@ interface JourneyStep {
                           </div>
                         }
                       </section>
-                    } @else {
+                    } @else if (!isWebOrder()) {
                       <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
                         <button class="linklike" type="button" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
                     }
@@ -981,9 +1013,13 @@ interface JourneyStep {
                           <a class="desk-action" [routerLink]="['/sales', quoteId]"><i aria-hidden="true">›</i><span><b>Naar de offerte</b><small>Waar deze factuur uit gemaakt is</small></span></a>
                         }
                       } @else {
-                        @if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
+                        @if (webOrderOpen()) {
+                          <button class="desk-action" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openTake()">
+                            <i aria-hidden="true">✓</i><span><b>In verwerking nemen</b><small>Daarna kun je bewerken, versturen of factureren; de klant krijgt een e-mail</small></span>
+                          </button>
+                        } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
                           <button class="desk-action" type="button" [disabled]="sending() || sendIssues().length > 0 || dirty()" (click)="openSend()">
-                            <i aria-hidden="true">➤</i><span><b>{{ data.order.sentAt ? 'Opnieuw versturen' : 'Versturen' }}</b><small>{{ dirty() ? 'Sla eerst op' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
+                            <i aria-hidden="true">➤</i><span><b>{{ sendLabel(data) }}</b><small>{{ dirty() ? 'Sla eerst op' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
                           </button>
                         }
                         @if (advanceAgreement() || canCreateInvoice(data)) {
@@ -998,12 +1034,12 @@ interface JourneyStep {
                           <button class="desk-action" type="button" [disabled]="busy()" (click)="reopen()"><i aria-hidden="true">↺</i><span><b>Heropenen</b><small>Terug naar concept om aan te passen</small></span></button>
                         }
                         @if (canCancel()) {
-                          <button class="desk-action" type="button" [disabled]="busy()" (click)="openCancel()"><i aria-hidden="true">⊘</i><span><b>{{ websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Offerte annuleren' }}</b><small>De klant kan niet meer aanvaarden</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="busy()" (click)="openCancel()"><i aria-hidden="true">⊘</i><span><b>{{ cancelLabel(data) }}</b><small>De klant kan niet meer aanvaarden</small></span></button>
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Taal en inhoud kiezen en downloaden</small></span></button>
                       }
                       @if (!isCreditNoteDoc()) {
-                      @if (!isPartnerDocument(data.order) && !data.fulfillment) { <button class="desk-action" type="button" [disabled]="!!splitBlockReason(data) || dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : splitBlockReason(data) || 'Verplaats producten naar een nalevering' }}</small></span></button> }
+                      @if (!isPartnerDocument(data.order) && !data.fulfillment && !isWebOrder()) { <button class="desk-action" type="button" [disabled]="!!splitBlockReason(data) || dirty() || saving() || sending() || invoiceBusy()" (click)="openSplit()"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : splitBlockReason(data) || 'Verplaats producten naar een nalevering' }}</small></span></button> }
                       <button class="desk-action" type="button" [disabled]="busy()" (click)="duplicate()"><i aria-hidden="true">⧉</i><span><b>{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</b><small>{{ isPartnerDocument(data.order) ? 'Voorschotten en afrekeningen op de container bekijken' : 'Een nieuw concept met dezelfde inhoud' }}</small></span></button>
                       }
                     </div>
@@ -1110,7 +1146,7 @@ interface JourneyStep {
         <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" />
       }
       @if (advanceSheetOpen()) {
-        <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" />
+        <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" (conflict)="reloadAfterConflict()" />
       }
       @if (offsetOpen()) {
         <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" />
@@ -1146,10 +1182,12 @@ interface JourneyStep {
       }
 
       @if (cancelSheet()) {
-        <app-sheet [title]="websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Offerte annuleren'" (closed)="cancelSheet.set(false)">
+        <app-sheet [title]="cancelLabel(data)" (closed)="cancelSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              @if (websiteRequest(data.order) && !data.order.sentAt) {
+              @if (isWebOrder()) {
+                De klant plaatste deze bestelling via de website. Ze gaat op “Geannuleerd”; de klant ziet dat onder Mijn bestellingen.
+              } @else if (websiteRequest(data.order) && !data.order.sentAt) {
                 De klant stuurde deze aanvraag via de website en kreeg nog geen offerte. Ze gaat op “Geannuleerd”; er volgt geen offerte. Heropenen kan later nog.
               } @else {
                 De offerte gaat op “Geannuleerd” en kan niet meer aanvaard worden. Heropenen kan later nog; dan staat ze weer op concept.
@@ -1158,27 +1196,38 @@ interface JourneyStep {
             <div class="field">
               <label for="sd-cancel-message">Bericht aan de klant <span class="opt"></span></label>
               <textarea class="textarea" id="sd-cancel-message" rows="3" [ngModel]="cancelMessage()" (ngModelChange)="cancelMessage.set($event)"
-                        placeholder="bijv. de gevraagde kleur is niet meer leverbaar; u krijgt een nieuwe offerte"></textarea>
+                        [placeholder]="isWebOrder() ? 'bijv. zoals afgesproken aan de telefoon' : 'bijv. de gevraagde kleur is niet meer leverbaar; u krijgt een nieuwe offerte'"></textarea>
             </div>
             <label class="switch-row" [class.switch-row--on]="cancelNotify()">
               <span class="switch-row__copy">
                 <b>Klant verwittigen per e-mail</b>
                 <small>
-                  @if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
+                  @if (isWebOrder()) { De klant krijgt in zijn eigen taal een mail dat de bestelling geannuleerd is. }
+                  @else if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
                   @else if (data.order.sentAt) { Naar {{ customerEmail() }}, met de link naar de offertepagina, waar ze als geannuleerd staat. }
                   @else { De klant krijgt in zijn eigen taal een mail dat de aanvraag geannuleerd is, met een knop om een nieuwe aanvraag te starten. }
                 </small>
               </span>
               <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="cancelNotify()"
-                     [disabled]="!customerEmail()" [ngModel]="cancelNotify()" (ngModelChange)="cancelNotify.set($event)" />
+                     [disabled]="!cancelMailPossible()" [ngModel]="cancelNotify()" (ngModelChange)="cancelNotify.set($event)" />
               <span class="switch-row__track" aria-hidden="true"><i></i></span>
             </label>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="cancelSheet.set(false)">Terug</button>
             <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="cancel()">
-              {{ busy() ? 'Bezig…' : (websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : 'Offerte annuleren') }}
+              {{ busy() ? 'Bezig…' : cancelLabel(data) }}
             </button>
+          </div>
+        </app-sheet>
+      }
+
+      @if (takeSheet()) {
+        <app-sheet title="Bestelling in verwerking nemen?" (closed)="takeSheet.set(false)">
+          <div body><p style="font-size:14.5px;line-height:1.55">De klant kan de bestelling daarna niet meer wijzigen of annuleren op de website en krijgt hiervan een e-mail.</p></div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" data-initial-focus (click)="takeSheet.set(false)">Terug</button>
+            <button class="btn btn--primary" type="button" [disabled]="busy() || documentMutationBusy()" (click)="take()">{{ documentMutationBusy() ? 'Bezig…' : 'In verwerking nemen' }}</button>
           </div>
         </app-sheet>
       }
@@ -1368,6 +1417,10 @@ interface JourneyStep {
     .desk-ship{display:grid;gap:8px;margin:0;padding:0;list-style:none}.desk-ship li{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px}.desk-ship__photo{width:40px;height:40px;flex:none;border-radius:9px;object-fit:cover;border:1px solid var(--line)}.desk-ship__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted)}.desk-ship__copy{display:grid;flex:1;min-width:0}.desk-ship__copy strong{font-size:13px}.desk-ship__copy small{color:var(--muted);font-size:11px}.desk-ship__stock{font-variant-numeric:tabular-nums;font-weight:700}.desk-ship__stock.is-bad{color:var(--danger)}
     .desk-loading{padding:40px;color:var(--muted);text-align:center}.desk-load-error{display:grid;gap:8px;justify-items:start;padding:20px}
     .hint--warn{color:var(--danger);font-weight:650}
+    .desk-notes{display:grid;column-gap:14px}.desk-web-note{margin-bottom:16px}
+    @media(min-width:1180px){.desk-notes{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-items:start}}
+    .desk-attention--order{align-items:flex-start}.desk-attention--order small{display:block;margin-top:4px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+    .desk-attention--order small.desk-attention__gold{padding:5px 8px;border-left:3px solid var(--gold);border-radius:8px;background:var(--surface);color:var(--ink)}
     .check-option{display:flex;gap:10px;padding:8px 0;cursor:pointer}.check-option input{width:20px;height:20px;flex:none;accent-color:var(--rose)}.check-option span{display:grid;gap:2px}.check-option strong{font-size:12.5px}.check-option small{color:var(--muted);font-size:11px}
   `],
 })
@@ -1383,7 +1436,7 @@ export class SalesDesk extends SalesEditor {
   }
   readonly financiallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
   readonly commercialEditable = computed(() => this.canEdit() && !this.financiallyLocked() && !this.advanceLocked());
-  openSplit(): void { if (this.dirty() || this.saving() || this.sending() || this.invoiceBusy() || this.splitBlockReason(this.view())) return; this.splitOpen.set(true); }
+  openSplit(): void { if (this.dirty() || this.saving() || this.sending() || this.invoiceBusy() || this.splitBlockReason(this.view()) || this.isWebOrder()) return; this.splitOpen.set(true); }
   closeSplit(): void { this.splitOpen.set(false); this.splitBusy.set(false); if (!this.dirty()) void this.reloadLatestOrder(); }
   splitSaved(result: SalesSplitResult): void {
     this.splitOpen.set(false); this.splitBusy.set(false);
@@ -1536,12 +1589,13 @@ export class SalesDesk extends SalesEditor {
     if (!canCreateInvoiceFromQuote(data)) return;
     this.invoiceBusy.set(true);
     try {
-      const invoice = await this.sales.createInvoiceFrom(data.order.id);
+      /* The revision of this screen's copy, read inline: the node tests run this method without its imports. */
+      const invoice = await this.sales.createInvoiceFrom(data.order.id, data.webOrder?.revision ?? null);
       this.refreshWorkQueue();
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.router.navigate(['/sales', invoice.order.id]);
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Factuur maken mislukt'), 'err');
+      this.actionFailed(failure, 'Factuur maken mislukt');
     } finally {
       this.invoiceBusy.set(false);
     }
