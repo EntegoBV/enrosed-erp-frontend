@@ -8,6 +8,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { countryName } from '../../core/api/geo';
+import { CustomerLoginBlock } from './customer-login-block';
 
 function blank(countryCode: string): Customer {
   return {
@@ -22,9 +23,9 @@ function blank(countryCode: string): Customer {
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, PageHeader, Sheet],
+  imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock],
   template: `
-    <app-page-header title="Klanten" [subtitle]="filtered().length + ' klanten'">
+    <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Nieuw
       </button>
@@ -166,6 +167,11 @@ function blank(countryCode: string): Customer {
                 <span><b>Inklaring in Nederland via onze fiscaal vertegenwoordiger</b><small>De btw verschuift naar deze klant (art. 12.3 Wet OB). Offerte en voorschotfactuur vermelden onze beperkt fiscaal vertegenwoordiger, de verlegging en het btw-nummer van de klant; de slotfactuur enkel de verlegging. Vraagt een btw-nummer.</small></span>
               </label>
             </div>
+            @if (draft().id; as customerId) {
+              <div class="field span-2 partner-field">
+                <app-customer-login-block [customerId]="customerId" [customerEmail]="draft().email || null" />
+              </div>
+            }
             <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
               <textarea class="textarea" id="c-invoice-note" [ngModel]="draft().invoiceNote ?? ''"
                         (ngModelChange)="patch({ invoiceNote: $event })" placeholder="Komt op elke offerte en factuur voor deze klant."></textarea></div>

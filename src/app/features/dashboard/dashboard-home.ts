@@ -14,6 +14,7 @@ import { isPartnerFundingDocument, partnerFinancingAnalysis, resultAnalysis } fr
 import { FinanceApi } from '../../core/api/finance-api';
 import { PlannerStore } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
+import { WorkQueue } from '../../core/api/work-queue';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
@@ -114,6 +115,18 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                     <small>{{ salesActionLabel() }}</small>
                   </span>
                   <strong class="work-row__number">{{ salesActionCount() }}</strong>
+                  <span class="work-row__chev" aria-hidden="true">›</span>
+                </a>
+              }
+
+              @if (work.loginRequestCount() > 0) {
+                <a class="work-row" routerLink="/klantlogins">
+                  <span class="work-row__icon"><app-icon name="customers" [size]="18" /></span>
+                  <span class="work-row__copy">
+                    <b>Login-aanvragen</b>
+                    <small>Wachten op goedkeuring</small>
+                  </span>
+                  <strong class="work-row__number">{{ work.loginRequestCount() }}</strong>
                   <span class="work-row__chev" aria-hidden="true">›</span>
                 </a>
               }
@@ -463,6 +476,7 @@ export class DashboardHome {
   private readonly catalog = inject(CatalogApi);
   private readonly planner = inject(PlannerStore);
   private readonly analytics = inject(AnalyticsApi);
+  readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly plannerCards = viewChild(PlannerCards);
@@ -536,7 +550,8 @@ export class DashboardHome {
     + Number(this.purchaseAttentionOrders().length > 0)
     + Number(this.financing().unbilledAdvanceCount > 0)
     + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0 || this.receivables().creditNoteCount > 0)
-    + Number(this.catalogAttention() > 0));
+    + Number(this.catalogAttention() > 0)
+    + Number(this.work.loginRequestCount() > 0));
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
     && this.purchasesReady() && this.catalogReady());
 
@@ -661,6 +676,7 @@ export class DashboardHome {
     if (this.refreshing()) return;
     if (this.loadedOnce) this.refreshing.set(true);
     else this.loading.set(true);
+    void this.work.refresh();
 
     try {
       const [sales, purchases, revisions, products, families, suppliers, website, costs, incoming, partners] = await Promise.allSettled([

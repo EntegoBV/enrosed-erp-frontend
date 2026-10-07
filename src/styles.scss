@@ -1602,6 +1602,11 @@ table.data tfoot td {
   line-height: 15px;
   text-align: center;
 }
+/* A link label that shares its row with a count stays on one line. The count
+   moves closer so that the bold label of the open page still fits beside it. */
+.sidebar__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar__text:not(:last-child) { margin-right: -8px; }
+.sidebar__text + .sidebar__count { padding-inline: 4px; }
 .sidebar__count {
   margin-left: auto;
   min-width: 19px;
