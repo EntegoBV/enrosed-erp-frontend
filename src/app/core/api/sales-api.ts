@@ -18,6 +18,16 @@ export interface WebsiteQuoteSettings {
   pricesVisible: boolean;
 }
 
+/**
+ * The website-order revision a staff mutation presents. Always the one of the
+ * copy the calling screen shows, never a shared or refreshed copy: the server
+ * refuses a stale one instead of overwriting the customer's change. Nothing is
+ * sent for a document that is no website order.
+ */
+function revisionQuery(webOrderRevision: number | null | undefined): string {
+  return typeof webOrderRevision === 'number' ? `?webOrderRevision=${webOrderRevision}` : '';
+}
+
 @Injectable({ providedIn: 'root' })
 export class SalesApi {
   private readonly http = inject(HttpClient);
@@ -140,14 +150,16 @@ export class SalesApi {
   }
 
   /** A concept voorschotfactuur on a regular quote: a percentage of its total excl. VAT, or an amount. Nothing is sent. */
-  createAdvanceInvoice(quoteId: number, body: SalesAdvanceInvoiceRequest): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/advance-invoice`), body));
+  createAdvanceInvoice(quoteId: number, body: SalesAdvanceInvoiceRequest,
+                       webOrderRevision?: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(
+      api(`/api/sales-orders/${quoteId}/advance-invoice${revisionQuery(webOrderRevision)}`), body));
   }
 
   /** Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. With advances it is the slotfactuur. */
-  createInvoiceFrom(quoteId: number): Promise<SalesOrderView> {
+  createInvoiceFrom(quoteId: number, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice${revisionQuery(webOrderRevision)}`), {}));
   }
 
   markInvoiceSent(id: number): Promise<SalesOrderView> {
@@ -252,15 +264,17 @@ export class SalesApi {
     return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/preview`), order));
   }
 
-  updateOrder(id: number, order: SalesOrder): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}`), order));
+  updateOrder(id: number, order: SalesOrder, webOrderRevision?: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(
+      api(`/api/sales-orders/${id}${revisionQuery(webOrderRevision)}`), order));
   }
 
   /** Changes only delivery promises; safe after the commercial quote is locked. */
   updateDeliveryTerms(id: number,
-                      lines: { productId: number; deliveryWeek: string | null }[]): Promise<SalesOrderView> {
+                      lines: { productId: number; deliveryWeek: string | null }[],
+                      webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}/delivery-terms`), { lines }));
+      api(`/api/sales-orders/${id}/delivery-terms${revisionQuery(webOrderRevision)}`), { lines }));
   }
 
   /** Changes only the open freight item; prices and quantities stay locked. */
@@ -268,15 +282,17 @@ export class SalesApi {
                 manualFreightEur: number | null,
                 freightPricingStrategy: FreightPricingStrategy | null,
                 freightRatePerCbmEur: number | null,
-                freightCarrierId: number | null = null): Promise<SalesOrderView> {
+                freightCarrierId: number | null = null,
+                webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}/freight`), {
+      api(`/api/sales-orders/${id}/freight${revisionQuery(webOrderRevision)}`), {
         state, manualFreightEur, freightPricingStrategy, freightRatePerCbmEur, freightCarrierId,
       }));
   }
 
-  updateShipping(id: number, shipping: ShippingUpdate): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.put<SalesOrderView>(api(`/api/sales-orders/${id}/shipping`), shipping));
+  updateShipping(id: number, shipping: ShippingUpdate, webOrderRevision?: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.put<SalesOrderView>(
+      api(`/api/sales-orders/${id}/shipping${revisionQuery(webOrderRevision)}`), shipping));
   }
 
   duplicateOrder(id: number): Promise<SalesOrderView> {
@@ -284,39 +300,57 @@ export class SalesApi {
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/duplicate`), {}));
   }
 
-  deleteOrder(id: number): Promise<void> {
-    return firstValueFrom(this.http.delete<void>(api(`/api/sales-orders/${id}`)));
+  deleteOrder(id: number, webOrderRevision?: number | null): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/sales-orders/${id}${revisionQuery(webOrderRevision)}`)));
   }
 
   /** Off the working list into the archive tab; the document itself does not change. */
-  archiveOrder(id: number): Promise<SalesOrderView> {
+  archiveOrder(id: number, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/archive`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/archive${revisionQuery(webOrderRevision)}`), {}));
   }
 
-  unarchiveOrder(id: number): Promise<SalesOrderView> {
+  unarchiveOrder(id: number, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/unarchive`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/unarchive${revisionQuery(webOrderRevision)}`), {}));
+  }
+
+  /* ------------------------------------------------- websitebestellingen */
+
+  /**
+   * Closes a website order for the customer and mails them. Pass the revision
+   * of the copy the screen shows: a stale one is refused, nothing is taken.
+   */
+  takeIntoProcessing(id: number, webOrderRevision: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(
+      api(`/api/sales-orders/${id}/take-into-processing${revisionQuery(webOrderRevision)}`), {}));
+  }
+
+  /** Sends the customer mail that is due and unsent; with repeat the last order mail goes out once more. */
+  resendWebOrderMails(id: number, repeat = false): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(
+      api(`/api/sales-orders/${id}/web-order/mails${repeat ? '?repeat=true' : ''}`), {}));
   }
 
   /* ----------------------------------------------------------- offertes */
 
   /** Builds the PDF, mails it to the customer and marks the quote sent. */
-  sendQuote(id: number, message: string): Promise<SalesOrderView> {
+  sendQuote(id: number, message: string, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send`), { message }));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send${revisionQuery(webOrderRevision)}`), { message }));
   }
 
   /** Withdraws an open quote; with notify the customer gets a mail with the portal link. */
-  cancelQuote(id: number, message: string, notifyCustomer: boolean): Promise<SalesOrderView> {
-    return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/cancel`), { message, notifyCustomer }));
+  cancelQuote(id: number, message: string, notifyCustomer: boolean,
+              webOrderRevision?: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(
+      api(`/api/sales-orders/${id}/cancel${revisionQuery(webOrderRevision)}`), { message, notifyCustomer }));
   }
 
   /** Puts a rejected, expired or cancelled quote back on concept. */
-  reopenQuote(id: number): Promise<SalesOrderView> {
+  reopenQuote(id: number, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/reopen`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/reopen${revisionQuery(webOrderRevision)}`), {}));
   }
 
   /** A manual export can choose its language and visible customer-facing detail. */

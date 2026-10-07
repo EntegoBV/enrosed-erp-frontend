@@ -1,4 +1,4 @@
-import type { QuoteStatus, SalesOrder, SalesPaymentSummary, SalesOrderView } from '../../core/api/models';
+import type { QuoteStatus, SalesOrder, SalesPaymentSummary, SalesOrderView, SalesWebOrderTermsState } from '../../core/api/models';
 
 /**
  * Machine-readable source marker used by the public quote endpoint.
@@ -101,6 +101,87 @@ export function websiteCartonRequests(
       cartons: Number.isFinite(cartons) && cartons > 0 ? cartons : null,
     }];
   });
+}
+
+/* ---------------------------------------------------------------- website orders
+ *
+ * A website order is a document whose view carries a `webOrder` block: an
+ * order placed by a logged-in customer. The block is the only key; the note
+ * marker and the channel also sit on legacy requests and on copies. Against a
+ * backend without the block every helper answers as for a plain document.
+ */
+
+type WebOrderView = Pick<SalesOrderView, 'webOrder'> | null | undefined;
+type WebOrderDocumentView = (Pick<SalesOrderView, 'webOrder'> & { order: Pick<SalesOrder, 'status' | 'sentAt' | 'archivedAt'> }) | null | undefined;
+
+export function isWebOrder(view: WebOrderView): boolean {
+  return !!view?.webOrder;
+}
+
+/** Until staff take the order the customer may change or cancel it; the server decides. */
+export function customerCanStillChange(view: WebOrderView): boolean {
+  return !!view?.webOrder?.customerEditable;
+}
+
+/** Still open to the customer, and already changed by them at least once. */
+export function customerRevised(view: WebOrderView): boolean {
+  return customerCanStillChange(view) && (view?.webOrder?.revision ?? 0) > 1;
+}
+
+export function cancelledByCustomer(view: WebOrderView): boolean {
+  return !!view?.webOrder?.customerCancelledAt;
+}
+
+/** Taken by staff and still a working concept: past "new", not yet sent, invoiced or closed. */
+export function webOrderInProcessing(view: WebOrderDocumentView): boolean {
+  return !!view?.webOrder?.processingStartedAt && view.order.status === 'CONCEPT' && !view.order.archivedAt;
+}
+
+/** What a staff mutation presents; always from the copy the acting screen shows. */
+export function webOrderRevision(view: WebOrderView): number | null {
+  return view?.webOrder?.revision ?? null;
+}
+
+/** A website order is deleted only once it is cancelled or declined: the customer sees it until then. */
+export function webOrderDeletable(view: (Pick<SalesOrderView, 'webOrder'> & { order: Pick<SalesOrder, 'status'> }) | null | undefined): boolean {
+  return !view?.webOrder || view.order.status === 'GEANNULEERD' || view.order.status === 'AFGEWEZEN';
+}
+
+/** The compare state shown on screen: only once the order is taken and while it is not archived. */
+export function webOrderTermsState(view: WebOrderDocumentView): SalesWebOrderTermsState | null {
+  const order = view?.webOrder;
+  if (!order?.processingStartedAt || view?.order.archivedAt) return null;
+  return order.termsState ?? null;
+}
+
+/** Mirror of the server guard: invoicing without sending needs the ordered or the approved figures. */
+export function webOrderInvoiceable(view: WebOrderView): boolean {
+  const order = view?.webOrder;
+  return !order || order.termsState === 'ORDER_EQUAL' || order.termsState === 'APPROVED';
+}
+
+/** A customer mail is due and did not leave; an old error alone does not count. */
+export function webOrderMailDue(view: WebOrderView): boolean {
+  return !!view?.webOrder?.mailDue;
+}
+
+/** The sent date of the order mail that can be sent once more, or null when there is none to repeat. */
+export function webOrderMailRepeatable(view: WebOrderDocumentView): string | null {
+  const order = view?.webOrder;
+  if (!order || order.mailDue || view?.order.status !== 'CONCEPT' || view.order.sentAt || order.customerCancelledAt) return null;
+  return (order.processingStartedAt ? order.processingMailSentAt : order.receivedMailSentAt) ?? null;
+}
+
+/** What still waits for a first look: legacy requests, and website orders nobody took yet. */
+export function countsAsNewWebsiteItem(view: Pick<SalesOrderView, 'order' | 'webOrder'>): boolean {
+  return isWebsiteQuoteRequest(view.order) && !webOrderInProcessing(view);
+}
+
+/** The customer changed or cancelled the order after this screen loaded it; the server wrote nothing. */
+export function isWebOrderConflict(failure: unknown): boolean {
+  const response = failure as { status?: number; error?: { code?: unknown } | string | null };
+  const body = response?.error;
+  return response?.status === 409 && !!body && typeof body === 'object' && body.code === 'WEB_ORDER_CHANGED';
 }
 
 /** One place for how a quote status looks. */

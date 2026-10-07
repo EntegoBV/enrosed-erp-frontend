@@ -1974,6 +1974,55 @@ export interface SalesOrderView {
   advanceInvoices?: SalesAdvanceInvoice[];
   /** On a slotfactuur: the advances it deducts, frozen at creation, with their payment dates. */
   advanceDeductions?: SalesAdvanceDeduction[];
+  /** Only on the document that IS a website order of a logged-in customer; absent on an older backend. Beside `order`, never inside it: the editor PUTs and compares `order`. */
+  webOrder?: SalesWebOrder | null;
+  /** Delivery and contact the customer gave for this order; also on documents derived from it. Absent on an older backend. */
+  delivery?: SalesOrderDelivery | null;
+}
+
+/** How the document's price, quantity and freight relate to what the customer ordered or approved; the server guard uses the same state. */
+export type SalesWebOrderTermsState =
+  'ORDER_EQUAL' | 'ORDER_DIFFERENT' | 'ORDER_UNKNOWN' | 'AWAITING_APPROVAL' | 'RESEND_REQUIRED' | 'APPROVED';
+
+export interface SalesWebOrder {
+  /** Moves only through customer actions; every staff mutation presents the one its screen shows. */
+  revision: number;
+  accountEmail: string;
+  placedAt: string;
+  /** The customer may still change or cancel: computed by the server, never derived here. */
+  customerEditable: boolean;
+  customerChangedAt: string | null;
+  customerChangeSummary: string | null;
+  customerCancelledAt: string | null;
+  /** The processing marker; once set it is never cleared. */
+  processingStartedAt: string | null;
+  processingStartedBy: string | null;
+  processingTrigger: 'KNOP' | 'AUTOMATISCH' | null;
+  termsState: SalesWebOrderTermsState | null;
+  /** Detail only (null on the list), and null when freight or a price was still open at ordering. */
+  orderedTotalExclVat: number | null;
+  orderedTotalInclVat: number | null;
+  /** Detail only: Dutch sentences, empty unless termsState is ORDER_DIFFERENT. */
+  differences: string[];
+  receivedMailSentAt: string | null;
+  processingMailSentAt: string | null;
+  mailError: string | null;
+  /** A customer mail is due and did not leave. */
+  mailDue: boolean;
+}
+
+export interface SalesOrderDelivery {
+  fulfillment: 'DELIVERY' | 'PICKUP';
+  address: string | null;
+  postalCode: string | null;
+  city: string | null;
+  countryCode: string | null;
+  pickupLabel: string | null;
+  pickupAddress: string | null;
+  contactName: string | null;
+  phone: string | null;
+  /** Address, postal code or city differ from the customer record. */
+  differsFromCustomerRecord: boolean;
 }
 
 export type SalesAdvanceStage = 'ADVANCE' | 'FINAL';
