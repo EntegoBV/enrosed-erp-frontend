@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-/** The saved document note is also the comment supplied with a website request. */
+/** The saved document note is also the comment supplied with a website request or a website order. */
 @Component({
   selector: 'app-sales-document-note',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -10,7 +10,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       <section class="document-note" [attr.aria-label]="fromCustomer() ? 'Bericht van klant' : 'Documentnotitie'">
         <header>
           <h2>{{ fromCustomer() ? 'Bericht van klant' : 'Documentnotitie' }}</h2>
-          <span>{{ fromCustomer() ? 'Originele aanvraag · alleen lezen' : 'Zichtbaar op het document' }}</span>
+          <span>{{ fromCustomer() ? (order() ? 'Bij de bestelling · alleen lezen' : 'Originele aanvraag · alleen lezen') : 'Zichtbaar op het document' }}</span>
         </header>
         <p>{{ notes() }}</p>
       </section>
@@ -35,4 +35,6 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 export class SalesDocumentNote {
   readonly notes = input<string | null | undefined>();
   readonly fromCustomer = input(false);
+  /** The message came with a website order, not with a quote request. */
+  readonly order = input(false);
 }

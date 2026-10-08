@@ -20,7 +20,7 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
-import { isWebsiteQuoteRequest } from '../sales/quote-status';
+import { countsAsNewWebsiteItem } from '../sales/quote-status';
 import { PlannerCards } from './planner-cards';
 import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money';
 import { DashboardSearchConsole } from './dashboard-search-console';
@@ -519,7 +519,7 @@ export class DashboardHome {
   readonly newWebsiteRequests = computed(() => this.salesOrders()
     .filter((row) => !row.order.archivedAt && !row.invoicedAsId
       && (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
-      && !row.awaitingResend && isWebsiteQuoteRequest(row.order)));
+      && !row.awaitingResend && countsAsNewWebsiteItem(row)));
   readonly awaitingResend = computed(() => this.salesOrders().filter((row) =>
     !row.order.archivedAt && !row.invoicedAsId
     && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && row.awaitingResend));
@@ -530,7 +530,7 @@ export class DashboardHome {
     const requests = this.newWebsiteRequests().length;
     const revisions = this.revisions().length;
     const resend = this.awaitingResend().length;
-    if (requests) parts.push('Nieuwe websiteaanvragen');
+    if (requests) parts.push('Nieuwe websiteaanvragen en -bestellingen');
     if (revisions) parts.push('Wijzigingen gevraagd');
     if (resend) parts.push('Opnieuw verzenden');
     return parts.join(' · ');
