@@ -47,7 +47,7 @@ function harness() {
     t: (key: string) => TEXT[key] ?? key,
     local: (key: string) => key,
     sales: { portalPropose: async (_token: string, _by: string, _message: string, lines: any[]) => { submissions.push(lines); return page.quote(); }, portalCatalog: async () => [] },
-    language: () => 'NL', run: async (action: () => Promise<any>) => { await action(); },
+    language: () => 'NL', error: signal(false), run: async (action: () => Promise<any>) => { await action(); },
   });
   return { page, submissions, timers };
 }

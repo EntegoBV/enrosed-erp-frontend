@@ -854,7 +854,7 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `tests/portal-refusal.test.mts`). The page route answers 409 with a
   `code` for two cases that are no dead link: `QUOTE_BEING_UPDATED` (title
   plus one sentence: being updated, visible again once Enrosed has sent it)
-  and `QUOTE_CANCELLED` (`Deze offerte is geannuleerd.` with
+  and `QUOTE_CANCELLED` (title `Deze offerte is geannuleerd`, with
   `cancellationMessage`, what staff wrote, printed below exactly as typed,
   `white-space:pre-wrap`, never translated; the Dutch `message` is not
   read). A 404, no connection, or a 409 without a code (older backend) is
@@ -862,7 +862,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `PORTAL_FALLBACKS` in all nine languages (no quotation means no texts
   from the server). Language: the customer's remembered pick, else the
   `language` of the refusal (the customer file), else NL. The notices sit
-  in the `error()` branch, which has no PDF link and no buttons. Picking a
+  in the `error()` branch, which has no PDF link and no buttons. An action
+  (accept, reject, propose, withdraw) refused with one of the two codes
+  switches the open page to the same notice in the language the customer is
+  reading in (`run()` / `showRefusal()`: sheets closed, the old quotation
+  dropped); any other refusal stays a toast. Picking a
   language while a notice is shown changes its words, remembers the pick
   and loads the link once more.
 - **List.** Badge `Websitebestelling` on every web order, with one pill

@@ -35,7 +35,8 @@ const KIND_BY_CODE: Record<string, PortalRefusalKind> = {
 };
 
 /**
- * Reads the failure of the page's first call. `languages` are the codes the
+ * Reads the failure of the page's first call, or of an action the customer
+ * took on a quotation that was reopened or cancelled meanwhile. `languages` are the codes the
  * page can show. The Dutch `message` of the body is deliberately not read:
  * the page words the notice itself, in the customer's language, and the
  * staff sentence arrives in its own field so no sentence is cut apart.

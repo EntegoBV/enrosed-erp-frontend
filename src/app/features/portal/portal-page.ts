@@ -31,7 +31,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Φόρτωση…',
     updatingTitle: 'Αυτή η προσφορά ενημερώνεται',
     updatingText: 'Ενημερώνουμε αυτή την προσφορά. Η νέα έκδοση θα είναι ορατή εδώ μόλις η Enrosed τη στείλει ξανά.',
-    cancelledTitle: 'Αυτή η προσφορά ακυρώθηκε.',
+    cancelledTitle: 'Αυτή η προσφορά ακυρώθηκε',
   },
   NL: {
     chooseLanguage: 'Taal kiezen', nameRequired: 'Vul uw naam in om te tekenen.',
@@ -42,7 +42,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Laden…',
     updatingTitle: 'Deze offerte wordt bijgewerkt',
     updatingText: 'We passen deze offerte momenteel aan. De nieuwe versie is hier zichtbaar zodra Enrosed ze opnieuw heeft verstuurd.',
-    cancelledTitle: 'Deze offerte is geannuleerd.',
+    cancelledTitle: 'Deze offerte is geannuleerd',
   },
   FR: {
     chooseLanguage: 'Choisir la langue', nameRequired: 'Saisissez votre nom pour signer.',
@@ -52,8 +52,8 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     notFoundText: 'Ce lien n’est plus valable. Contactez-nous et nous vous en enverrons un nouveau.',
     loading: 'Chargement…',
     updatingTitle: 'Cette offre est en cours de mise à jour',
-    updatingText: 'Nous adaptons actuellement cette offre. La nouvelle version sera visible ici dès qu’Enrosed l’aura renvoyée.',
-    cancelledTitle: 'Cette offre a été annulée.',
+    updatingText: 'Nous adaptons actuellement cette offre. La nouvelle version sera visible ici dès qu’Enrosed l’aura envoyée à nouveau.',
+    cancelledTitle: 'Cette offre a été annulée',
   },
   EN: {
     chooseLanguage: 'Choose language', nameRequired: 'Enter your name to sign.',
@@ -64,7 +64,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Loading…',
     updatingTitle: 'This quotation is being updated',
     updatingText: 'We are currently updating this quotation. The new version will be visible here once Enrosed has sent it again.',
-    cancelledTitle: 'This quotation has been cancelled.',
+    cancelledTitle: 'This quotation has been cancelled',
   },
   DE: {
     chooseLanguage: 'Sprache wählen', nameRequired: 'Geben Sie zum Unterzeichnen Ihren Namen ein.',
@@ -75,7 +75,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Wird geladen…',
     updatingTitle: 'Dieses Angebot wird aktualisiert',
     updatingText: 'Wir überarbeiten dieses Angebot gerade. Die neue Version ist hier sichtbar, sobald Enrosed sie erneut versendet hat.',
-    cancelledTitle: 'Dieses Angebot wurde storniert.',
+    cancelledTitle: 'Dieses Angebot wurde zurückgezogen',
   },
   ES: {
     chooseLanguage: 'Elegir idioma', nameRequired: 'Indique su nombre para firmar.',
@@ -86,7 +86,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Cargando…',
     updatingTitle: 'Este presupuesto se está actualizando',
     updatingText: 'Estamos actualizando este presupuesto. La nueva versión estará visible aquí en cuanto Enrosed la haya enviado de nuevo.',
-    cancelledTitle: 'Este presupuesto ha sido cancelado.',
+    cancelledTitle: 'Este presupuesto ha sido cancelado',
   },
   PL: {
     chooseLanguage: 'Wybierz język', nameRequired: 'Proszę podać imię i nazwisko, aby podpisać.',
@@ -97,7 +97,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Wczytywanie…',
     updatingTitle: 'Ta oferta jest aktualizowana',
     updatingText: 'Właśnie aktualizujemy tę ofertę. Nowa wersja będzie tutaj widoczna, gdy Enrosed wyśle ją ponownie.',
-    cancelledTitle: 'Ta oferta została anulowana.',
+    cancelledTitle: 'Ta oferta została anulowana',
   },
   PT: {
     chooseLanguage: 'Escolher idioma', nameRequired: 'Indique o seu nome para assinar.',
@@ -108,7 +108,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'A carregar…',
     updatingTitle: 'Este orçamento está a ser atualizado',
     updatingText: 'Estamos a atualizar este orçamento. A nova versão ficará visível aqui assim que a Enrosed a enviar novamente.',
-    cancelledTitle: 'Este orçamento foi cancelado.',
+    cancelledTitle: 'Este orçamento foi cancelado',
   },
   TR: {
     chooseLanguage: 'Dil seçin', nameRequired: 'İmzalamak için adınızı girin.',
@@ -119,7 +119,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     loading: 'Yükleniyor…',
     updatingTitle: 'Bu teklif güncelleniyor',
     updatingText: 'Bu teklifi şu anda güncelliyoruz. Yeni sürüm, Enrosed tekrar gönderdiğinde burada görünecek.',
-    cancelledTitle: 'Bu teklif iptal edildi.',
+    cancelledTitle: 'Bu teklif iptal edildi',
   },
 };
 
@@ -742,7 +742,7 @@ export class PortalPage implements OnDestroy {
 
   readonly quote = signal<PortalQuote | null>(null);
   readonly error = signal(false);
-  /** Why nothing is shown, read from the failure of the load; only looked at while `error` is set. */
+  /** Why nothing is shown, read from the failure of the load or of an action; only looked at while `error` is set. */
   readonly refusal = signal<PortalRefusal>(PORTAL_NOT_FOUND);
   readonly busy = signal(false);
   /** Language and browser locale are related, but deliberately not identical. */
@@ -1154,6 +1154,8 @@ export class PortalPage implements OnDestroy {
       () => this.sales.portalPropose(this.token(), this.proposeBy(), this.proposeMessage(), lines),
       this.t('portalProposalSent'));
 
+    /* Refused because the quotation was reopened or cancelled meanwhile: the notice stands, nothing to reload. */
+    if (this.error()) return;
     this.proposalSheet.set(false);
     this.catalog.set(await this.sales.portalCatalog(this.token(), this.language()));
   }
@@ -1171,10 +1173,31 @@ export class PortalPage implements OnDestroy {
       this.quote.set(await action());
       this.ui.toast(success);
     } catch (failure: unknown) {
+      /* Enrosed reopened or cancelled the quotation while the customer had it open: what is on screen is
+         no longer the offer. The page switches to the same notice as on a first visit, in the language the
+         customer is reading in, instead of a Dutch sentence over figures and buttons that no longer count. */
+      const refusal = portalRefusalOf(failure, LANGUAGES.map((language) => language.code));
+      if (refusal.kind !== 'notFound') {
+        this.showRefusal(refusal);
+        return;
+      }
       const message = (failure as { error?: { message?: string } }).error?.message;
       this.ui.toast(message ?? this.local('genericError'), 'err');
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Puts the notice in place of a quotation that was on screen: sheets closed, nothing of the old version kept. */
+  private showRefusal(refusal: PortalRefusal): void {
+    for (const timer of this.roundTimers.values()) clearTimeout(timer);
+    this.roundTimers.clear();
+    this.signSheet.set(false);
+    this.proposalSheet.set(false);
+    this.catalogSheet.set(false);
+    this.rejectSheet.set(false);
+    this.refusal.set(refusal);
+    this.error.set(true);
+    this.quote.set(null);
   }
 }
