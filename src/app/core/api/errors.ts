@@ -6,12 +6,44 @@
  * wrong", so we show it when present. When there is nothing, we fall back
  * to our own sentence - a technical error tells the user nothing.
  */
+const NO_CONNECTION = 'Geen verbinding met de server. Controleer uw internetverbinding en probeer opnieuw.';
+
+/**
+ * A failed download answers with a Blob, also when the server explained the
+ * refusal as JSON: the message is in there but messageOf cannot see it.
+ * This reads such a body back into an object (or its text) and hands the
+ * failure on in the shape messageOf and the refusal readers expect. Any
+ * other failure comes back untouched.
+ */
+export async function readableFailure(failure: unknown): Promise<unknown> {
+  const response = failure as { status?: number; error?: unknown } | null | undefined;
+  const body = response?.error;
+  if (!response || typeof Blob === 'undefined' || !(body instanceof Blob)) return failure;
+  let text = '';
+  try {
+    text = await body.text();
+  } catch {
+    return { status: response.status, error: null };
+  }
+  try {
+    return { status: response.status, error: JSON.parse(text) as unknown };
+  } catch {
+    return { status: response.status, error: /json/i.test(body.type) ? null : text };
+  }
+}
+
 export function messageOf(failure: unknown, fallback: string): string {
   const response = failure as {
     status?: number;
     error?: { message?: unknown; detail?: unknown } | string | null;
   };
   const body = response?.error;
+  /*
+   * No answer at all (offline, a dropped connection): the body is then the
+   * browser's own error, whose English text ("Failed to fetch") says nothing
+   * to the user. Our sentence comes first.
+   */
+  if (response?.status === 0 || body instanceof Error) return NO_CONNECTION;
   if (body && typeof body === 'object') {
     if (typeof body.message === 'string' && body.message.trim()) return body.message.trim();
     if (typeof body.detail === 'string' && body.detail.trim()) return body.detail.trim();
@@ -22,7 +54,7 @@ export function messageOf(failure: unknown, fallback: string): string {
     if (text && text.length <= 500 && !/<(?:!doctype|html|body)\b/i.test(text)) return text;
   }
   switch (response?.status) {
-    case 0: return 'Geen verbinding met de server. Controleer uw internetverbinding en probeer opnieuw.';
+    case 0: return NO_CONNECTION;
     case 401: return 'Uw sessie is verlopen. Meld opnieuw aan en probeer de actie opnieuw.';
     case 403: return 'U heeft geen toegang tot deze actie.';
     case 404: return 'De gevraagde gegevens bestaan niet meer of zijn verplaatst.';

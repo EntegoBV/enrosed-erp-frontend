@@ -1,0 +1,212 @@
+/* ==========================================================================
+   Jaarinventaris · Afsluiting: the five step components of the closing
+   (app-closing-step-count, -date, -value, -separate, -finalize) and their
+   sheets. Desk layout, built on the workspace kit inside an ordinary ERP
+   page. Every rule hangs on an inv- class; kit classes are used bare and
+   never restyled, only kit custom properties are set (--wk-cols,
+   --wk-sticky-top).
+
+   Sticky: table heads stick below the app bar; a shell with sticky chrome of
+   its own sets --inv-sticky-top on the step. A table inside .inv-scroll
+   scrolls sideways when the step is narrow and its head stays with it.
+
+   Trap rule: no step is a size container, so the sheets the steps render
+   stay fixed to the window.
+   ========================================================================== */
+
+/* ---- a step */
+.inv-step{display:block;min-width:0;--wk-sticky-top:var(--inv-sticky-top,var(--appbar-h))}
+.inv-step>.wk-card+.inv-fold,.inv-step>.inv-fold+.wk-card{margin-top:16px}
+.inv-step__text{margin:0 0 10px;color:var(--ink-2);font-size:13.5px;line-height:1.5}
+.inv-step__hint{margin:12px 2px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.wk-card__body>.inv-step__hint:last-child{margin-bottom:0}
+.inv-step__quiet{margin:6px 0 0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.inv-step__empty{margin:28px 16px;color:var(--muted);font-size:14px;text-align:center}
+.inv-note{margin:8px 0 0;padding:8px 12px;border-radius:10px;background:var(--warn-soft);color:#7c450b;font-size:13px;line-height:1.45}
+.inv-note--stop{background:var(--danger-soft);color:#83261e;font-weight:600}
+.inv-hint--stop{color:var(--danger);font-weight:650}
+.inv-pre{white-space:pre-line}
+.inv-wrap{white-space:normal;overflow-wrap:anywhere}
+.inv-hash{font-family:var(--mono);font-size:12px;font-weight:500;word-break:break-all}
+
+/* folds */
+.inv-fold{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.inv-fold>summary{display:flex;align-items:center;min-height:40px;padding:6px 14px;color:var(--ink-2);font-size:13px;font-weight:650;cursor:pointer}
+.inv-fold>summary:focus-visible{outline:2px solid var(--rose);outline-offset:2px;border-radius:12px}
+.inv-fold[open]>summary{border-bottom:1px solid var(--line)}
+.inv-fold>:not(summary){margin-inline:14px}
+.inv-fold>.wk-table{margin-inline:0}
+.inv-fold>.inv-step__text{margin-top:10px}
+.inv-fold>.inv-step__quiet{margin-bottom:10px}
+.inv-fold--block{padding-bottom:14px;background:transparent}
+.inv-fold--block>.wk-card{margin-top:14px}
+
+/* a tick with its label; a small number field inside a table */
+.inv-check{display:inline-flex;align-items:center;gap:8px;min-height:28px;color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.inv-check input{flex:none;width:18px;height:18px;margin:0;accent-color:var(--rose)}
+.inv-check:has(input:disabled){cursor:default}
+.inv-check--tall{align-items:flex-start;font-size:14px;line-height:1.45}
+.inv-check--tall input{margin-top:2px}
+.inv-field{width:96px;height:30px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;outline:none}
+.inv-field:focus{border-color:var(--rose);box-shadow:var(--wk-focus)}
+.inv-field:disabled{opacity:.55}
+
+/* facts as label and value, wider labels than the kit list */
+.inv-kv{display:grid;margin:8px 0 0}
+.inv-kv>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.inv-kv>div:last-child{border-bottom:0}
+.inv-kv dt{min-width:0;color:var(--muted)}
+.inv-kv dd{min-width:0;margin:0;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+
+/* wide tables scroll sideways inside their card */
+.inv-scroll{overflow-x:auto;--wk-sticky-top:0px}
+.inv-scroll>*{min-width:var(--inv-min,0px)}
+/* More columns beyond an edge (set by InventoryScrollCue): that edge fades out, so a cut table never looks complete. */
+.inv-scroll--right{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 56px);mask-image:linear-gradient(to left,transparent 0,#000 56px)}
+.inv-scroll--left{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 56px);mask-image:linear-gradient(to right,transparent 0,#000 56px)}
+.inv-scroll--left.inv-scroll--right{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%)}
+.inv-scroll:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+
+/* ---- sheets */
+.inv-sheet{display:grid;min-width:0}
+.inv-sheet__lead{margin:0 0 12px;color:var(--ink-2);font-size:14px;line-height:1.5}
+.inv-sheet__help{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.5}
+.inv-sheet__warn{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:var(--danger-soft);color:#83261e;font-size:13px;font-weight:650}
+.inv-sheet__preview{margin:0 0 8px;padding:10px 12px;border-radius:10px;background:var(--surface-2);color:var(--ink);font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.5}
+.inv-sheet__last{margin-bottom:0}
+/* what a typed amount was read as, under its field; a help line that belongs to the row of fields above it */
+.inv-sheet__read{color:var(--ink-2);font-weight:650;font-variant-numeric:tabular-nums}
+.inv-sheet__under{margin-top:4px}
+.inv-sheet__choices{display:grid;gap:8px;margin-bottom:14px}
+.inv-sheet__choice{display:grid;gap:2px;min-height:44px;padding:10px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:14.5px;font-weight:600;line-height:1.4;text-align:left;cursor:pointer}
+.inv-sheet__choice small{color:var(--muted);font-size:12.5px;font-weight:500}
+.inv-sheet__choice[aria-checked=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.inv-sheet__choice:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+
+/* ---- step 1: locations */
+.inv-loc__state{margin:0;font-size:14px;font-weight:600}
+.inv-loc__state--open{color:var(--warn)}
+.inv-loc__state--none{color:var(--muted);font-weight:500}
+
+/* ---- step 2: Geboekt op · Soort · Referentie · Door · Aantal · Meerekenen · Voorstel */
+.inv-roll__table{--inv-min:1020px;--wk-cols:128px minmax(0,1fr) minmax(0,1.2fr) minmax(0,.8fr) 150px 244px minmax(0,1.8fr);border:1px solid var(--line);border-radius:10px}
+.inv-roll__row--removed{color:var(--muted)}
+.inv-roll__row--removed>:not(.inv-roll__note){text-decoration:line-through}
+.inv-roll__tick{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;overflow:visible}
+.inv-roll__effect{color:var(--rose-dark);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inv-roll__note{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--ink-2);font-size:12.5px;line-height:1.4}
+.inv-roll__changed{color:var(--rose-dark);font-weight:650}
+.inv-roll__result{font-weight:650;font-variant-numeric:tabular-nums}
+.inv-span{grid-column:1 / -1}
+
+/* ---- step 3: tabs, products with the FIFO build-up */
+.inv-value__tabs{margin-bottom:14px}
+.inv-value__split--docked{display:grid;grid-template-columns:minmax(0,1fr) var(--wk-inspector-w);align-items:start;gap:16px}
+.inv-value__aside{position:sticky;top:calc(var(--wk-sticky-top) + 8px);max-height:calc(100vh - var(--wk-sticky-top) - 24px);overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.inv-products{--inv-min:920px;--wk-cols:minmax(180px,1fr) 104px 168px 122px 154px 104px;border:1px solid var(--line);border-radius:12px}
+/* a narrow step keeps the four columns that fit; the average and the write-down move into the other cells */
+.inv-products--tight{--inv-min:0px;--wk-cols:minmax(150px,1fr) 104px 122px 168px}
+.inv-products--tight .inv-col--roomy{display:none}
+.inv-products__row{scroll-margin-top:calc(var(--wk-sticky-top) + var(--wk-head-h) + 40px)}
+.inv-products__chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.inv-products__prev{flex-basis:100%;color:var(--muted);font-size:11.5px;font-weight:600;line-height:1.35;white-space:normal}
+.inv-products>.inv-products__inline{position:sticky;left:0;min-width:0;max-width:100%;box-sizing:border-box}
+.inv-products__inline{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.inv-products__inline .inv-inspector{border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.inv-inspector{min-width:0;font-size:13px}
+.inv-inspector__head{display:flex;align-items:flex-start;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--line)}
+.inv-inspector__title{flex:1;min-width:0;margin:0;font-size:16px;font-weight:650;letter-spacing:-.01em;overflow-wrap:anywhere}
+.inv-inspector__title small{display:block;color:var(--muted);font-size:12.5px;font-weight:500;letter-spacing:0}
+.inv-inspector__add{margin-top:10px}
+.inv-layer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:10px;margin:0;padding:6px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;line-height:1.45}
+.inv-layer:last-of-type{border-bottom:0}
+.inv-layer--stop{color:var(--danger);font-weight:650}
+.inv-layer--apart{color:var(--muted)}
+.inv-saved{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:10px;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;line-height:1.45;text-align:left;cursor:pointer}
+.inv-saved+.inv-saved{margin-top:6px}
+.inv-saved:hover:not(:disabled){border-color:var(--line-strong);background:var(--surface-2)}
+.inv-saved:disabled{cursor:default}
+.inv-saved:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+
+/* containers */
+.inv-container{scroll-margin-top:calc(var(--wk-sticky-top) + 16px)}
+.inv-container__equation{max-width:520px;margin-top:10px}
+.inv-container__title{margin:18px 0 6px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.inv-container__out{max-width:520px}
+.inv-stream{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--line)}
+.inv-stream--ask{margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.inv-stream__text{flex:1 1 320px;min-width:0}
+.inv-stream__line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-size:13.5px;font-variant-numeric:tabular-nums;line-height:1.5}
+.inv-stream__sub{margin:2px 0 0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.inv-stream__buttons{display:grid;gap:6px;flex:1 1 320px}
+.inv-stream__choice{height:auto;min-height:32px;padding-block:6px;justify-content:flex-start;line-height:1.35;text-align:left;white-space:normal}
+.inv-stream__choice[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+/* Product · Besteld · Ontvangen · Beschadigd · Later gemeld · Goederen ÷ · Kosten ÷ · Waarde per stuk · In partij */
+.inv-lots{--inv-min:1380px;--wk-cols:minmax(180px,1fr) 76px 92px 100px 196px 196px 164px 136px 84px;border:1px solid var(--line);border-radius:10px}
+/* Goederen holds "− € 10.000,00 creditnota" under the amount: a credit above the goods of a lot must be readable whole. */
+.inv-keys{--inv-min:1788px;--wk-cols:minmax(160px,1fr) 144px 160px 244px 212px 220px 156px 150px 216px}
+.inv-keys .wk-td--num .wk-td__sub{overflow:visible;text-overflow:clip;white-space:normal}
+.inv-calc{--inv-min:860px;--wk-cols:minmax(160px,1fr) repeat(4,160px)}
+/* Datum · Betaalstroom · Omschrijving · Bedrag · Munt · Geboekte eurowaarde · Getelde eurowaarde · Regel */
+.inv-payments{--inv-min:1040px;--wk-cols:92px minmax(120px,1fr) minmax(0,1.4fr) 104px 52px 168px 160px minmax(0,1.8fr);border:1px solid var(--line);border-radius:10px}
+
+/* zonder waarde */
+.inv-unvalued{scroll-margin-top:calc(var(--wk-sticky-top) + 16px)}
+.inv-unvalued__shared{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0 16px;max-width:760px}
+.inv-unvalued__table{--wk-cols:minmax(0,1fr) 190px 120px 240px;border:1px solid var(--line);border-radius:10px}
+.inv-unvalued__cell{display:flex;align-items:center;justify-content:flex-end;gap:8px;overflow:visible}
+.inv-unvalued__unit{flex:none;min-width:76px;color:var(--muted);font-size:12px;text-align:left}
+.inv-unvalued__foot{display:flex;align-items:center;gap:12px;margin-top:12px}
+.inv-unvalued__foot .inv-step__quiet{margin:0}
+.inv-unvalued__replace{color:#7c450b;font-weight:600}
+.inv-unvalued__read{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+.inv-opening{--inv-min:820px;--wk-cols:minmax(0,1.8fr) 84px 136px 96px minmax(0,1.6fr) 104px}
+.inv-opening__action{display:flex;justify-content:flex-end;overflow:visible}
+
+/* ---- step 4: facts on the left, the decision on the right */
+.inv-apart__subtotal{color:var(--ink-2);font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.inv-apart__bulk{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+/* the three answers of an invoice, each with what it does to the value */
+.inv-apart__choices{display:grid;gap:6px;margin:12px 0 0;padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:12.5px;line-height:1.45}
+.inv-apart__choices>div{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:4px 14px}
+.inv-apart__choices dt{font-weight:700;color:var(--ink)}
+.inv-apart__choices dd{margin:0;color:var(--ink-2)}
+.inv-item{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px;padding:12px 0;border-bottom:1px solid var(--line);scroll-margin-top:calc(var(--wk-sticky-top) + 16px)}
+.inv-item__facts{flex:1 1 360px;min-width:0}
+.inv-item__facts .inv-kv{max-width:460px;margin-bottom:6px}
+.inv-item__title{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:0;font-size:14.5px;font-weight:650}
+.inv-item__title small{color:var(--muted);font-size:12.5px;font-weight:500}
+.inv-item__title .wk-amount{margin-left:auto}
+.inv-item__row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(88px,auto) auto;align-items:baseline;gap:12px;margin:0;padding:5px 0;font-size:13px;font-variant-numeric:tabular-nums;line-height:1.45}
+.inv-item__row small{display:block;color:var(--muted);font-size:12px}
+.inv-item__row>.wk-amount{text-align:right}
+.inv-item__auto{grid-column:3 / -1;color:var(--muted);font-size:12.5px}
+.inv-item__decided{margin:4px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.45}
+.inv-item__side{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+.inv-item__side--stack{flex-direction:column;align-items:stretch}
+.inv-item__side .wk-pill{align-self:center}
+.inv-item__side [aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.inv-older{--wk-cols:minmax(0,1fr) 104px minmax(0,1.6fr) 84px}
+
+/* ---- step 5 */
+.inv-final__title{margin:0 0 6px;font-size:13px;font-weight:700}
+.inv-final__title--stop{color:var(--danger)}
+.inv-final__notices{padding-top:14px}
+.inv-final__list{display:grid;gap:2px;margin:0 0 14px;padding:0;list-style:none}
+.inv-final__list:last-child{margin-bottom:0}
+.inv-final__notice{display:block;padding:6px 10px;border-radius:8px;color:var(--ink);font-size:13px;line-height:1.45;text-decoration:none}
+.inv-final__notice:hover{background:var(--surface-2);text-decoration:underline;text-underline-offset:3px}
+.inv-final__notice:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
+.inv-final__totals,.inv-final__outside,.inv-final__hashes{max-width:560px}
+.inv-final__outside{margin-top:14px}
+.inv-final__sub{margin:14px 0 4px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.inv-final__change{display:flex;flex-wrap:wrap;gap:2px 16px;margin:0;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;font-variant-numeric:tabular-nums;line-height:1.45}
+.inv-final__change strong{flex:1 1 260px;min-width:0;font-weight:600}
+.inv-final__confirm{padding-top:16px}
+.inv-final__confirm .inv-step__quiet{margin-left:26px}
+.inv-final__actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px}
+.inv-final__spacer{flex:1}
+.inv-final__todo{color:var(--danger);font-size:13px;font-weight:650}
+/* why "Definitief maken" was refused or is held back: stays above the button, with the way out beside it */
+.inv-final__refused{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:16px;padding:10px 14px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:13.5px;font-weight:650;line-height:1.45}
+.inv-final__refused span{flex:1 1 320px;min-width:0}

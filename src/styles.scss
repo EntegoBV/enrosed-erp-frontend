@@ -3952,3 +3952,5 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/purchase-nacalc');
 @include meta.load-css('styles/sales-credit-note');
 @include meta.load-css('styles/sales-advance-billing');
+@include meta.load-css('styles/inventory-count');
+@include meta.load-css('styles/inventory-closing');

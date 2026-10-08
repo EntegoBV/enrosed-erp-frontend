@@ -47,6 +47,7 @@ export function returnLabel(url: string): string {
   if (under(path, '/website')) return 'Website';
   if (under(path, '/more')) return 'Meer';
   if (under(path, '/dashboard')) return 'Dashboard';
+  if (under(path, '/stock/inventaris')) return 'Jaarinventaris';
   return 'ERP';
 }
 
