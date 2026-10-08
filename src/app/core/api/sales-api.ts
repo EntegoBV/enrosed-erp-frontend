@@ -332,6 +332,18 @@ export class SalesApi {
       api(`/api/sales-orders/${id}/web-order/mails${repeat ? '?repeat=true' : ''}`), {}));
   }
 
+  /**
+   * "Leveradres overnemen": fills the empty address fields of the customer
+   * record from the delivery address of this document. `confirmed` is the
+   * address staff saw; the server refuses when the delivery reads otherwise
+   * by now. Deliberately without a revision: it never takes a website order
+   * into processing and does not touch the order.
+   */
+  takeCustomerAddressFromDelivery(id: number, confirmed: { address: string; postalCode: string; city: string }): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(
+      api(`/api/sales-orders/${id}/customer-address-from-delivery`), confirmed));
+  }
+
   /* ----------------------------------------------------------- offertes */
 
   /** Builds the PDF, mails it to the customer and marks the quote sent. */

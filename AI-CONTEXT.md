@@ -803,6 +803,30 @@ and on copies. Without the blocks (older backend) every screen is as before.
   when the view has `webOrder` or `delivery` (a plain document keeps the old
   markup, pixel for pixel), and its mail buttons are `blocked` while the host
   has unsaved edits: the answer is a whole view and must not replace them.
+- **Customer record without an address** (`invoiceCustomer` on a single
+  `SalesOrderView`; null on the list and when nothing is missing). A customer
+  made when a website login is approved has no street, postal code or city,
+  and the server refuses to issue an invoice until the record has them.
+  `sales-customer-address.ts` (`customerAddressNotice`, pure, node-tested in
+  `tests/sales-customer-address.test.mts`) words the block; the server alone
+  decides whether it applies and whether a takeover is offered.
+  `sales-customer-address-notice.ts` (`app-sales-customer-address-notice`,
+  `variant="desk"` on the desk, banner on phone editor and read view) sits
+  straight under the website-order banner: `Klantgegevens onvolledig · bij X
+  ontbreken …`. With `takeover` it offers `Leveradres overnemen`, a sheet that
+  shows the address that will be written, then
+  `SalesApi.takeCustomerAddressFromDelivery` (POST
+  `/api/sales-orders/{id}/customer-address-from-delivery`, body = the address
+  staff saw, never a `webOrderRevision`: it does not take a website order
+  into processing). The server fills only empty address fields. The answer is
+  a whole view, so the button is `blocked` while the host has unsaved edits;
+  the hosts adopt it in `customerAddressTaken` and read the cached customers
+  again. A 409 shows the server's sentence and reloads the view, so the next
+  confirmation shows the current delivery address. Without `takeover`
+  (`takeoverBlockedBy` PICKUP, NO_DELIVERY, OTHER_COUNTRY, INCOMPLETE) it
+  gives the reason and links to `/customers?q=<company>`. The host element
+  is `display:none` when there is no notice. The refusal on issuing is the
+  server's sentence in the usual error toast (`messageOf`).
 - **List.** Badge `Websitebestelling` on every web order, with one pill
   under it: `Door klant geannuleerd`, `Door klant gewijzigd`, `Klant kan nog
   wijzigen`, `Opnieuw versturen` / `Gewijzigd na akkoord`, `Wacht op klant`
