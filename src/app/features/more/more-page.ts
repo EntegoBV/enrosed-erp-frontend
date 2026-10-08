@@ -171,6 +171,12 @@ import { WorkQueue } from '../../core/api/work-queue';
               <div class="list-item__meta">Per locatie tellen en verplaatsen</div></div>
             <span class="list-item__chev">›</span>
           </a>
+          <a class="list-item" routerLink="/stock/inventaris">
+            <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
+            <div class="list-item__body"><div class="list-item__title">Jaarinventaris</div>
+              <div class="list-item__meta">Tellen en eindvoorraad met waarde voor de boekhouding</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" routerLink="/stock-locations">
             <span class="thumb thumb--placeholder"><app-icon name="stock" /></span>
             <div class="list-item__body"><div class="list-item__title">Voorraadlocaties</div>

@@ -926,3 +926,58 @@ page NL/EN.
   sheet decides "no customers yet → add form" only after loading -
   deciding on an in-flight empty list opened the wrong flow.
 - Never trust `sessionStorage` auth outside `api.config.ts` helpers.
+
+## Jaarinventaris (2026-10-09)
+
+The yearly stock count and the year-end closing stock with its value for the
+accountant, under "Producten & voorraad". The backend computes every figure
+(FIFO per receipt lot at acquisition value, never the Enrosed kost); these
+screens show them, collect decisions with a reason and build the writes.
+
+- **Routes** (all under `/stock`, so the Producten group and tab light up):
+  `/stock/inventaris` (hub, query `jaar`), `/stock/inventaris/telling/:id`
+  (count session, query `boeken=1` opens the booking sheet) and
+  `/stock/inventaris/afsluiting/:id` (closing, query `stap` =
+  `tellen|datum|waarde|apart|afsluiten`, fragment = the row a notice names).
+  The Voorraad sidebar link matches its path exactly so it does not light
+  together with Jaarinventaris.
+- **Files.** `core/api/inventory-models.ts` (the server's types, verbatim)
+  and `inventory-api.ts` (`refusalCode` / `refusalDetails` read the `code`
+  and `details` of a 409). In `features/inventory/`: the pure modules
+  `inventory-count.ts`, `inventory-closing.ts` (node-tested) and
+  `inventory-unit.ts` (the one adapter to `productSalesUnit`; no screen
+  builds its own unit word); `inventory-page.ts` (hub); `stock-count-page.ts`
+  with its three sheets; `stock-closing-page.ts` (shell) with the five
+  `closing-step-*` components and their sheets. Area CSS: `styles/
+  inventory-count.scss` and `inventory-closing.scss` (`inv-*`); the hub and
+  the shell keep their own layout classes (`inv-hub`, `inv-shell`) in the
+  component.
+- **Count.** Nothing touches stock until "Telling boeken". Every line save
+  carries the line's `revision`; a 409 `REGEL_GEWIJZIGD` becomes the conflict
+  dialog and "Vervang" resends with the server line's revision. The session
+  reloads every 20 s and on focus while open; per line the higher revision
+  wins. A difference an unshipped invoice or an unbooked container explains
+  is solved in that document, not with a reason. A correction counts only
+  the products added to it.
+- **Closing shell.** It owns every API call. A CONCEPT is opened with
+  `recompute` (after the plain read that tells the status), a final closing
+  is read. The steps take `view` and `busy` and only emit; every server
+  answer is a NEW `ClosingView`, which is also what closes their sheets, so
+  after a refused save the view stays untouched and the sheet stays open.
+  After `saveOpeningLayers` and `retireOpeningLayer` the shell recomputes
+  (the server computes nothing there). Finalize sends the `dataSha256` of
+  the view on screen; `CIJFERS_GEWIJZIGD` and `GEBLOKKEERD` toast and
+  recompute, `DEFINITIEF` reads the stored rows. "Corrigeren (nieuwe versie)"
+  navigates to the new concept.
+- Do not make an ancestor of a step a size container or transform it: the
+  steps render their own sheets (trap rule).
+- **Wording** (owner rules): Aanschafwaarde (never Kostprijs), Waarde per
+  stuk, Waardevermindering (never Afwaardering as a label), Product, Excel,
+  Concept / Definitief, "Volgens systeem", "gewijzigd", "de
+  voorraadgeschiedenis", Afspraak, and "Bank- en betalingskosten
+  ('Bijkomende kosten')" where it names what stays out of the value.
+- A phone gets the hub, the count and a summary of the closing (totals, Nog
+  te doen, Aandachtspunten, the two files); valuing and finalising need a
+  desk (`DesktopViewport.active()`).
+- Rollout: backend first. A new ERP on an old backend shows the hub with a
+  load error.

@@ -138,8 +138,14 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
               <a class="sidebar__link" routerLink="/products" routerLinkActive="active" data-rail-main>
                 <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
               </a>
-              <a class="sidebar__link" routerLink="/stock" routerLinkActive="active">
+              <a class="sidebar__link" routerLink="/stock" routerLinkActive="active"
+                 [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' }">
                 <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
+              </a>
+              <a class="sidebar__link" routerLink="/stock/inventaris" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="stock" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">Jaarinventaris</span>
+                <span class="sidebar__text sidebar__text--rail">Inventaris</span>
               </a>
               <a class="sidebar__link" routerLink="/stock-locations" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="stock" [size]="18" />

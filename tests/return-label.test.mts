@@ -27,6 +27,8 @@ test('every ERP screen has a name to return to', () => {
     ['/more', 'Meer'],
     ['/dashboard', 'Dashboard'],
     ['/stock', 'ERP'],
+    ['/stock/inventaris', 'Jaarinventaris'],
+    ['/stock/inventaris/telling/3', 'Jaarinventaris'],
     ['/countries', 'ERP'],
   ];
   for (const [url, label] of table) assert.equal(returnLabel(url), label, url);

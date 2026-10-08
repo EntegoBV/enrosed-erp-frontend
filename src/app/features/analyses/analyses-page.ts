@@ -397,6 +397,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <span class="metric-card__label">Kostwaarde voorraad</span>
             <strong>{{ inventoryMetrics().stock.costValueEur | eur: 0 }}</strong>
             <p>{{ inventoryMetrics().stock.valuedPieces | num }} gewaardeerde stuks</p>
+            <p>Bevat de Enrosed kost. Voor de boekhouding: <a routerLink="/stock/inventaris" style="color:inherit;font-weight:700;white-space:nowrap">Jaarinventaris ›</a></p>
           </article>
           <article class="card metric-card">
             <span class="metric-card__label">Eigen voorraadwaarde</span>

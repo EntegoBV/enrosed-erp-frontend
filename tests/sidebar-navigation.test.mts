@@ -13,6 +13,7 @@ test('the current ERP page opens the matching desktop menu section', () => {
   assert.equal(sidebarGroupForUrl('/purchasing/46/edit'), 'inkoop');
   assert.equal(sidebarGroupForUrl('/products/57/edit?tab=media'), 'producten');
   assert.equal(sidebarGroupForUrl('/stock-locations'), 'producten');
+  assert.equal(sidebarGroupForUrl('/stock/inventaris/afsluiting/7'), 'producten');
   assert.equal(sidebarGroupForUrl('/barcodes'), 'producten');
   assert.equal(sidebarGroupForUrl('/catalog/texts'), 'producten');
   assert.equal(sidebarGroupForUrl('/analyses/market'), 'analyses');

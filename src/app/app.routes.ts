@@ -241,6 +241,21 @@ export const routes: Routes = [
     loadComponent: () => import('./features/finance/costs-page').then((m) => m.CostsPage),
   },
   {
+    path: 'stock/inventaris/telling/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/inventory/stock-count-page').then((m) => m.StockCountPage),
+  },
+  {
+    path: 'stock/inventaris/afsluiting/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/inventory/stock-closing-page').then((m) => m.StockClosingPage),
+  },
+  {
+    path: 'stock/inventaris',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/inventory/inventory-page').then((m) => m.InventoryPage),
+  },
+  {
     path: 'stock',
     canActivate: [authGuard],
     loadComponent: () => import('./features/products/stock-page').then((m) => m.StockPage),
