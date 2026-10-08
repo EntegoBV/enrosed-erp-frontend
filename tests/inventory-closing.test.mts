@@ -5,7 +5,7 @@ import type {
   ClosingTotals, ClosingView, Decision, DecisionKind, Notice, NoticeSegment, OpeningLayer, SeparateItem, WriteDownRow,
 } from '../src/app/core/api/inventory-models.ts';
 import {
-  bookedLater, byName, dateText, dateTimeText, openingQuantity, openingReplaced, presentText, rollEffect, rollIntro,
+  bookedLater, byName, carvedPieces, dateText, dateTimeText, needsLook, openingQuantity, openingReplaced, presentText, rollEffect, rollIntro,
   rollTickHead, rollTickLabel, sentence, todoText,
 } from '../src/app/features/inventory/inventory-closing.ts';
 import {
@@ -592,4 +592,42 @@ test('the pieces of a product that are present but not own stock are named', () 
   assert.equal(presentText({ closingQuantity: 1250, ownQuantity: 1140, partnerQuantity: 60, thirdPartyQuantity: 10, invoicedOutQuantity: 30, unvaluedQuantity: 10 }),
     '1.250 aanwezig · 60 van partner · 10 van derden · 30 gefactureerd · 10 zonder waarde');
   assert.equal(presentText({ ...partner, closingQuantity: 90, ownQuantity: 90, partnerQuantity: 0 }), '');
+});
+
+/* ---- shapes the backend added after the review ---- */
+
+test('an invoiced row names the pieces its value covers, not the invoiced pieces', () => {
+  /* FifoValuerTest.anInvoiceLargerThanThePoolStatesHowManyPiecesItsValueCovers: 30 invoiced, 20 taken, 2,0000, 40,00. */
+  assert.equal(carvedPieces({ quantity: 30, carvedQuantity: 20, unitValueEur: 2, valueEur: 40 }), 20);
+  assert.equal(carvedPieces({ quantity: 30, carvedQuantity: 30, unitValueEur: 4.3083, valueEur: 129.25 }), 30);
+  /* Not decided, "Nog van ons" or "al weg": nothing taken out, so no value and only the invoiced quantity. */
+  assert.equal(carvedPieces({ quantity: 30, carvedQuantity: 0, unitValueEur: null, valueEur: null }), null);
+  /* A row frozen before the field existed reads as fully taken. */
+  assert.equal(carvedPieces({ quantity: 12, carvedQuantity: null, unitValueEur: 11.2375, valueEur: 134.85 }), 12);
+});
+
+test('a removed row and an undecided row to review open the fold they sit in', () => {
+  assert.equal(needsLook({ removed: true, review: false, decisionId: null }), true);
+  assert.equal(needsLook({ removed: false, review: true, decisionId: null }), true);
+  assert.equal(needsLook({ removed: false, review: true, decisionId: 53 }), false);
+  assert.equal(needsLook({ removed: false, review: false, decisionId: null }), false);
+});
+
+test('a blocker the screen has no special case for is listed by its message under its container', () => {
+  const goods = blocker('waarde', 'TEGOED_MEER_DAN_GOEDEREN', { purchaseOrderId: 41, productId: 101,
+    message: 'Container Kunming september, Eternal Rose Box Rood: prijstegoed € 250,00 is hoger dan de goederen van de partij (€ 184,00). '
+      + 'Kijk het tegoed na of geef aan dat het buiten de voorraadwaarde blijft.' });
+  const loss = blocker('waarde', 'TEGOED_MEER_DAN_VERLIES', { purchaseOrderId: 41, amountEur: 141,
+    message: 'Container Kunming september: tegoed voor tekort of schade € 141,00, terwijl de ontbrekende en beschadigde stuks samen € 140,90 kostten. '
+      + 'Geef per tegoed aan wat het is.' });
+  const gone = warning('datum', 'BEWEGING_VERDWENEN', {
+    message: '1 beweging uit de vorige berekening staat niet meer in de voorraadgeschiedenis: F-2026-119. Ze telt niet mee in het aantal op de afsluitdatum.' });
+  const closing = view({ notices: [gone, goods, loss], decisions: [decision('CREDIT_TREATMENT', { purchaseOrderId: 41, creditId: 71 })] });
+  assert.deepEqual(noticesFor(closing, 'waarde').map((notice) => notice.message), [goods.message, loss.message]);
+  assert.deepEqual(noticesFor(closing, 'datum'), [gone]);
+  /* One credit decided and the blocker still stands: the step stays under way, with two points open. */
+  const value = stepStates(closing).find((step) => step.key === 'waarde')!;
+  assert.equal(value.state, 'BEZIG');
+  assert.equal(value.line, '3 Waarde · 2 punten open');
+  assert.equal(stateOf(closing, 'datum'), 'KLAAR');
 });

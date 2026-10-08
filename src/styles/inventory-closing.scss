@@ -143,7 +143,9 @@
 .inv-stream__choice[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
 /* Product · Besteld · Ontvangen · Beschadigd · Later gemeld · Goederen ÷ · Kosten ÷ · Waarde per stuk · In partij */
 .inv-lots{--inv-min:1380px;--wk-cols:minmax(180px,1fr) 76px 92px 100px 196px 196px 164px 136px 84px;border:1px solid var(--line);border-radius:10px}
-.inv-keys{--inv-min:1740px;--wk-cols:minmax(160px,1fr) 144px 112px 244px 212px 220px 156px 150px 216px}
+/* Goederen holds "− € 10.000,00 creditnota" under the amount: a credit above the goods of a lot must be readable whole. */
+.inv-keys{--inv-min:1788px;--wk-cols:minmax(160px,1fr) 144px 160px 244px 212px 220px 156px 150px 216px}
+.inv-keys .wk-td--num .wk-td__sub{overflow:visible;text-overflow:clip;white-space:normal}
 .inv-calc{--inv-min:860px;--wk-cols:minmax(160px,1fr) repeat(4,160px)}
 /* Datum · Betaalstroom · Omschrijving · Bedrag · Munt · Geboekte eurowaarde · Getelde eurowaarde · Regel */
 .inv-payments{--inv-min:1040px;--wk-cols:92px minmax(120px,1fr) minmax(0,1.4fr) 104px 52px 168px 160px minmax(0,1.8fr);border:1px solid var(--line);border-radius:10px}

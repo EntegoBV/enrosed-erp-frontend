@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BookingCheck, CountLine, CountView } from '../src/app/core/api/inventory-models.ts';
 import {
-  COUNT_CHIPS, bookingSummaryText, canConfirmEqual, conflictText, countProgress, countSections, differenceText,
+  BOOKING_QUIET_NOTE, COUNT_CHIPS, bookingSummaryText, canConfirmEqual, conflictText, countProgress, countSections, differenceText,
   filterLines, lineState, mergeCountView, openDocumentHint, openDocumentText, overtakenDrafts, reasonsFor, rebaseWrite,
   sameReasonWrites,
 } from '../src/app/features/inventory/inventory-count.ts';
@@ -265,4 +265,11 @@ test('a number typed in a line somebody else counted meanwhile is not lost', () 
   const wiped = session('OPEN', [line({ id: 2, revision: 4 })]);
   assert.deepEqual(overtakenDrafts(wiped, session('OPEN', [countedLine(10, 10, { id: 2, revision: 3 })]), { 2: '12' }), []);
   assert.deepEqual(overtakenDrafts(null, fresh, { 2: '12' }), []);
+});
+
+test('the booking screen says a movement during the booking can still be missed', () => {
+  /* The booking runs for seconds, not an instant; the advice to book in a quiet moment stays. */
+  assert.match(BOOKING_QUIET_NOTE, /Het boeken duurt enkele seconden\./);
+  assert.match(BOOKING_QUIET_NOTE, /kan die beweging nog gemist worden\./);
+  assert.match(BOOKING_QUIET_NOTE, /Boek de telling op een moment dat niemand verzendt of ontvangt\.$/);
 });

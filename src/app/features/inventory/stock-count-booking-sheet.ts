@@ -4,7 +4,7 @@ import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
-import { bookingSummaryText, differenceText } from './inventory-count';
+import { BOOKING_QUIET_NOTE, bookingSummaryText, differenceText } from './inventory-count';
 import { StockCountDocuments } from './stock-count-reason-sheet';
 
 type MovedRow = BookingCheck['moved'][number];
@@ -154,7 +154,7 @@ export function countTime(instant: string | null): string {
               </div>
             }
             <p class="inv-book__total">{{ summary() }}</p>
-            <p class="inv-book__note">Boek de telling op een moment dat niemand verzendt of ontvangt.</p>
+            <p class="inv-book__note">{{ quietNote }}</p>
             @if (blocked()) { <p class="inv-book__note inv-book__note--stop">Werk eerst af wat hierboven staat; daarna kan je boeken.</p> }
           </section>
         } @else if (failed()) {
@@ -202,6 +202,8 @@ export class StockCountBookingSheet {
 
   readonly correction = computed(() => this.view().correctsCountId !== null);
   private readonly linesById = computed(() => new Map(this.view().lines.map((line) => [line.id, line])));
+  readonly quietNote = BOOKING_QUIET_NOTE;
+
   readonly missingReasons = computed(() => this.lines(this.check()?.missingReasons ?? []));
   readonly missingReasonIds = computed(() => this.missingReasons().map((line) => line.id));
   readonly openDocuments = computed(() => this.lines(this.check()?.openDocuments ?? []));

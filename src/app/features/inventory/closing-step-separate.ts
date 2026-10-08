@@ -5,7 +5,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { BrusselsDatePipe } from './inventory-dates';
 import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor } from './closing-decision-sheet';
 import {
-  InvoicedChoice, borderFixed, byName, decisionWriteInvoiced, decisionWritePartnerContainer, decisionWritePartnerQuantity,
+  InvoicedChoice, borderFixed, byName, carvedPieces, decisionWriteInvoiced, decisionWritePartnerContainer, decisionWritePartnerQuantity,
   decisionWriteThirdParty, decisionWriteTransit, invoiceBulkWrite, undecidedInvoiceIds,
 } from './inventory-closing';
 
@@ -168,10 +168,17 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
               <p class="inv-item__title"><a class="wk-link" [routerLink]="['/sales', group.salesOrderId]">Factuur {{ group.first.documentNumber }}</a>
                 <small>{{ group.first.documentDate | brusselsDate }} · {{ group.first.counterparty || 'Geen klant' }}</small></p>
               @for (item of group.items; track item.id) {
-                <p class="inv-item__row"><span>{{ item.productName }}</span><span>{{ item.quantity | num }}</span>
+                @let carved = item.automatic ? null : carvedOf(item);
+                <p class="inv-item__row"><span>{{ item.productName }}
+                    @if (carved !== null && carved !== item.quantity) { <small>{{ item.quantity | num }} gefactureerd, waarvan {{ carved | num }} uit eigen voorraad</small> }</span>
+                  @if (carved === null) {
+                    <span>{{ item.quantity | num }}</span>
+                  } @else {
+                    <span>{{ carved | num }} x {{ item.unitValueEur | eur: 4 }}</span>
+                  }
                   @if (item.automatic) {
                     <span class="inv-item__auto">Stuks waren al weg · al verwerkt bij de bewegingen van stap 2</span>
-                  } @else if (item.valueEur !== null && item.choice === 'UIT') {
+                  } @else if (carved !== null) {
                     <span class="wk-amount">{{ item.valueEur | eur }}</span>
                   }
                 </p>
@@ -321,6 +328,11 @@ export class ClosingStepSeparate {
       this.view();
       this.question.set(null);
     });
+  }
+
+  /** The pieces the value of an invoiced row stands for, or null without a value. */
+  carvedOf(item: SeparateItem): number | null {
+    return carvedPieces(item);
   }
 
   name(item: SeparateItem): string {

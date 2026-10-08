@@ -6,7 +6,7 @@ import type {
 import { BrusselsDateTimePipe } from './inventory-dates';
 import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor } from './closing-decision-sheet';
 import {
-  bookedLater, byName, dateText, decisionWriteMovement, laterRowsIntro, rollEffect, rollIntro, rollLine, rollTickHead, rollTickLabel,
+  bookedLater, byName, dateText, decisionWriteMovement, laterRowsIntro, needsLook, rollEffect, rollIntro, rollLine, rollTickHead, rollTickLabel,
 } from './inventory-closing';
 import { InventoryScrollCue } from './inventory-scroll-cue';
 import { signedQuantity } from './stock-count-booking-sheet';
@@ -27,6 +27,8 @@ interface LocationBlock {
   /** Rows of the 31 days after the later of the two moments. */
   later: ProductRows[];
   laterCount: number;
+  /** A row in the fold needs a look (removed since the last calculation, or to review): the fold starts open. */
+  laterOpen: boolean;
 }
 
 /**
@@ -62,7 +64,7 @@ interface LocationBlock {
             <p class="inv-step__text">Geen bewegingen tussen de afsluitdatum en de telling. De getelde aantallen zijn de eindvoorraad.</p>
           }
           @if (block.laterCount) {
-            <details class="inv-fold">
+            <details class="inv-fold" [open]="block.laterOpen">
               <summary>Later geboekt ({{ block.laterCount }})</summary>
               <p class="inv-step__text">{{ laterIntro(block.location) }}</p>
               <ng-container [ngTemplateOutlet]="table" [ngTemplateOutletContext]="{ $implicit: block.later, result: false, known: block.between, after: block.location.countAfterClosingDate }" />
@@ -107,7 +109,7 @@ interface LocationBlock {
               </span>
               <span class="wk-td wk-td--wrap inv-roll__note" role="cell">
                 @if (row.removed) {
-                  <span class="inv-roll__gone">Verwijderd uit de voorraadgeschiedenis</span>
+                  <span class="inv-roll__gone">Verwijderd uit de voorraadgeschiedenis; telt niet meer mee</span>
                 } @else {
                   @if (row.review && row.decisionId === null) { <span class="wk-pill tone-warn">Nakijken</span> }
                   @if (row.defaultNote) { <span>{{ row.defaultNote }}</span> }
@@ -154,11 +156,15 @@ export class ClosingStepDate {
       const between = new Map<number, ProductRows>();
       const later = new Map<number, ProductRows>();
       let laterCount = 0;
+      let laterOpen = false;
       for (const row of view.movements) {
         if (row.locationId !== location.locationId) continue;
         const place = places.get(`${location.locationId}:${row.productId}`) ?? null;
         const isLater = bookedLater(row.bookedAt, place?.anchoredAt ?? location.anchoredAt, cutoff);
-        if (isLater) laterCount += 1;
+        if (isLater) {
+          laterCount += 1;
+          if (needsLook(row)) laterOpen = true;
+        }
         const target = isLater ? later : between;
         let product = target.get(row.productId);
         if (!product) {
@@ -167,7 +173,7 @@ export class ClosingStepDate {
         }
         product.rows.push(row);
       }
-      return { location, between: sorted(between), later: sorted(later), laterCount };
+      return { location, between: sorted(between), later: sorted(later), laterCount, laterOpen };
     });
   });
 

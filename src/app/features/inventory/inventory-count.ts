@@ -139,6 +139,15 @@ export function differenceText(difference: number): string {
   return difference < 0 ? `${whole(-difference)} te weinig` : `${whole(difference)} te veel`;
 }
 
+/**
+ * The known limit of the booking, said as it is. The server reads every level
+ * again and refuses the booking when one moved since the check, but the
+ * booking itself runs for several seconds, and a movement that read its
+ * level before the booking was written can still overwrite it.
+ */
+export const BOOKING_QUIET_NOTE = 'Het boeken duurt enkele seconden. Wordt er net dan iets afgepunt, bijgeboekt of verplaatst, '
+  + 'dan kan die beweging nog gemist worden. Boek de telling op een moment dat niemand verzendt of ontvangt.';
+
 export function bookingSummaryText(summary: BookingCheck['summary']): string {
   if (summary.lines === 0) return 'Je bevestigt dat hier niets ligt.';
   return `Je boekt ${counted1(summary.lines, 'regel', 'regels')}: ${counted1(summary.equal, 'klopt', 'kloppen')}, `
@@ -223,7 +232,11 @@ export function conflictText(line: CountLine, mine: number | null): string {
   return `${line.countedByName ?? 'Iemand'} telde hier al ${whole(line.countedQuantity)}${time ? ` (${time})` : ''}. ${own}`;
 }
 
-/** Why a difference cannot be booked yet: the invoice or container that explains it is still open. */
+/**
+ * Why a difference cannot be booked yet: the invoice or container that
+ * explains it is still open. The server sends an invoice by its number and a
+ * container by its display name, the name the banner and the refusal use.
+ */
 export function openDocumentText(document: OpenDocument): string {
   return document.kind === 'FACTUUR'
     ? `Factuur ${document.number} (${whole(document.quantity)} stuks) is nog niet afgepunt.`

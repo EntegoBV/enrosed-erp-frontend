@@ -1,6 +1,6 @@
 import type {
-  ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingStream, ClosingSummary, ClosingTotals,
-  ClosingView, DecisionKind, DecisionWrite, Notice, NoticeSegment, OpeningLayer, WriteDownRow,
+  ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingMovement, ClosingStream, ClosingSummary,
+  ClosingTotals, ClosingView, DecisionKind, DecisionWrite, Notice, NoticeSegment, OpeningLayer, SeparateItem, WriteDownRow,
 } from '../../core/api/inventory-models';
 
 /**
@@ -237,6 +237,15 @@ export function bookedLater(bookedAt: string, anchoredAt: string | null, cutoff:
   return anchor >= cutoff ? at > anchor : at >= cutoff;
 }
 
+/**
+ * A listed row the user should see without opening a fold: one that left the
+ * stock book since it was listed (it counts for nothing now), and one the
+ * server asks to review and nobody decided on yet.
+ */
+export function needsLook(row: Pick<ClosingMovement, 'removed' | 'review' | 'decisionId'>): boolean {
+  return row.removed || (row.review && row.decisionId === null);
+}
+
 /* ---- step 3: value ---- */
 
 /** A saved waardevermindering as the server replays it: its pieces (null = all that are left) and its market value. */
@@ -453,6 +462,18 @@ export function decisionWriteMovement(movementId: number, applied: boolean, reas
 /** The tick of step 5; unticking deletes the decision. */
 export function decisionWriteVatConfirmation(): DecisionWrite {
   return { kind: 'VAT_CONFIRMATION', flag: true };
+}
+
+/**
+ * The pieces the value of an invoiced row covers: those taken out of the own
+ * stock (`carvedQuantity`), which are fewer than the invoiced pieces when the
+ * stock held less. Null when nothing was taken out: the row has no value
+ * then, only its invoiced quantity.
+ */
+export function carvedPieces(item: Pick<SeparateItem, 'quantity' | 'carvedQuantity' | 'unitValueEur' | 'valueEur'>): number | null {
+  if (item.valueEur === null || item.unitValueEur === null) return null;
+  const carved = item.carvedQuantity ?? item.quantity;
+  return carved > 0 ? carved : null;
 }
 
 /** The invoices of "Gefactureerd, nog niet afgepunt" that still wait for a choice, in list order. */

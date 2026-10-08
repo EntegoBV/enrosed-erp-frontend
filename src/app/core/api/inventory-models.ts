@@ -18,7 +18,9 @@ export interface CountLocation { locationId: number; locationName: string; kindL
   correctionCount: number; }        // booked corrections of that full count
 export interface CountOverview { year: number; years: number[];   // distinct count_year of all sessions, newest first
   locations: CountLocation[]; counts: CountSummary[]; }
-export interface OpenDocument { kind: 'FACTUUR' | 'CONTAINER'; id: number; number: string; quantity: number; }
+export interface OpenDocument { kind: 'FACTUUR' | 'CONTAINER'; id: number;
+  number: string;                   // FACTUUR: the invoice number; CONTAINER: the display name (the order number only when it has none)
+  quantity: number; }
 export interface CountLine { id: number; productId: number; sku: string | null; productName: string; categoryName: string | null;
   familyId: number | null; unitKey: string | null; salesUnit: 'PIECE' | 'DISPLAY'; piecesPerUnit: number | null;
   addedByHand: boolean; liveQuantity: number; expectedQuantity: number | null; countedQuantity: number | null;
@@ -140,7 +142,10 @@ export interface ClosingContainer { purchaseOrderId: number; orderNumber: string
 export interface SeparateItem { id: number; kind: 'PARTNER' | 'GEFACTUREERD' | 'DERDEN' | 'ONDERWEG';   // never 'OUDER'
   purchaseOrderId: number | null; salesOrderId: number | null; documentNumber: string | null; documentName: string | null;
   documentDate: string | null; counterparty: string | null; productId: number | null; sku: string | null;
-  productName: string | null; proposedQuantity: number | null; quantity: number; unitValueEur: number | null;
+  productName: string | null; proposedQuantity: number | null; quantity: number;
+  carvedQuantity: number | null;    // GEFACTUREERD only: the pieces taken out of the own stock; unitValueEur and valueEur cover
+                                    // these, not `quantity` (the invoiced pieces). 0 = nothing taken out; null on other kinds
+  unitValueEur: number | null;
   valueEur: number | null; estimatedEur: number | null; included: boolean | null; choice: string | null;
   ownershipDate: string | null; shippedOn: string | null; receivedOn: string | null; paidUntilClosingEur: number | null;
   reason: string | null; automatic: boolean; decidedByName: string | null; decidedAt: string | null;
@@ -152,8 +157,13 @@ export interface WriteDownRow { decisionId: number; productId: number; sku: stri
 export interface ClosingMovement { movementId: number; productId: number; sku: string | null; productName: string;
   locationId: number; locationName: string; bookedAt: string; kind: string; kindLabel: string; reference: string | null;
   actor: string | null; delta: number; effectiveDelta: number; noAnchor: boolean; businessDate: string | null;
-  businessDateSource: string | null; defaultApplied: boolean; defaultNote: string | null; applied: boolean;
-  appliedReason: string | null; review: boolean; removed: boolean; decisionId: number | null; }
+  businessDateSource: string | null; defaultApplied: boolean;
+  defaultNote: string | null;       // the server's own sentence, shown as it is (also the two that ask for a look: a row that
+                                    // does not join the booking before it, and a row booked at the instant of the count)
+  applied: boolean; appliedReason: string | null; review: boolean;
+  removed: boolean;                 // no longer in the stock book: stays listed, counts for nothing (applied false); a correction
+                                    // version also lists the removed rows of the version it replaces
+  decisionId: number | null; }
 export type DecisionKind = 'ACCRUAL' | 'SUPPLIER_BILLED' | 'CREDIT_TREATMENT' | 'OWNERSHIP_DATE' | 'TRANSIT' | 'PARTNER_CONTAINER'
   | 'PARTNER_QUANTITY' | 'INVOICED' | 'THIRD_PARTY' | 'WRITE_DOWN' | 'MOVEMENT' | 'VAT_CONFIRMATION';
 export interface Decision { id: number; kind: DecisionKind; kindLabel: string; subjectLabel: string;
