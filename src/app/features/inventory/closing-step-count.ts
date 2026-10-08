@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { ClosingLocation, ClosingView, Notice } from '../../core/api/inventory-models';
-import { DateNlPipe, NumPipe } from '../../shared/pipes';
+import { NumPipe } from '../../shared/pipes';
+import { BrusselsDatePipe } from './inventory-dates';
 import { followAnchor } from './closing-decision-sheet';
 import { noticesFor } from './inventory-closing';
 
@@ -14,7 +15,7 @@ import { noticesFor } from './inventory-closing';
 @Component({
   selector: 'app-closing-step-count',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, DateNlPipe, NumPipe],
+  imports: [RouterLink, BrusselsDatePipe, NumPipe],
   host: { class: 'inv-step' },
   template: `
     @if (view().status === 'CONCEPT') {
@@ -35,7 +36,7 @@ import { noticesFor } from './inventory-closing';
             @case ('TELLING') {
               <p class="inv-loc__state">
                 @if (location.anchoredAt) {
-                  Geteld op {{ location.anchoredAt | dateNl }}@if (location.countedByName) { door {{ location.countedByName }} }
+                  Geteld op {{ location.anchoredAt | brusselsDate }}@if (location.countedByName) { door {{ location.countedByName }} }
                 } @else { Geteld }
                 · {{ location.differenceCount | num }} {{ location.differenceCount === 1 ? 'verschil' : 'verschillen' }}
                 @if (location.correctionCount > 0) { · {{ location.correctionCount | num }} {{ location.correctionCount === 1 ? 'correctie' : 'correcties' }} }

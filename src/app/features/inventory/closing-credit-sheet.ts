@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, input, output, signal } from '@angular/core';
 import type { ClosingContainer } from '../../core/api/inventory-models';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
+import { EurPipe } from '../../shared/pipes';
+import { BrusselsDatePipe } from './inventory-dates';
 import { Sheet } from '../../shared/ui';
 import type { CreditTreatmentChoice } from './inventory-closing';
 
@@ -25,11 +26,11 @@ const CHOICES: readonly { value: CreditTreatmentChoice; label: string }[] = [
 @Component({
   selector: 'app-closing-credit-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, EurPipe, DateNlPipe],
+  imports: [Sheet, EurPipe, BrusselsDatePipe],
   template: `
     <app-sheet title="Wat is dit tegoed?" (closed)="closed.emit()">
       <div body class="inv-sheet">
-        <p class="inv-sheet__lead"><strong>{{ credit().reasonLabel }} {{ credit().countedEur | eur }}</strong> · {{ container().displayName }} · genoteerd op {{ credit().notedOn | dateNl }}</p>
+        <p class="inv-sheet__lead"><strong>{{ credit().reasonLabel }} {{ credit().countedEur | eur }}</strong> · {{ container().displayName }} · genoteerd op {{ credit().notedOn | brusselsDate }}</p>
         <div class="inv-sheet__choices" role="radiogroup" aria-label="Wat is dit tegoed?">
           @for (option of choices; track option.value) {
             <button class="inv-sheet__choice" type="button" role="radio" [attr.aria-checked]="choice() === option.value" (click)="choice.set(option.value)"><span>{{ option.label }}</span></button>

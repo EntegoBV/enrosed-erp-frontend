@@ -61,6 +61,11 @@
 /* wide tables scroll sideways inside their card */
 .inv-scroll{overflow-x:auto;--wk-sticky-top:0px}
 .inv-scroll>*{min-width:var(--inv-min,0px)}
+/* More columns beyond an edge (set by InventoryScrollCue): that edge fades out, so a cut table never looks complete. */
+.inv-scroll--right{-webkit-mask-image:linear-gradient(to left,transparent 0,#000 56px);mask-image:linear-gradient(to left,transparent 0,#000 56px)}
+.inv-scroll--left{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 56px);mask-image:linear-gradient(to right,transparent 0,#000 56px)}
+.inv-scroll--left.inv-scroll--right{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 56px,#000 calc(100% - 56px),transparent 100%)}
+.inv-scroll:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
 
 /* ---- sheets */
 .inv-sheet{display:grid;min-width:0}
@@ -69,6 +74,9 @@
 .inv-sheet__warn{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:var(--danger-soft);color:#83261e;font-size:13px;font-weight:650}
 .inv-sheet__preview{margin:0 0 8px;padding:10px 12px;border-radius:10px;background:var(--surface-2);color:var(--ink);font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.5}
 .inv-sheet__last{margin-bottom:0}
+/* what a typed amount was read as, under its field; a help line that belongs to the row of fields above it */
+.inv-sheet__read{color:var(--ink-2);font-weight:650;font-variant-numeric:tabular-nums}
+.inv-sheet__under{margin-top:4px}
 .inv-sheet__choices{display:grid;gap:8px;margin-bottom:14px}
 .inv-sheet__choice{display:grid;gap:2px;min-height:44px;padding:10px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:14.5px;font-weight:600;line-height:1.4;text-align:left;cursor:pointer}
 .inv-sheet__choice small{color:var(--muted);font-size:12.5px;font-weight:500}
@@ -81,10 +89,11 @@
 .inv-loc__state--none{color:var(--muted);font-weight:500}
 
 /* ---- step 2: Geboekt op · Soort · Referentie · Door · Aantal · Meerekenen · Voorstel */
-.inv-roll__table{--inv-min:860px;--wk-cols:128px minmax(0,1fr) minmax(0,1.2fr) minmax(0,.8fr) 150px 124px minmax(0,2fr);border:1px solid var(--line);border-radius:10px}
+.inv-roll__table{--inv-min:1020px;--wk-cols:128px minmax(0,1fr) minmax(0,1.2fr) minmax(0,.8fr) 150px 244px minmax(0,1.8fr);border:1px solid var(--line);border-radius:10px}
 .inv-roll__row--removed{color:var(--muted)}
 .inv-roll__row--removed>:not(.inv-roll__note){text-decoration:line-through}
-.inv-roll__tick{overflow:visible}
+.inv-roll__tick{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;overflow:visible}
+.inv-roll__effect{color:var(--rose-dark);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .inv-roll__note{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--ink-2);font-size:12.5px;line-height:1.4}
 .inv-roll__changed{color:var(--rose-dark);font-weight:650}
 .inv-roll__result{font-weight:650;font-variant-numeric:tabular-nums}
@@ -95,6 +104,9 @@
 .inv-value__split--docked{display:grid;grid-template-columns:minmax(0,1fr) var(--wk-inspector-w);align-items:start;gap:16px}
 .inv-value__aside{position:sticky;top:calc(var(--wk-sticky-top) + 8px);max-height:calc(100vh - var(--wk-sticky-top) - 24px);overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .inv-products{--inv-min:920px;--wk-cols:minmax(180px,1fr) 104px 168px 122px 154px 104px;border:1px solid var(--line);border-radius:12px}
+/* a narrow step keeps the four columns that fit; the average and the write-down move into the other cells */
+.inv-products--tight{--inv-min:0px;--wk-cols:minmax(150px,1fr) 104px 122px 168px}
+.inv-products--tight .inv-col--roomy{display:none}
 .inv-products__row{scroll-margin-top:calc(var(--wk-sticky-top) + var(--wk-head-h) + 40px)}
 .inv-products__chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
 .inv-products__prev{flex-basis:100%;color:var(--muted);font-size:11.5px;font-weight:600;line-height:1.35;white-space:normal}
@@ -144,12 +156,19 @@
 .inv-unvalued__unit{flex:none;min-width:76px;color:var(--muted);font-size:12px;text-align:left}
 .inv-unvalued__foot{display:flex;align-items:center;gap:12px;margin-top:12px}
 .inv-unvalued__foot .inv-step__quiet{margin:0}
+.inv-unvalued__replace{color:#7c450b;font-weight:600}
+.inv-unvalued__read{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
 .inv-opening{--inv-min:820px;--wk-cols:minmax(0,1.8fr) 84px 136px 96px minmax(0,1.6fr) 104px}
 .inv-opening__action{display:flex;justify-content:flex-end;overflow:visible}
 
 /* ---- step 4: facts on the left, the decision on the right */
 .inv-apart__subtotal{color:var(--ink-2);font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
 .inv-apart__bulk{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+/* the three answers of an invoice, each with what it does to the value */
+.inv-apart__choices{display:grid;gap:6px;margin:12px 0 0;padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:12.5px;line-height:1.45}
+.inv-apart__choices>div{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:4px 14px}
+.inv-apart__choices dt{font-weight:700;color:var(--ink)}
+.inv-apart__choices dd{margin:0;color:var(--ink-2)}
 .inv-item{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px;padding:12px 0;border-bottom:1px solid var(--line);scroll-margin-top:calc(var(--wk-sticky-top) + 16px)}
 .inv-item__facts{flex:1 1 360px;min-width:0}
 .inv-item__facts .inv-kv{max-width:460px;margin-bottom:6px}
@@ -186,3 +205,6 @@
 .inv-final__actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px}
 .inv-final__spacer{flex:1}
 .inv-final__todo{color:var(--danger);font-size:13px;font-weight:650}
+/* why "Definitief maken" was refused or is held back: stays above the button, with the way out beside it */
+.inv-final__refused{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:16px;padding:10px 14px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:13.5px;font-weight:650;line-height:1.45}
+.inv-final__refused span{flex:1 1 320px;min-width:0}

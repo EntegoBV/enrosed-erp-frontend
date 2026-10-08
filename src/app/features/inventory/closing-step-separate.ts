@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { ClosingArticle, ClosingView, Decision, DecisionKind, DecisionWrite, SeparateItem } from '../../core/api/inventory-models';
-import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
+import { BrusselsDatePipe } from './inventory-dates';
 import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor } from './closing-decision-sheet';
 import {
-  InvoicedChoice, borderFixed, decisionWriteInvoiced, decisionWritePartnerContainer, decisionWritePartnerQuantity,
+  InvoicedChoice, borderFixed, byName, decisionWriteInvoiced, decisionWritePartnerContainer, decisionWritePartnerQuantity,
   decisionWriteThirdParty, decisionWriteTransit, invoiceBulkWrite, undecidedInvoiceIds,
 } from './inventory-closing';
 
@@ -37,10 +38,18 @@ interface Question {
   remove?: () => void;
 }
 
-const INVOICE_CHOICES: readonly { value: InvoicedChoice; label: string; help: string | null }[] = [
-  { value: 'UIT', label: 'Uit eigen voorraad', help: 'De stuks lagen er op de afsluitdatum nog en zijn meegeteld.' },
-  { value: 'BLIJFT', label: 'Blijft eigen voorraad', help: null },
-  { value: 'AL_WEG', label: 'Stuks waren al weg', help: 'Ze zitten niet in de getelde voorraad.' },
+/*
+ * Three answers to one question: where were the invoiced pieces on the
+ * closing date, and whose are they. Each says what it does to the value,
+ * because this choice moves value in or out of the annual-accounts figure.
+ */
+const INVOICE_CHOICES: readonly { value: InvoicedChoice; label: string; help: string }[] = [
+  { value: 'UIT', label: 'Verkocht: uit eigen voorraad',
+    help: 'De stuks lagen er op de afsluitdatum nog en zijn meegeteld, maar ze zijn van de klant. Hun waarde gaat uit de eigen voorraad en staat apart, niet in het totaal.' },
+  { value: 'BLIJFT', label: 'Nog van ons: blijft eigen voorraad',
+    help: 'De stuks lagen er op de afsluitdatum nog en blijven van ons tot ze vertrekken. Hun waarde blijft in de eigen voorraad en in het totaal.' },
+  { value: 'AL_WEG', label: 'Stuks waren al weg',
+    help: 'De stuks waren op de afsluitdatum al vertrokken en zitten niet in de getelde voorraad. Er wijzigt niets aan het aantal of aan de waarde.' },
 ];
 const FACTS_ONLY = 'Dit is een beslissing voor jou en je boekhouder; het ERP toont alleen de feiten.';
 const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
@@ -55,12 +64,12 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
 @Component({
   selector: 'app-closing-step-separate',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, NumPipe, DateNlPipe, ClosingDecisionSheet],
+  imports: [RouterLink, EurPipe, NumPipe, BrusselsDatePipe, ClosingDecisionSheet],
   host: { class: 'inv-step inv-apart' },
   template: `
     <section class="wk-card">
       <div class="wk-card__head">
-        <h3 class="wk-card__title">Goederen onderweg op {{ view().closingDate | dateNl }}</h3>
+        <h3 class="wk-card__title">Goederen onderweg op {{ view().closingDate | brusselsDate }}</h3>
         <span class="wk-card__trail inv-apart__subtotal">Opgenomen {{ view().totals.transitIncludedEur | eur }} · niet opgenomen {{ view().totals.transitExcludedEur | eur }}</span>
       </div>
       <div class="wk-card__body">
@@ -72,14 +81,14 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
                 <div><dt>Leverancier</dt><dd>{{ group.first.counterparty || '—' }}</dd></div>
                 <div><dt>Incoterm leverancier (fiche)</dt><dd>{{ group.first.supplierIncoterm || 'niet ingevuld' }}</dd></div>
                 <div><dt>Transport via leverancier</dt><dd>{{ group.first.transportViaSupplier ? 'ja' : 'nee' }}</dd></div>
-                <div><dt>Afvaart</dt><dd>{{ group.first.shippedOn | dateNl }}</dd></div>
+                <div><dt>Afvaart</dt><dd>{{ group.first.shippedOn | brusselsDate }}</dd></div>
                 <div><dt>Betaald t/m afsluitdatum</dt><dd>{{ group.first.paidUntilClosingEur | eur }}</dd></div>
               </dl>
               @for (item of group.items; track item.id) {
                 <p class="inv-item__row"><span>{{ item.productName }}</span><span>{{ item.quantity | num }} x {{ item.unitValueEur | eur: 4 }}</span><span class="wk-amount">{{ item.valueEur | eur }}</span></p>
               }
               @if (group.decision; as decision) {
-                <p class="inv-item__decided">{{ decision.flag ? 'Opgenomen' : 'Niet opgenomen' }}@if (decision.flag && decision.decisionDate) { · eigendom of risico overgegaan op {{ decision.decisionDate | dateNl }} } · {{ decision.reason }} · {{ decision.decidedByName }}</p>
+                <p class="inv-item__decided">{{ decision.flag ? 'Opgenomen' : 'Niet opgenomen' }}@if (decision.flag && decision.decisionDate) { · eigendom of risico overgegaan op {{ decision.decisionDate | brusselsDate }} } · {{ decision.reason }} · {{ decision.decidedByName }}</p>
               }
             </div>
             <div class="inv-item__side">
@@ -108,7 +117,7 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
             <div class="inv-item__facts">
               <p class="inv-item__title">{{ name(group.first) }}@if (group.first.counterparty) { <small>{{ group.first.counterparty }}</small> }
                 @if (!group.empty) { <span class="wk-amount">{{ group.valueEur | eur }}</span> }</p>
-              @if (group.first.receivedOn) { <p class="inv-step__quiet">Ontvangen {{ group.first.receivedOn | dateNl }}</p> }
+              @if (group.first.receivedOn) { <p class="inv-step__quiet">Ontvangen {{ group.first.receivedOn | brusselsDate }}</p> }
               @if (group.empty) {
                 <p class="inv-step__quiet">Geen stuks meer in voorraad</p>
               } @else {
@@ -149,7 +158,7 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
       <div class="wk-card__body">
         @if (editable() && undecided().length) {
           <div class="inv-apart__bulk">
-            <button class="wk-btn" type="button" [disabled]="busy()" (click)="bulk('UIT')">Alle {{ undecided().length }} uit eigen voorraad</button>
+            <button class="wk-btn" type="button" [disabled]="busy()" (click)="bulk('UIT')">Alle {{ undecided().length }} verkocht: uit eigen voorraad</button>
             <button class="wk-btn" type="button" [disabled]="busy()" (click)="bulk('AL_WEG')">Alle {{ undecided().length }}: stuks waren al weg</button>
           </div>
         }
@@ -157,7 +166,7 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
           <div class="inv-item" [id]="'inv-apart-invoice-' + group.salesOrderId">
             <div class="inv-item__facts">
               <p class="inv-item__title"><a class="wk-link" [routerLink]="['/sales', group.salesOrderId]">Factuur {{ group.first.documentNumber }}</a>
-                <small>{{ group.first.documentDate | dateNl }} · {{ group.first.counterparty || 'Geen klant' }}</small></p>
+                <small>{{ group.first.documentDate | brusselsDate }} · {{ group.first.counterparty || 'Geen klant' }}</small></p>
               @for (item of group.items; track item.id) {
                 <p class="inv-item__row"><span>{{ item.productName }}</span><span>{{ item.quantity | num }}</span>
                   @if (item.automatic) {
@@ -175,7 +184,7 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
               <div class="inv-item__side inv-item__side--stack">
                 @if (group.undecided) { <span class="wk-pill tone-danger">Nog te beslissen</span> }
                 @for (option of invoiceChoices; track option.value) {
-                  <button class="wk-btn wk-btn--sm" type="button" [disabled]="!editable() || busy()" [attr.aria-pressed]="group.choice === option.value" [title]="option.help ?? ''" (click)="chooseInvoice(group, option.value)">{{ option.label }}</button>
+                  <button class="wk-btn wk-btn--sm" type="button" [disabled]="!editable() || busy()" [attr.aria-pressed]="group.choice === option.value" [title]="option.help" (click)="chooseInvoice(group, option.value)">{{ option.label }}</button>
                 }
               </div>
             }
@@ -184,7 +193,9 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
           <p class="inv-step__quiet">Geen facturen die op de afsluitdatum nog niet afgepunt waren.</p>
         }
         @if (invoices().length) {
-          <p class="inv-step__quiet">Uit eigen voorraad: de stuks lagen er op de afsluitdatum nog en zijn meegeteld. Stuks waren al weg: ze zitten niet in de getelde voorraad.</p>
+          <dl class="inv-apart__choices">
+            @for (option of invoiceChoices; track option.value) { <div><dt>{{ option.label }}</dt><dd>{{ option.help }}</dd></div> }
+          </dl>
         }
         @if (view().olderInvoices.length) {
           <details class="inv-fold">
@@ -199,7 +210,7 @@ const cents = (eur: number | null) => Math.round((eur ?? 0) * 100);
               @for (invoice of view().olderInvoices; track invoice.salesOrderId) {
                 <div class="wk-tr" role="row">
                   <span class="wk-td" role="cell">{{ invoice.number }}</span>
-                  <span class="wk-td" role="cell">{{ invoice.orderDate | dateNl }}</span>
+                  <span class="wk-td" role="cell">{{ invoice.orderDate | brusselsDate }}</span>
                   <span class="wk-td" role="cell">{{ invoice.customerName || '—' }}</span>
                   <span class="wk-td wk-td--num" role="cell">{{ invoice.quantity | num }}</span>
                 </div>
@@ -414,7 +425,7 @@ export class ClosingStepSeparate {
     this.question.set({
       spec: {
         title: `${option?.label ?? ''} · factuur ${group.first.documentNumber ?? ''}`,
-        lead: option?.help ? [option.help] : [],
+        lead: option ? [option.help] : [],
         reason: { label: 'Reden', value: saved?.choice === choice ? saved.reason ?? '' : '', required: true },
         saveLabel: 'Bewaren',
       },
@@ -432,7 +443,7 @@ export class ClosingStepSeparate {
     this.question.set({
       spec: {
         title: `Alle ${count}: stuks waren al weg`,
-        lead: ['Ze zitten niet in de getelde voorraad. Elke factuur bewaart deze reden.'],
+        lead: ['De stuks waren op de afsluitdatum al vertrokken en zitten niet in de getelde voorraad. Er wijzigt niets aan het aantal of aan de waarde. Elke factuur bewaart deze reden.'],
         reason: { label: 'Reden', value: '', required: true },
         saveLabel: 'Bewaren',
       },
@@ -442,7 +453,7 @@ export class ClosingStepSeparate {
 
   askThird(): void {
     const options = [...this.view().articles]
-      .sort((a: ClosingArticle, b: ClosingArticle) => a.productName.localeCompare(b.productName, 'nl'))
+      .sort((a: ClosingArticle, b: ClosingArticle) => byName(a.productName, b.productName))
       .map((article) => ({ id: article.productId, label: article.sku ? `${article.productName} · ${article.sku}` : article.productName }));
     this.question.set({
       spec: {

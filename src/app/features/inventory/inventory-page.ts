@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { saveBlob } from '../../core/api/download';
-import { messageOf } from '../../core/api/errors';
+import { messageOf, readableFailure } from '../../core/api/errors';
 import { InventoryApi, refusalCode, refusalDetails } from '../../core/api/inventory-api';
 import type { ClosingOverview, ClosingSummary, CountLocation, CountOverview } from '../../core/api/inventory-models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -12,10 +12,11 @@ import type { MenuPoint } from '../../shared/context-menu-position';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
-import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
+import { BrusselsDatePipe } from './inventory-dates';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { defaultInventoryYear, fileName } from './inventory-closing';
+import { dateText, defaultInventoryYear, fileName, todoText } from './inventory-closing';
 
 /** What the sheet "Telling starten" holds; the year and the location can still be changed there. */
 interface CountDraft {
@@ -53,7 +54,7 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
 @Component({
   selector: 'app-inventory-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, Icon, Sheet, ContextMenu, DateField, DateNlPipe, EurPipe, NumPipe],
+  imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, Icon, Sheet, ContextMenu, DateField, BrusselsDatePipe, EurPipe, NumPipe],
   template: `
     <app-page-header [showBack]="true" backTo="/more" title="Jaarinventaris"
                      subtitle="Voorraadtelling en eindvoorraad met waarde, per boekjaar" />
@@ -68,9 +69,9 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
 
       @if (loadError(); as message) {
         <div class="alert alert--danger" role="alert">
-          <span>{{ message }}</span>
-          <button class="btn btn--sm" type="button" (click)="load()">Opnieuw</button>
+          <span><strong>De jaarinventaris kon niet worden geladen.</strong> {{ message }}</span>
         </div>
+        <p class="inv-hub__retry"><button class="btn btn--sm btn--primary" type="button" (click)="load()">Opnieuw proberen</button></p>
       } @else if (!closings() || !counts()) {
         <div aria-busy="true"><app-skeleton kind="card" /><app-skeleton kind="list" [rows]="4" /></div>
       } @else {
@@ -80,16 +81,26 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
 
         <section class="card" aria-labelledby="inv-hub-counts">
           <div class="card__head"><h2 id="inv-hub-counts">Tellingen {{ year() }}</h2></div>
-          <p class="inv-hub__intro">Tel elke locatie. Twee mensen kunnen tegelijk op hun telefoon tellen; je kan stoppen en later verder tellen, alles wat je invult blijft bewaard. Er wordt pas iets in de voorraad geboekt wanneer je de telling boekt.</p>
+          <p class="inv-hub__intro">Tel elke locatie. Twee mensen kunnen tegelijk op hun telefoon tellen; je kan stoppen en later verder tellen, alles wat je invult blijft bewaard. Er wordt pas iets in de voorraad geboekt wanneer je de telling boekt.
+            @if (anyBooked()) { <span class="inv-hub__intro-more">'Telling corrigeren' is voor een tikfout of een doos die je later vond: je telt alleen de producten die je toevoegt.</span> }</p>
           @for (location of counts()!.locations; track location.locationId) {
             <div class="inv-hub__row">
               <div class="inv-hub__body">
                 <div class="inv-hub__title">{{ location.locationName }}
-                  <span class="inv-hub__kind">{{ location.kindLabel }}@if (!location.active) { · inactief }</span></div>
+                  <span class="inv-hub__kind">{{ kindText(location) }}</span></div>
                 <div class="inv-hub__state">{{ countState(location) }}</div>
+                @if (otherYearOpen(location); as other) {
+                  <div class="inv-hub__state inv-hub__state--todo">Telling {{ other.countYear }} bezig op deze locatie · {{ other.countedCount | num }} van {{ other.lineCount | num }} geteld.
+                    Een nieuwe telling of correctie kan pas wanneer die geboekt of geannuleerd is.</div>
+                }
               </div>
               <div class="inv-hub__actions">
-                @if (location.open; as open) {
+                @if (otherYearOpen(location); as other) {
+                  @if (location.booked; as booked) {
+                    <a class="btn btn--sm" [routerLink]="['/stock/inventaris/telling', booked.id]">Bekijk telling</a>
+                  }
+                  <a class="btn btn--sm" [routerLink]="['/stock/inventaris/telling', other.id]">Open telling {{ other.countYear }}</a>
+                } @else if (location.open; as open) {
                   <a class="btn btn--sm btn--primary" [routerLink]="['/stock/inventaris/telling', open.id]">Verder tellen</a>
                 } @else if (location.booked; as booked) {
                   <a class="btn btn--sm" [routerLink]="['/stock/inventaris/telling', booked.id]">Bekijk telling</a>
@@ -102,9 +113,6 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
                   <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="confirmEmpty(location)">Lege locatie bevestigen</button>
                 }
               </div>
-              @if (!location.open && location.booked) {
-                <p class="inv-hub__help">Voor een tikfout of een doos die je later vond. Je telt alleen de producten die je toevoegt.</p>
-              }
             </div>
           } @empty {
             <p class="inv-hub__none">Er zijn geen voorraadlocaties.</p>
@@ -146,7 +154,7 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
               }
               <div class="inv-hub__state">Aanschafwaarde zonder Enrosed kost</div>
               @if (!closings()!.closings.length) { <div class="inv-hub__state">Wordt vastgelegd bij de eerste afsluiting.</div> }
-              @if (!anyFinal()) { <div class="inv-hub__state">Het beginjaar volgt de vroegste afsluiting tot de eerste definitief is.</div> }
+              @if (closings()!.closings.length && !anyFinal()) { <div class="inv-hub__state">De regel geldt vanaf het boekjaar van je eerste afsluiting. Dat jaar ligt vast zodra een afsluiting definitief is.</div> }
             </div>
             @if (closings()!.rule) {
               <div class="inv-hub__actions"><button class="inv-hub__link" type="button" (click)="ruleOpen.set(true)">Tekst bekijken</button></div>
@@ -160,20 +168,22 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
       <div class="inv-hub__row">
         <a class="inv-hub__body inv-hub__body--link" [routerLink]="['/stock/inventaris/afsluiting', closing.id]">
           @if (closing.status === 'CONCEPT') {
-            <div class="inv-hub__title">Versie {{ closing.versionNo }} · per {{ closing.closingDate | dateNl }} · Concept</div>
-            <div class="inv-hub__state" [class.inv-hub__state--todo]="closing.blockerCount > 0">Nog {{ closing.blockerCount | num }} te doen</div>
+            <div class="inv-hub__title">Versie {{ closing.versionNo }} · per {{ closing.closingDate | brusselsDate }} · Concept</div>
+            <div class="inv-hub__state" [class.inv-hub__state--todo]="closing.blockerCount > 0" [class.inv-hub__state--ok]="closing.blockerCount === 0">{{ todo(closing) }}</div>
           } @else {
-            <div class="inv-hub__title">Versie {{ closing.versionNo }} · Definitief · {{ closing.finalizedAt | dateNl }}@if (closing.finalizedByName) { · {{ closing.finalizedByName }} }</div>
+            <div class="inv-hub__title">Versie {{ closing.versionNo }} · per {{ closing.closingDate | brusselsDate }} · Definitief</div>
             @if (closing.superseded) { <div class="inv-hub__state">{{ replacedText(closing) }}</div> }
             <div class="inv-hub__state">
-              @if (closing.totalValueEur !== null) { <b class="inv-hub__total">{{ closing.totalValueEur | eur }}</b> }
-              @if (closing.estimatedEur !== null) { waarvan geschat {{ closing.estimatedEur | eur }} }
+              @if (closing.totalValueEur !== null) { Totaal voorraadwaarde <b class="inv-hub__total">{{ closing.totalValueEur | eur }}</b> }
+              @if (closing.estimatedEur !== null) { · waarvan geschat {{ closing.estimatedEur | eur }} }
             </div>
+            <div class="inv-hub__state">Definitief gemaakt op {{ closing.finalizedAt | brusselsDate }}@if (closing.finalizedByName) { door {{ closing.finalizedByName }} }</div>
           }
-          <span class="inv-hub__chev" aria-hidden="true">›</span>
+          @if (closing.status !== 'CONCEPT') { <span class="inv-hub__chev" aria-hidden="true">›</span> }
         </a>
         <div class="inv-hub__actions">
           @if (closing.status === 'CONCEPT') {
+            <a class="btn btn--sm btn--primary" [routerLink]="['/stock/inventaris/afsluiting', closing.id]">Verder met afsluiten</a>
             <button class="btn btn--sm inv-hub__more" type="button" [attr.aria-label]="'Meer voor versie ' + closing.versionNo"
                     (click)="openMenu($event, { closing })"><app-icon name="more" [size]="20" /></button>
           } @else {
@@ -259,10 +269,12 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
     .inv-hub__kind { margin-left: 6px; color: var(--muted); font-size: 12.5px; font-weight: 500; }
     .inv-hub__state { color: var(--muted); font-size: 13px; line-height: 1.45; font-variant-numeric: tabular-nums; }
     .inv-hub__state--todo { color: var(--warn); font-weight: 650; }
-    .inv-hub__total { margin-right: 6px; color: var(--ink); font-weight: 700; }
+    .inv-hub__state--ok { color: var(--ok, #1f7a4d); font-weight: 650; }
+    .inv-hub__intro-more { display: block; margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+    .inv-hub__retry { margin: 12px 2px 0; }
+    .inv-hub__total { color: var(--ink); font-weight: 700; }
     .inv-hub__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .inv-hub__more { width: 44px; padding: 0; }
-    .inv-hub__help { flex: 0 0 100%; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
     .inv-hub__none { margin: 0; padding: 14px; color: var(--muted); font-size: 13.5px; }
     .inv-hub__fold { border-top: 1px solid var(--line); }
     .inv-hub__fold > summary { display: flex; align-items: center; min-height: 44px; padding: 6px 14px; color: var(--ink-2);
@@ -326,6 +338,8 @@ export class InventoryPage {
   readonly currentClosings = computed(() => this.yearClosings().filter((closing) => !closing.superseded));
   readonly replacedClosings = computed(() => this.yearClosings().filter((closing) => closing.superseded));
   readonly anyFinal = computed(() => (this.closings()?.closings ?? []).some((closing) => closing.status === 'DEFINITIEF'));
+  /** A booked count on screen: the one explanation of "Telling corrigeren" is shown under the intro. */
+  readonly anyBooked = computed(() => (this.counts()?.locations ?? []).some((location) => location.booked && !location.open));
   readonly nothingYet = computed(() => !this.closings()?.closings.length && !this.counts()?.years.length);
 
   readonly menuItems = computed<ContextMenuItem[]>(() => {
@@ -366,7 +380,7 @@ export class InventoryPage {
       if (run !== this.run) return;
       this.closings.set(null);
       this.counts.set(null);
-      this.loadError.set(messageOf(failure, 'De jaarinventaris kon niet worden geladen.'));
+      this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
     }
   }
 
@@ -378,8 +392,29 @@ export class InventoryPage {
 
   /* -------------------------------------------------------------- counts */
 
-  countState(location: CountLocation): string {
+  /**
+   * The server answers the location's open session whatever its year (one
+   * session per location at a time). When it belongs to another year than
+   * the one on screen it is shown as such, and the booked count of the year
+   * on screen stays visible beside it.
+   */
+  otherYearOpen(location: CountLocation): CountLocation['open'] {
     const open = location.open;
+    return open && this.year() !== null && open.countYear !== this.year() ? open : null;
+  }
+
+  /** "Magazijn" once when name and kind are the same word. */
+  kindText(location: CountLocation): string {
+    const same = location.kindLabel.trim().toLocaleLowerCase('nl-BE') === location.locationName.trim().toLocaleLowerCase('nl-BE');
+    return [same ? '' : location.kindLabel, location.active ? '' : 'inactief'].filter(Boolean).join(' · ');
+  }
+
+  todo(closing: ClosingSummary): string {
+    return todoText(closing.blockerCount);
+  }
+
+  countState(location: CountLocation): string {
+    const open = this.otherYearOpen(location) ? null : location.open;
     if (open) {
       return open.correctsCountId !== null
         ? `Correctie bezig · ${counted(open.countedCount, 'product', 'producten')}`
@@ -387,7 +422,7 @@ export class InventoryPage {
     }
     const booked = location.booked;
     if (booked) {
-      const date = new DateNlPipe().transform(booked.bookedAt);
+      const date = dateText(booked.bookedAt);
       return `Geboekt op ${date} door ${booked.bookedByName || 'onbekend'} · ${counted(booked.differenceCount, 'verschil', 'verschillen')}`
         + (location.correctionCount > 0 ? ` · ${counted(location.correctionCount, 'correctie', 'correcties')}` : '');
     }
@@ -495,7 +530,9 @@ export class InventoryPage {
       const blob = kind === 'pdf' ? await this.api.closingPdf(closing.id) : await this.api.closingXlsx(closing.id);
       saveBlob(blob, fileName(closing, kind));
     } catch (failure) {
-      this.ui.toast(messageOf(failure, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
+      /* The refusal of a file route arrives as a Blob: read the server's sentence out of it. */
+      const readable = await readableFailure(failure);
+      this.ui.toast(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
     } finally {
       this.busy.set(false);
     }

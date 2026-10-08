@@ -27,6 +27,8 @@
 .inv-count__lead{display:grid;gap:4px;margin:0 4px 14px;color:var(--ink-2);font-size:13.5px;line-height:1.45}
 .inv-count__lead p{margin:0}
 .inv-count__quiet{margin:-6px 4px 12px;color:var(--muted);font-size:12.5px;line-height:1.45}
+.inv-count__offline{margin:0 0 12px;padding:8px 12px;border-radius:10px;background:var(--warn-soft);color:#7c450b;font-size:13px;font-weight:600;line-height:1.45}
+.inv-count__retry{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:12px 4px 0}
 .inv-banner{align-items:flex-start}
 .inv-banner__links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
 .inv-banner__links a{min-height:28px;display:inline-flex;align-items:center;color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px}
@@ -91,6 +93,8 @@ button.inv-chip{cursor:pointer}
 .inv-row__field{width:76px;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;outline:none}
 .inv-row__field:focus{border-color:var(--rose);box-shadow:var(--wk-focus)}
 .inv-row__diff{font-weight:650}
+/* a SKU stays on one line: "ER-BOX-RD" never breaks at its hyphens */
+.inv-row__sku{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inv-row__tick{color:var(--rose-dark);vertical-align:-2px}
 .inv-row__reason{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .inv-row__actions{display:flex;justify-content:flex-end;overflow:visible}
@@ -131,6 +135,9 @@ button.inv-chip{cursor:pointer}
 .inv-book__total{margin:0;font-size:16px;font-weight:700;line-height:1.4}
 .inv-book__note{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
 .inv-book__note--stop{color:var(--danger);font-weight:650}
+/* the server's refusal of "Telling boeken": stays above the summary until the next attempt */
+.inv-book__refused{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:14px;font-weight:650;line-height:1.45}
+.inv-book__refused span{flex:1 1 220px;min-width:0}
 @media (max-width:679.98px){
  .inv-reason,.inv-add__search,.inv-add__empty,.inv-add__alert,.inv-add__loading,.inv-book__alert,.inv-book__loading,.inv-book__summary{margin-inline:16px}
  .inv-add,.inv-book{--ios-inset:16px}

@@ -6,21 +6,22 @@ import type {
   DecisionWrite, Notice, OpeningLayer, OpeningLayerWrite,
 } from '../../core/api/inventory-models';
 import { DateField } from '../../shared/date-field';
-import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { SegmentOption, Segmented } from '../../shared/segmented';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { elementWidth } from '../../shared/workspace-layout';
 import { AccrualChoice, ClosingAccrualSheet } from './closing-accrual-sheet';
 import { ClosingCreditSheet, CreditChoice } from './closing-credit-sheet';
-import {
-  ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor, parseDecimal,
-} from './closing-decision-sheet';
+import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor } from './closing-decision-sheet';
 import { ClosingWriteDownSheet, WriteDownChoice } from './closing-write-down-sheet';
 import {
-  SupplierBilledChoice, borderFixed, decisionWriteAccrual, decisionWriteCreditTreatment, decisionWriteOwnershipDate,
-  decisionWriteSupplierBilled, decisionWriteWriteDown, defaultOpeningDate, openingDateError, streamButtonLabel, streamNotice,
-  unvaluedRows,
+  SupplierBilledChoice, WriteDownOrder, borderFixed, byName, dateText, decisionWriteAccrual, decisionWriteCreditTreatment,
+  decisionWriteOwnershipDate, decisionWriteSupplierBilled, decisionWriteWriteDown, defaultOpeningDate, openingDateError,
+  openingQuantity, openingReplaced, presentText, streamButtonLabel, streamNotice, unvaluedRows,
 } from './inventory-closing';
+import { BrusselsDatePipe } from './inventory-dates';
+import { decimalError, decimalText, parseDecimal } from './inventory-number';
+import { InventoryScrollCue } from './inventory-scroll-cue';
 import { inventoryUnit } from './inventory-unit';
 
 type ValueTab = 'producten' | 'containers' | 'zonder';
@@ -62,6 +63,8 @@ const BILLED_CHOICES: readonly { value: SupplierBilledChoice; label: string }[] 
 ];
 /* The six columns of the product table need about 920 px next to the 360 px build-up. */
 const DOCK_MIN_PX = 1300;
+/* Below this the product table keeps the four columns that fit: nothing that counts may sit beyond the edge. */
+const PRODUCTS_FULL_PX = 920;
 const cents = (eur: number) => Math.round(eur * 100);
 
 /**
@@ -77,7 +80,7 @@ const cents = (eur: number) => Math.round(eur * 100);
   selector: 'app-closing-step-value',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    NgTemplateOutlet, RouterLink, Segmented, DateField, EurPipe, NumPipe, DateNlPipe, PctPipe,
+    NgTemplateOutlet, RouterLink, Segmented, DateField, EurPipe, NumPipe, BrusselsDatePipe, PctPipe, InventoryScrollCue,
     ClosingWriteDownSheet, ClosingAccrualSheet, ClosingCreditSheet, ClosingDecisionSheet,
   ],
   host: { class: 'inv-step inv-value' },
@@ -87,13 +90,13 @@ const cents = (eur: number) => Math.round(eur * 100);
     @switch (tab()) {
       @case ('producten') {
         <div class="inv-value__split" [class.inv-value__split--docked]="docked() && !!selected()">
-          <div class="wk-table inv-scroll inv-products" role="table">
+          <div class="wk-table inv-scroll inv-products" role="table" [class.inv-products--tight]="tight()">
             <div class="wk-thead" role="row">
               <span class="wk-th" role="columnheader">Product</span>
               <span class="wk-th wk-th--num" role="columnheader">Aantal</span>
-              <span class="wk-th wk-th--num" role="columnheader">Waarde per stuk (gem.)</span>
+              <span class="wk-th wk-th--num inv-col--roomy" role="columnheader">Waarde per stuk (gem.)</span>
               <span class="wk-th wk-th--num" role="columnheader">Aanschafwaarde</span>
-              <span class="wk-th wk-th--num" role="columnheader">Waardevermindering</span>
+              <span class="wk-th wk-th--num inv-col--roomy" role="columnheader">Waardevermindering</span>
               <span class="wk-th wk-th--num" role="columnheader">Waarde</span>
             </div>
             @for (group of groups(); track group.category) {
@@ -113,12 +116,14 @@ const cents = (eur: number) => Math.round(eur * 100);
                     }
                   </span>
                   <span class="wk-td wk-td--num" role="cell">{{ article.ownQuantity | num }} {{ unitWord(article, article.ownQuantity) }}
-                    @if (article.closingQuantity !== article.ownQuantity) { <span class="wk-td__sub">van {{ article.closingQuantity | num }} aanwezig</span> }
+                    @if (present(article); as text) { <span class="wk-td__sub inv-wrap">{{ text }}</span> }
                   </span>
-                  <span class="wk-td wk-td--num" role="cell">{{ article.averageUnitEur === null ? '—' : (article.averageUnitEur | eur: 4) }}</span>
+                  <span class="wk-td wk-td--num inv-col--roomy" role="cell">{{ article.averageUnitEur === null ? '—' : (article.averageUnitEur | eur: 4) }}</span>
                   <span class="wk-td wk-td--num" role="cell">{{ article.costValueEur | eur }}</span>
-                  <span class="wk-td wk-td--num" role="cell">{{ article.writeDownEur ? (article.writeDownEur | eur) : '—' }}</span>
-                  <span class="wk-td wk-td--num" role="cell">{{ article.ownValueEur | eur }}</span>
+                  <span class="wk-td wk-td--num inv-col--roomy" role="cell">{{ article.writeDownEur ? (article.writeDownEur | eur) : '—' }}</span>
+                  <span class="wk-td wk-td--num" role="cell">{{ article.ownValueEur | eur }}
+                    @if (tight() && article.writeDownEur > 0) { <span class="wk-td__sub inv-wrap">waardevermindering {{ article.writeDownEur | eur }}</span> }
+                  </span>
                 </div>
                 @if (!docked() && selectedId() === article.productId) {
                   <div class="inv-products__inline" [style.width.px]="width()"><ng-container [ngTemplateOutlet]="inspector" [ngTemplateOutletContext]="{ $implicit: article }" /></div>
@@ -130,10 +135,12 @@ const cents = (eur: number) => Math.round(eur * 100);
             <div class="wk-tr wk-tr--total" role="row">
               <span class="wk-td" role="cell">Totaal eigen voorraad</span>
               <span class="wk-td wk-td--num" role="cell">{{ view().totals.ownQuantity | num }}</span>
-              <span class="wk-td" role="cell"></span>
+              <span class="wk-td inv-col--roomy" role="cell"></span>
               <span class="wk-td wk-td--num" role="cell">{{ view().totals.costValueEur | eur }}</span>
-              <span class="wk-td wk-td--num" role="cell">{{ view().totals.writeDownEur | eur }}</span>
-              <span class="wk-td wk-td--num" role="cell">{{ view().totals.ownValueEur | eur }}</span>
+              <span class="wk-td wk-td--num inv-col--roomy" role="cell">{{ view().totals.writeDownEur | eur }}</span>
+              <span class="wk-td wk-td--num" role="cell">{{ view().totals.ownValueEur | eur }}
+                @if (tight() && view().totals.writeDownEur > 0) { <span class="wk-td__sub inv-wrap">waardevermindering {{ view().totals.writeDownEur | eur }}</span> }
+              </span>
             </div>
           </div>
           @if (docked() && selected(); as article) {
@@ -186,7 +193,16 @@ const cents = (eur: number) => Math.round(eur * 100);
                 </div>
                 @for (article of unvalued(); track article.productId) {
                   <div class="wk-tr" role="row">
-                    <span class="wk-td" role="cell">{{ article.productName }} <span class="wk-td__sub">{{ article.sku || 'Geen SKU' }}</span></span>
+                    <span class="wk-td" role="cell">{{ article.productName }} <span class="wk-td__sub">{{ article.sku || 'Geen SKU' }}</span>
+                      @if (editable() && replaced(article); as old) {
+                        <span class="wk-td__sub inv-wrap inv-unvalued__replace">Vervangt de beginwaarde van {{ old.quantity | num }} stuks aan {{ old.unitValueEur | eur: 4 }} op {{ old.asOfDate | brusselsDate }}: het aantal telt die stuks mee. Kies een andere datum om ze apart te houden.</span>
+                      }
+                      @if (rowError(article); as error) {
+                        <span class="wk-td__sub inv-wrap inv-hint--stop" role="alert">{{ error }}</span>
+                      } @else if (rowRead(article); as read) {
+                        <span class="wk-td__sub inv-wrap inv-unvalued__read">{{ read }}</span>
+                      }
+                    </span>
                     <span class="wk-td wk-td--num" role="cell">{{ article.unvaluedQuantity | num }} {{ unitWord(article, article.unvaluedQuantity) }}</span>
                     <span class="wk-td wk-td--num inv-unvalued__cell" role="cell">
                       <input class="inv-field" type="text" inputmode="numeric" autocomplete="off" [attr.aria-label]="'Aantal ' + article.productName"
@@ -231,7 +247,7 @@ const cents = (eur: number) => Math.round(eur * 100);
                     <span class="wk-td" role="cell">{{ layer.productName }} <span class="wk-td__sub">{{ layer.sku || 'Geen SKU' }}</span></span>
                     <span class="wk-td wk-td--num" role="cell">{{ layer.quantity | num }}</span>
                     <span class="wk-td wk-td--num" role="cell">{{ layer.unitValueEur | eur: 4 }}</span>
-                    <span class="wk-td" role="cell">{{ layer.asOfDate | dateNl }}</span>
+                    <span class="wk-td" role="cell">{{ layer.asOfDate | brusselsDate }}</span>
                     <span class="wk-td wk-td--wrap" role="cell">{{ layer.source }} <span class="wk-td__sub">{{ layer.createdByName }}</span></span>
                     <span class="wk-td inv-opening__action" role="cell">
                       @if (editable()) { <button class="wk-btn wk-btn--sm wk-btn--danger" type="button" [disabled]="busy()" (click)="retire(layer)">Verwijderen</button> }
@@ -334,7 +350,7 @@ const cents = (eur: number) => Math.round(eur * 100);
         </div>
         <div class="wk-card__body">
           <p class="inv-step__quiet">{{ container.orderNumber || 'Geen nummer' }} · {{ container.supplierName || 'Geen leverancier' }}
-            @if (container.receivedOn) { · ontvangen {{ container.receivedOn | dateNl }} } @else if (container.shippedOn) { · afvaart {{ container.shippedOn | dateNl }} }</p>
+            @if (container.receivedOn) { · ontvangen {{ container.receivedOn | brusselsDate }} } @else if (container.shippedOn) { · afvaart {{ container.shippedOn | brusselsDate }} }</p>
           @for (notice of containerNotices(container); track $index) {
             <p class="inv-note" [class.inv-note--stop]="notice.severity === 'BLOCKER'">{{ notice.message }}</p>
           }
@@ -372,9 +388,9 @@ const cents = (eur: number) => Math.round(eur * 100);
             <div class="inv-stream">
               <div class="inv-stream__text">
                 @if (fixed(container)) {
-                  <p class="inv-stream__line">Koers geldt tot {{ container.rateCutoffDate | dateNl }} · Overgenomen uit de vorige afsluiting · ligt vast</p>
+                  <p class="inv-stream__line">Koers geldt tot {{ container.rateCutoffDate | brusselsDate }} · Overgenomen uit de vorige afsluiting · ligt vast</p>
                 } @else {
-                  <p class="inv-stream__line">Koers geldt tot {{ container.rateCutoffDate | dateNl }} · {{ container.rateCutoffSourceLabel }}</p>
+                  <p class="inv-stream__line">Koers geldt tot {{ container.rateCutoffDate | brusselsDate }} · {{ container.rateCutoffSourceLabel }}</p>
                 }
                 <p class="inv-stream__sub">Betalingen in vreemde munt tot en met deze datum tellen aan hun bankwaarde; latere aan de koers van de container.</p>
               </div>
@@ -508,7 +524,7 @@ const cents = (eur: number) => Math.round(eur * 100);
               </div>
               @for (payment of valuePayments(container); track payment.paymentId) {
                 <div class="wk-tr" role="row">
-                  <span class="wk-td" role="cell">{{ payment.paidOn | dateNl }}</span>
+                  <span class="wk-td" role="cell">{{ payment.paidOn | brusselsDate }}</span>
                   <span class="wk-td" role="cell">{{ payment.payeeLabel }}</span>
                   <span class="wk-td wk-td--wrap" role="cell">{{ payment.label || '—' }}</span>
                   <span class="wk-td wk-td--num" role="cell">{{ payment.amount | num: 2 }}</span>
@@ -528,7 +544,7 @@ const cents = (eur: number) => Math.round(eur * 100);
                 <div class="inv-stream__text">
                   <p class="inv-stream__line">{{ credit.reasonLabel }} {{ credit.countedEur | eur }} · {{ creditEffect(credit) }}
                     @if (credit.decisionRequired) { <span class="wk-pill tone-danger">Nog te beslissen</span> }</p>
-                  <p class="inv-stream__sub">Genoteerd op {{ credit.notedOn | dateNl }}@if (credit.currency !== 'EUR') { · {{ credit.amount | num: 2 }} {{ credit.currency }} }@if (credit.reason) { · {{ credit.reason }} }</p>
+                  <p class="inv-stream__sub">Genoteerd op {{ credit.notedOn | brusselsDate }}@if (credit.currency !== 'EUR') { · {{ credit.amount | num: 2 }} {{ credit.currency }} }@if (credit.reason) { · {{ credit.reason }} }</p>
                 </div>
                 @if (canDecide(container)) {
                   <button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="credit$.set({ container, credit })">Wat is dit tegoed?</button>
@@ -553,7 +569,7 @@ const cents = (eur: number) => Math.round(eur * 100);
 
     @if (writeDown(); as open) {
       <app-closing-write-down-sheet [article]="open.article" [writeDowns]="rowsOf(open.article)" [reasons]="view().writeDownReasons"
-                                    [decision]="open.decision" [busy]="busy()" (save)="saveWriteDown(open.article, open.decision, $event)"
+                                    [decision]="open.decision" [saved]="ordersOf(open.article)" [busy]="busy()" (save)="saveWriteDown(open.article, open.decision, $event)"
                                     (remove)="open.decision && removeDecision.emit(open.decision.id)" (closed)="writeDown.set(null)" />
     }
     @if (accrual(); as open) {
@@ -572,7 +588,7 @@ const cents = (eur: number) => Math.round(eur * 100);
 export class ClosingStepValue {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly ui = inject(Ui);
-  private readonly dateNl = new DateNlPipe();
+  private readonly eur = new EurPipe();
 
   readonly view = input.required<ClosingView>();
   readonly busy = input(false);
@@ -600,6 +616,8 @@ export class ClosingStepValue {
   readonly width = elementWidth(() => this.host.nativeElement);
   /** The build-up docks beside the table when both fit; otherwise it opens under its row. */
   readonly docked = computed(() => this.width() >= DOCK_MIN_PX);
+  /** Too narrow for six columns (0 = not measured yet): average and write-down fold into the other cells. */
+  readonly tight = computed(() => this.width() > 0 && this.width() < PRODUCTS_FULL_PX);
 
   readonly unvalued = computed(() => unvaluedRows(this.view()));
   readonly tabs = computed<SegmentOption[]>(() => [
@@ -615,8 +633,8 @@ export class ClosingStepValue {
       byCategory.set(category, [...(byCategory.get(category) ?? []), article]);
     }
     return [...byCategory.entries()]
-      .sort(([a], [b]) => (a === NO_CATEGORY ? 1 : 0) - (b === NO_CATEGORY ? 1 : 0) || a.localeCompare(b, 'nl'))
-      .map(([category, articles]) => ({ category, articles: articles.sort((a, b) => a.productName.localeCompare(b.productName, 'nl')) }));
+      .sort(([a], [b]) => (a === NO_CATEGORY ? 1 : 0) - (b === NO_CATEGORY ? 1 : 0) || byName(a, b))
+      .map(([category, articles]) => ({ category, articles: articles.sort((a, b) => byName(a.productName, b.productName)) }));
   });
   readonly selected = computed(() => this.view().articles.find((article) => article.productId === this.selectedId()) ?? null);
 
@@ -696,13 +714,13 @@ export class ClosingStepValue {
       if (layer.originSource === 'BEGINWAARDE') return `${carried} · beginwaarde: ${layer.openingSource ?? '—'}`;
       return container ? `${carried}: ${container}` : carried;
     }
-    return `${container ?? 'Container'}, ontvangen ${this.dateNl.transform(layer.receivedOn)}`;
+    return `${container ?? 'Container'}, ontvangen ${dateText(layer.receivedOn)}`;
   }
 
   countFacts(place: ClosingArticleLocation): string {
     if (place.countedQuantity === null) return place.anchor === 'TELLING' ? 'Niet op de telling: 0' : 'Stand volgens systeem, niet geteld';
     const parts = [`Geteld ${place.countedQuantity.toLocaleString('nl-BE')}`];
-    if (place.countedAt) parts.push(`op ${this.dateNl.transform(place.countedAt)}`);
+    if (place.countedAt) parts.push(`op ${dateText(place.countedAt)}`);
     if (place.countedByName) parts.push(`door ${place.countedByName}`);
     let text = parts.join(' ');
     if (place.countDifference) {
@@ -710,6 +728,17 @@ export class ClosingStepValue {
       if (place.countReasonLabel) text += ` (${place.countReasonLabel}${place.countReasonNote ? `: ${place.countReasonNote}` : ''})`;
     }
     return text;
+  }
+
+  present(article: ClosingArticle): string {
+    return presentText(article);
+  }
+
+  /** Every saved waardevermindering of the product as the server replays it, for the preview of an edit. */
+  ordersOf(article: ClosingArticle): WriteDownOrder[] {
+    return this.view().decisions
+      .filter((decision) => decision.kind === 'WRITE_DOWN' && decision.productId === article.productId)
+      .map((decision) => ({ decisionId: decision.id, quantity: decision.quantity, marketUnitEur: decision.unitValueEur }));
   }
 
   rowsOf(article: ClosingArticle) {
@@ -835,7 +864,7 @@ export class ClosingStepValue {
     this.question.set({
       spec: {
         title: 'Datum van eigendom of risico',
-        lead: [`${container.displayName} · Koers geldt tot ${this.dateNl.transform(container.rateCutoffDate)} · ${container.rateCutoffSourceLabel}`,
+        lead: [`${container.displayName} · Koers geldt tot ${dateText(container.rateCutoffDate)} · ${container.rateCutoffSourceLabel}`,
           'Betalingen in vreemde munt tot en met deze datum tellen aan hun bankwaarde; latere aan de koers van de container.'],
         date: { label: 'Eigendom of risico overgegaan op', value: saved?.decisionDate ?? null },
         reason: { label: 'Waarop steunt dit?', value: saved?.reason ?? '', required: true },
@@ -869,8 +898,35 @@ export class ClosingStepValue {
 
   /* ---- zonder waarde ---- */
 
+  /**
+   * The saved beginwaarde of this product on the chosen date: a new one for
+   * the same day takes its place on the server, so the row says so and
+   * proposes the old pieces plus the ones still without a value.
+   */
+  replaced(article: ClosingArticle): OpeningLayer | null {
+    return openingReplaced(this.view().openingLayers, article.productId, this.openingDate());
+  }
+
   quantityText(article: ClosingArticle): string {
-    return this.quantities()[article.productId] ?? String(article.unvaluedQuantity);
+    return this.quantities()[article.productId] ?? decimalText(openingQuantity(article.unvaluedQuantity, this.replaced(article)));
+  }
+
+  /** Why a filled row cannot be saved, said in the row; null for an empty or a readable row. */
+  rowError(article: ClosingArticle): string | null {
+    const value = this.values()[article.productId] ?? '';
+    if (!value.trim()) return null;
+    const quantity = parseDecimal(this.quantityText(article));
+    if (quantity === null || !Number.isInteger(quantity) || quantity < 1) return 'Vul een geheel aantal van 1 of meer in.';
+    const unitValueEur = parseDecimal(value);
+    return decimalError(value) ?? (unitValueEur !== null && unitValueEur < 0 ? 'De waarde kan niet negatief zijn.' : null);
+  }
+
+  /** "Gelezen als 105 x € 2,1060 = € 221,13": what the row will save, before it is saved. */
+  rowRead(article: ClosingArticle): string | null {
+    const row = this.openingRow(article);
+    if (!row) return null;
+    const total = Math.round(row.quantity * Math.round(row.unitValueEur * 10_000) / 100) / 100;
+    return `Gelezen als ${row.quantity.toLocaleString('nl-BE')} x ${this.eur.transform(row.unitValueEur, 4)} = ${this.eur.transform(total)}`;
   }
 
   setQuantity(article: ClosingArticle, text: string): void {
@@ -893,8 +949,25 @@ export class ClosingStepValue {
   saveOpening(): void {
     if (!this.canSaveOpening()) return;
     const rows = this.filled().map((article) => this.openingRow(article)).filter((row) => row !== null);
-    this.openingSent = true;
-    this.openingLayers.emit({ asOfDate: this.openingDate(), source: this.source().trim(), rows });
+    const send = () => {
+      this.openingSent = true;
+      this.openingLayers.emit({ asOfDate: this.openingDate(), source: this.source().trim(), rows });
+    };
+    /* The server keeps one beginwaarde per product and date: never replace a saved one without saying so. */
+    const replacing = this.filled().map((article) => ({ article, old: this.replaced(article) }))
+      .filter((entry): entry is { article: ClosingArticle; old: OpeningLayer } => entry.old !== null);
+    if (!replacing.length) {
+      send();
+      return;
+    }
+    const list = replacing.map(({ article, old }) =>
+      `${escapeHtml(article.productName)} (nu ${old.quantity.toLocaleString('nl-BE')} stuks aan ${this.eur.transform(old.unitValueEur, 4)})`).join(', ');
+    this.ui.confirm({
+      title: 'Beginwaarde vervangen?',
+      message: `Op ${dateText(this.openingDate())} bestaat al een beginwaarde voor ${list}. Ze wordt vervangen door het aantal en de waarde die je nu invult; `
+        + 'de stuks die je niet meetelt staan daarna opnieuw zonder waarde.',
+      confirmLabel: 'Vervangen',
+    }, send);
   }
 
   retire(layer: OpeningLayer): void {

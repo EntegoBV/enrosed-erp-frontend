@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, input, output, si
 import type { ClosingArticle, ClosingView, Decision, WriteDownRow } from '../../core/api/inventory-models';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { decimalText, parseDecimal } from './closing-decision-sheet';
 import { writeDownPreview } from './inventory-closing';
+import type { WriteDownOrder } from './inventory-closing';
+import { decimalError, decimalText, parseDecimal } from './inventory-number';
 import { inventoryUnit } from './inventory-unit';
 
 export interface WriteDownChoice {
@@ -32,7 +33,7 @@ export interface WriteDownChoice {
           <div class="field">
             <label for="inv-wd-quantity">Aantal {{ unit().plural }}</label>
             <input class="input num" id="inv-wd-quantity" type="text" inputmode="numeric" autocomplete="off" placeholder="alle" [value]="quantity()" (input)="quantity.set($any($event.target).value)" />
-            <span class="hint">Leeg = alle {{ unit().plural }} die nog geen waardevermindering hebben@if (unit().isDisplay && unit().piecesPerDisplay) { · 1 display = {{ unit().piecesPerDisplay }} stuks }</span>
+            @if (quantityError(); as error) { <span class="hint inv-hint--stop" role="alert">{{ error }}</span> }
           </div>
           <div class="field">
             <label for="inv-wd-market">Marktwaarde per {{ unit().singular }}</label>
@@ -40,8 +41,14 @@ export interface WriteDownChoice {
               <input class="input num" id="inv-wd-market" type="text" inputmode="decimal" autocomplete="off" [value]="market()" (input)="market.set($any($event.target).value)" />
               <span class="input-affix__suffix">EUR</span>
             </div>
+            @if (marketError(); as error) {
+              <span class="hint inv-hint--stop" role="alert">{{ error }}</span>
+            } @else if (marketUnitEur() !== null) {
+              <span class="hint inv-sheet__read" aria-live="polite">Gelezen als {{ marketUnitEur() | eur: 4 }}</span>
+            }
           </div>
         </div>
+        <p class="inv-sheet__help inv-sheet__under">Aantal leeg = alle {{ unit().plural }} die nog geen waardevermindering hebben@if (unit().isDisplay && unit().piecesPerDisplay) { · 1 display = {{ unit().piecesPerDisplay }} stuks }</p>
         <div class="field">
           <label for="inv-wd-reason">Reden</label>
           <select class="select" id="inv-wd-reason" (change)="reasonCode.set($any($event.target).value || null)">
@@ -77,6 +84,8 @@ export class ClosingWriteDownSheet implements OnInit {
   readonly reasons = input.required<ClosingView['writeDownReasons']>();
   /** The saved decision that is being edited, or null for a new one. */
   readonly decision = input<Decision | null>(null);
+  /** Every saved waardevermindering of this product: the ones after the edited one are applied again after it. */
+  readonly saved = input<readonly WriteDownOrder[]>([]);
   readonly busy = input(false);
   readonly save = output<WriteDownChoice>();
   readonly remove = output<void>();
@@ -89,7 +98,18 @@ export class ClosingWriteDownSheet implements OnInit {
 
   readonly unit = computed(() => inventoryUnit(this.article()));
   private readonly pieces = computed(() => parseDecimal(this.quantity()));
-  private readonly marketUnitEur = computed(() => parseDecimal(this.market()));
+  /** The market value as it will be sent: shown under the field before anything is saved. */
+  readonly marketUnitEur = computed(() => parseDecimal(this.market()));
+  readonly quantityError = computed(() => {
+    const pieces = this.pieces();
+    if (pieces === null) return null;
+    return this.quantityValid() ? null : 'Vul een geheel aantal van 1 of meer in, of laat leeg.';
+  });
+  readonly marketError = computed(() => {
+    const market = this.marketUnitEur();
+    if (market === null) return null;
+    return decimalError(this.market()) ?? (market < 0 ? 'De marktwaarde kan niet negatief zijn.' : null);
+  });
   private readonly quantityValid = computed(() => {
     const pieces = this.pieces();
     return pieces === null || (Number.isInteger(pieces) && pieces >= 1);
@@ -102,7 +122,7 @@ export class ClosingWriteDownSheet implements OnInit {
   readonly preview = computed(() => {
     const market = this.marketUnitEur();
     if (market === null || !this.marketValid() || !this.quantityValid()) return null;
-    return writeDownPreview(this.article().layers, this.writeDowns(), this.pieces(), market, this.decision()?.id ?? null);
+    return writeDownPreview(this.article().layers, this.writeDowns(), this.pieces(), market, this.decision()?.id ?? null, this.saved());
   });
   readonly canSave = computed(() =>
     !this.busy() && this.quantityValid() && this.marketValid() && !!this.reasonCode() && !!this.reason().trim());
@@ -112,7 +132,7 @@ export class ClosingWriteDownSheet implements OnInit {
     const decision = this.decision();
     if (!decision) return;
     this.quantity.set(decimalText(decision.quantity));
-    this.market.set(decimalText(decision.unitValueEur));
+    this.market.set(decimalText(decision.unitValueEur, 2));
     this.reasonCode.set(decision.reasonCode);
     this.reason.set(decision.reason ?? '');
   }

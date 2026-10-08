@@ -1,4 +1,4 @@
-import type { BookingCheck, CountLine, CountLineWrite, OpenDocument } from '../../core/api/inventory-models';
+import type { BookingCheck, CountLine, CountLineWrite, CountView, OpenDocument } from '../../core/api/inventory-models';
 
 /**
  * The rules behind the count screen, without Angular.
@@ -13,6 +13,7 @@ const LOCALE = 'nl-BE';
 const ZONE = 'Europe/Brussels';
 
 const whole = (value: number) => value.toLocaleString(LOCALE);
+const counted1 = (value: number, one: string, many: string) => `${whole(value)} ${value === 1 ? one : many}`;
 
 /** "09:02", the Brussels time of an instant; empty when there is none. */
 function timeText(instant: string | null): string {
@@ -103,7 +104,8 @@ export function countSections(lines: readonly CountLine[]): CountSection[] {
     .map(([category, bucket]) => {
       const sorted = [...bucket].sort((a, b) =>
         (family(a) === family(b) ? 0 : family(a) < family(b) ? -1 : 1)
-        || a.productName.localeCompare(b.productName, LOCALE) || a.id - b.id);
+        /* Numbers in a name in their own order: "Rose Bear 25 cm" before "Rose Bear 100 cm", as on the shelf. */
+        || a.productName.localeCompare(b.productName, LOCALE, { numeric: true }) || a.id - b.id);
       const progress = countProgress(sorted);
       return { category, lines: sorted, counted: progress.counted, total: progress.total };
     });
@@ -139,9 +141,74 @@ export function differenceText(difference: number): string {
 
 export function bookingSummaryText(summary: BookingCheck['summary']): string {
   if (summary.lines === 0) return 'Je bevestigt dat hier niets ligt.';
-  return `Je boekt ${whole(summary.lines)} regels: ${whole(summary.equal)} kloppen, `
+  return `Je boekt ${counted1(summary.lines, 'regel', 'regels')}: ${counted1(summary.equal, 'klopt', 'kloppen')}, `
     + `${whole(summary.short)} te weinig (-${whole(summary.shortUnits)}), `
     + `${whole(summary.over)} te veel (+${whole(summary.overUnits)}).`;
+}
+
+/**
+ * The reasons that fit the direction of a difference: nobody "finds back" a
+ * shortage, and a surplus was not lost, broken or given away. A reason this
+ * screen does not know stays on both lists, and without a direction (the same
+ * reason for lines that go both ways) every reason is offered.
+ */
+const SHORTAGE_ONLY: ReadonlySet<string> = new Set(['BESCHADIGD', 'NIET_GEVONDEN', 'DEMO']);
+const SURPLUS_ONLY: ReadonlySet<string> = new Set(['TERUGGEVONDEN']);
+
+export function reasonsFor<T extends { code: string }>(reasons: readonly T[], differences: readonly (number | null)[]): T[] {
+  const short = differences.some((difference) => (difference ?? 0) < 0);
+  const over = differences.some((difference) => (difference ?? 0) > 0);
+  if (short === over) return [...reasons];
+  const hidden = short ? SURPLUS_ONLY : SHORTAGE_ONLY;
+  return reasons.filter((reason) => !hidden.has(reason.code));
+}
+
+/**
+ * The way out under an open invoice or container, by what is open: an
+ * invoice is afgepunt, a container bijgeboekt.
+ */
+export function openDocumentHint(documents: readonly OpenDocument[]): string {
+  const invoices = documents.some((document) => document.kind === 'FACTUUR');
+  const containers = documents.some((document) => document.kind !== 'FACTUUR');
+  const action = invoices && containers ? 'Punt dan eerst de factuur af en boek de container bij'
+    : containers ? 'Boek dan eerst de container bij' : 'Punt dan eerst de factuur af';
+  return `Zijn dit die stuks? ${action}; het verschil verdwijnt dan uit de telling.`;
+}
+
+/**
+ * A whole-session answer against what is on screen. A reload can be older
+ * than a save that answered while it was under way: per line the higher
+ * revision stays, and a line added here meanwhile is kept. A session that
+ * this screen already knows as booked or cancelled never goes back to open:
+ * the older answer loses, lines and all.
+ */
+export function mergeCountView(current: CountView | null, fresh: CountView): CountView {
+  if (!current || current.id !== fresh.id) return fresh;
+  if (current.status !== 'OPEN' && fresh.status === 'OPEN') return current;
+  const mine = new Map(current.lines.map((line) => [line.id, line]));
+  const lines = fresh.lines.map((line) => {
+    const local = mine.get(line.id);
+    mine.delete(line.id);
+    return local && local.revision > line.revision ? local : line;
+  });
+  return { ...fresh, lines: [...lines, ...mine.values()] };
+}
+
+/**
+ * The lines another phone counted while this one was typing in them: lines
+ * with a draft here that the fresh answer shows as counted and this screen
+ * still showed as open. Their typed number becomes the conflict question
+ * instead of vanishing with the field.
+ */
+export function overtakenDrafts(
+  current: CountView | null, fresh: CountView, drafts: Readonly<Record<number, string>>,
+): { line: CountLine; draft: string }[] {
+  if (!current || current.id !== fresh.id) return [];
+  const open = new Map(current.lines.filter((line) => line.countedQuantity === null).map((line) => [line.id, line.revision]));
+  return fresh.lines
+    .filter((line) => line.countedQuantity !== null && line.revision > (open.get(line.id) ?? Number.POSITIVE_INFINITY)
+      && (drafts[line.id] ?? '').trim() !== '')
+    .map((line) => ({ line, draft: drafts[line.id].trim() }));
 }
 
 /**

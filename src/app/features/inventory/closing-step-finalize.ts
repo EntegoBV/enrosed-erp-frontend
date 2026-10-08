@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { ClosingView, DecisionWrite, Notice } from '../../core/api/inventory-models';
-import { DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe } from '../../shared/pipes';
+import { BrusselsDateTimePipe } from './inventory-dates';
 import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor, noticeAnchor } from './closing-decision-sheet';
 import { decisionWriteVatConfirmation } from './inventory-closing';
 
@@ -20,7 +21,7 @@ interface Question {
 @Component({
   selector: 'app-closing-step-finalize',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, NumPipe, DateTimeNlPipe, ClosingDecisionSheet],
+  imports: [RouterLink, EurPipe, NumPipe, BrusselsDateTimePipe, ClosingDecisionSheet],
   host: { class: 'inv-step inv-final' },
   template: `
     @if (blockers().length || warnings().length) {
@@ -119,18 +120,29 @@ interface Question {
           <input type="checkbox" [checked]="!!vat()" [disabled]="!editable() || busy()" (change)="toggleVat($event)" />
           <span>Ik bevestig dat de betalingen onder Leverancier, Douane &amp; transport en Inspectie &amp; andere kosten zonder aftrekbare btw zijn ingevoerd (bedragen exclusief btw).</span>
         </label>
-        @if (vat(); as confirmed) { <p class="inv-step__quiet">Bevestigd door {{ confirmed.decidedByName }} op {{ confirmed.decidedAt | dateTimeNl }}</p> }
+        @if (vat(); as confirmed) { <p class="inv-step__quiet">Bevestigd door {{ confirmed.decidedByName }} op {{ confirmed.decidedAt | brusselsDateTime }}</p> }
         <p class="inv-step__quiet">Niet zeker? Kijk de betalingen na in stap 3, Containers. Een betaling met btw die je terugkrijgt pas je aan op de container; de btw boek je als aparte betaling onder 'Bijkomende kosten'.</p>
       </div>
     </section>
 
     @if (editable()) {
+      @if (stale()) {
+        <div class="inv-final__refused" role="alert">
+          <span>De cijfers op dit scherm zijn niet meer actueel. Herbereken voor je definitief maakt.</span>
+          <button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="recompute.emit()">Herbereken</button>
+        </div>
+      } @else if (refused(); as why) {
+        <div class="inv-final__refused" role="alert">
+          <span>{{ why }}</span>
+          <button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="recompute.emit()">Herbereken</button>
+        </div>
+      }
       <div class="inv-final__actions">
         <button class="wk-btn" type="button" [disabled]="busy()" (click)="download.emit('pdf')">Concept-PDF</button>
         <button class="wk-btn" type="button" [disabled]="busy()" (click)="download.emit('xlsx')">Concept-Excel</button>
         <span class="inv-final__spacer"></span>
         @if (blockers().length) { <span class="inv-final__todo">Nog {{ blockers().length }} te doen</span> }
-        <button class="wk-btn wk-btn--primary" type="button" [disabled]="busy() || blockers().length > 0 || !view().canFinalize" (click)="askFinalize()">Definitief maken</button>
+        <button class="wk-btn wk-btn--primary" type="button" [disabled]="busy() || stale() || blockers().length > 0 || !view().canFinalize" (click)="askFinalize()">Definitief maken</button>
       </div>
     } @else {
       <section class="wk-card">
@@ -138,7 +150,7 @@ interface Question {
         <div class="wk-card__body">
           <dl class="inv-kv inv-final__hashes">
             <div><dt>Ondertekend door</dt><dd>{{ view().signerName || '—' }}</dd></div>
-            <div><dt>Definitief gemaakt</dt><dd>{{ view().finalizedAt | dateTimeNl }}@if (view().finalizedByName) { · {{ view().finalizedByName }} }</dd></div>
+            <div><dt>Definitief gemaakt</dt><dd>{{ view().finalizedAt | brusselsDateTime }}@if (view().finalizedByName) { · {{ view().finalizedByName }} }</dd></div>
             <div><dt>Gegevens (SHA-256)</dt><dd class="inv-hash">{{ view().dataSha256 }}</dd></div>
             <div><dt>PDF (SHA-256)</dt><dd class="inv-hash">{{ view().pdfSha256 || '—' }}</dd></div>
             <div><dt>Excel (SHA-256)</dt><dd class="inv-hash">{{ view().xlsxSha256 || '—' }}</dd></div>
@@ -161,8 +173,13 @@ interface Question {
 export class ClosingStepFinalize {
   readonly view = input.required<ClosingView>();
   readonly busy = input(false);
+  /** The figures on screen are behind the server: nothing may be made final until a recompute answered. */
+  readonly stale = input(false);
+  /** Why the last "Definitief maken" was refused; stays beside the button. */
+  readonly refused = input<string | null>(null);
   readonly decision = output<DecisionWrite>();
   readonly removeDecision = output<number>();
+  readonly recompute = output<void>();
   readonly finalize = output<{ signerName: string }>();
   readonly startVersion = output<{ reason: string }>();
   readonly download = output<'pdf' | 'xlsx'>();
@@ -181,9 +198,11 @@ export class ClosingStepFinalize {
 
   constructor() {
     followAnchor();
-    /* A new view is the answer to a save (or the figures moved): the sheet is done. */
+    /* A new view is the answer to a save (or the figures moved, or fell behind): the sheet is done. */
     effect(() => {
       this.view();
+      this.stale();
+      this.refused();
       this.question.set(null);
     });
   }
@@ -222,6 +241,7 @@ export class ClosingStepFinalize {
   }
 
   askFinalize(): void {
+    if (this.stale()) return;
     const view = this.view();
     const lead = ['Aantallen, waarden, partijen, waardeverminderingen en beslissingen worden vastgelegd en kunnen daarna niet meer wijzigen. Een correctie wordt een nieuwe versie; deze blijft bewaard.'];
     const laterYear = view.supersedesId === null ? null : view.notices.find((notice) => notice.code === 'LATER_JAAR_AFGESLOTEN') ?? null;

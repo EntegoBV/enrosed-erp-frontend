@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, input, output, si
 import type { ClosingContainer, ClosingStream } from '../../core/api/inventory-models';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { decimalText, parseDecimal } from './closing-decision-sheet';
 import { streamButtonLabel } from './inventory-closing';
+import { decimalError, decimalText, parseDecimal } from './inventory-number';
 
 export interface AccrualChoice {
   amountEur: number;
@@ -36,6 +36,11 @@ export interface AccrualChoice {
             <input class="input num" id="inv-accrual-amount" type="text" inputmode="decimal" autocomplete="off" [value]="amount()" (input)="amount.set($any($event.target).value)" />
             <span class="input-affix__suffix">EUR</span>
           </div>
+          @if (amountError(); as error) {
+            <span class="hint inv-hint--stop" role="alert">{{ error }}</span>
+          } @else if (amountEur() !== null) {
+            <span class="hint inv-sheet__read" aria-live="polite">Gelezen als {{ amountEur() | eur }}</span>
+          }
         </div>
         <div class="field">
           <label for="inv-accrual-reason">Waarop steunt dit bedrag?</label>
@@ -70,7 +75,13 @@ export class ClosingAccrualSheet implements OnInit {
   readonly invoiceReceived = signal(false);
 
   readonly title = computed(() => streamButtonLabel(this.stream()));
-  private readonly amountEur = computed(() => parseDecimal(this.amount()));
+  /** The amount as it will be sent: shown under the field before anything is saved. */
+  readonly amountEur = computed(() => parseDecimal(this.amount()));
+  readonly amountError = computed(() => {
+    const amount = this.amountEur();
+    if (amount === null) return null;
+    return decimalError(this.amount()) ?? (amount < 0 ? 'Het bedrag kan niet negatief zijn.' : null);
+  });
   readonly canSave = computed(() => {
     const amount = this.amountEur();
     return !this.busy() && amount !== null && Number.isFinite(amount) && amount >= 0 && !!this.reason().trim();
@@ -80,11 +91,11 @@ export class ClosingAccrualSheet implements OnInit {
   ngOnInit(): void {
     const stream = this.stream();
     if (stream.accrual) {
-      this.amount.set(decimalText(stream.accrual.amountEur));
+      this.amount.set(decimalText(stream.accrual.amountEur, 2));
       this.reason.set(stream.accrual.reason);
       this.invoiceReceived.set(stream.accrual.invoiceReceived);
     } else if (stream.openEur > 0) {
-      this.amount.set(decimalText(stream.openEur));
+      this.amount.set(decimalText(stream.openEur, 2));
     }
   }
 

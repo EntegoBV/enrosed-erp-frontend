@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BookingCheck, CountLine } from '../src/app/core/api/inventory-models.ts';
+import type { BookingCheck, CountLine, CountView } from '../src/app/core/api/inventory-models.ts';
 import {
   COUNT_CHIPS, bookingSummaryText, canConfirmEqual, conflictText, countProgress, countSections, differenceText,
-  filterLines, lineState, openDocumentText, rebaseWrite, sameReasonWrites,
+  filterLines, lineState, mergeCountView, openDocumentHint, openDocumentText, overtakenDrafts, reasonsFor, rebaseWrite,
+  sameReasonWrites,
 } from '../src/app/features/inventory/inventory-count.ts';
 
 let nextId = 1;
@@ -129,6 +130,11 @@ test('the booking summary names the lines, and an empty one confirms that nothin
   assert.equal(bookingSummaryText(summary), 'Je boekt 42 regels: 37 kloppen, 3 te weinig (-14), 2 te veel (+5).');
   assert.equal(bookingSummaryText({ lines: 0, equal: 0, short: 0, shortUnits: 0, over: 0, overUnits: 0 }),
     'Je bevestigt dat hier niets ligt.');
+  /* One line that is right "klopt"; several "kloppen". */
+  assert.equal(bookingSummaryText({ lines: 4, equal: 1, short: 2, shortUnits: 8, over: 1, overUnits: 1 }),
+    'Je boekt 4 regels: 1 klopt, 2 te weinig (-8), 1 te veel (+1).');
+  assert.equal(bookingSummaryText({ lines: 1, equal: 0, short: 1, shortUnits: 2, over: 0, overUnits: 0 }),
+    'Je boekt 1 regel: 0 kloppen, 1 te weinig (-2), 0 te veel (+0).');
 });
 
 test('a conflict says who counted what and when, in Brussels time', () => {
@@ -178,4 +184,85 @@ test('"Klopt" is offered only while the system figure is not below zero', () => 
   assert.equal(canConfirmEqual(line({ liveQuantity: 3 })), true);
   assert.equal(canConfirmEqual(line({ liveQuantity: 0 })), true);
   assert.equal(canConfirmEqual(line({ liveQuantity: -1 })), false);
+});
+
+/* ---- order, reasons and hints ---- */
+
+test('names with numbers come in the order of the shelf', () => {
+  const lines = ['Rose Bear 100 cm', 'Rose Bear 25 cm', 'Mini Rose Display 40', 'Mini Rose Display 4', 'Mini Rose Display 34', 'Los product 6', 'Los product 54']
+    .map((productName) => line({ productName }));
+  assert.deepEqual(names(countSections(lines)[0].lines), [
+    'Los product 6', 'Los product 54', 'Mini Rose Display 4', 'Mini Rose Display 34', 'Mini Rose Display 40',
+    'Rose Bear 25 cm', 'Rose Bear 100 cm',
+  ]);
+});
+
+const REASONS = ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'TERUGGEVONDEN', 'ANDERE'].map((code) => ({ code }));
+const codes = (reasons: { code: string }[]) => reasons.map((reason) => reason.code);
+
+test('the reasons offered fit the direction of the difference', () => {
+  /* 2 te weinig: nothing was "found back". */
+  assert.deepEqual(codes(reasonsFor(REASONS, [-2])), ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'ANDERE']);
+  /* 1 te veel: nothing was lost, broken or given away. */
+  assert.deepEqual(codes(reasonsFor(REASONS, [1])), ['TELFOUT', 'ANDERE_LOCATIE', 'TERUGGEVONDEN', 'ANDERE']);
+  /* The same reason for lines that go both ways, or no difference known: every reason. */
+  assert.deepEqual(codes(reasonsFor(REASONS, [-2, 1])), codes(REASONS));
+  assert.deepEqual(codes(reasonsFor(REASONS, [null])), codes(REASONS));
+  assert.deepEqual(codes(reasonsFor(REASONS, [-2, -5])), codes(reasonsFor(REASONS, [-2])));
+  /* A reason this screen does not know stays on both sides. */
+  assert.deepEqual(codes(reasonsFor([{ code: 'NIEUW' }, { code: 'TERUGGEVONDEN' }], [-1])), ['NIEUW']);
+});
+
+test('the way out under an open document names the right action', () => {
+  const invoice = { kind: 'FACTUUR' as const, id: 1, number: 'F-2026-118', quantity: 30 };
+  const container = { kind: 'CONTAINER' as const, id: 46, number: 'Kunming september', quantity: 3 };
+  assert.equal(openDocumentHint([container]), 'Zijn dit die stuks? Boek dan eerst de container bij; het verschil verdwijnt dan uit de telling.');
+  assert.equal(openDocumentHint([invoice]), 'Zijn dit die stuks? Punt dan eerst de factuur af; het verschil verdwijnt dan uit de telling.');
+  assert.equal(openDocumentHint([invoice, container]),
+    'Zijn dit die stuks? Punt dan eerst de factuur af en boek de container bij; het verschil verdwijnt dan uit de telling.');
+});
+
+/* ---- a reload against the screen ---- */
+
+const session = (status: CountView['status'], lines: CountLine[], input: Partial<CountView> = {}) =>
+  ({ id: 5, status, bookedByName: null, bookedAt: null, lines, ...input }) as CountView;
+
+test('a reload keeps the newer local line and a line added here meanwhile', () => {
+  const saved = countedLine(10, 9, { id: 1, revision: 3 });
+  const added = line({ id: 9, addedByHand: true });
+  const current = session('OPEN', [saved, line({ id: 2 }), added]);
+  const theirs = countedLine(10, 7, { id: 2, revision: 1, countedByName: 'Emre' });
+  const merged = mergeCountView(current, session('OPEN', [line({ id: 1, revision: 2 }), theirs]));
+  assert.deepEqual(merged.lines.map((row) => [row.id, row.countedQuantity, row.revision]), [[1, 9, 3], [2, 7, 1], [9, null, 0]]);
+  /* Another session, or nothing on screen: the answer as it is. */
+  const other = session('OPEN', [], { id: 6 });
+  assert.equal(mergeCountView(current, other), other);
+  assert.equal(mergeCountView(null, other), other);
+});
+
+test('a reload that is older than the booking never opens the session again', () => {
+  const booked = session('GEBOEKT', [countedLine(10, 9, { id: 1, revision: 3 })], { bookedByName: 'Tester', bookedAt: '2026-10-08T04:57:00Z' });
+  const late = session('OPEN', [countedLine(10, 9, { id: 1, revision: 3 })]);
+  const merged = mergeCountView(booked, late);
+  assert.equal(merged, booked);
+  assert.equal(merged.status, 'GEBOEKT');
+  assert.equal(merged.bookedByName, 'Tester');
+  assert.equal(mergeCountView(session('GEANNULEERD', []), late).status, 'GEANNULEERD');
+  /* The other way round is news: an open screen learns that the session was booked elsewhere. */
+  assert.equal(mergeCountView(late, booked).status, 'GEBOEKT');
+});
+
+test('a number typed in a line somebody else counted meanwhile is not lost', () => {
+  const current = session('OPEN', [line({ id: 2 }), line({ id: 3 }), line({ id: 4 }), countedLine(10, 10, { id: 5, revision: 1 })]);
+  const fresh = session('OPEN', [
+    countedLine(10, 10, { id: 2, revision: 1, countedByName: 'Tester' }), line({ id: 3 }),
+    countedLine(10, 8, { id: 4, revision: 1 }), countedLine(10, 10, { id: 5, revision: 1 }),
+  ]);
+  const overtaken = overtakenDrafts(current, fresh, { 2: ' 12 ', 3: '9', 5: '4' });
+  /* Line 2 was typed in here and counted there; 3 is still open (its draft stays in its field); 4 had no draft; 5 was no field. */
+  assert.deepEqual(overtaken.map((entry) => [entry.line.id, entry.line.countedQuantity, entry.draft]), [[2, 10, '12']]);
+  /* An answer that is older than the local line overtakes nothing. */
+  const wiped = session('OPEN', [line({ id: 2, revision: 4 })]);
+  assert.deepEqual(overtakenDrafts(wiped, session('OPEN', [countedLine(10, 10, { id: 2, revision: 3 })]), { 2: '12' }), []);
+  assert.deepEqual(overtakenDrafts(null, fresh, { 2: '12' }), []);
 });

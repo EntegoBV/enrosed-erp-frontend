@@ -14,12 +14,14 @@ import type { ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
-import { DateNlPipe, DateTimeNlPipe, NumPipe } from '../../shared/pipes';
+import { NumPipe } from '../../shared/pipes';
+import { BrusselsDatePipe, BrusselsDateTimePipe } from './inventory-dates';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
+import { sentence } from './inventory-closing';
 import {
   COUNT_CHIPS, canConfirmEqual, conflictText, countProgress, countSections, differenceText, filterLines, lineState,
-  rebaseWrite, sameReasonWrites,
+  mergeCountView, overtakenDrafts, reasonsFor, rebaseWrite, sameReasonWrites,
 } from './inventory-count';
 import type { CountChip, CountLineState } from './inventory-count';
 import { inventoryUnit } from './inventory-unit';
@@ -52,7 +54,9 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
  * counted, difference, reason), the same data as a table on a desk, and the
  * way to the booking. Nothing here touches stock: every count is saved per
  * line with its revision, a second phone that was first is shown as a
- * question, and only "Telling boeken" writes the differences. The rules
+ * question (one per line, in a queue), and only "Telling boeken" writes the
+ * differences. What is typed and not yet saved is kept per line, so a
+ * search, a chip, a rotation or a reload never wipes it. The rules
  * (what is to count, how a difference reads, which write goes out) are in
  * inventory-count.ts. Sheets, the menu and the conflict dialog render at
  * host level; styles are in styles/inventory-count.scss (.inv-*).
@@ -60,7 +64,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
 @Component({
   selector: 'app-stock-count-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, Icon, Sheet, ContextMenu, NumPipe, DateNlPipe, DateTimeNlPipe,
+  imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, Icon, Sheet, ContextMenu, NumPipe, BrusselsDatePipe, BrusselsDateTimePipe,
     StockCountDocuments, StockCountReasonSheet, StockCountBookingSheet, StockCountAddSheet],
   host: {
     '(window:focus)': 'refresh()',
@@ -80,7 +84,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
         @let p = progress();
         <div class="inv-count__sticky">
           @if (table()) {
-            <div class="wk-strip inv-count__strip" aria-label="Voortgang">
+            <div class="wk-strip inv-count__strip" role="group" aria-label="Voortgang">
               <div class="wk-strip__item"><span class="wk-strip__label">Geteld</span><span class="wk-strip__value">{{ p.counted | num }} / {{ p.total | num }}</span></div>
               <div class="wk-strip__item"><span class="wk-strip__label">Verschillen</span><span class="wk-strip__value">{{ p.differences | num }}</span></div>
               <div class="wk-strip__item"><span class="wk-strip__label">Zonder reden</span>
@@ -91,17 +95,22 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
               </div>
             </div>
           } @else {
-            <div class="ios-figures ios-figures--3 inv-count__figures" aria-label="Voortgang">
+            <div class="ios-figures ios-figures--3 inv-count__figures" role="group" aria-label="Voortgang">
               <div><small>Geteld</small><strong>{{ p.counted | num }} / {{ p.total | num }}</strong></div>
               <div><small>Verschillen</small><strong>{{ p.differences | num }}</strong></div>
               <div><small>Zonder reden</small><strong [class.inv-count__figure--stop]="p.missingReasons > 0">{{ p.missingReasons | num }}</strong></div>
             </div>
           }
+          <p class="sr-only" aria-live="polite">{{ announced() }}</p>
         </div>
+
+        @if (reloadFailed()) {
+          <p class="inv-count__offline" role="status">Geen verbinding: de lijst is van {{ lastReadTime() }}. De aantallen 'volgens systeem' kunnen intussen gewijzigd zijn.</p>
+        }
 
         @if (v.status === 'GEBOEKT') {
           <div class="alert alert--ok inv-count__closed" role="status">
-            <span>Geboekt door {{ v.bookedByName || 'onbekend' }} op {{ v.bookedAt | dateNl }}. Deze telling kan niet meer gewijzigd worden.</span>
+            <span>Geboekt door {{ v.bookedByName || 'onbekend' }} op {{ v.bookedAt | brusselsDate }}. Deze telling kan niet meer gewijzigd worden.</span>
             <a class="inv-count__back" routerLink="/stock/inventaris">Terug naar Jaarinventaris</a>
           </div>
         } @else if (v.status === 'GEANNULEERD') {
@@ -113,7 +122,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
 
         <div class="inv-count__lead">
           @if (correction()) {
-            <p>@if (correctedAt(); as at) { Je corrigeert de geboekte telling van {{ at | dateNl }}. } @else { Je corrigeert de geboekte telling. }
+            <p>@if (correctedAt(); as at) { Je corrigeert de geboekte telling van {{ at | brusselsDate }}. } @else { Je corrigeert de geboekte telling. }
               Voeg alleen de producten toe die je opnieuw telt; de rest blijft zoals geboekt.</p>
           } @else {
             <p>Tel alles wat er ligt: ook demostukken, stuks van partnercontainers en goederen van iemand anders. Kapotte stuks tel je niet mee; kies bij het verschil de reden 'Beschadigd of stuk'.</p>
@@ -140,7 +149,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
           <p class="inv-count__quiet">{{ olderText() }}</p>
         }
         @for (level of v.warnings.orphanLevels; track level.productId) {
-          <p class="inv-count__quiet">Voorraadstand van een verwijderd product (id {{ level.productId }}, {{ level.quantity | num }} stuks) wordt niet geteld.</p>
+          <p class="inv-count__quiet">{{ orphanText(level) }}</p>
         }
 
         <div class="inv-count__filter">
@@ -199,7 +208,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
           @for (section of sections(); track section.category) {
             <section class="ios-section">
               <div class="ios-section__head"><h2>{{ section.category }}</h2><span class="ios-section__trail">{{ sectionProgress(section.category) }}</span></div>
-              <div class="ios-group">
+              <div class="ios-group" role="list">
                 @for (line of section.lines; track line.id) {
                   <ng-container *ngTemplateOutlet="phoneLine; context: { $implicit: line }" />
                 }
@@ -217,10 +226,12 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
         }
       } @else if (loadError(); as message) {
         <div class="alert alert--danger" role="alert">
-          <span>{{ message }}</span>
-          <button class="btn btn--sm" type="button" (click)="load()">Opnieuw</button>
+          <span><strong>De telling kon niet worden geladen.</strong> {{ message }}</span>
         </div>
-        <p class="inv-count__quiet"><a class="inv-count__back" routerLink="/stock/inventaris">Terug naar Jaarinventaris</a></p>
+        <p class="inv-count__retry">
+          @if (validId()) { <button class="btn btn--sm btn--primary" type="button" (click)="load()">Opnieuw proberen</button> }
+          <a class="inv-count__back" routerLink="/stock/inventaris">Terug naar Jaarinventaris</a>
+        </p>
       } @else {
         <div aria-busy="true"><app-skeleton kind="stats" [rows]="3" /><app-skeleton kind="list" [rows]="8" /></div>
       }
@@ -229,7 +240,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
     <!-- phone: one line of the list -->
     <ng-template #phoneLine let-line>
       @let st = state(line);
-      <div class="ios-cell ios-cell--tall inv-line" [id]="'inv-line-' + line.id" [class.inv-line--gone]="isOrphan(line)">
+      <div class="ios-cell ios-cell--tall inv-line" role="listitem" [id]="'inv-line-' + line.id" [class.inv-line--gone]="isOrphan(line)">
         <span class="ios-cell__body">
           <span class="ios-cell__title ios-cell__title--2">{{ line.productName }}</span>
           <span class="ios-cell__sub">{{ line.sku || 'Geen SKU' }}</span>
@@ -243,10 +254,11 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
                 <label class="sr-only" [for]="'inv-count-field-' + line.id">Geteld, {{ line.productName }}</label>
                 <input #field class="input inv-line__field" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" enterkeyhint="done"
                        placeholder="Geteld" [id]="'inv-count-field-' + line.id" [disabled]="saving().has(line.id)"
+                       [value]="draft(line.id)" (input)="setDraft(line.id, field.value)"
                        (keydown.enter)="$event.preventDefault(); saveField(line, field)" />
-                <button class="btn btn--primary inv-line__save" type="button" [disabled]="saving().has(line.id)" (click)="saveField(line, field)">Bewaar</button>
+                <button class="btn btn--primary inv-line__save" type="button" [attr.aria-label]="'Bewaren, ' + line.productName" [disabled]="saving().has(line.id)" (click)="saveField(line, field)">Bewaren</button>
                 @if (canConfirm(line)) {
-                  <button class="btn inv-line__equal" type="button" [disabled]="saving().has(line.id)" (click)="confirmEqual(line)">Klopt</button>
+                  <button class="btn inv-line__equal" type="button" [attr.aria-label]="'Klopt, ' + line.productName" [disabled]="saving().has(line.id)" (click)="confirmEqual(line)">Klopt</button>
                 }
               </span>
             }
@@ -261,7 +273,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
                 } @else if (line.reasonCode) {
                   <button class="inv-line__link" type="button" (click)="openReason(line)">{{ reasonText(line) }}</button>
                 } @else {
-                  <button class="inv-chip inv-chip--stop" type="button" (click)="openReason(line)">Reden kiezen</button>
+                  <button class="inv-chip inv-chip--stop" type="button" [attr.aria-label]="'Reden kiezen, ' + line.productName" (click)="openReason(line)">Reden kiezen</button>
                 }
               </span>
             }
@@ -274,7 +286,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
               <app-stock-count-documents [line]="line" [editable]="isOpen()" [disabled]="saving().has(line.id)" (confirmed)="confirmDocuments(line, $event)" />
             }
             @if (isOpen()) {
-              <button class="inv-line__link inv-line__wipe" type="button" [disabled]="saving().has(line.id)" (click)="wipe(line)">Aantal wissen</button>
+              <button class="inv-line__link inv-line__wipe" type="button" [attr.aria-label]="'Aantal wissen, ' + line.productName" [disabled]="saving().has(line.id)" (click)="wipe(line)">Aantal wissen</button>
             }
           }
         </span>
@@ -288,7 +300,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
       <div class="wk-tr inv-row" role="row" [id]="'inv-line-' + line.id" [class.inv-row--gone]="gone">
         <span class="wk-td wk-td--wrap" role="cell">{{ line.productName }}
           <span class="wk-td__sub inv-col--narrow">{{ line.sku || 'Geen SKU' }} · {{ unit(line).singular }}@if (displayHint(line); as hint) { · {{ hint }} }</span></span>
-        <span class="wk-td wk-td--wrap inv-col--wide" role="cell">{{ line.sku || '—' }}</span>
+        <span class="wk-td inv-col--wide inv-row__sku" role="cell">{{ line.sku || '—' }}</span>
         <span class="wk-td inv-col--wide" role="cell">{{ unit(line).singular }}@if (displayHint(line); as hint) { <span class="wk-td__sub">{{ hint }}</span> }</span>
         <span class="wk-td wk-td--num" role="cell">{{ systemQuantity(line) | num }}</span>
         <span class="wk-td inv-row__count" role="cell">
@@ -300,8 +312,9 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
             <label class="sr-only" [for]="'inv-count-field-' + line.id">Geteld, {{ line.productName }}</label>
             <input #field class="inv-row__field" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
                    [id]="'inv-count-field-' + line.id" [disabled]="saving().has(line.id)"
+                   [value]="draft(line.id)" (input)="setDraft(line.id, field.value)"
                    (keydown.enter)="$event.preventDefault(); saveField(line, field)" />
-            <button class="wk-btn wk-btn--sm wk-btn--primary" type="button" [disabled]="saving().has(line.id)" (click)="saveField(line, field)">Bewaar</button>
+            <button class="wk-btn wk-btn--sm wk-btn--primary" type="button" [attr.aria-label]="'Bewaren, ' + line.productName" [disabled]="saving().has(line.id)" (click)="saveField(line, field)">Bewaren</button>
           }
         </span>
         <span class="wk-td" role="cell" [class.inv-row__diff]="st === 'VERSCHIL_ZONDER_REDEN' || st === 'VERSCHIL_MET_REDEN'">
@@ -317,16 +330,16 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
           } @else if (line.reasonCode) {
             <button class="wk-link inv-row__reason" type="button" [title]="reasonText(line)" (click)="openReason(line)">{{ reasonText(line) }}</button>
           } @else {
-            <button class="inv-chip inv-chip--stop" type="button" (click)="openReason(line)">Reden kiezen</button>
+            <button class="inv-chip inv-chip--stop" type="button" [attr.aria-label]="'Reden kiezen, ' + line.productName" (click)="openReason(line)">Reden kiezen</button>
           }
         </span>
         <span class="wk-td inv-col--wide" role="cell">@if (!gone && line.countedQuantity !== null) { {{ line.countedByName }} <span class="wk-td__sub">{{ time(line) }}</span> }</span>
         <span class="wk-td inv-row__actions" role="cell">
           @if (!gone && isOpen()) {
             @if (st !== 'TE_TELLEN') {
-              <button class="wk-btn wk-btn--sm wk-btn--ghost" type="button" [disabled]="saving().has(line.id)" (click)="wipe(line)">Aantal wissen</button>
+              <button class="wk-btn wk-btn--sm wk-btn--ghost" type="button" [attr.aria-label]="'Aantal wissen, ' + line.productName" [disabled]="saving().has(line.id)" (click)="wipe(line)">Aantal wissen</button>
             } @else if (canConfirm(line)) {
-              <button class="wk-btn wk-btn--sm" type="button" [disabled]="saving().has(line.id)" (click)="confirmEqual(line)">Klopt</button>
+              <button class="wk-btn wk-btn--sm" type="button" [attr.aria-label]="'Klopt, ' + line.productName" [disabled]="saving().has(line.id)" (click)="confirmEqual(line)">Klopt</button>
             }
           }
         </span>
@@ -366,7 +379,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
     @if (printing()) {
       @if (view(); as v) {
         <div class="inv-print">
-          <p class="inv-print__head">Tellijst {{ v.locationName }} · {{ v.countYear }} · afgedrukt {{ printedAt() | dateTimeNl }}</p>
+          <p class="inv-print__head">Tellijst {{ v.locationName }} · {{ v.countYear }} · afgedrukt {{ printedAt() | brusselsDateTime }}</p>
           <table class="inv-print__table">
             <thead><tr><th>Product</th><th>SKU</th><th>Eenheid</th><th class="inv-print__num">Volgens systeem</th><th class="inv-print__num">Geteld</th><th>Reden</th><th>Door</th></tr></thead>
             <tbody>
@@ -397,16 +410,17 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
     @if (bookingOpen()) {
       @if (view(); as v) {
         <app-stock-count-booking-sheet [view]="v" [check]="check()" [checking]="checking()" [failed]="checkFailed()" [busy]="working()"
+                                       [saving]="saving()" [refusal]="bookRefusal()"
                                        [looked]="looked()" [rebased]="rebasedLines()"
-                                       (reload)="loadCheck()" (showUncounted)="showUncounted()" (add)="addProduct($event)"
+                                       (reload)="recheck()" (showUncounted)="showUncounted()" (add)="addProduct($event)"
                                        (reason)="openReasonById($event)" (sameReason)="reasonTarget.set({ bulk: $event })"
                                        (documents)="confirmDocumentsById($event.lineId, $event.confirmed)" (keep)="keepMoved($event)"
-                                       (rebase)="rebase($event)" (book)="askBook()" (closed)="bookingOpen.set(false)" />
+                                       (rebase)="rebase($event)" (book)="askBook()" (closed)="closeBooking()" />
       }
     }
     @if (reasonTarget(); as target) {
       @if (view(); as v) {
-        <app-stock-count-reason-sheet [line]="reasonLine()" [bulkCount]="bulkCount()" [reasons]="v.reasons" [busy]="working() || reasonBusy()"
+        <app-stock-count-reason-sheet [line]="reasonLine()" [bulkCount]="bulkCount()" [reasons]="reasonChoices()" [busy]="working() || reasonBusy()"
                                       (save)="saveReason($event)" (documents)="confirmDocumentsById(reasonLineId(), $event)" (closed)="closeReason()" />
       }
     }
@@ -468,7 +482,21 @@ export class StockCountPage {
 
   readonly reasonTarget = signal<ReasonTarget | null>(null);
   readonly addOpen = signal(false);
-  readonly conflict = signal<CountConflict | null>(null);
+  /** Every line another phone was first on, in the order the answers came; the first is the question on screen. */
+  private readonly conflicts = signal<readonly CountConflict[]>([]);
+  readonly conflict = computed(() => this.conflicts()[0] ?? null);
+  /** What is typed in a count field and not saved yet, per line: the field is drawn from it. */
+  readonly drafts = signal<Readonly<Record<number, string>>>({});
+  /** The last background reload failed: the list says how old it is until one succeeds. */
+  readonly reloadFailed = signal(false);
+  private readonly lastReadAt = signal<string | null>(null);
+  readonly lastReadTime = computed(() => countTime(this.lastReadAt()));
+  /** The server's refusal of "Telling boeken", kept in the booking sheet until the next attempt. */
+  readonly bookRefusal = signal<string | null>(null);
+  /** "12 van 40 geteld", said to a screen reader after a save. */
+  readonly announced = signal('');
+  /** The route id is a session id at all; otherwise there is nothing to retry. */
+  readonly validId = signal(true);
   readonly menu = signal<{ anchor: MenuPoint | null } | null>(null);
   readonly printing = signal(false);
   readonly printedAt = signal('');
@@ -476,6 +504,14 @@ export class StockCountPage {
   private countId = 0;
   private checkRun = 0;
   private reloading = false;
+  /** The page is gone: no answer that arrives afterwards may touch it (or ask for a render). */
+  private destroyed = false;
+  /**
+   * Counts the whole-session answers this page took (load, book, cancel). A
+   * background reload that started before the latest one is older than what
+   * is on screen and is dropped.
+   */
+  private sessionSeq = 0;
   /** The field to go to once the reason sheet of a just saved difference closes. */
   private focusAfterReason: number | null = null;
 
@@ -539,6 +575,17 @@ export class StockCountPage {
     return target && 'lineId' in target ? target.lineId : null;
   });
   readonly reasonLine = computed(() => this.lineById(this.reasonLineId()));
+  /** The reasons that fit the direction of the difference(s) the sheet is open for; a stored reason always stays. */
+  readonly reasonChoices = computed(() => {
+    const view = this.view();
+    const target = this.reasonTarget();
+    if (!view || !target) return view?.reasons ?? [];
+    const lines = 'lineId' in target ? [this.lineById(target.lineId)]
+      : target.bulk.map((id) => this.lineById(id));
+    const fitting = reasonsFor(view.reasons, lines.map((line) => line?.difference ?? null));
+    const stored = 'lineId' in target ? lines[0]?.reasonCode ?? null : null;
+    return view.reasons.filter((reason) => fitting.includes(reason) || reason.code === stored);
+  });
   readonly bulkCount = computed(() => {
     const target = this.reasonTarget();
     return target && 'bulk' in target ? target.bulk.length : 0;
@@ -567,6 +614,7 @@ export class StockCountPage {
     const onWide = (event: MediaQueryListEvent) => this.table.set(event.matches);
     this.wideQuery?.addEventListener('change', onWide);
     inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
       clearInterval(timer);
       this.wideQuery?.removeEventListener('change', onWide);
     });
@@ -579,12 +627,22 @@ export class StockCountPage {
     this.view.set(null);
     this.bookingOpen.set(false);
     this.reasonTarget.set(null);
-    this.conflict.set(null);
+    this.conflicts.set([]);
+    this.drafts.set({});
+    this.reloadFailed.set(false);
+    this.bookRefusal.set(null);
     this.addOpen.set(false);
     this.query.set('');
     this.looked.set(new Set());
     this.rebasedIds.set([]);
     this.correctedAt.set(null);
+    /* "abc" or "0" is no session: say so instead of waiting for an answer that cannot come. */
+    const valid = Number.isInteger(id) && id > 0;
+    this.validId.set(valid);
+    if (!valid) {
+      this.loadError.set('De gevraagde gegevens bestaan niet meer of zijn verplaatst.');
+      return;
+    }
     await this.load();
     const view = this.view();
     if (!view || this.countId !== id) return;
@@ -599,22 +657,37 @@ export class StockCountPage {
     this.loadError.set(null);
     try {
       const view = await this.api.count(id);
-      if (this.countId === id) this.view.set(view);
+      if (this.destroyed || this.countId !== id) return;
+      this.takeSession(view);
     } catch (failure) {
-      if (this.countId === id) this.loadError.set(messageOf(failure, 'De telling kon niet worden geladen.'));
+      if (!this.destroyed && this.countId === id) this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
     }
+  }
+
+  /** A whole-session answer that is newer than everything on screen: a load, the booked or the cancelled session. */
+  private takeSession(view: CountView): void {
+    this.sessionSeq++;
+    this.view.set(view);
+    this.lastReadAt.set(new Date().toISOString());
+    this.reloadFailed.set(false);
   }
 
   /** The 20-second and on-focus reload: quiet, only while the session is open and the page is in view. */
   async refresh(): Promise<void> {
     const id = this.countId;
-    if (this.reloading || !this.isOpen() || document.visibilityState !== 'visible') return;
+    if (this.destroyed || this.reloading || !this.isOpen() || document.visibilityState !== 'visible') return;
     this.reloading = true;
+    const seq = this.sessionSeq;
     try {
       const fresh = await this.api.count(id);
-      if (this.countId === id) this.mergeView(fresh);
+      /* Booked, cancelled or loaded again while this answer was under way: it is older than the screen. */
+      if (this.destroyed || this.countId !== id || seq !== this.sessionSeq) return;
+      this.mergeView(fresh);
+      this.lastReadAt.set(new Date().toISOString());
+      this.reloadFailed.set(false);
     } catch {
-      /* The next round tries again; what is on screen stays. */
+      /* The next round tries again; what is on screen stays, and the list says it is not current. */
+      if (!this.destroyed && this.countId === id && seq === this.sessionSeq) this.reloadFailed.set(true);
     } finally {
       this.reloading = false;
     }
@@ -631,22 +704,61 @@ export class StockCountPage {
   }
 
   /**
-   * A reload can be older than a save that answered while it was under way:
-   * per line the higher revision stays, and a line added here meanwhile is kept.
+   * A background reload against the screen (the rules are mergeCountView's).
+   * A line somebody else counted while a number was being typed in it here
+   * loses its field: the typed number becomes the conflict question instead
+   * of vanishing with it.
    */
   private mergeView(fresh: CountView): void {
     const current = this.view();
-    if (!current || current.id !== fresh.id) {
-      this.view.set(fresh);
-      return;
+    const saving = this.saving();
+    for (const { line, draft } of overtakenDrafts(current, fresh, this.drafts())) {
+      if (saving.has(line.id)) continue;
+      this.dropDraft(line.id);
+      if (/^\d+$/.test(draft) && Number.isSafeInteger(Number(draft))) {
+        this.addConflict({
+          line, intent: 'count', order: this.fieldOrder(),
+          write: { countedQuantity: Number(draft), reasonCode: null, reasonNote: null, revision: line.revision },
+        });
+      }
     }
-    const mine = new Map(current.lines.map((line) => [line.id, line]));
-    const lines = fresh.lines.map((line) => {
-      const local = mine.get(line.id);
-      mine.delete(line.id);
-      return local && local.revision > line.revision ? local : line;
+    this.view.set(mergeCountView(current, fresh));
+  }
+
+  private addConflict(clash: CountConflict): void {
+    this.conflicts.update((list) => [...list.filter((other) => other.line.id !== clash.line.id), clash]);
+  }
+
+  /** The question on screen is answered: the next one, if any, takes its place. */
+  private takeConflict(): CountConflict | null {
+    const clash = this.conflict();
+    if (clash) this.conflicts.update((list) => list.slice(1));
+    return clash;
+  }
+
+  draft(lineId: number): string {
+    return this.drafts()[lineId] ?? '';
+  }
+
+  setDraft(lineId: number, text: string): void {
+    this.drafts.update((all) => ({ ...all, [lineId]: text }));
+  }
+
+  private dropDraft(lineId: number): void {
+    this.drafts.update((all) => {
+      if (!(lineId in all)) return all;
+      const next = { ...all };
+      delete next[lineId];
+      return next;
     });
-    this.view.set({ ...fresh, lines: [...lines, ...mine.values()] });
+  }
+
+  /** The product of a stock level without a product: its name when a line of the list still carries it. */
+  orphanText(level: { productId: number; quantity: number }): string {
+    const name = this.view()?.lines.find((line) => line.productId === level.productId)?.productName ?? null;
+    const pieces = `${whole(level.quantity)} ${level.quantity === 1 ? 'stuk' : 'stuks'}`;
+    return name ? `De voorraadstand van het verwijderde product ${name} (${pieces}) wordt niet geteld.`
+      : `De voorraadstand van een verwijderd product (${pieces}) wordt niet geteld.`;
   }
 
   private mergeLine(line: CountLine): void {
@@ -724,7 +836,7 @@ export class StockCountPage {
 
   /** Enter or "Bewaar": never while typing and never on blur. */
   saveField(line: CountLine, field: HTMLInputElement): void {
-    const raw = field.value.trim();
+    const raw = (this.drafts()[line.id] ?? field.value).trim();
     if (!raw || this.saving().has(line.id)) return;
     if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
       this.ui.toast('Vul een geheel aantal van 0 of meer in.', 'err');
@@ -765,7 +877,7 @@ export class StockCountPage {
   /** "Ja, herreken het verschil": the same count against the level of now (4.4). */
   rebase(lineId: number): void {
     const line = this.lineById(lineId);
-    if (line) void this.save(line, rebaseWrite(line), 'rebase');
+    if (line && !this.saving().has(line.id)) void this.save(line, rebaseWrite(line), 'rebase');
   }
 
   /** "Nee, klopt zo": looked at on this phone; nothing is sent. */
@@ -785,24 +897,28 @@ export class StockCountPage {
    */
   private async save(line: CountLine, write: CountLineWrite, intent: SaveIntent, order: number[] = []): Promise<void> {
     const countId = this.countId;
+    /* One write per line at a time: a second tap would carry the old revision and clash with the first. */
+    if (this.saving().has(line.id)) return;
     this.markSaving(line.id, true);
     let saved: CountLine;
     try {
       saved = await this.api.saveCountLine(countId, line.id, write);
     } catch (failure) {
-      if (this.countId !== countId) return;
+      if (this.destroyed || this.countId !== countId) return;
       const theirs = refusalCode(failure) === 'REGEL_GEWIJZIGD' ? refusalDetails<{ line: CountLine }>(failure)?.line : null;
       if (theirs) {
-        this.conflict.set({ line: theirs, write, intent, order });
+        /* Queued: two lines that clash at the same moment each get their question. */
+        this.addConflict({ line: theirs, write, intent, order });
         return;
       }
-      this.ui.toast(messageOf(failure, 'Bewaren is niet gelukt. Probeer opnieuw.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'Bewaren is niet gelukt. Probeer opnieuw.')), 'err');
       if (refusalCode(failure) === 'TELLING_GESLOTEN') this.sessionClosed();
       return;
     } finally {
-      this.markSaving(line.id, false);
+      if (!this.destroyed) this.markSaving(line.id, false);
     }
-    if (this.countId !== countId) return;
+    if (this.destroyed || this.countId !== countId) return;
+    if (intent === 'count' || intent === 'wipe') this.dropDraft(line.id);
     this.mergeLine(saved);
     this.afterSave(saved, intent, order);
   }
@@ -829,6 +945,10 @@ export class StockCountPage {
       default:
         break;
     }
+    if (intent === 'count' || intent === 'wipe') {
+      const p = this.progress();
+      this.announced.set(`${whole(p.counted)} van ${whole(p.total)} geteld`);
+    }
     if (this.bookingOpen()) void this.loadCheck();
   }
 
@@ -850,7 +970,7 @@ export class StockCountPage {
 
   /** After the render, and after a closing sheet handed the focus back. */
   private focusField(lineId: number | null, scroll = false): void {
-    if (lineId === null) return;
+    if (lineId === null || this.destroyed) return;
     afterNextRender(() => setTimeout(() => {
       if (scroll) document.getElementById(`inv-line-${lineId}`)?.scrollIntoView({ block: 'center' });
       document.getElementById(`inv-count-field-${lineId}`)?.focus({ preventScroll: scroll });
@@ -957,18 +1077,17 @@ export class StockCountPage {
 
   /** "Vervang door {m}": the same write again, with the revision of the line the server sent. */
   replaceTheirs(): void {
-    const clash = this.conflict();
+    const clash = this.takeConflict();
     if (!clash) return;
-    this.conflict.set(null);
     this.mergeLine(clash.line);
     void this.save(clash.line, { ...clash.write, revision: clash.line.revision }, clash.intent, clash.order);
   }
 
   /** "Laat {n} staan": take over the other phone's line. */
   keepTheirs(): void {
-    const clash = this.conflict();
+    const clash = this.takeConflict();
     if (!clash) return;
-    this.conflict.set(null);
+    this.dropDraft(clash.line.id);
     this.mergeLine(clash.line);
     if (clash.intent === 'reason') this.closeReason();
     else if (clash.intent === 'count') this.focusField(this.nextField(clash.line.id, clash.order));
@@ -1007,9 +1126,21 @@ export class StockCountPage {
   /* -------------------------------------------------------------- booking */
 
   openBooking(): void {
+    this.bookRefusal.set(null);
     this.check.set(null);
     this.rebasedIds.set([]);
     this.bookingOpen.set(true);
+    void this.loadCheck();
+  }
+
+  closeBooking(): void {
+    this.bookingOpen.set(false);
+    this.bookRefusal.set(null);
+  }
+
+  /** "Opnieuw controleren": the refusal was read, the check is read again. */
+  recheck(): void {
+    this.bookRefusal.set(null);
     void this.loadCheck();
   }
 
@@ -1021,10 +1152,10 @@ export class StockCountPage {
     this.checkFailed.set(false);
     try {
       const check = await this.api.bookingCheck(countId);
-      if (this.countId !== countId || run !== this.checkRun) return;
+      if (this.destroyed || this.countId !== countId || run !== this.checkRun) return;
       this.check.set(check);
     } catch (failure) {
-      if (this.countId !== countId || run !== this.checkRun) return;
+      if (this.destroyed || this.countId !== countId || run !== this.checkRun) return;
       this.ui.toast(messageOf(failure, 'De controle kon niet worden geladen.'), 'err');
       if (refusalCode(failure) === 'TELLING_GESLOTEN') this.sessionClosed();
       else if (!this.check()) this.checkFailed.set(true);
@@ -1056,20 +1187,26 @@ export class StockCountPage {
     const countId = this.countId;
     if (this.working()) return;
     this.working.set(true);
+    this.bookRefusal.set(null);
     try {
       const booked = await this.api.bookCount(countId, checkToken);
-      if (this.countId !== countId) return;
-      this.view.set(booked);
+      if (this.destroyed || this.countId !== countId) return;
+      this.takeSession(booked);
+      this.conflicts.set([]);
+      this.drafts.set({});
       this.bookingOpen.set(false);
       this.chip.set('ALLES');
       this.ui.toast(`Telling geboekt. De voorraad van ${booked.locationName} is bijgewerkt.`);
     } catch (failure) {
-      if (this.countId !== countId) return;
+      if (this.destroyed || this.countId !== countId) return;
       /* TELLING_GEWIJZIGD, EERST_AFPUNTEN, EERST_BIJBOEKEN and the others: the server's words, then look again. */
-      this.ui.toast(messageOf(failure, 'De telling kon niet worden geboekt.'), 'err');
+      const message = sentence(messageOf(failure, 'De telling kon niet worden geboekt.'));
       if (refusalCode(failure) === 'TELLING_GESLOTEN') {
+        this.ui.toast(message, 'err');
         this.sessionClosed();
       } else {
+        /* It stays in the sheet, above the button: a toast would be gone before it is read. */
+        this.bookRefusal.set(`Niet geboekt. ${message}`);
         void this.refresh();
         void this.loadCheck();
       }
@@ -1081,9 +1218,10 @@ export class StockCountPage {
   /** Somebody else booked or cancelled this session: close what is open and show it as it is. */
   private sessionClosed(): void {
     this.bookingOpen.set(false);
+    this.bookRefusal.set(null);
     this.reasonTarget.set(null);
     this.addOpen.set(false);
-    this.conflict.set(null);
+    this.conflicts.set([]);
     void this.load().then(() => {
       if (this.view()?.status !== 'OPEN') this.chip.set('ALLES');
     });
@@ -1118,8 +1256,10 @@ export class StockCountPage {
     this.working.set(true);
     try {
       const cancelled = await this.api.cancelCount(countId);
-      if (this.countId !== countId) return;
-      this.view.set(cancelled);
+      if (this.destroyed || this.countId !== countId) return;
+      this.takeSession(cancelled);
+      this.conflicts.set([]);
+      this.drafts.set({});
       this.chip.set('ALLES');
       this.ui.toast('Telling geannuleerd. Er is niets geboekt.');
     } catch (failure) {

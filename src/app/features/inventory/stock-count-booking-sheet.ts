@@ -88,7 +88,7 @@ export function countTime(instant: string | null): string {
                 @for (line of openDocuments(); track line.id) {
                   <div class="ios-cell ios-cell--tall inv-book__documents">
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ line.productName }}</span><span class="ios-cell__sub">{{ countedText(line) }}</span>
-                      <app-stock-count-documents [line]="line" [disabled]="busy()" (confirmed)="documents.emit({ lineId: line.id, confirmed: $event })" /></span>
+                      <app-stock-count-documents [line]="line" [disabled]="busy() || saving().has(line.id)" (confirmed)="documents.emit({ lineId: line.id, confirmed: $event })" /></span>
                   </div>
                 }
               </div>
@@ -125,8 +125,8 @@ export function countTime(instant: string | null): string {
                     <p class="inv-moved__question">Waren deze stuks al weg (of al binnen) toen je telde?</p>
                     <div class="inv-moved__answers">
                       <button class="btn btn--sm" type="button" [class.inv-moved__answer--on]="looked().has(row.lineId)" [attr.aria-pressed]="looked().has(row.lineId)"
-                              [disabled]="busy()" (click)="keep.emit(row.lineId)">Nee, klopt zo</button>
-                      <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="rebase.emit(row.lineId)">Ja, herreken het verschil</button>
+                              [disabled]="busy() || saving().has(row.lineId)" (click)="keep.emit(row.lineId)">Nee, klopt zo</button>
+                      <button class="btn btn--sm" type="button" [disabled]="busy() || saving().has(row.lineId)" (click)="rebase.emit(row.lineId)">{{ saving().has(row.lineId) ? 'Bezig…' : 'Ja, herreken het verschil' }}</button>
                     </div>
                   </div>
                 </div>
@@ -147,6 +147,12 @@ export function countTime(instant: string | null): string {
           }
 
           <section class="ios-section inv-book__summary" aria-label="Samenvatting">
+            @if (refusal(); as why) {
+              <div class="inv-book__refused" role="alert">
+                <span>{{ why }}</span>
+                <button class="btn btn--sm" type="button" [disabled]="busy() || checking()" (click)="reload.emit()">Opnieuw controleren</button>
+              </div>
+            }
             <p class="inv-book__total">{{ summary() }}</p>
             <p class="inv-book__note">Boek de telling op een moment dat niemand verzendt of ontvangt.</p>
             @if (blocked()) { <p class="inv-book__note inv-book__note--stop">Werk eerst af wat hierboven staat; daarna kan je boeken.</p> }
@@ -162,7 +168,7 @@ export function countTime(instant: string | null): string {
       </div>
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="closed.emit()">Sluiten</button>
-        <button class="btn btn--primary" type="button" [disabled]="!check() || blocked() || busy() || checking()" (click)="book.emit()">{{ busy() ? 'Bezig…' : 'Telling boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="!check() || blocked() || busy() || checking() || saving().size > 0" (click)="book.emit()">{{ busy() ? 'Bezig…' : 'Telling boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -174,6 +180,10 @@ export class StockCountBookingSheet {
   readonly checking = input(false);
   readonly failed = input(false);
   readonly busy = input(false);
+  /** Line ids with a save under way: their buttons wait, so no answer is sent twice. */
+  readonly saving = input<ReadonlySet<number>>(new Set());
+  /** Why the server refused the last "Telling boeken"; stays above the summary until the next attempt. */
+  readonly refusal = input<string | null>(null);
   /** Line ids answered "Nee, klopt zo" on this phone. */
   readonly looked = input<ReadonlySet<number>>(new Set());
   /** Lines answered "Ja, herreken het verschil" since the sheet opened. */

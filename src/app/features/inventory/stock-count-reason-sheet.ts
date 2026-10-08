@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import type { CountLine, CountView, OpenDocument } from '../../core/api/inventory-models';
 import { NumPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { differenceText, openDocumentText } from './inventory-count';
+import { differenceText, openDocumentHint, openDocumentText } from './inventory-count';
 
 /**
  * Why a difference cannot be booked yet: the invoices that are not afgepunt
@@ -22,8 +22,8 @@ import { differenceText, openDocumentText } from './inventory-count';
       <p class="inv-docs__text">{{ text(document) }}
         <a class="inv-docs__link" [routerLink]="link(document)">{{ document.kind === 'FACTUUR' ? 'Factuur openen' : 'Container openen' }} ›</a></p>
     }
-    <p class="inv-docs__hint">Zijn dit die stuks? Punt dan eerst de factuur af (of boek de container bij); het verschil verdwijnt dan uit de telling.</p>
     @if (editable()) {
+      <p class="inv-docs__hint">{{ hint() }}</p>
       <label class="inv-docs__check">
         <input type="checkbox" [checked]="line().documentsConfirmed" [disabled]="disabled()" (change)="toggle($event)" />
         <span>{{ checkLabel() }}</span>
@@ -40,6 +40,8 @@ export class StockCountDocuments {
   readonly disabled = input(false);
   readonly confirmed = output<boolean>();
 
+  /** The way out, by what is open; a booked count has none left, so it is only shown while the session is open. */
+  readonly hint = computed(() => openDocumentHint(this.line().openDocuments));
   readonly checkLabel = computed(() => {
     const documents = this.line().openDocuments;
     const what = documents.length !== 1 ? 'deze documenten' : documents[0].kind === 'FACTUUR' ? 'deze factuur' : 'deze container';

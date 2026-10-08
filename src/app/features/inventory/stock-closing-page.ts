@@ -1,14 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { saveBlob } from '../../core/api/download';
-import { messageOf } from '../../core/api/errors';
+import { messageOf, readableFailure } from '../../core/api/errors';
 import { InventoryApi, refusalCode, refusalDetails } from '../../core/api/inventory-api';
 import type { ClosingView, DecisionWrite, Notice, NoticeSegment, OpeningLayerWrite } from '../../core/api/inventory-models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
-import { DateNlPipe, DateTimeNlPipe, EurPipe } from '../../shared/pipes';
+import { EurPipe } from '../../shared/pipes';
+import { BrusselsDatePipe, BrusselsDateTimePipe } from './inventory-dates';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import { ClosingDecisionSheet, noticeAnchor } from './closing-decision-sheet';
@@ -18,7 +19,7 @@ import { ClosingStepDate } from './closing-step-date';
 import { ClosingStepFinalize } from './closing-step-finalize';
 import { ClosingStepSeparate } from './closing-step-separate';
 import { ClosingStepValue } from './closing-step-value';
-import { fileName, stepStates, stripItems } from './inventory-closing';
+import { dateText, fileName, sentence, stepStates, stripItems } from './inventory-closing';
 import type { StepState } from './inventory-closing';
 
 const STEP_KEYS: readonly NoticeSegment[] = ['tellen', 'datum', 'waarde', 'apart', 'afsluiten'];
@@ -42,14 +43,17 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
  * figures, a final closing is read as stored. The steps only emit; each
  * answer of the server is a new view, which is also what closes their
  * sheets. Around the steps: the totals strip, the step bar (the active step
- * is the query `stap`) and what is still to do. A phone gets the summary
- * only. Layout classes of the shell are the .inv-shell ones below; the
+ * is the query `stap`, or the step the closing opened on: it never moves by
+ * itself) and what is still to do. When the server says the figures moved
+ * and the recompute that should follow fails, the page says so until a
+ * recompute answers, and nothing can be made final meanwhile. A phone gets
+ * the summary only. Layout classes of the shell are the .inv-shell ones below; the
  * steps bring styles/inventory-closing.scss.
  */
 @Component({
   selector: 'app-stock-closing-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, Skeleton, Icon, DateField, DateNlPipe, DateTimeNlPipe, EurPipe, ClosingDecisionSheet,
+  imports: [RouterLink, PageHeader, Skeleton, Icon, DateField, BrusselsDatePipe, BrusselsDateTimePipe, EurPipe, ClosingDecisionSheet,
     ClosingStepCount, ClosingStepDate, ClosingStepValue, ClosingStepSeparate, ClosingStepFinalize],
   template: `
     <app-page-header [showBack]="true" backTo="/stock/inventaris" [showBell]="false" [title]="title()" [subtitle]="subtitle()" />
@@ -58,7 +62,7 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
       @if (view(); as v) {
         @if (v.status === 'DEFINITIEF') {
           <div class="alert alert--ok inv-shell__banner" role="status">
-            <span>Definitief sinds {{ v.finalizedAt | dateNl }} door {{ v.finalizedByName || 'onbekend' }}. Niets kan nog gewijzigd worden.</span>
+            <span>Definitief sinds {{ v.finalizedAt | brusselsDate }} door {{ v.finalizedByName || 'onbekend' }}. Niets kan nog gewijzigd worden.</span>
             <span class="inv-shell__banner-actions">
               <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="download('pdf')">PDF</button>
               <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="download('xlsx')">Excel</button>
@@ -80,12 +84,21 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
           </div>
         }
 
+        @if (stale(); as why) {
+          <div class="alert alert--danger inv-shell__banner" role="alert">
+            <span>{{ why }} De cijfers op dit scherm zijn niet meer actueel.</span>
+            <span class="inv-shell__banner-actions">
+              <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="recompute(true)">Herbereken</button>
+            </span>
+          </div>
+        }
+
         <div class="inv-shell__bar">
           @if (desktop.active() && v.status === 'CONCEPT') {
             <label class="inv-shell__date" for="inv-shell-date">Afsluitdatum</label>
             <app-date-field class="inv-shell__datefield" fieldId="inv-shell-date" [value]="dateDraft()" (valueChange)="changeDate($event)" />
           }
-          <span class="inv-shell__computed">@if (computing()) { Wordt herberekend… } @else { Berekend op {{ v.computedAt | dateTimeNl }} }</span>
+          <span class="inv-shell__computed">@if (computing()) { Wordt herberekend… } @else { Berekend op {{ v.computedAt | brusselsDateTime }} }</span>
           @if (v.status === 'CONCEPT') {
             <span class="inv-shell__tools">
               @if (desktop.active()) {
@@ -99,10 +112,12 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
         </div>
 
         @if (desktop.active()) {
-          <div class="wk-strip inv-shell__strip" aria-label="Totalen">
+          <div class="wk-strip inv-shell__strip" role="group" aria-label="Totalen">
             @for (item of strip(); track item.key) {
-              <div class="wk-strip__item"><span class="wk-strip__label">{{ item.label }}</span>
-                <span class="wk-strip__value">{{ item.valueEur | eur }}</span></div>
+              <div class="wk-strip__item" [class.inv-shell__grand]="item.grand"><span class="wk-strip__label">{{ item.label }}</span>
+                <span class="wk-strip__value">{{ item.valueEur | eur }}</span>
+                @if (item.sub; as sub) { <span class="inv-shell__sub">{{ sub.label }} {{ sub.valueEur | eur }}</span> }
+              </div>
             }
           </div>
 
@@ -130,14 +145,17 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
                   <app-closing-step-separate [view]="v" [busy]="busy()" (decision)="saveDecision($event)" (removeDecision)="removeDecision($event)" />
                 }
                 @default {
-                  <app-closing-step-finalize [view]="v" [busy]="busy()" (decision)="saveDecision($event)" (removeDecision)="removeDecision($event)"
+                  <app-closing-step-finalize [view]="v" [busy]="busy()" [stale]="stale() !== null" [refused]="refused()" (recompute)="recompute(true)" (decision)="saveDecision($event)" (removeDecision)="removeDecision($event)"
                                              (finalize)="finalize($event.signerName)" (startVersion)="startVersion($event.reason)"
                                              (download)="download($event)" />
                 }
               }
             </div>
 
+            <!-- Step 5 lists both itself; a final closing has nothing left to do. -->
+            @if (stap() !== 'afsluiten') {
             <aside class="inv-shell__aside" aria-label="Nog te doen en aandachtspunten">
+              @if (v.status === 'CONCEPT') {
               <section class="inv-shell__todo">
                 <h2 class="inv-shell__todo-title" [class.inv-shell__todo-title--stop]="blockers().length > 0">Nog te doen ({{ blockers().length }})</h2>
                 @for (notice of blockers(); track $index) {
@@ -147,6 +165,7 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
                   <p class="inv-shell__quiet">Niets houdt de afsluiting nog tegen.</p>
                 }
               </section>
+              }
               <section class="inv-shell__todo">
                 <h2 class="inv-shell__todo-title">Aandachtspunten ({{ warnings().length }})</h2>
                 @for (notice of warnings(); track $index) {
@@ -157,18 +176,23 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
                 }
               </section>
             </aside>
-          </div>
-        } @else {
-          <div class="ios-figures inv-shell__figures" aria-label="Totalen">
-            @for (item of strip(); track item.key) {
-              <div><small>{{ item.label }}</small><strong>{{ item.valueEur | eur }}</strong></div>
             }
           </div>
-          <section class="card inv-shell__todo">
-            <h2 class="inv-shell__todo-title" [class.inv-shell__todo-title--stop]="blockers().length > 0">Nog te doen ({{ blockers().length }})</h2>
-            @for (notice of blockers(); track $index) { <p class="inv-shell__notice">{{ notice.message }}</p> }
-            @empty { <p class="inv-shell__quiet">Niets houdt de afsluiting nog tegen.</p> }
-          </section>
+        } @else {
+          <div class="ios-figures inv-shell__figures" role="group" aria-label="Totalen">
+            @for (item of strip(); track item.key) {
+              <div [class.inv-shell__grand]="item.grand"><small>{{ item.label }}</small><strong>{{ item.valueEur | eur }}</strong>
+                @if (item.sub; as sub) { <small>{{ sub.label }} {{ sub.valueEur | eur }}</small> }
+              </div>
+            }
+          </div>
+          @if (v.status === 'CONCEPT') {
+            <section class="card inv-shell__todo">
+              <h2 class="inv-shell__todo-title" [class.inv-shell__todo-title--stop]="blockers().length > 0">Nog te doen ({{ blockers().length }})</h2>
+              @for (notice of blockers(); track $index) { <p class="inv-shell__notice">{{ notice.message }}</p> }
+              @empty { <p class="inv-shell__quiet">Niets houdt de afsluiting nog tegen.</p> }
+            </section>
+          }
           <section class="card inv-shell__todo">
             <h2 class="inv-shell__todo-title">Aandachtspunten ({{ warnings().length }})</h2>
             @for (notice of warnings(); track $index) { <p class="inv-shell__notice">{{ notice.message }}</p> }
@@ -178,9 +202,12 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
         }
       } @else if (loadError(); as message) {
         <div class="alert alert--danger" role="alert">
-          <span>{{ message }}</span>
-          <button class="btn btn--sm" type="button" (click)="reload()">Opnieuw</button>
+          <span><strong>De afsluiting kon niet worden geladen.</strong> {{ message }}</span>
         </div>
+        <p class="inv-shell__retry">
+          @if (validId()) { <button class="btn btn--sm btn--primary" type="button" (click)="reload()">Opnieuw proberen</button> }
+          <a class="inv-shell__link" routerLink="/stock/inventaris">Terug naar Jaarinventaris</a>
+        </p>
       } @else {
         <div aria-busy="true"><app-skeleton kind="stats" /><app-skeleton kind="list" [rows]="6" /></div>
       }
@@ -214,7 +241,13 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
     .inv-shell__step .wk-dot { margin-top: 5px; }
     .inv-shell__aside { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; order: -1; }
     .inv-shell__todo { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
-    .inv-shell__aside .inv-shell__todo { max-height: 190px; overflow-y: auto; }
+    /* The cards grow with their list: a title that says six must show six. */
+    .inv-shell__grand { margin-left: auto; padding-left: 18px; border-left: 1px solid var(--line); }
+    .inv-shell__grand .wk-strip__label { color: var(--ink); font-weight: 700; }
+    .inv-shell__grand .wk-strip__value { font-size: 19px; font-weight: 750; }
+    .inv-shell__sub { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .inv-shell__figures .inv-shell__grand { grid-column: 1 / -1; margin-left: 0; padding-left: 0; border-left: 0; }
+    .inv-shell__retry { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 12px 2px 0; }
     .inv-shell__todo.card { border-color: rgb(255 255 255 / 70%); }
     .inv-shell__todo-title { margin: 0 0 6px; font-size: 13.5px; font-weight: 700; }
     .inv-shell__todo-title--stop { color: var(--danger); }
@@ -233,7 +266,6 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
       .inv-shell__grid { grid-template-columns: minmax(0, 1fr) 280px; }
       .inv-shell__aside { position: sticky; top: calc(var(--appbar-h) + 12px); grid-template-columns: minmax(0, 1fr); order: 0;
         max-height: calc(100vh - var(--appbar-h) - 24px); overflow-y: auto; }
-      .inv-shell__aside .inv-shell__todo { max-height: none; overflow: visible; }
     }
   `,
 })
@@ -258,8 +290,23 @@ export class StockClosingPage {
   /** What the date field shows: the saved closing date, or the one being saved. */
   readonly dateDraft = signal('');
 
+  /**
+   * Why the figures on screen are behind, while they are: the server said
+   * they moved (or took a write) and the recompute that should follow did
+   * not answer. Cleared by the next view that comes from the server.
+   */
+  readonly stale = signal<string | null>(null);
+  /** The server's refusal of "Definitief maken", kept beside the button until the next attempt or view change. */
+  readonly refused = signal<string | null>(null);
+  /** The route id is a closing id at all; otherwise there is nothing to retry. */
+  readonly validId = signal(true);
+  /** The step this closing opened on: the default until the user picks one, so no answer moves the step. */
+  private readonly firstStep = signal<NoticeSegment | null>(null);
+
   readonly correctionSpec = CORRECTION_SPEC;
   private closingId = 0;
+  /** The words of the last refused write, for the line that stays beside "Definitief maken". */
+  private lastRefusal: string | null = null;
 
   readonly title = computed(() => {
     const view = this.view();
@@ -268,7 +315,7 @@ export class StockClosingPage {
   readonly subtitle = computed(() => {
     const view = this.view();
     if (!view) return '';
-    return `Afsluitdatum ${new DateNlPipe().transform(view.closingDate)} · versie ${view.versionNo} · ${view.status === 'CONCEPT' ? 'Concept' : 'Definitief'}`;
+    return `Afsluitdatum ${dateText(view.closingDate)} · versie ${view.versionNo} · ${view.status === 'CONCEPT' ? 'Concept' : 'Definitief'}`;
   });
   readonly steps = computed(() => {
     const view = this.view();
@@ -277,7 +324,7 @@ export class StockClosingPage {
   readonly stap = computed<NoticeSegment>(() => {
     const asked = this.stapParam() as NoticeSegment | undefined;
     if (asked && STEP_KEYS.includes(asked)) return asked;
-    return this.steps().find((step) => step.state !== 'KLAAR')?.key ?? 'afsluiten';
+    return this.firstStep() ?? 'tellen';
   });
   readonly strip = computed(() => {
     const view = this.view();
@@ -312,9 +359,15 @@ export class StockClosingPage {
 
   /* ------------------------------------------------------------- loading */
 
+  /** A view from the server: the figures are current again. */
   private show(view: ClosingView): void {
+    /* Once per opened closing: the first step that is not done. A later answer never moves the step. */
+    if (this.firstStep() === null) {
+      this.firstStep.set(stepStates(view).find((step) => step.state !== 'KLAAR')?.key ?? 'afsluiten');
+    }
     this.view.set(view);
     this.dateDraft.set(view.closingDate);
+    this.stale.set(null);
   }
 
   private async open(id: number): Promise<void> {
@@ -322,6 +375,18 @@ export class StockClosingPage {
     this.view.set(null);
     this.loadError.set(null);
     this.correcting.set(false);
+    this.stale.set(null);
+    this.refused.set(null);
+    this.firstStep.set(null);
+    /* "abc" or "0" is no closing: say so instead of waiting for an answer that cannot come. */
+    const valid = Number.isInteger(id) && id > 0;
+    this.validId.set(valid);
+    if (!valid) {
+      this.busy.set(false);
+      this.computing.set(false);
+      this.loadError.set('De gevraagde gegevens bestaan niet meer of zijn verplaatst.');
+      return;
+    }
     this.busy.set(true);
     try {
       /* The stored rows first: they say whether this is a concept, and a final closing is done here. */
@@ -339,7 +404,7 @@ export class StockClosingPage {
       if (this.closingId !== id) return;
       /* Made final by someone else between the two calls: the stored rows are the truth. */
       if (refusalCode(failure) === 'DEFINITIEF') await this.read(id);
-      else this.loadError.set(messageOf(failure, 'De afsluiting kon niet worden geladen.'));
+      else this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
     } finally {
       if (this.closingId === id) {
         this.busy.set(false);
@@ -353,7 +418,7 @@ export class StockClosingPage {
       const stored = await this.api.closing(id);
       if (this.closingId === id) this.show(stored);
     } catch (failure) {
-      if (this.closingId === id && !this.view()) this.loadError.set(messageOf(failure, 'De afsluiting kon niet worden geladen.'));
+      if (this.closingId === id && !this.view()) this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
     }
   }
 
@@ -378,23 +443,35 @@ export class StockClosingPage {
       return true;
     } catch (failure) {
       if (this.closingId !== id) return false;
-      this.ui.toast(messageOf(failure, fallback), 'err');
+      const message = sentence(messageOf(failure, fallback));
+      this.lastRefusal = message;
+      this.ui.toast(message, 'err');
       const code = refusalCode(failure);
       if (code === 'DEFINITIEF') await this.read(id);
-      else if (code === 'CIJFERS_GEWIJZIGD' || code === 'GEBLOKKEERD') await this.recomputeQuietly(id);
+      else if (code === 'CIJFERS_GEWIJZIGD' || code === 'GEBLOKKEERD') await this.recomputeQuietly(id, message);
       return false;
     } finally {
       if (this.closingId === id) this.busy.set(false);
     }
   }
 
-  private async recomputeQuietly(id: number): Promise<void> {
+  /**
+   * The recompute that must follow when the server says the figures moved or
+   * took a write that computes nothing. When it fails the page is marked as
+   * behind with `why`, so nobody reads (or freezes) figures the server
+   * already called outdated.
+   */
+  private async recomputeQuietly(id: number, why: string): Promise<boolean> {
     this.computing.set(true);
     try {
       const view = await this.api.recompute(id);
       if (this.closingId === id) this.show(view);
+      return true;
     } catch (failure) {
-      if (this.closingId === id) this.ui.toast(messageOf(failure, 'Herberekenen is mislukt.'), 'err');
+      if (this.closingId === id) {
+        this.stale.set(`${why} Herberekenen is mislukt: ${sentence(messageOf(failure, 'probeer het opnieuw'))}`);
+      }
+      return false;
     } finally {
       if (this.closingId === id) this.computing.set(false);
     }
@@ -427,25 +504,55 @@ export class StockClosingPage {
 
   /** Writing a beginwaarde computes nothing on the server: the recompute brings it into the figures. */
   saveOpeningLayers(write: OpeningLayerWrite): void {
-    void this.run(async (id) => {
-      await this.api.saveOpeningLayers(write);
-      return this.api.recompute(id);
-    }, 'De beginwaarden konden niet worden bewaard.', 'Beginwaarden bewaard');
+    void this.writeThenRecompute(() => this.api.saveOpeningLayers(write),
+      'De beginwaarden konden niet worden bewaard.', 'Beginwaarden bewaard', 'De beginwaarden zijn bewaard.');
   }
 
   retireOpeningLayer(layerId: number): void {
-    void this.run(async (id) => {
-      await this.api.retireOpeningLayer(layerId);
-      return this.api.recompute(id);
-    }, 'De beginwaarde kon niet worden verwijderd.', 'Beginwaarde verwijderd');
+    void this.writeThenRecompute(() => this.api.retireOpeningLayer(layerId),
+      'De beginwaarde kon niet worden verwijderd.', 'Beginwaarde verwijderd', 'De beginwaarde is verwijderd.');
+  }
+
+  /**
+   * A write that is stored on its own, and the recompute after it, as two
+   * steps with two outcomes: a failed write says nothing was stored; a
+   * stored write whose recompute fails says it IS stored and that the
+   * figures are behind, with "Herbereken" to catch up.
+   */
+  private async writeThenRecompute(write: () => Promise<unknown>, failed: string, done: string, stored: string): Promise<void> {
+    const id = this.closingId;
+    if (this.busy() || !this.view()) return;
+    this.busy.set(true);
+    try {
+      try {
+        await write();
+      } catch (failure) {
+        if (this.closingId === id) this.ui.toast(messageOf(failure, failed), 'err');
+        return;
+      }
+      if (this.closingId !== id) return;
+      if (await this.recomputeQuietly(id, stored)) this.ui.toast(done);
+      else if (this.closingId === id) this.ui.toast(`${stored} Herberekenen is mislukt.`, 'err');
+    } finally {
+      if (this.closingId === id) this.busy.set(false);
+    }
   }
 
   /** The hash of the view on screen goes along: nobody freezes figures they have not seen. */
-  finalize(signerName: string): void {
+  async finalize(signerName: string): Promise<void> {
     const view = this.view();
-    if (!view) return;
-    void this.run((id) => this.api.finalize(id, view.dataSha256, signerName), 'Definitief maken is mislukt.',
+    if (!view || this.stale() !== null) return;
+    this.refused.set(null);
+    this.lastRefusal = null;
+    const computedBefore = view.computedAt;
+    const done = await this.run((id) => this.api.finalize(id, view.dataSha256, signerName), 'Definitief maken is mislukt.',
       `Jaarinventaris ${view.closingYear} versie ${view.versionNo} is definitief`);
+    const now = this.view();
+    if (done || !now || now.id !== view.id || now.status !== 'CONCEPT') return;
+    /* Refused: the server's reason stays beside the button, with what happened to the figures since. */
+    const why = `Niet definitief gemaakt. ${this.lastRefusal ?? ''}`.trim();
+    this.refused.set(this.stale() === null && now.computedAt !== computedBefore
+      ? `${why} De cijfers zijn intussen herberekend: kijk ze na voor je opnieuw definitief maakt.` : why);
   }
 
   startVersionFromSheet(result: DecisionSheetResult): void {
@@ -473,14 +580,18 @@ export class StockClosingPage {
   async download(kind: 'pdf' | 'xlsx'): Promise<void> {
     const view = this.view();
     if (!view || this.busy()) return;
+    const id = this.closingId;
     this.busy.set(true);
     try {
       const blob = kind === 'pdf' ? await this.api.closingPdf(view.id) : await this.api.closingXlsx(view.id);
       saveBlob(blob, fileName(view, kind));
     } catch (failure) {
-      this.ui.toast(messageOf(failure, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
+      /* The refusal of a file route arrives as a Blob: read the server's sentence out of it. */
+      const readable = await readableFailure(failure);
+      this.ui.toast(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
     } finally {
-      this.busy.set(false);
+      /* Another closing was opened meanwhile: its own call owns the flag now. */
+      if (this.closingId === id) this.busy.set(false);
     }
   }
 }

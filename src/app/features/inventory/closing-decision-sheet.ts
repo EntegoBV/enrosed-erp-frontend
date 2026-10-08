@@ -6,18 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import type { Notice } from '../../core/api/inventory-models';
 import { DateField } from '../../shared/date-field';
 import { Sheet } from '../../shared/ui';
-
-/** "12,5" and "12.5" as 12.5; null when empty, NaN when it is no number. */
-export function parseDecimal(text: string): number | null {
-  const raw = text.trim().replace(/\s/g, '').replace(',', '.');
-  if (!raw) return null;
-  return /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : NaN;
-}
-
-/** A number as a Belgian field shows it: 12.5 becomes "12,5". */
-export function decimalText(value: number | null | undefined): string {
-  return value === null || value === undefined ? '' : String(value).replace('.', ',');
-}
+import { decimalText, parseDecimal } from './inventory-number';
 
 /**
  * The element id of the row a notice is solved on, the same id the step
@@ -132,6 +121,7 @@ export interface DecisionSheetResult {
           <div class="field">
             <label for="inv-decision-quantity">{{ field.label }}</label>
             <input class="input num" id="inv-decision-quantity" type="text" inputmode="numeric" autocomplete="off" [value]="quantity()" (input)="quantity.set($any($event.target).value)" />
+            @if (quantityError(); as error) { <span class="hint inv-hint--stop" role="alert">{{ error }}</span> }
             @if (field.help) { <span class="hint">{{ field.help }}</span> }
           </div>
         }
@@ -185,6 +175,14 @@ export class ClosingDecisionSheet implements OnInit {
   readonly reason = signal('');
 
   private readonly amount = computed(() => parseDecimal(this.quantity()));
+  /** Why the typed quantity cannot be saved, said under the field; null while it is empty or fine. */
+  readonly quantityError = computed(() => {
+    const field = this.spec().quantity;
+    const amount = this.amount();
+    if (!field || amount === null) return null;
+    if (!Number.isInteger(amount)) return 'Vul een geheel aantal in, zonder decimalen.';
+    return amount < field.min ? `Het aantal moet ${field.min} of meer zijn.` : null;
+  });
 
   readonly canSave = computed(() => {
     const spec = this.spec();

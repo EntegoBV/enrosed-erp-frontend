@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {
   ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingLocation, ClosingStream, ClosingSummary,
-  ClosingTotals, ClosingView, Decision, DecisionKind, Notice, NoticeSegment, SeparateItem, WriteDownRow,
+  ClosingTotals, ClosingView, Decision, DecisionKind, Notice, NoticeSegment, OpeningLayer, SeparateItem, WriteDownRow,
 } from '../src/app/core/api/inventory-models.ts';
+import {
+  bookedLater, byName, dateText, dateTimeText, openingQuantity, openingReplaced, presentText, rollEffect, rollIntro,
+  rollTickHead, rollTickLabel, sentence, todoText,
+} from '../src/app/features/inventory/inventory-closing.ts';
 import {
   borderFixed, decisionWriteAccrual, decisionWriteCreditTreatment, decisionWriteInvoiced, decisionWriteMovement,
   decisionWriteOwnershipDate, decisionWritePartnerContainer, decisionWritePartnerQuantity, decisionWriteSupplierBilled,
@@ -136,7 +140,30 @@ test('the value line counts open points when every product has a value, and is b
     '3 Waarde · 2 punten open');
   assert.equal(lineOf(view({ notices: [warning('waarde', 'GESCHAT')] })), '3 Waarde');
   assert.equal(stepStates(view())[0].line, '1 Tellen · 0 van 0 locaties geboekt');
-  assert.equal(stepStates(view())[3].line, '4 Afzonderlijk · 0 beslissingen open');
+  /* Nothing open: the chip carries no counter instead of "0 beslissingen open". */
+  assert.equal(stepStates(view())[3].line, '4 Afzonderlijk');
+});
+
+test('a counter of one is singular on every step', () => {
+  const closing = view({
+    locations: [location('TELLING', { movementCount: 1, reviewCount: 0 })],
+    articles: [article({ status: 'ZONDER_WAARDE', unvaluedQuantity: 3 })],
+    notices: [blocker('waarde', 'ZONDER_WAARDE'), blocker('apart', 'BESLISSING_PARTNER')],
+  });
+  assert.deepEqual(stepStates(closing).map((step) => step.line), [
+    '1 Tellen · 1 van 1 locatie geboekt',
+    '2 Bewegingen rond de afsluitdatum · 1 beweging, 0 na te kijken',
+    '3 Waarde · 1 product zonder waarde',
+    '4 Afzonderlijk · 1 beslissing open',
+    '5 Afsluiten',
+  ]);
+  assert.equal(stepStates(view({ notices: [blocker('waarde', 'GEEN_PRIJS')] }))[2].line, '3 Waarde · 1 punt open');
+});
+
+test('the hub says what is left, and never "Nog 0 te doen"', () => {
+  assert.equal(todoText(6), 'Nog 6 te doen');
+  assert.equal(todoText(1), 'Nog 1 te doen');
+  assert.equal(todoText(0), 'Klaar om definitief te maken');
 });
 
 test('the notices of a step come with the blockers first', () => {
@@ -150,15 +177,19 @@ test('the notices of a step come with the blockers first', () => {
 
 /* ---- strip ---- */
 
-test('the strip shows the six figures, partner and transit added to the cent', () => {
+test('the strip builds up to the total, which comes last with the estimated part under it', () => {
   assert.deepEqual(stripItems(TOTALS).map((item) => [item.label, item.valueEur]), [
     ['Aanschafwaarde eigen voorraad', 3181.76],
     ['Waardeverminderingen', 24.54],
     ['Eigen voorraad na waardevermindering', 3157.22],
     ['Partner en onderweg, opgenomen', 1660.3],
     ['Totaal voorraadwaarde', 4817.52],
-    ['Waarvan geschat', 188.33],
   ]);
+  const items = stripItems(TOTALS);
+  /* "Waarvan geschat" is a part of the total and of no other figure: it hangs under the total, the one figure set apart. */
+  assert.deepEqual(items.filter((item) => item.grand).map((item) => item.key), ['total']);
+  assert.deepEqual(items[4].sub, { label: 'waarvan geschat', valueEur: 188.33 });
+  assert.equal(items.filter((item) => item.sub).length, 1);
   /* 0,10 + 0,20 is not 0,30 in floating point; the strip adds cents. */
   assert.equal(stripItems({ ...TOTALS, partnerIncludedEur: 0.1, transitIncludedEur: 0.2 })[3].valueEur, 0.3);
 });
@@ -181,15 +212,84 @@ test('a count before the closing date is rolled forward to it', () => {
   assert.equal(rollLine(sold, '2026-12-31'), 'Geteld 60, bewegingen tot 31/12/2026 bijgeteld: -12 → 48');
 });
 
-test('the fold of later rows asks the question of its side of the closing date', () => {
+test('a tick of step 2 means one thing in both tables: the movement is counted back (or on) to the closing date', () => {
+  /* Counted after the closing date: the same word, head and effect in the main table and in "Later geboekt". */
+  assert.equal(rollTickLabel(true), 'Terugtellen');
+  assert.equal(rollTickHead(true, '2026-12-31'), 'Terugtellen naar 31/12/2026');
+  assert.equal(rollTickLabel(false), 'Bijtellen');
+  assert.equal(rollTickHead(false, '2026-12-31'), 'Bijtellen t/m 31/12/2026');
+  assert.equal(rollIntro(true, '2026-12-31', '2027-01-02T09:15:00Z'),
+    'De telling was op 02/01/2027, na de afsluitdatum. Een vinkje betekent: deze beweging gebeurde na 31/12/2026 en wordt '
+    + 'teruggeteld, zodat het aantal van 31/12/2026 overblijft. Was ze op 31/12/2026 al gebeurd en alleen later geboekt? Haal het vinkje dan weg.');
+  assert.equal(rollIntro(false, '2026-12-31', '2026-12-28'),
+    'De telling was op 28/12/2026, vóór de afsluitdatum. Een vinkje betekent: deze beweging gebeurde nog tot en met 31/12/2026 '
+    + 'en wordt bij het getelde aantal geteld. Gebeurde ze pas na 31/12/2026? Haal het vinkje dan weg.');
   assert.equal(laterRowsIntro(true, '2026-12-31', '2027-01-02T09:15:00Z'),
-    'Na de telling geboekt. Vink alleen aan wat tussen 31/12/2026 en de telling van 02/01/2027 al gebeurd was. '
-    + 'Een gewone beweging van na die datum laat je uitgevinkt.');
+    'Geboekt na de telling van 02/01/2027. Zet alleen een vinkje bij wat in werkelijkheid tussen 31/12/2026 en de telling '
+    + 'gebeurde en pas later geboekt is: het wordt dan teruggeteld. Een gewone beweging van na de telling laat je zonder vinkje.');
   assert.equal(laterRowsIntro(false, '2026-12-31', '2026-12-28'),
-    'Na de afsluitdatum geboekt. Vink alleen aan wat vóór 31/12/2026 al gebeurd was. '
-    + 'Een gewone beweging van na die datum laat je uitgevinkt.');
+    'Geboekt na 31/12/2026. Zet alleen een vinkje bij wat in werkelijkheid tot en met 31/12/2026 gebeurde en pas later geboekt is: '
+    + 'het wordt dan bijgeteld. Een gewone beweging van na 31/12/2026 laat je zonder vinkje.');
   /* The count day is the Brussels day: 23:30 UTC on 1 January is already 2 January there. */
   assert.match(laterRowsIntro(true, '2026-12-31', '2027-01-01T23:30:00Z'), /de telling van 02\/01\/2027/);
+});
+
+test('a ticked row shows what it does to the closing quantity (worked example 3.8: the sale of -40 gives +40 terug)', () => {
+  assert.equal(rollEffect(-40, true, true), '+40 terug');
+  assert.equal(rollEffect(12, true, true), '-12 terug');
+  assert.equal(rollEffect(-12, true, false), '-12 erbij');
+  assert.equal(rollEffect(1250, true, false), '+1.250 erbij');
+  /* No tick, or no stock change: nothing happens to the figure. */
+  assert.equal(rollEffect(-40, false, true), '');
+  assert.equal(rollEffect(0, true, true), '');
+  /* The effects of the ticked rows add up to the rollDelta the result line prints. */
+  const magazijn = articleLocation({ countAfterClosingDate: true, anchorQuantity: 1210, rollDelta: 40, closingQuantity: 1250 });
+  assert.match(rollLine(magazijn, '2026-12-31'), /teruggeteld: \+40 → 1\.250/);
+});
+
+test('a row is "later geboekt" after the later of the count and the cut-off', () => {
+  const cutoff = Date.parse('2026-12-31T23:00:00Z');
+  /* Counted on 02/01, after the cut-off: later = booked after the count. */
+  assert.equal(bookedLater('2027-01-02T08:00:00Z', '2027-01-02T09:15:00Z', cutoff), false);
+  assert.equal(bookedLater('2027-01-02T09:15:00Z', '2027-01-02T09:15:00Z', cutoff), false);
+  assert.equal(bookedLater('2027-01-02T09:15:01Z', '2027-01-02T09:15:00Z', cutoff), true);
+  /* Counted on 28/12, before the cut-off: later = booked from the cut-off on. */
+  assert.equal(bookedLater('2026-12-30T10:00:00Z', '2026-12-28T10:00:00Z', cutoff), false);
+  assert.equal(bookedLater('2026-12-31T23:00:00Z', '2026-12-28T10:00:00Z', cutoff), true);
+  /* Counted exactly on the cut-off counts as after it. */
+  assert.equal(bookedLater('2026-12-31T23:00:00Z', '2026-12-31T23:00:00Z', cutoff), false);
+  /* Without an anchor (or with an unreadable instant) every row is between. */
+  assert.equal(bookedLater('2027-03-01T10:00:00Z', null, cutoff), false);
+  assert.equal(bookedLater('geen datum', '2027-01-02T09:15:00Z', cutoff), false);
+  assert.equal(bookedLater('2027-03-01T10:00:00Z', '2027-01-02T09:15:00Z', NaN), false);
+});
+
+test('every instant of the Jaarinventaris reads in Brussels time, whatever the device zone', () => {
+  /* 23:30 UTC on New Year's Eve is 00:30 on 1 January in Brussels: the day the server and the PDF print. */
+  assert.equal(dateText('2026-12-31T23:30:00Z'), '01/01/2027');
+  assert.equal(dateTimeText('2026-12-31T23:30:00Z'), '01/01/2027 00:30');
+  /* Summer time: 22:10 UTC is 00:10 the next day. */
+  assert.equal(dateText('2026-07-14T22:10:00Z'), '15/07/2026');
+  assert.equal(dateTimeText('2026-10-08T04:57:00Z'), '08/10/2026 06:57');
+  /* A plain date is no instant and never shifts. */
+  assert.equal(dateText('2026-12-31'), '31/12/2026');
+  assert.equal(dateText(null), '—');
+  assert.equal(dateTimeText(undefined), '—');
+  assert.equal(dateText('geen datum'), 'geen datum');
+});
+
+test('names sort with their numbers in order, as on the shelf', () => {
+  const names = ['Rose Bear 100 cm', 'Rose Bear 25 cm', 'Mini Rose Display 40', 'Mini Rose Display 4', 'Mini Rose Display 34'];
+  assert.deepEqual([...names].sort(byName),
+    ['Mini Rose Display 4', 'Mini Rose Display 34', 'Mini Rose Display 40', 'Rose Bear 25 cm', 'Rose Bear 100 cm']);
+});
+
+test('a refusal reads as a sentence', () => {
+  assert.equal(sentence('De gegevens zijn intussen gewijzigd. Herbereken en kijk de cijfers opnieuw na'),
+    'De gegevens zijn intussen gewijzigd. Herbereken en kijk de cijfers opnieuw na.');
+  assert.equal(sentence('Al definitief.'), 'Al definitief.');
+  assert.equal(sentence('  Kan dat?  '), 'Kan dat?');
+  assert.equal(sentence(''), '');
 });
 
 /* ---- waardevermindering: worked example 3.8 ---- */
@@ -427,4 +527,69 @@ test('without a concept it is last year until June and this year from July', () 
   assert.equal(defaultInventoryYear('2027-06-30', [summary(2026, 'DEFINITIEF')]), 2026);
   assert.equal(defaultInventoryYear('2027-07-01', [summary(2026, 'DEFINITIEF')]), 2027);
   assert.equal(defaultInventoryYear('2026-12-31', []), 2026);
+});
+
+/* ---- waardevermindering: editing a decision that is not the last one ---- */
+
+test('editing an earlier waardevermindering replays the later ones on the pieces it leaves (the figure the row shows after saving)', () => {
+  /*
+   * One layer of 1.045 x 2,0000 = 2.090,00. Saved: id 10 (255 at 0,6812), id 13 (604 at 0,3826), id 16 (the rest at 0,5988).
+   * Stored rows: 255 x 1,3188 = 336,29; 604 x 1,6174 = 976,91; 186 x 1,4012 = 260,62.
+   */
+  const one = [layer(1, 1045, 2, 2090)];
+  const rows = [writeDown(10, 1, 255, 336.29), writeDown(13, 1, 604, 976.91), writeDown(16, 1, 186, 260.62)];
+  const saved = [
+    { decisionId: 10, quantity: 255, marketUnitEur: 0.6812 },
+    { decisionId: 13, quantity: 604, marketUnitEur: 0.3826 },
+    { decisionId: 16, quantity: null, marketUnitEur: 0.5988 },
+  ];
+  /* Unchanged, the preview of id 13 gives back what is stored: 2.090,00 - 336,29 - 976,91 - 260,62 = 516,18. */
+  assert.deepEqual(writeDownPreview(one, rows, 604, 0.3826, 13, saved), { amountEur: 976.91, valueEur: 516.18 });
+  /*
+   * Id 13 edited to 104 pieces at 2,0106 (above cost): it lowers nothing but still takes its 104 pieces, and id 16
+   * now gets 1.045 - 255 - 104 = 686 pieces: 686 x 1,4012 = 961,22. Value 2.090,00 - 336,29 - 0 - 961,22 = 792,49,
+   * not the 1.753,71 that leaving the later decision out gave.
+   */
+  assert.deepEqual(writeDownPreview(one, rows, 104, 2.0106, 13, saved), { amountEur: 0, valueEur: 792.49 });
+  /* Editing the first decision replays both later ones: 100 x 1,5 = 150,00; 604 x 1,6174 = 976,91; 341 x 1,4012 = 477,81. */
+  assert.deepEqual(writeDownPreview(one, rows, 100, 0.5, 10, saved), { amountEur: 150, valueEur: 485.28 });
+  /* Editing the last one replays nothing, and a new decision comes after all stored rows: no piece is left. */
+  assert.deepEqual(writeDownPreview(one, rows, null, 1, 16, saved), { amountEur: 186, valueEur: 590.8 });
+  assert.deepEqual(writeDownPreview(one, rows, null, 0, null, saved), { amountEur: 0, valueEur: 516.18 });
+});
+
+test('a later decision for "all that are left" gets nothing when the edited one takes every piece', () => {
+  const two = [layer(1, 100, 3, 300), layer(2, 50, 2, 100)];
+  const rows = [writeDown(4, 1, 20, 20), writeDown(7, 1, 80, 160), writeDown(7, 2, 50, 50)];
+  const saved = [{ decisionId: 4, quantity: 20, marketUnitEur: 2 }, { decisionId: 7, quantity: null, marketUnitEur: 1 }];
+  /* Id 4 edited to all pieces at 2,50: 100 x 0,50 = 50,00 on the dear layer, nothing on the layer of 2,00; id 7 finds no piece. */
+  assert.deepEqual(writeDownPreview(two, rows, null, 2.5, 4, saved), { amountEur: 50, valueEur: 350 });
+  /* Id 4 edited to 30 pieces at 2,00: 30,00; id 7 then lowers 70 x 2,00 + 50 x 1,00 = 190,00. */
+  assert.deepEqual(writeDownPreview(two, rows, 30, 2, 4, saved), { amountEur: 30, valueEur: 180 });
+});
+
+/* ---- beginwaarden: one value per product and date ---- */
+
+const opening = (input: Partial<OpeningLayer>) =>
+  ({ id: 1, productId: 1, quantity: 100, unitValueEur: 2.5, asOfDate: '2025-12-31', source: 'inventaris 2025', ...input }) as OpeningLayer;
+
+test('a new beginwaarde on the date of a saved one replaces it, and proposes its pieces too', () => {
+  const layers = [opening({ id: 3, productId: 1, quantity: 100 }), opening({ id: 4, productId: 2, quantity: 40, asOfDate: '2026-03-01' })];
+  /* Product 1 has 100 pieces valued on 31/12/2025; a count correction adds 5 without a value. */
+  const old = openingReplaced(layers, 1, '2025-12-31');
+  assert.equal(old?.id, 3);
+  /* Saving 5 on that date would retire the 100: the proposal is 105, so the 100 keep their value. */
+  assert.equal(openingQuantity(5, old), 105);
+  /* Another date, or another product, replaces nothing: the proposal is the remainder alone. */
+  assert.equal(openingReplaced(layers, 1, '2026-01-01'), null);
+  assert.equal(openingReplaced(layers, 2, '2025-12-31'), null);
+  assert.equal(openingQuantity(5, null), 5);
+});
+
+test('the pieces of a product that are present but not own stock are named', () => {
+  const partner = { closingQuantity: 360, ownQuantity: 0, partnerQuantity: 360, thirdPartyQuantity: 0, invoicedOutQuantity: 0, unvaluedQuantity: 0 };
+  assert.equal(presentText(partner), '360 aanwezig · 360 van partner');
+  assert.equal(presentText({ closingQuantity: 1250, ownQuantity: 1140, partnerQuantity: 60, thirdPartyQuantity: 10, invoicedOutQuantity: 30, unvaluedQuantity: 10 }),
+    '1.250 aanwezig · 60 van partner · 10 van derden · 30 gefactureerd · 10 zonder waarde');
+  assert.equal(presentText({ ...partner, closingQuantity: 90, ownQuantity: 90, partnerQuantity: 0 }), '');
 });
