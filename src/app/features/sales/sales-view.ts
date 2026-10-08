@@ -8,7 +8,7 @@ import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
-import { cancelledByCustomer, customerCanStillChange, customerMessageIsReadOnly, isWebOrder, isWebOrderConflict, originalCustomerMessage, webOrderDeletable, webOrderInvoiceable, webOrderRevision } from './quote-status';
+import { cancelledByCustomer, customerCanStillChange, customerMessageIsReadOnly, documentDeletable, isWebOrder, isWebOrderConflict, originalCustomerMessage, webOrderInvoiceable, webOrderRevision } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
@@ -23,7 +23,7 @@ import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoi
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
-import { canCreateInvoiceFromQuote, webOrderNeedsApproval, webOrderNotice } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
@@ -93,7 +93,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <span class="switch-row__copy">
                 <b>Klant verwittigen per e-mail</b>
                 <small>
-                  @if (isWebOrder()) { Naar de besteller, in de taal van de bestelling: de bestelling is geannuleerd. }
+                  @if (isWebOrder() && !customerEmail()) { De klantgegevens hebben geen e-mailadres: er vertrekt geen mail. De klant ziet de annulering onder Mijn bestellingen. }
+                  @else if (isWebOrder()) { Naar de besteller, in de taal van de bestelling: de bestelling is geannuleerd. }
                   @else if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
                   @else if (isRequest()) { Naar {{ customerEmail() }}, in de taal van de klant: de aanvraag is geannuleerd, er volgt geen offerte, met een knop om een nieuwe aanvraag te starten. }
                   @else { Naar {{ customerEmail() }}, in de taal van de klant, met de link naar de offertepagina waar ze als geannuleerd staat. }
@@ -196,7 +197,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <button class="shero-back" type="button" aria-label="Terug" (click)="goBack()">‹</button>
               <span class="shero-spacer"></span>
               @if (canCancel()) {
-                <button class="shero-pdf" type="button" [disabled]="cancelling()" (click)="openCancel()">Annuleren</button>
+                <button class="shero-pdf" type="button" [disabled]="cancelling()" [attr.aria-label]="isWebOrder() ? cancelLabel() : null" (click)="openCancel()">Annuleren</button>
               } @else if (canCancelCredit()) {
                 <button class="shero-pdf" type="button" [disabled]="invoiceBusy()" (click)="cancelCredit()">Annuleren</button>
               }
@@ -355,17 +356,25 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
           }
         </section>
 
+        <!-- The state of a website order is the first thing to read: straight under the hero. On a phone it also
+             carries the primary action, which otherwise sits three screens down in 'Volgende stap'. -->
+        @if (webOrderNotice(); as notice) {
+          <div class="web-order-banner">
+            <p role="status"><span aria-hidden="true">↗</span> <b>Websitebestelling</b> · {{ notice.lead }}</p>
+            @for (line of notice.lines; track line.text) { <p [class.web-order-banner__gold]="line.gold">{{ line.text }}</p> }
+            @if (webOrderOpen() && !desktop.active()) {
+              <button class="btn btn--primary btn--block web-order-banner__take" type="button" [disabled]="invoiceBusy()" (click)="openTake()">In verwerking nemen</button>
+            }
+          </div>
+        }
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-advance-billing [view]="data" variant="ios" [blocked]="invoiceBusy() || sendingQuote() || invoiceBlockedByOrder(data)" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="fulfillmentChanged($event)" /> }
-        @if (webOrderNotice(); as notice) {
-          <div class="web-order-banner" role="status">
-            <p><span aria-hidden="true">↗</span> <b>Websitebestelling</b> · {{ notice.lead }}</p>
-            @for (line of notice.lines; track line.text) { <p [class.web-order-banner__gold]="line.gold">{{ line.text }}</p> }
-          </div>
+        <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" [order]="!!(data.webOrder || data.delivery)" />
+        <!-- Mounted only when there is something to show: an empty host with its margin would move every plain document. -->
+        @if (data.webOrder || data.delivery) {
+          <app-sales-web-order-note class="web-order-note" [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="show($event)" />
         }
-        <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
-        <app-sales-web-order-note class="web-order-note" [view]="data" (changed)="show($event)" />
 
         @if (advanceAgreement(); as agreement) {
           <app-sales-advance-agreement [agreement]="agreement" />
@@ -767,11 +776,18 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
-                  <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
+                  @if (invoiceFirst(data)) {
+                    <!-- An unchanged website order is invoiced without a second signature: the invoice comes first. -->
+                    <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()"
+                            (click)="makeInvoice(data)">
+                      {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
+                    </button>
+                  }
+                  <button class="btn btn--block" [class.btn--primary]="!invoiceFirst(data)" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                           (click)="sendSheetOpen.set(true)">
                     {{ sendForApproval() ? 'Versturen ter goedkeuring…' : data.order.sentAt ? 'Nieuwe versie versturen…' : 'Offerte versturen…' }}
                   </button>
-                  @if (canCreateInvoice(data)) {
+                  @if (canCreateInvoice(data) && !invoiceFirst(data)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()"
                             (click)="makeInvoice(data)">
                       {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
@@ -867,8 +883,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <button class="btn btn--danger btn--block manage-actions__delete" type="button"
                           [disabled]="deleting()" (click)="remove(data)">
                     {{ deleting()
-                        ? (isCreditNote() ? 'Creditnota verwijderen…' : isInvoice() ? 'Factuur verwijderen…' : 'Offerte verwijderen…')
-                        : (isCreditNote() ? 'Creditnota verwijderen' : isInvoice() ? 'Factuur verwijderen' : 'Offerte verwijderen') }}
+                        ? (isCreditNote() ? 'Creditnota verwijderen…' : isInvoice() ? 'Factuur verwijderen…' : isWebOrder() ? 'Bestelling verwijderen…' : 'Offerte verwijderen…')
+                        : (isCreditNote() ? 'Creditnota verwijderen' : isInvoice() ? 'Factuur verwijderen' : isWebOrder() ? 'Bestelling verwijderen' : 'Offerte verwijderen') }}
                   </button>
                 }
               </div>
@@ -945,15 +961,15 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         }
 
         @if (sendSheetOpen()) {
-      <app-sheet [title]="isCreditNote() ? 'Creditnota versturen' : isInvoice() ? 'Factuur versturen' : 'Offerte versturen'"
+      <app-sheet [title]="sendCopy()?.title ?? (isCreditNote() ? 'Creditnota versturen' : isInvoice() ? 'Factuur versturen' : 'Offerte versturen')"
                  (closed)="sendSheetOpen.set(false)">
         <div body>
           <p class="small muted" style="margin-bottom:14px">
-            {{ isCreditNote()
+            {{ sendCopy()?.body ?? (isCreditNote()
                 ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.'
                 : isInvoice()
                 ? 'De klant krijgt de factuur-PDF in bijlage, met de betaalgegevens in de mail.'
-                : 'De klant krijgt de PDF in bijlage en een link om online te tekenen of een wijziging voor te stellen.' }}
+                : 'De klant krijgt de PDF in bijlage en een link om online te tekenen of een wijziging voor te stellen.') }}
           </p>
           <div class="field">
             <label for="view-send-message">Persoonlijk bericht</label>
@@ -965,7 +981,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="sendSheetOpen.set(false)">Annuleren</button>
           <button class="btn btn--primary" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
-                  (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : 'Versturen' }}</button>
+                  (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}</button>
         </div>
       </app-sheet>
     }
@@ -1060,6 +1076,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       background:color-mix(in srgb,var(--gold-soft) 30%,var(--surface)) }
     .web-order-banner p { margin:0;color:var(--ink-2);font-size:13px;line-height:1.45;overflow-wrap:anywhere }
     .web-order-banner p.web-order-banner__gold { padding:7px 9px;border-left:3px solid var(--gold);border-radius:8px;background:var(--gold-soft);color:var(--ink) }
+    .web-order-banner__take { margin-top:6px;min-height:46px }
     .web-order-note { margin:0 0 16px }
     .status-pill { display:inline-flex;flex:0 0 auto;align-items:center;gap:6px;max-width:44%;padding:6px 9px;border:1px solid rgb(255 255 255/.18);border-radius:999px;background:rgb(255 255 255/.08);font-size:10.5px;font-weight:750;text-align:center }
     .sales-hero__badges .status-pill { max-width:none }
@@ -1545,10 +1562,18 @@ export class SalesView {
   /** The customer may still change or cancel: nothing is sent or invoiced from here until the order is taken. */
   readonly webOrderOpen = computed(() => customerCanStillChange(this.view()));
   readonly webOrderNotice = computed(() => webOrderNotice(this.view(), (value) => new DateTimeNlPipe().transform(value)));
-  readonly sendForApproval = computed(() => webOrderNeedsApproval(this.view()));
+  /** Every send of a website order that is still a concept asks the customer to approve this version. */
+  readonly sendForApproval = computed(() => webOrderSendsForApproval(this.view()));
+  readonly sendCopy = computed(() => webOrderSendCopy(this.view()));
+  /** Unchanged website order: the invoice is the primary action, sending the secondary one. */
+  invoiceFirst(data: SalesOrderView): boolean { return webOrderInvoiceFirst(data); }
   readonly takeSheet = signal(false);
-  /** The mail about a website order goes to the login that ordered, whatever the customer record holds. */
-  readonly cancelMailPossible = computed(() => this.isWebOrder() || !!this.customerEmail());
+  /**
+   * The server mails a cancellation only when the customer record holds an
+   * address, for a website order too. Without one nothing leaves, so the
+   * switch and the toast must not promise a mail.
+   */
+  readonly cancelMailPossible = computed(() => !!this.customerEmail());
   /** A website order whose figures are not the ordered or approved ones: no invoice and no advance invoice. */
   invoiceBlockedByOrder(data: SalesOrderView): boolean {
     return customerCanStillChange(data) || (isWebOrder(data) && !webOrderInvoiceable(data));
@@ -1591,7 +1616,7 @@ export class SalesView {
       void this.work.refresh(true);
       this.ui.toast('In verwerking genomen · de klant krijgt een e-mail');
     } catch (failure: unknown) {
-      this.actionFailed(failure, 'In verwerking nemen mislukt');
+      this.actionFailed(failure, 'In verwerking nemen mislukt', data.order.id);
     } finally { this.invoiceBusy.set(false); }
   }
 
@@ -1599,10 +1624,16 @@ export class SalesView {
    * Toasts a failed action. When the customer changed or cancelled the
    * website order meanwhile, the server wrote nothing and this copy is stale:
    * the latest version loads by itself (a read view has nothing local to lose).
+   *
+   * `orderId` is the document the action ran on. This screen is reused when
+   * only the id in the address changes, so an answer can arrive after the
+   * user moved on: it is then only toasted and the document now on screen is
+   * left alone.
    */
-  private actionFailed(failure: unknown, fallback: string): void {
-    this.ui.toast(messageOf(failure, fallback), 'err');
-    if (isWebOrderConflict(failure)) this.reloadAfterConflict();
+  private actionFailed(failure: unknown, fallback: string, orderId: number): void {
+    if (this.view()?.order.id !== orderId || !isWebOrderConflict(failure)) { this.ui.toast(messageOf(failure, fallback), 'err'); return; }
+    this.ui.toast(WEB_ORDER_RELOADED, 'err');
+    this.reloadAfterConflict();
   }
 
   reloadAfterConflict(): void {
@@ -1629,15 +1660,16 @@ export class SalesView {
       this.cancelSheet.set(false);
       this.ui.toast(notify ? `${what} geannuleerd; de klant is verwittigd` : `${what} geannuleerd`);
     } catch (failure: unknown) {
-      this.actionFailed(failure, 'Annuleren mislukt');
+      this.actionFailed(failure, 'Annuleren mislukt', data.order.id);
     } finally {
       this.cancelling.set(false);
     }
   }
   readonly canDelete = computed(() => {
     const data = this.view();
+    /* A website order is deleted once it is cancelled or declined; any other document only as a never-used concept. */
     return !!data && this.revisions().length === 0 && !(data.creditNotes?.length)
-      && isLocallyDeletableSalesDocument(data.order) && webOrderDeletable(data);
+      && documentDeletable(data, () => isLocallyDeletableSalesDocument(data.order));
   });
   readonly invoiceBusy = signal(false);
   readonly sendSheetOpen = signal(false);
@@ -1653,9 +1685,9 @@ export class SalesView {
       this.show(await this.sales.sendQuote(data.order.id!, this.sendMessage().trim(), webOrderRevision(data)));
       this.sendSheetOpen.set(false);
       this.sendMessage.set('');
-      this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota verstuurd' : this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd');
+      this.ui.toast(webOrderSendCopy(data)?.toast ?? (data.order.docType === 'CREDITNOTA' ? 'Creditnota verstuurd' : this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd'));
     } catch (failure: unknown) {
-      this.actionFailed(failure, 'Versturen mislukt');
+      this.actionFailed(failure, 'Versturen mislukt', data.order.id);
     } finally {
       this.sendingQuote.set(false);
     }
@@ -1679,7 +1711,7 @@ export class SalesView {
       if (this.view()?.order.id !== orderId) return;
       this.show(fresh); void this.work.refresh(true);
       this.ui.toast(`${fresh.order.docType === 'CREDITNOTA' ? 'Creditnota' : fresh.order.docType === 'FACTUUR' ? 'Factuur' : 'Offerte'} staat weer op concept`);
-    } catch (failure) { this.actionFailed(failure, 'Heropenen mislukt'); }
+    } catch (failure) { this.actionFailed(failure, 'Heropenen mislukt', orderId); }
     finally { this.invoiceBusy.set(false); }
   }
 
@@ -1734,7 +1766,7 @@ export class SalesView {
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.routerNav.navigate(['/sales', invoice.order.id]);
     } catch (failure: unknown) {
-      this.actionFailed(failure, 'Factuur maken mislukt');
+      this.actionFailed(failure, 'Factuur maken mislukt', data.order.id);
     } finally {
       this.invoiceBusy.set(false);
     }
@@ -1813,7 +1845,7 @@ export class SalesView {
 
   remove(data: SalesOrderView): void {
     if (!this.canDelete() || this.deleting() || this.ui.confirmRequest() !== null) return;
-    const label = salesDocumentKind(data.order, data.settlement?.finalSettlement);
+    const label = data.webOrder ? 'Bestelling' : salesDocumentKind(data.order, data.settlement?.finalSettlement);
     const customer = this.customerName();
     this.ui.confirm(
       {
@@ -1841,7 +1873,7 @@ export class SalesView {
       this.ui.toast(`${label} verwijderd`);
       await this.routerNav.navigate(['/sales']);
     } catch (failure: unknown) {
-      this.actionFailed(failure, `${label} verwijderen mislukt`);
+      this.actionFailed(failure, `${label} verwijderen mislukt`, data.order.id);
       this.deleting.set(false);
     }
   }

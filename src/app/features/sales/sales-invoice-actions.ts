@@ -24,8 +24,9 @@ export interface WebOrderNotice { lead: string; lines: WebOrderNoticeLine[] }
 /**
  * What desk, editor and read view say above a website order: while the
  * customer can still change it, and after staff took it with the line that
- * compares the saved document with what the customer ordered. Null for any
- * other document and for an order the customer cancelled (the note says so).
+ * compares the saved document with what the customer ordered. An order the
+ * customer cancelled says so here too: it is the first thing staff must read.
+ * Null for any other document.
  */
 export function webOrderNotice(
   view: SalesOrderView | null | undefined,
@@ -33,7 +34,8 @@ export function webOrderNotice(
   unsaved = false,
 ): WebOrderNotice | null {
   const webOrder = view?.webOrder;
-  if (!view || !webOrder || webOrder.customerCancelledAt) return null;
+  if (!view || !webOrder) return null;
+  if (webOrder.customerCancelledAt) return { lead: `door de klant geannuleerd op ${dateTime(webOrder.customerCancelledAt)}`, lines: [] };
   if (webOrder.customerEditable) {
     const summary = webOrder.customerChangeSummary?.trim();
     return {
@@ -87,3 +89,43 @@ export function webOrderNeedsApproval(view: SalesOrderView | null | undefined): 
   if (!view || !webOrder?.processingStartedAt || view.order.status !== 'CONCEPT' || view.order.archivedAt) return false;
   return webOrder.termsState === 'ORDER_DIFFERENT' || webOrder.termsState === 'ORDER_UNKNOWN' || webOrder.termsState === 'RESEND_REQUIRED';
 }
+
+/**
+ * A taken website order that is still a concept leaves as `Versturen ter
+ * goedkeuring`, whatever its figures: the mail the customer gets asks for
+ * approval of this version.
+ */
+export function webOrderSendsForApproval(view: SalesOrderView | null | undefined): boolean {
+  const webOrder = view?.webOrder;
+  return !!view && !!webOrder?.processingStartedAt && !webOrder.customerCancelledAt
+    && view.order.status === 'CONCEPT' && !view.order.archivedAt && !view.invoicedAsId && !view.invoicedAs;
+}
+
+/**
+ * The order equals what the customer ordered (or approved) and is still a
+ * concept: the invoice is the way on. Sending would ask the customer for a
+ * second signature, so it is the secondary action there.
+ */
+export function webOrderInvoiceFirst(view: SalesOrderView | null | undefined): boolean {
+  return !!view?.webOrder && view.order.status === 'CONCEPT' && canCreateInvoiceFromQuote(view);
+}
+
+export interface WebOrderSendCopy { title: string; body: string; confirm: string; toast: string }
+/** What the send sheet and its toast say on a website order; null for any other document. */
+export function webOrderSendCopy(view: SalesOrderView | null | undefined): WebOrderSendCopy | null {
+  if (!view?.webOrder) return null;
+  return {
+    title: 'Bestelling ter goedkeuring versturen',
+    body: 'De klant krijgt de PDF in bijlage en een link om deze versie van de bestelling goed te keuren of een wijziging voor te stellen.',
+    confirm: 'Versturen ter goedkeuring',
+    toast: 'Bestelling ter goedkeuring verstuurd',
+  };
+}
+
+/**
+ * Shown when an action was refused because the customer changed or cancelled
+ * the order and this screen had nothing unsaved: the latest version loads by
+ * itself, so the server's "your changes are not saved, load the latest
+ * version" would ask for something that already happened.
+ */
+export const WEB_ORDER_RELOADED = 'De klant heeft deze bestelling intussen gewijzigd of geannuleerd; de laatste versie is geladen.';

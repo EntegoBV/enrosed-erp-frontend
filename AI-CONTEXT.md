@@ -772,23 +772,41 @@ and on copies. Without the blocks (older backend) every screen is as before.
   as its last argument and must get `webOrderRevision(view)` of the copy
   that screen shows, never the work queue's. A stale copy gets 409
   `WEB_ORDER_CHANGED`: on a save the sentence lands in the save alert with
-  `Laatste versie laden` (no `Opnieuw opslaan`); on every other action it
-  is a toast and the screen reloads by itself. The list reloads its rows.
+  `Laatste versie laden` (no `Opnieuw opslaan`, Opslaan disabled, the alert
+  scrolled into view); on every other action the screen reloads by itself
+  and the toast is `WEB_ORDER_RELOADED`, not the server's "laad de laatste
+  versie". The list reloads its rows. Every failure handler gets the id of
+  the order the action ran on (`actionFailed(failure, fallback, orderId)`):
+  the screens are reused across ids, and a late answer must not touch the
+  order now on screen. `persistOrder` and `saveDeliveryWeek` refuse to write
+  while `customerEditable`: no save or autosave takes an order by itself.
 - **Wording.** A web order never shows request wording: `Websitebestelling`,
   `Bestelling annuleren`, and so on in every state. `webOrderNotice` in
   `sales-invoice-actions.ts` is the single source of the banner and the
   compare line per `termsState`; `canCreateInvoiceFromQuote` allows an
   invoice without sending only for a taken order with `ORDER_EQUAL` or
-  `APPROVED`, otherwise the send action reads `Versturen ter goedkeuring`.
+  `APPROVED`; there the invoice is the primary action
+  (`webOrderInvoiceFirst`). The send action of a taken concept always reads
+  `Versturen ter goedkeuring` (`webOrderSendsForApproval`), and the send
+  sheet and toast come from `webOrderSendCopy`. The banner sits straight
+  under the hero on desk, phone editor and read view (where it also carries
+  `In verwerking nemen` on a phone) and names a cancellation by the customer.
+  Verwijderen on a document follows `documentDeletable`: a web order once
+  it is cancelled or declined. The cancel switch follows the customer
+  record's e-mail address, as the server does.
   A customer-cancelled order cannot be reopened (`sales-reopen.ts`). No
   `Order splitsen` and no partner link on a web order.
 - `sales-web-order-note.ts` (`app-sales-web-order-note`) shows the delivery
   or pickup block, who ordered, the customer's cancellation and the state of
   the customer mail with `Opnieuw sturen`; a derived invoice carries only
-  the delivery block. Staff cannot edit that address.
+  the delivery block. Staff cannot edit that address. It is mounted only
+  when the view has `webOrder` or `delivery` (a plain document keeps the old
+  markup, pixel for pixel), and its mail buttons are `blocked` while the host
+  has unsaved edits: the answer is a whole view and must not replace them.
 - **List.** Badge `Websitebestelling` on every web order, with one pill
   under it: `Door klant geannuleerd`, `Door klant gewijzigd`, `Klant kan nog
-  wijzigen` or `In verwerking`. The chip `Website` counts and filters what
+  wijzigen`, `Opnieuw versturen` / `Gewijzigd na akkoord`, `Wacht op klant`
+  or `In verwerking` (`webOrderListPill`). The chip `Website` counts and filters what
   waits for a first look (`countsAsNewWebsiteItem`: legacy requests and web
   orders not yet in processing); the chip `In verwerking te nemen`
   (`toTakeOnly`) shows when a row has `customerCanStillChange`. A row offers
@@ -801,7 +819,8 @@ and on copies. Without the blocks (older backend) every screen is as before.
 - Members of `SalesDesk`, `SalesEditor`, `SalesView` and `SalesList.todo`
   are run in isolation by node tests with a fixed set of globals; a new free
   function on such a path breaks them, so those members read `view.webOrder`
-  inline.
+  inline. `tests/sales-web-order-screens.test.mts` runs the guards, the
+  revision on every call and the conflict handling of all four screens.
 
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.

@@ -10,6 +10,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { AdvanceChoice, advanceBaseExcl, advancePreview, remainingToInvoiceExcl } from './sales-advance-billing';
 import { isWebOrderConflict, webOrderRevision } from './quote-status';
+import { WEB_ORDER_RELOADED } from './sales-invoice-actions';
 
 type Mode = 'P30' | 'P50' | 'PCT' | 'AMOUNT';
 
@@ -121,7 +122,7 @@ export class SalesAdvanceInvoiceSheet {
     } catch (failure: unknown) {
       if (isWebOrderConflict(failure)) {
         /* Nothing was written and the figures in this sheet are stale: the host shows the latest version. */
-        this.ui.toast(messageOf(failure, 'Voorschotfactuur maken mislukt'), 'err');
+        this.ui.toast(WEB_ORDER_RELOADED, 'err');
         this.conflict.emit();
         this.closed.emit();
         return;

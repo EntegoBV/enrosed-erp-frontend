@@ -67,7 +67,8 @@ test('the website order banner says who can act and compares the saved document 
   const when = (value: string | null | undefined) => `<${value}>`;
   const lines = (order: Record<string, unknown>, block: Record<string, unknown> | null, unsaved = false) => webOrderNotice(quote(order, block), when, unsaved);
   assert.equal(lines({}, null), null);
-  assert.equal(lines({ status: 'GEANNULEERD' }, webOrder({ processingStartedAt: null, customerCancelledAt: '2026-10-07T11:00:00Z' })), null);
+  assert.deepEqual(lines({ status: 'GEANNULEERD' }, webOrder({ processingStartedAt: null, customerCancelledAt: '2026-10-07T11:00:00Z' })),
+    { lead: 'door de klant geannuleerd op <2026-10-07T11:00:00Z>', lines: [] }, 'a cancellation by the customer is the first thing staff read');
   assert.deepEqual(lines({}, webOrder({ customerEditable: true, processingStartedAt: null })),
     { lead: 'de klant kan nog wijzigen. Neem ze in verwerking om te bewerken, te versturen of te factureren.', lines: [] });
   assert.deepEqual(lines({}, webOrder({ customerEditable: true, processingStartedAt: null, revision: 3, customerChangedAt: '2026-10-07T09:30:00Z', customerChangeSummary: '2 regels gewijzigd' }))?.lines,

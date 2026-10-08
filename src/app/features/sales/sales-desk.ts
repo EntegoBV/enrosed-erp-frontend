@@ -91,7 +91,7 @@ interface JourneyStep {
         }
         @if (billingTag(); as tag) { <a class="desk-partner-tag" [routerLink]="['/sales', billingQuoteId()]" title="Offerte openen">{{ tag }}</a> }
         @if (canEdit() && documentDirty() && !transportSaving()) {
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="save()">
+          <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || saveConflict()" [title]="saveConflict() ? 'Laad eerst de laatste versie' : ''" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
           </button>
         }
@@ -104,7 +104,7 @@ interface JourneyStep {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openOffset(data.creditedInvoiceId ?? null)">{{ creditStep()!.label }}</button>
         }
         @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
-          <button class="btn btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
+          <button class="btn btn--sm" [class.btn--primary]="invoiceFirst(data)" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
                   [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoice(data)">
             {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
           </button>
@@ -119,7 +119,8 @@ interface JourneyStep {
           <button class="btn btn--sm" [class.btn--primary]="!isCreditNoteDoc()" type="button" [disabled]="busy()" (click)="reopen()">Heropenen</button>
         } @else if (!isClaimDoc() && (data.order.status === 'CONCEPT'
                    || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN')) {
-          <button class="btn btn--primary btn--sm" type="button" [disabled]="sending() || dirty()"
+          <!-- An unchanged website order is invoiced without a second signature: sending is the detour there. -->
+          <button class="btn btn--sm" [class.btn--primary]="!invoiceFirst(data)" type="button" [disabled]="sending() || dirty()"
                   [title]="dirty() ? 'Sla eerst op' : ''" (click)="openSend()">
             {{ sendLabel(data) }}
           </button>
@@ -270,6 +271,12 @@ interface JourneyStep {
                 <strong>{{ sendIssues().length }} open {{ sendIssues().length === 1 ? 'punt' : 'punten' }} ›</strong>
                 <span>{{ sendIssues()[0] }}</span>
               </button>
+            } @else if (invoiceFirst(data)) {
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)">
+                <small>Volgende stap</small>
+                <strong>Factuur maken ›</strong>
+                <span>{{ dirty() ? 'sla eerst op' : 'gelijk aan de bestelling · zonder versturen' }}</span>
+              </button>
             } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()">
                 <small>Volgende stap</small>
@@ -287,24 +294,31 @@ interface JourneyStep {
           </div>
         </header>
 
+        <!-- The state of a website order is the first thing to read: straight under the hero. Only its lead is the live
+             region; the compare line follows typing and saving and would be read out again each time. -->
+        @if (webOrderNotice(); as notice) {
+          <div class="desk-attention desk-attention--order">
+            <b>↗</b>
+            <span><span role="status"><strong>Websitebestelling</strong> · {{ notice.lead }}</span>
+              @for (line of notice.lines; track line.text) { <small [class.desk-attention__gold]="line.gold">{{ line.text }}</small> }
+            </span>
+            @if (websiteRequest(data.order) && !webOrderCancelled()) { <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button> }
+          </div>
+        }
+
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-advance-billing [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy() || invoiceBlockedByOrder(data)" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
         <app-sales-advance-deductions [view]="data" />
-        <!-- The customer's message and what the website order adds to it share a row on a wide desk. -->
-        <div class="desk-notes">
-          <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
-          @if (data.webOrder || data.delivery) { <app-sales-web-order-note class="desk-web-note" [view]="data" (changed)="adopt($event)" /> }
-        </div>
-
-        @if (webOrderNotice(); as notice) {
-          <div class="desk-attention desk-attention--order" role="status">
-            <b>↗</b>
-            <span><strong>Websitebestelling</strong> · {{ notice.lead }}
-              @for (line of notice.lines; track line.text) { <small [class.desk-attention__gold]="line.gold">{{ line.text }}</small> }
-            </span>
-            @if (websiteRequest(data.order)) { <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button> }
+        <!-- The customer's message and what the website order adds to it share a row on a wide desk.
+             Any other document keeps the bare note: an empty grid row would move everything under it. -->
+        @if (data.webOrder || data.delivery) {
+          <div class="desk-notes">
+            <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" [order]="true" />
+            <app-sales-web-order-note class="desk-web-note" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="webOrderMailed($event)" />
           </div>
+        } @else {
+          <app-sales-document-note [notes]="customerNote(data)" [fromCustomer]="customerAuthoredMessage(data)" />
         }
 
         @if (pendingRevision(); as revision) {
@@ -327,7 +341,7 @@ interface JourneyStep {
           </div>
         }
         @if (saveError()) {
-          <div class="alert alert--warn desk-alert" role="alert">
+          <div class="alert alert--warn desk-alert" role="alert" data-save-alert>
             <span class="alert__icon">!</span>
             <div class="grow"><b>Nog niet opgeslagen</b><div class="small">{{ saveError() }}</div></div>
             <button class="btn btn--sm" [class.btn--primary]="saveConflict()" type="button" [disabled]="saving()" (click)="reloadLatestOrder()">{{ saveConflict() ? 'Laatste versie laden' : 'Serverversie laden' }}</button>
@@ -358,7 +372,7 @@ interface JourneyStep {
         } @else if (!canEdit() && !webOrderOpen()) {
           <div class="desk-lock" role="status">
             <span aria-hidden="true">✓</span>
-            <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer. {{ canEditTerms() ? 'Transport en leverweken kun je aanpassen zolang de offerte nog openstaat; transport wordt automatisch opgeslagen.' : 'Deze offerte is afgesloten; transport kan niet meer worden aangepast.' }}</span>
+            <span><b>Deze versie staat vast.</b> Klant, aantallen en prijzen veranderen niet meer. {{ canEditTerms() ? 'Transport en leverweken kun je aanpassen zolang de ' + documentWord() + ' nog openstaat; transport wordt automatisch opgeslagen.' : 'Deze ' + documentWord() + ' is afgesloten; transport kan niet meer worden aangepast.' }}</span>
             <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
           </div>
         }
@@ -771,7 +785,7 @@ interface JourneyStep {
                       <div class="field">
                         <label id="sd-customer-message-label">Bericht van klant</label>
                         <p id="sd-notes" class="customer-message-readonly" aria-labelledby="sd-customer-message-label">{{ customerNote(data) || 'De klant liet geen bericht achter.' }}</p>
-                        <span class="hint">Originele aanvraag. Dit bericht kan niet worden gewijzigd.</span>
+                        <span class="hint">{{ isWebOrder() || data.delivery ? 'Bericht bij de bestelling' : 'Originele aanvraag' }}. Dit bericht kan niet worden gewijzigd.</span>
                       </div>
                     } @else {
                       <div class="field">
@@ -1019,7 +1033,7 @@ interface JourneyStep {
                           </button>
                         } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
                           <button class="desk-action" type="button" [disabled]="sending() || sendIssues().length > 0 || dirty()" (click)="openSend()">
-                            <i aria-hidden="true">➤</i><span><b>{{ sendLabel(data) }}</b><small>{{ dirty() ? 'Sla eerst op' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
+                            <i aria-hidden="true">➤</i><span><b>{{ sendLabel(data) }}</b><small>{{ dirty() ? 'Sla eerst op' : isWebOrder() ? 'PDF in bijlage en een link om deze versie goed te keuren' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
                           </button>
                         }
                         @if (advanceAgreement() || canCreateInvoice(data)) {
@@ -1034,7 +1048,7 @@ interface JourneyStep {
                           <button class="desk-action" type="button" [disabled]="busy()" (click)="reopen()"><i aria-hidden="true">↺</i><span><b>Heropenen</b><small>Terug naar concept om aan te passen</small></span></button>
                         }
                         @if (canCancel()) {
-                          <button class="desk-action" type="button" [disabled]="busy()" (click)="openCancel()"><i aria-hidden="true">⊘</i><span><b>{{ cancelLabel(data) }}</b><small>De klant kan niet meer aanvaarden</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="busy()" (click)="openCancel()"><i aria-hidden="true">⊘</i><span><b>{{ cancelLabel(data) }}</b><small>{{ isWebOrder() ? 'De klant ziet dat onder Mijn bestellingen' : 'De klant kan niet meer aanvaarden' }}</small></span></button>
                         }
                         <button class="desk-action" type="button" (click)="openPdfSheet()"><i aria-hidden="true">⎙</i><span><b>PDF</b><small>Taal en inhoud kiezen en downloaden</small></span></button>
                       }
@@ -1060,9 +1074,9 @@ interface JourneyStep {
                     @if (canDelete()) {
                       <details class="desk-danger">
                         <summary>Verwijderen</summary>
-                        <p>Alleen een concept dat de klant nooit zag. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
+                        <p>{{ isWebOrder() ? 'Een websitebestelling die geannuleerd of afgewezen is.' : 'Alleen een concept dat de klant nooit zag.' }} Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                         <button class="btn btn--danger btn--block" type="button" [disabled]="deleting()" (click)="remove()">
-                          {{ deleting() ? 'Verwijderen…' : (isCreditNoteDoc() ? 'Deze creditnota verwijderen' : isInvoiceDoc() ? 'Deze factuur verwijderen' : 'Deze offerte verwijderen') }}
+                          {{ deleting() ? 'Verwijderen…' : (isCreditNoteDoc() ? 'Deze creditnota verwijderen' : isInvoiceDoc() ? 'Deze factuur verwijderen' : isWebOrder() ? 'Deze bestelling verwijderen' : 'Deze offerte verwijderen') }}
                         </button>
                       </details>
                     }
@@ -1202,7 +1216,8 @@ interface JourneyStep {
               <span class="switch-row__copy">
                 <b>Klant verwittigen per e-mail</b>
                 <small>
-                  @if (isWebOrder()) { De klant krijgt in zijn eigen taal een mail dat de bestelling geannuleerd is. }
+                  @if (isWebOrder() && !customerEmail()) { De klantgegevens hebben geen e-mailadres: er vertrekt geen mail. De klant ziet de annulering onder Mijn bestellingen. }
+                  @else if (isWebOrder()) { De klant krijgt in zijn eigen taal een mail dat de bestelling geannuleerd is. }
                   @else if (!customerEmail()) { De klant heeft geen e-mailadres; de offertepagina toont wel dat ze geannuleerd is. }
                   @else if (data.order.sentAt) { Naar {{ customerEmail() }}, met de link naar de offertepagina, waar ze als geannuleerd staat. }
                   @else { De klant krijgt in zijn eigen taal een mail dat de aanvraag geannuleerd is, met een knop om een nieuwe aanvraag te starten. }
@@ -1233,10 +1248,10 @@ interface JourneyStep {
       }
 
       @if (sendSheet()) {
-        <app-sheet [title]="isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen'" (closed)="sendSheet.set(false)">
+        <app-sheet [title]="sendCopy()?.title ?? (isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen')" (closed)="sendSheet.set(false)">
           <div body>
             <p class="small muted" style="margin-bottom:14px">
-              {{ isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.' }}
+              {{ sendCopy()?.body ?? (isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.') }}
             </p>
             <div class="field">
               <label for="sd-send-message">Persoonlijk bericht</label>
@@ -1246,7 +1261,7 @@ interface JourneyStep {
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="sendSheet.set(false)">Annuleren</button>
             <button class="btn btn--primary" type="button" [disabled]="sending() || sendIssues().length > 0" (click)="send()">
-              {{ sending() ? 'Bezig…' : 'Versturen' }}
+              {{ sending() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}
             </button>
           </div>
         </app-sheet>
@@ -1419,7 +1434,7 @@ interface JourneyStep {
     .hint--warn{color:var(--danger);font-weight:650}
     .desk-notes{display:grid;column-gap:14px}.desk-web-note{margin-bottom:16px}
     @media(min-width:1180px){.desk-notes{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-items:start}}
-    .desk-attention--order{align-items:flex-start}.desk-attention--order small{display:block;margin-top:4px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+    .desk-attention--order{align-items:flex-start;margin-bottom:12px}.desk-attention--order small{display:block;margin-top:4px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
     .desk-attention--order small.desk-attention__gold{padding:5px 8px;border-left:3px solid var(--gold);border-radius:8px;background:var(--surface);color:var(--ink)}
     .check-option{display:flex;gap:10px;padding:8px 0;cursor:pointer}.check-option input{width:20px;height:20px;flex:none;accent-color:var(--rose)}.check-option span{display:grid;gap:2px}.check-option strong{font-size:12.5px}.check-option small{color:var(--muted);font-size:11px}
   `],
@@ -1595,7 +1610,7 @@ export class SalesDesk extends SalesEditor {
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.router.navigate(['/sales', invoice.order.id]);
     } catch (failure: unknown) {
-      this.actionFailed(failure, 'Factuur maken mislukt');
+      this.actionFailed(failure, 'Factuur maken mislukt', data.order.id);
     } finally {
       this.invoiceBusy.set(false);
     }

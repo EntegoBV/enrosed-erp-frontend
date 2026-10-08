@@ -147,6 +147,17 @@ export function webOrderDeletable(view: (Pick<SalesOrderView, 'webOrder'> & { or
   return !view?.webOrder || view.order.status === 'GEANNULEERD' || view.order.status === 'AFGEWEZEN';
 }
 
+/**
+ * Verwijderen on a document screen. A website order: only once it is
+ * cancelled or declined, whatever happened to it before. Any other document:
+ * the screen's own rule for a never-used concept.
+ */
+export function documentDeletable(view: (Pick<SalesOrderView, 'webOrder'> & { order: Pick<SalesOrder, 'status'> }) | null | undefined,
+                                  plainRule: () => boolean): boolean {
+  if (!view) return false;
+  return view.webOrder ? webOrderDeletable(view) : plainRule();
+}
+
 /** The compare state shown on screen: only once the order is taken and while it is not archived. */
 export function webOrderTermsState(view: WebOrderDocumentView): SalesWebOrderTermsState | null {
   const order = view?.webOrder;
@@ -170,6 +181,33 @@ export function webOrderMailRepeatable(view: WebOrderDocumentView): string | nul
   const order = view?.webOrder;
   if (!order || order.mailDue || view?.order.status !== 'CONCEPT' || view.order.sentAt || order.customerCancelledAt) return null;
   return (order.processingStartedAt ? order.processingMailSentAt : order.receivedMailSentAt) ?? null;
+}
+
+/**
+ * The address hint tells staff how to handle a wrong address. It applies
+ * while the order is a working concept; on a sent, closed, cancelled or
+ * archived order and on a derived document there is nothing left to do with it.
+ */
+export function webOrderDeliveryHint(view: WebOrderDocumentView): boolean {
+  return !!view?.webOrder && !view.webOrder.customerCancelledAt && view.order.status === 'CONCEPT' && !view.order.archivedAt;
+}
+
+/**
+ * Where a website order stands between the customer and us on the list: one
+ * pill, the first that applies. The two approval states tell a row that waits
+ * on the customer apart from one that waits on us.
+ */
+export function webOrderListPill(view: WebOrderDocumentView): { label: string; cls: string } | null {
+  if (!view?.webOrder) return null;
+  if (cancelledByCustomer(view)) return { label: 'Door klant geannuleerd', cls: 'danger' };
+  if (customerRevised(view)) return { label: 'Door klant gewijzigd', cls: 'blue' };
+  if (customerCanStillChange(view)) return { label: 'Klant kan nog wijzigen', cls: 'gold' };
+  const open = view.order.status === 'CONCEPT' || view.order.status === 'VERZONDEN' || view.order.status === 'BEKEKEN' || view.order.status === 'GEACCEPTEERD';
+  const terms = webOrderTermsState(view);
+  if (open && terms === 'RESEND_REQUIRED') return { label: view.order.status === 'GEACCEPTEERD' ? 'Gewijzigd na akkoord' : 'Opnieuw versturen', cls: 'gold' };
+  if (terms === 'AWAITING_APPROVAL' && (view.order.status === 'VERZONDEN' || view.order.status === 'BEKEKEN')) return { label: 'Wacht op klant', cls: 'neutral' };
+  if (webOrderInProcessing(view)) return { label: 'In verwerking', cls: 'neutral' };
+  return null;
 }
 
 /** What still waits for a first look: legacy requests, and website orders nobody took yet. */

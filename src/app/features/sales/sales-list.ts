@@ -23,12 +23,13 @@ import { Skeleton } from '../../shared/skeleton';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { channelCode, channelLabel } from './sales-channels';
 import {
-  STATUS_LABEL, actionNeeded, cancelledByCustomer, countsAsNewWebsiteItem, customerCanStillChange, customerRevised,
-  isWebOrder, isWebOrderConflict, isWebsiteQuoteRequest, statusClass, statusOf, webOrderDeletable, webOrderInProcessing,
+  STATUS_LABEL, actionNeeded, countsAsNewWebsiteItem, customerCanStillChange,
+  isWebOrder, isWebOrderConflict, isWebsiteQuoteRequest, statusClass, statusOf, webOrderDeletable, webOrderListPill,
   webOrderRevision,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
+import { WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-credit-note';
 import { salesDocumentKind } from './partner-settlement';
 import { billingKind, isAdvanceBillingInvoice } from './sales-advance-billing';
@@ -216,7 +217,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                     · op <a class="so-link" [routerLink]="['/sales', row.creditedInvoiceId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.creditedInvoiceNumber + ' openen'">{{ row.creditedInvoiceNumber }}</a>
                     · {{ creditReason(row) }}
                   }
-                  @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT') { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
+                  @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
                   @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate && !creditNoteRow(row)) {
                     · vervalt {{ row.order.invoiceDueDate | dateNl }}
                   }
@@ -412,14 +413,14 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
         (deleted)="containerDeleted($event)" />
     }
     @if (rowMenu(); as menuRow) {
-      <app-sheet [title]="documentLabel(menuRow.order) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
+      <app-sheet [title]="(webOrder(menuRow) ? 'Bestelling' : documentLabel(menuRow.order)) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
         <div body>
           <p class="row-menu__who">{{ customerName(menuRow) }} · {{ label(menuRow.order.status) }}
             · {{ menuRow.priced.totals.total | eur: (menuRow.fulfillment || partner(menuRow.order) ? 2 : 0) }}</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/sales', menuRow.order.id]" (click)="rowMenu.set(null)">
               <i aria-hidden="true">›</i>
-              <span><b>Openen</b><small>Bekijken of bewerken</small></span>
+              <span><b>Openen</b><small>{{ canArchive(menuRow) ? 'Bekijken of bewerken' : 'Bekijken of in verwerking nemen' }}</small></span>
             </a>
             @if (!partner(menuRow.order) && !menuRow.fulfillment && !webOrder(menuRow)) {
               <button class="desk-action" type="button" [disabled]="!!splitBlockReason(menuRow)" (click)="openSplit(menuRow)"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ splitBlockReason(menuRow) || 'Verplaats producten naar een latere levering' }}</small></span></button>
@@ -1422,8 +1423,7 @@ export class SalesList {
       this.all.update((rows) => rows.map((candidate) => candidate.order.id === id ? updated : candidate));
       this.ui.toast(toArchive ? `${label} ${row.order.number} gearchiveerd` : `${label} ${row.order.number} terug op de lijst`);
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt'), 'err');
-      this.reloadAfterWebOrderConflict(failure);
+      this.actionFailed(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt');
     } finally {
       this.archivingOrderId.set(null);
     }
@@ -1469,8 +1469,7 @@ export class SalesList {
           await this.work.refresh(true);
           this.ui.toast(`${label} verwijderd`);
         } catch (failure: unknown) {
-          this.ui.toast(messageOf(failure, `${label} verwijderen mislukt`), 'err');
-          this.reloadAfterWebOrderConflict(failure);
+          this.actionFailed(failure, `${label} verwijderen mislukt`);
         } finally {
           if (this.deletingOrderId() === order.id) this.deletingOrderId.set(null);
         }
@@ -1502,9 +1501,15 @@ export class SalesList {
     this.swipeOffset.set(0);
   }
 
-  /** The customer changed or cancelled the order after this list loaded: the rows are stale, fetch them again. */
-  private reloadAfterWebOrderConflict(failure: unknown): void {
-    if (isWebOrderConflict(failure)) void this.load();
+  /**
+   * Toasts a failed row action. When the customer changed or cancelled the
+   * order after this list loaded, the rows are stale: they are fetched again
+   * and the toast says so, as on the document screens.
+   */
+  private actionFailed(failure: unknown, fallback: string): void {
+    if (!isWebOrderConflict(failure)) { this.ui.toast(messageOf(failure, fallback), 'err'); return; }
+    this.ui.toast(WEB_ORDER_RELOADED, 'err');
+    void this.load();
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];
@@ -1530,13 +1535,7 @@ export class SalesList {
   readonly webOrder = isWebOrder;
 
   /** Where a website order stands between the customer and us; one pill, the first that applies. */
-  webOrderPill(row: SalesOrderView): { label: string; cls: string } | null {
-    if (cancelledByCustomer(row)) return { label: 'Door klant geannuleerd', cls: 'danger' };
-    if (customerRevised(row)) return { label: 'Door klant gewijzigd', cls: 'blue' };
-    if (customerCanStillChange(row)) return { label: 'Klant kan nog wijzigen', cls: 'gold' };
-    if (webOrderInProcessing(row)) return { label: 'In verwerking', cls: 'neutral' };
-    return null;
-  }
+  readonly webOrderPill = webOrderListPill;
 
   workIcon(kind: string): string {
     switch (kind) {

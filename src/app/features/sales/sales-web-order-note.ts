@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { SalesApi } from '../../core/api/sales-api';
 import type { SalesOrderView } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
-import { cancelledByCustomer, webOrderMailDue, webOrderMailRepeatable } from './quote-status';
+import { cancelledByCustomer, webOrderDeliveryHint, webOrderMailDue, webOrderMailRepeatable } from './quote-status';
 import { DateTimeNlPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 
@@ -42,7 +42,9 @@ import { Sheet, Ui } from '../../shared/ui';
             @if (delivery.differsFromCustomerRecord) {
               <p class="web-note__line web-note__line--gold">Wijkt af van het adres in de klantgegevens. De vracht is berekend op dit leveradres.</p>
             }
+            @if (hint()) {
             <p class="web-note__hint">Alleen de klant kan dit wijzigen, en alleen zolang de bestelling niet in verwerking is. Klopt het adres niet? Zet de vracht op “Vast bedrag” en noteer het juiste adres bij de interne notities.</p>
+            }
           </div>
         }
         @if (view().webOrder; as order) {
@@ -52,14 +54,15 @@ import { Sheet, Ui } from '../../shared/ui';
               <p class="web-note__line web-note__line--danger">Door de klant geannuleerd op {{ order.customerCancelledAt | dateTimeNl }}.</p>
             }
             @if (mailDue()) {
-              <p class="web-note__line web-note__line--danger web-note__mail" role="alert">
-                <span>{{ mailFailure() }}</span>
-                <button type="button" class="btn btn--sm" [disabled]="busy()" (click)="resend(false)">{{ busy() ? 'Versturen…' : 'Opnieuw sturen' }}</button>
+              <!-- Only the sentence is the alert: a button inside it would be read out again each time its label changes. -->
+              <p class="web-note__line web-note__line--danger web-note__mail">
+                <span role="alert">{{ mailFailure() }}</span>
+                <button type="button" class="btn btn--sm" [disabled]="busy() || blocked()" [title]="blockedTitle()" (click)="resend(false)">{{ busy() ? 'Versturen…' : 'Opnieuw sturen' }}</button>
               </p>
             } @else if (repeatable(); as sentAt) {
               <p class="web-note__line web-note__line--muted web-note__mail">
                 <span>E-mail aan de klant verstuurd op {{ sentAt | dateTimeNl }}</span>
-                <button type="button" class="web-note__link" [disabled]="busy()" (click)="repeatSheet.set(true)">Opnieuw sturen</button>
+                <button type="button" class="web-note__link" [disabled]="busy() || blocked()" [title]="blockedTitle()" (click)="openRepeat()">Opnieuw sturen</button>
               </p>
             }
           </div>
@@ -70,7 +73,7 @@ import { Sheet, Ui } from '../../shared/ui';
           <div body><p class="web-note__confirm">De klant krijgt dezelfde e-mail nog een keer. Opnieuw sturen?</p></div>
           <div foot style="display:contents">
             <button class="btn" type="button" data-initial-focus (click)="repeatSheet.set(false)">Terug</button>
-            <button class="btn btn--primary" type="button" [disabled]="busy()" (click)="resend(true)">Opnieuw sturen</button>
+            <button class="btn btn--primary" type="button" [disabled]="busy() || blocked()" (click)="resend(true)">Opnieuw sturen</button>
           </div>
         </app-sheet>
       }
@@ -98,6 +101,12 @@ import { Sheet, Ui } from '../../shared/ui';
 })
 export class SalesWebOrderNote {
   readonly view = input.required<SalesOrderView>();
+  /**
+   * The host has unsaved edits or a write under way. The answer of a resend
+   * is a whole server view; adopting it would drop what staff typed, so the
+   * mail waits until the document is saved.
+   */
+  readonly blocked = input(false);
   /** The view the server answered after a mail went out; the host adopts it. */
   readonly changed = output<SalesOrderView>();
   readonly busy = signal(false);
@@ -108,6 +117,8 @@ export class SalesWebOrderNote {
   readonly cancelled = computed(() => cancelledByCustomer(this.view()));
   readonly mailDue = computed(() => webOrderMailDue(this.view()));
   readonly repeatable = computed(() => webOrderMailRepeatable(this.view()));
+  readonly hint = computed(() => webOrderDeliveryHint(this.view()));
+  readonly blockedTitle = computed(() => this.blocked() ? 'Sla de wijzigingen eerst op' : '');
   /** Follows mailDue, not the error: a mail that never left without a recorded error still gets the line. */
   readonly mailFailure = computed(() => {
     const error = this.view().webOrder?.mailError?.trim();
@@ -125,8 +136,13 @@ export class SalesWebOrderNote {
   });
 
   /** Sends the mail that is due, or with repeat the last order mail once more. */
+  openRepeat(): void {
+    if (this.busy() || this.blocked()) return;
+    this.repeatSheet.set(true);
+  }
+
   async resend(repeat: boolean): Promise<void> {
-    if (this.busy()) return;
+    if (this.busy() || this.blocked()) return;
     const id = this.view().order.id;
     this.repeatSheet.set(false);
     this.busy.set(true);
