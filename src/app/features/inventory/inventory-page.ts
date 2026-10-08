@@ -16,7 +16,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { BrusselsDatePipe } from './inventory-dates';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { dateText, defaultInventoryYear, fileName, todoText } from './inventory-closing';
+import { countStartRefusal, dateText, defaultInventoryYear, fileName, sentence, todoText } from './inventory-closing';
 
 /** What the sheet "Telling starten" holds; the year and the location can still be changed there. */
 interface CountDraft {
@@ -380,7 +380,7 @@ export class InventoryPage {
       if (run !== this.run) return;
       this.closings.set(null);
       this.counts.set(null);
-      this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
+      this.loadError.set(sentence(messageOf(failure, 'Probeer het opnieuw.')));
     }
   }
 
@@ -468,12 +468,15 @@ export class InventoryPage {
       this.countDraft.set(null);
       await this.router.navigate(['/stock/inventaris/telling', view.id], book ? { queryParams: { boeken: 1 } } : {});
     } catch (failure) {
-      const running = refusalCode(failure) === 'TELLING_LOOPT' ? refusalDetails<{ countId: number }>(failure)?.countId ?? null : null;
-      this.ui.toast(messageOf(failure, 'De telling kon niet worden gestart.'), 'err');
-      if (running !== null) {
+      const next = countStartRefusal(refusalCode(failure), refusalDetails<{ countId?: unknown }>(failure));
+      this.ui.toast(sentence(messageOf(failure, 'De telling kon niet worden gestart.')), 'err');
+      if (next.open !== null) {
         /* Somebody started this location meanwhile: that session is the one to count in. */
         this.countDraft.set(null);
-        await this.router.navigate(['/stock/inventaris/telling', running]);
+        await this.router.navigate(['/stock/inventaris/telling', next.open]);
+      } else if (next.reload) {
+        /* A newer count of this location was booked meanwhile: the overview names the one to correct now. */
+        await this.load();
       }
     } finally {
       this.busy.set(false);
@@ -505,7 +508,7 @@ export class InventoryPage {
       await this.router.navigate(['/stock/inventaris/afsluiting', view.id]);
     } catch (failure) {
       const existing = refusalCode(failure) === 'BESTAAT_AL' ? refusalDetails<{ closingId: number }>(failure)?.closingId ?? null : null;
-      this.ui.toast(messageOf(failure, 'De afsluiting kon niet worden aangemaakt.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'De afsluiting kon niet worden aangemaakt.')), 'err');
       if (existing !== null) {
         this.closingDraft.set(null);
         await this.router.navigate(['/stock/inventaris/afsluiting', existing]);
@@ -532,7 +535,7 @@ export class InventoryPage {
     } catch (failure) {
       /* The refusal of a file route arrives as a Blob: read the server's sentence out of it. */
       const readable = await readableFailure(failure);
-      this.ui.toast(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
+      this.ui.toast(sentence(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.')), 'err');
     } finally {
       this.busy.set(false);
     }
@@ -554,7 +557,7 @@ export class InventoryPage {
       await this.api.deleteClosing(closing.id);
       this.ui.toast('Concept verwijderd');
     } catch (failure) {
-      this.ui.toast(messageOf(failure, 'Het concept kon niet worden verwijderd.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'Het concept kon niet worden verwijderd.')), 'err');
     } finally {
       this.busy.set(false);
     }

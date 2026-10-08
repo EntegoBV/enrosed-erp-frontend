@@ -21,13 +21,14 @@ test('the explanation of the server still comes first when there is an answer', 
 
 test('the refusal of a download is read out of its Blob', async () => {
   /* responseType blob: the JSON the file route answered arrives as a Blob. */
-  const body = new Blob([JSON.stringify({ status: 404, code: 'BESTAND_ONTBREEKT', message: 'Het bestand van deze afsluiting ontbreekt' })],
+  const body = new Blob([JSON.stringify({ status: 404, message: 'Afsluiting 2 bestaat niet', timestamp: '2026-10-08T09:41:00Z' })],
     { type: 'application/json' });
   const failure = { status: 404, error: body };
   assert.equal(messageOf(failure, 'De PDF kon niet worden gedownload.'), 'De gevraagde gegevens bestaan niet meer of zijn verplaatst.');
   const readable = await readableFailure(failure);
-  assert.equal(messageOf(readable, 'De PDF kon niet worden gedownload.'), 'Het bestand van deze afsluiting ontbreekt');
-  assert.equal((readable as { error: { code: string } }).error.code, 'BESTAND_ONTBREEKT');
+  assert.equal(messageOf(readable, 'De PDF kon niet worden gedownload.'), 'Afsluiting 2 bestaat niet');
+  /* The file route answers a missing closing without a code; the parsed body is what the page reads. */
+  assert.deepEqual(Object.keys((readable as { error: object }).error), ['status', 'message', 'timestamp']);
   /* A JSON Blob that cannot be parsed, or an HTML error page: the status sentence or the fallback, never the raw body. */
   const broken = await readableFailure({ status: 500, error: new Blob(['{oops'], { type: 'application/json' }) });
   assert.equal(messageOf(broken, 'De PDF kon niet worden gedownload.'), 'De PDF kon niet worden gedownload.');

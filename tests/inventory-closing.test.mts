@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import type {
   ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingLocation, ClosingStream, ClosingSummary,
   ClosingTotals, ClosingView, Decision, DecisionKind, Notice, NoticeSegment, OpeningLayer, SeparateItem, WriteDownRow,
 } from '../src/app/core/api/inventory-models.ts';
 import {
-  bookedLater, byName, carvedPieces, dateText, dateTimeText, needsLook, openingQuantity, openingReplaced, presentText, rollEffect, rollIntro,
-  rollTickHead, rollTickLabel, sentence, todoText,
+  bookedLater, byName, carvedPieces, countStartRefusal, dateText, dateTimeText, needsLook, openingQuantity, openingReplaced, presentText,
+  rollDirection, rollEffect, rollIntro, rollTickHead, rollTickLabel, sentence, todoText, versionStartRefusal,
 } from '../src/app/features/inventory/inventory-closing.ts';
 import {
   borderFixed, decisionWriteAccrual, decisionWriteCreditTreatment, decisionWriteInvoiced, decisionWriteMovement,
@@ -290,6 +291,60 @@ test('a refusal reads as a sentence', () => {
   assert.equal(sentence('Al definitief.'), 'Al definitief.');
   assert.equal(sentence('  Kan dat?  '), 'Kan dat?');
   assert.equal(sentence(''), '');
+  /* The server sends every refusal without its full stop (StockCountService, StockClosingService, StockClosingFinalizer). */
+  for (const message of [
+    'Voor Magazijn loopt al een telling', 'Voor 2026 bestaat al een afsluiting. Open ze, of maak een nieuwe versie',
+    'Voor 2026 staat al een concept open', 'Een definitieve afsluiting kan niet verwijderd worden', 'Deze telling is al geboekt',
+    'Corrigeren kan alleen op de laatste geboekte telling van Magazijn voor 2026', 'Afsluiting 2 bestaat niet',
+  ]) assert.equal(sentence(message), `${message}.`);
+});
+
+test('every server sentence the inventory screens show goes through sentence()', () => {
+  const folder = new URL('../src/app/features/inventory/', import.meta.url);
+  const bare: string[] = [];
+  let shown = 0;
+  for (const file of readdirSync(folder).filter((name) => name.endsWith('.ts'))) {
+    readFileSync(new URL(file, folder), 'utf8').split('\n').forEach((line, index) => {
+      if (!line.includes('messageOf(') || line.trimStart().startsWith('import ')) return;
+      shown += 1;
+      if (!line.includes('sentence(messageOf(')) bare.push(`${file}:${index + 1}`);
+    });
+  }
+  assert.ok(shown >= 20, `only ${shown} messageOf calls found: the check reads the wrong lines`);
+  assert.deepEqual(bare, []);
+});
+
+test('a refused start says what the screen does next', () => {
+  /* Somebody else started the location: their session opens. */
+  assert.deepEqual(countStartRefusal('TELLING_LOOPT', { countId: 3 }), { open: 3, reload: false });
+  /* A newer full count was booked meanwhile: "Telling corrigeren" stood on the old one, the overview is read again. */
+  assert.deepEqual(countStartRefusal('GEEN_TELLING_OM_TE_CORRIGEREN', {}), { open: null, reload: true });
+  assert.deepEqual(countStartRefusal('TELLING_LOOPT', {}), { open: null, reload: false });
+  assert.deepEqual(countStartRefusal(null, null), { open: null, reload: false });
+  /* A concept of the year is open: that version opens. */
+  assert.deepEqual(versionStartRefusal('CONCEPT_BESTAAT', { closingId: 9 }), { open: 9, reload: false });
+  /* No longer the valid final version: read it again, so "Corrigeren" goes and the replacing version shows. */
+  assert.deepEqual(versionStartRefusal('GEEN_DEFINITIEVE', {}), { open: null, reload: true });
+  assert.deepEqual(versionStartRefusal('DEFINITIEF', {}), { open: null, reload: false });
+  assert.deepEqual(versionStartRefusal(null, null), { open: null, reload: false });
+});
+
+test('a table of step 2 takes its direction from the places of its products', () => {
+  const late = { anchoredAt: '2027-01-02T09:15:00Z', countAfterClosingDate: true };
+  const early = { anchoredAt: '2026-12-28T10:00:00Z', countAfterClosingDate: false };
+  /* "Lege locatie bevestigen": the count booked no line, so the location answers no moment and "before", its products the count. */
+  const emptyCount = { anchoredAt: null, countAfterClosingDate: false };
+  assert.deepEqual(rollDirection([late, late], emptyCount), { after: true, anchoredAt: '2027-01-02T09:15:00Z' });
+  assert.equal(rollTickHead(rollDirection([late], emptyCount).after, '2026-12-31'), 'Terugtellen naar 31/12/2026');
+  /* The usual case: location and products agree; the latest count moment of the table is named. */
+  assert.deepEqual(rollDirection([late, { ...late, anchoredAt: '2027-01-03T08:00:00Z' }], late), { after: true, anchoredAt: '2027-01-03T08:00:00Z' });
+  assert.deepEqual(rollDirection([early, null], early), { after: false, anchoredAt: '2026-12-28T10:00:00Z' });
+  /* No place known (the product left the articles), or the products disagree: the location decides. */
+  assert.deepEqual(rollDirection([null], late), { after: true, anchoredAt: '2027-01-02T09:15:00Z' });
+  assert.deepEqual(rollDirection([], early), { after: false, anchoredAt: '2026-12-28T10:00:00Z' });
+  assert.deepEqual(rollDirection([late, early], late), { after: true, anchoredAt: '2027-01-02T09:15:00Z' });
+  /* A level read from the book has no moment of its own: the direction is the place's, the moment the location's (none). */
+  assert.deepEqual(rollDirection([{ anchoredAt: null, countAfterClosingDate: true }], emptyCount), { after: true, anchoredAt: null });
 });
 
 /* ---- waardevermindering: worked example 3.8 ---- */

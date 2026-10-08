@@ -1,5 +1,5 @@
 import type {
-  ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingMovement, ClosingStream, ClosingSummary,
+  ClosingArticle, ClosingArticleLocation, ClosingContainer, ClosingLayer, ClosingLocation, ClosingMovement, ClosingStream, ClosingSummary,
   ClosingTotals, ClosingView, DecisionKind, DecisionWrite, Notice, NoticeSegment, OpeningLayer, SeparateItem, WriteDownRow,
 } from '../../core/api/inventory-models';
 
@@ -222,6 +222,50 @@ export function laterRowsIntro(countAfterClosingDate: boolean, closingDate: stri
       + `gebeurde en pas later geboekt is: het wordt dan teruggeteld. Een gewone beweging van na de telling laat je zonder vinkje.`
     : `Geboekt na ${date}. Zet alleen een vinkje bij wat in werkelijkheid tot en met ${date} gebeurde en pas later geboekt is: `
       + `het wordt dan bijgeteld. Een gewone beweging van na ${date} laat je zonder vinkje.`;
+}
+
+/**
+ * The direction and the count moment of one table of step 2. The products
+ * of the table say it themselves: the location only knows the moment of a
+ * count that booked a line, so after "Lege locatie bevestigen" (a count
+ * without lines) it answers no moment and "before the closing date" while
+ * its products are anchored on that count. The location decides when no
+ * place is known, or when the products of the table do not agree (a
+ * correction counted some of them on the other side of the closing date).
+ */
+export function rollDirection(
+  places: readonly (Pick<ClosingArticleLocation, 'anchoredAt' | 'countAfterClosingDate'> | null)[],
+  location: Pick<ClosingLocation, 'anchoredAt' | 'countAfterClosingDate'>,
+): { after: boolean; anchoredAt: string | null } {
+  const known = places.filter((place) => place !== null);
+  const after = known[0]?.countAfterClosingDate;
+  if (after === undefined || known.some((place) => place.countAfterClosingDate !== after)) {
+    return { after: location.countAfterClosingDate, anchoredAt: location.anchoredAt };
+  }
+  const latest = known.map((place) => place.anchoredAt).filter((at) => at !== null).sort().at(-1);
+  return { after, anchoredAt: latest ?? location.anchoredAt };
+}
+
+/**
+ * What the hub does after the server refused to start a count: open the
+ * session somebody else started (TELLING_LOOPT names it), or read the
+ * overview again when the count to correct is no longer the latest one, so
+ * "Telling corrigeren" stands on the right count.
+ */
+export function countStartRefusal(code: string | null, details: { countId?: unknown } | null): { open: number | null; reload: boolean } {
+  const countId = code === 'TELLING_LOOPT' && typeof details?.countId === 'number' ? details.countId : null;
+  return { open: countId, reload: code === 'GEEN_TELLING_OM_TE_CORRIGEREN' };
+}
+
+/**
+ * What the closing page does after the server refused a new version: open
+ * the concept that already exists (CONCEPT_BESTAAT names it), or read this
+ * version again when it is no longer the valid final one, so "Corrigeren"
+ * goes and "Vervangen door versie n" shows.
+ */
+export function versionStartRefusal(code: string | null, details: { closingId?: unknown } | null): { open: number | null; reload: boolean } {
+  const closingId = code === 'CONCEPT_BESTAAT' && typeof details?.closingId === 'number' ? details.closingId : null;
+  return { open: closingId, reload: code === 'GEEN_DEFINITIEVE' };
 }
 
 /**

@@ -197,14 +197,14 @@ test('names with numbers come in the order of the shelf', () => {
   ]);
 });
 
-const REASONS = ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'TERUGGEVONDEN', 'ANDERE'].map((code) => ({ code }));
+const REASONS = ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'TERUGGEVONDEN', 'ANDERS'].map((code) => ({ code }));
 const codes = (reasons: { code: string }[]) => reasons.map((reason) => reason.code);
 
 test('the reasons offered fit the direction of the difference', () => {
   /* 2 te weinig: nothing was "found back". */
-  assert.deepEqual(codes(reasonsFor(REASONS, [-2])), ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'ANDERE']);
+  assert.deepEqual(codes(reasonsFor(REASONS, [-2])), ['BESCHADIGD', 'NIET_GEVONDEN', 'TELFOUT', 'ANDERE_LOCATIE', 'DEMO', 'ANDERS']);
   /* 1 te veel: nothing was lost, broken or given away. */
-  assert.deepEqual(codes(reasonsFor(REASONS, [1])), ['TELFOUT', 'ANDERE_LOCATIE', 'TERUGGEVONDEN', 'ANDERE']);
+  assert.deepEqual(codes(reasonsFor(REASONS, [1])), ['TELFOUT', 'ANDERE_LOCATIE', 'TERUGGEVONDEN', 'ANDERS']);
   /* The same reason for lines that go both ways, or no difference known: every reason. */
   assert.deepEqual(codes(reasonsFor(REASONS, [-2, 1])), codes(REASONS));
   assert.deepEqual(codes(reasonsFor(REASONS, [null])), codes(REASONS));

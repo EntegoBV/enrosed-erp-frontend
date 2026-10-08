@@ -660,7 +660,7 @@ export class StockCountPage {
       if (this.destroyed || this.countId !== id) return;
       this.takeSession(view);
     } catch (failure) {
-      if (!this.destroyed && this.countId === id) this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
+      if (!this.destroyed && this.countId === id) this.loadError.set(sentence(messageOf(failure, 'Probeer het opnieuw.')));
     }
   }
 
@@ -1035,7 +1035,7 @@ export class StockCountPage {
         } catch (failure) {
           if (this.countId !== countId) return;
           if (refusalCode(failure) === 'TELLING_GESLOTEN') {
-            this.ui.toast(messageOf(failure, 'Deze telling is gesloten.'), 'err');
+            this.ui.toast(sentence(messageOf(failure, 'Deze telling is gesloten.')), 'err');
             this.sessionClosed();
             return;
           }
@@ -1043,7 +1043,7 @@ export class StockCountPage {
             skipped++;
             continue;
           }
-          this.ui.toast(messageOf(failure, 'Bewaren is niet gelukt. Probeer opnieuw.'), 'err');
+          this.ui.toast(sentence(messageOf(failure, 'Bewaren is niet gelukt. Probeer opnieuw.')), 'err');
           break;
         }
       }
@@ -1109,7 +1109,7 @@ export class StockCountPage {
       else this.reveal(line);
     } catch (failure) {
       if (this.countId !== countId) return;
-      this.ui.toast(messageOf(failure, 'Het product kon niet worden toegevoegd.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'Het product kon niet worden toegevoegd.')), 'err');
       if (refusalCode(failure) === 'TELLING_GESLOTEN') this.sessionClosed();
     } finally {
       this.working.set(false);
@@ -1156,7 +1156,7 @@ export class StockCountPage {
       this.check.set(check);
     } catch (failure) {
       if (this.destroyed || this.countId !== countId || run !== this.checkRun) return;
-      this.ui.toast(messageOf(failure, 'De controle kon niet worden geladen.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'De controle kon niet worden geladen.')), 'err');
       if (refusalCode(failure) === 'TELLING_GESLOTEN') this.sessionClosed();
       else if (!this.check()) this.checkFailed.set(true);
     } finally {
@@ -1264,7 +1264,7 @@ export class StockCountPage {
       this.ui.toast('Telling geannuleerd. Er is niets geboekt.');
     } catch (failure) {
       if (this.countId !== countId) return;
-      this.ui.toast(messageOf(failure, 'De telling kon niet worden geannuleerd.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'De telling kon niet worden geannuleerd.')), 'err');
       if (refusalCode(failure) === 'TELLING_GESLOTEN') this.sessionClosed();
     } finally {
       this.working.set(false);

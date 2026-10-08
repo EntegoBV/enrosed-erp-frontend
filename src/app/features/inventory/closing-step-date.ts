@@ -6,7 +6,8 @@ import type {
 import { BrusselsDateTimePipe } from './inventory-dates';
 import { ClosingDecisionSheet, DecisionSheetResult, DecisionSheetSpec, followAnchor } from './closing-decision-sheet';
 import {
-  bookedLater, byName, dateText, decisionWriteMovement, laterRowsIntro, needsLook, rollEffect, rollIntro, rollLine, rollTickHead, rollTickLabel,
+  bookedLater, byName, dateText, decisionWriteMovement, laterRowsIntro, needsLook, rollDirection, rollEffect, rollIntro, rollLine, rollTickHead,
+  rollTickLabel,
 } from './inventory-closing';
 import { InventoryScrollCue } from './inventory-scroll-cue';
 import { signedQuantity } from './stock-count-booking-sheet';
@@ -20,6 +21,8 @@ interface ProductRows {
   rows: ClosingMovement[];
 }
 
+type RollDirection = ReturnType<typeof rollDirection>;
+
 interface LocationBlock {
   location: ClosingLocation;
   /** Rows booked between the closing date and the count. */
@@ -27,6 +30,9 @@ interface LocationBlock {
   /** Rows of the 31 days after the later of the two moments. */
   later: ProductRows[];
   laterCount: number;
+  /** Direction and count moment of each table, read from the places of its products. */
+  betweenRoll: RollDirection;
+  laterRoll: RollDirection;
   /** A row in the fold needs a look (removed since the last calculation, or to review): the fold starts open. */
   laterOpen: boolean;
 }
@@ -56,18 +62,18 @@ interface LocationBlock {
             <p class="inv-step__text">Nog niet geteld: dit concept rekent met de stand volgens het systeem.</p>
           }
           @if (block.between.length) {
-            @if (block.location.anchor === 'TELLING' && block.location.anchoredAt) {
-              <p class="inv-step__text">{{ intro(block.location) }}</p>
+            @if (block.location.anchor === 'TELLING' && block.betweenRoll.anchoredAt) {
+              <p class="inv-step__text">{{ intro(block.betweenRoll) }}</p>
             }
-            <ng-container [ngTemplateOutlet]="table" [ngTemplateOutletContext]="{ $implicit: block.between, result: true, after: block.location.countAfterClosingDate }" />
+            <ng-container [ngTemplateOutlet]="table" [ngTemplateOutletContext]="{ $implicit: block.between, result: true, after: block.betweenRoll.after }" />
           } @else if (block.location.anchor === 'TELLING') {
             <p class="inv-step__text">Geen bewegingen tussen de afsluitdatum en de telling. De getelde aantallen zijn de eindvoorraad.</p>
           }
           @if (block.laterCount) {
             <details class="inv-fold" [open]="block.laterOpen">
               <summary>Later geboekt ({{ block.laterCount }})</summary>
-              <p class="inv-step__text">{{ laterIntro(block.location) }}</p>
-              <ng-container [ngTemplateOutlet]="table" [ngTemplateOutletContext]="{ $implicit: block.later, result: false, known: block.between, after: block.location.countAfterClosingDate }" />
+              <p class="inv-step__text">{{ laterIntro(block.laterRoll) }}</p>
+              <ng-container [ngTemplateOutlet]="table" [ngTemplateOutletContext]="{ $implicit: block.later, result: false, known: block.between, after: block.laterRoll.after }" />
             </details>
           }
         </div>
@@ -173,7 +179,10 @@ export class ClosingStepDate {
         }
         product.rows.push(row);
       }
-      return { location, between: sorted(between), later: sorted(later), laterCount, laterOpen };
+      const roll = (products: Map<number, ProductRows>) => rollDirection([...products.values()].map((product) => product.place), location);
+      return {
+        location, between: sorted(between), later: sorted(later), laterCount, laterOpen, betweenRoll: roll(between), laterRoll: roll(later),
+      };
     });
   });
 
@@ -194,8 +203,8 @@ export class ClosingStepDate {
     return rollLine(place, this.view().closingDate);
   }
 
-  intro(location: ClosingLocation): string {
-    return rollIntro(location.countAfterClosingDate, this.view().closingDate, location.anchoredAt ?? this.view().cutoffAt);
+  intro(roll: RollDirection): string {
+    return rollIntro(roll.after, this.view().closingDate, roll.anchoredAt ?? this.view().cutoffAt);
   }
 
   tickHead(countAfterClosingDate: boolean): string {
@@ -211,8 +220,8 @@ export class ClosingStepDate {
     return rollEffect(row.effectiveDelta, row.applied, countAfterClosingDate);
   }
 
-  laterIntro(location: ClosingLocation): string {
-    return laterRowsIntro(location.countAfterClosingDate, this.view().closingDate, location.anchoredAt ?? this.view().cutoffAt);
+  laterIntro(roll: RollDirection): string {
+    return laterRowsIntro(roll.after, this.view().closingDate, roll.anchoredAt ?? this.view().cutoffAt);
   }
 
   listed(products: ProductRows[] | undefined, productId: number): boolean {

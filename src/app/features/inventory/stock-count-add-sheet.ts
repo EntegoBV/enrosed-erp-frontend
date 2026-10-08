@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
+import { sentence } from './inventory-closing';
 import type { Product } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
 import { Skeleton } from '../../shared/skeleton';
@@ -99,7 +100,7 @@ export class StockCountAddSheet {
         .filter((product) => product.id !== null)
         .sort((a, b) => a.name.localeCompare(b.name, 'nl-BE')));
     } catch (failure) {
-      this.error.set(messageOf(failure, 'De producten konden niet worden geladen.'));
+      this.error.set(sentence(messageOf(failure, 'De producten konden niet worden geladen.')));
     }
   }
 }

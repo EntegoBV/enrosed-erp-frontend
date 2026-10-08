@@ -19,7 +19,7 @@ import { ClosingStepDate } from './closing-step-date';
 import { ClosingStepFinalize } from './closing-step-finalize';
 import { ClosingStepSeparate } from './closing-step-separate';
 import { ClosingStepValue } from './closing-step-value';
-import { dateText, fileName, sentence, stepStates, stripItems } from './inventory-closing';
+import { dateText, fileName, sentence, stepStates, stripItems, versionStartRefusal } from './inventory-closing';
 import type { StepState } from './inventory-closing';
 
 const STEP_KEYS: readonly NoticeSegment[] = ['tellen', 'datum', 'waarde', 'apart', 'afsluiten'];
@@ -404,7 +404,7 @@ export class StockClosingPage {
       if (this.closingId !== id) return;
       /* Made final by someone else between the two calls: the stored rows are the truth. */
       if (refusalCode(failure) === 'DEFINITIEF') await this.read(id);
-      else this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
+      else this.loadError.set(sentence(messageOf(failure, 'Probeer het opnieuw.')));
     } finally {
       if (this.closingId === id) {
         this.busy.set(false);
@@ -418,7 +418,7 @@ export class StockClosingPage {
       const stored = await this.api.closing(id);
       if (this.closingId === id) this.show(stored);
     } catch (failure) {
-      if (this.closingId === id && !this.view()) this.loadError.set(messageOf(failure, 'Probeer het opnieuw.'));
+      if (this.closingId === id && !this.view()) this.loadError.set(sentence(messageOf(failure, 'Probeer het opnieuw.')));
     }
   }
 
@@ -527,7 +527,7 @@ export class StockClosingPage {
       try {
         await write();
       } catch (failure) {
-        if (this.closingId === id) this.ui.toast(messageOf(failure, failed), 'err');
+        if (this.closingId === id) this.ui.toast(sentence(messageOf(failure, failed)), 'err');
         return;
       }
       if (this.closingId !== id) return;
@@ -570,10 +570,15 @@ export class StockClosingPage {
     } catch (failure) {
       if (this.closingId !== id) return;
       this.busy.set(false);
-      this.ui.toast(messageOf(failure, 'De nieuwe versie kon niet worden gestart.'), 'err');
+      this.ui.toast(sentence(messageOf(failure, 'De nieuwe versie kon niet worden gestart.')), 'err');
       /* A concept of this year is already open: that is the version to work in. */
-      const open = refusalCode(failure) === 'CONCEPT_BESTAAT' ? refusalDetails<{ closingId: number }>(failure)?.closingId ?? null : null;
-      if (open !== null) await this.router.navigate(['/stock/inventaris/afsluiting', open]);
+      const next = versionStartRefusal(refusalCode(failure), refusalDetails<{ closingId?: unknown }>(failure));
+      if (next.open !== null) await this.router.navigate(['/stock/inventaris/afsluiting', next.open]);
+      else if (next.reload) {
+        /* No longer the valid final version: the question is off, the stored rows say which version replaced it. */
+        this.correcting.set(false);
+        await this.read(id);
+      }
     }
   }
 
@@ -588,7 +593,7 @@ export class StockClosingPage {
     } catch (failure) {
       /* The refusal of a file route arrives as a Blob: read the server's sentence out of it. */
       const readable = await readableFailure(failure);
-      this.ui.toast(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.'), 'err');
+      this.ui.toast(sentence(messageOf(readable, kind === 'pdf' ? 'De PDF kon niet worden gedownload.' : 'Het Excel-bestand kon niet worden gedownload.')), 'err');
     } finally {
       /* Another closing was opened meanwhile: its own call owns the flag now. */
       if (this.closingId === id) this.busy.set(false);
