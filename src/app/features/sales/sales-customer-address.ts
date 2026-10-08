@@ -23,6 +23,8 @@ export interface CustomerAddressNotice {
   /** Why no takeover is offered; null when one is, or when the document simply has no delivery address. */
   reason: string | null;
   takeover: CustomerAddressTakeover | null;
+  /** "de factuur" or "de creditnota": the lead and the confirmation name the same document. */
+  document: string;
   /** The `q` of the link to the customer list, which filters it to this customer. */
   customerQuery: string;
 }
@@ -32,8 +34,13 @@ const FIELD: Record<string, string> = { ADDRESS: 'straat en nummer', POSTAL_CODE
 const REASON: Record<string, string> = {
   PICKUP: 'Deze bestelling wordt afgehaald: er is geen leveradres om over te nemen. Vul het adres in bij de klant.',
   OTHER_COUNTRY: 'Het leveradres ligt in een ander land dan de klant. Vul het adres in bij de klant.',
-  INCOMPLETE: 'Het leveradres past niet bij wat al in de klantgegevens staat. Vul het adres in bij de klant.',
+  /* The server sends this code for two cases: the delivery itself lacks a street, postal code or city,
+     or a field the record already has says something else. One sentence has to be true for both. */
+  INCOMPLETE: 'Het leveradres is onvolledig of past niet bij wat al in de klantgegevens staat. Vul het adres in bij de klant.',
 };
+
+/** Beside the disabled button: a touch screen never shows a title attribute. */
+export const TAKEOVER_BLOCKED_HINT = 'Sla openstaande wijzigingen eerst op om het leveradres over te nemen.';
 
 /** "straat en nummer, postcode en stad", in the order the server sends the codes. */
 export function missingAddressText(missing: readonly string[] | null | undefined): string {
@@ -70,6 +77,7 @@ export function customerAddressNotice(
       + `Zonder volledig adres kan ${document} niet uitgereikt worden.`,
     reason: takeoverOf(block, countryName) ? null : REASON[block.takeoverBlockedBy ?? ''] ?? null,
     takeover: takeoverOf(block, countryName),
+    document,
     customerQuery: block.company?.trim() ?? '',
   };
 }
@@ -84,4 +92,42 @@ function takeoverOf(block: SalesInvoiceCustomer, countryName: (code: string) => 
     lines: [address, `${postalCode} ${city}`, ...(country ? [countryName(country) || country] : [])],
     request: { address, postalCode, city },
   };
+}
+
+/**
+ * What the host should show when the server answers a takeover (or the reload
+ * after a refusal). `started` is the view the host showed when the call left.
+ * Still the same object: nothing happened meanwhile, the answer is the newest
+ * view. Another object: the host saved or reloaded while the call was under
+ * way, so the answer may be older than the screen; only the two blocks the
+ * takeover decides are laid over what the host shows now. Null when the host
+ * moved on to another document.
+ */
+export function takeoverAnswerFor(
+  started: SalesOrderView,
+  current: SalesOrderView | null | undefined,
+  answer: SalesOrderView,
+): SalesOrderView | null {
+  if (!current || current.order.id !== answer.order.id) return null;
+  if (current === started) return answer;
+  return { ...current, invoiceCustomer: answer.invoiceCustomer ?? null, delivery: answer.delivery ?? current.delivery };
+}
+
+/** The little of an element the focus rule below reads; the browser's Element fits it. */
+export interface FocusPlace {
+  previousElementSibling: FocusPlace | null;
+  contains(other: any): boolean;
+}
+
+/**
+ * Where the keyboard focus goes once the notice is gone. The sheet hands the
+ * focus back to "Leveradres overnemen", which disappears with the notice, and
+ * the browser then drops it on the page body: a keyboard user would start at
+ * the top again. The element straight above the notice (the website-order
+ * banner, else the head of the document) is the nearest thing that stays.
+ * Null when staff already moved the focus somewhere else themselves.
+ */
+export function focusPlaceAfterTakeover<T extends FocusPlace>(host: T, active: unknown, body: unknown): T | null {
+  const lost = active == null || active === body || active === host || host.contains(active);
+  return lost ? (host.previousElementSibling as T | null) : null;
 }

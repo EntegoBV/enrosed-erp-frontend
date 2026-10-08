@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import type { SalesOrderView } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
-import { customerAddressNotice } from './sales-customer-address';
+import { TAKEOVER_BLOCKED_HINT, customerAddressNotice, focusPlaceAfterTakeover, takeoverAnswerFor } from './sales-customer-address';
 import { Sheet, Ui } from '../../shared/ui';
 
 /**
@@ -28,22 +28,24 @@ import { Sheet, Ui } from '../../shared/ui';
       <div class="cust-notice" [class.cust-notice--desk]="variant() === 'desk'">
         @if (variant() === 'desk') { <b aria-hidden="true">!</b> }
         <div class="cust-notice__text">
-          <p role="status">@if (variant() !== 'desk') { <span aria-hidden="true">!</span> } <strong>Klantgegevens onvolledig</strong> · {{ notice.lead }}</p>
+          <p role="status">@if (variant() !== 'desk') { <span class="cust-notice__mark" aria-hidden="true">!</span> } <strong>Klantgegevens onvolledig</strong> · {{ notice.lead }}</p>
           @if (notice.reason) { <p class="cust-notice__reason">{{ notice.reason }}</p> }
         </div>
         <div class="cust-notice__actions">
           @if (notice.takeover) {
-            <button type="button" class="btn btn--sm btn--primary" [disabled]="busy() || blocked()" [title]="blockedTitle()" (click)="open()">Leveradres overnemen</button>
+            <button type="button" class="btn btn--sm btn--primary" [disabled]="busy() || blocked()" [attr.aria-describedby]="blocked() ? hintId : null" (click)="open()">Leveradres overnemen</button>
             <a class="cust-notice__link" [routerLink]="['/customers']" [queryParams]="{ q: notice.customerQuery }">Zelf invullen bij de klant ›</a>
           } @else {
             <a class="btn btn--sm" [routerLink]="['/customers']" [queryParams]="{ q: notice.customerQuery }">Naar de klant ›</a>
           }
+          <!-- Said in words: a title on the disabled button never shows on a touch screen. -->
+          @if (notice.takeover && blocked() && !busy()) { <p class="cust-notice__blocked" [id]="hintId">{{ blockedHint }}</p> }
         </div>
       </div>
       @if (sheet() && notice.takeover; as takeover) {
         <app-sheet title="Leveradres overnemen" (closed)="sheet.set(false)">
           <div body class="cust-sheet">
-            <p>Dit adres komt in de klantgegevens van <strong>{{ notice.company }}</strong> en op de factuur:</p>
+            <p>Dit adres komt in de klantgegevens van <strong>{{ notice.company }}</strong> en op {{ notice.document }}:</p>
             <p class="cust-sheet__address">
               @for (line of takeover.lines; track $index) { <span>{{ line }}</span> }
             </p>
@@ -69,6 +71,8 @@ import { Sheet, Ui } from '../../shared/ui';
     .cust-notice p strong { color:var(--ink) }
     .cust-notice__actions { display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px }
     .cust-notice__actions .btn { flex:none;margin:0;min-height:44px }
+    .cust-notice__mark { display:inline-grid;place-items:center;width:18px;height:18px;margin-right:7px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:700;line-height:1;vertical-align:1px }
+    .cust-notice .cust-notice__blocked { flex-basis:100%;color:var(--muted);font-size:12px }
     .cust-notice__link { display:inline-flex;align-items:center;min-height:44px;color:var(--rose-dark);font-size:13px;font-weight:650;text-decoration:underline }
     /* Desk: one row of the kit's attention bar (global .desk-attention), actions at the right. */
     .cust-notice--desk { display:flex;align-items:center;gap:10px;margin:12px 0;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2) }
@@ -76,9 +80,11 @@ import { Sheet, Ui } from '../../shared/ui';
     .cust-notice--desk .cust-notice__text { flex:1;gap:4px }
     .cust-notice--desk p { font-size:12.5px }
     .cust-notice--desk .cust-notice__reason { font-size:12px }
-    .cust-notice--desk .cust-notice__actions { flex:none;flex-wrap:nowrap;justify-content:flex-end }
+    .cust-notice--desk .cust-notice__actions { flex:none;justify-content:flex-end }
     .cust-notice--desk .cust-notice__actions .btn { min-height:32px }
     .cust-notice--desk .cust-notice__link { min-height:32px;font-size:12.5px;white-space:nowrap }
+    .cust-notice--desk .cust-notice__actions { flex-wrap:wrap;max-width:46% }
+    .cust-notice--desk .cust-notice__blocked { text-align:right;font-size:11.5px }
     @media (max-width:1100px) { .cust-notice--desk { flex-wrap:wrap } .cust-notice--desk .cust-notice__text { flex-basis:60% } .cust-notice--desk .cust-notice__actions { flex-wrap:wrap } }
     .cust-sheet { display:grid;gap:12px }
     .cust-sheet p { margin:0;font-size:14.5px;line-height:1.55;overflow-wrap:anywhere }
@@ -96,7 +102,7 @@ export class SalesCustomerAddressNotice {
    * waits until the document is saved.
    */
   readonly blocked = input(false);
-  /** The view the server answered (or a fresh one after a refusal); the host adopts it. */
+  /** The view for the host to show: the server's answer (or a fresh view after a refusal), see `hand`. */
   readonly changed = output<SalesOrderView>();
   readonly busy = signal(false);
   readonly sheet = signal(false);
@@ -106,7 +112,11 @@ export class SalesCustomerAddressNotice {
   readonly notice = computed(() => customerAddressNotice(this.view(), (code) => {
     try { return new Intl.DisplayNames('nl-BE', { type: 'region' }).of(code) ?? code; } catch { return code; }
   }));
-  readonly blockedTitle = computed(() => this.blocked() ? 'Sla de wijzigingen eerst op' : '');
+  readonly blockedHint = TAKEOVER_BLOCKED_HINT;
+  private static count = 0;
+  readonly hintId = `cust-notice-hint-${++SalesCustomerAddressNotice.count}`;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   open(): void {
     if (this.busy() || this.blocked() || !this.notice()?.takeover) return;
@@ -117,23 +127,52 @@ export class SalesCustomerAddressNotice {
   async take(): Promise<void> {
     const notice = this.notice();
     if (this.busy() || this.blocked() || !notice?.takeover) return;
-    const id = this.view().order.id;
+    const started = this.view();
+    const id = started.order.id;
     this.sheet.set(false);
     this.busy.set(true);
     try {
       const updated = await this.sales.takeCustomerAddressFromDelivery(id, notice.takeover.request);
-      if (this.view().order.id === id) this.changed.emit(updated);
+      this.hand(started, updated);
       this.ui.toast(`Adres overgenomen in de klantgegevens van ${notice.company}`);
+      this.keepFocusNearby();
     } catch (failure) {
       this.ui.toast(messageOf(failure, 'Leveradres overnemen mislukt. Probeer opnieuw.'), 'err');
       /* A refusal means the screen is behind (the customer changed the delivery, or the record was
          filled elsewhere): show what the server has now, so the next look is at the right address. */
       if ((failure as { status?: number })?.status === 409) {
         try {
+          const asked = this.view();
           const fresh = await this.sales.order(id);
-          if (this.view().order.id === id) this.changed.emit(fresh);
+          this.hand(asked, fresh);
         } catch { /* the sentence above stands; the next load brings the rest */ }
       }
     } finally { this.busy.set(false); }
+  }
+
+  /**
+   * Hands the server's view to the host. When the host saved or reloaded
+   * while the call was under way, the answer may be older than the screen:
+   * then only the notice and the delivery block are laid over what it shows.
+   */
+  private hand(started: SalesOrderView, answer: SalesOrderView): void {
+    const next = takeoverAnswerFor(started, this.view(), answer);
+    if (next) this.changed.emit(next);
+  }
+
+  /**
+   * The notice disappears with the button the sheet gave the focus back to.
+   * Once the host has rendered without it, the focus goes to the element
+   * straight above (the website-order banner or the head of the document),
+   * so a keyboard user continues from where they were.
+   */
+  private keepFocusNearby(): void {
+    afterNextRender(() => {
+      if (this.notice()) return;
+      const place = focusPlaceAfterTakeover(this.host.nativeElement as HTMLElement, document.activeElement, document.body);
+      if (!place) return;
+      if (!place.hasAttribute('tabindex')) place.setAttribute('tabindex', '-1');
+      place.focus({ preventScroll: true });
+    }, { injector: this.injector });
   }
 }

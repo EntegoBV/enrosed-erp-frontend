@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { customerAddressNotice, missingAddressText } from '../src/app/features/sales/sales-customer-address.ts';
+import { TAKEOVER_BLOCKED_HINT, customerAddressNotice, focusPlaceAfterTakeover, missingAddressText, takeoverAnswerFor } from '../src/app/features/sales/sales-customer-address.ts';
 
 /*
  * The notice on a document whose customer record lacks the address an
@@ -60,6 +60,10 @@ test('a credit note names the credit note', () => {
   const notice = customerAddressNotice(view(block(), { docType: 'CREDITNOTA' }))!;
   assert.match(notice.lead, /kan de creditnota niet uitgereikt worden\.$/);
   assert.match(customerAddressNotice(view(block(), { docType: 'FACTUUR' }))!.lead, /kan de factuur niet uitgereikt worden\.$/);
+  /* The confirmation names the same document as the lead. */
+  assert.equal(notice.document, 'de creditnota');
+  assert.equal(customerAddressNotice(view(block(), { docType: 'FACTUUR' }))!.document, 'de factuur');
+  assert.equal(customerAddressNotice(view(block()))!.document, 'de factuur');
 });
 
 test('no takeover: each reason of the server gets its sentence and the link to the customer', () => {
@@ -67,7 +71,9 @@ test('no takeover: each reason of the server gets its sentence and the link to t
   assert.equal(blocked('PICKUP').takeover, null);
   assert.match(blocked('PICKUP').reason!, /wordt afgehaald/);
   assert.match(blocked('OTHER_COUNTRY').reason!, /ander land/);
-  assert.match(blocked('INCOMPLETE').reason!, /past niet bij wat al in de klantgegevens staat/);
+  /* The server sends INCOMPLETE both for a delivery that lacks a field and for a record that says something
+     else (CustomerInvoiceData.fits): the sentence must hold for an empty record too. */
+  assert.equal(blocked('INCOMPLETE').reason, 'Het leveradres is onvolledig of past niet bij wat al in de klantgegevens staat. Vul het adres in bij de klant.');
   for (const code of ['PICKUP', 'OTHER_COUNTRY', 'INCOMPLETE']) assert.match(blocked(code).reason!, /Vul het adres in bij de klant\.$/);
   /* A plain quotation has no delivery address at all: nothing to explain, only the link. */
   assert.equal(blocked('NO_DELIVERY').reason, null);
@@ -100,4 +106,53 @@ test('a record without a company name still gets a readable sentence', () => {
   const notice = customerAddressNotice(view(block({ company: ' ' })))!;
   assert.match(notice.lead, /^bij deze klant ontbreken/);
   assert.equal(notice.customerQuery, '');
+});
+
+test('the reason of a disabled takeover is a sentence, in the words of the neighbouring cards', () => {
+  assert.equal(TAKEOVER_BLOCKED_HINT, 'Sla openstaande wijzigingen eerst op om het leveradres over te nemen.');
+});
+
+test('an answer that arrives while nothing else happened is shown whole', () => {
+  const started = view(block());
+  const answer = { ...view(null), delivery: { address: 'Stationsstraat 9', differsFromCustomerRecord: false } } as any;
+  assert.equal(takeoverAnswerFor(started, started, answer), answer);
+});
+
+test('an answer that arrives after a save only brings the notice and the delivery block', () => {
+  const started = view(block(), { internalNotes: '' });
+  /* Staff typed and saved while the takeover was under way: the host shows the saved view. */
+  const saved = { ...view(block(), { internalNotes: 'Teamnotitie' }), delivery: { address: 'Stationsstraat 9', differsFromCustomerRecord: true } } as any;
+  const answer = { ...view(null, { internalNotes: '' }), delivery: { address: 'Stationsstraat 9', differsFromCustomerRecord: false } } as any;
+  const shown = takeoverAnswerFor(started, saved, answer)!;
+  assert.equal(shown.order, saved.order);
+  assert.equal(shown.order.internalNotes, 'Teamnotitie');
+  assert.equal(shown.invoiceCustomer, null);
+  assert.equal(shown.delivery!.differsFromCustomerRecord, false);
+  assert.equal(customerAddressNotice(shown), null);
+  /* An answer without a delivery block (older backend) keeps the one on screen. */
+  assert.equal(takeoverAnswerFor(started, saved, view(null))!.delivery, saved.delivery);
+  /* A refusal reloads the view: the notice of that reload is laid over the saved view the same way. */
+  const stale = block({ takeover: { ...OFFER, address: 'Nieuwe Kaai 3' } });
+  assert.equal(takeoverAnswerFor(started, saved, view(stale))!.invoiceCustomer, stale);
+});
+
+test('an answer for a document the host no longer shows is dropped', () => {
+  const started = view(block());
+  assert.equal(takeoverAnswerFor(started, view(block(), { id: 8 }), view(null)), null);
+  assert.equal(takeoverAnswerFor(started, null, view(null)), null);
+});
+
+test('after the takeover the focus goes to the element above the notice, unless staff moved it', () => {
+  const body = {};
+  const banner = { previousElementSibling: null, contains: () => false };
+  const button = {};
+  const host = { previousElementSibling: banner, contains: (other: unknown) => other === button };
+  /* The button vanished with the notice: the browser reports the body (or nothing). */
+  assert.equal(focusPlaceAfterTakeover(host, body, body), banner);
+  assert.equal(focusPlaceAfterTakeover(host, null, body), banner);
+  assert.equal(focusPlaceAfterTakeover(host, button, body), banner);
+  /* Staff clicked into a field meanwhile: leave the focus there. */
+  assert.equal(focusPlaceAfterTakeover(host, {}, body), null);
+  /* Nothing above the notice: nowhere better than where the browser left it. */
+  assert.equal(focusPlaceAfterTakeover({ previousElementSibling: null, contains: () => false }, body, body), null);
 });

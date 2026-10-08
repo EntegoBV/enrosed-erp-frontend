@@ -819,9 +819,17 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `/api/sales-orders/{id}/customer-address-from-delivery`, body = the address
   staff saw, never a `webOrderRevision`: it does not take a website order
   into processing). The server fills only empty address fields. The answer is
-  a whole view, so the button is `blocked` while the host has unsaved edits;
-  the hosts adopt it in `customerAddressTaken` and read the cached customers
-  again. A 409 shows the server's sentence and reloads the view, so the next
+  a whole view, so the button is `blocked` while the host has unsaved edits
+  (the reason stands beside it as a sentence, `TAKEOVER_BLOCKED_HINT`: a
+  title never shows on a touch screen); the hosts adopt it in
+  `customerAddressTaken` and read the cached customers again. When the host
+  saved or reloaded while the call was under way, the answer may be older
+  than the screen: `takeoverAnswerFor` then lays only `invoiceCustomer` and
+  `delivery` over the view the host shows. After success the notice (and the
+  button the sheet returns focus to) is gone; `focusPlaceAfterTakeover` moves
+  the focus to the element straight above the host. The sheet names the same
+  document as the lead (`de factuur` / `de creditnota`). A 409 shows the
+  server's sentence and reloads the view, so the next
   confirmation shows the current delivery address. Without `takeover`
   (`takeoverBlockedBy` PICKUP, NO_DELIVERY, OTHER_COUNTRY, INCOMPLETE) it
   gives the reason and links to `/customers?q=<company>`. The host element
