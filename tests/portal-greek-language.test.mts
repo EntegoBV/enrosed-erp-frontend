@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { signal, computed } from '@angular/core';
 import { LANGUAGES } from '../src/app/core/api/models.ts';
+import { PORTAL_NOT_FOUND, portalRefusalOf } from '../src/app/features/portal/portal-refusal.ts';
 
 const source = await readFile(new URL('../src/app/features/portal/portal-page.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('portal-page.ts', source, ts.ScriptTarget.Latest, true);
@@ -20,11 +21,11 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
 }).outputText;
 function harness() {
   const storage = new Map<string, string>(), calls: any[] = [], exports: any = {};
-  vm.runInNewContext(javascript, { exports, signal, computed, LANGUAGES, Intl,
+  vm.runInNewContext(javascript, { exports, signal, computed, LANGUAGES, Intl, portalRefusalOf,
     localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
   });
   const page = new exports.PortalPage();
-  Object.assign(page, { token: () => 'fixture', quote: signal(null), catalog: signal([]), error: signal(false), proposeBy: signal(''),
+  Object.assign(page, { token: () => 'fixture', quote: signal(null), catalog: signal([]), error: signal(false), refusal: signal(PORTAL_NOT_FOUND), proposeBy: signal(''),
     sales: {
       portalQuote: async (token: string, language?: string) => { calls.push(['quote', token, language]); return {
         language: language ?? 'EL', contactName: 'Πελάτης', text: { quote: 'Προσφορά', lineUnavailable: 'Προσωρινά μη διαθέσιμο',

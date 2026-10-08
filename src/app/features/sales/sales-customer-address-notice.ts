@@ -1,0 +1,198 @@
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, inject, input, output, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { SalesApi } from '../../core/api/sales-api';
+import type { SalesOrderView } from '../../core/api/models';
+import { messageOf } from '../../core/api/errors';
+import { TAKEOVER_BLOCKED_HINT, TAKEOVER_KEPT, TAKEOVER_WRITTEN, customerAddressNotice, focusPlaceAfterTakeover, takeoverAnswerFor } from './sales-customer-address';
+import { Sheet, Ui } from '../../shared/ui';
+
+/**
+ * The notice on a sales document whose customer record lacks the address an
+ * invoice needs. A customer made when a website login is approved has no
+ * street, postal code or city; the invoice is refused until the record has
+ * them. The notice names what is missing and, when the document has a
+ * delivery address the server offers, lets staff take it over into the empty
+ * fields of the record after they have seen it, each part marked as written
+ * or already there. The country is never written. Otherwise it links to the
+ * customer.
+ *
+ * It renders only what the view carries: without an `invoiceCustomer` block
+ * (nothing missing, an older backend) the host stays empty and takes no room.
+ */
+@Component({
+  selector: 'app-sales-customer-address-notice',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Sheet],
+  host: { '[class.is-shown]': '!!notice()' },
+  template: `
+    @if (notice(); as notice) {
+      <div class="cust-notice" [class.cust-notice--desk]="variant() === 'desk'">
+        @if (variant() === 'desk') { <b aria-hidden="true">!</b> }
+        <div class="cust-notice__text">
+          <p role="status">@if (variant() !== 'desk') { <span class="cust-notice__mark" aria-hidden="true">!</span> } <strong>Klantgegevens onvolledig</strong> · {{ notice.lead }}</p>
+          @if (notice.reason) { <p class="cust-notice__reason">{{ notice.reason }}</p> }
+        </div>
+        <div class="cust-notice__actions">
+          @if (notice.takeover) {
+            <button type="button" class="btn btn--sm btn--primary" [disabled]="busy() || blocked()" [attr.aria-describedby]="blocked() ? hintId : null" (click)="open()">Leveradres overnemen</button>
+            <a class="cust-notice__link" [routerLink]="['/customers']" [queryParams]="{ q: notice.customerQuery }">Zelf invullen bij de klant ›</a>
+          } @else {
+            <a class="btn btn--sm" [routerLink]="['/customers']" [queryParams]="{ q: notice.customerQuery }">Naar de klant ›</a>
+          }
+          <!-- Said in words: a title on the disabled button never shows on a touch screen. -->
+          @if (notice.takeover && blocked() && !busy()) { <p class="cust-notice__blocked" [id]="hintId">{{ blockedHint }}</p> }
+        </div>
+      </div>
+      @if (sheet() && notice.takeover; as takeover) {
+        <app-sheet title="Leveradres overnemen" (closed)="sheet.set(false)">
+          <div body class="cust-sheet">
+            <p>Zo staat het adres daarna in de klantgegevens van <strong>{{ notice.company }}</strong> en op {{ notice.document }}:</p>
+            <dl class="cust-sheet__address">
+              @for (field of takeover.fields; track field.label) {
+                <div [class.is-kept]="!field.written">
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ field.value }}</dd>
+                  <dd class="cust-sheet__state">{{ field.written ? written : kept }}</dd>
+                </div>
+              }
+            </dl>
+            <p class="cust-sheet__hint">Alleen de lege velden straat en nummer, postcode en stad worden ingevuld. Het land, de naam, het btw-nummer en de contactgegevens blijven zoals ze zijn.
+              Is dit niet het adres van de klant zelf, bijvoorbeeld een levering bij een ander bedrijf? Vul het adres dan zelf in bij de klant.</p>
+          </div>
+          <div foot style="display:contents">
+            <button class="btn" type="button" data-initial-focus (click)="sheet.set(false)">Terug</button>
+            <button class="btn btn--primary" type="button" [disabled]="busy() || blocked()" (click)="take()">{{ busy() ? 'Overnemen…' : 'Adres overnemen' }}</button>
+          </div>
+        </app-sheet>
+      }
+    }
+  `,
+  styles: `
+    :host { display:none;min-width:0 }
+    :host(.is-shown) { display:block }
+    /* Phone editor and read view: the look of the website-order banner above it. */
+    .cust-notice { display:grid;gap:10px;margin:0 0 16px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--line));border-radius:14px;
+      background:color-mix(in srgb,var(--gold-soft) 30%,var(--surface)) }
+    .cust-notice__text { display:grid;gap:5px;min-width:0 }
+    .cust-notice p { margin:0;color:var(--ink-2);font-size:13px;line-height:1.45;overflow-wrap:anywhere }
+    .cust-notice p strong { color:var(--ink) }
+    .cust-notice__actions { display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px }
+    .cust-notice__actions .btn { flex:none;margin:0;min-height:44px }
+    .cust-notice__mark { display:inline-grid;place-items:center;width:18px;height:18px;margin-right:7px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:700;line-height:1;vertical-align:1px }
+    .cust-notice .cust-notice__blocked { flex-basis:100%;color:var(--muted);font-size:12px }
+    .cust-notice__link { display:inline-flex;align-items:center;min-height:44px;color:var(--rose-dark);font-size:13px;font-weight:650;text-decoration:underline }
+    /* Desk: one row of the kit's attention bar (global .desk-attention), actions at the right. */
+    .cust-notice--desk { display:flex;align-items:center;gap:10px;margin:12px 0;padding:9px 14px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2) }
+    .cust-notice--desk > b { flex:none;display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px }
+    .cust-notice--desk .cust-notice__text { flex:1;gap:4px }
+    .cust-notice--desk p { font-size:12.5px }
+    .cust-notice--desk .cust-notice__reason { font-size:12px }
+    .cust-notice--desk .cust-notice__actions { flex:none;justify-content:flex-end }
+    .cust-notice--desk .cust-notice__actions .btn { min-height:32px }
+    .cust-notice--desk .cust-notice__link { min-height:32px;font-size:12.5px;white-space:nowrap }
+    .cust-notice--desk .cust-notice__actions { flex-wrap:wrap;max-width:46% }
+    .cust-notice--desk .cust-notice__blocked { text-align:right;font-size:11.5px }
+    @media (max-width:1100px) { .cust-notice--desk { flex-wrap:wrap } .cust-notice--desk .cust-notice__text { flex-basis:60% } .cust-notice--desk .cust-notice__actions { flex-wrap:wrap } }
+    .cust-sheet { display:grid;gap:12px }
+    .cust-sheet p { margin:0;font-size:14.5px;line-height:1.55;overflow-wrap:anywhere }
+    .cust-sheet__address { display:grid;gap:0;margin:0;padding:3px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2) }
+    .cust-sheet__address > div { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line) }
+    .cust-sheet__address > div:first-child { border-top:0 }
+    .cust-sheet__address dt { grid-column:1 / -1;color:var(--muted);font-size:11.5px }
+    .cust-sheet__address dd { margin:0;min-width:0;font-size:14.5px;font-weight:650;overflow-wrap:anywhere }
+    .cust-sheet__address .cust-sheet__state { font-size:12px;font-weight:650;color:var(--rose-dark);white-space:nowrap }
+    .cust-sheet__address .is-kept dd { font-weight:500 }
+    .cust-sheet__address .is-kept .cust-sheet__state { color:var(--muted);font-weight:500 }
+    .cust-sheet .cust-sheet__hint { font-size:12.5px;line-height:1.5;color:var(--muted) }
+  `,
+})
+export class SalesCustomerAddressNotice {
+  readonly view = input.required<SalesOrderView>();
+  /** The desk shows it as one attention bar; phone editor and read view as a banner. */
+  readonly variant = input<'desk' | 'ios'>('ios');
+  /**
+   * The host has unsaved edits or a write under way. The answer is a whole
+   * server view; adopting it would drop what staff typed, so the takeover
+   * waits until the document is saved.
+   */
+  readonly blocked = input(false);
+  /** The view for the host to show: the server's answer (or a fresh view after a refusal), see `hand`. */
+  readonly changed = output<SalesOrderView>();
+  readonly busy = signal(false);
+  readonly sheet = signal(false);
+  private readonly sales = inject(SalesApi);
+  private readonly ui = inject(Ui);
+
+  readonly notice = computed(() => customerAddressNotice(this.view(), (code) => {
+    try { return new Intl.DisplayNames('nl-BE', { type: 'region' }).of(code) ?? code; } catch { return code; }
+  }));
+  readonly blockedHint = TAKEOVER_BLOCKED_HINT;
+  readonly written = TAKEOVER_WRITTEN;
+  readonly kept = TAKEOVER_KEPT;
+  private static count = 0;
+  readonly hintId = `cust-notice-hint-${++SalesCustomerAddressNotice.count}`;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
+  open(): void {
+    if (this.busy() || this.blocked() || !this.notice()?.takeover) return;
+    this.sheet.set(true);
+  }
+
+  /**
+   * Confirms the address staff are looking at. All three parts travel, also the ones the record already has:
+   * the server compares them with what it would offer now (delivery for the empty fields, the record's own
+   * spelling for the others) and writes only the empty ones.
+   */
+  async take(): Promise<void> {
+    const notice = this.notice();
+    if (this.busy() || this.blocked() || !notice?.takeover) return;
+    const started = this.view();
+    const id = started.order.id;
+    this.sheet.set(false);
+    this.busy.set(true);
+    try {
+      const updated = await this.sales.takeCustomerAddressFromDelivery(id, notice.takeover.request);
+      this.hand(started, updated);
+      this.ui.toast(`Adres overgenomen in de klantgegevens van ${notice.company}`);
+      this.keepFocusNearby();
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, 'Leveradres overnemen mislukt. Probeer opnieuw.'), 'err');
+      /* A refusal means the screen is behind (the customer changed the delivery, or the record was
+         filled elsewhere): show what the server has now, so the next look is at the right address. */
+      if ((failure as { status?: number })?.status === 409) {
+        try {
+          const asked = this.view();
+          const fresh = await this.sales.order(id);
+          this.hand(asked, fresh);
+        } catch { /* the sentence above stands; the next load brings the rest */ }
+      }
+    } finally { this.busy.set(false); }
+  }
+
+  /**
+   * Hands the server's view to the host. When the host saved or reloaded
+   * while the call was under way, the answer may be older than the screen:
+   * then only the notice and the delivery block are laid over what it shows.
+   */
+  private hand(started: SalesOrderView, answer: SalesOrderView): void {
+    const next = takeoverAnswerFor(started, this.view(), answer);
+    if (next) this.changed.emit(next);
+  }
+
+  /**
+   * The notice disappears with the button the sheet gave the focus back to.
+   * Once the host has rendered without it, the focus goes to the element
+   * straight above (the website-order banner or the head of the document),
+   * so a keyboard user continues from where they were.
+   */
+  private keepFocusNearby(): void {
+    afterNextRender(() => {
+      if (this.notice()) return;
+      const place = focusPlaceAfterTakeover(this.host.nativeElement as HTMLElement, document.activeElement, document.body);
+      if (!place) return;
+      if (!place.hasAttribute('tabindex')) place.setAttribute('tabindex', '-1');
+      place.focus({ preventScroll: true });
+    }, { injector: this.injector });
+  }
+}

@@ -10,6 +10,7 @@ import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
 import { cancelledByCustomer, customerCanStillChange, customerMessageIsReadOnly, documentDeletable, isWebOrder, isWebOrderConflict, originalCustomerMessage, webOrderInvoiceable, webOrderRevision } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
+import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
@@ -67,7 +68,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
   template: `
     @if (view(); as data) {
@@ -367,6 +368,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             }
           </div>
         }
+        <!-- The customer record lacks the address an invoice needs: said where staff work on the document, with the
+             delivery address of the order as the one-step fix. Renders nothing (and takes no room) otherwise. -->
+        <app-sales-customer-address-notice [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="customerAddressTaken($event)" />
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-advance-billing [view]="data" variant="ios" [blocked]="invoiceBusy() || sendingQuote() || invoiceBlockedByOrder(data)" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoice(data)" />
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="invoiceBusy() || sendingQuote()" (changed)="fulfillmentChanged($event)" /> }
@@ -1595,6 +1599,13 @@ export class SalesView {
       this.ui.toast('Bestelling is nu in verwerking; de klant kan ze niet meer wijzigen.');
     }
     this.view.set(fresh);
+  }
+
+  /** "Leveradres overnemen" filled the customer record: show the answer and read the cached customers again. */
+  customerAddressTaken(updated: SalesOrderView): void {
+    if (this.view()?.order.id !== updated.order.id) return;
+    this.show(updated);
+    void this.sales.customers().then((customers) => this.customers.set(customers)).catch(() => undefined);
   }
 
   openTake(): void {

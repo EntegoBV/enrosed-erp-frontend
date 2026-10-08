@@ -803,6 +803,72 @@ and on copies. Without the blocks (older backend) every screen is as before.
   when the view has `webOrder` or `delivery` (a plain document keeps the old
   markup, pixel for pixel), and its mail buttons are `blocked` while the host
   has unsaved edits: the answer is a whole view and must not replace them.
+- **Customer record without an address** (`invoiceCustomer` on a single
+  `SalesOrderView`; null on the list and when nothing is missing). A customer
+  made when a website login is approved has no street, postal code or city,
+  and the server refuses to issue an invoice until the record has them.
+  `sales-customer-address.ts` (`customerAddressNotice`, pure, node-tested in
+  `tests/sales-customer-address.test.mts`) words the block; the server alone
+  decides whether it applies and whether a takeover is offered.
+  `sales-customer-address-notice.ts` (`app-sales-customer-address-notice`,
+  `variant="desk"` on the desk, banner on phone editor and read view) sits
+  straight under the website-order banner: `Klantgegevens onvolledig · bij X
+  ontbreken …`. With `takeover` it offers `Leveradres overnemen`, a sheet that
+  shows the address as the record will read afterwards, one row per part:
+  a field in `missing` carries the delivery's value and is marked `wordt
+  ingevuld`, a field the record already has carries the record's own stored
+  spelling and is marked `staat er al`; `Land` is shown only when
+  `takeover.countryCode` is set (the record's own country, else null) and is
+  **never written**. Then
+  `SalesApi.takeCustomerAddressFromDelivery` (POST
+  `/api/sales-orders/{id}/customer-address-from-delivery`, body = `{address,
+  postalCode, city}` of that `takeover`, trimmed, all three also when only
+  one is written - the server compares them with what it would offer now,
+  ignoring capitals and outer spaces - never a `webOrderRevision`: it does
+  not take a website order into processing). The server fills only empty
+  street, postal code and city. The answer is
+  a whole view, so the button is `blocked` while the host has unsaved edits
+  (the reason stands beside it as a sentence, `TAKEOVER_BLOCKED_HINT`: a
+  title never shows on a touch screen); the hosts adopt it in
+  `customerAddressTaken` and read the cached customers again. When the host
+  saved or reloaded while the call was under way, the answer may be older
+  than the screen: `takeoverAnswerFor` then lays only `invoiceCustomer` and
+  `delivery` over the view the host shows. After success the notice (and the
+  button the sheet returns focus to) is gone; `focusPlaceAfterTakeover` moves
+  the focus to the element straight above the host. The sheet names the same
+  document as the lead (`de factuur` / `de creditnota`). A 409 shows the
+  server's sentence and reloads the view, so the next
+  confirmation shows the current delivery address. Without `takeover`
+  (`takeoverBlockedBy` PICKUP, NO_DELIVERY, OTHER_COUNTRY, INCOMPLETE) it
+  gives the reason and links to `/customers?q=<company>`. The host element
+  is `display:none` when there is no notice. The refusal on issuing is the
+  server's sentence in the usual error toast (`messageOf`): `De factuur kan
+  niet uitgereikt worden: bij klant X ontbreken …`, and `kan niet verstuurd
+  worden` when an invoice that is already issued is marked sent or mailed
+  after its customer's address was emptied (409 without a code; such a
+  document carries no `invoiceCustomer`, so no notice). Nothing here matches
+  on those words.
+- **Customer's quotation page without a quotation** (`offerte/:token`,
+  `features/portal/portal-page.ts`). `load()` keeps why nothing is shown in
+  `refusal` (`portal-refusal.ts`, `portalRefusalOf`, pure, node-tested in
+  `tests/portal-refusal.test.mts`). The page route answers 409 with a
+  `code` for two cases that are no dead link: `QUOTE_BEING_UPDATED` (title
+  plus one sentence: being updated, visible again once Enrosed has sent it)
+  and `QUOTE_CANCELLED` (title `Deze offerte is geannuleerd`, with
+  `cancellationMessage`, what staff wrote, printed below exactly as typed,
+  `white-space:pre-wrap`, never translated; the Dutch `message` is not
+  read). A 404, no connection, or a 409 without a code (older backend) is
+  the old `Offerte niet gevonden` text. These texts live in the page's own
+  `PORTAL_FALLBACKS` in all nine languages (no quotation means no texts
+  from the server). Language: the customer's remembered pick, else the
+  `language` of the refusal (the customer file), else NL. The notices sit
+  in the `error()` branch, which has no PDF link and no buttons. An action
+  (accept, reject, propose, withdraw) refused with one of the two codes
+  switches the open page to the same notice in the language the customer is
+  reading in (`run()` / `showRefusal()`: sheets closed, the old quotation
+  dropped); any other refusal stays a toast. Picking a
+  language while a notice is shown changes its words, remembers the pick
+  and loads the link once more.
 - **List.** Badge `Websitebestelling` on every web order, with one pill
   under it: `Door klant geannuleerd`, `Door klant gewijzigd`, `Klant kan nog
   wijzigen`, `Opnieuw versturen` / `Gewijzigd na akkoord`, `Wacht op klant`

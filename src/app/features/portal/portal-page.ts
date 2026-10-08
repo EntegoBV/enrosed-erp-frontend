@@ -7,6 +7,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { PortalCatalogItem, PortalQuote } from '../../core/api/models';
 import { Sheet, Ui } from '../../shared/ui';
 import { PortalProductPicker } from './portal-product-picker';
+import { PORTAL_NOT_FOUND, PortalRefusal, portalRefusalOf } from './portal-refusal';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe } from '../../shared/pipes';
 import { LANGUAGES, LanguageCode } from '../../core/api/models';
 
@@ -17,7 +18,8 @@ const PORTAL_LOCALES: Record<LanguageCode, string> = {
 
 type PortalFallback = 'chooseLanguage' | 'nameRequired' | 'genericError'
   | 'emptyTitle' | 'emptyText' | 'change' | 'addedByCustomer'
-  | 'notFound' | 'notFoundText' | 'loading';
+  | 'notFound' | 'notFoundText' | 'loading'
+  | 'updatingTitle' | 'updatingText' | 'cancelledTitle';
 
 const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
   EL: {
@@ -27,6 +29,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Προστέθηκε από τον πελάτη', notFound: 'Η προσφορά δεν βρέθηκε',
     notFoundText: 'Αυτός ο σύνδεσμος δεν ισχύει πλέον. Επικοινωνήστε μαζί μας για να σας στείλουμε νέο.',
     loading: 'Φόρτωση…',
+    updatingTitle: 'Αυτή η προσφορά ενημερώνεται',
+    updatingText: 'Ενημερώνουμε αυτή την προσφορά. Η νέα έκδοση θα είναι ορατή εδώ μόλις η Enrosed τη στείλει ξανά.',
+    cancelledTitle: 'Αυτή η προσφορά ακυρώθηκε',
   },
   NL: {
     chooseLanguage: 'Taal kiezen', nameRequired: 'Vul uw naam in om te tekenen.',
@@ -35,6 +40,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Toegevoegd door de klant', notFound: 'Offerte niet gevonden',
     notFoundText: 'Deze link is niet meer geldig. Neem contact op, dan sturen we een nieuwe.',
     loading: 'Laden…',
+    updatingTitle: 'Deze offerte wordt bijgewerkt',
+    updatingText: 'We passen deze offerte momenteel aan. De nieuwe versie is hier zichtbaar zodra Enrosed ze opnieuw heeft verstuurd.',
+    cancelledTitle: 'Deze offerte is geannuleerd',
   },
   FR: {
     chooseLanguage: 'Choisir la langue', nameRequired: 'Saisissez votre nom pour signer.',
@@ -43,6 +51,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Ajouté par le client', notFound: 'Offre introuvable',
     notFoundText: 'Ce lien n’est plus valable. Contactez-nous et nous vous en enverrons un nouveau.',
     loading: 'Chargement…',
+    updatingTitle: 'Cette offre est en cours de mise à jour',
+    updatingText: 'Nous adaptons actuellement cette offre. La nouvelle version sera visible ici dès qu’Enrosed l’aura envoyée à nouveau.',
+    cancelledTitle: 'Cette offre a été annulée',
   },
   EN: {
     chooseLanguage: 'Choose language', nameRequired: 'Enter your name to sign.',
@@ -51,6 +62,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Added by the customer', notFound: 'Quotation not found',
     notFoundText: 'This link is no longer valid. Contact us and we will send a new one.',
     loading: 'Loading…',
+    updatingTitle: 'This quotation is being updated',
+    updatingText: 'We are currently updating this quotation. The new version will be visible here once Enrosed has sent it again.',
+    cancelledTitle: 'This quotation has been cancelled',
   },
   DE: {
     chooseLanguage: 'Sprache wählen', nameRequired: 'Geben Sie zum Unterzeichnen Ihren Namen ein.',
@@ -59,6 +73,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Vom Kunden hinzugefügt', notFound: 'Angebot nicht gefunden',
     notFoundText: 'Dieser Link ist nicht mehr gültig. Kontaktieren Sie uns für einen neuen.',
     loading: 'Wird geladen…',
+    updatingTitle: 'Dieses Angebot wird aktualisiert',
+    updatingText: 'Wir überarbeiten dieses Angebot gerade. Die neue Version ist hier sichtbar, sobald Enrosed sie erneut versendet hat.',
+    cancelledTitle: 'Dieses Angebot wurde zurückgezogen',
   },
   ES: {
     chooseLanguage: 'Elegir idioma', nameRequired: 'Indique su nombre para firmar.',
@@ -67,6 +84,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Añadido por el cliente', notFound: 'Presupuesto no encontrado',
     notFoundText: 'Este enlace ya no es válido. Contáctenos y le enviaremos uno nuevo.',
     loading: 'Cargando…',
+    updatingTitle: 'Este presupuesto se está actualizando',
+    updatingText: 'Estamos actualizando este presupuesto. La nueva versión estará visible aquí en cuanto Enrosed la haya enviado de nuevo.',
+    cancelledTitle: 'Este presupuesto ha sido cancelado',
   },
   PL: {
     chooseLanguage: 'Wybierz język', nameRequired: 'Proszę podać imię i nazwisko, aby podpisać.',
@@ -75,6 +95,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Dodane przez klienta', notFound: 'Nie znaleziono oferty',
     notFoundText: 'Ten link nie jest już aktywny. Prosimy o kontakt, prześlemy nowy.',
     loading: 'Wczytywanie…',
+    updatingTitle: 'Ta oferta jest aktualizowana',
+    updatingText: 'Właśnie aktualizujemy tę ofertę. Nowa wersja będzie tutaj widoczna, gdy Enrosed wyśle ją ponownie.',
+    cancelledTitle: 'Ta oferta została anulowana',
   },
   PT: {
     chooseLanguage: 'Escolher idioma', nameRequired: 'Indique o seu nome para assinar.',
@@ -83,6 +106,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Adicionado pelo cliente', notFound: 'Orçamento não encontrado',
     notFoundText: 'Esta ligação já não é válida. Contacte-nos e enviaremos uma nova.',
     loading: 'A carregar…',
+    updatingTitle: 'Este orçamento está a ser atualizado',
+    updatingText: 'Estamos a atualizar este orçamento. A nova versão ficará visível aqui assim que a Enrosed a enviar novamente.',
+    cancelledTitle: 'Este orçamento foi cancelado',
   },
   TR: {
     chooseLanguage: 'Dil seçin', nameRequired: 'İmzalamak için adınızı girin.',
@@ -91,6 +117,9 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
     addedByCustomer: 'Müşteri tarafından eklendi', notFound: 'Teklif bulunamadı',
     notFoundText: 'Bu bağlantı artık geçerli değil. Yeni bağlantı için bizimle iletişime geçin.',
     loading: 'Yükleniyor…',
+    updatingTitle: 'Bu teklif güncelleniyor',
+    updatingText: 'Bu teklifi şu anda güncelliyoruz. Yeni sürüm, Enrosed tekrar gönderdiğinde burada görünecek.',
+    cancelledTitle: 'Bu teklif iptal edildi',
   },
 };
 
@@ -132,11 +161,32 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
       @if (error()) {
         <div class="content" style="max-width:640px">
           <div class="card"><div class="card__body">
-            <div class="empty">
-              <div class="empty__icon">◇</div>
-              <div class="empty__title">{{ t('portalNotFound') }}</div>
-              <div class="empty__text">{{ t('portalNotFoundText') }}</div>
-            </div>
+            <!-- The link is fine but there is nothing to show: said calmly, in the customer's language, from the
+                 page's own dictionary (no quotation, so no texts from the server). No PDF, no buttons, no "new link". -->
+            @switch (refusal().kind) {
+              @case ('updating') {
+                <div class="empty" role="status">
+                  <div class="empty__icon">◇</div>
+                  <div class="empty__title">{{ local('updatingTitle') }}</div>
+                  <div class="empty__text">{{ local('updatingText') }}</div>
+                </div>
+              }
+              @case ('cancelled') {
+                <div class="empty" role="status">
+                  <div class="empty__icon">◇</div>
+                  <div class="empty__title">{{ local('cancelledTitle') }}</div>
+                  <!-- What staff wrote for the customer, exactly as typed: never translated, never cut. -->
+                  @if (refusal().staffMessage; as message) { <p class="portal__staff-message">{{ message }}</p> }
+                </div>
+              }
+              @default {
+                <div class="empty">
+                  <div class="empty__icon">◇</div>
+                  <div class="empty__title">{{ t('portalNotFound') }}</div>
+                  <div class="empty__text">{{ t('portalNotFoundText') }}</div>
+                </div>
+              }
+            }
           </div></div>
         </div>
       } @else if (quote(); as data) {
@@ -599,6 +649,20 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
       overflow-wrap: anywhere;
     }
     .portal__version-note { flex: 1 1 320px; margin: 0; line-height: 1.6; }
+    .portal__staff-message {
+      max-width: 520px;
+      margin: 14px auto 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-2);
+      color: var(--ink-2);
+      font-size: 14.5px;
+      line-height: 1.55;
+      text-align: left;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .portal .stat-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
     .portal .stat-row--total > .num,
     .portal .stat-row--muted > .num { flex-shrink: 0; white-space: nowrap; }
@@ -678,6 +742,8 @@ export class PortalPage implements OnDestroy {
 
   readonly quote = signal<PortalQuote | null>(null);
   readonly error = signal(false);
+  /** Why nothing is shown, read from the failure of the load or of an action; only looked at while `error` is set. */
+  readonly refusal = signal<PortalRefusal>(PORTAL_NOT_FOUND);
   readonly busy = signal(false);
   /** Language and browser locale are related, but deliberately not identical. */
   readonly language = signal<LanguageCode>('NL');
@@ -723,16 +789,24 @@ export class PortalPage implements OnDestroy {
   }
 
   private async load(token: string): Promise<void> {
+    /* When this customer picked a language here before, they start in it again. */
+    const chosen = this.storedLanguage(token);
     try {
-      /* When this customer picked a language here before, they start in it again. */
-      const chosen = this.storedLanguage(token);
       if (chosen) this.language.set(chosen);
       const quote = await this.sales.portalQuote(token, chosen ?? undefined);
       this.quote.set(quote);
       this.language.set(chosen ?? (quote.language as LanguageCode) ?? 'NL');
       this.proposeBy.set(quote.contactName ?? '');
       this.catalog.set(quote.advanceAgreement ? [] : await this.sales.portalCatalog(token, this.language()));
-    } catch {
+      this.error.set(false);
+    } catch (failure) {
+      /* Being updated and cancelled are no dead link: each gets its own notice. Anything else (a 404, no
+         connection, an older backend without a code) is the "not found" text as before. */
+      const refusal = portalRefusalOf(failure, LANGUAGES.map((language) => language.code));
+      /* Nothing of the quotation arrived, so its language did not either: the customer's own pick comes
+         first, then the language of their file as the refusal names it. */
+      if (!chosen && refusal.language) this.language.set(refusal.language as LanguageCode);
+      this.refusal.set(refusal);
       this.error.set(true);
     }
   }
@@ -821,8 +895,16 @@ export class PortalPage implements OnDestroy {
    * between us and them, not a browser setting.
    */
   async setLanguage(code: LanguageCode): Promise<void> {
+    const token = this.token();
+    /* A notice is on screen and no quotation: the pick changes the words of the notice at once, and the
+       link is asked once more - by now the quotation may have been sent again. */
+    if (this.error()) {
+      this.language.set(code);
+      try { localStorage.setItem('enrosed.portalLanguage.' + token, code); } catch { /* private mode */ }
+      await this.load(token);
+      return;
+    }
     try {
-      const token = this.token();
       const quote = await this.sales.portalQuote(token, code);
       const catalog = quote.advanceAgreement ? [] : await this.sales.portalCatalog(token, code);
       this.quote.set(quote);
@@ -1072,6 +1154,8 @@ export class PortalPage implements OnDestroy {
       () => this.sales.portalPropose(this.token(), this.proposeBy(), this.proposeMessage(), lines),
       this.t('portalProposalSent'));
 
+    /* Refused because the quotation was reopened or cancelled meanwhile: the notice stands, nothing to reload. */
+    if (this.error()) return;
     this.proposalSheet.set(false);
     this.catalog.set(await this.sales.portalCatalog(this.token(), this.language()));
   }
@@ -1089,10 +1173,31 @@ export class PortalPage implements OnDestroy {
       this.quote.set(await action());
       this.ui.toast(success);
     } catch (failure: unknown) {
+      /* Enrosed reopened or cancelled the quotation while the customer had it open: what is on screen is
+         no longer the offer. The page switches to the same notice as on a first visit, in the language the
+         customer is reading in, instead of a Dutch sentence over figures and buttons that no longer count. */
+      const refusal = portalRefusalOf(failure, LANGUAGES.map((language) => language.code));
+      if (refusal.kind !== 'notFound') {
+        this.showRefusal(refusal);
+        return;
+      }
       const message = (failure as { error?: { message?: string } }).error?.message;
       this.ui.toast(message ?? this.local('genericError'), 'err');
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Puts the notice in place of a quotation that was on screen: sheets closed, nothing of the old version kept. */
+  private showRefusal(refusal: PortalRefusal): void {
+    for (const timer of this.roundTimers.values()) clearTimeout(timer);
+    this.roundTimers.clear();
+    this.signSheet.set(false);
+    this.proposalSheet.set(false);
+    this.catalogSheet.set(false);
+    this.rejectSheet.set(false);
+    this.refusal.set(refusal);
+    this.error.set(true);
+    this.quote.set(null);
   }
 }

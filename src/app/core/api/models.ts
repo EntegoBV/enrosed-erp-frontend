@@ -1978,6 +1978,31 @@ export interface SalesOrderView {
   webOrder?: SalesWebOrder | null;
   /** Delivery and contact the customer gave for this order; also on documents derived from it. Absent on an older backend. */
   delivery?: SalesOrderDelivery | null;
+  /**
+   * The customer record lacks address data an invoice needs. Only on a single
+   * document that can still lead to an invoice; null when nothing is missing,
+   * always null on the list, absent on an older backend.
+   */
+  invoiceCustomer?: SalesInvoiceCustomer | null;
+}
+
+export type SalesInvoiceCustomerField = 'ADDRESS' | 'POSTAL_CODE' | 'CITY';
+export interface SalesInvoiceCustomer {
+  customerId: number;
+  company: string;
+  /** The empty fields, always in the order street, postal code, city. */
+  missing: SalesInvoiceCustomerField[];
+  /**
+   * The address the record will read after "Leveradres overnemen"; exactly
+   * one of this and `takeoverBlockedBy` is set. A field listed in `missing`
+   * carries the delivery's value and is what the takeover writes; a field the
+   * record already has carries the record's own stored spelling and is left
+   * alone. `countryCode` is the record's own country, null when it has none:
+   * the takeover never writes a country.
+   */
+  takeover: { address: string; postalCode: string; city: string; countryCode: string | null } | null;
+  /** Why the delivery address cannot be taken over: staff fill in the record themselves. */
+  takeoverBlockedBy: 'PICKUP' | 'NO_DELIVERY' | 'OTHER_COUNTRY' | 'INCOMPLETE' | null;
 }
 
 /** How the document's price, quantity and freight relate to what the customer ordered or approved; the server guard uses the same state. */

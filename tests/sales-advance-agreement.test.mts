@@ -216,7 +216,8 @@ test('agreement portal disallows product/cart proposals at the action boundaries
 test('switching agreement portal language never fetches the regular-price catalogue', async () => {
   const { screen } = makeHarness(portalJs, 'PortalPage');
   let catalogs = 0;
-  Object.assign(screen, { token: () => 'fixture-token', language: signal('NL'), catalog: signal(['old']),
+  /* A quotation is on screen (no notice): the pick fetches the quotation in that language. */
+  Object.assign(screen, { token: () => 'fixture-token', language: signal('NL'), catalog: signal(['old']), error: signal(false),
     sales: { portalQuote: async () => quote(), portalCatalog: async () => { catalogs++; return ['catalog']; } } });
   await screen.setLanguage('EN');
   assert.equal(screen.language(), 'EN');

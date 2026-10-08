@@ -5,6 +5,7 @@ import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
+import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -71,7 +72,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -305,6 +306,9 @@ interface JourneyStep {
             @if (websiteRequest(data.order) && !webOrderCancelled()) { <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button> }
           </div>
         }
+        <!-- The customer record lacks the address an invoice needs: said where staff work on the document, with the
+             delivery address of the order as the one-step fix. Renders nothing (and takes no room) otherwise. -->
+        <app-sales-customer-address-notice variant="desk" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="customerAddressTaken($event)" />
 
         @if (data.fulfillment) { <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || sending() || invoiceBusy()" (changed)="fulfillmentChanged($event)" /> }
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />

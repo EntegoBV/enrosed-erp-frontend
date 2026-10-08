@@ -17,6 +17,7 @@ import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { SalesWebOrderNote } from './sales-web-order-note';
+import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
@@ -74,7 +75,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
@@ -269,6 +270,9 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
             @for (line of notice.lines; track line.text) { <p [class.web-order-banner__gold]="line.gold">{{ line.text }}</p> }
           </div>
         }
+        <!-- The customer record lacks the address an invoice needs: said where staff work on the document, with the
+             delivery address of the order as the one-step fix. Renders nothing (and takes no room) otherwise. -->
+        <app-sales-customer-address-notice [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="customerAddressTaken($event)" />
 
         <app-sales-advance-invoices [order]="data.order" [containerName]="containerLabel()" />
         <app-sales-advance-billing [view]="data" variant="ios" [blocked]="dirty() || saving() || sending() || documentMutationBusy() || invoiceBlockedByOrder(data)" (create)="openAdvanceSheet()" (finalInvoice)="makeInvoiceFromEditor(data)" />
@@ -2192,6 +2196,21 @@ export class SalesEditor {
     if (!current || current.order.id !== updated.order.id) return;
     if (this.dirty() || this.saving()) { this.view.set({ ...current, webOrder: updated.webOrder }); return; }
     this.adopt(updated);
+  }
+
+  /**
+   * "Leveradres overnemen" filled the customer record and hands back the
+   * server's view. The order itself did not change; with unsaved edits on
+   * screen only the notice is taken over (its button is disabled then; this
+   * is the safety net for a late answer). The cached customer list is read
+   * again: the postal code it now carries drives the freight preview.
+   */
+  customerAddressTaken(updated: SalesOrderView): void {
+    const current = this.view();
+    if (!current || current.order.id !== updated.order.id) return;
+    if (this.dirty() || this.saving()) this.view.set({ ...current, invoiceCustomer: updated.invoiceCustomer });
+    else this.adopt(updated);
+    void this.sales.customers().then((customers) => this.customers.set(customers)).catch(() => undefined);
   }
 
   openTake(): void {
