@@ -814,11 +814,19 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `variant="desk"` on the desk, banner on phone editor and read view) sits
   straight under the website-order banner: `Klantgegevens onvolledig · bij X
   ontbreken …`. With `takeover` it offers `Leveradres overnemen`, a sheet that
-  shows the address that will be written, then
+  shows the address as the record will read afterwards, one row per part:
+  a field in `missing` carries the delivery's value and is marked `wordt
+  ingevuld`, a field the record already has carries the record's own stored
+  spelling and is marked `staat er al`; `Land` is shown only when
+  `takeover.countryCode` is set (the record's own country, else null) and is
+  **never written**. Then
   `SalesApi.takeCustomerAddressFromDelivery` (POST
-  `/api/sales-orders/{id}/customer-address-from-delivery`, body = the address
-  staff saw, never a `webOrderRevision`: it does not take a website order
-  into processing). The server fills only empty address fields. The answer is
+  `/api/sales-orders/{id}/customer-address-from-delivery`, body = `{address,
+  postalCode, city}` of that `takeover`, trimmed, all three also when only
+  one is written - the server compares them with what it would offer now,
+  ignoring capitals and outer spaces - never a `webOrderRevision`: it does
+  not take a website order into processing). The server fills only empty
+  street, postal code and city. The answer is
   a whole view, so the button is `blocked` while the host has unsaved edits
   (the reason stands beside it as a sentence, `TAKEOVER_BLOCKED_HINT`: a
   title never shows on a touch screen); the hosts adopt it in
@@ -834,7 +842,12 @@ and on copies. Without the blocks (older backend) every screen is as before.
   (`takeoverBlockedBy` PICKUP, NO_DELIVERY, OTHER_COUNTRY, INCOMPLETE) it
   gives the reason and links to `/customers?q=<company>`. The host element
   is `display:none` when there is no notice. The refusal on issuing is the
-  server's sentence in the usual error toast (`messageOf`).
+  server's sentence in the usual error toast (`messageOf`): `De factuur kan
+  niet uitgereikt worden: bij klant X ontbreken …`, and `kan niet verstuurd
+  worden` when an invoice that is already issued is marked sent or mailed
+  after its customer's address was emptied (409 without a code; such a
+  document carries no `invoiceCustomer`, so no notice). Nothing here matches
+  on those words.
 - **List.** Badge `Websitebestelling` on every web order, with one pill
   under it: `Door klant geannuleerd`, `Door klant gewijzigd`, `Klant kan nog
   wijzigen`, `Opnieuw versturen` / `Gewijzigd na akkoord`, `Wacht op klant`

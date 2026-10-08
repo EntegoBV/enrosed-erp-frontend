@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TAKEOVER_BLOCKED_HINT, customerAddressNotice, focusPlaceAfterTakeover, missingAddressText, takeoverAnswerFor } from '../src/app/features/sales/sales-customer-address.ts';
+import { TAKEOVER_BLOCKED_HINT, TAKEOVER_KEPT, TAKEOVER_WRITTEN, customerAddressNotice, focusPlaceAfterTakeover, missingAddressText, takeoverAnswerFor } from '../src/app/features/sales/sales-customer-address.ts';
 
 /*
  * The notice on a document whose customer record lacks the address an
@@ -8,7 +8,10 @@ import { TAKEOVER_BLOCKED_HINT, customerAddressNotice, focusPlaceAfterTakeover, 
  * (SalesOrderResource.OrderView.invoiceCustomer, CustomerInvoiceData.Notice).
  */
 
+/* A record with a country and no address: every address field comes from the delivery, the country is the record's. */
 const OFFER = { address: 'Stationsstraat 9', postalCode: '9000', city: 'Gent', countryCode: 'BE' };
+const shown = (takeover: { fields: { label: string; value: string; written: boolean }[] }) =>
+  takeover.fields.map((field) => `${field.label}: ${field.value} (${field.written ? 'written' : 'kept'})`);
 const block = (changes: Record<string, unknown> = {}) => ({
   customerId: 42, company: 'Bloemen Anna', missing: ['ADDRESS', 'POSTAL_CODE', 'CITY'], takeover: OFFER, takeoverBlockedBy: null, ...changes,
 });
@@ -39,21 +42,55 @@ test('a website order with a delivery address offers the takeover and shows the 
   assert.equal(notice.lead, 'bij Bloemen Anna ontbreken straat en nummer, postcode en stad. Zonder volledig adres kan de factuur niet uitgereikt worden.');
   assert.equal(notice.reason, null);
   assert.deepEqual(notice.takeover, {
-    lines: ['Stationsstraat 9', '9000 Gent', 'België'],
+    fields: [
+      { label: 'Straat en nummer', value: 'Stationsstraat 9', written: true },
+      { label: 'Postcode', value: '9000', written: true },
+      { label: 'Stad', value: 'Gent', written: true },
+      /* The record's own country: shown, never written. */
+      { label: 'Land', value: 'België', written: false },
+    ],
     request: { address: 'Stationsstraat 9', postalCode: '9000', city: 'Gent' },
   });
   assert.equal(notice.customerQuery, 'Bloemen Anna');
   assert.equal(notice.customerId, 42);
 });
 
-test('one missing field is singular; the country line is left out when the server has none', () => {
+test('one missing field is singular; a record without a country shows no country, none is written', () => {
   const notice = customerAddressNotice(view(block({ missing: ['POSTAL_CODE'], takeover: { ...OFFER, countryCode: null } })))!;
   assert.equal(notice.lead, 'bij Bloemen Anna ontbreekt postcode. Zonder volledig adres kan de factuur niet uitgereikt worden.');
-  assert.deepEqual(notice.takeover!.lines, ['Stationsstraat 9', '9000 Gent']);
+  /* Only the postal code is written; street and city are the record's own and stay. */
+  assert.deepEqual(shown(notice.takeover!), ['Straat en nummer: Stationsstraat 9 (kept)', 'Postcode: 9000 (written)', 'Stad: Gent (kept)']);
+});
+
+test('a field the record already has is shown in the record\'s own spelling and still travels in the call', () => {
+  /* CustomerInvoiceData.afterwards: the record says "GENT ", the delivery "Gent"; the server sends the record's
+     value unstripped and compares the body with it ignoring capitals and outer spaces. */
+  const notice = customerAddressNotice(view(block({ missing: ['ADDRESS', 'POSTAL_CODE'], takeover: { ...OFFER, city: 'GENT ', countryCode: null } })), names)!;
+  assert.deepEqual(shown(notice.takeover!), ['Straat en nummer: Stationsstraat 9 (written)', 'Postcode: 9000 (written)', 'Stad: GENT (kept)']);
+  assert.deepEqual(notice.takeover!.request, { address: 'Stationsstraat 9', postalCode: '9000', city: 'GENT' });
+  assert.equal(notice.lead, 'bij Bloemen Anna ontbreken straat en nummer en postcode. Zonder volledig adres kan de factuur niet uitgereikt worden.');
+});
+
+test('the country is the record\'s own or absent, whatever the document says', () => {
+  /* The document is for France, the record has no country: the server sends null and nothing about a country is shown. */
+  const none = customerAddressNotice(view(block({ takeover: { ...OFFER, countryCode: null } }), { countryCode: 'FR' }), names)!;
+  assert.deepEqual(none.takeover!.fields.map((field) => field.label), ['Straat en nummer', 'Postcode', 'Stad']);
+  for (const empty of [undefined, '', '  ']) {
+    const notice = customerAddressNotice(view(block({ takeover: { ...OFFER, countryCode: empty } })), names)!;
+    assert.equal(notice.takeover!.fields.length, 3);
+  }
+  const own = customerAddressNotice(view(block()), names)!;
+  assert.deepEqual(own.takeover!.fields[3], { label: 'Land', value: 'België', written: false });
+  assert.equal('countryCode' in own.takeover!.request, false);
+});
+
+test('the words beside each part of the confirmation', () => {
+  assert.equal(TAKEOVER_WRITTEN, 'wordt ingevuld');
+  assert.equal(TAKEOVER_KEPT, 'staat er al');
 });
 
 test('without a country name lookup the code is shown', () => {
-  assert.deepEqual(customerAddressNotice(view(block()))!.takeover!.lines, ['Stationsstraat 9', '9000 Gent', 'BE']);
+  assert.equal(customerAddressNotice(view(block()))!.takeover!.fields[3].value, 'BE');
 });
 
 test('a credit note names the credit note', () => {
@@ -94,7 +131,7 @@ test('a half address is never offered for confirmation', () => {
 test('the confirmed values are the trimmed ones the server compares', () => {
   const notice = customerAddressNotice(view(block({ takeover: { address: ' Stationsstraat 9 ', postalCode: '9000 ', city: ' Gent', countryCode: ' be ' } })), names)!;
   assert.deepEqual(notice.takeover!.request, { address: 'Stationsstraat 9', postalCode: '9000', city: 'Gent' });
-  assert.deepEqual(notice.takeover!.lines, ['Stationsstraat 9', '9000 Gent', 'België']);
+  assert.deepEqual(notice.takeover!.fields.map((field) => field.value), ['Stationsstraat 9', '9000', 'Gent', 'België']);
 });
 
 test('an unsaved customer change in the editor hides the notice of the saved customer', () => {

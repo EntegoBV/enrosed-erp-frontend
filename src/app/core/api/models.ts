@@ -1993,9 +1993,12 @@ export interface SalesInvoiceCustomer {
   /** The empty fields, always in the order street, postal code, city. */
   missing: SalesInvoiceCustomerField[];
   /**
-   * The address the record will read after "Leveradres overnemen", from the
-   * delivery address of this document; exactly one of this and
-   * `takeoverBlockedBy` is set. `countryCode` is the record's own when it has one.
+   * The address the record will read after "Leveradres overnemen"; exactly
+   * one of this and `takeoverBlockedBy` is set. A field listed in `missing`
+   * carries the delivery's value and is what the takeover writes; a field the
+   * record already has carries the record's own stored spelling and is left
+   * alone. `countryCode` is the record's own country, null when it has none:
+   * the takeover never writes a country.
    */
   takeover: { address: string; postalCode: string; city: string; countryCode: string | null } | null;
   /** Why the delivery address cannot be taken over: staff fill in the record themselves. */

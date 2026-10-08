@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
 import type { SalesOrderView } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
-import { TAKEOVER_BLOCKED_HINT, customerAddressNotice, focusPlaceAfterTakeover, takeoverAnswerFor } from './sales-customer-address';
+import { TAKEOVER_BLOCKED_HINT, TAKEOVER_KEPT, TAKEOVER_WRITTEN, customerAddressNotice, focusPlaceAfterTakeover, takeoverAnswerFor } from './sales-customer-address';
 import { Sheet, Ui } from '../../shared/ui';
 
 /**
@@ -12,7 +12,8 @@ import { Sheet, Ui } from '../../shared/ui';
  * street, postal code or city; the invoice is refused until the record has
  * them. The notice names what is missing and, when the document has a
  * delivery address the server offers, lets staff take it over into the empty
- * fields of the record after they have seen it. Otherwise it links to the
+ * fields of the record after they have seen it, each part marked as written
+ * or already there. The country is never written. Otherwise it links to the
  * customer.
  *
  * It renders only what the view carries: without an `invoiceCustomer` block
@@ -45,11 +46,17 @@ import { Sheet, Ui } from '../../shared/ui';
       @if (sheet() && notice.takeover; as takeover) {
         <app-sheet title="Leveradres overnemen" (closed)="sheet.set(false)">
           <div body class="cust-sheet">
-            <p>Dit adres komt in de klantgegevens van <strong>{{ notice.company }}</strong> en op {{ notice.document }}:</p>
-            <p class="cust-sheet__address">
-              @for (line of takeover.lines; track $index) { <span>{{ line }}</span> }
-            </p>
-            <p class="cust-sheet__hint">Alleen lege adresvelden worden ingevuld; naam, btw-nummer en contactgegevens blijven zoals ze zijn.
+            <p>Zo staat het adres daarna in de klantgegevens van <strong>{{ notice.company }}</strong> en op {{ notice.document }}:</p>
+            <dl class="cust-sheet__address">
+              @for (field of takeover.fields; track field.label) {
+                <div [class.is-kept]="!field.written">
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ field.value }}</dd>
+                  <dd class="cust-sheet__state">{{ field.written ? written : kept }}</dd>
+                </div>
+              }
+            </dl>
+            <p class="cust-sheet__hint">Alleen de lege velden straat en nummer, postcode en stad worden ingevuld. Het land, de naam, het btw-nummer en de contactgegevens blijven zoals ze zijn.
               Is dit niet het adres van de klant zelf, bijvoorbeeld een levering bij een ander bedrijf? Vul het adres dan zelf in bij de klant.</p>
           </div>
           <div foot style="display:contents">
@@ -88,7 +95,14 @@ import { Sheet, Ui } from '../../shared/ui';
     @media (max-width:1100px) { .cust-notice--desk { flex-wrap:wrap } .cust-notice--desk .cust-notice__text { flex-basis:60% } .cust-notice--desk .cust-notice__actions { flex-wrap:wrap } }
     .cust-sheet { display:grid;gap:12px }
     .cust-sheet p { margin:0;font-size:14.5px;line-height:1.55;overflow-wrap:anywhere }
-    .cust-sheet__address { display:grid;gap:1px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-weight:650 }
+    .cust-sheet__address { display:grid;gap:0;margin:0;padding:3px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2) }
+    .cust-sheet__address > div { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 12px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line) }
+    .cust-sheet__address > div:first-child { border-top:0 }
+    .cust-sheet__address dt { grid-column:1 / -1;color:var(--muted);font-size:11.5px }
+    .cust-sheet__address dd { margin:0;min-width:0;font-size:14.5px;font-weight:650;overflow-wrap:anywhere }
+    .cust-sheet__address .cust-sheet__state { font-size:12px;font-weight:650;color:var(--rose-dark);white-space:nowrap }
+    .cust-sheet__address .is-kept dd { font-weight:500 }
+    .cust-sheet__address .is-kept .cust-sheet__state { color:var(--muted);font-weight:500 }
     .cust-sheet .cust-sheet__hint { font-size:12.5px;line-height:1.5;color:var(--muted) }
   `,
 })
@@ -113,6 +127,8 @@ export class SalesCustomerAddressNotice {
     try { return new Intl.DisplayNames('nl-BE', { type: 'region' }).of(code) ?? code; } catch { return code; }
   }));
   readonly blockedHint = TAKEOVER_BLOCKED_HINT;
+  readonly written = TAKEOVER_WRITTEN;
+  readonly kept = TAKEOVER_KEPT;
   private static count = 0;
   readonly hintId = `cust-notice-hint-${++SalesCustomerAddressNotice.count}`;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -123,7 +139,11 @@ export class SalesCustomerAddressNotice {
     this.sheet.set(true);
   }
 
-  /** Writes the address staff are looking at; the server compares it with the delivery as it reads now. */
+  /**
+   * Confirms the address staff are looking at. All three parts travel, also the ones the record already has:
+   * the server compares them with what it would offer now (delivery for the empty fields, the record's own
+   * spelling for the others) and writes only the empty ones.
+   */
   async take(): Promise<void> {
     const notice = this.notice();
     if (this.busy() || this.blocked() || !notice?.takeover) return;

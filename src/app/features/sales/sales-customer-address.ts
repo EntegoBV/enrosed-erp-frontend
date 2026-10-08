@@ -1,10 +1,28 @@
 import type { SalesInvoiceCustomer, SalesOrderView } from '../../core/api/models';
 
+/** One part of the address in the confirmation, with whether the takeover writes it. */
+export interface CustomerAddressTakeoverField {
+  /** "Straat en nummer", "Postcode", "Stad" or "Land". */
+  label: string;
+  /** As the record will read: the delivery's value when written, else the record's own spelling. */
+  value: string;
+  /** True for a field the record lacks and the takeover fills; false for one the record already has. */
+  written: boolean;
+}
+
 /** The address staff confirm in "Leveradres overnemen", exactly as the server offered it. */
 export interface CustomerAddressTakeover {
-  /** One line per part, as it will read in the customer record. */
-  lines: string[];
-  /** What travels in the call: the server refuses when the delivery reads otherwise by now. */
+  /**
+   * Street, postal code and city, then the country when the record has one,
+   * as the record will read afterwards. Only the fields the server lists as
+   * missing are written; the country never is.
+   */
+  fields: CustomerAddressTakeoverField[];
+  /**
+   * What travels in the call: all three parts as shown, also the ones that
+   * are not written. The server compares them with what it would offer now
+   * and refuses when the delivery or the record reads otherwise.
+   */
   request: { address: string; postalCode: string; city: string };
 }
 
@@ -82,17 +100,33 @@ export function customerAddressNotice(
   };
 }
 
-/** Offered only when the server sent all three parts: a half address is never confirmed. */
+/**
+ * Offered only when the server sent all three parts: a half address is never
+ * confirmed. The server sends the address as the record will read afterwards:
+ * the delivery's value for a field in `missing`, the record's own spelling for
+ * a field it already has, and the record's own country or null (the takeover
+ * never writes a country). Each part says which of the two it is.
+ */
 function takeoverOf(block: SalesInvoiceCustomer, countryName: (code: string) => string): CustomerAddressTakeover | null {
   const offer = block.takeover;
   const address = offer?.address?.trim(), postalCode = offer?.postalCode?.trim(), city = offer?.city?.trim();
   if (!offer || !address || !postalCode || !city) return null;
+  const missing: readonly string[] = Array.isArray(block.missing) ? block.missing : [];
   const country = offer.countryCode?.trim().toUpperCase();
   return {
-    lines: [address, `${postalCode} ${city}`, ...(country ? [countryName(country) || country] : [])],
+    fields: [
+      { label: 'Straat en nummer', value: address, written: missing.includes('ADDRESS') },
+      { label: 'Postcode', value: postalCode, written: missing.includes('POSTAL_CODE') },
+      { label: 'Stad', value: city, written: missing.includes('CITY') },
+      ...(country ? [{ label: 'Land', value: countryName(country) || country, written: false }] : []),
+    ],
     request: { address, postalCode, city },
   };
 }
+
+/** Beside each part of the address in the confirmation. */
+export const TAKEOVER_WRITTEN = 'wordt ingevuld';
+export const TAKEOVER_KEPT = 'staat er al';
 
 /**
  * What the host should show when the server answers a takeover (or the reload

@@ -334,9 +334,10 @@ export class SalesApi {
 
   /**
    * "Leveradres overnemen": fills the empty address fields of the customer
-   * record from the delivery address of this document. `confirmed` is the
-   * address staff saw; the server refuses when the delivery reads otherwise
-   * by now. Deliberately without a revision: it never takes a website order
+   * record (street, postal code, city; never the country) from the delivery
+   * address of this document. `confirmed` is the whole `takeover` address
+   * staff saw, also the parts the record already has; the server refuses
+   * (409) when it would offer another address by now. Deliberately without a revision: it never takes a website order
    * into processing and does not touch the order.
    */
   takeCustomerAddressFromDelivery(id: number, confirmed: { address: string; postalCode: string; city: string }): Promise<SalesOrderView> {
