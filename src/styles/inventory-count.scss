@@ -1,0 +1,163 @@
+/* ==========================================================================
+   Jaarinventaris · Telling: the count session of one location
+   (app-stock-count-page) with its reason, booking and add sheets. Built on
+   the workspace kit inside an ordinary ERP page: the phone is a grouped
+   ios-* list with the count field in every line, the desk the same data as
+   a wk-table. Every rule hangs on an inv- class; kit classes are used bare
+   and never restyled, only kit custom properties are set (--ios-inset,
+   --wk-cols, --wk-sticky-top).
+
+   Sticky: the three figures stay under the app bar on both layouts; on the
+   desk the table head sticks right below them (--inv-strip-h).
+
+   Print: "Tellijst afdrukken" draws .inv-print (a plain table, only while
+   printing) and the print rules at the end hide everything else of the page.
+   ========================================================================== */
+
+/* ---- page */
+.inv-count{--ios-inset:0px;--inv-strip-h:64px}
+.inv-count__more{min-width:44px;padding-inline:8px}
+.inv-count__sticky{position:sticky;top:var(--appbar-h);z-index:20;isolation:isolate;padding-top:8px;margin-top:-8px}
+/* blur behind the figures, never on them (trap rule) */
+.inv-count__sticky::before{content:'';position:absolute;inset:-6px -12px 8px;z-index:-1;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4)}
+.inv-count__figures{box-shadow:0 1px 2px rgb(26 22 20/5%),0 4px 14px rgb(26 22 20/5%)}
+.inv-count__figure--stop{color:var(--danger)}
+.inv-count__closed{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-bottom:14px}
+.inv-count__back{min-height:32px;display:inline-flex;align-items:center;color:var(--rose-dark);font-size:13.5px;font-weight:650;text-decoration:underline;text-underline-offset:3px}
+.inv-count__lead{display:grid;gap:4px;margin:0 4px 14px;color:var(--ink-2);font-size:13.5px;line-height:1.45}
+.inv-count__lead p{margin:0}
+.inv-count__quiet{margin:-6px 4px 12px;color:var(--muted);font-size:12.5px;line-height:1.45}
+.inv-banner{align-items:flex-start}
+.inv-banner__links{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px}
+.inv-banner__links a{min-height:28px;display:inline-flex;align-items:center;color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px}
+.inv-count__filter{display:grid;gap:6px;margin-bottom:10px}
+.inv-count__chipn{font-variant-numeric:tabular-nums;font-weight:500;opacity:.7}
+.inv-count__empty{margin:28px 16px;color:var(--muted);font-size:14.5px;text-align:center}
+.inv-count__add{margin-top:4px}
+.inv-count__bar .btn{flex:none}
+
+/* ---- small state chips: a missing reason (also a button) and changed stock */
+.inv-chip{display:inline-flex;align-items:center;min-height:24px;padding:2px 10px;border:0;border-radius:999px;font:inherit;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap}
+button.inv-chip{cursor:pointer}
+.inv-chip--stop{background:var(--danger-soft);color:var(--danger)}
+.inv-chip--warn{background:var(--warn-soft);color:var(--warn);white-space:normal}
+
+/* ---- phone: one line */
+.inv-line{align-items:flex-start;padding-block:12px;scroll-margin-top:calc(var(--appbar-h) + 120px)}
+.inv-line--gone{opacity:.55}
+.inv-line__note{color:var(--muted);font-size:13px;font-weight:600}
+.inv-line__note--stop{color:var(--danger)}
+.inv-line__system{white-space:normal}
+.inv-line__entry{display:flex;align-items:center;gap:8px;margin-top:8px}
+.inv-line__field{flex:1 1 0;min-width:0;max-width:140px;font-variant-numeric:tabular-nums;text-align:right}
+.inv-line__save,.inv-line__equal{flex:none}
+.inv-line__equal{margin-left:auto}
+.inv-line__result{display:flex;align-items:center;gap:5px;margin-top:4px;font-size:15px;font-weight:650;font-variant-numeric:tabular-nums}
+.inv-line__result--ok{color:var(--rose-dark)}
+.inv-line__reason{display:block;margin:2px 0;color:var(--ink-2);font-size:13.5px}
+.inv-line__link{min-height:32px;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:13.5px;font-weight:600;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.inv-line__link:disabled{opacity:.45;cursor:default}
+.inv-line__wipe{justify-self:start;color:var(--muted)}
+.inv-line__moved{display:grid;justify-items:start;gap:3px;margin-top:4px}
+@media (max-width:679.98px){
+ .inv-line .inv-chip--stop{min-height:32px;padding-inline:12px;font-size:13px}
+ .inv-line__link{min-height:40px}}
+
+/* ---- open invoices and containers of a line (line, reason sheet, booking sheet) */
+.inv-docs{display:grid;gap:6px;min-width:0;margin-top:6px;padding:10px 12px;border-radius:12px;background:var(--warn-soft);color:#7c450b;font-size:13px;line-height:1.4;white-space:normal}
+.inv-docs__text{margin:0;font-weight:650}
+.inv-docs__link{margin-left:4px;color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.inv-docs__hint{margin:0}
+.inv-docs__check{display:flex;align-items:flex-start;gap:10px;min-height:32px;padding-top:4px;font-weight:650;cursor:pointer}
+.inv-docs__check input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--rose)}
+
+/* ---- desk: strip and table. Product · SKU · Eenheid · Volgens systeem · Geteld · Verschil · Reden · Door · acties */
+.inv-count--desk{container:inv-count/inline-size;--wk-sticky-top:calc(var(--appbar-h) + var(--inv-strip-h))}
+.inv-count--desk .inv-count__sticky{margin-bottom:14px;padding-top:0;margin-top:0}
+.inv-count--desk .inv-count__sticky::before{display:none}
+.inv-count__strip{flex-wrap:nowrap;align-items:center;height:var(--inv-strip-h);overflow:hidden;border:1px solid var(--line);border-radius:0 0 14px 14px}
+.inv-count__tools{display:flex;flex:none;gap:8px;margin-left:auto}
+.inv-count--desk .inv-count__lead{max-width:860px}
+.inv-count--desk .inv-count__filter{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px}
+.inv-table{--wk-cols:minmax(0,2.4fr) minmax(0,1fr) minmax(112px,.8fr) 132px 168px minmax(104px,1fr) minmax(0,1.4fr) minmax(0,1fr) 112px;border:1px solid var(--line)}
+.inv-col--narrow{display:none}
+/* below 1040 px of room SKU, unit and counter move under the product and the difference */
+@container inv-count (max-width:1039.98px){
+ .inv-table{--wk-cols:minmax(0,1.6fr) 124px 168px minmax(104px,.9fr) minmax(0,1.3fr) 112px}
+ .inv-col--wide{display:none}.inv-col--narrow{display:block}}
+.inv-row{scroll-margin-top:calc(var(--appbar-h) + var(--inv-strip-h) + var(--wk-head-h) + 40px)}
+.inv-row--gone{color:var(--muted)}
+.inv-row__count{display:flex;align-items:center;gap:6px;overflow:visible}
+.inv-row__field{width:76px;height:28px;padding:0 8px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;outline:none}
+.inv-row__field:focus{border-color:var(--rose);box-shadow:var(--wk-focus)}
+.inv-row__diff{font-weight:650}
+.inv-row__tick{color:var(--rose-dark);vertical-align:-2px}
+.inv-row__reason{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.inv-row__actions{display:flex;justify-content:flex-end;overflow:visible}
+.inv-row__more{grid-column:1 / -1;display:grid;gap:6px;padding-block:8px}
+.inv-row__more .inv-docs{margin-top:0;max-width:720px}
+.inv-row__more .inv-line__moved{display:flex;align-items:center;gap:10px;margin:0}
+
+/* ---- reason sheet */
+.inv-reason{display:grid;gap:14px;min-width:0}
+.inv-reason__docs{margin-top:0}
+.inv-reason__lead{margin:0;color:var(--ink-2);font-size:13.5px;line-height:1.45}
+.inv-reason__choices{display:grid;gap:8px}
+.inv-reason__choice{display:flex;align-items:center;min-height:52px;padding:8px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;font-weight:600;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.inv-reason__choice[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.inv-reason__choice:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+.inv-reason__note{margin-bottom:0}
+.inv-reason__must{color:var(--danger);font-weight:650}
+@media (min-width:680px){.inv-reason__choices{grid-template-columns:1fr 1fr}.inv-reason__choice{min-height:44px;font-size:14.5px}}
+
+/* ---- add sheet and booking sheet: grouped lists; the phone sheet has no side padding of its own */
+.inv-add,.inv-book{min-width:0}
+.inv-add__search{margin-bottom:12px}
+.inv-add__empty{margin:24px 0;color:var(--muted);font-size:14.5px;text-align:center}
+.inv-add__alert,.inv-book__alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.inv-book__head--stop h2{color:var(--danger)}
+.inv-book__documents{align-items:flex-start}
+.inv-book__negative{color:var(--danger);font-weight:650}
+.inv-book__moved+.inv-book__moved{margin-top:10px}
+.inv-moved{display:grid;gap:6px;padding:14px 16px;font-size:14px;line-height:1.45}
+.inv-moved__name{font-size:15.5px}
+.inv-moved__text,.inv-moved__question{margin:0}
+.inv-moved__rows{display:grid;gap:2px;margin:0;padding:8px 12px;border-radius:10px;background:var(--surface-2);color:var(--ink-2);font-size:13px;font-variant-numeric:tabular-nums;list-style:none}
+.inv-moved__question{font-weight:650}
+.inv-moved__answers{display:flex;flex-wrap:wrap;gap:8px}
+.inv-moved__answers .btn{flex:1 1 auto;min-height:44px}
+.inv-moved__answer--on{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.inv-book__summary{display:grid;gap:6px;margin-bottom:0}
+.inv-book__total{margin:0;font-size:16px;font-weight:700;line-height:1.4}
+.inv-book__note{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+.inv-book__note--stop{color:var(--danger);font-weight:650}
+@media (max-width:679.98px){
+ .inv-reason,.inv-add__search,.inv-add__empty,.inv-add__alert,.inv-add__loading,.inv-book__alert,.inv-book__loading,.inv-book__summary{margin-inline:16px}
+ .inv-add,.inv-book{--ios-inset:16px}
+ .inv-reason__lead{margin-top:4px}
+ .inv-book{padding-top:8px}}
+@media (min-width:680px){
+ .inv-add,.inv-book{--ios-inset:0px;padding:14px;border-radius:14px;background:var(--ios-bg)}
+ .inv-moved__answers .btn{flex:none;min-height:34px}}
+
+/* ---- conflict dialog */
+.inv-conflict{margin:0;font-size:15.5px;line-height:1.5}
+
+/* ---- print: the count list only */
+.inv-print{display:none}
+@media print{
+ app-stock-count-page>:not(.inv-print){display:none !important}
+ body:has(.inv-print) .toasts{display:none !important}
+ .inv-print{display:block;color:#000;font-size:10pt;line-height:1.3}
+ .inv-print__head{margin:0 0 10pt;font-size:13pt;font-weight:700}
+ .inv-print__table{width:100%;border-collapse:collapse}
+ .inv-print__table thead{display:table-header-group}
+ .inv-print__table tr{break-inside:avoid}
+ .inv-print__table th,.inv-print__table td{padding:4pt 6pt;border:.5pt solid #777;text-align:left;vertical-align:top}
+ .inv-print__table thead th{border-bottom-width:1pt;font-size:8.5pt;letter-spacing:.03em;text-transform:uppercase}
+ .inv-print__table .inv-print__num{width:13%;text-align:right;white-space:nowrap}
+ .inv-print__sku{white-space:nowrap}
+ .inv-print__group th{background:#eee;font-size:9.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ .inv-print__foot{break-inside:avoid;margin-top:22pt}
+ .inv-print__foot p{margin:0 0 20pt}
+ .inv-print__rule{display:inline-block;width:32%;margin:0 10pt 0 4pt;border-bottom:.75pt solid #000}}
