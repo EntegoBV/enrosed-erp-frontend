@@ -38,6 +38,7 @@ import { CategoryTranslationEditor } from './category-translation-editor';
 import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
+import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -78,6 +79,7 @@ const normalizeCategoryCode = (value: string): string => value
     RouterLink,
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
+    StaffContactPhones,
   ],
   template: `
     <app-page-header
@@ -332,6 +334,9 @@ const normalizeCategoryCode = (value: string): string => value
                     [disabled]="savingCompany()" (click)="saveCompany()">
               {{ savingCompany() ? 'Bezig…' : 'Bedrijfsgegevens opslaan' }}
             </button>
+          }
+          @if (!websiteCategoryMode) {
+            <app-staff-contact-phones style="display:block; margin-top:20px" />
           }
         </div>
       </div>
