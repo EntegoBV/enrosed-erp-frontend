@@ -39,6 +39,7 @@ import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
+import { DateTimeNlPipe } from '../../shared/pipes';
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -80,6 +81,7 @@ const normalizeCategoryCode = (value: string): string => value
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
     StaffContactPhones,
+    DateTimeNlPipe,
   ],
   template: `
     <app-page-header
@@ -914,7 +916,7 @@ const normalizeCategoryCode = (value: string): string => value
         <div class="card__body">
           <p class="small muted" style="margin-bottom:12px">
             Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
-            product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
             Op iPhone werkt dit zodra de app op het beginscherm staat.
           </p>
           @if (!push.supported()) {
@@ -923,30 +925,36 @@ const normalizeCategoryCode = (value: string): string => value
             <div class="push-actions">
               <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
               <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="testPush()">Stuur testmelding</button>
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
                       (click)="disablePush()">Uitzetten</button>
             </div>
-            @if (pushDevices().length) {
-              <div class="push-devices">
-                @for (device of pushDevices(); track device.id) {
-                  <div class="push-device">
-                    <b>{{ device.device }}</b>
-                    <span>
-                      @if (device.lastStatus === null) { nog geen melding gestuurd }
-                      @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
-                        laatste melding afgeleverd ✓
-                      } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
-                    </span>
-                  </div>
-                }
-              </div>
-            }
           } @else {
             <button class="btn btn--primary" type="button" [disabled]="push.busy()"
                     (click)="enablePush()">
               {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
             </button>
+          }
+          @if (push.enabled() || pushDevices().length) {
+            <div class="push-actions mt-12">
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="testPush()">Stuur testmelding</button>
+              <span class="small muted">Naar alle aangemelde toestellen.</span>
+            </div>
+          }
+          @if (pushDevices().length) {
+            <div class="push-devices" aria-label="Aangemelde toestellen">
+              @for (device of pushDevices(); track device.id) {
+                <div class="push-device">
+                  <b>{{ device.device }}</b>
+                  <span>
+                    @if (device.lastStatus === null) { nog geen melding gestuurd }
+                    @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                      laatste melding door pushdienst geaccepteerd
+                    } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                    @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
+                  </span>
+                </div>
+              }
+            </div>
           }
           @if (pushActionError()) {
             <div class="push-error" role="alert">
@@ -1218,7 +1226,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly push = inject(PushSetup);
   readonly pushActionError = signal<string | null>(null);
   private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';
-  /** The device list fills in once the worker knows whether we are enabled. */
+  /** All registered devices remain visible even if this browser is not subscribed. */
   private readonly pushDevicesLoad = setTimeout(() => void this.loadPushDevices(), 1500);
 
   async enablePush(): Promise<void> {
@@ -1247,6 +1255,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.pushActionError.set(null);
     try {
       await this.push.disable();
+      await this.loadPushDevices();
       this.ui.toast('Meldingen uitgezet op dit toestel');
     } catch (failure: unknown) {
       const message = messageOf(failure, 'Meldingen uitzetten mislukt.');

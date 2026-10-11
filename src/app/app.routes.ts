@@ -86,6 +86,12 @@ export const routes: Routes = [
       import('./features/login-requests/login-requests-page').then((m) => m.LoginRequestsPage),
   },
   {
+    path: 'contactaanvragen',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/contact-inquiries/contact-inquiries-page').then((m) => m.ContactInquiriesPage),
+  },
+  {
     path: 'purchasing',
     canActivate: [authGuard],
     loadComponent: () =>
