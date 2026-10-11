@@ -32,11 +32,13 @@ import {
   ProductPhotoRoleKey,
 } from '../../core/api/models';
 import { FilePicker } from '../../shared/file-picker';
+import { formatBytes } from '../../shared/format-bytes';
 import { Icon } from '../../shared/icon';
 import { SegmentOption, Segmented } from '../../shared/segmented';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { WebsiteSyncStore } from '../settings/website-sync-store';
-import { ProductPhotoPicker } from './product-photo-picker';
+import { ProductPhotoColours } from './product-photo-colours';
+import { PhotoCompareNeighbour, ProductPhotoPicker } from './product-photo-picker';
 import {
   ProductPhotoChannelsRequest,
   ProductPhotoPromoteRequest,
@@ -65,6 +67,7 @@ import {
   channelSavedMessage,
   cleanupScope,
   colourPhotos,
+  colourStatus,
   deleteTexts,
   documentsMovedNote,
   duplicatesNote,
@@ -72,6 +75,7 @@ import {
   galleryTexts,
   movedOrder,
   orderSavedMessage,
+  otherColourRow,
   photoKeyForSignedId,
   photoTileLabel,
   pickerModel,
@@ -92,6 +96,7 @@ import {
   signedIdForPhotoKey,
   splitPhotoFiles,
   standingNotes,
+  switchLock,
   syncPill,
   tileFoot,
   tileUses,
@@ -116,6 +121,19 @@ interface OrderDrag {
   handle: HTMLElement;
 }
 
+/** The "Ook tonen als extra foto" switches of a series photo as they stood before a choice. */
+export interface PhotoSwitchMemory {
+  key: string;
+  imageId: number;
+  channels: CatalogChannel[];
+}
+
+/** The other colours of the series, fetched fresh each time they are looked at. */
+export interface OtherColoursState {
+  state: 'loading' | 'ready' | 'failed';
+  overviews: ProductPhotoOverview[];
+}
+
 /** The last choice of this session: what the undo line in the card and the toast take back. */
 export interface PhotoPlaceChange {
   kind: PhotoPickerKind;
@@ -125,6 +143,12 @@ export interface PhotoPlaceChange {
   /** The stored choice before the change; null = it was automatic. */
   previousKey: string | null;
   newKey: string | null;
+  /**
+   * The role call switches the website or the catalogue on for the photo it
+   * is given, on the first tap and on the undo call. These are the switches of
+   * the new and of the previous photo before the first tap; undo puts them back.
+   */
+  restore: PhotoSwitchMemory[];
 }
 
 /**
@@ -140,7 +164,7 @@ export interface PhotoPlaceChange {
 @Component({
   selector: 'app-product-photos-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FilePicker, Icon, NgTemplateOutlet, ProductPhotoPicker, ProductPhotoSheet, RouterLink, Segmented, Sheet],
+  imports: [AuthImage, FilePicker, Icon, NgTemplateOutlet, ProductPhotoColours, ProductPhotoPicker, ProductPhotoSheet, RouterLink, Segmented, Sheet],
   template: `
     <!-- The status pill: the editor draws this template in the section head, next to "Foto's". -->
     <ng-template #pill>
@@ -281,8 +305,10 @@ export interface PhotoPlaceChange {
           </div>
         }
 
-        <!-- TODO(photos-round): ui-spec 4.5 "Andere kleuren van deze reeks" (build-plan C6) goes here:
-             othersOpen, others, loadOthers(); not rendered without places or without another member. -->
+        @if (otherMembers().length) {
+          <app-product-photo-colours [rows]="otherRows()" [state]="others()?.state ?? null" [open]="othersOpen()"
+                                     (toggled)="othersToggled($event)" (retry)="loadOthers()" />
+        }
 
         <section class="gl" id="pp-gallery" aria-labelledby="pp-photos-title">
           <header class="gl__head">
@@ -381,7 +407,7 @@ export interface PhotoPlaceChange {
     @if (picker(); as model) {
       <app-product-photo-picker [kind]="model.kind" [texts]="model.texts" [current]="model.current" [candidates]="model.tiles"
                                 [busyKey]="pickerBusyKey()" [uploading]="uploadStage()" [detailSize]="model.detailSize"
-                                [compareNeighbours]="null" [disabled]="disabled() || busy()"
+                                [compareNeighbours]="compareNeighbours()" [disabled]="disabled() || busy()"
                                 (picked)="pickFromPicker($event)" (cleared)="clearFromPicker()" (uploadRequested)="uploadFromPicker($event)"
                                 (sizeChanged)="setDetailSize($event)" (compareOpened)="compareOpened()" (closed)="closePicker()" />
     }
@@ -391,11 +417,12 @@ export interface PhotoPlaceChange {
       <app-sheet [title]="add.title" (closed)="cancelAdd()">
         <div body class="pp-add-sheet" [attr.aria-busy]="busy()">
           <ul class="pp-previews" aria-label="Gekozen foto’s">
-            @for (item of files; track item.previewUrl) { <li><img [src]="item.previewUrl" [alt]="item.file.name" /></li> }
+            @for (item of files; track item.previewUrl) {
+              <li><img [src]="item.previewUrl" alt="" /><span><b [title]="item.file.name">{{ item.file.name }}</b><small>{{ fileSize(item.file.size) }}</small></span></li>
+            }
           </ul>
           @if (addError(); as error) { <p class="pp-error" role="alert"><span>{{ error }}</span></p> }
           @if (overview()?.familyId) {
-            <!-- TODO(photos-round): ui-spec 4.9 (build-plan C5): file name and size next to the preview; the words below are final. -->
             <div class="pp-field">
               <h4>{{ add.scopeLabel }}</h4>
               <app-segmented class="pp-seg" variant="ios" semantics="radio" [label]="add.scopeLabel" [options]="addScopeOptions()" [value]="addScope()"
@@ -469,7 +496,7 @@ export interface PhotoPlaceChange {
     .pp-link { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--rose-dark);
       font: inherit; font-size: 12.5px; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .pp-link:disabled { opacity: .5; cursor: default; }
-    .pp-dot { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
+    .pp-dot { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--muted-2); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
 
     .pl-head h3 { display: flex; align-items: center; gap: 8px; font-size: 17px; overflow-wrap: anywhere; }
     .pl-head p { margin-top: 2px; color: var(--ink-2); font-size: 13px; line-height: 1.4; }
@@ -596,8 +623,12 @@ export interface PhotoPlaceChange {
 
     .pp-add-sheet { display: grid; gap: 16px; min-width: 0; }
     .pp-previews { display: flex; gap: 8px; padding: 2px; overflow-x: auto; }
-    .pp-previews li { flex: 0 0 72px; height: 72px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-    .pp-previews img { width: 100%; height: 100%; object-fit: contain; }
+    .pp-previews li { display: grid; flex: 0 0 104px; align-content: start; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.3; }
+    .pp-previews li:only-child { flex: 1; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 13px; }
+    .pp-previews img { width: 72px; height: 72px; border: 1px solid var(--line); border-radius: 12px; background: #fff; object-fit: contain; }
+    .pp-previews span { display: grid; min-width: 0; }
+    .pp-previews b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pp-previews small { color: #6a615b; font-size: 12px; }
     .pp-field { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
     .pp-field :is(h4, legend) { padding: 0; font-size: 14px; font-weight: 700; }
     .pp-field legend { margin-bottom: 8px; }
@@ -669,8 +700,12 @@ export class ProductPhotosPanel {
   readonly disabled = input(false);
   /** The editor bumps this when something outside the panel may have changed photos. */
   readonly revision = input(0);
+  /** A link asked for a picker (`?kies=`): it opens once, when the overview is there and the panel is enabled. */
+  readonly pick = input<'website' | 'catalogus' | null>(null);
   /** A photo change was saved: the editor refreshes the product and the series. */
   readonly changed = output<void>();
+  /** The asked picker was opened, or its card has no "Wijzig" now: the editor drops the parameter. */
+  readonly pickHandled = output<void>();
   /** The status pill; the editor draws it in the section head. */
   readonly pillTemplate = viewChild<TemplateRef<unknown>>('pill');
 
@@ -686,6 +721,8 @@ export class ProductPhotosPanel {
   readonly pickerBusyKey = signal<string | null>(null);
   /** "Nieuwe foto uploaden" in the picker: sending the file, then saving the choice. */
   readonly uploadStage = signal<'upload' | 'save' | null>(null);
+  /** A photo that was uploaded in the picker but could not be chosen: it leads the candidates for a retry. */
+  readonly uploadedKey = signal<string | null>(null);
   readonly openKey = signal<string | null>(null);
   readonly libraryOpen = signal(false);
   readonly staged = signal<StagedPhoto[] | null>(null);
@@ -702,6 +739,10 @@ export class ProductPhotosPanel {
   readonly announcement = signal('');
   /** The choice the undo line and the toast can take back; dropped by any other photo change. */
   readonly lastChange = signal<PhotoPlaceChange | null>(null);
+  /** "Andere kleuren van deze reeks" is unfolded. */
+  readonly othersOpen = signal(false);
+  /** The other colours' own overviews; null = not asked, or a save made the last answer old. */
+  readonly others = signal<OtherColoursState | null>(null);
   /** "Voor de hele reeks" on a phone; remembered for the session. */
   readonly seriesOpen = signal(storedFlag(SERIES_OPEN_KEY));
   /** The panel is at least 700 px wide (the same line as the container query). */
@@ -710,8 +751,10 @@ export class ProductPhotosPanel {
   readonly acceptTypes = PHOTO_UPLOAD_TYPES.join(',');
   readonly stripTitle = SERIES_STRIP_TITLE;
   readonly stripLine = SERIES_STRIP_LINE;
+  readonly fileSize = formatBytes;
 
   private loadVersion = 0;
+  private othersVersion = 0;
   private dragDepth = 0;
   private drag: OrderDrag | null = null;
   private lastOrderToast = 0;
@@ -806,7 +849,33 @@ export class ProductPhotosPanel {
   });
   readonly picker = computed(() => {
     const kind = this.pickerKind();
-    return kind ? pickerModel(this.overview(), kind, this.colour(), this.product()) : null;
+    return kind ? pickerModel(this.overview(), kind, this.colour(), this.product(), this.uploadedKey()) : null;
+  });
+  /** The other colours of the series; none against an older server, which cannot say what they show. */
+  readonly otherMembers = computed(() => {
+    const id = this.productId();
+    return this.overview()?.places ? this.members().filter((member) => member.productId !== id) : [];
+  });
+  readonly otherRows = computed(() => {
+    const loaded = this.others();
+    const overviews = loaded?.state === 'ready' ? loaded.overviews : [];
+    return this.otherMembers().map((member) => otherColourRow(member, overviews.find((item) => item.productId === member.productId) ?? null));
+  });
+  /**
+   * "Bekijk groot" in the Catalogus picker: the catalogue photos of the other
+   * colours the pdf prints next to this one. Null = no strip (loading, failed,
+   * a one-colour series, a colour that is not sold, no other colour with a photo).
+   */
+  readonly compareNeighbours = computed<PhotoCompareNeighbour[] | null>(() => {
+    const overview = this.overview();
+    const loaded = this.others();
+    if (this.picker()?.kind !== 'catalogue' || !overview?.places || loaded?.state !== 'ready') return null;
+    if (cataloguePlaceFor(overview.places).single || colourStatus(overview, this.product()) !== 'active') return null;
+    const printed = overview.catalogueAssumption?.productIds;
+    const list = this.otherRows()
+      .filter((row) => row.catalogue && (!printed || printed.includes(row.productId)))
+      .map((row) => ({ label: row.name, photo: row.catalogue }));
+    return list.length ? list : null;
   });
   readonly addTexts = computed(() => addSheetTexts(this.staged()?.length ?? 1, this.colour(), this.addScope()));
   readonly addScopeOptions = computed<SegmentOption[]>(() => [
@@ -838,6 +907,15 @@ export class ProductPhotosPanel {
         }));
       }
       wasBusy = busy;
+    });
+    /* A link from the product page or the Catalogusstudio asks for a picker; it waits for the overview. */
+    let handledPick: string | null = null;
+    effect(() => {
+      const pick = this.pick();
+      if (!pick) handledPick = null;
+      if (!pick || pick === handledPick || this.interactionDisabled()) return;
+      handledPick = pick;
+      untracked(() => this.openRequestedPicker(pick));
     });
     /* One status for the whole app: watch it while the section is on screen. */
     this.sync.attach();
@@ -895,7 +973,44 @@ export class ProductPhotosPanel {
   }
 
   closePicker(): void {
-    if (!this.pickerBusyKey() && !this.uploadStage()) this.pickerKind.set(null);
+    if (this.pickerBusyKey() || this.uploadStage()) return;
+    this.pickerKind.set(null);
+    this.uploadedKey.set(null);
+  }
+
+  /** `?kies=website|catalogus`: opens that card's picker when the card has a "Wijzig" now; its own sentence says why not. */
+  openRequestedPicker(pick: 'website' | 'catalogus'): void {
+    if (this.interactionDisabled()) return;
+    const card = this.cards().find((item) => item.key === (pick === 'website' ? 'website' : 'catalogue'));
+    const picker = card?.actions.find((action) => action.id === 'pick')?.picker;
+    if (picker) this.openPicker(picker);
+    this.pickHandled.emit();
+  }
+
+  othersToggled(open: boolean): void {
+    if (open === this.othersOpen()) return;
+    this.othersOpen.set(open);
+    if (open) void this.loadOthers();
+  }
+
+  /**
+   * Fetches what the other colours show, fresh: an older answer is never
+   * shown as "nu". Looking only; nothing here writes for another product.
+   */
+  async loadOthers(): Promise<void> {
+    const members = this.otherMembers();
+    const version = ++this.othersVersion;
+    if (!members.length) {
+      this.others.set(null);
+      return;
+    }
+    this.others.set({ state: 'loading', overviews: [] });
+    try {
+      const overviews = await Promise.all(members.map((member) => this.catalog.productPhotoOverview(member.productId)));
+      if (version === this.othersVersion) this.others.set({ state: 'ready', overviews });
+    } catch {
+      if (version === this.othersVersion) this.others.set({ state: 'failed', overviews: [] });
+    }
   }
 
   /** "Volgorde": the whole series in reorder mode, scrolled to. The only scroll the panel does itself. */
@@ -949,6 +1064,7 @@ export class ProductPhotosPanel {
     const place = placeOfRole(before, role);
     if (!force && place.chosenKey === photoKey) {
       this.pickerKind.set(null);
+      this.uploadedKey.set(null);
       return;
     }
     const productId = overview.productId;
@@ -960,18 +1076,22 @@ export class ProductPhotosPanel {
     const change: PhotoPlaceChange = {
       kind, role, previousKey: place.chosenKey, newKey: photoKey,
       card: role === 'MAIN' ? 'website' : role === single.role ? 'catalogue' : null,
+      restore: this.switchesOf([photoKey, place.chosenKey]),
     };
     this.pickerBusyKey.set(photoKey);
     const saved = await this.run(
       () => this.catalog.setProductPhotoRole(productId, role, photoKey),
-      () => placeSavedMessage(kind, this.colour(), before, this.places(), event),
+      /* Success is read from the answer: a choice the place still does not show is not announced as shown. */
+      () => (this.choiceHidden(kind) ? null : placeSavedMessage(kind, this.colour(), before, this.places(), event)),
       PHOTO_MESSAGES.roleFailed,
       force ? undefined : { label: PHOTO_MESSAGES.undo, run: () => void this.undo() },
     );
     this.pickerBusyKey.set(null);
     if (!saved) return;
     this.pickerKind.set(null);
+    this.uploadedKey.set(null);
     this.lastChange.set(force ? null : change);
+    if (this.choiceHidden(kind)) this.announcement.set(HIDDEN_CHOICE);
   }
 
   pickFromPicker(key: string): void {
@@ -989,57 +1109,104 @@ export class ProductPhotosPanel {
     if (kind === 'website' || kind === 'catalogue') void this.uploadAndUse(kind, file);
   }
 
-  /** "Bekijk groot" opened in the picker. */
+  /** "Bekijk groot" opened in the picker: the Catalogus strip shows the other colours as they are now. */
   compareOpened(): void {
-    // TODO(photos-round): ui-spec 4.7 "Bekijk groot" + 4.5 (build-plan C6): fetch the other colours' overviews
-    // fresh here (loadOthers) and hand their catalogue photos to the picker as compareNeighbours.
+    if (this.picker()?.kind === 'catalogue' && this.otherMembers().length) void this.loadOthers();
   }
 
-  /** Takes the last choice back: the stored choice of before, or the automatic rule. */
+  /**
+   * Takes the last choice back: the stored choice of before, or the automatic
+   * rule. The role call may have switched the website or the catalogue on for
+   * a photo (on the first tap and again here), so the switches of the new and
+   * of the previous photo go back to what they were, where the answer differs.
+   */
   async undo(): Promise<void> {
     const change = this.lastChange();
     const overview = this.overview();
     const before = this.places();
     if (!change || !overview || this.interactionDisabled()) return;
-    // TODO(photos-round): ui-spec 6 "Undo" and 4.10 (build-plan C3). This only sends the previous key. Still to do:
-    // remember publishedChannels of the new and of the previous photo before the first tap, restore them after
-    // this call where the answer differs (at most two publication calls, one overview fetch at the end), the
-    // toasts undoLeftOnWebsite / undoLeftInCatalogue when one of them fails, and the server's sentence followed
-    // by undoRefused when this call is refused. run() already drops the undo line, also on a refusal.
     const productId = overview.productId;
-    await this.run(
-      () => this.catalog.setProductPhotoRole(productId, change.role, change.previousKey),
-      () => placeSavedMessage(change.kind, this.colour(), before, this.places(), 'undone'),
-      PHOTO_MESSAGES.roleFailed,
-    );
+    const familyId = overview.familyId;
+    let refused: string | null = null;
+    let left: CatalogChannel | null = null;
+    let done = false;
+    /* One step only: the line goes, whatever the server answers. */
+    this.lastChange.set(null);
+    this.busy.set(true);
+    try {
+      try {
+        const answer = await this.catalog.setProductPhotoRole(productId, change.role, change.previousKey);
+        if (this.productId() !== productId) return;
+        this.apply(answer);
+        done = true;
+      } catch (failure: unknown) {
+        /* The previous choice can no longer be stored, for example its colour was made inactive meanwhile. */
+        refused = messageOf(failure, PHOTO_MESSAGES.roleFailed);
+      }
+      let restored = false;
+      for (const memory of done && familyId ? change.restore : []) {
+        const photo = this.overview()?.photos.find((item) => item.key === memory.key);
+        const now = photo ? selectedChannels(photo) : memory.channels;
+        const extra = now.filter((channel) => !memory.channels.includes(channel));
+        if (!extra.length && now.length === memory.channels.length) continue;
+        try {
+          await this.catalog.updateProductFamilyImagePublication(familyId!, memory.imageId, memory.channels);
+          restored = true;
+        } catch {
+          left ??= extra.includes('WEBSITE') ? 'WEBSITE' : 'CATALOGUE';
+        }
+        if (this.productId() !== productId) return;
+      }
+      /* A publication call answers with the series, not an overview. */
+      if (restored || left || refused) await this.load(productId);
+    } finally {
+      this.busy.set(false);
+    }
+    if (this.productId() !== productId) return;
+    if (refused) {
+      this.ui.toast(`${refused.trim().replace(/[.\s]+$/, '')}. ${PHOTO_MESSAGES.undoRefused}`, 'err');
+      return;
+    }
+    if (left) {
+      this.ui.toast(left === 'WEBSITE' ? PHOTO_MESSAGES.undoLeftOnWebsite : PHOTO_MESSAGES.undoLeftInCatalogue, 'err');
+    } else {
+      const message = placeSavedMessage(change.kind, this.colour(), before, this.places(), 'undone');
+      this.ui.toast(message);
+      this.announcement.set(message);
+    }
+    this.afterSave(before);
   }
 
   /** "Zet mijn keuze weer aan": sends the stored choice again, which switches it on for that place. */
   async repair(kind: 'website' | 'catalogue'): Promise<void> {
     const places = this.places();
-    if (!places) return;
-    // TODO(photos-round): ui-spec 4.2 reason table (build-plan C3): panel test for the forced call; when the
-    // answer still does not show the choice the card keeps its warning, and the toast should then not claim it.
+    if (!places || places.legacy) return;
     const target = pickerTarget(places, kind);
     if (target.chosenKey) await this.pickRole(target.role, target.chosenKey, true);
   }
 
-  /** "Gebruik de websitefoto": quotes and invoices move to the photo the website shows. */
+  /** "Gebruik de websitefoto": quotes and invoices move to the photo the website shows. No undo line: the website card did not change. */
   async useWebsitePhotoForDocuments(): Promise<void> {
     const overview = this.overview();
-    const key = this.places()?.websiteColour.shownKey;
-    if (!overview || !key) return;
-    // TODO(photos-round): ui-spec 4.2 "Offertes en facturen" (build-plan C3): panel test; no undo is offered here.
+    const places = this.places();
+    const key = places?.websiteColour.shownKey;
+    if (!overview || !places || places.legacy || !key || key === places.documents.shownKey) return;
     const productId = overview.productId;
     await this.run(() => this.catalog.setProductPhotoRole(productId, 'MAIN', key), PHOTO_MESSAGES.documentsUseWebsite, PHOTO_MESSAGES.roleFailed);
   }
 
   /**
-   * "Nieuwe foto uploaden" in the picker: upload for this colour, then choose
-   * it. It keeps `busy` itself (run() refuses while busy) and reports success
-   * only when the place shows the new photo as the owner's choice.
+   * "Nieuwe foto uploaden" in the picker (api-contract part E): upload for
+   * this colour, name the photo the server stored or reused, then choose it.
+   * The photo is named the way the server reuses one: by the SHA-256 of the
+   * file; without crypto.subtle (plain http) by the one id that is new. A
+   * photo of another colour, or of all colours for the colour strip, is never
+   * taken over. It keeps `busy` itself (run() refuses while busy) and reports
+   * success only when the place shows the new photo as the owner's choice.
+   * `addedKey` is the photo a failed attempt already added ("Opnieuw
+   * proberen"): for the owner it is still the new photo, not one that was there.
    */
-  async uploadAndUse(kind: 'website' | 'catalogue', file: File): Promise<void> {
+  async uploadAndUse(kind: 'website' | 'catalogue', file: File, addedKey: string | null = null): Promise<void> {
     const overview = this.overview();
     const before = this.places();
     const familyId = overview?.familyId;
@@ -1047,32 +1214,47 @@ export class ProductPhotosPanel {
     const { accepted, skipped } = splitPhotoFiles([file]);
     if (skipped) this.ui.toast(skipped, 'err');
     if (!accepted.length) return;
-    // TODO(photos-round): ui-spec 6 and api-contract part E (build-plan C2). This is the road without crypto.subtle
-    // (part E step 3: the one new id). Still to do: the SHA-256 of the file and uploadedImage(images, sha, ids) in
-    // the server's order (so a reused file gives 'reused' instead of 'unidentified'), the other colour's label in
-    // the 'otherColour' message, the toast action "Opnieuw proberen" after 'roleFailed', the new photo first in the
-    // picker after a failure, and the panel test of every outcome.
     const productId = overview.productId;
     const target = pickerTarget(before, kind);
     const colour = this.colour();
+    const listed = overview.photos.filter((photo) => photo.kind === 'SERIES' && photo.familyPhotoId !== null);
     let failure: string | null = null;
+    let retry = false;
     let key: string | null = null;
     let uploaded = false;
+    let reused = false;
+    let restore: PhotoSwitchMemory[] = [];
     this.lastChange.set(null);
+    this.uploadedKey.set(null);
     this.busy.set(true);
     this.uploadStage.set('upload');
     try {
-      const idsBefore = (await this.catalog.productFamily(familyId)).images.map((image) => image.id);
-      const family = await this.catalog.uploadProductFamilyImage(familyId, accepted[0], productId);
+      const sha = await fileSha256(file);
+      const idsBefore = sha ? null : (await this.catalog.productFamily(familyId)).images.map((image) => image.id);
+      const family = await this.catalog.uploadProductFamilyImage(familyId, file, productId);
       uploaded = true;
-      const image = uploadedImage(family.images, null, idsBefore);
+      if (this.productId() !== productId) return;
+      /* The hash names a new and a reused photo alike. Should a server answer without it, the one id the overview did not list is the new photo. */
+      const image = uploadedImage(family.images, sha, idsBefore ?? [])
+        ?? (sha ? uploadedImage(family.images, null, listed.map((photo) => photo.familyPhotoId!)) : null);
       const verdict = image ? uploadUseVerdict(image, productId, kind, before) : null;
       if (!image) {
         failure = uploadUseMessage('unidentified', colour);
-      } else if (verdict !== 'ok') {
-        failure = uploadUseMessage(verdict === 'allColours' ? 'allColours' : 'otherColour', colour);
+      } else if (verdict === 'otherColour') {
+        const owner = listed.find((photo) => photo.familyPhotoId === image.id)?.variantLabel
+          || this.members().find((member) => member.productId === image.variantProductId)?.colour
+          || image.variantColor;
+        failure = uploadUseMessage('otherColour', colour, owner ?? null);
+      } else if (verdict === 'allColours') {
+        failure = uploadUseMessage('allColours', colour);
       } else {
         key = photoKeyForSignedId(image.id);
+        reused = key !== addedKey && (idsBefore ? idsBefore.includes(image.id) : listed.some((photo) => photo.familyPhotoId === image.id));
+        /* A new photo starts without any switch; undo takes the one the role call adds away again. */
+        restore = [
+          ...(reused ? this.switchesOf([key]) : [{ key: key!, imageId: image.id, channels: [] }]),
+          ...this.switchesOf([target.chosenKey === key ? null : target.chosenKey]),
+        ];
         this.uploadStage.set('save');
         try {
           const answer = await this.catalog.setProductPhotoRole(productId, target.role, key);
@@ -1080,6 +1262,7 @@ export class ProductPhotosPanel {
           this.apply(answer);
         } catch (refused: unknown) {
           failure = uploadUseMessage('roleFailed', colour, messageOf(refused, ''));
+          retry = true;
         }
       }
     } catch (failed: unknown) {
@@ -1090,21 +1273,28 @@ export class ProductPhotosPanel {
     }
     if (this.productId() !== productId) return;
     if (failure) {
-      this.ui.toast(failure, 'err');
+      /* The photo is in the series, not chosen: the same file again is safe (the server reuses it). */
+      if (retry) this.ui.toast(failure, 'err', { label: PHOTO_MESSAGES.retry, run: () => void this.uploadAndUse(kind, file, key) });
+      else this.ui.toast(failure, 'err');
       await this.load(productId);
+      if (retry && this.pickerKind()) this.uploadedKey.set(key);
     } else {
       this.pickerKind.set(null);
       if (key && placeShowsChoice(this.overview(), kind, key)) {
-        const message = placeSavedMessage(target.kind, colour, before, this.places(), 'chosen');
-        this.lastChange.set({ kind: target.kind, role: target.role, card: kind, previousKey: target.chosenKey, newKey: key });
-        this.ui.toast(message, 'ok', { label: PHOTO_MESSAGES.undo, run: () => void this.undo() });
+        const message = reused ? uploadUseMessage('reused', colour) : placeSavedMessage(target.kind, colour, before, this.places(), 'chosen');
+        if (target.chosenKey !== key) {
+          this.lastChange.set({ kind: target.kind, role: target.role, card: kind, previousKey: target.chosenKey, newKey: key, restore });
+          this.ui.toast(message, 'ok', { label: PHOTO_MESSAGES.undo, run: () => void this.undo() });
+        } else {
+          this.ui.toast(message);
+        }
         this.announcement.set(message);
+      } else {
+        /* Saved, but the place does not show it: the card says so with its reason; no success is claimed. */
+        this.announcement.set(HIDDEN_CHOICE);
       }
     }
-    if (uploaded) {
-      this.refreshSync(before);
-      this.changed.emit();
-    }
+    if (uploaded) this.afterSave(before);
   }
 
   async setDetailSize(size: 'STANDARD' | 'LARGE'): Promise<void> {
@@ -1128,6 +1318,13 @@ export class ProductPhotosPanel {
     const imageId = request.photo.familyPhotoId;
     if (!familyId || imageId === null) return;
     const channels: CatalogChannel[] = request.channels;
+    /* A stored choice keeps its switch on, for every colour that chose the photo. */
+    const locked = selectedChannels(request.photo).filter((channel) => !channels.includes(channel))
+      .map((channel) => switchLock(request.photo, this.places(), channel, this.colour())).find((lock) => lock?.locked);
+    if (locked) {
+      this.ui.toast(locked.help, 'err');
+      return;
+    }
     await this.run(
       () => this.catalog.updateProductFamilyImagePublication(familyId, imageId, channels),
       channelSavedMessage(selectedChannels(request.photo), channels),
@@ -1184,9 +1381,11 @@ export class ProductPhotosPanel {
       const request = photo.kind === 'OWN'
         ? () => this.catalog.deletePhoto(overview.productId, photo.productPhotoId!)
         : () => this.catalog.deleteProductFamilyImage(overview.familyId!, photo.familyPhotoId!);
-      // TODO(photos-round): ui-spec 4.10 "Delete" (build-plan C4): when the server refuses, show its sentence
-      // followed by PHOTO_MESSAGES.deleteRefusedHint.
-      void this.run(request, 'Foto verwijderd', PHOTO_MESSAGES.deleteFailed).then((done) => {
+      /* The server refuses to delete the stored large or small catalogue photo; its sentence gets the way out. */
+      const places = this.places();
+      const seriesChoice = places?.catalogueDetail.chosenKey === photo.key || places?.catalogueOverview.chosenKey === photo.key;
+      void this.run(request, 'Foto verwijderd', PHOTO_MESSAGES.deleteFailed, undefined,
+        seriesChoice ? PHOTO_MESSAGES.deleteRefusedHint : undefined).then((done) => {
         if (done) this.openKey.set(null);
       });
     });
@@ -1292,8 +1491,7 @@ export class ProductPhotosPanel {
     this.addError.set(failed.length ? firstError : null);
     if (result.added || result.existing) {
       await this.reload();
-      this.refreshSync(before);
-      this.changed.emit();
+      this.afterSave(before);
     }
     const summary = uploadSummary(result);
     const text = summary.text + documentsMovedNote(before, this.places());
@@ -1412,9 +1610,13 @@ export class ProductPhotosPanel {
     this.reordering.set(false);
     this.pickerKind.set(null);
     this.pickerBusyKey.set(null);
+    this.uploadedKey.set(null);
     this.openKey.set(null);
     this.orderOverride.set(null);
     this.lastChange.set(null);
+    ++this.othersVersion;
+    this.others.set(null);
+    this.othersOpen.set(false);
     if (!this.busy()) {
       this.releaseStaged();
       this.staged.set(null);
@@ -1452,12 +1654,14 @@ export class ProductPhotosPanel {
    * editor, and say what happened. A failure reloads, because the server may
    * have done part of the work (a publication before a choice, for example).
    * `success` can be read after the answer, so it can name what moved.
+   * `refusedHint` follows the server's own sentence when it refuses.
    */
   private async run(
     request: () => Promise<unknown>,
-    success: string | (() => string),
+    success: string | (() => string | null),
     failureText: string,
     action?: { label: string; run: () => void },
+    refusedHint?: string,
   ): Promise<boolean> {
     const productId = this.productId();
     if (productId === null || this.interactionDisabled()) return false;
@@ -1469,19 +1673,51 @@ export class ProductPhotosPanel {
       const answer = await request();
       if (this.productId() !== productId) return false;
       if (isOverview(answer)) this.apply(answer); else await this.load(productId);
+      /* Null = the answer does not show what was asked: nothing is claimed, the screen says what is. */
       const text = typeof success === 'string' ? success : success();
-      if (action) this.ui.toast(text, 'ok', action); else this.ui.toast(text);
-      this.announcement.set(text);
-      this.refreshSync(before);
-      this.changed.emit();
+      if (text !== null) {
+        if (action) this.ui.toast(text, 'ok', action); else this.ui.toast(text);
+        this.announcement.set(text);
+      }
+      this.afterSave(before);
       return true;
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, failureText), 'err');
+      const text = messageOf(failure, failureText);
+      this.ui.toast(refusedHint && text !== failureText ? `${text.trim().replace(/[.\s]+$/, '')}. ${refusedHint}` : text, 'err');
       if (this.productId() === productId) await this.load(productId);
       return false;
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** After every saved change: the pill follows, the editor is told, and the other colours are asked again while they are looked at. */
+  private afterSave(before: ResolvedPlaces | null): void {
+    this.refreshSync(before);
+    this.changed.emit();
+    if (this.othersOpen()) void this.loadOthers();
+    else {
+      ++this.othersVersion;
+      this.others.set(null);
+    }
+  }
+
+  /** The switches of these photos as the overview has them now; own photos and other colours' photos have none. */
+  private switchesOf(keys: readonly (string | null)[]): PhotoSwitchMemory[] {
+    const photos = this.overview()?.photos ?? [];
+    const memories: PhotoSwitchMemory[] = [];
+    for (const key of keys) {
+      const photo = key === null ? undefined : photos.find((item) => item.key === key);
+      if (!photo || photo.kind !== 'SERIES' || photo.familyPhotoId === null || memories.some((item) => item.key === key)) continue;
+      memories.push({ key: photo.key, imageId: photo.familyPhotoId, channels: selectedChannels(photo) });
+    }
+    return memories;
+  }
+
+  /** The stored choice of this picker's place is not what the place shows (read after a save). */
+  private choiceHidden(kind: PhotoPickerKind): boolean {
+    const places = this.places();
+    return !!places && pickerTarget(places, kind).place.state === 'CHOSEN_NOT_SHOWN';
   }
 
   /** The website is rebuilt after a change of what it shows; ask the shared status once so the pill follows. */
@@ -1514,8 +1750,7 @@ export class ProductPhotosPanel {
       /* Arrow keys save each step; one toast per burst is enough. */
       if (Date.now() - this.lastOrderToast > 3000) this.ui.toast(orderSavedMessage(before, this.places()));
       this.lastOrderToast = Date.now();
-      this.refreshSync(before);
-      this.changed.emit();
+      this.afterSave(before);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, PHOTO_MESSAGES.orderFailed), 'err');
       await this.load(overview.productId);
@@ -1568,6 +1803,24 @@ export class ProductPhotosPanel {
 }
 
 const SERIES_OPEN_KEY = 'erp.product-photos.series-open';
+/** Read to screen readers when a saved choice is not what the place shows; the card carries the reason. */
+const HIDDEN_CHOICE = 'Je keuze wordt niet getoond';
+
+/**
+ * SHA-256 of a file as lower-case hex, the way the server names an upload.
+ * Null where the browser cannot: crypto.subtle only exists on https and
+ * localhost, not on a plain-http address.
+ */
+async function fileSha256(file: Blob): Promise<string | null> {
+  try {
+    const subtle = typeof crypto === 'undefined' ? null : crypto.subtle;
+    if (!subtle) return null;
+    const digest = await subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
 
 /** Session flags are a comfort; a browser that refuses storage simply forgets. */
 function storedFlag(key: string): boolean {

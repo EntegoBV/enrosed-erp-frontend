@@ -308,6 +308,10 @@
     .product-editor-dock .product-editor-dock__save:disabled { color: var(--muted); background: var(--surface-2); box-shadow: none; opacity: 1; }
     .product-save-check { font-size: 17px; }
     @media (max-width: 359px) { .product-editor-dock__context small { font-size: 9px; } }
+    /* "Foto's worden meteen bewaard": a message to read, not the dock's small status. */
+    .product-editor-dock .product-editor-dock__photos { gap: 2px; line-height: 1.25; }
+    .product-editor-dock .product-editor-dock__photos strong { font-size: 13px; white-space: normal; }
+    .product-editor-dock .product-editor-dock__photos small { color: var(--ink-2); font-size: 12px; font-weight: 400; text-transform: none; white-space: normal; }
   }
 }
 

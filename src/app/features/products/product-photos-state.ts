@@ -1180,12 +1180,14 @@ export function pickerTarget(places: PhotoPlaces, kind: PhotoPickerKind): Picker
  * this colour's photos only, because the pdf puts no photo of all colours
  * next to a colour; a one-colour series has no such strip and takes them. An
  * inactive colour can only use its own photos. A stored choice that is not
- * shown stays in the list so the owner sees it.
+ * shown stays in the list so the owner sees it. `firstKey` is a photo that
+ * was just uploaded but could not be chosen: it leads the list for a retry.
  */
 export function placeCandidates(
   overview: ProductPhotoOverview | null,
   kind: PhotoPickerKind,
   product: { active?: boolean | null; demo?: boolean | null } | null = null,
+  firstKey: string | null = null,
 ): PlacePhoto[] {
   const places = resolvedPlaces(overview);
   if (!overview || !places) return [];
@@ -1200,7 +1202,9 @@ export function placeCandidates(
   };
   const current = photoByKey(overview, target.place.shownKey);
   const rest = (overview.photos ?? []).filter((photo) => photo.key !== current?.key && (fits(photo) || photo.key === target.chosenKey));
-  return current ? [current, ...rest] : rest;
+  const list = current ? [current, ...rest] : rest;
+  const lead = firstKey ? list.find((photo) => photo.key === firstKey) : undefined;
+  return lead ? [lead, ...list.filter((photo) => photo !== lead)] : list;
 }
 
 export interface PickerTexts {
@@ -1330,6 +1334,7 @@ export function pickerModel(
   kind: PhotoPickerKind,
   colour: string,
   product: { active?: boolean | null; demo?: boolean | null } | null = null,
+  firstKey: string | null = null,
 ): PickerModel | null {
   const places = resolvedPlaces(overview);
   if (!overview || !places) return null;
@@ -1339,7 +1344,7 @@ export function pickerModel(
   const texts = pickerTexts(target.kind, colour, target.place, seriesLive(overview), {
     upload, chosen: target.chosen, stored: target.chosenKey !== null, allColours: target.allowAllColours,
   });
-  const photos = placeCandidates(overview, kind, product);
+  const photos = placeCandidates(overview, kind, product, firstKey);
   const current = photoByKey(overview, target.place.shownKey);
   const tiles = photos.map((photo, index): PickerTile => {
     const isCurrent = photo.key === current?.key;

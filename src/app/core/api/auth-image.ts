@@ -24,6 +24,12 @@ export class AuthImage implements OnDestroy {
   readonly source = input.required<string | null>({ alias: 'appAuthSrc' });
   /** Lists default to small; viewers opt into medium or the untouched original. */
   readonly rendition = input<'small' | 'medium' | 'original'>('small', { alias: 'appAuthSize' });
+  /**
+   * A phone gets the small rendition even where medium is asked: lists stay
+   * light. A view that exists to judge a photo ("Bekijk groot", the photo
+   * sheet's stage) opts out and gets the asked rendition on every device.
+   */
+  readonly keepSize = input(false, { alias: 'appAuthKeepSize', transform: booleanAttribute });
   /** Wait with the fetch until the image is (nearly) on screen. */
   readonly lazy = input(false, { alias: 'appAuthLazy', transform: booleanAttribute });
 
@@ -47,7 +53,7 @@ export class AuthImage implements OnDestroy {
     effect(() => {
       if (this.lazy() && !this.visible()) return;
       const requestedSize = this.rendition();
-      const size = requestedSize === 'medium' && !this.desktop.active() ? 'small' : requestedSize;
+      const size = renditionFor(requestedSize, this.desktop.active(), this.keepSize());
       const url = screenPhotoUrl(this.source(), size);
       const version = ++this.requestVersion;
       this.release();
@@ -85,6 +91,15 @@ export class AuthImage implements OnDestroy {
       this.objectUrl = null;
     }
   }
+}
+
+/** The rendition really fetched: a phone takes small for medium unless the image asked to keep its size. */
+export function renditionFor(
+  requested: 'small' | 'medium' | 'original',
+  desktop: boolean,
+  keepSize = false,
+): 'small' | 'medium' | 'original' {
+  return requested === 'medium' && !desktop && !keepSize ? 'small' : requested;
 }
 
 /** Only known ERP photo routes are transformed; downloads and unrelated media stay intact. */
