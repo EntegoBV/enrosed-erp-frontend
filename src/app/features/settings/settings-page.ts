@@ -956,6 +956,17 @@ const normalizeCategoryCode = (value: string): string => value
               }
             </div>
           }
+          @if (pushDevicesError(); as error) {
+            <div class="push-error" role="alert">
+              <div><b>Aangemelde toestellen konden niet worden geladen</b><small>{{ error }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="pushDevicesLoading()"
+                      (click)="loadPushDevices()">Opnieuw proberen</button>
+            </div>
+          } @else if (pushDevicesLoading()) {
+            <p class="small muted mt-12" role="status">Aangemelde toestellen laden…</p>
+          } @else if (pushDevicesLoaded() && !pushDevices().length) {
+            <p class="small muted mt-12" role="status">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</p>
+          }
           @if (pushActionError()) {
             <div class="push-error" role="alert">
               <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
@@ -1286,11 +1297,21 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   readonly pushDevices = signal<{ id: number; device: string;
     lastStatus: number | null; lastAt: string | null }[]>([]);
+  readonly pushDevicesLoaded = signal(false);
+  readonly pushDevicesLoading = signal(false);
+  readonly pushDevicesError = signal<string | null>(null);
 
   async loadPushDevices(): Promise<void> {
+    this.pushDevicesLoading.set(true);
+    this.pushDevicesError.set(null);
     try {
       this.pushDevices.set(await this.push.devices());
-    } catch { /* diagnostics only */ }
+      this.pushDevicesLoaded.set(true);
+    } catch (failure: unknown) {
+      this.pushDevicesError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
+    } finally {
+      this.pushDevicesLoading.set(false);
+    }
   }
 
   previewSound(kind: string): void {
