@@ -40,6 +40,7 @@ import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection
 import { deselectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
 import { variantLabelIn } from './product-translation-adapter';
+import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
 const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
@@ -93,6 +94,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     FormsModule,
     PageHeader,
     RouterLink,
+    StaffContactPhones,
   ],
   template: `
     <app-page-header
@@ -258,6 +260,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               [settings]="brochure()" (settingsChange)="brochure.set($event)"
             />
           }
+          <app-staff-contact-phones [disabled]="busy()" (pendingChange)="contactPhonesPending.set($event)" />
           <details class="studio-personal">
             <summary><span>Een persoonlijke inleiding<small>Optioneel · bijvoorbeeld voor een specifieke klant</small></span><i aria-hidden="true">+</i></summary>
             <label class="field intro-field"><span>Korte inleiding</span>
@@ -602,17 +605,19 @@ export class CatalogExport {
   readonly renderError = signal<string | null>(null);
   readonly renderTranslationError = signal(false);
   readonly missingTranslationPaths = signal<string[]>([]);
+  readonly contactPhonesPending = signal(false);
 
   readonly busy = computed(() => this.downloading() || this.savingPhotos() || this.importingPhotos()
     || this.savingOrder() || this.loadingOrder());
   readonly canExport = computed(() =>
-    this.dataReady() && this.selected().size > 0 && !this.loadError());
+    this.dataReady() && this.selected().size > 0 && !this.loadError() && !this.contactPhonesPending());
   readonly actionStatus = computed(() => {
     if (this.savingOrder()) return 'Catalogusvolgorde wordt opgeslagen.';
     if (this.loadingOrder()) return 'Opgeslagen catalogusvolgorde wordt geladen.';
     if (this.importingPhotos()) return 'Catalogusfoto’s worden gecontroleerd of toegevoegd.';
     if (this.savingPhotos()) return 'Fotokeuzes worden opgeslagen.';
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
+    if (this.contactPhonesPending()) return 'Sla de gewijzigde telefoonnummers op voor u de catalogus downloadt.';
     return this.renderError() ?? '';
   });
   readonly renderTranslationIssues = computed(() => catalogTranslationLinks(
