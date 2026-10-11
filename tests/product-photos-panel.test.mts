@@ -202,7 +202,7 @@ test('adding photos uploads each file as a series photo and publishes only the n
   assert.deepEqual(calls.filter((call: any[]) => call[0] !== 'overview'), [
     ['family', 13], ['upload', 13, 'new.jpg', null], ['publish', 13, 404, ['WEBSITE']], ['upload', 13, 'same.jpg', null],
   ]);
-  assert.deepEqual(toasts, [['1 foto toegevoegd · op de website · 1 foto stond al in de reeks', 'ok']]);
+  assert.deepEqual(toasts, [['1 foto toegevoegd · staat als extra foto op de website · 1 foto stond al in de reeks', 'ok']]);
   assert.equal(page.staged(), null);
   assert.deepEqual(revoked, ['blob:1', 'blob:2'], 'Previews are released once uploaded');
   assert.equal(changes.length, 1);
@@ -216,7 +216,7 @@ test('a failed file stays in the add sheet with the server’s reason', async ()
   assert.deepEqual(Array.from(page.staged(), (item: any) => item.previewUrl), [broken.previewUrl]);
   assert.deepEqual(revoked, ['blob:4'], 'The failed preview stays for another try');
   assert.equal(page.addError(), 'Bestand is beschadigd');
-  assert.deepEqual(toasts, [['1 foto toegevoegd · nog niet online · 1 foto niet geüpload', 'err']]);
+  assert.deepEqual(toasts, [['1 foto toegevoegd · nog niet in gebruik · 1 foto niet geüpload', 'err']]);
 });
 
 test('a late overview for the previous colour never replaces the current one', async () => {
