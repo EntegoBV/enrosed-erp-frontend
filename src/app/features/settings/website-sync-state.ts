@@ -33,6 +33,8 @@ export class WebsiteSyncState {
   readonly loading = signal(false);
   readonly retrying = signal(false);
   readonly loadError = signal<string | null>(null);
+  /** The rebuild is still under way, but the five-minute poll window is over: nobody asks any more. */
+  readonly pollEnded = signal(false);
 
   constructor(source: WebsiteSyncSource, failureText: WebsiteSyncFailureText) {
     this.source = source;
@@ -54,6 +56,7 @@ export class WebsiteSyncState {
     this.loading.set(false);
     this.retrying.set(false);
     this.loadError.set(null);
+    this.pollEnded.set(false);
   }
 
   /** Panels that ask in the same turn (page load, shared counter) get one request. */
@@ -132,10 +135,13 @@ export class WebsiteSyncState {
       || !!status.nextAttemptAt;
     if (!pollable) {
       this.pollStartedAt = null;
+      this.pollEnded.set(false);
       return;
     }
     this.pollStartedAt ??= Date.now();
-    if (Date.now() - this.pollStartedAt >= MAX_POLL_WINDOW_MS) return;
+    const ended = Date.now() - this.pollStartedAt >= MAX_POLL_WINDOW_MS;
+    this.pollEnded.set(ended);
+    if (ended) return;
     const nextAttempt = status.nextAttemptAt ? Date.parse(status.nextAttemptAt) : Number.NaN;
     const delay = Number.isNaN(nextAttempt)
       ? POLL_DELAY_MS

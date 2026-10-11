@@ -41,7 +41,6 @@ import {
   photoFileLine,
   photoKeyForProductPhoto,
   photoKeyForSignedId,
-  photoScopeLabel,
   photoTileLabel,
   pickerModel,
   pickerTarget,
@@ -54,11 +53,6 @@ import {
   placesHeading,
   publishTargetForRole,
   resolvedPlaces,
-  roleCandidates,
-  roleSavedMessage,
-  roleStatus,
-  roleTitle,
-  rolesForPhoto,
   scopeConfirm,
   scopeSavedMessage,
   seenSentence,
@@ -75,7 +69,6 @@ import {
   switchLock,
   syncPill,
   tileFoot,
-  tileRoleBadges,
   tileUses,
   toggledChannels,
   uploadSummary,
@@ -85,7 +78,6 @@ import {
   usedPlacesText,
   variantShortLabel,
   visibleChannels,
-  websiteReasonText,
 } from '../src/app/features/products/product-photos-state.ts';
 
 /*
@@ -1600,7 +1592,7 @@ test('vocabulary: the literals of the module outside its legacy block hold none 
   const legacyBlock = source.slice(marker);
   for (const name of LEGACY_PHOTO_EXPORTS) {
     assert.match(legacyBlock, new RegExp(`export (?:const|function|type) ${name}\\b`), `${name} lives in the legacy block`);
-    assert.ok(name in state || name === 'PhotoRoleStatus');
+    assert.ok(name in state);
   }
   const exported = [...legacyBlock.matchAll(/^export (?:const|function) (\w+)/gm)].map((match) => match[1]).filter((name) => name !== 'LEGACY_PHOTO_EXPORTS');
   assert.deepEqual(exported.sort(), [...LEGACY_PHOTO_EXPORTS].sort());
@@ -1613,22 +1605,6 @@ test('vocabulary: the literals of the module outside its legacy block hold none 
 
 test('legacy exports keep their behaviour until the old components are gone', () => {
   const data = legacy();
-  assert.deepEqual(keys(roleCandidates(data, 'MAIN')), ['F242', 'F243', 'F244', 'F250']);
-  assert.deepEqual(roleCandidates(null, 'MAIN'), []);
-  assert.deepEqual(rolesForPhoto(byKey(data, 'F214')), ['QUOTE', 'CATALOGUE_OVERVIEW', 'CATALOGUE_DETAIL']);
-  assert.equal(roleStatus(data, 'MAIN'), 'explicit');
-  assert.equal(roleStatus(data, 'QUOTE'), 'automatic');
-  assert.equal(roleStatus(data, 'CATALOGUE_DETAIL'), 'automatic', 'The catalogue picks it while being made');
-  assert.equal(roleStatus({ ...data, quote: null }, 'QUOTE'), 'none');
-  assert.equal(roleStatus(null, 'MAIN'), 'none');
-  assert.equal(roleTitle('MAIN', 'Rood'), 'Hoofdfoto · Rood');
-  assert.equal(roleSavedMessage('QUOTE', 'Rood', false, 'website'), 'Vraag een offerte gekozen · staat nu ook op de website');
-  assert.equal(photoScopeLabel(byKey(data, 'F250'), 'Rood'), 'Alle kleuren');
-  assert.deepEqual(tileRoleBadges(byKey(data, 'F242')), ['Hoofdfoto', 'Offerte']);
-  assert.equal(websiteReasonText({ ...byKey(data, 'F242'), websiteReason: 'FALLBACK' }),
-    'Staat op de website omdat deze kleur nog geen reeksfoto online heeft.');
-  assert.equal(photoTileLabel(byKey(data, 'F242'), 'Rood', 1, 3), 'Foto 2 van 3 · Reeksfoto · Alleen Rood · Hoofdfoto · Offerte · op de website · in de catalogus',
-    'Without uses the old panel still gets its old sentence');
   const rows = [{ id: 5501, familyPhotoId: null }, { id: 9001, familyPhotoId: 244 }, { id: 9002, familyPhotoId: 242 }];
   assert.deepEqual(hoofdfotoFirst(rows, rows[2]).map((item) => item.id), [9002, 5501, 9001]);
   assert.deepEqual(hoofdfotoFirst(rows, null).map((item) => item.id), [5501, 9001, 9002]);

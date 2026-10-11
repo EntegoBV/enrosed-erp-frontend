@@ -10,7 +10,7 @@ import {
   input,
   signal,
   viewChild, untracked } from '@angular/core';
-import { Location } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -81,7 +81,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet,
   ],
   template: `
     @if (!desktop.active()) {
@@ -653,7 +653,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span class="section-head__number erp-workspace__section-index" aria-hidden="true">02</span>
           <div><h2 id="media-title">Foto's</h2></div>
           <span class="spacer"></span>
-          <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
+          <!-- The photo panel owns the website status pill; it is drawn here, next to the title. -->
+          @if (photoWorkspace() === 'series') {
+            @if (photosPanel()?.pillTemplate(); as pill) { <ng-container [ngTemplateOutlet]="pill" /> }
+          }
         </div>
         <div class="card__body photo-workspace">
           @if (photoWorkspace() === 'series') {
@@ -666,9 +669,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               [disabled]="saving() || sharedFieldsBusy() || translationSaving() || translationDirty()"
               (changed)="refreshPhotoState()"
             />
-            @if (translationDirty() || translationSaving()) {
-              <p class="photo-scope-hint">Bewaar eerst de vertalingen; daarna pas je de foto’s weer aan.</p>
-            }
           }
           <!-- Products outside a saved series keep the own-photo manager. It stays mounted
                so a queue picked before the first save survives the switch to the series panel. -->

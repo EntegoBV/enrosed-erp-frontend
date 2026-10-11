@@ -1095,18 +1095,15 @@ export function tileFoot(
 /**
  * The accessible name of a tile: "Foto 1 van 6. Websitefoto van Kersenroze,
  * en op 3 plekken van de reeks. Open voor alle keuzes."
- * Without `uses` the old sentence is returned for the old panel; that road
- * goes with the legacy block.
  */
 export function photoTileLabel(
   photo: ProductPhotoOverviewPhoto,
   colour: string,
   index: number,
   total: number,
-  uses: TileUses | null = null,
+  uses: TileUses,
   view: 'colour' | 'series' = 'colour',
 ): string {
-  if (!uses) return legacyTileLabel(photo, colour, index, total);
   const foot = tileFoot(photo, uses, colour, view);
   return [
     `Foto ${index + 1} van ${total}.`,
@@ -1866,150 +1863,13 @@ export function otherColourRow(
 }
 
 /* ================================================================= Legacy
- * What product-photos-panel.ts, product-photo-sheet.ts and product-view.ts
- * still import until they are rewritten on the places above. These exports
- * speak the old vocabulary ("Hoofdfoto", "Catalogus · overzicht") and are
- * not part of the new screen: delete each one together with its last caller.
+ * What product-view.ts still imports until it is rewritten on the places
+ * above. These exports speak the old vocabulary ("Hoofdfoto", "Offerte") and
+ * are not part of the new screen: delete each one together with its last caller.
  * LEGACY_PHOTO_EXPORTS names them for the vocabulary test.
  */
 
-export const LEGACY_PHOTO_EXPORTS: readonly string[] = [
-  'PHOTO_ROLE_ORDER', 'roleCandidates', 'roleStatus', 'mainDiffersFromDocuments', 'rolesForPhoto', 'roleTitle',
-  'roleExplanation', 'roleToggleLabel', 'roleSavedMessage', 'tileRoleBadges', 'photoScopeLabel', 'websiteReasonText',
-  'hoofdfotoFirst', 'slideBadges',
-];
-
-/** The order of the rows in "Waar staat welke foto?" and of the toggles in the photo sheet. */
-export const PHOTO_ROLE_ORDER: readonly ProductPhotoRoleKey[] = [
-  'MAIN', 'QUOTE', 'CATALOGUE_VARIANT', 'CATALOGUE_OVERVIEW', 'CATALOGUE_DETAIL',
-];
-
-export function roleCandidates(
-  overview: ProductPhotoOverview | null,
-  role: ProductPhotoRoleKey,
-): ProductPhotoOverviewPhoto[] {
-  return (overview?.photos ?? []).filter((photo) => canUseForRole(photo, role));
-}
-
-/** What a row in "Waar staat welke foto?" says about its role. */
-export type PhotoRoleStatus = 'explicit' | 'automatic' | 'none';
-
-/**
- * The catalogue picks its automatic photos only while it is being made, so
- * the overview names none for the three catalogue roles. They are still
- * automatic, not empty, as long as a photo could be picked.
- */
-export function roleStatus(overview: ProductPhotoOverview | null, role: ProductPhotoRoleKey): PhotoRoleStatus {
-  const choice = roleChoice(overview, role);
-  if (choice) return choice.explicit ? 'explicit' : 'automatic';
-  const catalogue = role === 'CATALOGUE_VARIANT' || role === 'CATALOGUE_OVERVIEW' || role === 'CATALOGUE_DETAIL';
-  return catalogue && roleCandidates(overview, role).length ? 'automatic' : 'none';
-}
-
-/**
- * Without an explicit choice the Hoofdfoto is this colour's first website
- * photo, while quotes, invoices and ERP lists fall back to the product's
- * first series photo (shared/sales-photo.ts, the server's
- * photoForSalesDocument), which may not be online. Right after adding such a
- * photo the two differ; the owner must see that and can pin one to align them.
- */
-export function mainDiffersFromDocuments(
-  overview: ProductPhotoOverview | null,
-  documentPhoto: Pick<PhotoDto, 'id' | 'familyPhotoId'> | null,
-): boolean {
-  const main = overview?.main;
-  return !!main && !main.explicit && !!documentPhoto && photoKeyForProductPhoto(documentPhoto) !== main.key;
-}
-
-/** The "Gebruik als" toggles a photo sheet offers. */
-export function rolesForPhoto(photo: ProductPhotoOverviewPhoto): ProductPhotoRoleKey[] {
-  return PHOTO_ROLE_ORDER.filter((role) => canUseForRole(photo, role));
-}
-
-export function roleTitle(role: ProductPhotoRoleKey, colour: string): string {
-  switch (role) {
-    case 'MAIN': return `Hoofdfoto · ${colour}`;
-    case 'QUOTE': return 'Vraag een offerte';
-    case 'CATALOGUE_VARIANT': return `Catalogus · ${colour}`;
-    case 'CATALOGUE_OVERVIEW': return 'Catalogus · overzicht';
-    case 'CATALOGUE_DETAIL': return 'Catalogus · grote foto';
-  }
-}
-
-export function roleExplanation(role: ProductPhotoRoleKey): string {
-  switch (role) {
-    case 'MAIN': return 'Eerste foto op de website, op offertes en facturen.';
-    case 'QUOTE': return 'Deze foto ziet de klant bij het aanvragen van een offerte. Geldt voor de hele reeks.';
-    case 'CATALOGUE_VARIANT': return 'Kleurfoto in de gedrukte catalogus.';
-    case 'CATALOGUE_OVERVIEW': return 'Foto in het assortimentsoverzicht van de catalogus. Hele reeks.';
-    case 'CATALOGUE_DETAIL': return 'Grote foto op de productpagina van de catalogus. Hele reeks.';
-  }
-}
-
-/** Short label for the toggle buttons in the photo sheet. */
-export function roleToggleLabel(role: ProductPhotoRoleKey, colour: string): string {
-  switch (role) {
-    case 'MAIN': return `Hoofdfoto ${colour}`;
-    case 'QUOTE': return 'Vraag een offerte';
-    case 'CATALOGUE_VARIANT': return `Catalogus ${colour}`;
-    case 'CATALOGUE_OVERVIEW': return 'Catalogus overzicht';
-    case 'CATALOGUE_DETAIL': return 'Catalogus grote foto';
-  }
-}
-
-export function roleSavedMessage(
-  role: ProductPhotoRoleKey,
-  colour: string,
-  cleared: boolean,
-  published: PhotoPublishTarget | null = null,
-): string {
-  if (cleared) return `${roleTitle(role, colour)} kiest weer automatisch`;
-  const suffix = published === 'website' ? ' · staat nu ook op de website'
-    : published === 'catalogue' ? ' · staat nu ook in de catalogus' : '';
-  return `${roleTitle(role, colour)} gekozen${suffix}`;
-}
-
-/** The small role badges on a tile: only the two that matter to a customer. */
-export function tileRoleBadges(photo: ProductPhotoOverviewPhoto): string[] {
-  return [
-    ...(photo.roles.includes('MAIN') ? ['Hoofdfoto'] : []),
-    ...(photo.roles.includes('QUOTE') ? ['Offerte'] : []),
-  ];
-}
-
-export function photoScopeLabel(photo: ProductPhotoOverviewPhoto, colour: string): string {
-  if (photo.kind === 'OWN') return 'Losse foto';
-  if (photo.scope === 'ALL_VARIANTS') return 'Alle kleuren';
-  if (photo.scope === 'THIS_VARIANT') return `Alleen ${colour}`;
-  return `Alleen ${photo.variantLabel?.trim() || 'andere kleur'}`;
-}
-
-/** Why a photo is (not) on the website, in words; the fallback case used to surprise everyone. */
-export function websiteReasonText(photo: ProductPhotoOverviewPhoto): string {
-  switch (photo.websiteReason) {
-    case 'PUBLISHED': return 'Staat op de website.';
-    case 'LEAD': return 'Staat op de website omdat hij de hoofdfoto van deze kleur is.';
-    case 'FALLBACK': return 'Staat op de website omdat deze kleur nog geen reeksfoto online heeft.';
-    default: return 'Staat niet op de website.';
-  }
-}
-
-function legacyTileLabel(
-  photo: ProductPhotoOverviewPhoto,
-  colour: string,
-  index: number,
-  total: number,
-): string {
-  return [
-    `Foto ${index + 1} van ${total}`,
-    photo.kind === 'OWN' ? 'Losse productfoto' : 'Reeksfoto',
-    photoScopeLabel(photo, colour),
-    ...tileRoleBadges(photo),
-    photo.visibility.website ? 'op de website' : 'niet op de website',
-    ...(photo.visibility.catalogue ? ['in de catalogus'] : []),
-    ...(photo.duplicateOfKey ? ['dubbele foto'] : []),
-  ].join(' · ');
-}
+export const LEGACY_PHOTO_EXPORTS: readonly string[] = ['hoofdfotoFirst', 'slideBadges'];
 
 /** Carousels open on the Hoofdfoto; the other photos keep their order. */
 export function hoofdfotoFirst<T extends { id: number }>(photos: readonly T[], main: T | null): T[] {
