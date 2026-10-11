@@ -26,7 +26,7 @@ self.addEventListener('push', (event) => {
       body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      tag: kind + ':' + body.slice(0, 40),
+      tag: kind + ':' + (kind === 'contact-inquiry' || kind === 'login-request' ? url : body.slice(0, 40)),
       data: { url },
     });
   })());

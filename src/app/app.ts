@@ -88,6 +88,9 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
               <a class="sidebar__link" routerLink="/prospects" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="customers" [size]="18" /> Prospects
               </a>
+              <a class="sidebar__link" routerLink="/contactaanvragen" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Contactaanvragen
+              </a>
               <a class="sidebar__link" routerLink="/countries" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="countries" [size]="18" /> Landen &amp; vracht
               </a>
@@ -448,7 +451,7 @@ export class App {
 
   readonly moreRoute = computed(() => {
     const url = this.url();
-    return ['/more', '/analyses', '/customers', '/klantlogins', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
+    return ['/more', '/analyses', '/customers', '/klantlogins', '/contactaanvragen', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
       .some((path) => url.startsWith(path));
   });
 

@@ -19,6 +19,7 @@ test('every ERP screen has a name to return to', () => {
     ['/products', 'Producten'],
     ['/customers', 'Klanten'],
     ['/klantlogins', 'Login-aanvragen'],
+    ['/contactaanvragen', 'Contactaanvragen'],
     ['/prospects/24', 'Prospects'],
     ['/suppliers', 'Leveranciers'],
     ['/settings', 'Instellingen'],
@@ -40,6 +41,7 @@ test('query strings and fragments do not change the name', () => {
   assert.equal(returnLabel('/sales?filter=open#top'), 'Verkoop');
   assert.equal(returnLabel('/products/57#media'), 'product');
   assert.equal(returnLabel('/klantlogins?status=goedgekeurd'), 'Login-aanvragen');
+  assert.equal(returnLabel('/contactaanvragen?open=12'), 'Contactaanvragen');
 });
 
 test('a longer sibling path is not mistaken for a known screen', () => {

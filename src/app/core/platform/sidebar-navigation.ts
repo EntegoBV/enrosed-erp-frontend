@@ -13,6 +13,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
     || path.startsWith('/revisions')
     || path.startsWith('/customers')
     || path.startsWith('/klantlogins')
+    || path.startsWith('/contactaanvragen')
     || path.startsWith('/prospects')
     || path.startsWith('/countries')
     || section === 'discounts'

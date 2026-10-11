@@ -91,7 +91,7 @@ import { WorkQueue } from '../../core/api/work-queue';
         <summary>
           <span class="thumb thumb--placeholder"><app-icon name="sales" /></span>
           <span class="more-group__copy"><strong>Verkoop</strong>
-            <small>Klanten · Login-aanvragen · Prospects · Landen &amp; vracht</small></span>
+            <small>Klanten · Login- en contactaanvragen · Prospects</small></span>
           @if (work.loginRequestCount() > 0) {
             <span class="badge badge--gold" [attr.aria-label]="work.loginRequestCount() + ' login-aanvragen wachten'">{{ work.loginRequestCount() }}</span>
           }
@@ -111,6 +111,12 @@ import { WorkQueue } from '../../core/api/work-queue';
             @if (work.loginRequestCount() > 0) {
               <span class="badge badge--gold">{{ work.loginRequestCount() }}</span>
             }
+            <span class="list-item__chev">›</span>
+          </a>
+          <a class="list-item" routerLink="/contactaanvragen">
+            <span class="thumb thumb--placeholder"><app-icon name="customers" /></span>
+            <div class="list-item__body"><div class="list-item__title">Contactaanvragen</div>
+              <div class="list-item__meta">Berichten van het contactformulier opvolgen</div></div>
             <span class="list-item__chev">›</span>
           </a>
           <a class="list-item" routerLink="/prospects">
