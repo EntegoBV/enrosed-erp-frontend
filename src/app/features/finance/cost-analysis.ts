@@ -4,9 +4,9 @@ import { EurPipe, PctPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { categoryLabel } from './cost-categories';
 import { costSummary } from './cost-metrics';
-import { CONTAINER_PAYMENT_CATEGORIES, costLedgerTotals, missingDocument } from './cost-ledger';
+import { CONTAINER_PAYMENT_CATEGORIES, costLedgerTotals } from './cost-ledger';
 import { dayMonth } from './finance-format';
-import { COST_MONEY, cashTotalOf, largestCosts, monthlyCostSeries, quarterOf, returnVatOf, topParties, yearComparison } from './finance-metrics';
+import { COST_MONEY, largestCosts, monthlyCostSeries, topParties, yearComparison } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import { FinanceState, formatEuro } from './finance-state';
 
@@ -16,10 +16,11 @@ type ShareRow = { key: string; label: string; count: number; exclEur: number; sh
 type TableId = 'category' | 'party' | 'channel';
 
 /**
- * Analyse: where the money goes, excl. btw. The year comes from the address;
- * a single year gets the btw per quarter (with the documents still missing
- * and the accountant package) and the months against the year before.
- * Container payments are purchasing and stay in their own card.
+ * Analyse › Kosten: where the money goes, excl. btw. The year comes from the
+ * address (a chip row on a phone, the strip on a desk); a single year gets
+ * a link per quarter to the Btw-aangifte (with the accountant package) and
+ * the months against the year before. Container payments are purchasing
+ * and stay in their own card.
  */
 @Component({
   selector: 'app-cost-analysis',
@@ -28,6 +29,11 @@ type TableId = 'category' | 'party' | 'channel';
   imports: [RouterLink, EurPipe, PctPipe, TrendChart],
   template: `
     @if (!state.desk()) {
+      <div class="ios-chips" role="group" aria-label="Jaar">
+        @for (option of yearOptions(); track option.id) {
+          <button class="ios-chip" type="button" [attr.aria-pressed]="option.id === state.location().year" (click)="state.go({ year: option.id })">{{ option.label }}</button>
+        }
+      </div>
       <div class="ios-figures">
         @for (item of kpis(); track item.label) { <div><small>{{ item.label }}</small><strong>{{ item.value }}</strong></div> }
       </div>
@@ -90,20 +96,17 @@ type TableId = 'category' | 'party' | 'channel';
 
     @if (year() > 0) {
       @if (state.desk()) {
-        <section class="wk-card fin-vat">
-          <header class="wk-card__head"><h2 class="wk-card__title">Btw per kwartaal · {{ year() }}</h2><span class="wk-card__trail">{{ quartersTotal().vatEur | eur }} btw</span></header>
-          <div class="wk-table fin-table fin-table--vat" role="table">
-            <div class="wk-thead" role="row"><span class="wk-th">Kwartaal</span><span class="wk-th wk-th--num">Excl.</span><span class="wk-th wk-th--num">Btw</span><span class="wk-th wk-th--num" data-hide="md">Incl.</span><span class="wk-th wk-th--num" title="Zonder document">Zonder document</span><span class="wk-th"></span></div>
+        <section class="fin-card fin-share">
+          <header class="wk-card__head"><h2 class="wk-card__title">Btw per kwartaal · {{ year() }}</h2><span class="wk-card__trail">{{ quartersDeductible() | eur }} aftrekbaar</span></header>
+          <ul class="fin-share__list">
             @for (row of quarters(); track row.quarter) {
-              <div class="wk-tr" role="row" [class.wk-tr--muted]="!row.count">
-                <span class="wk-td"><b>{{ row.label }}</b> <span class="wk-amount--muted">· {{ row.count }} {{ row.count === 1 ? 'kost' : 'kosten' }}</span></span>
-                <span class="wk-td wk-td--num">{{ row.exclEur | eur }}</span><span class="wk-td wk-td--num">{{ row.vatEur | eur }}</span><span class="wk-td wk-td--num" data-hide="md">{{ row.inclEur | eur }}</span>
-                <span class="wk-td wk-td--num">@if (row.missing) { <button class="wk-link" type="button" (click)="showMissing(row.quarter)">{{ row.missing }}</button> } @else { <span class="wk-amount--muted">0</span> }</span>
-                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="state.openPackage({ year: year(), quarter: row.quarter })">Pakket</button></span>
-              </div>
+              <li>
+                <span class="fin-share__label"><b>Q{{ row.quarter }} · aftrekbaar {{ row.deductibleEur | eur }}</b><small>{{ row.sub }}</small></span>
+                <span class="fin-share__amount"><button class="wk-link" type="button" (click)="state.openVatReturn(year(), row.quarter)">naar de btw-aangifte ›</button>
+                  <button class="wk-btn wk-btn--sm" type="button" (click)="state.openPackage({ year: year(), quarter: row.quarter })">Pakket</button></span>
+              </li>
             }
-            <div class="wk-tr wk-tr--total" role="row"><span class="wk-td">{{ year() }}</span><span class="wk-td wk-td--num">{{ quartersTotal().exclEur | eur }}</span><span class="wk-td wk-td--num">{{ quartersTotal().vatEur | eur }}</span><span class="wk-td wk-td--num" data-hide="md">{{ quartersTotal().inclEur | eur }}</span><span class="wk-td"></span><span class="wk-td"></span></div>
-          </div>
+          </ul>
         </section>
         <section class="wk-card fin-compare">
           <header class="wk-card__head"><h2 class="wk-card__title">Per maand tegenover {{ year() - 1 }}</h2><span class="wk-card__trail">{{ compareTotal().thisYearEur | eur: 0 }} · vorig jaar {{ compareTotal().lastYearEur | eur: 0 }}</span></header>
@@ -119,12 +122,16 @@ type TableId = 'category' | 'party' | 'channel';
         </section>
       } @else {
         <section class="ios-section">
-          <div class="ios-section__head"><h2>Btw per kwartaal</h2><span class="ios-section__trail">{{ quartersTotal().vatEur | eur }}</span></div>
+          <div class="ios-section__head"><h2>Btw per kwartaal</h2><span class="ios-section__trail">{{ quartersDeductible() | eur }} aftrekbaar</span></div>
           <div class="ios-group">
             @for (row of quarters(); track row.quarter) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ row.label }} · {{ row.vatEur | eur }} btw</span>
-                <span class="ios-cell__sub">{{ row.exclEur | eur }} excl. · {{ row.missing }} zonder document</span></span>
-                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openPackage({ year: year(), quarter: row.quarter })">Pakket</button></div>
+              <div class="ios-cell ios-cell--tall">
+                <button class="fin-cell-button" type="button" (click)="state.openVatReturn(year(), row.quarter)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Q{{ row.quarter }} · aftrekbaar {{ row.deductibleEur | eur }}</span>
+                    <span class="ios-cell__sub">{{ row.sub }} · naar de btw-aangifte ›</span></span>
+                </button>
+                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openPackage({ year: year(), quarter: row.quarter })">Pakket</button>
+              </div>
             }
           </div>
         </section>
@@ -212,22 +219,25 @@ export class CostAnalysis implements FinanceSectionApi {
     ];
   });
   readonly largest = computed(() => largestCosts(this.rows(), 8));
-  /* The four quarters as the return counts them: the VAT it shows and the cash paid (the card becomes links to the Btw-aangifte). */
+  /** The phone's year chips; a year picked elsewhere (the desk's 'Ander jaar') shows as its own chip. */
+  readonly yearOptions = computed(() => {
+    const options = [{ id: '', label: 'Dit jaar' }, { id: String(this.thisYear() - 1), label: 'Vorig jaar' }, { id: 'all', label: 'Alles' }];
+    const year = this.state.location().year;
+    if (year && !options.some((option) => option.id === year)) options.push({ id: year, label: year });
+    return options;
+  });
+  /* The four quarters as the return reads them (four returns, cheap): the link rows to the Btw-aangifte. */
   readonly quarters = computed(() => [1, 2, 3, 4].map((quarter) => {
-    const costs = this.state.costs().filter((cost) => quarterOf(cost.date).year === this.year() && quarterOf(cost.date).quarter === quarter);
+    const result = this.state.vatReturnFor(this.year(), quarter);
+    const pending = result.unconfirmedCount + result.unknown.length;
+    const favour = result.totals.refundEur > 0;
+    const headline = `${formatEuro(favour ? result.totals.refundEur : result.totals.payableEur)} ${favour ? 'in je voordeel' : 'te betalen'}`;
     return {
-      quarter, label: `Q${quarter}`, count: costs.length,
-      exclEur: round2(costs.reduce((sum, cost) => sum + (Number.isFinite(cost.amountExclEur) ? cost.amountExclEur : 0), 0)),
-      vatEur: round2(costs.reduce((sum, cost) => sum + returnVatOf(cost), 0)),
-      inclEur: round2(costs.reduce((sum, cost) => sum + cashTotalOf(cost), 0)),
-      missing: costs.filter((cost) => missingDocument(cost, this.state.documentedIds())).length,
+      quarter, deductibleEur: result.totals.deductibleEur,
+      sub: result.status === 'ready' ? `${headline} · klaar` : `${headline} · ${pending ? `${pending} te bevestigen` : 'voorlopig'}`,
     };
   }));
-  readonly quartersTotal = computed(() => ({
-    exclEur: round2(this.quarters().reduce((sum, row) => sum + row.exclEur, 0)),
-    vatEur: round2(this.quarters().reduce((sum, row) => sum + row.vatEur, 0)),
-    inclEur: round2(this.quarters().reduce((sum, row) => sum + row.inclEur, 0)),
-  }));
+  readonly quartersDeductible = computed(() => round2(this.quarters().reduce((sum, row) => sum + row.deductibleEur, 0)));
   readonly compare = computed(() => yearComparison(this.state.costs(), this.year()));
   readonly compareMax = computed(() => Math.max(0, ...this.compare().flatMap((row) => [row.thisYearEur, row.lastYearEur])));
   readonly compareTotal = computed(() => ({
@@ -241,13 +251,6 @@ export class CostAnalysis implements FinanceSectionApi {
 
   flipSort(id: TableId): void {
     this.sortByName.update((set) => { const next = new Set(set); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  }
-
-  showMissing(quarter: number): void {
-    const first = (quarter - 1) * 3 + 1;
-    const from = `${this.year()}-${String(first).padStart(2, '0')}-01`;
-    const to = new Date(Date.UTC(this.year(), first + 2, 0)).toISOString().slice(0, 10);
-    this.state.go({ view: 'costs', tab: 'company', docs: 'missing', from, to }, 'push');
   }
 
   monthName(month: number): string { return MONTHS[month - 1] ?? ''; }

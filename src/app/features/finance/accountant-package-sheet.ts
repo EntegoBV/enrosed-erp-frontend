@@ -25,7 +25,8 @@ import { FinanceState } from './finance-state';
               @for (option of [1, 2, 3, 4]; track option) { <option [value]="option" [selected]="option === quarter()">Q{{ option }}</option> }
             </select></label>
         </div></div>
-        <p class="fin-sheet__lead">{{ counts().costs }} kosten, {{ counts().documents }} documenten{{ state.purchaseFiguresVisible() ? ', ' + counts().containers + ' containerbetalingen' : '' }}.</p>
+        <p class="fin-sheet__lead">{{ counts().costs }} kosten, {{ counts().documents }} documenten{{ state.purchaseFiguresVisible() ? ', ' + counts().containers + ' containerbetalingen' : '' }} en de btw-aangifte (CSV).</p>
+        @if (vatStatus(); as status) { <p class="fin-hint fin-hint--warn">{{ status }}</p> }
         @if (counts().missing) {
           <button class="wk-link" type="button" (click)="showMissing()">{{ counts().missing }} {{ counts().missing === 1 ? 'kost' : 'kosten' }} zonder document ›</button>
         }
@@ -62,6 +63,14 @@ export class AccountantPackageSheet {
       documents: costs.reduce((sum, row) => sum + this.state.attachmentsFor(row.cost!.id).length, 0),
       missing: costs.filter((row) => missingDocument(row.cost!, this.state.documentedIds())).length,
     };
+  });
+  /** The return's status line while it is still provisional: the regimes to confirm, or why else it is not final yet. */
+  readonly vatStatus = computed(() => {
+    const result = this.state.vatReturnFor(this.year(), this.quarter());
+    if (result.status === 'ready') return '';
+    const pending = result.unconfirmedCount + result.unknown.length;
+    if (pending) return `Voorlopig · ${pending} ${pending === 1 ? 'btw-regeling' : 'btw-regelingen'} te bevestigen`;
+    return this.state.today() <= result.to ? 'Voorlopig · het kwartaal loopt nog' : 'Voorlopig · inklaring van een container te bevestigen';
   });
 
   showMissing(): void {

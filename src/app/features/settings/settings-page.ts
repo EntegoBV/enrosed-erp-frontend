@@ -230,6 +230,17 @@ const normalizeCategoryCode = (value: string): string => value
                 <input class="input mono" id="co-rep-vat" [ngModel]="profile.fiscalRepresentativeVat ?? ''"
                        (ngModelChange)="patchCompany({ fiscalRepresentativeVat: $event })" placeholder="NL858617262B02" />
               </div>
+              <div class="field span-2">
+                <label class="switch-row" [class.switch-row--on]="!!profile.importVatDeferred">
+                  <span class="switch-row__copy">
+                    <b>Vergunning ET 14000 (invoer-btw verlegd)</b>
+                    <small>Aan: de invoer-btw van containers ingeklaard in België komt in rooster 87/57/59 in plaats van betaald aan de douane.</small>
+                  </span>
+                  <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="!!profile.importVatDeferred"
+                         [ngModel]="!!profile.importVatDeferred" (ngModelChange)="patchCompany({ importVatDeferred: $event })" />
+                  <span class="switch-row__track" aria-hidden="true"><i></i></span>
+                </label>
+              </div>
               <div class="field">
                 <label for="co-quote-prefix">Nummering offertes <span class="opt"></span></label>
                 <input class="input mono" id="co-quote-prefix" maxlength="12" [ngModel]="profile.quoteNumberPrefix ?? ''"
