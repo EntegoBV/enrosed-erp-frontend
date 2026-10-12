@@ -7,7 +7,6 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
-import { channelLabel } from '../sales/sales-channels';
 import { bankAccountKey } from './bank-reconciliation';
 import { categoryLabel } from './cost-categories';
 import { paymentPayeeLabel } from './cost-ledger';
@@ -287,13 +286,13 @@ export class FinanceInspector {
     });
   }
 
-  incl(row: { amountExclEur: number; vatPct: number | null }): number { return inclOf(row); }
-  vat(row: { amountExclEur: number; vatPct: number | null }): number { return vatOf(row); }
+  incl(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return inclOf(row); }
+  vat(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return vatOf(row); }
   day(date: string | null): string { return dayMonth(date); }
   dayYear(date: string | null): string { return dayMonthYear(date); }
   age(date: string): number { return date <= this.state.today() ? daysBetween(date, this.state.today()) : 0; }
   category(code: string): string { return categoryLabel(code); }
-  channel(code: string): string { return channelLabel(code); }
+  channel(code: string): string { return this.state.channelName(code); }
   payee(code: Payee): string { return paymentPayeeLabel(code); }
   payeeTone(code: string): string { return PAYEE_TONES[code] ?? 'grey'; }
   rhythm(code: string): string { return intervalLabel(code); }

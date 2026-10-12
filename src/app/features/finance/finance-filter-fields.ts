@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { Segmented, SegmentOption } from '../../shared/segmented';
-import { SALES_CHANNELS } from '../sales/sales-channels';
 import { categoryChoices } from './cost-categories';
 import { FinanceState } from './finance-state';
 import { FinancePurpose, NO_ACCOUNT } from './finance-url';
@@ -31,7 +30,7 @@ import { FinancePurpose, NO_ACCOUNT } from './finance-url';
       <label class="fin-field"><span>Kanaal</span>
         <select class="select" [value]="location.channel" (change)="state.go({ channel: $any($event.target).value })">
           <option value="">Alle kanalen</option>
-          @for (channel of channels; track channel.code) { <option [value]="channel.code" [selected]="channel.code === location.channel">{{ channel.label }}</option> }
+          @for (channel of channels(); track channel.code) { <option [value]="channel.code" [selected]="channel.code === location.channel">{{ channel.label }}{{ channel.hint === 'Beurs' ? ' (beurs)' : '' }}</option> }
         </select></label>
       <label class="fin-field fin-field--switch"><span>Zonder document<small>Alleen kosten zonder factuur of bon; vaste kosten tellen niet mee</small></span>
         <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="location.docs === 'missing'" (change)="state.go({ docs: $any($event.target).checked ? 'missing' : '' })" /></label>
@@ -59,7 +58,8 @@ export class FinanceFilterFields {
   readonly state = inject(FinanceState);
   readonly kind = input<'costs' | 'receipts'>('costs');
   readonly variant = computed(() => (this.state.desk() ? 'desk' : 'ios'));
-  readonly channels = SALES_CHANNELS;
+  /** The built-in channels and the fairs. */
+  readonly channels = computed(() => this.state.channelChoices());
   readonly noAccount = NO_ACCOUNT;
   readonly categories = computed(() => categoryChoices(this.state.costs().map((cost) => cost.category)));
   readonly statusOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'open', label: 'Open' }, { id: 'paid', label: 'Betaald' }];

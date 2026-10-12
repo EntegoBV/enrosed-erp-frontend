@@ -10,8 +10,8 @@ export interface CostCategory {
 export type CategoryTone = 'accent' | 'blue' | 'teal' | 'amber' | 'green' | 'plum' | 'grey' | 'ink';
 
 export const COST_CATEGORIES: readonly CostCategory[] = [
+  /* The fair itself (TICA, Ede, …) is the cost's channel; older rows on the retired TICA category keep showing through categoryChoices(). */
   { code: 'BEURS', label: 'Beurs & stand', hint: 'Standhuur, opbouw, inschrijving', tone: 'accent' },
-  { code: 'TICA', label: 'TICA', hint: 'Standhuur en kosten bij TICA', tone: 'accent' },
   { code: 'HUUR', label: 'Huur & magazijn', hint: 'Magazijn, kantoor, opslag', tone: 'blue' },
   { code: 'BOEKHOUDER', label: 'Boekhouder & advies', hint: 'Accountant, jurist, adviseur', tone: 'ink' },
   { code: 'TRANSPORT', label: 'Transport & verzending', hint: 'Koerier, pallets, brandstof', tone: 'amber' },

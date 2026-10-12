@@ -34,12 +34,15 @@ export function paymentPayeeLabel(payee?: Payee | null): string {
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const money = (value: number | null | undefined): number => Number.isFinite(value) ? value as number : 0;
+/** The entered inclusive total when there is one, else excl + btw (the rule of vatOf/inclOf in cost-metrics.ts). */
+const inclOf = (cost: CompanyCost): number => (money(cost.amountInclEur) > 0 ? money(cost.amountInclEur)
+  : round2(money(cost.amountExclEur) + round2(money(cost.amountExclEur) * Math.max(0, money(cost.vatPct)) / 100)));
 
 export function costLedger(costs: readonly CompanyCost[], payments: readonly PurchasePaymentRow[]): CostLedgerRow[] {
   const rows: CostLedgerRow[] = costs.map((cost, index) => ({
     key: `cost:${cost.id ?? `new-${index}`}`, source: 'company', date: cost.date, category: cost.category,
     description: cost.description, party: cost.party, reference: cost.reference, paidOn: cost.paidOn,
-    amountEur: round2(money(cost.amountExclEur) + round2(money(cost.amountExclEur) * Math.max(0, money(cost.vatPct)) / 100)),
+    amountEur: inclOf(cost),
     cost, payment: null,
   }));
   // PurchasePayment is the source of truth. Reloading reflects additions, edits and deletions without a backfill or copied cost.
@@ -120,7 +123,7 @@ export function costLedgerTotals(rows: readonly CostLedgerRow[]): { containerCou
  * holding the file names of each row.
  */
 export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (code: string) => string,
-                              documents?: (row: CostLedgerRow) => string): string {
+                              documents?: (row: CostLedgerRow) => string, channelLabel: (code: string) => string = (code) => code): string {
   const cell = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return '';
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value;
@@ -133,7 +136,7 @@ export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (co
     return [row.date, cost ? 'Bedrijfskost' : 'Containerbetaling', categoryLabel(row.category), row.description, row.party, row.reference,
       cost?.amountExclEur, cost?.vatPct, cost ? round2(row.amountEur - money(cost.amountExclEur)) : null, cost ? row.amountEur : null,
       row.paidOn ? row.amountEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
-      row.payment ? String(row.payment.id) : null, cost?.salesChannel, cost ? (cost.recurringCostId ? 'ja' : 'nee') : null,
+      row.payment ? String(row.payment.id) : null, cost?.salesChannel ? channelLabel(cost.salesChannel) : null, cost ? (cost.recurringCostId ? 'ja' : 'nee') : null,
       cost?.notes ?? (row.payment ? 'Automatisch gekoppeld; beheren bij de container. Btw niet uit betaling afgeleid.' : null),
       ...(documents ? [documents(row)] : []),
     ].map(cell).join(';');

@@ -1,4 +1,4 @@
-import type { BankBalance, CompanyCost, RecurringCost } from '../../core/api/models';
+import type { BankBalance, CompanyCost, CostParty, Fair, RecurringCost } from '../../core/api/models';
 
 /*
  * The six sections of the Kosten & bank workspace, one daily question each,
@@ -62,8 +62,10 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
   ],
   costs: [
     { id: 'company', label: 'Bedrijfskosten', short: 'Kosten' },
-    { id: 'containers', label: 'Containers', short: 'Containers' },
+    /* Four segments here too: 'Cont.' on a 375px phone. */
+    { id: 'containers', label: 'Containers', short: 'Cont.' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
+    { id: 'lists', label: 'Aan wie & beurzen', short: 'Lijsten' },
   ],
   analysis: [],
 };
@@ -101,11 +103,21 @@ export function periodRange(id: PeriodId, today: string): { from: string; to: st
 }
 
 export function blankCost(today: string): CompanyCost {
-  return { id: null, date: today, category: 'ANDERE', description: '', party: '', amountExclEur: 0, vatPct: 21, reference: '', paidOn: null, salesChannel: null, notes: '', recurringCostId: null };
+  return { id: null, date: today, category: 'ANDERE', description: '', party: '', amountExclEur: 0, amountInclEur: null, vatPct: 21, reference: '', paidOn: null, salesChannel: null, notes: '', recurringCostId: null };
 }
 
 export function blankRecurring(today: string): RecurringCost {
   return { id: null, name: '', category: 'HUUR', party: '', amountExclEur: 0, vatPct: 21, salesChannel: null, interval: 'MONTHLY', startDate: today, endDate: null, active: true, autoPaid: false, reference: '', notes: '' };
+}
+
+/** A new name for the Aan wie list, without defaults until the sheet sets them. */
+export function blankCostParty(name = ''): CostParty {
+  return { id: null, name, category: null, vatPct: null, salesChannel: null, iban: null, notes: '' };
+}
+
+/** A new fair; the server derives the code from the label. */
+export function blankFair(): Fair {
+  return { id: null, code: '', label: '', active: true };
 }
 
 /** New readings are taken now, in the bank's own zone. */

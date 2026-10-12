@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { BankBalance, CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
 import {
   addDays, bankOverview, cashOutlook, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
-  largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, yearComparison, yearlyEur,
+  inclOf, largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, vatOf, yearComparison, yearlyEur,
 } from '../src/app/features/finance/finance-metrics.ts';
 
 function definition(input: Partial<RecurringCost> = {}): RecurringCost {
@@ -17,6 +17,15 @@ function definition(input: Partial<RecurringCost> = {}): RecurringCost {
 function cost(input: Partial<CompanyCost> & { date: string; amountExclEur: number }): CompanyCost {
   return { id: 1, category: 'HUUR', description: 'Huur', party: null, vatPct: 21, reference: null, paidOn: null, salesChannel: null, notes: null, ...input };
 }
+
+test('an entered inclusive total wins over the rate, also in the CSV', () => {
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 100);
+  assert.equal(vatOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 17.36);
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21 }), 99.99);
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: null }), 99.99);
+  const line = costsCsv([cost({ id: 1, date: '2026-09-01', amountExclEur: 82.64, amountInclEur: 100 })], (code) => code).split('\r\n')[1];
+  assert.equal(line, '2026-09-01;HUUR;Huur;;;82,64;21,00;17,36;100,00;;;nee;');
+});
 
 test('a monthly step is counted from the start, so the 31st comes back after February', () => {
   assert.equal(stepDate('2026-01-31', 'MONTHLY', 1), '2026-02-28');

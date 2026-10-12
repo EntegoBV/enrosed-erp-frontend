@@ -56,5 +56,8 @@
     .fin-insp-link, .fin-pay-line--link { min-height: 44px; }
     .fin-insp-link { align-items: center; }
     .fin-doc-buttons .ios-capsule { flex: 1; }
+
+    /* ---- Aan wie & beurzen: a 'Bewaren' capsule and a switch sit at the end of their cells */
+    .ios-cell > .ios-capsule, .ios-cell > .ios-switch { flex: none; }
   }
 }

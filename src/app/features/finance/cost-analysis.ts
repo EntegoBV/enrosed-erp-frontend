@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, forwardRef, inject, signa
 import { RouterLink } from '@angular/router';
 import { EurPipe, PctPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
-import { channelLabel } from '../sales/sales-channels';
 import { categoryLabel } from './cost-categories';
 import { costSummary } from './cost-metrics';
 import { CONTAINER_PAYMENT_CATEGORIES, costLedgerTotals, missingDocument } from './cost-ledger';
@@ -204,7 +203,7 @@ export class CostAnalysis implements FinanceSectionApi {
       ? [...rows].sort((a, b) => a.label.localeCompare(b.label, 'nl')) : rows);
     const byCategory: ShareRow[] = this.summary().byCategory.map((row) => ({ key: row.category, label: categoryLabel(row.category), count: row.count, exclEur: row.exclEur, sharePct: row.sharePct }));
     const byParty: ShareRow[] = topParties(this.rows(), 8).map((row) => ({ key: row.party, label: row.party, count: row.count, exclEur: row.exclEur, sharePct: row.sharePct }));
-    const byChannel: ShareRow[] = this.summary().byChannel.map((row) => ({ key: row.channel ?? 'ALGEMEEN', label: row.channel ? channelLabel(row.channel) : 'Algemene kosten',
+    const byChannel: ShareRow[] = this.summary().byChannel.map((row) => ({ key: row.channel ?? 'ALGEMEEN', label: row.channel ? this.state.channelName(row.channel) : 'Algemene kosten',
       count: row.count, exclEur: row.exclEur, sharePct: total > 0 ? round2(row.exclEur / total * 100) : 0 }));
     return [
       { id: 'category' as const, title: 'Per categorie', rows: order('category', byCategory) },

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { BankBalance, CompanyCost, RecurringCost } from './models';
+import { BankBalance, CompanyCost, CostParty, Fair, RecurringCost } from './models';
 
 /** The company's own money: costs, the recurring ones the server books, and what the bank holds. */
 @Injectable({ providedIn: 'root' })
@@ -68,5 +68,41 @@ export class FinanceApi {
 
   deleteBankBalance(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/bank-balances/${id}`)));
+  }
+
+  /* The "Aan wie" list: the server learns a name from every booking, the list edits the defaults. */
+  costParties(): Promise<CostParty[]> {
+    return firstValueFrom(this.http.get<CostParty[]>(api('/api/cost-parties')));
+  }
+
+  createCostParty(party: CostParty): Promise<CostParty> {
+    return firstValueFrom(this.http.post<CostParty>(api('/api/cost-parties'), party));
+  }
+
+  /** A new name renames the bookings on the old one. */
+  updateCostParty(id: number, party: CostParty): Promise<CostParty> {
+    return firstValueFrom(this.http.put<CostParty>(api(`/api/cost-parties/${id}`), party));
+  }
+
+  deleteCostParty(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/cost-parties/${id}`)));
+  }
+
+  fairs(): Promise<Fair[]> {
+    return firstValueFrom(this.http.get<Fair[]>(api('/api/fairs')));
+  }
+
+  /** Without a code the server derives one from the label ("Ede" → EDE). */
+  createFair(body: { label: string; code?: string | null }): Promise<Fair> {
+    return firstValueFrom(this.http.post<Fair>(api('/api/fairs'), body));
+  }
+
+  updateFair(id: number, body: { label: string; active: boolean }): Promise<Fair> {
+    return firstValueFrom(this.http.put<Fair>(api(`/api/fairs/${id}`), body));
+  }
+
+  /** Refused while a cost still carries the code. */
+  deleteFair(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/fairs/${id}`)));
   }
 }

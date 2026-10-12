@@ -10,7 +10,7 @@ import { FinanceSectionApi } from './finance-section';
 import { FINANCE_TABS, financeSection } from './finance-sections';
 import { FinanceState } from './finance-state';
 
-type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring';
+type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 'party' | 'fair';
 
 /**
  * The desk toolbar: section title and segments on the left; search, ⋯,
@@ -118,6 +118,7 @@ export class FinanceToolbar {
     if (view === 'incoming' || (view === 'bank' && tab === 'movements')) return { kind: 'movement', label: 'Bankbeweging noteren' };
     if (view === 'bank') return { kind: 'balance', label: 'Saldo invullen' };
     if (view === 'costs' && tab === 'recurring') return { kind: 'recurring', label: 'Vaste kost instellen' };
+    if (view === 'costs' && tab === 'lists') return { kind: 'party', label: 'Aan wie toevoegen' };
     return { kind: 'cost', label: 'Kost boeken' };
   });
 
@@ -167,6 +168,8 @@ export class FinanceToolbar {
     else if (kind === 'cost-file') this.picker()?.nativeElement.click();
     else if (kind === 'movement') this.state.openMovement({ accountKey: location.view === 'bank' ? location.account || undefined : undefined });
     else if (kind === 'balance') this.state.openBank(null);
+    else if (kind === 'party') this.state.openCostParty(null);
+    else if (kind === 'fair') this.state.openFair(null);
     else this.state.openRecurring(null);
   }
 
@@ -178,7 +181,9 @@ export class FinanceToolbar {
   }
 
   newMenu(event: MouseEvent): void {
+    const { view, tab } = this.state.location();
     const items: ContextMenuItem[] = [
+      ...(view === 'costs' && tab === 'lists' ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
       { id: 'cost', label: 'Kost boeken', hint: 'N', iconName: 'receipt' },
       { id: 'cost-file', label: 'Kost met document…', iconName: 'clip' },
       { id: 'movement', label: 'Bankbeweging noteren', hint: 'B', iconName: 'bank' },

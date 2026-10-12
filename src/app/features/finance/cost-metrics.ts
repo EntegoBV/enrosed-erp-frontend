@@ -16,13 +16,19 @@ export interface CostSummary {
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const money = (value: number | null | undefined): number => (Number.isFinite(value as number) && (value as number) > 0 ? (value as number) : 0);
 
-export function vatOf(cost: Pick<CompanyCost, 'amountExclEur' | 'vatPct'>): number {
+type VatRow = Pick<CompanyCost, 'amountExclEur' | 'vatPct'> & Partial<Pick<CompanyCost, 'amountInclEur'>>;
+
+/** The VAT on a cost: the difference when the total was entered incl. btw (the entered € 100,00 stays € 100,00), else the rate on the excl. amount. */
+export function vatOf(cost: VatRow): number {
+  const incl = money(cost.amountInclEur);
+  if (incl > 0) return round2(incl - money(cost.amountExclEur));
   const pct = money(cost.vatPct);
   return round2(money(cost.amountExclEur) * pct / 100);
 }
 
-export function inclOf(cost: Pick<CompanyCost, 'amountExclEur' | 'vatPct'>): number {
-  return round2(money(cost.amountExclEur) + vatOf(cost));
+export function inclOf(cost: VatRow): number {
+  const incl = money(cost.amountInclEur);
+  return incl > 0 ? incl : round2(money(cost.amountExclEur) + vatOf(cost));
 }
 
 /** The month a date belongs to, as YYYY-MM; malformed dates fall into an empty bucket. */

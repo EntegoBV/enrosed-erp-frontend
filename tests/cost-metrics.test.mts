@@ -15,6 +15,16 @@ test('a cost carries its VAT and total', () => {
   assert.equal(monthKey('nonsense'), '');
 });
 
+test('an entered inclusive total wins over the rate: € 100,00 incl. stays € 100,00', () => {
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 100);
+  assert.equal(vatOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 17.36);
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21 }), 99.99, 'without the entered total the rate drifts a cent');
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: null }), 99.99);
+  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 0 }), 99.99, 'zero is no entered total');
+  const summary = costSummary([cost({ id: 1, amountExclEur: 82.64, amountInclEur: 100 }), cost({ id: 2, amountExclEur: 10, vatPct: 0 })]);
+  assert.deepEqual([summary.exclEur, summary.vatEur, summary.inclEur, summary.unpaidEur], [92.64, 17.36, 110, 110]);
+});
+
 test('the summary adds up per category, month and channel and knows what is still open', () => {
   const costs = [
     cost({ id: 1, amountExclEur: 1250, category: 'TICA', salesChannel: 'TICA', date: '2026-10-03' }),

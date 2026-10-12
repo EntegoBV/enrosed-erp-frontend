@@ -20,14 +20,17 @@ export class FinanceCreateMenu {
 
   open(): void {
     const { view, tab } = this.state.location();
+    const lists = view === 'costs' && tab === 'lists';
     const items: ContextMenuItem[] = [
+      /* On Aan wie & beurzen the list's own kinds lead. */
+      ...(lists ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
       { id: 'cost', label: 'Kost boeken', iconName: 'receipt' },
       { id: 'photo', label: 'Foto van een bon', iconName: 'camera' },
       { id: 'movement', label: 'Bankbeweging noteren', iconName: 'bank' },
       { id: 'balance', label: 'Saldo invullen', iconName: 'pencil' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },
     ];
-    const first = view === 'incoming' || (view === 'bank' && tab === 'movements') ? 'movement'
+    const first = lists ? 'party' : view === 'incoming' || (view === 'bank' && tab === 'movements') ? 'movement'
       : view === 'bank' ? 'balance' : view === 'costs' && tab === 'recurring' ? 'recurring' : 'cost';
     items.sort((a, b) => Number(b.id === first) - Number(a.id === first));
     this.state.openMenu({ title: 'Toevoegen', items, anchor: null, cancelLabel: 'Annuleren', pick: (id) => this.run(id) });
@@ -39,6 +42,8 @@ export class FinanceCreateMenu {
     else if (id === 'photo') this.photo().nativeElement.click();
     else if (id === 'movement') this.state.openMovement({ accountKey: location.view === 'bank' ? location.account || undefined : undefined });
     else if (id === 'balance') this.state.openBank(null);
+    else if (id === 'party') this.state.openCostParty(null);
+    else if (id === 'fair') this.state.openFair(null);
     else this.state.openRecurring(null);
   }
 

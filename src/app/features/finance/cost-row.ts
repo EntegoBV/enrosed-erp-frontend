@@ -4,7 +4,6 @@ import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
-import { channelLabel } from '../sales/sales-channels';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth } from './finance-format';
 import { inclOf, vatOf } from './finance-metrics';
@@ -128,7 +127,7 @@ export class CostRow {
     const cost = this.cost();
     return cost.date <= this.state.today() ? daysBetween(cost.date, this.state.today()) : null;
   });
-  readonly channel = channelLabel;
+  readonly channel = (code: string): string => this.state.channelName(code);
 
   dragOver(event: DragEvent): void {
     if (!event.dataTransfer || ![...event.dataTransfer.types].includes('Files')) return;

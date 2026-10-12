@@ -17,6 +17,7 @@ test('historical container payments appear alongside company costs with independ
   const rows = costLedger([cost], [payment({ paidOn: '2025-12-31' })]);
   assert.deepEqual(rows.map((row) => [row.key, row.date, row.amountEur]), [['cost:1', '2026-09-01', 121], ['payment:1', '2025-12-31', 554.77]]);
   assert.equal(rows[1].cost, null, 'a payment never becomes a second expense or invents VAT');
+  assert.equal(costLedger([{ ...cost, amountExclEur: 82.64, amountInclEur: 100 }], [])[0].amountEur, 100, 'an entered inclusive total is the row total');
   assert.equal(rows[1].reference, 'PO-2026-001 · Zomerrozen');
   assert.equal(rows[1].paidOn, rows[1].date);
   assert.deepEqual(costLedgerTotals(rows), { containerCount: 1, containerPaidEur: 554.77, paidEur: 675.77 });

@@ -3,8 +3,6 @@ import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
-import { receiptInstant } from '../../shared/received-at';
-import { bankCheckpoint } from './bank-reconciliation';
 import { dayMonthYear } from './finance-format';
 import { addDays, inclOf } from './finance-metrics';
 import { FinanceState } from './finance-state';
@@ -87,18 +85,8 @@ export class PaySheet {
   readonly future = computed(() => this.paidOn() > this.state.today());
   readonly canSave = computed(() => !!this.paidOn() && !this.state.busy() && (!this.toBank() || (!!this.account() && !this.future())));
 
-  /** Whether the line lands after the account's last check (and so moves its balance). */
-  readonly accountHint = computed(() => {
-    const account = this.state.accountsView().find((row) => row.account === this.account());
-    if (!account) return '';
-    if (!account.reading) return `${account.label} heeft nog geen saldo; de beweging telt mee zodra je er een invult.`;
-    const paidOn = this.paidOn();
-    let at: number;
-    try { at = paidOn === this.state.today() ? Date.now() : Date.parse(receiptInstant(paidOn, '12:00:00', 'Europe/Brussels')); } catch { return ''; }
-    return at <= bankCheckpoint(account.reading)
-      ? `Valt vóór je laatste saldocontrole van ${account.label} (${dayMonthYear(account.reading.date)}); zit al in dat saldo.`
-      : `Telt mee in het saldo van ${account.label}.`;
-  });
+  /** Whether the line lands after the account's last check (and so moves its balance); the cost form shows the same hint. */
+  readonly accountHint = computed(() => this.state.accountHint(this.account(), this.paidOn()));
 
   save(): void {
     if (!this.canSave()) return;

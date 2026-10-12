@@ -43,5 +43,6 @@ test('six sections, five of them on the phone tab bar, in groups', () => {
     ['Overzicht', 'Betalen', 'Ontvangen', 'Bank', 'Uitgaven']);
   assert.deepEqual([...new Set(FINANCE_SECTIONS.map((section) => section.group))], ['Vandaag', 'Geld', 'Boekhouding']);
   assert.equal(financeSection('bank').label, 'Bank');
-  assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Containers', 'Vast']);
+  assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Cont.', 'Vast', 'Lijsten']);
+  assert.equal(blankCost('2026-10-02').amountInclEur, null, 'a new cost is entered excl. btw until the form says otherwise');
 });

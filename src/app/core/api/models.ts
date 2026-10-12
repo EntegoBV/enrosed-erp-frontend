@@ -2616,12 +2616,35 @@ export interface CompanyCost {
   salesChannel: string | null;
   notes: string | null;
   createdAt?: string | null;
-  /** Server-computed: the VAT on top and the total. */
+  /** The inclusive total as it was entered; null when the cost was entered excl. btw (the total is then excl + btw). */
+  amountInclEur: number | null;
+  /** Server-computed: the VAT on top. */
   vatEur?: number;
-  amountInclEur?: number;
   paid?: boolean;
   /** The recurring definition that booked this cost automatically; null for a hand-booked cost. */
   recurringCostId?: number | null;
+}
+
+/** A name in the "Aan wie" list: whom the company pays, with the defaults a new cost to that name takes. */
+export interface CostParty {
+  id: number | null;
+  name: string;
+  category: string | null;
+  vatPct: number | null;
+  /** A built-in channel or a fair code. */
+  salesChannel: string | null;
+  iban: string | null;
+  notes: string | null;
+  createdAt?: string | null;
+}
+
+/** A fair (TICA, Ede, …): a sales channel code costs and sales carry. The code never changes. */
+export interface Fair {
+  id: number | null;
+  code: string;
+  label: string;
+  active: boolean;
+  createdAt?: string | null;
 }
 
 export type RecurringInterval = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY' | 'YEARLY';

@@ -216,6 +216,14 @@
   .fin-recurring { display: grid; gap: 16px; }
   .fin-agenda .wk-section__title { margin-top: 10px; }
 
+  /* ---- Uitgaven › Aan wie & beurzen: three cards, each a table */
+  .fin-lists { display: grid; gap: 16px; .wk-card + .wk-card { margin-top: 0; } .wk-card__head > .wk-btn { margin-left: 8px; } }
+  .fin-lists__toggle { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .fin-table--parties { --wk-cols: minmax(160px, 1fr) minmax(0, 220px) 190px 110px 112px 84px; }
+  .fin-table--seen { --wk-cols: minmax(160px, 1fr) 100px 110px 112px 96px; }
+  .fin-table--fairs { --wk-cols: minmax(160px, 1fr) 140px 110px 112px 64px; }
+  .fin-iban { font-variant-numeric: tabular-nums; }
+
   /* ---- Analyse */
   .fin-analysis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
   .fin-share__list { display: grid; margin: 0; padding: 0 16px 14px; list-style: none;
@@ -241,6 +249,8 @@
     .fin-hide-lg { display: none !important; }
   }
   @container wk-pane (max-width: 1023.98px) {
+    .fin-table--parties { --wk-cols: minmax(140px, 1fr) minmax(0, 180px) 100px 108px 76px; }
+    .fin-lists-md { display: none !important; }
     .fin-table--payables { --wk-cols: 28px 96px minmax(150px, 1fr) 84px minmax(0, 140px) 112px 100px; --wk-group-span: 6; .fin-group__sum { grid-column: 6; } }
     .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 80px minmax(140px, 1fr) minmax(0, 124px) 96px 104px 108px; --wk-group-span: 5;
       .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
@@ -258,6 +268,9 @@
     .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px 36px; }
   }
   @container wk-pane (max-width: 719.98px) {
+    .fin-table--parties { --wk-cols: minmax(130px, 1fr) minmax(0, 150px) 90px 104px; }
+    .fin-table--fairs { --wk-cols: minmax(130px, 1fr) 90px 104px 56px; }
+    .fin-lists-sm { display: none !important; }
     .fin-table--payables { --wk-cols: 28px 88px minmax(130px, 1fr) minmax(0, 120px) 104px 96px; --wk-group-span: 5; .fin-group__sum { grid-column: 5; } }
     .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 72px minmax(120px, 1fr) 100px 100px; --wk-group-span: 4; .fin-sum--incl { grid-column: 4; } }
     .fin-table--receivables { --wk-cols: 96px minmax(120px, 1fr) 104px 104px 24px; }

@@ -29,13 +29,22 @@ const finite = (value: number | null | undefined): number => (Number.isFinite(va
 const pad = (value: number): string => String(value).padStart(2, '0');
 const isoOf = (year: number, month: number, day: number): string => `${year}-${pad(month)}-${pad(day)}`;
 
-export function vatOf(row: { amountExclEur: number; vatPct: number | null }): number {
+/** What VAT arithmetic needs; the inclusive total is there when the cost was entered incl. btw. */
+export interface VatRow { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }
+
+/** The entered inclusive total, when there is one. */
+const storedIncl = (row: VatRow): number | null => (Number.isFinite(row.amountInclEur as number) && (row.amountInclEur as number) > 0 ? row.amountInclEur as number : null);
+
+/** The VAT on a row: the difference when the total was entered (so € 100,00 incl. stays € 100,00), else the rate on the excl. amount. */
+export function vatOf(row: VatRow): number {
+  const incl = storedIncl(row);
+  if (incl !== null) return round2(incl - finite(row.amountExclEur));
   const pct = finite(row.vatPct);
   return pct > 0 ? round2(finite(row.amountExclEur) * pct / 100) : 0;
 }
 
-export function inclOf(row: { amountExclEur: number; vatPct: number | null }): number {
-  return round2(finite(row.amountExclEur) + vatOf(row));
+export function inclOf(row: VatRow): number {
+  return storedIncl(row) ?? round2(finite(row.amountExclEur) + vatOf(row));
 }
 
 /** The date `days` after an ISO day, without any time zone getting in the way. */
@@ -311,7 +320,7 @@ export function recurringGroups(definitions: readonly RecurringCost[], today: st
 }
 
 /** A semicolon-separated CSV with a decimal comma, the way a Belgian accountant's Excel opens it. */
-export function costsCsv(costs: readonly CompanyCost[], categoryLabel: (code: string) => string): string {
+export function costsCsv(costs: readonly CompanyCost[], categoryLabel: (code: string) => string, channelLabel: (code: string) => string = (code) => code): string {
   const cell = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return '';
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : String(value);
@@ -322,7 +331,7 @@ export function costsCsv(costs: readonly CompanyCost[], categoryLabel: (code: st
     .sort((left, right) => left.date.localeCompare(right.date) || (left.id ?? 0) - (right.id ?? 0))
     .map((cost) => [
       cost.date, categoryLabel(cost.category), cost.description, cost.party, cost.reference,
-      finite(cost.amountExclEur), finite(cost.vatPct), vatOf(cost), inclOf(cost), cost.paidOn, cost.salesChannel,
+      finite(cost.amountExclEur), finite(cost.vatPct), vatOf(cost), inclOf(cost), cost.paidOn, cost.salesChannel ? channelLabel(cost.salesChannel) : null,
       cost.recurringCostId ? 'ja' : 'nee', cost.notes,
     ].map(cell).join(';'));
   return [header.join(';'), ...lines].join('\r\n');

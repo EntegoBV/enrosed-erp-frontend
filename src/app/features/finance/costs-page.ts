@@ -20,7 +20,10 @@ import { BankSheet } from './bank-sheet';
 import { ContainerPaymentsPanel } from './container-payments-panel';
 import { CostAnalysis } from './cost-analysis';
 import { CostList } from './cost-list';
+import { CostListsPanel } from './cost-lists-panel';
+import { CostPartySheet } from './cost-party-sheet';
 import { CostSheet } from './cost-sheet';
+import { FairSheet } from './fair-sheet';
 import { FinanceCreateMenu } from './finance-create-menu';
 import { FinanceFilters } from './finance-filters';
 import { FinanceHelpSheet } from './finance-help-sheet';
@@ -58,8 +61,8 @@ const STALE_MS = 5 * 60_000;
   host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
     FinanceCreateMenu, FinanceInspector, FinanceOverview, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
-    RecurringPanel, CostAnalysis, CostSheet, RecurringSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
-    AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, BankAllocationSheet],
+    RecurringPanel, CostListsPanel, CostAnalysis, CostSheet, RecurringSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
+    AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, BankAllocationSheet, CostPartySheet, FairSheet],
   template: `
     @if (state.desk()) {
       <div class="wk-page fin-desk">
@@ -140,6 +143,7 @@ const STALE_MS = 5 * 60_000;
             @switch (state.location().tab) {
               @case ('containers') { <app-container-payments-panel /> }
               @case ('recurring') { <app-recurring-panel /> }
+              @case ('lists') { <app-cost-lists-panel /> }
               @default { <app-cost-list /> }
             }
           }
@@ -157,6 +161,8 @@ const STALE_MS = 5 * 60_000;
     }
     @if (state.costDraft()) { <app-cost-sheet /> }
     @if (state.recurringDraft()) { <app-recurring-sheet /> }
+    @if (state.costPartyDraft()) { <app-cost-party-sheet /> }
+    @if (state.fairDraft()) { <app-fair-sheet /> }
     @if (state.bankDraft()) { <app-bank-sheet /> }
     @if (state.movementDraft()) { <app-bank-movement-sheet /> }
     @if (state.paySheet()) { <app-pay-sheet /> }

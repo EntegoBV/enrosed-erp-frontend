@@ -7,7 +7,6 @@ import { Sheet } from '../../shared/ui';
 import { costSummary } from './cost-metrics';
 import { CostRow } from './cost-row';
 import { CostLedgerRow, filterCostLedger } from './cost-ledger';
-import { channelLabel } from '../sales/sales-channels';
 import { FinanceFilterFields } from './finance-filter-fields';
 import { monthLabel } from './finance-format';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
@@ -146,7 +145,7 @@ export class CostList implements FinanceSectionApi {
     return filterCostLedger(this.state.ledger(), {
       from: range.from || null, to: range.to || null, query: location.q, category: location.cat,
       status: location.status || 'all', source: 'company', docs: location.docs || null, documentedIds: this.state.documentedIds(),
-    }, this.state.categoryName, channelLabel).filter((row) => !location.channel || (row.cost?.salesChannel ?? '').toUpperCase() === location.channel);
+    }, this.state.categoryName, this.state.channelName).filter((row) => !location.channel || (row.cost?.salesChannel ?? '').toUpperCase() === location.channel);
   });
   readonly costs = computed(() => this.rows().map((row) => row.cost!));
   readonly summary = computed(() => costSummary(this.costs()));

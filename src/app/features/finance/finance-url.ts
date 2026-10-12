@@ -47,7 +47,7 @@ export const TAB_IDS: Readonly<Record<FinanceView, readonly string[]>> = {
   open: ['all', 'costs', 'containers', 'recurring'],
   incoming: ['open', 'received'],
   bank: ['accounts', 'movements'],
-  costs: ['company', 'containers', 'recurring'],
+  costs: ['company', 'containers', 'recurring', 'lists'],
   analysis: [],
 };
 const PERIODS: readonly FinancePeriod[] = ['month', 'quarter', 'year', 'lastYear', 'all'];
@@ -64,6 +64,7 @@ function honoured(view: FinanceView, tab: string): readonly Field[] {
     case 'bank/movements': return ['dir', 'link', 'account', 'period', 'from', 'to', 'q'];
     case 'costs/company': return ['period', 'from', 'to', 'q', 'cat', 'status', 'channel', 'docs', 'cost'];
     case 'costs/containers': return ['container', 'scope', 'q'];
+    case 'costs/lists': return ['q'];
     case 'analysis/': return ['year'];
     default: return [];
   }
