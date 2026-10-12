@@ -197,6 +197,8 @@ interface PhotoCompareView {
     .pk-tile__pick:disabled, .pk-tile__zoom:disabled { cursor: wait; }
     .pk-tile__pic { display: grid; place-items: center; height: 132px; padding: 6px; border-bottom: 1px solid var(--line); background: #fff; }
     .pk-tile__pic img { max-width: 100%; max-height: 120px; object-fit: contain; }
+    /* Not fetched yet: the empty image fills its frame, so the lazy fetch starts as soon as the frame shows in the sheet. */
+    .pk-tile__pic img:not([src]) { width: 100%; height: 100%; }
     .pk-tile__label { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 10px; color: var(--ink-2); font-size: 12.5px; font-weight: 600;
       line-height: 1.3; overflow-wrap: anywhere; }
     .pk-tile__label--warn { color: #7c450b; }

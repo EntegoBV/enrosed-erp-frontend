@@ -95,7 +95,7 @@ import { isSourceLink } from '../files/files-collections';
     .mc__grid--compact .mc__open{aspect-ratio:1;border-radius:10px}
     .mc__grid--compact .mc__ext{font-size:11px}
     .mc__grid--compact .mc__unlink{position:static;opacity:1;background:var(--surface-2);color:var(--muted)}
-    .mc__source{color:var(--muted);font-size:11.5px;line-height:1.35}
+    .mc__source{color:var(--muted);font-size:12px;line-height:1.35}
     .mc__source a{color:var(--rose-dark);font-weight:600}
     .mc__grid--compact .mc__source{grid-column:2/-1;margin-top:-14px}
     .mc__grid--compact .mc__source a{display:inline-block;padding-block:14px}

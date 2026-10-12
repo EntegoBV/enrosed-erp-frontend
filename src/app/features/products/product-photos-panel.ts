@@ -483,6 +483,8 @@ export interface PhotoPlaceChange {
     img { user-select: none; }
     .pp-pill { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px;
       background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 650; line-height: 1.3; text-align: left; }
+    /* Drawn in the section head next to the title: a long state wraps inside the pill instead of pushing the title away. */
+    .pp-pill { min-width: 0; max-width: calc(100% - 66px); }
     .pp-pill i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted-2); }
     .pp-pill--ok i { background: var(--ok); } .pp-pill--warn i { background: var(--warn); } .pp-pill--danger i { background: var(--danger); }
     :is(a, button).pp-pill { min-height: 44px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
@@ -634,6 +636,10 @@ export interface PhotoPlaceChange {
     .pp-field legend { margin-bottom: 8px; }
     .pp-field small { font-size: 12.5px; }
     .pp-switch { width: 100%; min-height: 52px; font: inherit; color: inherit; text-align: left; }
+    /* One "on" colour, the accent, as in the photo sheet; the off track is #8f867f for contrast. */
+    .pp-switch .switch-row__track { background: #8f867f; }
+    .pp-switch.switch-row--on { border-color: var(--rose-line); background: var(--rose-soft); }
+    .pp-switch.switch-row--on .switch-row__track { background: var(--rose); }
     .pp-warn, .pp-tip { display: flex; gap: 8px; color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
     .pp-warn { padding: 10px 12px; border: 1px solid #f0dcbc; border-radius: 12px; background: var(--warn-soft); color: #5e3608; }
     :is(.pp-warn, .pp-tip) app-icon { flex: none; margin-top: 1px; }

@@ -70,20 +70,6 @@ export function photoKeyForProductPhoto(photo: Pick<PhotoDto, 'id' | 'familyPhot
 
 /* ------------------------------------------------------------------ roles */
 
-export function roleChoice(
-  overview: ProductPhotoOverview | null,
-  role: ProductPhotoRoleKey,
-): ProductPhotoChoice | null {
-  if (!overview) return null;
-  switch (role) {
-    case 'MAIN': return overview.main;
-    case 'QUOTE': return overview.quote;
-    case 'CATALOGUE_VARIANT': return overview.catalogueVariant;
-    case 'CATALOGUE_OVERVIEW': return overview.catalogueOverview;
-    case 'CATALOGUE_DETAIL': return overview.catalogueDetail;
-  }
-}
-
 /**
  * Where choosing this photo for the role also makes it public. The server
  * publishes a series photo to the role's channel first. The per-colour leads
