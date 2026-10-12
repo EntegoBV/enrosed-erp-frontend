@@ -1,6 +1,13 @@
 import type { CompanyCost } from '../../core/api/models';
+import type { CostMoney } from './finance-metrics';
 
-/** The company's own costs added up, per category and per month, all excluding VAT unless said otherwise. */
+/**
+ * The company's own costs added up, per category and per month. The money
+ * rule comes in as COST_MONEY (finance-metrics.ts): the arithmetic exists
+ * once, and this file keeps no runtime import so the node tests run it alone.
+ * 'exclEur' is the expense (excl. plus non-deductible VAT), 'vatEur' what the
+ * return shows, 'inclEur' what the bank pays.
+ */
 export interface CostSummary {
   count: number;
   exclEur: number;
@@ -8,28 +15,14 @@ export interface CostSummary {
   inclEur: number;
   unpaidCount: number;
   unpaidEur: number;
+  /** Import VAT paid at customs: not a cost, its own line. */
+  importVatEur: number;
   byCategory: { category: string; count: number; exclEur: number; sharePct: number }[];
   byMonth: { month: string; count: number; exclEur: number }[];
   byChannel: { channel: string | null; count: number; exclEur: number }[];
 }
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
-const money = (value: number | null | undefined): number => (Number.isFinite(value as number) && (value as number) > 0 ? (value as number) : 0);
-
-type VatRow = Pick<CompanyCost, 'amountExclEur' | 'vatPct'> & Partial<Pick<CompanyCost, 'amountInclEur'>>;
-
-/** The VAT on a cost: the difference when the total was entered incl. btw (the entered € 100,00 stays € 100,00), else the rate on the excl. amount. */
-export function vatOf(cost: VatRow): number {
-  const incl = money(cost.amountInclEur);
-  if (incl > 0) return round2(incl - money(cost.amountExclEur));
-  const pct = money(cost.vatPct);
-  return round2(money(cost.amountExclEur) * pct / 100);
-}
-
-export function inclOf(cost: VatRow): number {
-  const incl = money(cost.amountInclEur);
-  return incl > 0 ? incl : round2(money(cost.amountExclEur) + vatOf(cost));
-}
 
 /** The month a date belongs to, as YYYY-MM; malformed dates fall into an empty bucket. */
 export function monthKey(date: string | null | undefined): string {
@@ -40,16 +33,18 @@ export function costsInPeriod(costs: readonly CompanyCost[], from?: string | nul
   return costs.filter((cost) => (!from || cost.date >= from) && (!to || cost.date <= to));
 }
 
-export function costSummary(costs: readonly CompanyCost[]): CostSummary {
-  const exclEur = round2(costs.reduce((sum, cost) => sum + money(cost.amountExclEur), 0));
-  const vatEur = round2(costs.reduce((sum, cost) => sum + vatOf(cost), 0));
-  const unpaid = costs.filter((cost) => !cost.paidOn);
+export function costSummary(costs: readonly CompanyCost[], money: CostMoney): CostSummary {
+  const exclEur = round2(costs.reduce((sum, cost) => sum + money.expenseOf(cost), 0));
+  const vatEur = round2(costs.reduce((sum, cost) => sum + money.returnVatOf(cost), 0));
+  const inclEur = round2(costs.reduce((sum, cost) => sum + money.cashTotalOf(cost), 0));
+  const unpaid = costs.map((cost) => money.openOf(cost)).filter((open) => open > 0);
+  const importVatEur = round2(costs.filter((cost) => cost.vatRegime === 'IMPORT_VAT_PAID').reduce((sum, cost) => sum + money.cashTotalOf(cost), 0));
   const groups = <K extends string | null>(key: (cost: CompanyCost) => K) => {
     const map = new Map<K, { count: number; exclEur: number }>();
     for (const cost of costs) {
       const bucket = map.get(key(cost)) ?? { count: 0, exclEur: 0 };
       bucket.count += 1;
-      bucket.exclEur = round2(bucket.exclEur + money(cost.amountExclEur));
+      bucket.exclEur = round2(bucket.exclEur + money.expenseOf(cost));
       map.set(key(cost), bucket);
     }
     return map;
@@ -67,9 +62,10 @@ export function costSummary(costs: readonly CompanyCost[]): CostSummary {
     count: costs.length,
     exclEur,
     vatEur,
-    inclEur: round2(exclEur + vatEur),
+    inclEur,
     unpaidCount: unpaid.length,
-    unpaidEur: round2(unpaid.reduce((sum, cost) => sum + inclOf(cost), 0)),
+    unpaidEur: round2(unpaid.reduce((sum, open) => sum + open, 0)),
+    importVatEur,
     byCategory,
     byMonth,
     byChannel,

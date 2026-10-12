@@ -16,6 +16,7 @@ import {
   resultAnalysis,
   salesAnalysis,
 } from '../src/app/features/analyses/analysis-metrics.ts';
+import { costChargeIn, openOf } from '../src/app/features/finance/finance-metrics.ts';
 
 interface SalesFixture {
   id: number;
@@ -472,6 +473,24 @@ test('the result sets the margin on the goods against the own costs, per channel
   assert.deepEqual(result.byCategory.map((row) => [row.category, row.amountEur]), [['BOEKHOUDER', 300], ['TICA', 250]]);
   assert.deepEqual(result.monthly.map((row) => [row.month, row.revenueEur, row.marginEur, row.costsEur, row.resultEur]),
     [['2026-09', 700, 200, 0, 200], ['2026-10', 1500, 400, 550, -150]]);
+});
+
+test('with the money rule an investment charges its depreciation, import VAT is no cost and remainders are what is open', () => {
+  const base = { category: 'BOEKHOUDER', description: 'Kost', party: null, vatPct: 21, reference: null, paidOn: null, salesChannel: null, notes: null, amountInclEur: null,
+    vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE', costKind: null, expenseType: 'STANDARD', vatDeductiblePct: 100, taxDeductiblePct: 100, depreciationYears: null, depreciationStart: null } as const;
+  const costs: CompanyCost[] = [
+    { ...base, id: 1, date: '2026-09-15', amountExclEur: 100 },
+    { ...base, id: 2, date: '2026-07-01', amountExclEur: 3000, category: 'SOFTWARE', description: 'Laptop', costKind: 'INVESTMENT', depreciationYears: 3, depreciationStart: '2026-07-01', paidOn: '2026-07-01', openEur: 0 },
+    { ...base, id: 3, date: '2026-10-02', amountExclEur: 0, vatPct: null, amountInclEur: 500, category: 'TRANSPORT', description: 'Invoer-btw', vatRegime: 'IMPORT_VAT_PAID' },
+  ];
+  const result = resultAnalysis([], [], costs, { from: '2026-09-01', to: '2026-10-31', costCharge: costChargeIn, openEur: openOf });
+  assert.equal(result.depreciationEur, 167.12, '1 000 × 61 / 365: the investment of July depreciates into the period');
+  assert.equal(result.costsEur, 267.12, 'the expense plus the depreciation; the import VAT is no cost');
+  assert.equal(result.unpaidCostsEur, 621, 'what is still open: € 121 and the € 500 import VAT');
+  assert.deepEqual(result.byCategory.map((row) => [row.category, row.amountEur]), [['AFSCHRIJVINGEN', 167.12], ['BOEKHOUDER', 100]]);
+  assert.deepEqual(result.monthly.map((row) => [row.month, row.costsEur]), [['2026-09', 182.19], ['2026-10', 84.93]]);
+  const plain = resultAnalysis([], [], costs, { from: '2026-09-01', to: '2026-10-31' });
+  assert.deepEqual([plain.costsEur, plain.depreciationEur], [100, 0], 'without the rule only the excl. amounts dated in the period count');
 });
 
 test('issued credit notes come off Gefactureerd, the trend and the top lists, and ask for their tegoed instead of a payment', () => {

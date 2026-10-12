@@ -5,20 +5,38 @@ import type { BankLineLike, OutgoingRow } from '../src/app/features/finance/bank
 
 const line = (id: number, amountEur: number, bookedAt: string, reference: string | null = null): BankLineLike =>
   ({ id, amountEur, bookedAt, timeZone: 'Europe/Brussels', reference });
-const row = (id: number, paidOn: string | null, amountEur: number, kind: OutgoingRow['kind'] = 'kost'): OutgoingRow => ({ kind, id, paidOn, amountEur });
+const row = (id: number, paidOn: string | null, amountEur: number, kind: OutgoingRow['kind'] = 'kost', linkedLineId: number | null = null): OutgoingRow =>
+  ({ kind, id, paidOn, amountEur, linkedLineId });
 
-test('markers read "kost #id" and "containerbetaling #id", in any case and among other text', () => {
+test('markers read "kost #id", "kostbetaling #id" and "containerbetaling #id", in any case and among other text', () => {
   assert.equal(bankMarker('kost', 123), 'kost #123');
+  assert.equal(bankMarker('kostbetaling', 7), 'kostbetaling #7');
   assert.equal(bankMarker('containerbetaling', 456), 'containerbetaling #456');
   const found = lineMarkers([
     { id: 1, reference: 'F-2026-12 · kost #12' }, { id: 2, reference: 'Kost #3 en CONTAINERBETALING #44 samen' },
-    { id: 3, reference: 'geen marker' }, { id: 4, reference: null }, { id: 5, reference: 'onkost #9x' },
+    { id: 3, reference: 'geen marker' }, { id: 4, reference: null }, { id: 5, reference: 'onkost #9x' }, { id: 6, reference: 'KBC · kostbetaling #7' },
   ]);
   assert.deepEqual(found.get(1), [{ kind: 'kost', id: 12 }]);
   assert.deepEqual(found.get(2), [{ kind: 'kost', id: 3 }, { kind: 'containerbetaling', id: 44 }]);
+  assert.deepEqual(found.get(6), [{ kind: 'kostbetaling', id: 7 }]);
   assert.equal(found.has(3), false);
   assert.equal(found.has(4), false);
   assert.equal(found.has(5), false, 'the marker must stand on its own');
+});
+
+test('a hard link wins, whatever the amount, date or marker; a single payment also answers to its cost marker', () => {
+  const linked = row(7, '2026-09-10', 121, 'kostbetaling', 9);
+  const lines = [line(9, -1, '2026-01-01T10:00:00Z', 'iets anders'), line(10, -121, '2026-09-10T10:00:00Z', 'kostbetaling #7')];
+  assert.equal(matchOutgoings([linked], lines).get(linked)?.id, 9);
+  assert.deepEqual(unbankedOutgoings([linked], lines, '2026-09-01'), []);
+  const marked = row(7, '2026-09-10', 121, 'kostbetaling');
+  assert.equal(matchOutgoings([marked], lines).get(marked)?.id, 10, 'without the link the marker decides');
+  const legacy = { ...row(7, '2026-09-10', 121, 'kostbetaling'), legacyCostId: 12 };
+  assert.equal(matchOutgoings([legacy], [line(1, -99, '2026-01-01T10:00:00Z', 'Huur · kost #12')]).get(legacy)?.id, 1, 'an older line written for the cost');
+  assert.equal(matchOutgoings([{ ...legacy, legacyCostId: null }], [line(1, -99, '2026-01-01T10:00:00Z', 'Huur · kost #12')]).has(legacy), false);
+  const taken = row(8, '2026-09-10', 121, 'kostbetaling', 9);
+  const other = row(7, '2026-09-10', 121, 'kostbetaling');
+  assert.equal(matchOutgoings([taken, other], [line(9, -121, '2026-09-10T10:00:00Z', 'kostbetaling #7')]).has(other), false, 'a line taken by a hard link is not reused by the marker');
 });
 
 test('a marked outgoing line puts its row on the bank, whatever the amount or date', () => {

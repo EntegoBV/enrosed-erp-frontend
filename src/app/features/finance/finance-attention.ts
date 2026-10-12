@@ -12,7 +12,7 @@ export const OLD_RECEIVABLE_DAYS = 30;
 export const DOCUMENT_WINDOW_DAYS = 90;
 
 export type AttentionKind = 'container-due' | 'overdue-costs' | 'account-without-reading' | 'recurring-due' | 'unlinked-incoming'
-  | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document' | 'open-credits';
+  | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document' | 'open-credits' | 'unconfirmed-regimes';
 export type AttentionTone = 'danger' | 'warn' | 'info';
 /** What the row's button does directly; null means it just opens the target. */
 export type AttentionAction = 'book' | 'link' | 'check' | 'fill' | null;
@@ -35,8 +35,10 @@ export interface AttentionInput {
   today: string;
   /** Issued credit notes whose tegoed is not yet offset or refunded. */
   openCredits?: { count: number; eur: number };
-  /** Open company costs: their date and the amount incl. btw. */
-  openCosts: readonly { date: string; amountInclEur: number }[];
+  /** Open company costs: their date and what is still to pay. */
+  openCosts: readonly { date: string; openEur: number }[];
+  /** Costs of this year whose regime was only derived from the rate, or is unknown. */
+  unconfirmedRegimes: { count: number };
   dueNowCount: number;
   containerNow: { count: number; eur: number };
   /** Bank lines as recorded: only incoming ones without an invoice count. */
@@ -76,7 +78,7 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
   const overdue = input.openCosts.filter((cost) => days(cost.date, today) > OVERDUE_COST_DAYS);
   if (overdue.length) {
     const oldest = Math.max(...overdue.map((cost) => days(cost.date, today)));
-    add({ kind: 'overdue-costs', tone: 'danger', count: overdue.length, amountEur: eur(overdue.map((cost) => cost.amountInclEur)),
+    add({ kind: 'overdue-costs', tone: 'danger', count: overdue.length, amountEur: eur(overdue.map((cost) => cost.openEur)),
       title: `${overdue.length} open ${plural(overdue.length, 'kost', 'kosten')} ouder dan ${OVERDUE_COST_DAYS} dagen`,
       detail: `De oudste staat er al ${oldest} dagen`, action: null, actionLabel: 'Bekijken', target: { view: 'open', tab: 'costs' } });
   }
@@ -146,6 +148,13 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
     add({ kind: 'costs-without-document', tone: 'info', count: n, amountEur: null,
       title: `${n} ${plural(n, 'kost', 'kosten')} zonder factuur of bon`, detail: `Van de laatste ${DOCUMENT_WINDOW_DAYS} dagen`,
       action: null, actionLabel: 'Bekijken', target: { view: 'costs', docs: 'missing', from: since, to: today } });
+  }
+
+  if (input.unconfirmedRegimes.count > 0) {
+    const n = input.unconfirmedRegimes.count;
+    add({ kind: 'unconfirmed-regimes', tone: 'info', count: n, amountEur: null,
+      title: `${n} ${plural(n, 'kost', 'kosten')}: btw-regeling nog te bevestigen`, detail: 'Afgeleid uit het btw-percentage · bevestig of pas aan',
+      action: null, actionLabel: 'Bekijken', target: { view: 'costs', tab: 'company', period: 'year', regime: 'unconfirmed' } });
   }
 
   return items

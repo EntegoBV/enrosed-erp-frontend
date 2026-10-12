@@ -5,7 +5,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { elementWidth } from '../../shared/workspace-layout';
 import { categoryChoices } from './cost-categories';
-import { inclOf } from './finance-metrics';
+import { cashTotalOf } from './finance-metrics';
 import { FinanceSectionApi } from './finance-section';
 import { FINANCE_TABS, financeSection } from './finance-sections';
 import { FinanceState } from './finance-state';
@@ -86,7 +86,7 @@ export class FinanceToolbar {
   readonly title = computed(() => financeSection(this.state.location().view).label);
   readonly selected = computed(() => this.section()?.selectedCosts?.() ?? []);
   readonly selecting = computed(() => !!this.section()?.selecting?.() && this.selected().length > 0);
-  readonly selectedIncl = computed(() => Math.round(this.selected().reduce((sum, cost) => sum + inclOf(cost) * 100, 0)) / 100);
+  readonly selectedIncl = computed(() => Math.round(this.selected().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
 
   /** Counts on Te betalen; a warn dot (and its count) where a sidebar badge points: Vaste kosten due, lines to link. */
   readonly segments = computed<SegmentOption[]>(() => {

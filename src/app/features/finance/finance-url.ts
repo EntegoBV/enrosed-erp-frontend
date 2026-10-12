@@ -36,6 +36,10 @@ export interface FinanceLocation {
   purpose: FinancePurpose | '';
   /** Analyse: 'YYYY' or 'all'; '' is the current year. */
   year: string;
+  /** Analyse › Btw-aangifte: the quarter; '' is the last closed one. */
+  quarter: '' | '1' | '2' | '3' | '4';
+  /** Uitgaven › Bedrijfskosten: a regime code, or 'unconfirmed' for the derived and unknown ones. */
+  regime: string;
 }
 
 export const NO_ACCOUNT = '__none__';
@@ -48,10 +52,12 @@ export const TAB_IDS: Readonly<Record<FinanceView, readonly string[]>> = {
   incoming: ['open', 'received'],
   bank: ['accounts', 'movements'],
   costs: ['company', 'containers', 'recurring', 'lists'],
-  analysis: [],
+  analysis: ['costs', 'vat'],
 };
 const PERIODS: readonly FinancePeriod[] = ['month', 'quarter', 'year', 'lastYear', 'all'];
 const PURPOSES: readonly FinancePurpose[] = ['STANDARD', 'PARTNER_ADVANCE', 'PARTNER_SETTLEMENT'];
+/** The regime codes of finance-metrics VAT_REGIMES, as the address accepts them. */
+const REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FOREIGN_VAT', 'EXEMPT', 'OUT_OF_SCOPE', 'NO_INVOICE', 'IMPORT_VAT_PAID', 'unconfirmed']);
 
 type Field = Exclude<keyof FinanceLocation, 'view' | 'tab'>;
 
@@ -62,10 +68,11 @@ function honoured(view: FinanceView, tab: string): readonly Field[] {
     case 'incoming/open': return ['kind', 'q'];
     case 'incoming/received': return ['period', 'from', 'to', 'dir', 'purpose', 'account', 'q'];
     case 'bank/movements': return ['dir', 'link', 'account', 'period', 'from', 'to', 'q'];
-    case 'costs/company': return ['period', 'from', 'to', 'q', 'cat', 'status', 'channel', 'docs', 'cost'];
+    case 'costs/company': return ['period', 'from', 'to', 'q', 'cat', 'status', 'channel', 'docs', 'cost', 'regime'];
     case 'costs/containers': return ['container', 'scope', 'q'];
     case 'costs/lists': return ['q'];
-    case 'analysis/': return ['year'];
+    case 'analysis/costs': return ['year'];
+    case 'analysis/vat': return ['year', 'quarter'];
     default: return [];
   }
 }
@@ -84,7 +91,7 @@ export function defaultTab(view: FinanceView): string {
 
 export const DEFAULT_LOCATION: FinanceLocation = {
   view: 'overview', tab: '', period: '', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '',
-  container: null, cost: null, scope: '', account: '', dir: '', link: '', kind: '', purpose: '', year: '',
+  container: null, cost: null, scope: '', account: '', dir: '', link: '', kind: '', purpose: '', year: '', quarter: '', regime: '',
 };
 
 /** A positive safe integer id, or null ('0', '-1', '1e3', 'abc' are all refused). */
@@ -133,6 +140,11 @@ export function parseFinanceLocation(get: (key: string) => string | null): Finan
   location.purpose = PURPOSES.includes(purpose as FinancePurpose) ? purpose as FinancePurpose : '';
   const year = text('year');
   location.year = year === 'all' || /^\d{4}$/.test(year) ? year : '';
+  const quarter = text('quarter');
+  location.quarter = quarter === '1' || quarter === '2' || quarter === '3' || quarter === '4' ? quarter : '';
+  const regime = text('regime').trim();
+  const regimeCode = regime === 'unconfirmed' ? regime : regime.toUpperCase();
+  location.regime = REGIMES.has(regimeCode) ? regimeCode : '';
   location.container = allowed.has('container') ? container : null;
   location.cost = allowed.has('cost') ? cost : null;
 

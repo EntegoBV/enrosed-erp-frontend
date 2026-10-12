@@ -5,7 +5,7 @@ import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { categoryChoices } from './cost-categories';
-import { INTERVALS, addDays, inclOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, yearlyEur } from './finance-metrics';
+import { INTERVALS, addDays, cashTotalOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, yearlyEur } from './finance-metrics';
 import { blankRecurring } from './finance-sections';
 import { FinanceState } from './finance-state';
 import { PartyField } from './party-field';
@@ -30,7 +30,7 @@ import { VatChoice } from './vat-choice';
         <div class="fin-group" [class.ios-group]="!state.desk()">
           <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
             <app-vat-choice [value]="draft().vatPct" (changed)="patch({ vatPct: $event })" />
-            <span class="fin-hint">Incl. btw: {{ inclOf(draft()) | eur }}</span></div>
+            <span class="fin-hint">Incl. btw: {{ cashTotalOf(draft()) | eur }}</span></div>
           <div class="fin-field fin-field--wide fin-field--stack"><span class="req">Hoe vaak</span>
             <div class="fin-choice" role="group" aria-label="Ritme">
               @for (option of intervals; track option.code) {
@@ -97,7 +97,7 @@ export class RecurringSheet {
   readonly channels = computed(() => this.state.channelChoices().filter((channel) => channel.hint !== 'Beurs'));
   readonly fairs = computed(() => this.state.channelChoices().filter((channel) => channel.hint === 'Beurs'));
   readonly intervals = INTERVALS;
-  readonly inclOf = inclOf;
+  readonly cashTotalOf = cashTotalOf;
   readonly draft = linkedSignal<RecurringCost>(() => this.state.recurringDraft() ?? blankRecurring(this.state.today()));
   readonly customCategory = signal(false);
   readonly categories = computed(() => categoryChoices([...this.state.costs().map((cost) => cost.category), ...this.state.recurring().map((row) => row.category)]));

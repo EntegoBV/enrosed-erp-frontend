@@ -15,7 +15,7 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { FinancePeriod } from './finance-url';
-import { inclOf, vatOf } from './finance-metrics';
+import { COST_MONEY, cashTotalOf, returnVatOf } from './finance-metrics';
 
 type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
 
@@ -148,14 +148,14 @@ export class CostList implements FinanceSectionApi {
     }, this.state.categoryName, this.state.channelName).filter((row) => !location.channel || (row.cost?.salesChannel ?? '').toUpperCase() === location.channel);
   });
   readonly costs = computed(() => this.rows().map((row) => row.cost!));
-  readonly summary = computed(() => costSummary(this.costs()));
+  readonly summary = computed(() => costSummary(this.costs(), COST_MONEY));
   readonly sorted = computed(() => {
     const sort = this.sort();
     if (sort.key === 'date') return sortRows(this.rows(), (row) => row.date, sort.direction);
     return sortRows(this.rows(), (row) => {
       const cost = row.cost!;
       return sort.key === 'description' ? cost.description : sort.key === 'category' ? this.state.categoryName(cost.category)
-        : sort.key === 'excl' ? cost.amountExclEur : inclOf(cost);
+        : sort.key === 'excl' ? cost.amountExclEur : cashTotalOf(cost);
     }, sort.direction);
   });
   /** Month groups while sorted by date; one plain list otherwise. */
@@ -279,7 +279,7 @@ export class CostList implements FinanceSectionApi {
 
   private totalsOf(rows: readonly CostLedgerRow[]): { exclEur: number; vatEur: number; inclEur: number } {
     const sum = (value: (cost: CompanyCost) => number): number => Math.round(rows.reduce((total, row) => total + value(row.cost!) * 100, 0)) / 100;
-    return { exclEur: sum((cost) => cost.amountExclEur || 0), vatEur: sum(vatOf), inclEur: sum(inclOf) };
+    return { exclEur: sum((cost) => cost.amountExclEur || 0), vatEur: sum(returnVatOf), inclEur: sum(cashTotalOf) };
   }
 }
 

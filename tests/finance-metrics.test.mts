@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BankBalance, CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
 import {
-  addDays, bankOverview, cashOutlook, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
-  inclOf, largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, stepDate, topParties, upcomingRecurring, vatByQuarter, vatOf, yearComparison, yearlyEur,
+  addDays, bankOverview, cashOutlook, cashTotalOf, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
+  largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, returnVatOf, stepDate, topParties, upcomingRecurring, vatOf, yearComparison, yearlyEur,
 } from '../src/app/features/finance/finance-metrics.ts';
 
 function definition(input: Partial<RecurringCost> = {}): RecurringCost {
@@ -15,16 +15,30 @@ function definition(input: Partial<RecurringCost> = {}): RecurringCost {
 }
 
 function cost(input: Partial<CompanyCost> & { date: string; amountExclEur: number }): CompanyCost {
-  return { id: 1, category: 'HUUR', description: 'Huur', party: null, vatPct: 21, reference: null, paidOn: null, salesChannel: null, notes: null, ...input };
+  return { id: 1, category: 'HUUR', description: 'Huur', party: null, vatPct: 21, reference: null, paidOn: null, salesChannel: null, notes: null,
+    vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE', ...input } as CompanyCost;
 }
 
 test('an entered inclusive total wins over the rate, also in the CSV', () => {
-  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 100);
+  assert.equal(cashTotalOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 100);
   assert.equal(vatOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: 100 }), 17.36);
-  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21 }), 99.99);
-  assert.equal(inclOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: null }), 99.99);
+  assert.equal(cashTotalOf({ amountExclEur: 82.64, vatPct: 21 }), 99.99);
+  assert.equal(cashTotalOf({ amountExclEur: 82.64, vatPct: 21, amountInclEur: null }), 99.99);
   const line = costsCsv([cost({ id: 1, date: '2026-09-01', amountExclEur: 82.64, amountInclEur: 100 })], (code) => code).split('\r\n')[1];
-  assert.equal(line, '2026-09-01;HUUR;Huur;;;82,64;21,00;17,36;100,00;;;nee;');
+  assert.equal(line, '2026-09-01;HUUR;Huur;;;82,64;21,00;17,36;100,00;;;nee;België;BE;Diensten;100,00;100,00;;');
+});
+
+test('the CSV shows the VAT of the return and the cash the bank pays, with the regime columns', () => {
+  const lines = costsCsv([
+    cost({ id: 1, date: '2026-09-01', amountExclEur: 100, vatRegime: 'EU_SERVICES', supplierCountry: 'IE', description: 'Google Workspace', category: 'SOFTWARE' }),
+    cost({ id: 2, date: '2026-09-02', amountExclEur: 3000, costKind: 'INVESTMENT', depreciationYears: 3, vatDeductiblePct: 50, taxDeductiblePct: 100, description: 'Laptop' }),
+    cost({ id: 3, date: '2026-09-03', amountExclEur: 10, vatPct: 0, vatRegime: null, vatRegimeConfirmed: false, supplierCountry: null, description: 'Oud' }),
+  ], (code) => code).split('\r\n');
+  assert.equal(lines[0].split(';').slice(12).join(';'), 'Btw-regeling;Land;Soort;Btw aftrekbaar %;Fiscaal aftrekbaar %;Investering (jaren);Notities');
+  assert.equal(lines[1], '2026-09-01;SOFTWARE;Google Workspace;;;100,00;21,00;21,00;100,00;;;nee;EU · dienst;IE;Diensten;100,00;100,00;;', 'reverse charge: the VAT counts, the cash is excl.');
+  assert.equal(lines[2], '2026-09-02;HUUR;Laptop;;;3000,00;21,00;630,00;3630,00;;;nee;België;BE;Investering;50,00;100,00;3;');
+  assert.equal(lines[3], '2026-09-03;HUUR;Oud;;;10,00;0,00;0,00;10,00;;;nee;Nog te bepalen;;Diensten;100,00;100,00;;');
+  assert.equal(returnVatOf(cost({ date: '2026-09-01', amountExclEur: 100, vatRegime: 'FOREIGN_VAT', vatPct: 9 })), 0);
 });
 
 test('a monthly step is counted from the start, so the 31st comes back after February', () => {
@@ -180,8 +194,8 @@ test('the CSV uses semicolons and a decimal comma and quotes what would break a 
   ], (code) => code === 'HUUR' ? 'Huur & magazijn' : code);
   const lines = csv.split('\r\n');
   assert.equal(lines[0].split(';')[5], 'Bedrag excl. btw');
-  assert.equal(lines[1], '2026-09-01;Huur & magazijn;Huur;;;10,00;0,00;0,00;10,00;;;nee;');
-  assert.equal(lines[2], '2026-09-05;Huur & magazijn;Huur;"TICA; Trends & Trade";"F ""77""";1250,00;21,00;262,50;1512,50;;;ja;');
+  assert.equal(lines[1], '2026-09-01;Huur & magazijn;Huur;;;10,00;0,00;0,00;10,00;;;nee;België;BE;Diensten;100,00;100,00;;');
+  assert.equal(lines[2], '2026-09-05;Huur & magazijn;Huur;"TICA; Trends & Trade";"F ""77""";1250,00;21,00;262,50;1512,50;;;ja;België;BE;Diensten;100,00;100,00;;');
 });
 
 test('the bank rolls forward with what moved after the last reading, and not before it', () => {
@@ -210,7 +224,7 @@ test('the bank rolls forward with what moved after the last reading, and not bef
   assert.equal(none.currentEur, 0);
 });
 
-test('parties, largest costs and quarters read from the same list', () => {
+test('parties and largest costs read from the same list', () => {
   const costs = [
     cost({ id: 1, date: '2026-01-10', amountExclEur: 300, party: 'TICA' }),
     cost({ id: 2, date: '2026-04-10', amountExclEur: 100, party: 'TICA', vatPct: 6 }),
@@ -219,7 +233,4 @@ test('parties, largest costs and quarters read from the same list', () => {
   ];
   assert.deepEqual(topParties(costs, 2).map((row) => [row.party, row.exclEur, row.sharePct]), [['Vorig jaar', 900, 50], ['Zonder naam', 500, 27.78]]);
   assert.deepEqual(largestCosts(costs, 2).map((row) => row.id), [4, 3]);
-  const quarters = vatByQuarter(costs, 2026);
-  assert.deepEqual(quarters.map((row) => [row.label, row.count, row.exclEur, row.vatEur, row.inclEur]),
-      [['Q1', 1, 300, 63, 363], ['Q2', 2, 600, 111, 711], ['Q3', 0, 0, 0, 0], ['Q4', 0, 0, 0, 0]]);
 });

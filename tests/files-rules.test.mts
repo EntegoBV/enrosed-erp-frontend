@@ -143,15 +143,15 @@ test('whereLine says link or folder, never both, and nothing where the place say
   assert.deepEqual(whereLine(asset(3), FILES_HOME, folders), { kind: 'none', text: '' });
 });
 
-test('costTargetMeta: party, date and amount', () => {
+test('costTargetMeta: party, date and the cash total the caller computed', () => {
   const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(1234.5);
-  assert.equal(costTargetMeta({ party: 'Proximus', date: '2026-09-03', amountInclEur: 1234.5, amountExclEur: 1020 }), `Proximus · 03/09/2026 · ${euro}`);
-  assert.equal(costTargetMeta({ party: null, date: '2026-09-03', amountExclEur: 10 }).startsWith('03/09/2026 · '), true);
+  assert.equal(costTargetMeta({ party: 'Proximus', date: '2026-09-03' }, 1234.5), `Proximus · 03/09/2026 · ${euro}`);
+  assert.equal(costTargetMeta({ party: null, date: '2026-09-03' }, 10).startsWith('03/09/2026 · '), true);
   const total = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(12.1);
-  assert.equal(costTargetMeta({ party: null, date: '2026-09-03', amountExclEur: 10, vatPct: 21, amountInclEur: null }), `03/09/2026 · ${total}`,
-    'a cost entered excl. shows its invoice total, € 12,10');
+  assert.equal(costTargetMeta({ party: null, date: '2026-09-03' }, 12.1), `03/09/2026 · ${total}`, 'the files page passes cashTotalOf(cost): excl 10 @21 → € 12,10');
   assert.equal(total.endsWith('12,10'), true);
-  assert.equal(costTargetMeta({ party: ' ', date: null }), '');
+  assert.equal(costTargetMeta({ party: ' ', date: null }, null), '');
+  assert.equal(costTargetMeta({ party: 'Proximus', date: null }, Number.NaN), 'Proximus');
 });
 
 test('sorting loaded files, with a stable fallback', () => {

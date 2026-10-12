@@ -840,6 +840,24 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** The months of a period, oldest first; without bounds from the oldest to the newest day given, at most ten years. */
+function monthsOf(from: string | null, to: string | null, days: readonly string[]): string[] {
+  const sorted = days.filter((day) => isoDayOrNull(day)).sort();
+  const first = (from ?? sorted[0] ?? null)?.slice(0, 7) ?? null;
+  const last = (to ?? sorted.at(-1) ?? null)?.slice(0, 7) ?? null;
+  if (!first || !last || first > last) return [];
+  const months: string[] = [];
+  let [year, month] = first.split('-').map(Number);
+  for (let guard = 0; guard < 120; guard++) {
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    months.push(key);
+    if (key >= last) break;
+    month++;
+    if (month > 12) { month = 1; year++; }
+  }
+  return months;
+}
+
 /**
  * A partner-deal settlement: flagged by the server, or an older one-line
  * settlement that only carried a profit-share line. Kept local so this
@@ -1227,8 +1245,10 @@ export interface ResultAnalysis {
   goodsCostEur: number;
   marginEur: number;
   marginPct: number | null;
-  /** The company's own costs in the period, excluding VAT. */
+  /** The company's own costs charged to the period: expenses plus the depreciation of investments. */
   costsEur: number;
+  /** The part of costsEur that is depreciation. */
+  depreciationEur: number;
   unpaidCostsEur: number;
   /** Margin on the goods minus the company costs. */
   resultEur: number;
@@ -1245,32 +1265,53 @@ export interface ResultAnalysis {
 
 const DEAD_STATUSES = new Set<SalesOrderView['order']['status']>(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 
+/** What a cost charges a window with; the default counts its excl. amount when it was made in the window. */
+export type CostCharge = (cost: CompanyCost, from: string | null, to: string | null) => { expenseEur: number; depreciationEur: number };
+
+export interface ResultOptions {
+  from?: string | null;
+  to?: string | null;
+  /** The money rule of finance-metrics (costChargeIn): investments charge their depreciation, the rest their expense. */
+  costCharge?: CostCharge;
+  /** What is still to pay on a cost (openOf); without it the excl. amount plus VAT of costs without a paid date. */
+  openEur?: (cost: CompanyCost) => number;
+}
+
+const defaultCharge: CostCharge = (cost, from, to) => ({
+  expenseEur: (!from || cost.date >= from) && (!to || cost.date <= to) ? finiteNonNegative(cost.amountExclEur) : 0, depreciationEur: 0,
+});
+
 /**
  * What the company keeps: the margin on the goods invoiced in the period
  * minus what it spent on itself, per channel and per month. Sales are
- * counted when they were invoiced, costs when they were made.
+ * counted when they were invoiced, costs when they were made, and an
+ * investment by its depreciation of the period (the 'Afschrijvingen' row).
  */
 export function resultAnalysis(
   sales: readonly SalesOrderView[],
   purchases: readonly PurchaseOrderView[],
   costs: readonly CompanyCost[],
-  options: { from?: string | null; to?: string | null } = {},
+  options: ResultOptions = {},
 ): ResultAnalysis {
   const from = isoDayOrNull(options.from);
   const to = isoDayOrNull(options.to);
+  const charge = options.costCharge ?? defaultCharge;
   const inPeriod = (day: string | null | undefined): boolean =>
     !!day && (!from || day >= from) && (!to || day <= to);
   const invoices = sales.filter((row) => (row.order.docType === 'FACTUUR' || row.order.docType === 'CREDITNOTA') && row.order.status !== 'CONCEPT'
     && !DEAD_STATUSES.has(row.order.status) && inPeriod(row.order.orderDate));
   const periodCosts = costs.filter((cost) => inPeriod(cost.date));
+  /* Every cost may charge the period: an investment bought earlier still depreciates in it. */
+  const charges = costs.map((cost) => ({ cost, ...charge(cost, from, to) })).filter((row) => row.expenseEur !== 0 || row.depreciationEur !== 0);
   const received = purchases.filter((row) => row.order.status === 'ONTVANGEN' && inPeriod(row.order.receivedOn ?? null));
 
   const revenueEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0));
   const marginEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedProfitEur, 0));
   const goodsCostEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedCostEur, 0));
-  const costsEur = round2(periodCosts.reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur), 0));
-  const unpaidCostsEur = round2(periodCosts.filter((cost) => !cost.paidOn)
-    .reduce((sum, cost) => sum + finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100), 0));
+  const depreciationEur = round2(charges.reduce((sum, row) => sum + row.depreciationEur, 0));
+  const costsEur = round2(charges.reduce((sum, row) => sum + row.expenseEur, 0) + depreciationEur);
+  const unpaidCostsEur = round2(periodCosts.reduce((sum, cost) => sum + (options.openEur ? finiteNonNegative(options.openEur(cost))
+    : cost.paidOn ? 0 : finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100)), 0));
   const goodsTotal = invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0);
 
   const channels = new Map<string, ResultChannelRow>();
@@ -1286,19 +1327,23 @@ export function resultAnalysis(
     row.goodsCostEur = round2(row.goodsCostEur + documentAccounting(invoice).recognizedCostEur);
     row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
   }
-  for (const cost of periodCosts) {
+  for (const { cost, expenseEur, depreciationEur: depreciation } of charges) {
     if (!cost.salesChannel) continue;
     const row = channelRow(cost.salesChannel.trim().toUpperCase());
-    row.costsEur = round2(row.costsEur + finiteNonNegative(cost.amountExclEur));
+    row.costsEur = round2(row.costsEur + expenseEur + depreciation);
   }
   const byChannel = [...channels.values()]
     .map((row) => ({ ...row, resultEur: round2(row.marginEur - row.costsEur) }))
     .sort((left, right) => right.revenueEur - left.revenueEur || left.channel.localeCompare(right.channel));
 
+  /* An investment leaves its category to the 'Afschrijvingen' row; its expense is 0 under the real charge. */
   const categories = new Map<string, number>();
-  for (const cost of periodCosts) {
-    const key = (cost.category ?? '').trim().toUpperCase() || 'ANDERE';
-    categories.set(key, round2((categories.get(key) ?? 0) + finiteNonNegative(cost.amountExclEur)));
+  for (const { cost, expenseEur, depreciationEur: depreciation } of charges) {
+    if (expenseEur !== 0 || cost.costKind !== 'INVESTMENT') {
+      const key = (cost.category ?? '').trim().toUpperCase() || 'ANDERE';
+      categories.set(key, round2((categories.get(key) ?? 0) + expenseEur));
+    }
+    if (depreciation !== 0) categories.set('AFSCHRIJVINGEN', round2((categories.get('AFSCHRIJVINGEN') ?? 0) + depreciation));
   }
   const byCategory = [...categories.entries()]
     .map(([category, amountEur]) => ({ category, amountEur, sharePct: costsEur > 0 ? round2(amountEur / costsEur * 100) : 0 }))
@@ -1315,9 +1360,18 @@ export function resultAnalysis(
     row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
     row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
   }
-  for (const cost of periodCosts) {
-    const row = monthRow(cost.date.slice(0, 7));
-    row.costsEur = round2(row.costsEur + finiteNonNegative(cost.amountExclEur));
+  /* Each month takes its own charge: the expenses made in it and the depreciation it carries. */
+  for (const cost of periodCosts) monthRow(cost.date.slice(0, 7));
+  for (const month of monthsOf(from, to, [...invoices.map((row) => row.order.orderDate), ...charges.map((row) => row.cost.date)])) {
+    const [year, index] = month.split('-').map(Number);
+    const monthFrom = `${month}-01`;
+    const monthTo = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, '0')}`;
+    for (const { cost } of charges) {
+      const part = charge(cost, from && from > monthFrom ? from : monthFrom, to && to < monthTo ? to : monthTo);
+      if (part.expenseEur === 0 && part.depreciationEur === 0) continue;
+      const row = monthRow(month);
+      row.costsEur = round2(row.costsEur + part.expenseEur + part.depreciationEur);
+    }
   }
   const monthly = [...months.values()]
     .map((row) => ({ ...row, resultEur: round2(row.marginEur - row.costsEur) }))
@@ -1331,6 +1385,7 @@ export function resultAnalysis(
     marginEur,
     marginPct: goodsTotal > 0 ? round2(marginEur / goodsTotal * 100) : null,
     costsEur,
+    depreciationEur,
     unpaidCostsEur: round2(unpaidCostsEur),
     resultEur: round2(marginEur - costsEur),
     purchasedEur: round2(received.reduce((sum, row) => sum + finiteNonNegative(row.reconciliation?.totals.forecastExternalEur

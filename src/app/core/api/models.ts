@@ -1457,6 +1457,8 @@ export interface PurchaseOrder {
   /** When the container is expected; drives "te verwachten" on the products. */
   expectedArrival?: string | null;
   receivedOn?: string | null;
+  /** Where the container is cleared; null = 'te bevestigen' (the screen suggests one from the destination port). */
+  clearance?: Clearance | null;
   /** What was actually paid for the whole order; sometimes differs from the sum. */
   paidTotalEur?: number | null;
   /** Whether the received pieces were booked into stock; null on old orders = yes if received. */
@@ -2402,6 +2404,8 @@ export interface CompanyProfile {
   partnerInvoiceNextNumber?: number | null;
   /** CN gives CN-2026-0001; one series for standard and partner credit notes. */
   creditNoteNumberPrefix?: string | null;
+  /** ET 14000 licence: import VAT of containers cleared in Belgium is self-assessed (87/57/59) instead of paid at customs. */
+  importVatDeferred?: boolean | null;
 }
 
 /** One step in the life of a quote. */
@@ -2605,6 +2609,29 @@ export interface AuctionSettlementRequest {
   note: string | null;
 }
 
+/** How the VAT on a cost is treated in the Belgian return; null on backfilled 0 % rows means 'Nog te bepalen'. */
+export type VatRegime = 'BE' | 'EU_GOODS' | 'EU_SERVICES' | 'NON_EU_SERVICES' | 'FOREIGN_VAT' | 'EXEMPT' | 'OUT_OF_SCOPE' | 'NO_INVOICE' | 'IMPORT_VAT_PAID';
+/** Which base grid a cost feeds: 81 goods, 82 services, 83 investments (depreciated). */
+export type CostKind = 'GOODS' | 'SERVICES' | 'INVESTMENT';
+/** A deductibility preset: the VAT and tax percentages it stands for live in finance-metrics EXPENSE_PRESETS. */
+export type ExpenseType = 'STANDARD' | 'RESTAURANT' | 'RECEPTION' | 'GIFT' | 'CAR' | 'MIXED' | 'CUSTOM';
+/** Where a container is cleared, which decides how its import VAT enters the return. */
+export type Clearance = 'BE_CUSTOMS' | 'NL_FISCAL_REP_TO_BE' | 'NL_FISCAL_REP_SOLD_IN_NL';
+
+/** One payment on a cost; a cost is paid once its payments reach the cash total. */
+export interface CostPayment {
+  id: number | null;
+  companyCostId?: number;
+  paidOn: string;
+  amountEur: number;
+  account: string | null;
+  /** The bank line this payment was noted on, once linked. */
+  bankStatementLineId: number | null;
+  note: string | null;
+  recordedAt?: string;
+  actor?: string | null;
+}
+
 /** A cost the company made outside purchasing, booked by date and category, excluding VAT. */
 export interface CompanyCost {
   id: number | null;
@@ -2628,6 +2655,24 @@ export interface CompanyCost {
   recurringCostId?: number | null;
   /** The bank line that paid this cost, once it was noted on the bank. */
   bankStatementLineId?: number | null;
+  /** The VAT treatment; false while it was only derived from the rate (the backfill), null when unknown. */
+  vatRegime: VatRegime | null;
+  vatRegimeConfirmed: boolean;
+  /** ISO 3166 code of the supplier's country. */
+  supplierCountry: string | null;
+  costKind: CostKind | null;
+  expenseType: ExpenseType | null;
+  /** 0–100; null reads 100. */
+  vatDeductiblePct: number | null;
+  taxDeductiblePct: number | null;
+  /** Investments only: the useful life and the day depreciation starts (defaults to the cost date). */
+  depreciationYears: number | null;
+  depreciationStart: string | null;
+  /** Server-computed; absent on older responses and blank drafts. */
+  payments?: CostPayment[];
+  paidEur?: number;
+  openEur?: number;
+  cashTotalEur?: number;
 }
 
 /** A name in the "Aan wie" list: whom the company pays, with the defaults a new cost to that name takes. */
@@ -2639,6 +2684,10 @@ export interface CostParty {
   /** A built-in channel or a fair code. */
   salesChannel: string | null;
   iban: string | null;
+  /** ISO 3166 code, the VAT number as cleaned by the server, and the regime learned from the first confirmed cost. */
+  country: string | null;
+  vatNumber: string | null;
+  vatRegime: VatRegime | null;
   createdAt?: string | null;
 }
 
@@ -2676,6 +2725,14 @@ export interface RecurringCost {
   notes: string | null;
   lastBookedOn?: string | null;
   createdAt?: string | null;
+  /** The regime and deductibility every booked cost inherits (confirmed); no depreciation on a recurring cost. */
+  vatRegime: VatRegime | null;
+  vatRegimeConfirmed: boolean;
+  supplierCountry: string | null;
+  costKind: CostKind | null;
+  expenseType: ExpenseType | null;
+  vatDeductiblePct: number | null;
+  taxDeductiblePct: number | null;
 }
 
 /** What an account held on a day, typed over from the bank. */

@@ -6,7 +6,7 @@ import { categoryLabel } from './cost-categories';
 import { costSummary } from './cost-metrics';
 import { CONTAINER_PAYMENT_CATEGORIES, costLedgerTotals, missingDocument } from './cost-ledger';
 import { dayMonth } from './finance-format';
-import { largestCosts, monthlyCostSeries, topParties, vatByQuarter, yearComparison } from './finance-metrics';
+import { COST_MONEY, cashTotalOf, largestCosts, monthlyCostSeries, quarterOf, returnVatOf, topParties, yearComparison } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import { FinanceState, formatEuro } from './finance-state';
 
@@ -161,7 +161,7 @@ export class CostAnalysis implements FinanceSectionApi {
     const today = this.state.today();
     return this.state.costs().filter((cost) => year === 0 || (cost.date.startsWith(`${year}-`) && (year !== this.thisYear() || cost.date <= today)));
   });
-  readonly summary = computed(() => costSummary(this.rows()));
+  readonly summary = computed(() => costSummary(this.rows(), COST_MONEY));
   readonly monthsCounted = computed(() => this.summary().byMonth.filter((row) => row.exclEur > 0).length);
   readonly perMonth = computed(() => (this.monthsCounted() ? round2(this.summary().exclEur / this.monthsCounted()) : 0));
   readonly containerRows = computed(() => this.state.ledger().filter((row) => row.source === 'container'
@@ -212,11 +212,17 @@ export class CostAnalysis implements FinanceSectionApi {
     ];
   });
   readonly largest = computed(() => largestCosts(this.rows(), 8));
-  readonly quarters = computed(() => vatByQuarter(this.state.costs(), this.year()).map((row) => ({
-    ...row,
-    missing: this.state.costs().filter((cost) => cost.date.startsWith(`${this.year()}-`) && Math.floor((Number(cost.date.slice(5, 7)) - 1) / 3) + 1 === row.quarter
-      && missingDocument(cost, this.state.documentedIds())).length,
-  })));
+  /* The four quarters as the return counts them: the VAT it shows and the cash paid (the card becomes links to the Btw-aangifte). */
+  readonly quarters = computed(() => [1, 2, 3, 4].map((quarter) => {
+    const costs = this.state.costs().filter((cost) => quarterOf(cost.date).year === this.year() && quarterOf(cost.date).quarter === quarter);
+    return {
+      quarter, label: `Q${quarter}`, count: costs.length,
+      exclEur: round2(costs.reduce((sum, cost) => sum + (Number.isFinite(cost.amountExclEur) ? cost.amountExclEur : 0), 0)),
+      vatEur: round2(costs.reduce((sum, cost) => sum + returnVatOf(cost), 0)),
+      inclEur: round2(costs.reduce((sum, cost) => sum + cashTotalOf(cost), 0)),
+      missing: costs.filter((cost) => missingDocument(cost, this.state.documentedIds())).length,
+    };
+  }));
   readonly quartersTotal = computed(() => ({
     exclEur: round2(this.quarters().reduce((sum, row) => sum + row.exclEur, 0)),
     vatEur: round2(this.quarters().reduce((sum, row) => sum + row.vatEur, 0)),

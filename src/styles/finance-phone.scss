@@ -54,6 +54,23 @@
       &:active { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); } }
     .fin-amount-mode { display: grid; }
     .fin-fair-add > .ios-capsule { flex: none; }
+    /* the Btw-regeling disclosure sits in the inset group as one 48px row; open, its fields follow the inset-group rule */
+    .fin-group > .fin-disclosure { border: 0; border-radius: 0; background: transparent;
+      > summary { min-height: var(--ios-row); padding: 8px 16px; > span { font-size: 16px; font-weight: 400; } > small { font-size: 13px; } }
+      > .fin-disclosure__body { gap: 0; padding: 0; }
+      > .fin-disclosure__body > .fin-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; position: relative; min-height: var(--ios-row); padding: 4px 16px; font-size: 16px;
+        &::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep); }
+        > span:first-child { flex: none; max-width: 48%; color: var(--ink); font-size: 16px; font-weight: 400; }
+        > .input, > .select, > app-date-field { flex: 1; min-width: 0; }
+        > .input, > .select, app-date-field .input { min-height: 44px; padding: 0; border: 0; border-radius: 0; background-color: transparent; box-shadow: none; text-align: right; text-align-last: right; }
+        > .select { padding-right: 18px; background-position: right 2px center; }
+        > .fin-hint, > .fin-choice, > app-segmented { flex-basis: 100%; }
+        > .fin-hint { padding-bottom: 6px; } } }
+    .fin-payment { grid-template-columns: 76px auto minmax(0, 1fr) 24px 44px; min-height: 44px; font-size: 15px; }
+    .fin-payment__menu { width: 44px; height: 44px; }
+    .fin-vat__value { font-size: 30px; }
+    .fin-vat__row { grid-template-columns: 72px minmax(0, 1fr) 92px; min-height: 44px; font-size: 14px; i { display: none; } }
+    .fin-vat__badges { display: flex; margin: 2px 0 0; }
     .fin-group .fin-field-row { display: grid; gap: 0; }
     .fin-group .fin-field-row > .fin-field + .fin-field { position: relative;
       &::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep); } }

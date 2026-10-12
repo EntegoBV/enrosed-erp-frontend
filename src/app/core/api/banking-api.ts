@@ -8,6 +8,8 @@ export interface BankMovementRequest {
   timeZone: string; reference: string | null; counterparty: string | null; requestId: string;
   /** The container payments and the cost this line pays; the server links them in the same transaction. */
   purchasePaymentIds?: number[]; companyCostId?: number | null;
+  /** The cost payment this line covers; wins over companyCostId. */
+  costPaymentId?: number | null;
 }
 export interface BankMatch { salesOrderId: number; number: string; openEur: number; score: number; existingPaymentId: number | null; reason: string; receivedAt: string | null; reference: string | null; }
 export interface BankStatementLine {

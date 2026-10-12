@@ -30,7 +30,7 @@ export const FINANCE_SECTIONS: readonly FinanceSection[] = [
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true },
   { id: 'bank', label: 'Bank', short: 'Bank', group: 'Geld', icon: 'bank', hint: 'Klopt mijn banksaldo?', phoneTab: true },
   { id: 'costs', label: 'Uitgaven', short: 'Uitgaven', group: 'Boekhouding', icon: 'receipt', hint: 'Waaraan geven we geld uit?', phoneTab: true },
-  { id: 'analysis', label: 'Analyse', short: 'Analyse', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, btw per kwartaal', phoneTab: false },
+  { id: 'analysis', label: 'Analyse', short: 'Analyse', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
 ];
 
 export const FINANCE_GROUPS: readonly FinanceGroup[] = ['Vandaag', 'Geld', 'Boekhouding'];
@@ -67,7 +67,10 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
     { id: 'lists', label: 'Aan wie & beurzen', short: 'Lijsten' },
   ],
-  analysis: [],
+  analysis: [
+    { id: 'costs', label: 'Kosten', short: 'Kosten' },
+    { id: 'vat', label: 'Btw-aangifte', short: 'Btw' },
+  ],
 };
 
 export function financeSection(view: FinanceView): FinanceSection {
@@ -102,17 +105,20 @@ export function periodRange(id: PeriodId, today: string): { from: string; to: st
   }
 }
 
+/** A new cost starts as a Belgian invoice, fully deductible; the kind follows the category until the form says otherwise. */
 export function blankCost(today: string): CompanyCost {
-  return { id: null, date: today, category: 'ANDERE', description: '', party: '', amountExclEur: 0, amountInclEur: null, vatPct: 21, reference: '', paidOn: null, salesChannel: null, notes: '', recurringCostId: null };
+  return { id: null, date: today, category: 'ANDERE', description: '', party: '', amountExclEur: 0, amountInclEur: null, vatPct: 21, reference: '', paidOn: null, salesChannel: null, notes: '', recurringCostId: null,
+    vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE', costKind: null, expenseType: 'STANDARD', vatDeductiblePct: 100, taxDeductiblePct: 100, depreciationYears: null, depreciationStart: null };
 }
 
 export function blankRecurring(today: string): RecurringCost {
-  return { id: null, name: '', category: 'HUUR', party: '', amountExclEur: 0, vatPct: 21, salesChannel: null, interval: 'MONTHLY', startDate: today, endDate: null, active: true, autoPaid: false, reference: '', notes: '' };
+  return { id: null, name: '', category: 'HUUR', party: '', amountExclEur: 0, vatPct: 21, salesChannel: null, interval: 'MONTHLY', startDate: today, endDate: null, active: true, autoPaid: false, reference: '', notes: '',
+    vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE', costKind: null, expenseType: 'STANDARD', vatDeductiblePct: 100, taxDeductiblePct: 100 };
 }
 
 /** A new name for the Aan wie list, without defaults until the sheet sets them. */
 export function blankCostParty(name = ''): CostParty {
-  return { id: null, name, category: null, vatPct: null, salesChannel: null, iban: null };
+  return { id: null, name, category: null, vatPct: null, salesChannel: null, iban: null, country: null, vatNumber: null, vatRegime: null };
 }
 
 /** A new fair; the server derives the code from the label. */

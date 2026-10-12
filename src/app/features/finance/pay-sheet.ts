@@ -4,7 +4,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { dayMonthYear } from './finance-format';
-import { addDays, inclOf } from './finance-metrics';
+import { addDays, cashTotalOf } from './finance-metrics';
 import { FinanceState } from './finance-state';
 
 type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
@@ -58,7 +58,7 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
 export class PaySheet {
   readonly state = inject(FinanceState);
   readonly costs = computed(() => this.state.paySheet()?.costs ?? []);
-  readonly total = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + inclOf(cost) * 100, 0)) / 100);
+  readonly total = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
   private readonly preference = this.state.payToBank();
   readonly choice = signal<PaidChoice>('today');
   readonly otherDay = signal(this.state.today());

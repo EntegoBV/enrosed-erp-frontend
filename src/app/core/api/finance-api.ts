@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import { BankBalance, CompanyCost, CostParty, Fair, RecurringCost } from './models';
+import { BankBalance, CompanyCost, CostParty, CostPayment, Fair, RecurringCost } from './models';
 
 /** The company's own money: costs, the recurring ones the server books, and what the bank holds. */
 @Injectable({ providedIn: 'root' })
@@ -24,13 +24,31 @@ export class FinanceApi {
     return firstValueFrom(this.http.put<CompanyCost>(api(`/api/costs/${id}`), cost));
   }
 
-  /** Settles an open cost; no day means today. */
+  /** Pays what is still open on a cost as one payment; no day means today. The response carries the payments. */
   markCostPaid(id: number, paidOn?: string | null): Promise<CompanyCost> {
     return firstValueFrom(this.http.post<CompanyCost>(api(`/api/costs/${id}/paid`), { paidOn: paidOn ?? null }));
   }
 
   deleteCost(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/costs/${id}`)));
+  }
+
+  /* The payments on a cost: each call that changes them returns the cost with its payments and open amount. */
+  costPayments(costId: number): Promise<CostPayment[]> {
+    return firstValueFrom(this.http.get<CostPayment[]>(api(`/api/costs/${costId}/payments`)));
+  }
+
+  addCostPayment(costId: number, body: { paidOn: string; amountEur: number; account?: string | null; note?: string | null }): Promise<CompanyCost> {
+    return firstValueFrom(this.http.post<CompanyCost>(api(`/api/costs/${costId}/payments`), body));
+  }
+
+  updateCostPayment(costId: number, paymentId: number, body: { paidOn: string; amountEur: number; account?: string | null; note?: string | null }): Promise<CompanyCost> {
+    return firstValueFrom(this.http.put<CompanyCost>(api(`/api/costs/${costId}/payments/${paymentId}`), body));
+  }
+
+  /** The bank line the payment was on stays; the cost comes back with the payments left. */
+  deleteCostPayment(costId: number, paymentId: number): Promise<CompanyCost> {
+    return firstValueFrom(this.http.delete<CompanyCost>(api(`/api/costs/${costId}/payments/${paymentId}`)));
   }
 
   recurringCosts(): Promise<RecurringCost[]> {

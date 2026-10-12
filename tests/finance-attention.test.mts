@@ -7,7 +7,7 @@ import type { AttentionInput } from '../src/app/features/finance/finance-attenti
 
 const clear: AttentionInput = {
   today: '2026-09-24', openCosts: [], dueNowCount: 0, containerNow: { count: 0, eur: 0 }, bankLines: [],
-  receiptsWithoutAccount: { count: 0, eur: 0 }, accounts: [], unbanked: { count: 0, eur: 0 }, costs: [], receivables: [],
+  receiptsWithoutAccount: { count: 0, eur: 0 }, accounts: [], unbanked: { count: 0, eur: 0 }, costs: [], receivables: [], unconfirmedRegimes: { count: 0 },
 };
 const kinds = (input: Partial<AttentionInput>) => financeAttention({ ...clear, ...input }).map((item) => item.kind);
 
@@ -28,13 +28,13 @@ test('an all-clear day asks for nothing', () => {
 });
 
 test('old costs count only when strictly older than 30 days', () => {
-  assert.deepEqual(kinds({ openCosts: [{ date: '2026-08-25', amountInclEur: 10 }] }), [], 'exactly 30 days');
-  const [item] = financeAttention({ ...clear, openCosts: [{ date: '2026-08-24', amountInclEur: 10 }, { date: '2026-08-01', amountInclEur: 5.5 }] });
+  assert.deepEqual(kinds({ openCosts: [{ date: '2026-08-25', openEur: 10 }] }), [], 'exactly 30 days');
+  const [item] = financeAttention({ ...clear, openCosts: [{ date: '2026-08-24', openEur: 10 }, { date: '2026-08-01', openEur: 5.5 }] });
   assert.equal(item.kind, 'overdue-costs');
   assert.equal(item.tone, 'danger');
   assert.equal(item.title, '2 open kosten ouder dan 30 dagen');
-  assert.equal(item.amountEur, 15.5);
-  assert.equal(financeAttention({ ...clear, openCosts: [{ date: '2026-08-01', amountInclEur: 5 }] })[0].title, '1 open kost ouder dan 30 dagen');
+  assert.equal(item.amountEur, 15.5, 'what is still open, not the invoice total');
+  assert.equal(financeAttention({ ...clear, openCosts: [{ date: '2026-08-01', openEur: 5 }] })[0].title, '1 open kost ouder dan 30 dagen');
 });
 
 test('a reading goes stale after 14 days; accounts without one ask for a balance', () => {
@@ -64,7 +64,7 @@ test('receivables count after 30 days, documents only within 90 days and never f
 
 test('"kosten zonder factuur of bon" counts exactly the rows its Bekijken opens', () => {
   const base: CompanyCost = { id: 1, date: '2026-09-01', category: 'HUUR', description: 'Huur', party: null, amountExclEur: 100, vatPct: 21,
-    reference: null, paidOn: null, salesChannel: null, notes: null, recurringCostId: null };
+    reference: null, paidOn: null, salesChannel: null, notes: null, recurringCostId: null } as CompanyCost;
   const costs: CompanyCost[] = [
     base, { ...base, id: 2, date: '2026-08-15' }, { ...base, id: 3, recurringCostId: 9 }, { ...base, id: 4, recurringCostId: 9, date: '2026-08-01' },
     { ...base, id: 5 }, { ...base, id: 6, date: '2026-05-01' }, { ...base, id: 7, date: '2026-10-01' },
@@ -73,7 +73,7 @@ test('"kosten zonder factuur of bon" counts exactly the rows its Bekijken opens'
   const [item] = financeAttention({ ...clear, costs: costs.map((cost) => ({ date: cost.date, recurringCostId: cost.recurringCostId, documented: documented.has(cost.id!) })) });
   assert.equal(item.kind, 'costs-without-document');
   const target = item.target as { from: string; to: string; docs: 'missing' };
-  const listed = filterCostLedger(costLedger(costs, []), { from: target.from, to: target.to, docs: target.docs, documentedIds: documented, source: 'company' });
+  const listed = filterCostLedger(costLedger(costs, [], (cost) => cost.amountExclEur), { from: target.from, to: target.to, docs: target.docs, documentedIds: documented, source: 'company' });
   assert.equal(item.count, listed.length);
   assert.deepEqual(listed.map((row) => row.key).sort(), ['cost:1', 'cost:2']);
 });
@@ -91,11 +91,22 @@ test('only incoming bank lines without an invoice wait to be linked', () => {
 
 test('danger first, then warnings, then information; bigger amounts first within a tone', () => {
   const items = financeAttention({ ...clear, dueNowCount: 1, containerNow: { count: 2, eur: 900 },
-    openCosts: [{ date: '2026-01-01', amountInclEur: 20 }], unbanked: { count: 1, eur: 40 },
+    openCosts: [{ date: '2026-01-01', openEur: 20 }], unbanked: { count: 1, eur: 40 },
     receiptsWithoutAccount: { count: 3, eur: 60 }, bankLines: [{ amountEur: 1500, salesPaymentId: null }] });
   assert.deepEqual(items.map((item) => item.kind),
     ['overdue-costs', 'unlinked-incoming', 'container-due', 'recurring-due', 'receipts-without-account', 'unbanked-payments']);
   assert.deepEqual(items.map((item) => item.tone), ['danger', 'warn', 'warn', 'warn', 'info', 'info']);
+});
+
+test('derived or unknown regimes ask for a confirmation, after the documents, with the filtered list as target', () => {
+  const items = financeAttention({ ...clear, unconfirmedRegimes: { count: 3 }, costs: [{ date: '2026-09-01', documented: false }] });
+  assert.deepEqual(items.map((item) => item.kind), ['costs-without-document', 'unconfirmed-regimes']);
+  const [, item] = items;
+  assert.deepEqual([item.tone, item.count, item.amountEur, item.action, item.actionLabel], ['info', 3, null, null, 'Bekijken']);
+  assert.equal(item.title, '3 kosten: btw-regeling nog te bevestigen');
+  assert.equal(item.detail, 'Afgeleid uit het btw-percentage · bevestig of pas aan');
+  assert.deepEqual(item.target, { view: 'costs', tab: 'company', period: 'year', regime: 'unconfirmed' });
+  assert.equal(financeAttention({ ...clear, unconfirmedRegimes: { count: 1 } })[0].title, '1 kost: btw-regeling nog te bevestigen');
 });
 
 test('singular and plural wording', () => {

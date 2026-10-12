@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  FINANCE_SECTIONS, FINANCE_TABS, blankBalance, blankCost, blankRecurring, financeSection, localIsoDay, periodRange,
+  FINANCE_SECTIONS, FINANCE_TABS, blankBalance, blankCost, blankCostParty, blankRecurring, financeSection, localIsoDay, periodRange,
 } from '../src/app/features/finance/finance-sections.ts';
 
 test('today follows the local calendar, also a minute either side of midnight', () => {
@@ -44,5 +44,18 @@ test('six sections, five of them on the phone tab bar, in groups', () => {
   assert.deepEqual([...new Set(FINANCE_SECTIONS.map((section) => section.group))], ['Vandaag', 'Geld', 'Boekhouding']);
   assert.equal(financeSection('bank').label, 'Bank');
   assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Cont.', 'Vast', 'Lijsten']);
+  assert.deepEqual(FINANCE_TABS.analysis.map((tab) => [tab.id, tab.label, tab.short]), [['costs', 'Kosten', 'Kosten'], ['vat', 'Btw-aangifte', 'Btw']]);
+  assert.equal(financeSection('analysis').hint, 'Per categorie, per maand, de btw-aangifte');
   assert.equal(blankCost('2026-10-02').amountInclEur, null, 'a new cost is entered excl. btw until the form says otherwise');
+});
+
+test('a new cost starts as a confirmed Belgian invoice, fully deductible; a recurring cost and a party alike', () => {
+  const cost = blankCost('2026-10-02');
+  assert.deepEqual([cost.vatRegime, cost.vatRegimeConfirmed, cost.supplierCountry, cost.costKind, cost.expenseType, cost.vatDeductiblePct, cost.taxDeductiblePct, cost.depreciationYears, cost.depreciationStart],
+    ['BE', true, 'BE', null, 'STANDARD', 100, 100, null, null]);
+  const recurring = blankRecurring('2026-10-02');
+  assert.deepEqual([recurring.vatRegime, recurring.vatRegimeConfirmed, recurring.supplierCountry, recurring.costKind, recurring.expenseType, recurring.vatDeductiblePct, recurring.taxDeductiblePct],
+    ['BE', true, 'BE', null, 'STANDARD', 100, 100]);
+  const party = blankCostParty('Google');
+  assert.deepEqual([party.name, party.country, party.vatNumber, party.vatRegime], ['Google', null, null, null]);
 });

@@ -11,7 +11,7 @@ import { Sheet } from '../../shared/ui';
 import { SALES_CHANNELS } from '../sales/sales-channels';
 import { exclFromIncl } from './cost-amount';
 import { categoryChoices } from './cost-categories';
-import { inclOf, vatOf } from './finance-metrics';
+import { cashTotalOf, vatOf } from './finance-metrics';
 import { blankCost } from './finance-sections';
 import { FinanceState, PartyPrefill } from './finance-state';
 import { PartyField } from './party-field';
@@ -52,7 +52,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
             @if (mode() === 'incl') {
               <span class="fin-hint">Excl. btw: <b>{{ draft().amountExclEur | eur }}</b> · btw <b>{{ vatOf(draft()) | eur }}</b></span>
             } @else {
-              <span class="fin-hint">Incl. btw: <b>{{ inclOf(draft()) | eur }}</b></span>
+              <span class="fin-hint">Incl. btw: <b>{{ cashTotalOf(draft()) | eur }}</b></span>
             }</div>
         </div>
         <div class="fin-group" [class.ios-group]="!state.desk()">
@@ -186,7 +186,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
 })
 export class CostSheet {
   readonly state = inject(FinanceState);
-  readonly inclOf = inclOf;
+  readonly cashTotalOf = cashTotalOf;
   readonly vatOf = vatOf;
   readonly modes: SegmentOption[] = [{ id: 'excl', label: 'Excl. btw' }, { id: 'incl', label: 'Incl. btw' }];
   readonly draft = linkedSignal<CompanyCost>(() => this.state.costDraft() ?? blankCost(this.state.today()));
@@ -289,7 +289,7 @@ export class CostSheet {
   setMode(mode: AmountMode): void {
     if (mode === this.mode()) return;
     const draft = this.draft();
-    if (mode === 'incl') this.patch({ amountInclEur: draft.amountExclEur > 0 ? inclOf(draft) : null });
+    if (mode === 'incl') this.patch({ amountInclEur: draft.amountExclEur > 0 ? cashTotalOf(draft) : null });
     else this.patch({ amountInclEur: null });
     this.mode.set(mode);
   }

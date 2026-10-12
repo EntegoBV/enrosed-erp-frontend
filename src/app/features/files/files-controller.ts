@@ -17,6 +17,7 @@ import { ActivityEvent, DocumentKind } from '../../core/api/models';
 import { PlannerApi } from '../../core/api/planner-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { cashTotalOf } from '../finance/finance-metrics';
 import type { ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { WK_DOCK_MIN_PX } from '../../shared/workspace-layout';
@@ -1760,7 +1761,7 @@ export class FilesController {
         case 'COMPANY_COST':
           options = (await this.finance.costs()).filter((cost) => cost.id !== null)
             .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.id ?? 0) - (a.id ?? 0)))
-            .map((cost) => ({ id: cost.id!, label: cost.description || cost.category, meta: costTargetMeta(cost) }));
+            .map((cost) => ({ id: cost.id!, label: cost.description || cost.category, meta: costTargetMeta(cost, cashTotalOf(cost)) }));
           break;
         case 'PLANNER_ITEM':
           options = (await this.planner.list()).filter((item) => item.id !== null)

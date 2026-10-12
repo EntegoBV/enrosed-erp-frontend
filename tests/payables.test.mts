@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CompanyCost, PurchaseOrderView, PurchaseReconciliationStream, RecurringCost } from '../src/app/core/api/models.ts';
 import { containerPayables, payableTotals, payablesFor } from '../src/app/features/finance/payables.ts';
-import type { ContainerPayable } from '../src/app/features/finance/payables.ts';
+import type { ContainerPayable, OpenCost } from '../src/app/features/finance/payables.ts';
 
 type Status = 'CONCEPT' | 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
 
@@ -68,14 +68,22 @@ test('archived containers still owe their money and say so', () => {
   assert.equal(row.remainingEur, 120);
 });
 
-const cost = (id: number, date: string, amountExclEur: number, vatPct = 21): CompanyCost => ({ id, date, category: 'HUUR', description: `Kost ${id}`,
-  party: 'Partij', amountExclEur, vatPct, reference: null, paidOn: null, salesChannel: null, notes: null });
+/** The state hands in what is open and the cash total (openOf / cashTotalOf of finance-metrics). */
+const cost = (id: number, date: string, openEur: number, cashTotalEur = openEur): OpenCost => ({ id, date, category: 'HUUR', description: `Kost ${id}`,
+  party: 'Partij', amountExclEur: cashTotalEur, vatPct: 0, reference: null, paidOn: null, salesChannel: null, notes: null, openEur, cashTotalEur } as OpenCost);
 
-test('costs are bucketed by date with their amount incl. btw and their age', () => {
+test('costs are bucketed by date with what is still open and their age', () => {
   const rows = payablesFor({ today: '2026-09-24', upcoming30: [], containerRows: [],
-    openCosts: [cost(1, '2026-08-01', 100), cost(2, '2026-09-24', 10, 6), cost(3, '2026-10-24', 50, 0), cost(4, '2026-10-25', 1)] });
+    openCosts: [cost(1, '2026-08-01', 121), cost(2, '2026-09-24', 10.6), cost(3, '2026-10-24', 50), cost(4, '2026-10-25', 1.21)] });
   assert.deepEqual(rows.map((row) => [row.costId, row.bucket, row.amountEur, row.ageDays]),
     [[1, 'now', 121, 54], [2, 'now', 10.6, 0], [3, 'soon', 50, null], [4, 'later', 1.21, null]]);
+});
+
+test('a partly paid cost shows its remainder and what it is a remainder of; a settled one is no payable', () => {
+  const rows = payablesFor({ today: '2026-09-24', upcoming30: [], containerRows: [],
+    openCosts: [cost(1, '2026-09-01', 50, 121), cost(2, '2026-09-02', 0, 121), cost(3, '2026-09-03', 200)] });
+  assert.deepEqual(rows.map((row) => [row.costId, row.amountEur, row.ofEur]), [[1, 50, 121], [3, 200, 200]]);
+  assert.equal(payableTotals(rows).nowEur, 250, 'remainders by construction');
 });
 
 test('recurring costs are coming up, with the direct debit flag; containers follow the costs in "now"', () => {
@@ -86,11 +94,12 @@ test('recurring costs are coming up, with the direct debit flag; containers foll
   assert.deepEqual(rows.map((row) => [row.kind, row.bucket, row.autoPaid, row.estimated]),
     [['cost', 'now', false, false], ['container', 'now', false, true], ['recurring', 'soon', true, false]]);
   assert.equal(rows[1].title, 'INK-2026-01 · voor Frans');
+  assert.deepEqual(rows.map((row) => [row.amountEur, row.ofEur]), [[10, 10], [80, 80], [121, 121]]);
 });
 
 test('totals add up in cents', () => {
   const rows = payablesFor({ today: '2026-09-24', upcoming30: [], containerRows: [],
-    openCosts: [cost(1, '2026-09-01', 0.1, 0), cost(2, '2026-09-02', 0.2, 0)] });
+    openCosts: [cost(1, '2026-09-01', 0.1), cost(2, '2026-09-02', 0.2)] });
   const totals = payableTotals(rows);
   assert.equal(totals.nowEur, 0.3);
   assert.equal(totals.totalEur, 0.3);

@@ -67,6 +67,21 @@ test('filters a section does not honour are dropped', () => {
   assert.equal(parse({ view: 'analysis', year: '2025', q: 'x' }).q, '');
   assert.equal(parse({ view: 'analysis', year: '2025' }).year, '2025');
   assert.equal(parse({ view: 'analysis', year: 'twenty' }).year, '');
+  assert.equal(parse({ view: 'open', regime: 'unconfirmed' }).regime, '');
+});
+
+test('Analyse has two segments; the return carries its year and quarter, the cost list its regime filter', () => {
+  assert.equal(parse({ view: 'analysis', year: '2025' }).tab, 'costs', 'older links land on Kosten');
+  const vat = parse({ view: 'analysis', tab: 'vat', year: '2026', quarter: '3' });
+  assert.deepEqual([vat.tab, vat.year, vat.quarter], ['vat', '2026', '3']);
+  assert.deepEqual(financeQueryParams(vat), { view: 'analysis', tab: 'vat', year: '2026', quarter: '3' });
+  assert.equal(parse({ view: 'analysis', tab: 'vat', quarter: '5' }).quarter, '');
+  assert.equal(parse({ view: 'analysis', tab: 'costs', quarter: '3' }).quarter, '', 'Kosten has no quarter');
+  assert.equal(parse({ view: 'costs', regime: 'eu_services' }).regime, 'EU_SERVICES');
+  assert.equal(parse({ view: 'costs', regime: 'unconfirmed' }).regime, 'unconfirmed');
+  assert.equal(parse({ view: 'costs', regime: 'bogus' }).regime, '');
+  assert.deepEqual(financeQueryParams(parse({ view: 'costs', regime: 'unconfirmed' })), { view: 'costs', regime: 'unconfirmed' });
+  assert.equal(parse({ view: 'costs', tab: 'lists', regime: 'BE' }).regime, '');
 });
 
 test('every section and segment survives a round trip through the address', () => {
@@ -75,6 +90,7 @@ test('every section and segment survives a round trip through the address', () =
     { cat: 'HUUR', status: 'open', channel: 'WHOLESALE', docs: 'missing', cost: 5 },
     { container: 46, scope: 'all' }, { dir: 'out', link: 'unlinked', account: 'KBC' }, { kind: 'partner' },
     { purpose: 'PARTNER_ADVANCE', account: '__none__', dir: 'in' }, { year: 'all' }, { year: '2024' },
+    { regime: 'unconfirmed' }, { regime: 'EU_SERVICES', status: 'open' }, { year: '2026', quarter: '3' }, { quarter: '1' },
   ];
   for (const view of Object.keys(TAB_IDS) as FinanceView[]) {
     for (const tab of TAB_IDS[view].length ? TAB_IDS[view] : ['']) {

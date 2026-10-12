@@ -1,13 +1,13 @@
 /*
- * Soft links between money that left and the bank. A cost or container
- * payment has no bank account and an outgoing bank line cannot be allocated
- * to one (that needs the backend), so a line written by "Betaald zetten"
- * carries a marker in its reference: "kost #123", "containerbetaling #456".
- * Markers and the ±7-day amount match only drive hints and link chips,
- * never money maths. Pure: node-tested.
+ * Links between money that left and the bank. A payment on a cost and a
+ * container payment link hard to their bank line (the server sets the id);
+ * older lines written by "Betaald zetten" carry a marker in their reference
+ * instead: "kost #123", "kostbetaling #7", "containerbetaling #456". The hard
+ * link wins, then the marker, then the ±7-day amount match; all three only
+ * drive hints and link chips, never money maths. Pure: node-tested.
  */
 
-export type MarkerKind = 'kost' | 'containerbetaling';
+export type MarkerKind = 'kost' | 'kostbetaling' | 'containerbetaling';
 
 export interface BankMarker {
   kind: MarkerKind;
@@ -19,7 +19,7 @@ export function bankMarker(kind: MarkerKind, id: number): string {
   return `${kind} #${id}`;
 }
 
-const MARKER = /\b(kost|containerbetaling) #(\d+)\b/gi;
+const MARKER = /\b(kost|kostbetaling|containerbetaling) #(\d+)\b/gi;
 
 /** The markers per bank line id; lines without one are left out. */
 export function lineMarkers(lines: readonly { id: number; reference: string | null }[]): Map<number, BankMarker[]> {
@@ -39,8 +39,12 @@ export interface OutgoingRow {
   kind: MarkerKind;
   id: number;
   paidOn: string | null;
-  /** Positive: incl. btw for costs, the EUR paid for container payments. */
+  /** Positive: the amount of the payment, the EUR paid for container payments. */
   amountEur: number;
+  /** The bank line the server linked this payment to; it matches without any amount or date check. */
+  linkedLineId: number | null;
+  /** A cost's only payment also answers to the older "kost #<costId>" marker of lines written before payments existed. */
+  legacyCostId?: number | null;
 }
 
 export interface BankLineLike {
@@ -70,14 +74,16 @@ function dayDistance(a: string, b: string): number {
 const cents = (value: number): number => Math.round(value * 100);
 
 /**
- * Which bank line accounts for each paid row. A row is on the bank when an
- * outgoing line carries its marker, or else when an unmarked outgoing line
- * has the same cents on a local day within ±7 days of the payment. Markers
- * are resolved first, each line matches once, and the closest date wins.
+ * Which bank line accounts for each paid row. A row is on the bank when a
+ * line carries its hard link, when an outgoing line carries its marker, or
+ * else when an unmarked outgoing line has the same cents on a local day
+ * within ±7 days of the payment. Hard links go first, then markers, each
+ * line matches once, and the closest date wins.
  */
 export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines: readonly BankLineLike[]): Map<T, BankLineLike> {
   const matched = new Map<T, BankLineLike>();
   const paid = rows.filter((row) => !!row.paidOn && row.amountEur > 0);
+  const byId = new Map(lines.map((line) => [line.id, line]));
   const outgoing = lines.filter((line) => line.amountEur < 0);
   const markers = lineMarkers(outgoing);
   const byMarker = new Map<string, BankLineLike>();
@@ -87,13 +93,19 @@ export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines:
       if (!byMarker.has(key)) byMarker.set(key, line);
     }
   }
+  const taken = new Set<number>();
   const open: T[] = [];
   for (const row of paid) {
-    const line = byMarker.get(`${row.kind}#${row.id}`);
-    if (line) matched.set(row, line);
+    const linked = row.linkedLineId !== null ? byId.get(row.linkedLineId) : undefined;
+    if (linked) { matched.set(row, linked); taken.add(linked.id); }
+  }
+  for (const row of paid) {
+    if (matched.has(row)) continue;
+    const line = byMarker.get(`${row.kind}#${row.id}`) ?? (row.legacyCostId ? byMarker.get(`kost#${row.legacyCostId}`) : undefined);
+    if (line && !taken.has(line.id)) { matched.set(row, line); taken.add(line.id); }
     else open.push(row);
   }
-  const free = outgoing.filter((line) => !markers.has(line.id)).map((line) => ({ line, day: localDay(line.bookedAt, line.timeZone) }));
+  const free = outgoing.filter((line) => !markers.has(line.id) && !taken.has(line.id)).map((line) => ({ line, day: localDay(line.bookedAt, line.timeZone) }));
   const pairs: { row: number; line: number; distance: number }[] = [];
   open.forEach((row, rowIndex) => {
     free.forEach(({ line, day }, lineIndex) => {

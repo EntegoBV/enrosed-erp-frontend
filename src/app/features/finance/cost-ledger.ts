@@ -10,8 +10,12 @@ export interface CostLedgerRow {
   party: string | null;
   reference: string | null;
   paidOn: string | null;
-  /** Invoice including VAT, or the actual EUR amount paid on the container. */
+  /** What the bank pays for the cost (the cash total), or the actual EUR amount paid on the container. */
   amountEur: number;
+  /** What is still to pay; 0 on container rows. */
+  openEur: number;
+  /** 'partial' once a payment is in but the cost is not settled; container rows are 'paid'. */
+  status: 'open' | 'partial' | 'paid';
   cost: CompanyCost | null;
   payment: PurchasePaymentRow | null;
 }
@@ -34,17 +38,30 @@ export function paymentPayeeLabel(payee?: Payee | null): string {
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const money = (value: number | null | undefined): number => Number.isFinite(value) ? value as number : 0;
-/** The entered inclusive total when there is one, else excl + btw (the rule of vatOf/inclOf in cost-metrics.ts). */
-const inclOf = (cost: CompanyCost): number => (money(cost.amountInclEur) > 0 ? money(cost.amountInclEur)
-  : round2(money(cost.amountExclEur) + round2(money(cost.amountExclEur) * Math.max(0, money(cost.vatPct)) / 100)));
+const cents = (value: number): number => Math.round(value * 100);
 
-export function costLedger(costs: readonly CompanyCost[], payments: readonly PurchasePaymentRow[]): CostLedgerRow[] {
-  const rows: CostLedgerRow[] = costs.map((cost, index) => ({
-    key: `cost:${cost.id ?? `new-${index}`}`, source: 'company', date: cost.date, category: cost.category,
-    description: cost.description, party: cost.party, reference: cost.reference, paidOn: cost.paidOn,
-    amountEur: inclOf(cost),
-    cost, payment: null,
-  }));
+/** The open amount of a cost: the server's figure, else the whole cash total until a paid date (older responses). */
+function openOf(cost: CompanyCost, cash: number): number {
+  if (Number.isFinite(cost.openEur as number)) return Math.max(0, cents(cost.openEur as number)) / 100;
+  return cost.paidOn ? 0 : cash;
+}
+
+/**
+ * The cash of a cost comes in through `cash` (cashTotalOf of
+ * finance-metrics.ts): the money rule lives there, this file imports nothing
+ * at runtime.
+ */
+export function costLedger(costs: readonly CompanyCost[], payments: readonly PurchasePaymentRow[], cash: (cost: CompanyCost) => number): CostLedgerRow[] {
+  const rows: CostLedgerRow[] = costs.map((cost, index) => {
+    const amountEur = round2(money(cash(cost)));
+    const openEur = openOf(cost, amountEur);
+    return {
+      key: `cost:${cost.id ?? `new-${index}`}`, source: 'company', date: cost.date, category: cost.category,
+      description: cost.description, party: cost.party, reference: cost.reference, paidOn: cost.paidOn,
+      amountEur, openEur, status: openEur <= 0 ? 'paid' : cents(openEur) < cents(amountEur) ? 'partial' : 'open',
+      cost, payment: null,
+    };
+  });
   // PurchasePayment is the source of truth. Reloading reflects additions, edits and deletions without a backfill or copied cost.
   const seen = new Set<number>();
   for (const payment of payments) {
@@ -55,7 +72,7 @@ export function costLedger(costs: readonly CompanyCost[], payments: readonly Pur
       category: `CONTAINER_${payment.payee ?? 'SUPPLIER'}`,
       description: payment.label?.trim() || `${paymentPayeeLabel(payment.payee)} · containerbetaling`,
       party: paymentPayeeLabel(payment.payee), reference: [payment.orderNumber, payment.orderAlias].filter(Boolean).join(' · ') || `Container #${payment.orderId}`,
-      paidOn: payment.paidOn, amountEur: round2(money(payment.amountEur)), cost: null, payment,
+      paidOn: payment.paidOn, amountEur: round2(money(payment.amountEur)), openEur: 0, status: 'paid', cost: null, payment,
     });
   }
   return rows.sort((left, right) => right.date.localeCompare(left.date) || left.key.localeCompare(right.key));
@@ -77,8 +94,11 @@ export interface CostLedgerFilter {
   to?: string | null;
   query?: string;
   category?: string;
+  /** 'open' includes partly paid costs. */
   status?: 'all' | 'open' | 'paid';
   source?: 'all' | 'company' | 'container';
+  /** A regime code, or 'unconfirmed' for costs whose regime is derived or unknown; '' is every regime. */
+  regime?: string;
   containerId?: number | null;
   /** 'missing' keeps only company costs that miss their document (see missingDocument; container rows never qualify). */
   docs?: 'missing' | null;
@@ -100,7 +120,8 @@ export function filterCostLedger(rows: readonly CostLedgerRow[], filter: CostLed
     && (!filter.containerId || row.payment?.orderId === filter.containerId)
     && (!filter.source || filter.source === 'all' || row.source === filter.source)
     && (!filter.category || row.category.toUpperCase() === filter.category.toUpperCase())
-    && (filter.status !== 'paid' || !!row.paidOn) && (filter.status !== 'open' || !row.paidOn)
+    && (filter.status !== 'paid' || row.status === 'paid') && (filter.status !== 'open' || row.status !== 'paid')
+    && (!filter.regime || (!!row.cost && (filter.regime === 'unconfirmed' ? !row.cost.vatRegimeConfirmed || !row.cost.vatRegime : row.cost.vatRegime === filter.regime)))
     && (filter.docs !== 'missing' || (!!row.cost && missingDocument(row.cost, filter.documentedIds)))
     && (!needle || [row.description, row.party, row.reference, row.cost?.notes, row.cost?.salesChannel,
       categoryLabel(row.category), row.cost?.salesChannel ? channelLabel(row.cost.salesChannel) : null,
@@ -113,30 +134,39 @@ export function costLedgerTotals(rows: readonly CostLedgerRow[]): { containerCou
   return {
     containerCount: container.length,
     containerPaidEur: round2(container.reduce((sum, row) => sum + row.amountEur, 0)),
-    paidEur: round2(rows.filter((row) => !!row.paidOn).reduce((sum, row) => sum + row.amountEur, 0)),
+    paidEur: round2(rows.reduce((sum, row) => sum + row.amountEur - row.openEur, 0)),
   };
 }
+
+/** The six regime columns without the labels of finance-metrics (costRegimeCells there gives the labelled form). */
+const rawRegimeCells = (cost: CompanyCost): (string | number | null)[] => [cost.vatRegime ?? null, cost.supplierCountry ?? null, cost.costKind ?? null,
+  money(cost.vatDeductiblePct ?? 100), money(cost.taxDeductiblePct ?? 100), cost.costKind === 'INVESTMENT' && cost.depreciationYears ? String(cost.depreciationYears) : null];
 
 /**
  * One export with an explicit source; unknown purchase VAT stays empty rather
  * than being reported as 0%. With `documents` a Documenten column follows,
- * holding the file names of each row.
+ * holding the file names of each row. 'Btw' is what the return shows, which
+ * `vat` (returnVatOf) supplies; without it the difference to the cash total.
  */
 export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (code: string) => string,
-                              documents?: (row: CostLedgerRow) => string, channelLabel: (code: string) => string = (code) => code): string {
+                              documents?: (row: CostLedgerRow) => string, channelLabel: (code: string) => string = (code) => code,
+                              vat?: (cost: CompanyCost) => number, regimeCells: (cost: CompanyCost) => (string | number | null)[] = rawRegimeCells): string {
   const cell = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined) return '';
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value;
     return /[;"\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
-  const header = ['Datum', 'Bron', 'Categorie', 'Omschrijving', 'Aan wie / betaalstroom', 'Referentie', 'Bedrag excl. btw', 'Btw %', 'Btw', 'Factuur incl. btw', 'Betaald EUR', 'Betaald op', 'Container-ID', 'Betaling-ID', 'Verkoopkanaal', 'Vaste kost', 'Notities',
+  const header = ['Datum', 'Bron', 'Categorie', 'Omschrijving', 'Aan wie / betaalstroom', 'Referentie', 'Bedrag excl. btw', 'Btw %', 'Btw', 'Factuur incl. btw', 'Betaald EUR', 'Betaald op', 'Container-ID', 'Betaling-ID', 'Verkoopkanaal', 'Vaste kost',
+    'Btw-regeling', 'Land', 'Soort', 'Btw aftrekbaar %', 'Fiscaal aftrekbaar %', 'Investering (jaren)', 'Notities',
     ...(documents ? ['Documenten'] : [])];
   const lines = [...rows].sort((left, right) => left.date.localeCompare(right.date) || left.key.localeCompare(right.key)).map((row) => {
     const cost = row.cost;
+    const paidEur = round2(row.amountEur - row.openEur);
     return [row.date, cost ? 'Bedrijfskost' : 'Containerbetaling', categoryLabel(row.category), row.description, row.party, row.reference,
-      cost?.amountExclEur, cost?.vatPct, cost ? round2(row.amountEur - money(cost.amountExclEur)) : null, cost ? row.amountEur : null,
-      row.paidOn ? row.amountEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
+      cost?.amountExclEur, cost?.vatPct, cost ? (vat ? round2(vat(cost)) : round2(row.amountEur - money(cost.amountExclEur))) : null, cost ? row.amountEur : null,
+      paidEur > 0 ? paidEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
       row.payment ? String(row.payment.id) : null, cost?.salesChannel ? channelLabel(cost.salesChannel) : null, cost ? (cost.recurringCostId ? 'ja' : 'nee') : null,
+      ...(cost ? regimeCells(cost) : [null, null, null, null, null, null]),
       cost?.notes ?? (row.payment ? 'Automatisch gekoppeld; beheren bij de container. Btw niet uit betaling afgeleid.' : null),
       ...(documents ? [documents(row)] : []),
     ].map(cell).join(';');

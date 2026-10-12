@@ -11,7 +11,7 @@ import { bankAccountKey } from './bank-reconciliation';
 import { categoryLabel } from './cost-categories';
 import { paymentPayeeLabel } from './cost-ledger';
 import { PAYEE_TONES, dayMonth, dayMonthYear } from './finance-format';
-import { inclOf, intervalLabel, monthlyEquivalentEur, occurrencesBetween, addDays, vatOf } from './finance-metrics';
+import { cashTotalOf, intervalLabel, monthlyEquivalentEur, occurrencesBetween, addDays, vatOf } from './finance-metrics';
 import { FinanceState, InspectTarget } from './finance-state';
 import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { daysBetween } from './payables';
@@ -269,7 +269,7 @@ export class FinanceInspector {
     return this.state.costs().filter((cost) => cost.recurringCostId === this.target().id && cost.date.startsWith(year))
       .sort((a, b) => b.date.localeCompare(a.date));
   });
-  readonly bookedTotal = computed(() => Math.round(this.bookedThisYear().reduce((sum, cost) => sum + inclOf(cost) * 100, 0)) / 100);
+  readonly bookedTotal = computed(() => Math.round(this.bookedThisYear().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
 
   readonly title = computed(() => this.state.inspectTitle(this.target()));
 
@@ -286,7 +286,7 @@ export class FinanceInspector {
     });
   }
 
-  incl(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return inclOf(row); }
+  incl(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return cashTotalOf(row); }
   vat(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return vatOf(row); }
   day(date: string | null): string { return dayMonth(date); }
   dayYear(date: string | null): string { return dayMonthYear(date); }

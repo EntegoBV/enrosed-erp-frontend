@@ -91,8 +91,10 @@ export interface PayableRow {
   ageDays: number | null;
   title: string;
   party: string | null;
-  /** Incl. btw for costs and recurring; the expected EUR for containers. */
+  /** What is still to pay: the remainder of a cost, the cash total of a recurring cost, the expected EUR of a container. */
   amountEur: number;
+  /** The whole amount the remainder belongs to ('van € y' when a cost is partly paid). */
+  ofEur: number;
   /** Container amounts are forecasts. */
   estimated: boolean;
   /** A direct debit: the recurring cost pays itself. */
@@ -105,8 +107,11 @@ export interface PayableRow {
   upcoming: UpcomingCost | null;
 }
 
+/** An open cost with the money the state computed for it (openOf / cashTotalOf of finance-metrics.ts). */
+export type OpenCost = CompanyCost & { openEur: number; cashTotalEur: number };
+
 export interface PayablesInput {
-  openCosts: readonly CompanyCost[];
+  openCosts: readonly OpenCost[];
   upcoming30: readonly UpcomingCost[];
   containerRows: readonly ContainerPayable[];
   today: string;
@@ -121,12 +126,6 @@ function addDays(day: string, days: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** incl. = excl + round2(excl × max(0, vat) / 100), the same rule as finance-metrics inclOf. */
-function inclCents(cost: Pick<CompanyCost, 'amountExclEur' | 'vatPct'>): number {
-  const excl = cents(cost.amountExclEur);
-  return excl + Math.round(excl * Math.max(0, Number(cost.vatPct) || 0) / 100);
-}
-
 const BUCKET_ORDER: Readonly<Record<PayableBucket, number>> = { now: 0, soon: 1, later: 2 };
 const KIND_ORDER: Readonly<Record<PayableRow['kind'], number>> = { cost: 0, recurring: 1, container: 2 };
 
@@ -136,21 +135,21 @@ export function payablesFor(input: PayablesInput): PayableRow[] {
   const empty = { costId: null, orderId: null, recurringId: null, cost: null, container: null, upcoming: null };
   const rows: PayableRow[] = [];
   for (const cost of input.openCosts) {
-    if (cost.paidOn) continue;
+    if (cents(cost.openEur) <= 0) continue;
     const bucket: PayableBucket = cost.date <= today ? 'now' : cost.date <= horizon ? 'soon' : 'later';
     rows.push({ ...empty, key: `cost:${cost.id ?? cost.date}`, kind: 'cost', bucket, date: cost.date,
       ageDays: cost.date <= today ? daysBetween(cost.date, today) : null, title: cost.description, party: cost.party || null,
-      amountEur: inclCents(cost) / 100, estimated: false, autoPaid: false, costId: cost.id, cost });
+      amountEur: cents(cost.openEur) / 100, ofEur: cents(cost.cashTotalEur) / 100, estimated: false, autoPaid: false, costId: cost.id, cost });
   }
   for (const row of input.upcoming30) {
     rows.push({ ...empty, key: `recurring:${row.definition.id}:${row.date}`, kind: 'recurring', bucket: 'soon', date: row.date,
-      ageDays: null, title: row.definition.name, party: row.definition.party || null, amountEur: cents(row.amountInclEur) / 100,
+      ageDays: null, title: row.definition.name, party: row.definition.party || null, amountEur: cents(row.amountInclEur) / 100, ofEur: cents(row.amountInclEur) / 100,
       estimated: false, autoPaid: !!row.definition.autoPaid, recurringId: row.definition.id, upcoming: row });
   }
   for (const container of input.containerRows) {
     rows.push({ ...empty, key: container.key, kind: 'container', bucket: container.bucket, date: null, ageDays: null,
       title: container.alias ? `${container.orderNumber} · ${container.alias}` : container.orderNumber, party: null,
-      amountEur: container.remainingEur, estimated: true, autoPaid: false, orderId: container.orderId, container });
+      amountEur: container.remainingEur, ofEur: container.remainingEur, estimated: true, autoPaid: false, orderId: container.orderId, container });
   }
   return rows.sort((a, b) => BUCKET_ORDER[a.bucket] - BUCKET_ORDER[b.bucket]
     || (a.bucket === 'now' ? KIND_ORDER[a.kind] - KIND_ORDER[b.kind] : 0)

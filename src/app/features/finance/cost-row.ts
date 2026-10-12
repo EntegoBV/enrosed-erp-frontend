@@ -6,7 +6,7 @@ import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth } from './finance-format';
-import { inclOf, vatOf } from './finance-metrics';
+import { cashTotalOf, vatOf } from './finance-metrics';
 import { FinanceState } from './finance-state';
 import { daysBetween } from './payables';
 
@@ -115,7 +115,7 @@ export class CostRow {
   readonly dropping = signal(false);
 
   readonly key = computed(() => `cost:${this.cost().id}`);
-  readonly incl = computed(() => inclOf(this.cost()));
+  readonly incl = computed(() => cashTotalOf(this.cost()));
   readonly vat = computed(() => vatOf(this.cost()));
   readonly date = computed(() => dayMonth(this.cost().date));
   readonly paid = computed(() => dayMonth(this.cost().paidOn));

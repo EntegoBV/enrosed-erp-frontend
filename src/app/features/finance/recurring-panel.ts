@@ -6,7 +6,7 @@ import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth, dayMonthYear, monthLabel } from './finance-format';
-import { addDays, inclOf, intervalLabel, perYear, recurringGroups, recurringSummary, upcomingRecurring } from './finance-metrics';
+import { addDays, cashTotalOf, intervalLabel, perYear, recurringGroups, recurringSummary, upcomingRecurring } from './finance-metrics';
 import type { UpcomingCost } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import type { FinanceCommand } from './finance-shortcuts';
@@ -227,8 +227,8 @@ export class RecurringPanel implements FinanceSectionApi {
     return definition.nextDate ? dayMonth(definition.nextDate) : '—';
   }
 
-  incl(definition: RecurringCost): number { return inclOf(definition); }
-  monthlyIncl(definition: RecurringCost): number { return Math.round(inclOf(definition) * perYear(definition.interval) / 12 * 100) / 100; }
+  incl(definition: RecurringCost): number { return cashTotalOf(definition); }
+  monthlyIncl(definition: RecurringCost): number { return Math.round(cashTotalOf(definition) * perYear(definition.interval) / 12 * 100) / 100; }
   rhythm(code: string): string { return intervalLabel(code); }
   category(code: string): string { return categoryLabel(code); }
   tone(code: string): string { return categoryTone(code); }
