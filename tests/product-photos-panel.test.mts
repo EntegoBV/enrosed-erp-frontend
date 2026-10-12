@@ -21,7 +21,8 @@ const names = ['overview', 'loading', 'loadError', 'busy', 'view', 'reordering',
   'openPicker', 'closePicker', 'openRequestedPicker', 'loadOthers', 'cardAction', 'pickRole', 'pickFromPicker', 'clearFromPicker',
   'uploadFromPicker', 'compareOpened', 'undo', 'repair', 'useWebsitePhotoForDocuments', 'uploadAndUse', 'setDetailSize', 'setChannels',
   'setScope', 'remove', 'confirmUpload', 'moveOrder', 'run', 'afterSave', 'refreshOthers', 'switchesOf', 'choiceHidden', 'refreshSync', 'load', 'apply',
-  'reload', 'focusHandle'];
+  'reload', 'focusHandle', 'stripLine', 'attention', 'keepOpenWhenWide', 'resetFor', 'releaseStaged', 'actionToast', 'dropActionToasts', 'actionToasts', 'destroyed',
+  'focusFallback'];
 const picked = panel.members.filter((member) => member.name && ts.isIdentifier(member.name) && names.includes(member.name.text));
 assert.equal(picked.length, names.length, 'The tests must run the current production members');
 const helperNames = ['isOverview', 'placeOfRole', 'kindOfRole', 'fileSha256', 'HIDDEN_CHOICE'];
@@ -77,12 +78,14 @@ function harness({ crypto = undefined as unknown } = {}) {
   const page = new exported.Panel();
   const calls: any[] = [], toasts: [string, string | undefined][] = [], changes: number[] = [], refreshes: number[] = [];
   const actions: ({ label: string; run: () => void } | undefined)[] = [], handled: number[] = [], confirms: any[] = [];
+  const dismissed: number[] = [];
   let familyImages: any[] = [{ id: 1, position: 0 }, { id: 300, position: 1 }, { id: 2, position: 2 }, { id: 3, position: 3 }];
   Object.assign(page, {
     product: signal({ id: 53, colour: 'Rood', variantSize: 'M', active: true, photos: [] as any[] }), members: signal([]), disabled: signal(false),
     changed: { emit: () => changes.push(1) }, pick: signal(null), pickHandled: { emit: () => handled.push(1) },
     ui: {
-      toast: (message: string, kind?: string, action?: { label: string; run: () => void }) => { toasts.push([message, kind]); actions.push(action); },
+      toast: (message: string, kind?: string, action?: { label: string; run: () => void }) => { toasts.push([message, kind]); actions.push(action); return toasts.length; },
+      dismissToast: (id: number) => dismissed.push(id),
       confirm: (question: unknown, go: () => void) => { confirms.push(question); go(); },
     },
     // The shared website status, as a stub: the panel only reads it and asks for a refresh.
@@ -108,7 +111,7 @@ function harness({ crypto = undefined as unknown } = {}) {
     },
   });
   page.overview.set(overview());
-  return { page, calls, toasts, actions, handled, confirms, changes, frames, revoked, refreshes };
+  return { page, calls, toasts, actions, handled, confirms, changes, frames, revoked, refreshes, dismissed };
 }
 
 /**
@@ -887,4 +890,52 @@ test('a link with ?kies= opens that card’s picker once and is always handed ba
   page.disabled.set(true);
   page.openRequestedPicker('website');
   assert.equal(handled.length, 3, 'While translations are unsaved the request waits');
+});
+
+test('review: the buttons of a toast stop working once the section is gone or shows another product', async () => {
+  const { page, calls, toasts, actions, dismissed } = harness();
+  page.pickerKind.set('website');
+  await page.pickRole('MAIN', 'F1');
+  const undoToast = toasts.length;
+  assert.equal(actions.at(-1)?.label, 'Ongedaan maken');
+  // The editor destroys the panel on every product switch; the toast lives a few seconds longer.
+  page.destroyed = true;
+  page.dropActionToasts();
+  assert.deepEqual(dismissed, [undoToast], 'The toast with the button is taken away with the section');
+  const before = calls.length;
+  actions.at(-1)!.run();
+  await page.undo();
+  assert.equal(calls.length, before, 'A tap that still lands writes nothing');
+  await page.uploadAndUse('website', file('late.jpg'));
+  assert.equal(calls.length, before, '“Opnieuw proberen” uploads nothing for a product that was left');
+
+  const second = harness();
+  second.page.pickerKind.set('website');
+  await second.page.pickRole('MAIN', 'F1');
+  second.page.resetFor(54);
+  assert.equal(second.dismissed.length, 1, 'Another product in the same section: the old toast goes too');
+  assert.equal(second.page.lastChange(), null);
+});
+
+test('review: the phone fold opens: its click handler never answers false, and only cancels the tap on a laptop', () => {
+  const { page } = harness();
+  const tap = () => { const event = { prevented: 0, preventDefault() { this.prevented++; } }; return event; };
+  page.wide = signal(false);
+  const phone = tap();
+  assert.equal(page.keepOpenWhenWide(phone), undefined, 'Angular cancels a DOM event whose handler returns false');
+  assert.equal(phone.prevented, 0);
+  page.wide.set(true);
+  const laptop = tap();
+  assert.equal(page.keepOpenWhenWide(laptop), undefined);
+  assert.equal(laptop.prevented, 1);
+  assert.doesNotMatch(text, /\(click\)="[^"]*&&[^"]*preventDefault/, 'No template handler that can answer false');
+});
+
+test('review: after ‘Ongedaan maken’ the focus has a place to return to in the card', async () => {
+  const { page } = harness();
+  page.pickerKind.set('website');
+  await page.pickRole('MAIN', 'F1');
+  assert.equal(page.lastChange()?.card, 'website');
+  await page.undo();
+  assert.equal(page.focusFallback, 'website', 'The undo button is gone with its line: the card’s own button takes the focus');
 });

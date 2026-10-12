@@ -456,12 +456,17 @@ export function cataloguePlaceFor(places: PhotoPlaces): CataloguePlace {
   }
   const detail = places.catalogueDetail;
   const series = detail.chosenKey !== null;
+  // The colour's own choice is stored but the pdf prints another photo (its catalogue switch went off):
+  // the compact row carries the server's reason, and the card says "Je keuze wordt niet getoond".
+  const compact = places.catalogueCompactRow;
+  const hidden = !series && colour.chosenKey !== null && detail.shownKey !== colour.chosenKey
+    && compact.state === 'CHOSEN_NOT_SHOWN' && compact.chosenKey === colour.chosenKey;
   return {
-    place: detail,
+    place: hidden ? { ...detail, chosenKey: colour.chosenKey, state: 'CHOSEN_NOT_SHOWN', reason: compact.reason } : detail,
     role: series ? 'CATALOGUE_DETAIL' : 'CATALOGUE_VARIANT',
     picker: series ? 'detail' : 'catalogue',
     allowAllColours: true,
-    chosen: detail.state === 'CHOSEN' || (detail.state === 'AUTOMATIC' && detail.reason === 'THIS_COLOUR_LEAD'),
+    chosen: !hidden && (detail.state === 'CHOSEN' || (detail.state === 'AUTOMATIC' && detail.reason === 'THIS_COLOUR_LEAD')),
     chosenKey: series ? detail.chosenKey : colour.chosenKey,
     single: true,
   };
@@ -567,6 +572,8 @@ function catalogueNotShown(place: PhotoPlace, colour: string): { reason: PhotoSe
 }
 
 const COLOUR_OFF_CHOICE: PhotoSentence = { strong: '', rest: 'Die kleur staat niet meer aan.' };
+const NOT_ON_WEBSITE = 'Niet op de website';
+const NO_SERIES_LINE = 'Dit product hoort bij geen reeks en staat daarom niet op de website.';
 
 function websiteCard(overview: ProductPhotoOverview, places: ResolvedPlaces, colour: string, status: ColourStatus): PlaceCard {
   const place = places.websiteColour;
@@ -581,9 +588,15 @@ function websiteCard(overview: ProductPhotoOverview, places: ResolvedPlaces, col
     caption: normal, reason: null, chosenThumb: null, text: null, textIcon: null,
     actions: [pickAction('website', 'website', colour, 'change')],
   };
+  // No screen opens this section for a product without a series; should one ever, it says what is true.
+  if (place.reason === 'NO_SERIES') {
+    return {
+      ...card, photo: null, emptyLabel: NOT_ON_WEBSITE, chip: NOT_ON_WEBSITE, tone: 'neutral', caption: NO_SERIES_LINE, actions: [],
+    };
+  }
   if (place.reason === 'COLOUR_NOT_ACTIVE') {
     return {
-      ...card, photo: null, chip: 'Kleur staat niet aan', tone: 'neutral',
+      ...card, photo: null, emptyLabel: NOT_ON_WEBSITE, chip: 'Kleur staat niet aan', tone: 'neutral',
       caption: status === 'demo'
         ? `${colour} is een demo-product en staat daarom niet op de website.`
         : `${colour} is niet actief en staat daarom niet op de website.`,
@@ -594,10 +607,13 @@ function websiteCard(overview: ProductPhotoOverview, places: ResolvedPlaces, col
   }
   if (unknownAutomatic(place)) return { ...card, emptyLabel: 'De website kiest zelf een foto.' };
   if (place.state === 'NONE') {
+    // The order page only shows a series photo when it has one; a series that is not online has neither page.
+    const caption = !seriesLive(overview) ? `${colour} heeft geen foto voor de website. Deze reeks staat nog niet op de website.`
+      : `${colour} heeft geen foto op de website. Op de productpagina is deze kleur daardoor niet aan te tikken`
+        + (places.websiteQuote.shownKey !== null
+          ? '; op de bestelpagina staat er een foto van de reeks bij, ook als die een andere kleur toont.' : '.');
     return {
-      ...card,
-      caption: `${colour} heeft geen foto op de website. Op de productpagina is deze kleur daardoor niet aan te tikken; `
-        + 'op de bestelpagina staat er een foto van de reeks bij, ook als die een andere kleur toont.',
+      ...card, caption,
       actions: [pickAction('website', 'website', colour, 'first')],
     };
   }
@@ -637,7 +653,7 @@ function catalogueCard(overview: ProductPhotoOverview, places: ResolvedPlaces, c
   if (places.catalogueColour.reason === 'COLOUR_NOT_ACTIVE') {
     const chosen = places.catalogueColour.chosenKey;
     return {
-      ...card, place: places.catalogueColour, photo: null, chip: 'Kleur staat niet aan', tone: 'neutral',
+      ...card, place: places.catalogueColour, photo: null, emptyLabel: 'Niet in de catalogus', chip: 'Kleur staat niet aan', tone: 'neutral',
       caption: `${colour} is een demo-product en komt daarom niet in een catalogus.`,
       reason: chosen ? COLOUR_OFF_CHOICE : null,
       chosenThumb: photoByKey(overview, chosen),
@@ -679,7 +695,7 @@ function catalogueCard(overview: ProductPhotoOverview, places: ResolvedPlaces, c
   };
 }
 
-export type DocumentsRow = 'same-chosen' | 'same-automatic' | 'differs' | 'documents-only' | 'none' | 'colour-off' | 'legacy';
+export type DocumentsRow = 'same-chosen' | 'same-automatic' | 'differs' | 'documents-only' | 'none' | 'colour-off' | 'no-series' | 'legacy';
 
 export interface DocumentsState {
   row: DocumentsRow;
@@ -690,14 +706,31 @@ export interface DocumentsState {
   action: PlaceAction | null;
 }
 
+/** Two keys of one picture: a duplicate and its original, or two duplicates of the same original. */
+function samePicture(
+  photos: readonly Pick<ProductPhotoOverviewPhoto, 'key' | 'duplicateOfKey'>[],
+  left: string | null,
+  right: string | null,
+): boolean {
+  if (left === null || right === null) return false;
+  if (left === right) return true;
+  const original = (key: string) => photos.find((photo) => photo.key === key)?.duplicateOfKey ?? key;
+  return original(left) === original(right);
+}
+
 /**
  * Quotes and invoices print the photo of one rule, the website shows the
  * photo of another. Usually they agree; this names the five ways they relate.
  */
-export function documentsState(places: ResolvedPlaces, colour: string): DocumentsState {
+export function documentsState(
+  places: ResolvedPlaces,
+  colour: string,
+  photos: readonly Pick<ProductPhotoOverviewPhoto, 'key' | 'duplicateOfKey'>[] = [],
+): DocumentsState {
   const documents = places.documents;
   const website = places.websiteColour;
   const base = { textIcon: null, action: null } as const;
+  const chosenChip = documents.state === 'CHOSEN' ? 'Zelf gekozen' : 'Automatisch gekozen';
   if (documents.shownKey === null) {
     return { ...base, row: 'none', chip: 'Geen foto', tone: 'warn', text: `Offertes en facturen tonen ${colour} zonder foto.` };
   }
@@ -706,9 +739,15 @@ export function documentsState(places: ResolvedPlaces, colour: string): Document
       ? { row: 'legacy', chip: 'Zelfde foto als de website', tone: 'neutral', text: 'Verandert mee als je de websitefoto wijzigt.', textIcon: 'link', action: null }
       : { ...base, row: 'legacy', chip: 'Automatisch gekozen', tone: 'neutral', text: null };
   }
+  if (website.reason === 'NO_SERIES') {
+    return {
+      ...base, row: 'no-series', chip: chosenChip, tone: 'neutral',
+      text: 'Dit product staat niet op de website. Op een offerte of factuur staat deze foto.',
+    };
+  }
   if (website.reason === 'COLOUR_NOT_ACTIVE') {
     return {
-      ...base, row: 'colour-off', chip: documents.state === 'CHOSEN' ? 'Zelf gekozen' : 'Automatisch gekozen', tone: 'neutral',
+      ...base, row: 'colour-off', chip: chosenChip, tone: 'neutral',
       text: `${colour} staat niet op de website. Op een offerte of factuur staat deze foto.`,
     };
   }
@@ -716,6 +755,13 @@ export function documentsState(places: ResolvedPlaces, colour: string): Document
     return website.state === 'CHOSEN'
       ? { row: 'same-chosen', chip: 'Zelfde foto als de website', tone: 'neutral', text: 'Verandert mee als je de websitefoto wijzigt.', textIcon: 'link', action: null }
       : { ...base, row: 'same-automatic', chip: 'Nu dezelfde foto als de website', tone: 'neutral', text: 'Kies zelf een websitefoto; dan blijft dat zo.' };
+  }
+  // The same file stored twice (as own photo and as series photo) is one picture: no warning about "another photo".
+  if (samePicture(photos, documents.shownKey, website.shownKey)) {
+    return {
+      ...base, row: 'same-automatic', chip: 'Nu dezelfde foto als de website', tone: 'neutral',
+      text: 'Het is dezelfde foto, twee keer opgeslagen. Kies zelf een websitefoto; dan blijft dat zo.',
+    };
   }
   if (website.shownKey !== null) {
     return {
@@ -734,7 +780,7 @@ export function documentsState(places: ResolvedPlaces, colour: string): Document
 }
 
 function documentsCard(overview: ProductPhotoOverview, places: ResolvedPlaces, colour: string): PlaceCard {
-  const state = documentsState(places, colour);
+  const state = documentsState(places, colour, overview.photos ?? []);
   return {
     key: 'documents', name: 'Offertes en facturen', icon: 'document', place: places.documents,
     photo: photoByKey(overview, places.documents.shownKey),
@@ -825,11 +871,13 @@ export function standingNotes(
   const card = catalogueCard(overview, places, colour, colourStatus(overview, product));
   const inCatalogue = places.catalogueColour.reason !== 'COLOUR_NOT_ACTIVE' && compact.reason !== 'COLOUR_NOT_ACTIVE';
   if (inCatalogue && compact.shownKey && compact.shownKey !== card.place.shownKey) {
-    const pick = card.actions.find((action) => action.id === 'pick');
+    // The compact row follows the colour's own choice. A picker for the series' large photo cannot bring the two together: fact only.
+    const pick = card.actions.find((action) => action.id === 'pick' && action.picker === 'catalogue');
     notes.push({
       id: 'compact',
       strong: 'Het Compact overzicht toont een andere foto.',
-      rest: 'Kies zelf een catalogusfoto; dan tonen beide dezelfde.',
+      rest: pick ? 'Kies zelf een catalogusfoto; dan tonen beide dezelfde.'
+        : card.place.role === 'CATALOGUE_DETAIL' ? 'Dat gebruikt de foto van de kleur zelf, niet de grote catalogusfoto van de reeks.' : '',
       photo: photoByKey(overview, compact.shownKey),
       alt: `Foto van ${colour} in het Compact overzicht`,
       action: pick ? { id: 'pick', label: 'Kies catalogusfoto', picker: pick.picker } : null,
@@ -860,7 +908,11 @@ const SERIES_ROW_NAME: Readonly<Record<SeriesRowKey, string>> = {
 };
 
 export const SERIES_STRIP_TITLE = 'Voor de hele reeks';
-export const SERIES_STRIP_LINE = 'Vier foto’s die voor alle kleuren gelden.';
+/** The line next to the title, counted from the rows drawn: an older server knows no opening photo, so three. */
+export function seriesStripLine(rows: number): string {
+  const count = ['Geen', 'Eén', 'Twee', 'Drie', 'Vier'][rows] ?? String(rows);
+  return rows === 1 ? 'Eén foto die voor alle kleuren geldt.' : `${count} foto’s die voor alle kleuren gelden.`;
+}
 
 /**
  * Why a series place shows its photo, from the server's reason. A reason the
@@ -953,8 +1005,15 @@ export function seriesRows(overview: ProductPhotoOverview | null): SeriesRow[] {
 
 /** The small line in the folded strip on a phone; empty when no row asks for attention. */
 export function seriesAttention(rows: readonly SeriesRow[]): string {
-  const count = rows.filter((row) => row.warn).length;
-  return count === 0 ? '' : count === 1 ? '1 foto vraagt aandacht' : `${count} foto’s vragen aandacht`;
+  const warn = rows.filter((row) => row.warn);
+  // A place without a photo is not a photo: it is counted as an empty place.
+  const empty = warn.filter((row) => row.place.shownKey === null && row.place.chosenKey === null).length;
+  const photos = warn.length - empty;
+  if (rows.length > 0 && empty === rows.length) return 'Nog geen foto’s';
+  return [
+    photos === 0 ? '' : photos === 1 ? '1 foto vraagt aandacht' : `${photos} foto’s vragen aandacht`,
+    empty === 0 ? '' : empty === 1 ? '1 plek zonder foto' : `${empty} plekken zonder foto`,
+  ].filter(Boolean).join(' · ');
 }
 
 /**
@@ -1324,7 +1383,8 @@ export function pickerModel(
   if (!overview || !places) return null;
   const target = pickerTarget(places, kind);
   const colourPlace = target.kind === 'website' || target.kind === 'catalogue';
-  const upload = colourPlace && colourStatus(overview, product) === 'active';
+  // Upload-and-use stores a series photo, so it needs a series.
+  const upload = colourPlace && !!overview.familyId && colourStatus(overview, product) === 'active';
   const texts = pickerTexts(target.kind, colour, target.place, seriesLive(overview), {
     upload, chosen: target.chosen, stored: target.chosenKey !== null, allColours: target.allowAllColours,
   });
@@ -1605,10 +1665,25 @@ export function seenSentence(photo: ProductPhotoOverviewPhoto, places: ResolvedP
     ...(uses.onDocuments ? ['op offertes en facturen'] : []),
     ...uses.series.map((key) => SERIES_SPOKEN[key]),
   ];
+  if (photo.kind === 'SERIES' && photo.scope === 'OTHER_VARIANT') {
+    // Another colour's photo: its website, catalogue and document places are that colour's, and this page does not know them.
+    const owner = photo.variantLabel?.trim() || null;
+    const roles = (photo.chosenFor ?? []).map((item) => item.role);
+    const chosen = [...(roles.includes('MAIN') ? ['websitefoto'] : []), ...(roles.includes('CATALOGUE_VARIANT') ? ['catalogusfoto'] : [])];
+    const whose = !owner ? 'Deze foto hoort bij een andere kleur. Open die kleur om te zien waar klanten hem zien.'
+      : chosen.length ? `Deze foto hoort bij ${owner} en is daar zelf gekozen als ${listNl(chosen)}.`
+        : `Deze foto hoort bij ${owner}. Open ${owner} om te zien waar klanten hem zien.`;
+    return where.length ? `Klanten zien deze foto nu ${listNl(where)}. ${whose}` : whose;
+  }
   if (where.length === 1 && uses.onDocuments) return 'Klanten zien deze foto nu alleen op offertes en facturen.';
   if (where.length) return `Klanten zien deze foto nu ${listNl(where)}.`;
-  if (photo.visibility.website) return 'Klanten zien deze foto nu alleen als extra foto op de website.';
-  if (photo.visibility.catalogue) return 'Klanten zien deze foto nu niet. Hij mag wel in de catalogus.';
+  if (photo.visibility.website) {
+    // A photo of all colours can be the website photo of a colour that has none of its own: never "alleen".
+    return photo.kind === 'SERIES' && photo.scope === 'ALL_VARIANTS'
+      ? 'Klanten zien deze foto nu als extra foto op de website. Een kleur zonder eigen foto kan hem ook als websitefoto tonen.'
+      : 'Klanten zien deze foto nu alleen als extra foto op de website.';
+  }
+  if (photo.visibility.catalogue) return 'Deze foto mag in de catalogus; een pdf met meer foto’s per reeks kan hem tonen.';
   return 'Klanten zien deze foto nu nergens.';
 }
 
@@ -1742,11 +1817,13 @@ function sheetChoiceRow(
   // The card of a colour that is not sold is fed by the colour place, also in a one-colour series.
   const gate = kind === 'website' ? places.websiteColour : kind === 'catalogue' ? places.catalogueColour : target.place;
   const off = gate.reason === 'COLOUR_NOT_ACTIVE';
+  const noSeries = kind === 'website' && gate.reason === 'NO_SERIES';
   const shownHere = !off && target.place.shownKey === photo.key;
   const row = (state: SheetRow['state'], sub: string, label = ''): SheetRow => ({
     key: kind, role: target.role, name, sub, state, label,
     shown: off || shownHere ? null : photoByKey(overview, target.place.shownKey),
   });
+  if (noSeries) return row('blocked', NO_SERIES_LINE);
   if (off) {
     return row('blocked', kind === 'website'
       ? (status === 'demo' ? `${colour} is een demo-product en staat daarom niet op de website.` : `${colour} is niet actief en staat daarom niet op de website.`)
@@ -1787,13 +1864,14 @@ function sheetChoiceRow(
 function sheetDocumentsRow(overview: ProductPhotoOverview, places: ResolvedPlaces, photo: ProductPhotoOverviewPhoto, colour: string): SheetRow {
   const documents = places.documents;
   const on = documents.shownKey === photo.key;
-  const relation = documentsState(places, colour);
+  const relation = documentsState(places, colour, overview.photos ?? []);
   const sub = relation.row === 'differs' ? 'Andere foto dan de website'
     : relation.row === 'documents-only' ? 'De website toont geen foto'
       : relation.row === 'none' ? 'Geen foto'
         : relation.row === 'colour-off' ? `${colour} staat niet op de website`
-          : relation.row === 'legacy' && documents.state !== 'CHOSEN' ? 'Automatisch gekozen'
-            : 'Zelfde foto als de website';
+          : relation.row === 'no-series' ? 'Dit product staat niet op de website'
+            : relation.row === 'legacy' && documents.state !== 'CHOSEN' ? 'Automatisch gekozen'
+              : 'Zelfde foto als de website';
   return {
     key: 'documents', role: null, name: 'Offertes en facturen', sub, state: on ? 'on' : 'plain', label: '',
     shown: on ? null : photoByKey(overview, documents.shownKey),

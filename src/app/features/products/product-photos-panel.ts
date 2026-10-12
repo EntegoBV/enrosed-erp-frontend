@@ -48,7 +48,6 @@ import {
 import {
   PHOTO_MESSAGES,
   PHOTO_UPLOAD_TYPES,
-  SERIES_STRIP_LINE,
   SERIES_STRIP_TITLE,
   PhotoPickerKind,
   PhotoUploadResult,
@@ -93,6 +92,7 @@ import {
   seriesLive,
   seriesPhotoGroups,
   seriesRows,
+  seriesStripLine,
   signedIdForPhotoKey,
   splitPhotoFiles,
   standingNotes,
@@ -278,11 +278,11 @@ export interface PhotoPlaceChange {
         @if (rows().length) {
           <div class="pp-series">
             <details class="sr" [open]="seriesOpen() || wide()" (toggle)="seriesToggled($event)">
-              <summary [attr.tabindex]="wide() ? -1 : null" (click)="wide() && $event.preventDefault()">
+              <summary [attr.tabindex]="wide() ? -1 : null" (click)="keepOpenWhenWide($event)">
                 <span class="sr__thumbs" aria-hidden="true">
                   @for (row of rows(); track row.key) { @if (row.photo; as photo) { <img [appAuthSrc]="photo.smallUrl" alt="" draggable="false" /> } }
                 </span>
-                <span class="sr__title"><b>{{ stripTitle }}</b><small>{{ wide() ? stripLine : attention() || stripLine }}</small></span>
+                <span class="sr__title"><b>{{ stripTitle }}</b><small>{{ wide() ? stripLine() : attention() || stripLine() }}</small></span>
                 <app-icon class="sr__chev" name="chevron-down" [size]="18" />
               </summary>
               <div class="sr__rows">
@@ -578,6 +578,8 @@ export interface PhotoPlaceChange {
     .gl__head { display: grid; gap: 10px; }
     .gl__head h3 { overflow-wrap: anywhere; }
     .pp-seg { height: 44px; }
+    /* The counts are the only place the number of photos stands: readable ink (4.5:1 on the grey track). */
+    :host ::ng-deep .pp-seg .ios-seg__count { color: var(--ink-2); }
     .gl__actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .pp-add { position: relative; }
     .pp-add--off { opacity: .45; pointer-events: none; }
@@ -756,7 +758,6 @@ export class ProductPhotosPanel {
 
   readonly acceptTypes = PHOTO_UPLOAD_TYPES.join(',');
   readonly stripTitle = SERIES_STRIP_TITLE;
-  readonly stripLine = SERIES_STRIP_LINE;
   readonly fileSize = formatBytes;
 
   private loadVersion = 0;
@@ -765,6 +766,11 @@ export class ProductPhotosPanel {
   private drag: OrderDrag | null = null;
   private lastOrderToast = 0;
   private lastControl: HTMLElement | null = null;
+  /** The card the focus returns to after a save when the control that started it is gone (the undo line removes its own button). */
+  private focusFallback: PlaceCardKey | null = null;
+  /** The toasts with "Ongedaan maken" or "Opnieuw proberen" that are still on screen; they go when the section goes. */
+  private actionToasts: number[] = [];
+  private destroyed = false;
 
   readonly productId = computed(() => this.product().id);
   readonly interactionDisabled = computed(() => this.disabled() || this.busy() || !this.overview());
@@ -784,10 +790,11 @@ export class ProductPhotosPanel {
   readonly notes = computed(() => standingNotes(this.overview(), this.colour(), this.product()));
   readonly rows = computed(() => (this.overview()?.familyId ? seriesRows(this.overview()) : []));
   readonly attention = computed(() => seriesAttention(this.rows()));
+  readonly stripLine = computed(() => seriesStripLine(this.rows().length));
   readonly assumption = computed(() => catalogueAssumptionLine(this.overview(), this.members()));
   /** The one place that speaks about the live site; null = no pill. */
   readonly syncPill = computed(() => {
-    if (!this.overview() || this.sync.loadError()) return null;
+    if (!this.overview()?.familyId || this.sync.loadError()) return null;
     return syncPill(this.sync.status(), this.sync.pollEnded(), this.live(), new Date());
   });
   /** The undo line of the card that was just changed. */
@@ -918,9 +925,15 @@ export class ProductPhotosPanel {
       const busy = this.busy();
       if (wasBusy && !busy) {
         const target = this.lastControl;
+        const fallback = this.focusFallback;
+        this.focusFallback = null;
         setTimeout(() => requestAnimationFrame(() => {
           const active = document.activeElement;
-          if (target?.isConnected && (!active || active === document.body)) target.focus();
+          if (active && active !== document.body) return;
+          const card = fallback ? this.host.nativeElement.querySelector<HTMLElement>(`[data-place="${fallback}"]`) : null;
+          /* The card's own button ("Wijzig"); a card without one still has its picture button. */
+          const next = target?.isConnected ? target : card?.querySelector<HTMLElement>('.place__act button') ?? card?.querySelector<HTMLElement>('button');
+          next?.focus();
         }));
       }
       wasBusy = busy;
@@ -945,6 +958,9 @@ export class ProductPhotosPanel {
       resize.observe(panel);
     });
     inject(DestroyRef).onDestroy(() => {
+      /* A toast outlives the section for a few seconds: its button must not act for a product that was left. */
+      this.destroyed = true;
+      this.dropActionToasts();
       this.releaseStaged();
       this.sync.detach();
       resize?.disconnect();
@@ -1037,6 +1053,15 @@ export class ProductPhotosPanel {
     this.view.set('series');
     this.reordering.set(true);
     setTimeout(() => this.host.nativeElement.querySelector('#pp-gallery')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  }
+
+  /**
+   * On a laptop the strip is always open: the summary does not fold it. It
+   * returns nothing on purpose: a handler that answers false cancels the tap,
+   * and on a phone the fold then never opens.
+   */
+  keepOpenWhenWide(event: Event): void {
+    if (this.wide()) event.preventDefault();
   }
 
   seriesToggled(event: Event): void {
@@ -1141,13 +1166,14 @@ export class ProductPhotosPanel {
     const change = this.lastChange();
     const overview = this.overview();
     const before = this.places();
-    if (!change || !overview || this.interactionDisabled()) return;
+    if (!change || !overview || this.destroyed || this.interactionDisabled()) return;
     const productId = overview.productId;
     const familyId = overview.familyId;
     let refused: string | null = null;
     let left: CatalogChannel | null = null;
     let done = false;
-    /* One step only: the line goes, whatever the server answers. */
+    /* One step only: the line goes, whatever the server answers. Its button goes with it, so the focus returns to the card. */
+    this.focusFallback = change.card;
     this.lastChange.set(null);
     this.busy.set(true);
     try {
@@ -1227,7 +1253,7 @@ export class ProductPhotosPanel {
     const overview = this.overview();
     const before = this.places();
     const familyId = overview?.familyId;
-    if (!overview || !before || !familyId || this.busy() || this.disabled()) return;
+    if (!overview || !before || !familyId || this.destroyed || this.busy() || this.disabled()) return;
     const { accepted, skipped } = splitPhotoFiles([file]);
     if (skipped) this.ui.toast(skipped, 'err');
     if (!accepted.length) return;
@@ -1291,7 +1317,7 @@ export class ProductPhotosPanel {
     if (this.productId() !== productId) return;
     if (failure) {
       /* The photo is in the series, not chosen: the same file again is safe (the server reuses it). */
-      if (retry) this.ui.toast(failure, 'err', { label: PHOTO_MESSAGES.retry, run: () => void this.uploadAndUse(kind, file, key) });
+      if (retry) this.actionToast(failure, 'err', { label: PHOTO_MESSAGES.retry, run: () => void this.uploadAndUse(kind, file, key) });
       else this.ui.toast(failure, 'err');
       await this.load(productId);
       if (retry && this.pickerKind()) this.uploadedKey.set(key);
@@ -1301,7 +1327,7 @@ export class ProductPhotosPanel {
         const message = reused ? uploadUseMessage('reused', colour) : placeSavedMessage(target.kind, colour, before, this.places(), 'chosen');
         if (target.chosenKey !== key) {
           this.lastChange.set({ kind: target.kind, role: target.role, card: kind, previousKey: target.chosenKey, newKey: key, restore });
-          this.ui.toast(message, 'ok', { label: PHOTO_MESSAGES.undo, run: () => void this.undo() });
+          this.actionToast(message, 'ok', { label: PHOTO_MESSAGES.undo, run: () => void this.undo() });
         } else {
           this.ui.toast(message);
         }
@@ -1620,6 +1646,7 @@ export class ProductPhotosPanel {
   /* ------------------------------------------------------------ private */
 
   private resetFor(productId: number | null): void {
+    this.dropActionToasts();
     ++this.loadVersion;
     this.overview.set(null);
     this.loadError.set(null);
@@ -1693,7 +1720,7 @@ export class ProductPhotosPanel {
       /* Null = the answer does not show what was asked: nothing is claimed, the screen says what is. */
       const text = typeof success === 'string' ? success : success();
       if (text !== null) {
-        if (action) this.ui.toast(text, 'ok', action); else this.ui.toast(text);
+        if (action) this.actionToast(text, 'ok', action); else this.ui.toast(text);
         this.announcement.set(text);
       }
       this.afterSave(before);
@@ -1706,6 +1733,17 @@ export class ProductPhotosPanel {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** A toast with a button that works on this product; remembered so it can be taken away with the section. */
+  private actionToast(text: string, kind: 'ok' | 'err', action: { label: string; run: () => void }): void {
+    const id = this.ui.toast(text, kind, action);
+    if (typeof id === 'number') this.actionToasts.push(id);
+  }
+
+  private dropActionToasts(): void {
+    for (const id of this.actionToasts ?? []) this.ui.dismissToast(id);
+    this.actionToasts = [];
   }
 
   /** After every saved change: the pill follows, the editor is told, and the other colours are asked again while they are looked at. */

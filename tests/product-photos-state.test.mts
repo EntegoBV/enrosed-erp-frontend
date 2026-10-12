@@ -693,12 +693,36 @@ test('4.4 the size "Groot en breed" is said on the row of the large photo only',
 test('4.4 series not live: the opening row speaks of later; a warn row counts for the folded summary', () => {
   const data = example({ websiteQuote: place('websiteQuote', null, 'NONE', 'NO_PHOTO') }, { seriesLiveOnWebsite: false });
   assert.equal(row(data, 'opening').why, 'Opent met deze foto zodra de reeks op de website staat.');
-  assert.equal(seriesAttention(seriesRows(data)), '1 foto vraagt aandacht');
+  assert.equal(seriesAttention(seriesRows(data)), '1 plek zonder foto', 'An empty place is not a photo');
   const two = example({
     websiteQuote: place('websiteQuote', null, 'NONE', 'NO_PHOTO'),
     catalogueDetail: place('catalogueDetail', 'F179', 'CHOSEN_NOT_SHOWN', 'CHOICE_NOT_AVAILABLE', { chosenKey: 'F243' }),
   });
-  assert.equal(seriesAttention(seriesRows(two)), '2 foto’s vragen aandacht');
+  assert.equal(seriesAttention(seriesRows(two)), '1 foto vraagt aandacht · 1 plek zonder foto');
+  const hidden = example({
+    websiteQuote: place('websiteQuote', 'F214', 'CHOSEN_NOT_SHOWN', 'NOT_PUBLISHED_FOR_WEBSITE', { chosenKey: 'F243' }),
+    catalogueDetail: place('catalogueDetail', 'F179', 'CHOSEN_NOT_SHOWN', 'CHOICE_NOT_AVAILABLE', { chosenKey: 'F243' }),
+  });
+  assert.equal(seriesAttention(seriesRows(hidden)), '2 foto’s vragen aandacht');
+});
+
+test('4.4 a series without any photo: the folded summary counts no photos, and the head counts the rows it draws', () => {
+  const none = (name: 'websiteOpening' | 'websiteQuote' | 'catalogueDetail' | 'catalogueOverview') => place(name, null, 'NONE', 'NO_PHOTO');
+  const empty = example({
+    websiteColour: place('websiteColour', null, 'NONE', 'NO_PHOTO'), documents: place('documents', null, 'NONE', 'NO_PHOTO'),
+    websiteOpening: none('websiteOpening'), websiteQuote: none('websiteQuote'),
+    catalogueColour: place('catalogueColour', null, 'NONE', 'NO_PHOTO'), catalogueCompactRow: place('catalogueCompactRow', null, 'NONE', 'NO_PHOTO'),
+    catalogueDetail: none('catalogueDetail'), catalogueOverview: none('catalogueOverview'),
+  }, { photos: [], seriesLiveOnWebsite: false, websitePageUrl: null });
+  assert.equal(seriesAttention(seriesRows(empty)), 'Nog geen foto’s', 'Never "4 foto’s vragen aandacht" next to "Deze kleur 0"');
+  assert.equal(state.seriesStripLine(seriesRows(empty).length), 'Vier foto’s die voor alle kleuren gelden.');
+  assert.equal(state.seriesStripLine(seriesRows(legacy()).length), 'Drie foto’s die voor alle kleuren gelden.', 'An older server has no opening row');
+  // The Website card promises nothing a series that is not online cannot show.
+  assert.equal(card(empty, 'website').caption, 'Kersenroze heeft geen foto voor de website. Deze reeks staat nog niet op de website.');
+  const liveNoQuote = example({ websiteColour: place('websiteColour', null, 'NONE', 'NO_PHOTO'), websiteQuote: none('websiteQuote') });
+  assert.equal(card(liveNoQuote, 'website').caption,
+    'Kersenroze heeft geen foto op de website. Op de productpagina is deze kleur daardoor niet aan te tikken.',
+    'No series photo on the order page: that half is left out');
 });
 
 test('4.4 a sentence that needs the colour and gets none falls back; an unknown reason gives the chip and no sentence', () => {
@@ -1162,8 +1186,18 @@ test('photo sheet: the sentence with the eye names every place, the series ones 
   assert.equal(seen('F242'), 'Klanten zien deze foto nu op de website, in de catalogus, op offertes en facturen, op de bestelpagina, als grote catalogusfoto en als kleine catalogusfoto.');
   assert.equal(seen('F244'), 'Klanten zien deze foto nu alleen als extra foto op de website.');
   assert.equal(seen('F243'), 'Klanten zien deze foto nu nergens.');
-  assert.equal(seen('F250'), 'Klanten zien deze foto nu niet. Hij mag wel in de catalogus.');
-  assert.equal(seen('F214'), 'Klanten zien deze foto nu als eerste foto op de productpagina.');
+  assert.equal(seen('F250'), 'Deze foto mag in de catalogus; een pdf met meer foto’s per reeks kan hem tonen.');
+  // Another colour's photo: never "alleen als extra foto"; its own places are that colour's.
+  assert.equal(seen('F214'), 'Klanten zien deze foto nu als eerste foto op de productpagina. Deze foto hoort bij Rood. Open Rood om te zien waar klanten hem zien.');
+  assert.equal(seen('F256'), 'Deze foto hoort bij Bordeaux. Open Bordeaux om te zien waar klanten hem zien.');
+  const shared = { ...byKey(data, 'F250'), visibility: { website: true, catalogue: true, orderApp: false } };
+  assert.equal(seenSentence(shared, places(data)),
+    'Klanten zien deze foto nu als extra foto op de website. Een kleur zonder eigen foto kan hem ook als websitefoto tonen.',
+    'A photo of all colours can be another colour’s website photo: never "alleen"');
+  const roods = { ...byKey(data, 'F179'), chosenFor: [{ productId: 101, variantLabel: 'Rood', role: 'MAIN' as const }, { productId: 101, variantLabel: 'Rood', role: 'CATALOGUE_VARIANT' as const }] };
+  assert.equal(seenSentence(roods, places(data)), 'Deze foto hoort bij Rood en is daar zelf gekozen als websitefoto en catalogusfoto.');
+  assert.equal(seenSentence({ ...roods, chosenFor: [roods.chosenFor[1]], variantLabel: null }, places(data)),
+    'Deze foto hoort bij een andere kleur. Open die kleur om te zien waar klanten hem zien.');
   const documents = example({ websiteColour: place('websiteColour', 'F244', 'CHOSEN'), documents: place('documents', 'F243', 'AUTOMATIC', 'FIRST_SERIES_PHOTO') });
   assert.equal(seenSentence(byKey(documents, 'F243'), places(documents)), 'Klanten zien deze foto nu alleen op offertes en facturen.');
   const simple = example({
@@ -1615,7 +1649,7 @@ function everything(data: ProductPhotoOverview, product: { active?: boolean; dem
   const built = places(data);
   const out: unknown[] = [
     placesHeading(K), placesHeading(K, true), placeCards(data, K, product), standingNotes(data, K, product), seriesRows(data),
-    seriesAttention(seriesRows(data)), documentsState(built, K), addWarning(data, 'THIS_VARIANT', K),
+    seriesAttention(seriesRows(data)), documentsState(built, K, data.photos), addWarning(data, 'THIS_VARIANT', K),
     catalogueAssumptionLine(data, [{ productId: 100, active: true }, { productId: 101, active: false }]),
     otherColourRow({ productId: 100, name: 'Half heart', colour: K, colourHex: null, active: product?.active !== false }, data),
     seriesPhotoGroups(data, K).map((group) => group.label),
@@ -1684,7 +1718,7 @@ test('vocabulary: no sentence the module builds uses a word of the old screen', 
   });
   const now = new Date(2026, 9, 12, 23, 5);
   const fixed: unknown[] = [
-    PHOTO_MESSAGES, state.OTHER_COLOURS_TEXTS, state.SERIES_STRIP_TITLE, state.SERIES_STRIP_LINE,
+    PHOTO_MESSAGES, state.OTHER_COLOURS_TEXTS, state.SERIES_STRIP_TITLE, [0, 1, 3, 4].map(state.seriesStripLine),
     orderSavedMessage(before, moved), documentsMovedNote(before, moved),
     (['website', 'catalogue', 'quote', 'detail', 'overview'] as const).map((kind) => placeSavedMessage(kind, K, before, moved)),
     channelSavedMessage([], ['WEBSITE']), channelSavedMessage(['WEBSITE'], []), channelSavedMessage([], ['CATALOGUE']),
@@ -1718,4 +1752,87 @@ test('vocabulary: the literals of the module hold none of those words either', a
   // The helpers of the old product page went with their last caller; nothing speaks the old vocabulary any more.
   for (const name of ['LEGACY_PHOTO_EXPORTS', 'hoofdfotoFirst', 'slideBadges']) assert.ok(!(name in state), `${name} is gone`);
   assert.ok(!source.includes('= Legacy'), 'No legacy block is left');
+});
+
+test('review: a colour that is not sold never reads "Nog geen foto" in its empty frame', () => {
+  assert.equal(card(inactiveColour(), 'website', K, INACTIVE).emptyLabel, 'Niet op de website');
+  assert.equal(card(demoColour(), 'website', K, { demo: true }).emptyLabel, 'Niet op de website');
+  assert.equal(card(demoColour(), 'catalogue', K, { demo: true }).emptyLabel, 'Niet in de catalogus');
+});
+
+test('review: the same file stored twice is one picture, not "Andere foto dan de website"', () => {
+  // The website falls back to the own copy, documents print the series copy of the same file.
+  const data = example({
+    websiteColour: place('websiteColour', 'P5601', 'AUTOMATIC', 'OWN_PHOTO_FALLBACK'),
+    documents: place('documents', 'F242', 'AUTOMATIC', 'FIRST_SERIES_PHOTO'),
+  });
+  data.photos = [photo('P5601', { duplicateOfKey: 'F242' }), ...data.photos];
+  assert.deepEqual(documentsState(places(data), K, data.photos), {
+    row: 'same-automatic', chip: 'Nu dezelfde foto als de website', tone: 'neutral', textIcon: null, action: null,
+    text: 'Het is dezelfde foto, twee keer opgeslagen. Kies zelf een websitefoto; dan blijft dat zo.',
+  });
+  const item = card(data, 'documents');
+  assert.deepEqual([item.chip, item.tone, item.actions], ['Nu dezelfde foto als de website', 'neutral', []]);
+  assert.equal(sheetRows(data, byKey(data, 'F242'), K).colour[2].sub, 'Zelfde foto als de website');
+  // Two different pictures still differ.
+  const other = example({ websiteColour: place('websiteColour', 'F244', 'AUTOMATIC', 'OWN_COLOUR_SERIES_PHOTO'), documents: place('documents', 'F243', 'AUTOMATIC', 'FIRST_SERIES_PHOTO') });
+  assert.equal(documentsState(places(other), K, other.photos).row, 'differs');
+});
+
+test('review: one-colour series, the colour’s stored catalogue choice is not printed: the card says so and can put it back', () => {
+  // Payload 07-single-colourchoice-off: the choice (F250, all colours) lost its catalogue switch; the pdf prints F242.
+  const data = oneColour(place('catalogueDetail', 'F242', 'AUTOMATIC', 'FIRST_IN_SERIES_ORDER'), 'F250');
+  data.places!.catalogueCompactRow = place('catalogueCompactRow', 'F242', 'CHOSEN_NOT_SHOWN', 'NOT_PUBLISHED_FOR_CATALOGUE', { chosenKey: 'F250' });
+  const item = card(data, 'catalogue');
+  assert.deepEqual([item.photo?.key, item.chip, item.tone, item.chosenThumb?.key, labels(item.actions)],
+    ['F242', 'Je keuze wordt niet getoond', 'warn', 'F250', ['Zet mijn keuze weer aan', 'Kies opnieuw']]);
+  assert.deepEqual(item.reason, { strong: 'Je gekozen foto mag niet in de catalogus.', rest: 'De pdf toont daarom deze foto.' });
+  const target = pickerTarget(data.places!, 'catalogue');
+  assert.deepEqual([target.kind, target.role, target.chosen, target.chosenKey, target.place.state], ['catalogue', 'CATALOGUE_VARIANT', false, 'F250', 'CHOSEN_NOT_SHOWN']);
+  assert.equal(placeShowsChoice(data, 'catalogue', 'F242'), false);
+  assert.equal(standingNotes(data, K).some((note) => note.id === 'compact'), false);
+  // The choice is printed: nothing changes for the card ("Zelf gekozen").
+  const shown = oneColour(place('catalogueDetail', 'F250', 'AUTOMATIC', 'THIS_COLOUR_LEAD'), 'F250');
+  shown.places!.catalogueCompactRow = place('catalogueCompactRow', 'F250', 'CHOSEN');
+  assert.deepEqual([card(shown, 'catalogue').chip, labels(card(shown, 'catalogue').actions)], ['Zelf gekozen', ['Wijzig']]);
+});
+
+test('review: one-colour series with a chosen large photo: the Compact note states the fact and offers no button that cannot help', () => {
+  // Payload 07-single-detailchoice: the colour chose F250, the series' large photo is the chosen F243.
+  const data = oneColour(place('catalogueDetail', 'F243', 'CHOSEN'), 'F250');
+  data.places!.catalogueCompactRow = place('catalogueCompactRow', 'F250', 'CHOSEN');
+  const note = standingNotes(data, K).find((item) => item.id === 'compact')!;
+  assert.deepEqual([note.strong, note.rest, note.action],
+    ['Het Compact overzicht toont een andere foto.', 'Dat gebruikt de foto van de kleur zelf, niet de grote catalogusfoto van de reeks.', null]);
+  // Without a stored large photo the card's picker is the colour's own: the promise holds and the button stays.
+  const automatic = oneColour(place('catalogueDetail', 'F250', 'AUTOMATIC', 'FIRST_IN_SERIES_ORDER'));
+  automatic.places!.catalogueCompactRow = place('catalogueCompactRow', 'F242', 'AUTOMATIC', 'FIRST_SERIES_PHOTO');
+  const kept = standingNotes(automatic, K).find((item) => item.id === 'compact')!;
+  assert.deepEqual([kept.rest, kept.action], ['Kies zelf een catalogusfoto; dan tonen beide dezelfde.', { id: 'pick', label: 'Kies catalogusfoto', picker: 'catalogue' }]);
+});
+
+test('review: a product without a series (reason NO_SERIES) reads true, should a screen ever show it', () => {
+  // Payload 11-noseries-chosen. The editor shows the own-photo manager for such a product; these rules must still not lie.
+  const data = example({
+    websiteColour: place('websiteColour', null, 'CHOSEN_NOT_SHOWN', 'NO_SERIES', { chosenKey: 'P39' }),
+    websiteOpening: place('websiteOpening', null, 'NONE', 'NO_SERIES'), websiteQuote: place('websiteQuote', null, 'NONE', 'NO_SERIES'),
+    documents: place('documents', 'P39', 'CHOSEN'),
+    catalogueColour: place('catalogueColour', null, 'CHOSEN_NOT_SHOWN', 'SINGLE_COLOUR_SERIES', { chosenKey: 'P39' }),
+    catalogueDetail: place('catalogueDetail', 'P39', 'AUTOMATIC', 'THIS_COLOUR_LEAD'),
+    catalogueOverview: place('catalogueOverview', 'P39', 'AUTOMATIC', 'SAME_AS_LARGE_PHOTO'),
+    catalogueCompactRow: place('catalogueCompactRow', 'P39', 'CHOSEN'),
+  }, { familyId: null, familyName: null, photos: [photo('P38'), photo('P39')], seriesLiveOnWebsite: false, colourOnWebsite: false, websitePageUrl: null,
+    catalogueAssumption: { layout: 'BROCHURE', photosPerSeries: 1, productIds: [100], includesThisColour: true } } as Partial<ProductPhotoOverview>);
+  const website = card(data, 'website');
+  assert.deepEqual([website.photo, website.emptyLabel, website.chip, website.tone, website.reason, website.chosenThumb, website.actions],
+    [null, 'Niet op de website', 'Niet op de website', 'neutral', null, null, []]);
+  assert.equal(website.caption, 'Dit product hoort bij geen reeks en staat daarom niet op de website.');
+  const documents = card(data, 'documents');
+  assert.deepEqual([documents.photo?.key, documents.chip, documents.tone, documents.text, documents.actions],
+    ['P39', 'Zelf gekozen', 'neutral', 'Dit product staat niet op de website. Op een offerte of factuur staat deze foto.', []]);
+  assert.equal(pickerModel(data, 'website', K)!.upload, false, 'Upload-and-use stores a series photo');
+  assert.equal(pickerModel(data, 'catalogue', K)!.upload, false);
+  const rows = sheetRows(data, byKey(data, 'P38'), K);
+  assert.deepEqual([rows.colour[0].state, rows.colour[0].sub, rows.colour[2].sub, rows.series],
+    ['blocked', 'Dit product hoort bij geen reeks en staat daarom niet op de website.', 'Dit product staat niet op de website', []]);
 });
