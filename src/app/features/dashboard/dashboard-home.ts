@@ -1,5 +1,5 @@
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Injector, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AnalyticsApi, WebsiteAnalyticsReport } from '../../core/api/analytics-api';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
@@ -16,6 +16,7 @@ import { PlannerStore } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { WorkQueue } from '../../core/api/work-queue';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -23,6 +24,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { countsAsNewWebsiteItem } from '../sales/quote-status';
 import { PlannerCards } from './planner-cards';
 import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money';
+import { FinanceIntake } from '../finance/finance-intake';
 import { DashboardSearchConsole } from './dashboard-search-console';
 import { DashboardToday } from './dashboard-today';
 import { localPlannerDate, purchasePlannerMilestones, todayAgendaEntries, type TodayAgendaEntry } from './dashboard-today-state';
@@ -40,7 +42,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
 @Component({
   selector: 'app-dashboard-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe, DashboardSearchConsole, DashboardToday],
+  imports: [RouterLink, Icon, PageHeader, Skeleton, PlannerCards, DateNlPipe, EurPipe, NumPipe, DashboardSearchConsole, DashboardToday, ContextMenu],
   template: `
     <app-page-header [title]="greeting()" [subtitle]="today()" />
 
@@ -329,6 +331,14 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
         </div>
       }
     </main>
+
+    <!-- The phone's '+': quick actions, the camera first. Hidden on a desk by the .fab rule. -->
+    <button class="fab fab--round" type="button" aria-label="Snelle acties" (click)="quickMenu.set(true)"><app-icon name="plus" [size]="24" /></button>
+    <input #photo type="file" accept="image/*" capture="environment" hidden (change)="photoPicked($event)" />
+    @if (quickMenu()) {
+      <app-context-menu variant="ios" title="Toevoegen" cancelLabel="Annuleren" [items]="quickActions"
+                        (pick)="quickAction($event.id)" (closed)="quickMenu.set(false)" />
+    }
   `,
   styles: `
     :host { display: block; }
@@ -441,6 +451,10 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
     .home-market-link small { overflow: hidden; color: var(--muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
     .home-market-link i { color: var(--muted-2); font-size: 17px; font-style: normal; }
 
+    @media (max-width: 679.98px) {
+      /* Room for the round '+' above the tab bar, so the last card scrolls clear of it. */
+      .home-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 100px); }
+    }
     @media (min-width: 760px) and (max-width: 999.98px) {
       .home-page { padding-bottom: 38px; }
       .home-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -477,8 +491,21 @@ export class DashboardHome {
   private readonly planner = inject(PlannerStore);
   private readonly analytics = inject(AnalyticsApi);
   readonly work = inject(WorkQueue);
+  private readonly router = inject(Router);
+  private readonly intake = inject(FinanceIntake);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly photo = viewChild.required<ElementRef<HTMLInputElement>>('photo');
+  readonly quickMenu = signal(false);
+  /** What the phone's '+' can add, in the order the owner reaches for them. */
+  readonly quickActions: ContextMenuItem[] = [
+    { id: 'photo', label: 'Bon of factuur fotograferen', hint: 'Foto nemen en meteen als kost boeken', iconName: 'camera' },
+    { id: 'cost', label: 'Kost boeken', iconName: 'receipt' },
+    { id: 'movement', label: 'Bankbeweging noteren', iconName: 'bank' },
+    { id: 'order', label: 'Nieuwe order', iconName: 'sales' },
+    { id: 'customer', label: 'Nieuwe klant', iconName: 'customers' },
+    { id: 'product', label: 'Nieuw product', iconName: 'products' },
+  ];
   private readonly plannerCards = viewChild(PlannerCards);
   private readonly plannerHost = viewChild<PlannerCards, ElementRef<HTMLElement>>(PlannerCards, { read: ElementRef });
   readonly todayDate = signal(localPlannerDate(new Date()));
@@ -624,6 +651,32 @@ export class DashboardHome {
       window.clearInterval(timer);
       window.removeEventListener('focus', checkDay);
     });
+  }
+
+  quickAction(id: string): void {
+    this.quickMenu.set(false);
+    /* The camera input must be clicked inside the tap itself: Safari ignores a file input opened outside a user gesture. */
+    if (id === 'photo') this.photo().nativeElement.click();
+    else if (id === 'cost') this.bookCost([]);
+    else if (id === 'movement') {
+      this.intake.queue({ kind: 'movement' });
+      void this.router.navigate(['/costs'], { queryParams: { view: 'bank', tab: 'movements' } });
+    } else if (id === 'order') void this.router.navigate(['/sales'], { queryParams: { nieuw: '1' } });
+    else if (id === 'customer') void this.router.navigate(['/customers'], { queryParams: { nieuw: '1' } });
+    else if (id === 'product') void this.router.navigate(['/products/new']);
+  }
+
+  photoPicked(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = [...(input.files ?? [])];
+    input.value = '';
+    if (files.length) this.bookCost(files);
+  }
+
+  /** Hands the photo (or nothing) to Kosten & bank, which opens a blank cost with it queued. */
+  private bookCost(files: File[]): void {
+    this.intake.queue({ kind: 'cost', files });
+    void this.router.navigate(['/costs'], { queryParams: { view: 'costs' } });
   }
 
   openTodayEntry(entry: TodayAgendaEntry): void {

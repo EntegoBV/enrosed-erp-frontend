@@ -853,6 +853,8 @@ a { color: var(--rose); }
   gap: 8px;
   cursor: pointer;
 }
+/* The home's '+': an icon-only circle instead of a labelled pill. */
+.fab--round { width: 56px; min-height: 56px; padding: 0; border-radius: 50%; justify-content: center; }
 @media (min-width: 680px) {
   .fab { display: none; }
 }
