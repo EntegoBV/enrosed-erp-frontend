@@ -24,8 +24,6 @@ import type {
  * Every sentence the section shows is built here, in the vocabulary of the
  * design (one name per concept). tests/product-photos-state.test.mts scans
  * what these functions return for the words the owner should never read.
- * The block "Legacy" at the end is what the old components still import; it
- * goes when they are rewritten.
  */
 
 /** Where choosing a photo for a role also publishes it. */
@@ -2015,33 +2013,4 @@ export function otherColourRow(
         : `${name} heeft nog geen foto.`,
     linkLabel: `Open ${name}`,
   };
-}
-
-/* ================================================================= Legacy
- * What product-view.ts still imports until it is rewritten on the places
- * above. These exports speak the old vocabulary ("Hoofdfoto", "Offerte") and
- * are not part of the new screen: delete each one together with its last caller.
- * LEGACY_PHOTO_EXPORTS names them for the vocabulary test.
- */
-
-export const LEGACY_PHOTO_EXPORTS: readonly string[] = ['hoofdfotoFirst', 'slideBadges'];
-
-/** Carousels open on the Hoofdfoto; the other photos keep their order. */
-export function hoofdfotoFirst<T extends { id: number }>(photos: readonly T[], main: T | null): T[] {
-  const index = main ? photos.findIndex((photo) => photo.id === main.id) : -1;
-  return index <= 0 ? [...photos] : [photos[index], ...photos.slice(0, index), ...photos.slice(index + 1)];
-}
-
-/** Badges on the current slide of the product view and desk carousels. */
-export function slideBadges(
-  photo: Pick<PhotoDto, 'id' | 'familyPhotoId'>,
-  main: boolean,
-  overview: ProductPhotoOverview | null,
-): string[] {
-  const entry = overview?.photos.find((item) => item.key === photoKeyForProductPhoto(photo));
-  return [
-    ...(main ? ['Hoofdfoto'] : []),
-    ...(entry?.visibility.website ? ['Website'] : []),
-    ...(entry?.roles.includes('QUOTE') ? ['Offerte'] : []),
-  ];
 }

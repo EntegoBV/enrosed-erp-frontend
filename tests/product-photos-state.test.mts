@@ -11,7 +11,6 @@ import type {
 } from '../src/app/core/api/models.ts';
 import * as state from '../src/app/features/products/product-photos-state.ts';
 import {
-  LEGACY_PHOTO_EXPORTS,
   PHOTO_MESSAGES,
   addSheetTexts,
   addWarning,
@@ -32,7 +31,6 @@ import {
   duplicatesNote,
   familyOrderWith,
   galleryTexts,
-  hoofdfotoFirst,
   legacyPlaces,
   movedOrder,
   orderSavedMessage,
@@ -65,7 +63,6 @@ import {
   sheetRows,
   sheetStage,
   signedIdForPhotoKey,
-  slideBadges,
   splitPhotoFiles,
   standingNotes,
   switchLock,
@@ -1704,35 +1701,13 @@ test('vocabulary: no sentence the module builds uses a word of the old screen', 
   assert.equal(banned('1 foto toegevoegd · staat als extra foto op de website · 1 foto stond al in de reeks'), null);
 });
 
-test('vocabulary: the literals of the module outside its legacy block hold none of those words either', async () => {
+test('vocabulary: the literals of the module hold none of those words either', async () => {
   const source = await readFile(new URL('../src/app/features/products/product-photos-state.ts', import.meta.url), 'utf8');
-  const marker = source.indexOf('= Legacy');
-  assert.ok(marker > 0, 'The legacy block is marked');
-  const live = source.slice(0, marker).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const live = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const literals = live.match(/'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g) ?? [];
   assert.ok(literals.length > 300);
   for (const literal of literals) assert.equal(banned(literal), null, `${literal} uses a word the owner should not read`);
-  // Every export is either scanned above or named as legacy; a new one cannot slip in unseen with old words.
-  const legacyBlock = source.slice(marker);
-  for (const name of LEGACY_PHOTO_EXPORTS) {
-    assert.match(legacyBlock, new RegExp(`export (?:const|function|type) ${name}\\b`), `${name} lives in the legacy block`);
-    assert.ok(name in state);
-  }
-  const exported = [...legacyBlock.matchAll(/^export (?:const|function) (\w+)/gm)].map((match) => match[1]).filter((name) => name !== 'LEGACY_PHOTO_EXPORTS');
-  assert.deepEqual(exported.sort(), [...LEGACY_PHOTO_EXPORTS].sort());
-});
-
-/* ---------------------------------------------------------------- legacy
- * The old components still call these until they are rewritten; the tests go
- * with the exports.
- */
-
-test('legacy exports keep their behaviour until the old components are gone', () => {
-  const data = legacy();
-  const rows = [{ id: 5501, familyPhotoId: null }, { id: 9001, familyPhotoId: 244 }, { id: 9002, familyPhotoId: 242 }];
-  assert.deepEqual(hoofdfotoFirst(rows, rows[2]).map((item) => item.id), [9002, 5501, 9001]);
-  assert.deepEqual(hoofdfotoFirst(rows, null).map((item) => item.id), [5501, 9001, 9002]);
-  assert.deepEqual(slideBadges(rows[2], true, data), ['Hoofdfoto', 'Website', 'Offerte']);
-  assert.deepEqual(slideBadges(rows[1], false, data), ['Website']);
-  assert.deepEqual(slideBadges(rows[2], true, null), ['Hoofdfoto']);
+  // The helpers of the old product page went with their last caller; nothing speaks the old vocabulary any more.
+  for (const name of ['LEGACY_PHOTO_EXPORTS', 'hoofdfotoFirst', 'slideBadges']) assert.ok(!(name in state), `${name} is gone`);
+  assert.ok(!source.includes('= Legacy'), 'No legacy block is left');
 });
