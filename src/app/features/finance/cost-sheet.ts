@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { CompanyCost } from '../../core/api/models';
+import { CompanyCost, VatRegime } from '../../core/api/models';
 import { DateField } from '../../shared/date-field';
 import { formatBytes } from '../../shared/format-bytes';
 import { Icon } from '../../shared/icon';
@@ -11,9 +11,12 @@ import { Sheet } from '../../shared/ui';
 import { SALES_CHANNELS } from '../sales/sales-channels';
 import { exclFromIncl } from './cost-amount';
 import { categoryChoices } from './cost-categories';
-import { cashTotalOf, vatOf } from './finance-metrics';
+import { paymentTotals } from './cost-payments';
+import { CostRegimeFields, NO_VAT_REGIMES, depreciationYearsFor, partyRegimeOf, regimePrefill, regimeProblem } from './cost-regime-fields';
+import type { RegimeFields } from './cost-regime-fields';
+import { REVERSE_CHARGE, cashTotalOf, suggestInvestment, vatOf } from './finance-metrics';
 import { blankCost } from './finance-sections';
-import { FinanceState, PartyPrefill } from './finance-state';
+import { FinanceState, PartyPrefill, formatEuro } from './finance-state';
 import { PartyField } from './party-field';
 import { rankParties } from './party-suggestions';
 import type { PartyCandidate } from './party-suggestions';
@@ -24,13 +27,15 @@ type AmountMode = 'excl' | 'incl';
 
 /** The categories that stand for a fair: the fair itself is then the cost's channel. */
 const FAIR_CATEGORIES = new Set(['BEURS', 'TICA']);
+/** The regimes with an invoice behind them: the date field reads 'Factuurdatum'. */
+const INVOICE_REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FOREIGN_VAT', 'EXEMPT']);
 const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountInclEur as number) && (cost.amountInclEur as number) > 0 ? cost.amountInclEur as number : 0);
 
 /** The cost form: book one, correct one, settle one. The amount comes first. */
 @Component({
   selector: 'app-cost-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Sheet, DateField, EurPipe, DateNlPipe, Icon, VatChoice, Segmented, PartyField],
+  imports: [FormsModule, RouterLink, Sheet, DateField, EurPipe, DateNlPipe, Icon, VatChoice, Segmented, PartyField, CostRegimeFields],
   template: `
     <app-sheet variant="ios" [title]="draft().id ? 'Kost bewerken' : 'Kost boeken'" [wide]="true" (closed)="close()">
       <div body class="fin-sheet fin-form">
@@ -39,26 +44,35 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
           <p class="fin-hint fin-field--wide">Automatisch geboekt als vaste kost. Deze boeking mag je hier corrigeren; pas de vaste kost zelf aan om de volgende periodes te veranderen.</p>
         }
         <div class="fin-amount-mode fin-field--wide">
-          <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Bedrag" [options]="modes" [value]="mode()" (changed)="setMode($any($event))" />
+          <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Bedrag" [options]="modes()" [value]="mode()" (changed)="setMode($any($event))" />
         </div>
         <label class="fin-amount fin-field--wide">
-          <span class="fin-sr">{{ mode() === 'incl' ? 'Bedrag incl. btw' : 'Bedrag excl. btw' }}</span><i aria-hidden="true">€</i>
+          <span class="fin-sr">{{ amountLabel() }}</span><i aria-hidden="true">€</i>
           <input type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0,00" [attr.data-initial-focus]="draft().id ? null : ''"
                  [ngModel]="amount() || null" (ngModelChange)="setAmount(+($event || 0))" />
         </label>
+        @if (amountNote(); as note) { <p class="fin-hint fin-field--wide">{{ note }}</p> }
+        @if (investmentSuggested()) {
+          <div class="fin-amount-mode fin-field--wide"><button class="fin-choice__chip" type="button" (click)="bookAsInvestment()">Boven € 250 excl.: als investering boeken?</button></div>
+        }
         <div class="fin-group" [class.ios-group]="!state.desk()">
-          <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
-            <app-vat-choice [value]="draft().vatPct" (changed)="setVat($event)" />
-            @if (mode() === 'incl') {
-              <span class="fin-hint">Excl. btw: <b>{{ draft().amountExclEur | eur }}</b> · btw <b>{{ vatOf(draft()) | eur }}</b></span>
-            } @else {
-              <span class="fin-hint">Incl. btw: <b>{{ cashTotalOf(draft()) | eur }}</b></span>
-            }</div>
+          @if (vatShown()) {
+            <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
+              <app-vat-choice [value]="draft().vatPct" (changed)="setVat($event)" />
+              <span class="fin-hint">
+                @if (reverseCharge()) { btw verlegd {{ draft().vatPct ?? 0 }} % · <b>{{ vatOf(draft()) | eur }}</b> · niet aan de leverancier, wel in de aangifte }
+                @else if (foreignVat()) { Buitenlandse btw <b>{{ vatOf(draft()) | eur }}</b> · niet aftrekbaar · telt als kost }
+                @else if (mode() === 'incl') { Excl. btw: <b>{{ draft().amountExclEur | eur }}</b> · btw <b>{{ vatOf(draft()) | eur }}</b> }
+                @else { Incl. btw: <b>{{ cashTotalOf(draft()) | eur }}</b> }
+              </span></div>
+          }
+          <details app-cost-regime-fields class="fin-disclosure fin-field--wide" [(open)]="regimeOpen" [value]="draft()" [category]="draft().category" [amountExclEur]="draft().amountExclEur"
+                   [countries]="state.countryChoices()" [date]="draft().date" [note]="derivedHint()" (changed)="applyRegime($event)"></details>
         </div>
         <div class="fin-group" [class.ios-group]="!state.desk()">
           <label class="fin-field fin-field--wide"><span class="req">Omschrijving</span>
             <input class="input" placeholder="bijv. Standhuur TICA oktober" [ngModel]="draft().description" (ngModelChange)="patch({ description: $event })" /></label>
-          <div class="fin-field"><span class="req">Datum</span>
+          <div class="fin-field"><span class="req">{{ dateLabel() }}</span>
             <app-date-field fieldId="k-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /></div>
           <label class="fin-field"><span class="req">Categorie</span>
             <select class="select" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
@@ -99,18 +113,28 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
           <label class="fin-field"><span>Factuurnummer</span>
             <input class="input" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></label>
         </div>
-        @if (filledFrom(); as party) {
-          <p class="fin-hint fin-field--wide">Categorie, btw en kanaal overgenomen {{ party.stored ? 'uit de lijst Aan wie voor' : 'van je vorige kost aan' }} {{ party.name }}.</p>
+        @if (filledFrom(); as filled) {
+          <p class="fin-hint fin-field--wide">Categorie, btw en {{ filled.regime ? 'btw-regeling' : 'kanaal' }} overgenomen {{ filled.party.stored ? 'uit de lijst Aan wie voor' : 'van je vorige kost aan' }} {{ filled.party.name }}.</p>
+        }
+        @if (forwarderHint()) {
+          <p class="fin-hint fin-field--wide">Een expediteursfactuur boek je per soort lijn: zeevracht (vrijgesteld), diensten met 21 % (België), betaalde invoer-btw, invoerrechten (niet in de aangifte, horen bij de goederen). Gebruik Dupliceren voor de volgende lijn.</p>
         }
         @if (duplicates().length) {
           <p class="fin-hint fin-hint--warn fin-field--wide" role="status"><b>Lijkt al geboekt:</b>
             @for (other of duplicates().slice(0, 2); track other.id; let last = $last) { {{ other.description }} van {{ other.date | dateNl }}, {{ other.amountExclEur | eur }} excl.{{ other.reference ? ' (' + other.reference + ')' : '' }}{{ last ? '.' : ';' }} }</p>
         }
         <div class="fin-group" [class.ios-group]="!state.desk()">
-          <label class="fin-field fin-field--switch fin-field--wide"><span>Betaald<small>{{ draft().paidOn ? 'Op ' + (draft().paidOn ?? '') : 'Nog open: staat bij Te betalen' }}</small></span>
-            <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!draft().paidOn" (change)="togglePaid($any($event.target).checked)" /></label>
-          @if (draft().paidOn) {
-            <div class="fin-field"><span>Betaald op</span><app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /></div>
+          @if (payments().length) {
+            <div class="fin-field fin-field--switch fin-field--wide"><span>Betalingen<small>{{ paidSummary() }}</small><small>Betalingen beheer je in het detail van de kost.</small></span></div>
+            @if (singleMovable()) {
+              <div class="fin-field"><span>Betaald op</span><app-date-field fieldId="k-paid" [value]="draft().paidOn ?? payments()[0].paidOn" (valueChange)="patch({ paidOn: $event || null })" /></div>
+            }
+          } @else {
+            <label class="fin-field fin-field--switch fin-field--wide"><span>Betaald<small>{{ draft().paidOn ? 'Op ' + (draft().paidOn ?? '') : 'Nog open: staat bij Te betalen' }}</small></span>
+              <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!draft().paidOn" (change)="togglePaid($any($event.target).checked)" /></label>
+            @if (draft().paidOn) {
+              <div class="fin-field"><span>Betaald op</span><app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /></div>
+            }
           }
           @if (becomingPaid()) {
             <label class="fin-field fin-field--switch fin-field--wide"><span>Ook als bankbeweging noteren<small>Een uitgaande beweging met een verwijzing naar deze kost</small></span>
@@ -178,8 +202,9 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
       </div>
       <div foot style="display:contents">
         @if (draft().id && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button> }
+        @if (regimeProblem(); as problem) { <span class="fin-foot-note">{{ problem }}</span> }
         <span class="spacer"></span>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -188,7 +213,6 @@ export class CostSheet {
   readonly state = inject(FinanceState);
   readonly cashTotalOf = cashTotalOf;
   readonly vatOf = vatOf;
-  readonly modes: SegmentOption[] = [{ id: 'excl', label: 'Excl. btw' }, { id: 'incl', label: 'Incl. btw' }];
   readonly draft = linkedSignal<CompanyCost>(() => this.state.costDraft() ?? blankCost(this.state.today()));
   /** Excl. for a new cost; incl. when the cost being edited was entered that way. */
   readonly mode = signal<AmountMode>(storedIncl(this.draft()) ? 'incl' : 'excl');
@@ -214,6 +238,38 @@ export class CostSheet {
     return `${files.length} ${photos ? "foto's" : 'bestanden'} gaan mee bij het boeken`;
   });
 
+  /* the regime: it decides what the amount block shows */
+  readonly regime = computed(() => this.draft().vatRegime);
+  readonly reverseCharge = computed(() => REVERSE_CHARGE.has(this.regime() ?? ''));
+  readonly foreignVat = computed(() => this.regime() === 'FOREIGN_VAT');
+  readonly noVat = computed(() => NO_VAT_REGIMES.has(this.regime() ?? ''));
+  readonly importVat = computed(() => this.regime() === 'IMPORT_VAT_PAID');
+  /** The rate stays on screen for a Belgian, foreign-VAT or reverse-charge invoice; the others carry none, or only VAT. */
+  readonly vatShown = computed(() => !this.noVat() && !this.importVat());
+  readonly amountLabel = computed(() => {
+    if (this.importVat()) return 'Betaalde invoer-btw';
+    if (this.regime() === 'NO_INVOICE') return 'Bedrag op de bon';
+    if (this.noVat()) return 'Bedrag';
+    return this.mode() === 'incl' ? 'Bedrag incl. btw' : 'Bedrag excl. btw';
+  });
+  /** 'Excl. btw | Incl. btw' for an invoice with VAT; the other regimes have one figure, named in a single segment. */
+  readonly modes = computed<SegmentOption[]>(() => (this.reverseCharge() || this.noVat() || this.importVat()
+    ? [{ id: this.mode(), label: this.amountLabel() }]
+    : [{ id: 'excl', label: 'Excl. btw' }, { id: 'incl', label: 'Incl. btw' }]));
+  readonly dateLabel = computed(() => (this.importVat() ? 'Datum douanedocument' : INVOICE_REGIMES.has(this.regime() ?? '') ? 'Factuurdatum' : 'Datum'));
+  readonly amountNote = computed(() => {
+    if (this.regime() === 'NO_INVOICE') return 'Staat ons btw-nummer op de bon (max. € 100)? Kies dan België.';
+    if (this.importVat()) return 'De douaneaangifte is het bewijsstuk, niet de factuur van de expediteur · zet het aangiftenummer bij Factuurnummer';
+    return '';
+  });
+  readonly investmentSuggested = computed(() => suggestInvestment(this.draft()));
+  readonly forwarderHint = computed(() => (this.draft().category ?? '').trim().toUpperCase() === 'TRANSPORT' && (this.regime() === 'EXEMPT' || this.importVat()));
+  /** Open at first paint when the form was asked for it or the regime is still derived or unknown; the user takes over from there. */
+  readonly regimeOpen = signal(this.state.costSheetFocus() === 'regime' || !this.draft().vatRegimeConfirmed || this.draft().vatRegime == null);
+  /** 'Afgeleid van het land · controleer' after a party prefill; gone once a regime is picked. */
+  readonly derivedHint = signal('');
+  readonly regimeProblem = computed(() => regimeProblem(this.draft()));
+
   /* channels and fairs: the select lists both, the chips only the fairs */
   readonly channels = computed(() => this.state.channelChoices().filter((channel) => channel.hint !== 'Beurs'));
   readonly fairChoices = computed(() => this.state.channelChoices().filter((channel) => channel.hint === 'Beurs'));
@@ -235,7 +291,7 @@ export class CostSheet {
     const draft = this.draft();
     return !!draft.date && !!(draft.category ?? '').trim() && !!(draft.description ?? '').trim();
   });
-  readonly canSave = computed(() => this.basics() && this.amount() > 0 && !this.bankBlocked());
+  readonly canSave = computed(() => this.basics() && this.amount() > 0 && !this.bankBlocked() && !this.regimeProblem());
   readonly showError = computed(() => this.tried() && !(this.amount() > 0));
 
   /* "Aan wie" */
@@ -247,15 +303,29 @@ export class CostSheet {
     if (!name || this.state.costPartyFor(name)) return false;
     return this.partyCommitted() || rankParties(name, this.state.partySuggestions(), 1).length === 0;
   });
-  /** The name whose defaults filled in category, VAT and channel. */
-  readonly filledFrom = signal<PartyPrefill | null>(null);
+  /** The name whose defaults filled in category, VAT and channel, and whether its regime came along. */
+  readonly filledFrom = signal<{ party: PartyPrefill; regime: boolean } | null>(null);
   /** Same supplier, same amount, same invoice number or within six weeks: probably booked already. */
   readonly duplicates = computed(() => duplicateCandidates(this.draft(), this.state.costs()));
+
+  /* payments: a cost with rows is settled in its detail, the form only reads them */
+  readonly payments = computed(() => this.draft().payments ?? []);
+  /** 'n betalingen · € x betaald · nog € y', or settled, or over the top. */
+  readonly paidSummary = computed(() => {
+    const payments = this.payments();
+    const totals = paymentTotals(cashTotalOf(this.draft()), payments);
+    const head = `${payments.length} ${payments.length === 1 ? 'betaling' : 'betalingen'}`;
+    if (totals.overpaidEur > 0) return `${head} · te veel betaald ${formatEuro(totals.overpaidEur)}`;
+    if (totals.paid) return `${head} · volledig betaald`;
+    return `${head} · ${formatEuro(totals.paidEur)} betaald · nog ${formatEuro(totals.openEur)}`;
+  });
+  /** One payment that is not on the bank: its date may still move through 'Betaald op'. */
+  readonly singleMovable = computed(() => this.payments().length === 1 && this.payments()[0].bankStatementLineId == null);
 
   /* "Ook als bankbeweging noteren": only when the cost becomes paid in this save */
   private readonly preference = this.state.payToBank();
   readonly before = computed(() => (this.draft().id ? this.state.costs().find((row) => row.id === this.draft().id) ?? null : null));
-  readonly becomingPaid = computed(() => !!this.draft().paidOn && (!this.draft().id || !this.before()?.paidOn));
+  readonly becomingPaid = computed(() => !!this.draft().paidOn && !this.payments().length && (!this.draft().id || !this.before()?.paidOn));
   readonly toBank = signal(this.preference.on);
   /** The remembered account, or the only one, as soon as the accounts are in. */
   readonly account = linkedSignal(() => {
@@ -274,7 +344,8 @@ export class CostSheet {
   /* ---- amount: the typed figure is kept, the other side follows */
 
   setAmount(value: number): void {
-    if (this.mode() === 'incl') this.patch({ amountInclEur: value, amountExclEur: exclFromIncl(value, this.draft().vatPct) });
+    if (this.importVat()) this.patch({ amountInclEur: value, amountExclEur: 0 });
+    else if (this.mode() === 'incl') this.patch({ amountInclEur: value, amountExclEur: exclFromIncl(value, this.draft().vatPct) });
     else this.patch({ amountExclEur: value, amountInclEur: null });
   }
 
@@ -292,6 +363,55 @@ export class CostSheet {
     if (mode === 'incl') this.patch({ amountInclEur: draft.amountExclEur > 0 ? cashTotalOf(draft) : null });
     else this.patch({ amountInclEur: null });
     this.mode.set(mode);
+  }
+
+  /* ---- regime */
+
+  /** A patch from the Btw-regeling fields; a new regime also refits the amount block. */
+  applyRegime(patch: Partial<RegimeFields>): void {
+    const before = this.draft().vatRegime;
+    this.patch(patch);
+    if (!('vatRegime' in patch)) return;
+    this.derivedHint.set('');
+    const regime = patch.vatRegime ?? null;
+    if (regime !== before) this.fitAmountTo(regime, before);
+  }
+
+  /**
+   * The amount block follows the regime: reverse charge and the regimes
+   * without VAT are excl.-only, import VAT is one incl. figure, and an
+   * invoice with VAT gets its rate back when the previous regime had none.
+   */
+  private fitAmountTo(regime: VatRegime | null, before: VatRegime | null): void {
+    const figure = this.amount();
+    if (regime === 'IMPORT_VAT_PAID') {
+      this.patch({ amountExclEur: 0, amountInclEur: figure > 0 ? figure : null, vatPct: null });
+      this.mode.set('incl');
+      return;
+    }
+    if (before === 'IMPORT_VAT_PAID') {
+      this.patch({ amountExclEur: figure, amountInclEur: null });
+      this.mode.set('excl');
+    }
+    if (regime && NO_VAT_REGIMES.has(regime)) {
+      this.patch({ amountInclEur: null, vatPct: null });
+      this.mode.set('excl');
+      return;
+    }
+    const rate = this.draft().vatPct;
+    if (regime && REVERSE_CHARGE.has(regime)) {
+      this.patch({ amountInclEur: null, vatPct: (rate ?? 0) > 0 ? rate : 21 });
+      this.mode.set('excl');
+      return;
+    }
+    if (!((rate ?? 0) > 0) && (!before || NO_VAT_REGIMES.has(before) || before === 'IMPORT_VAT_PAID')) this.setVat(21);
+  }
+
+  /** The chip under the amount: book as an investment and show the depreciation fields. */
+  bookAsInvestment(): void {
+    const draft = this.draft();
+    this.applyRegime({ costKind: 'INVESTMENT', depreciationYears: depreciationYearsFor(draft.category), depreciationStart: draft.date });
+    this.regimeOpen.set(true);
   }
 
   /* ---- Aan wie */
@@ -312,19 +432,40 @@ export class CostSheet {
     this.applyParty();
   }
 
-  /** A known name fills in category, VAT and channel (its stored defaults, else its last cost), as long as those are still untouched. */
+  /**
+   * A known name fills in category, VAT and channel (its stored defaults,
+   * else its last cost), as long as those are still untouched; its regime
+   * and country come along while the draft still holds the Belgian default,
+   * derived from the country (unconfirmed) when the name has no regime yet.
+   */
   applyParty(): void {
     const draft = this.draft();
     if (draft.id || this.customCategory()) return;
     const known = this.state.partyDefaultsFor(draft.party);
+    if (!known) return;
     const fresh = blankCost(this.state.today());
-    if (!known || draft.category !== fresh.category || draft.vatPct !== fresh.vatPct || draft.salesChannel) return;
-    const category = known.category ?? draft.category;
-    const vatPct = known.vatPct ?? draft.vatPct;
-    if (category === draft.category && vatPct === draft.vatPct && !known.salesChannel) return;
-    this.patch({ category, salesChannel: known.salesChannel });
-    this.setVat(vatPct);
-    this.filledFrom.set(known);
+    let filled = false;
+    if (draft.category === fresh.category && draft.vatPct === fresh.vatPct && !draft.salesChannel) {
+      const category = known.category ?? draft.category;
+      const vatPct = known.vatPct ?? draft.vatPct;
+      if (category !== draft.category || vatPct !== draft.vatPct || known.salesChannel) {
+        this.patch({ category, salesChannel: known.salesChannel });
+        this.setVat(vatPct);
+        filled = true;
+      }
+    }
+    let regime = false;
+    const current = this.draft();
+    if (current.vatRegime === fresh.vatRegime && current.vatRegimeConfirmed && (current.supplierCountry ?? 'BE') === 'BE') {
+      const prefill = regimePrefill(partyRegimeOf(known.name, this.state.costPartyFor(known.name), this.state.costs()), current.category);
+      if (prefill) {
+        this.applyRegime(prefill.patch);
+        this.derivedHint.set(prefill.derived ?? '');
+        if (prefill.derived) this.regimeOpen.set(true);
+        regime = true;
+      }
+    }
+    if (filled || regime) this.filledFrom.set({ party: known, regime });
   }
 
   /* ---- fairs */

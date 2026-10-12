@@ -5,7 +5,9 @@ import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
+import { countryName } from './cost-countries';
 import { dayMonth } from './finance-format';
+import { regimeLabel } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
@@ -13,7 +15,7 @@ import { normaliseParty } from './party-suggestions';
 
 interface PartyRow {
   party: CostParty;
-  /** "Beurs & stand · 21 % · TICA", or ''. */
+  /** "Beurs & stand · 21 % · TICA · Nederland · Buitenlandse btw", or ''. */
   detail: string;
   /** With a space every four characters. */
   iban: string;
@@ -156,9 +158,16 @@ export class CostListsPanel implements FinanceSectionApi {
     return !needle || parts.some((part) => normaliseParty(part).includes(needle));
   };
 
+  /** The defaults line, with the country (when not Belgium) and the regime the name carries. */
+  private detailOf(party: CostParty): string {
+    const country = (party.country ?? '').trim().toUpperCase();
+    return [this.state.partyDetail(party), country && country !== 'BE' ? countryName(country, this.state.countryChoices()) : '', party.vatRegime ? regimeLabel(party.vatRegime) : '']
+      .filter(Boolean).join(' · ');
+  }
+
   readonly parties = computed<PartyRow[]>(() => this.state.costParties().map((party) => {
     const figures = this.state.partyFiguresFor(party.name);
-    return { party, detail: this.state.partyDetail(party), iban: spaced(party.iban), ...figures };
+    return { party, detail: this.detailOf(party), iban: spaced(party.iban), ...figures };
   }).filter((row) => this.matches(row.party.name, row.detail, row.iban)));
 
   /** Per fair: every cost and recurring cost on its code (what blocks a delete), and this year's costs with their total. */

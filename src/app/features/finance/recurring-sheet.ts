@@ -1,11 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RecurringCost, RecurringInterval } from '../../core/api/models';
+import { RecurringCost, RecurringInterval, VatRegime } from '../../core/api/models';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { categoryChoices } from './cost-categories';
-import { INTERVALS, addDays, cashTotalOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, yearlyEur } from './finance-metrics';
+import { CostRegimeFields, NO_VAT_REGIMES, partyRegimeOf, regimePrefill, regimeProblem } from './cost-regime-fields';
+import type { RegimeFields } from './cost-regime-fields';
+import { INTERVALS, REVERSE_CHARGE, addDays, cashTotalOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, vatOf, yearlyEur } from './finance-metrics';
 import { blankRecurring } from './finance-sections';
 import { FinanceState } from './finance-state';
 import { PartyField } from './party-field';
@@ -15,7 +17,7 @@ import { VatChoice } from './vat-choice';
 @Component({
   selector: 'app-recurring-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe, VatChoice, PartyField],
+  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe, VatChoice, PartyField, CostRegimeFields],
   template: `
     <app-sheet variant="ios" [title]="draft().id ? 'Vaste kost bewerken' : 'Vaste kost instellen'" [wide]="true" (closed)="state.recurringDraft.set(null)">
       <div body class="fin-sheet fin-form">
@@ -24,13 +26,21 @@ import { VatChoice } from './vat-choice';
             <input class="input" placeholder="bijv. Huur magazijn" [ngModel]="draft().name" (ngModelChange)="patch({ name: $event })" /></label>
         </div>
         <label class="fin-amount fin-amount--left fin-field--wide">
-          <span class="fin-field__label req">Bedrag excl. btw</span><i aria-hidden="true">€</i>
+          <span class="fin-field__label req">{{ noVat() ? 'Bedrag' : 'Bedrag excl. btw' }}</span><i aria-hidden="true">€</i>
           <input type="number" min="0" step="0.01" inputmode="decimal" [ngModel]="draft().amountExclEur || null" (ngModelChange)="patch({ amountExclEur: +($event || 0) })" />
         </label>
         <div class="fin-group" [class.ios-group]="!state.desk()">
-          <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
-            <app-vat-choice [value]="draft().vatPct" (changed)="patch({ vatPct: $event })" />
-            <span class="fin-hint">Incl. btw: {{ cashTotalOf(draft()) | eur }}</span></div>
+          @if (!noVat()) {
+            <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
+              <app-vat-choice [value]="draft().vatPct" (changed)="patch({ vatPct: $event })" />
+              <span class="fin-hint">
+                @if (reverseCharge()) { btw verlegd {{ draft().vatPct ?? 0 }} % · <b>{{ vatOf(draft()) | eur }}</b> · niet aan de leverancier, wel in de aangifte }
+                @else if (foreignVat()) { Buitenlandse btw <b>{{ vatOf(draft()) | eur }}</b> · niet aftrekbaar · telt als kost }
+                @else { Incl. btw: {{ cashTotalOf(draft()) | eur }} }
+              </span></div>
+          }
+          <details app-cost-regime-fields class="fin-disclosure fin-field--wide" [(open)]="regimeOpen" [value]="draft()" [investmentAllowed]="false" [importAllowed]="false" [category]="draft().category"
+                   [amountExclEur]="draft().amountExclEur" [countries]="state.countryChoices()" [note]="derivedHint()" (changed)="applyRegime($event)"></details>
           <div class="fin-field fin-field--wide fin-field--stack"><span class="req">Hoe vaak</span>
             <div class="fin-choice" role="group" aria-label="Ritme">
               @for (option of intervals; track option.code) {
@@ -86,6 +96,7 @@ import { VatChoice } from './vat-choice';
       </div>
       <div foot style="display:contents">
         @if (draft().id) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteRecurring(draft())">Verwijderen</button> }
+        @if (regimeProblem(); as problem) { <span class="fin-foot-note">{{ problem }}</span> }
         <span class="spacer"></span>
         <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="state.saveRecurring(draft())">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaren' : 'Instellen' }}</button>
       </div>
@@ -98,8 +109,18 @@ export class RecurringSheet {
   readonly fairs = computed(() => this.state.channelChoices().filter((channel) => channel.hint === 'Beurs'));
   readonly intervals = INTERVALS;
   readonly cashTotalOf = cashTotalOf;
+  readonly vatOf = vatOf;
   readonly draft = linkedSignal<RecurringCost>(() => this.state.recurringDraft() ?? blankRecurring(this.state.today()));
   readonly customCategory = signal(false);
+  /* the regime decides what the amount block shows; a definition is never an investment and never import VAT */
+  readonly regime = computed(() => this.draft().vatRegime);
+  readonly reverseCharge = computed(() => REVERSE_CHARGE.has(this.regime() ?? ''));
+  readonly foreignVat = computed(() => this.regime() === 'FOREIGN_VAT');
+  readonly noVat = computed(() => NO_VAT_REGIMES.has(this.regime() ?? ''));
+  /** Open at first paint while the regime is still derived or unknown; the user takes over from there. */
+  readonly regimeOpen = signal(!this.draft().vatRegimeConfirmed || this.draft().vatRegime == null);
+  readonly derivedHint = signal('');
+  readonly regimeProblem = computed(() => regimeProblem(this.draft()));
   readonly categories = computed(() => categoryChoices([...this.state.costs().map((cost) => cost.category), ...this.state.recurring().map((row) => row.category)]));
   readonly categoryChoice = computed(() => {
     if (this.customCategory()) return '__other__';
@@ -131,11 +152,29 @@ export class RecurringSheet {
   readonly canSave = computed(() => {
     const draft = this.draft();
     return !!(draft.name ?? '').trim() && !!(draft.category ?? '').trim() && draft.amountExclEur >= 0 && !!draft.startDate
-      && !!draft.interval && (!draft.endDate || draft.endDate >= draft.startDate);
+      && !!draft.interval && (!draft.endDate || draft.endDate >= draft.startDate) && !this.regimeProblem();
   });
 
   patch(changes: Partial<RecurringCost> & { interval?: RecurringInterval }): void {
     this.draft.update((draft) => ({ ...draft, ...changes }));
+  }
+
+  /** A patch from the Btw-regeling fields; a new regime also refits the rate (excl.-only here). */
+  applyRegime(patch: Partial<RegimeFields>): void {
+    const before = this.draft().vatRegime;
+    this.patch(patch);
+    if (!('vatRegime' in patch)) return;
+    this.derivedHint.set('');
+    const regime = patch.vatRegime ?? null;
+    if (regime !== before) this.fitRateTo(regime, before);
+  }
+
+  /** No VAT at all under the exempt regimes; a rate back (21 %) when a regime with VAT follows one without. */
+  private fitRateTo(regime: VatRegime | null, before: VatRegime | null): void {
+    const rate = this.draft().vatPct;
+    if (regime && NO_VAT_REGIMES.has(regime)) this.patch({ vatPct: null });
+    else if (regime && REVERSE_CHARGE.has(regime)) this.patch({ vatPct: (rate ?? 0) > 0 ? rate : 21 });
+    else if (!((rate ?? 0) > 0) && (!before || NO_VAT_REGIMES.has(before))) this.patch({ vatPct: 21 });
   }
 
   pickCategory(value: string): void {
@@ -148,16 +187,24 @@ export class RecurringSheet {
     this.patch({ category: value });
   }
 
-  /** A known name fills in category, VAT and channel, the same rule as the cost form: only while those are still untouched. */
+  /** A known name fills in category, VAT and channel, the same rule as the cost form: only while those are still untouched; its regime and country come along while the draft still holds the Belgian default. */
   applyParty(): void {
     const draft = this.draft();
     if (draft.id || this.customCategory()) return;
     const known = this.state.partyDefaultsFor(draft.party);
+    if (!known) return;
     const fresh = blankRecurring(this.state.today());
-    if (!known || draft.category !== fresh.category || draft.vatPct !== fresh.vatPct || draft.salesChannel) return;
-    const category = known.category ?? draft.category;
-    const vatPct = known.vatPct ?? draft.vatPct;
-    if (category === draft.category && vatPct === draft.vatPct && !known.salesChannel) return;
-    this.patch({ category, vatPct, salesChannel: known.salesChannel });
+    if (draft.category === fresh.category && draft.vatPct === fresh.vatPct && !draft.salesChannel) {
+      const category = known.category ?? draft.category;
+      const vatPct = known.vatPct ?? draft.vatPct;
+      if (category !== draft.category || vatPct !== draft.vatPct || known.salesChannel) this.patch({ category, vatPct, salesChannel: known.salesChannel });
+    }
+    const current = this.draft();
+    if (current.vatRegime !== fresh.vatRegime || !current.vatRegimeConfirmed || (current.supplierCountry ?? 'BE') !== 'BE') return;
+    const prefill = regimePrefill(partyRegimeOf(known.name, this.state.costPartyFor(known.name), this.state.costs()), current.category);
+    if (!prefill) return;
+    this.applyRegime(prefill.patch);
+    this.derivedHint.set(prefill.derived ?? '');
+    if (prefill.derived) this.regimeOpen.set(true);
   }
 }

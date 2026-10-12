@@ -3,6 +3,8 @@ import { FormsModule } from '@angular/forms';
 import { CostParty } from '../../core/api/models';
 import { Sheet } from '../../shared/ui';
 import { categoryChoices } from './cost-categories';
+import { cleanVatNumber, countryName, isValidVatNumber } from './cost-countries';
+import { REGIME_GROUPS, countryChips } from './cost-regime-fields';
 import { dayMonth } from './finance-format';
 import { blankCostParty } from './finance-sections';
 import { FinanceState, formatEuro } from './finance-state';
@@ -11,8 +13,9 @@ const IBAN = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
 
 /**
  * One name of the Aan wie list: the name itself, the defaults a new cost
- * to it takes (category, btw, channel or fair) and the IBAN. Renaming runs
- * through the bookings on the old name (the server cascades).
+ * to it takes (category, btw, channel or fair, country, VAT number and
+ * regime) and the IBAN. Renaming runs through the bookings on the old name
+ * (the server cascades).
  */
 @Component({
   selector: 'app-cost-party-sheet',
@@ -61,6 +64,33 @@ const IBAN = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
                    [ngModel]="draft().iban" (ngModelChange)="patch({ iban: $event })" />
             @if (ibanWrong()) { <span class="fin-hint fin-hint--warn">Dit is geen geldig IBAN.</span> }</label>
         </div>
+        <div class="fin-group" [class.ios-group]="!state.desk()">
+          <div class="fin-field fin-field--wide fin-field--stack"><span>Land</span>
+            <div class="fin-choice" role="group" aria-label="Land">
+              @for (code of chips(); track code) {
+                <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!otherCountry() && country() === code" (click)="pickCountry(code)">{{ countryName(code) }}</button>
+              }
+              <button class="fin-choice__chip" type="button" [attr.aria-pressed]="otherCountry()" (click)="otherCountry.set(true)">Andere…</button>
+            </div>
+            @if (otherCountry()) {
+              <select class="select" aria-label="Ander land" [ngModel]="country()" (ngModelChange)="pickCountry($event)">
+                <option value="">Kies een land</option>
+                @for (choice of state.countryChoices(); track choice.code) { <option [value]="choice.code">{{ choice.name }}</option> }
+              </select>
+            }
+          </div>
+          <label class="fin-field"><span>Btw-nummer</span>
+            <input class="input" maxlength="24" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="BE 0123.456.749"
+                   [ngModel]="draft().vatNumber" (ngModelChange)="patch({ vatNumber: $event })" />
+            @if (vatNumberWrong()) { <span class="fin-hint fin-hint--warn">Dit is geen geldig btw-nummer</span> }</label>
+          <label class="fin-field"><span>Btw-regeling</span>
+            <select class="select" [ngModel]="draft().vatRegime ?? ''" (ngModelChange)="patch({ vatRegime: $event || null })">
+              <option value="">Geen standaard</option>
+              @for (group of regimeGroups; track group.label) {
+                <optgroup [label]="group.label">@for (regime of group.regimes; track regime.code) { <option [value]="regime.code">{{ regime.label }}</option> }</optgroup>
+              }
+            </select></label>
+        </div>
         @if (draft().id && !state.desk()) {
           <div class="ios-group fin-field--wide"><button class="ios-cell ios-cell--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCostParty(draft())">Uit de lijst halen</button></div>
         }
@@ -98,10 +128,24 @@ export class CostPartySheet {
     const iban = (this.draft().iban ?? '').replace(/\s+/g, '').toUpperCase();
     return !!iban && !IBAN.test(iban);
   });
+  /** The same rule as the server: BE + 0/1 + nine digits, or two letters and 2–16 characters. */
+  readonly vatNumberWrong = computed(() => {
+    const clean = cleanVatNumber(this.draft().vatNumber);
+    return !!clean && !isValidVatNumber(clean);
+  });
+  readonly regimeGroups = REGIME_GROUPS;
+  readonly country = computed(() => (this.draft().country ?? '').trim().toUpperCase());
+  readonly otherCountry = signal(false);
+  /** The short list, the countries the list and this year's costs already use, and the party's own. */
+  readonly chips = computed(() => {
+    const year = this.state.today().slice(0, 4);
+    const inUse = [...this.state.costParties().map((party) => party.country ?? ''), ...this.state.costs().filter((cost) => cost.date.startsWith(year)).map((cost) => cost.supplierCountry ?? '')];
+    return countryChips(null, inUse, this.country());
+  });
   readonly canSave = computed(() => {
     const draft = this.draft();
     const pct = draft.vatPct;
-    return !!draft.name.trim() && !this.ibanWrong() && (pct === null || pct === undefined || (Number.isFinite(pct) && pct >= 0 && pct <= 100));
+    return !!draft.name.trim() && !this.ibanWrong() && !this.vatNumberWrong() && (pct === null || pct === undefined || (Number.isFinite(pct) && pct >= 0 && pct <= 100));
   });
 
   /** The figures of the stored name (not of a rename being typed). */
@@ -128,6 +172,15 @@ export class CostPartySheet {
   pickVat(value: string): void {
     this.customVat.set(value === '__other__');
     this.patch({ vatPct: value === '__other__' || value === '' ? null : Number(value) });
+  }
+
+  countryName(code: string): string {
+    return countryName(code, this.state.countryChoices());
+  }
+
+  pickCountry(code: string): void {
+    this.otherCountry.set(false);
+    this.patch({ country: (code ?? '').trim().toUpperCase() || null });
   }
 
   /** Uitgaven › Bedrijfskosten on this name, all dates; the sheet closes. */
