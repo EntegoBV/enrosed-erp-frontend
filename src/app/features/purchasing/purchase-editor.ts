@@ -28,7 +28,13 @@ import { PurchasePaymentOverview } from './purchase-payment-overview';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { purchaseNacalc } from './purchase-nacalc-metrics';
 import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
-import { PurchasePaymentSheet } from './purchase-payment-sheet';
+import { PurchasePaymentSheet, type PurchasePaymentDraft } from './purchase-payment-sheet';
+import { invoiceDocument, splitTransfer } from './purchase-transfer-split';
+import { BankAccountsStore } from '../../core/api/bank-accounts';
+import { BankingApi, type BankMovementRequest, type BankStatementLine } from '../../core/api/banking-api';
+import { bankMarker, lineMarkers } from '../finance/bank-markers';
+import { defaultBankAccount, readPayToBank, writePayToBank } from '../finance/pay-to-bank-preference';
+import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
 import { ContextMenu } from '../../shared/context-menu';
@@ -36,7 +42,7 @@ import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
 import {
-  PAYEE_LABEL, SUPPLIER_CREDIT_REASON_LABEL, creditOffsetTargets, paymentOptionParts, purchasePaymentLedger, settleCarriers, type Due,
+  PAYEE_LABEL, SUPPLIER_CREDIT_REASON_LABEL, creditOffsetTargets, paymentOptionParts, purchaseCif, purchasePaymentLedger, settleCarriers, type Due,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type SupplierCreditSubmit } from './purchase-supplier-credit-sheet';
@@ -1461,8 +1467,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
+          [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
-          (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+          (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
       }
       @if (crediting(); as credit) {
         <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"
@@ -2001,7 +2008,7 @@ export class PurchaseEditor {
   /* ---- payments --------------------------------------------------- */
   readonly payments = signal<PurchasePayment[] | null>(null);
   /** The payment sheet's draft; amountEur is the bank's euro debit of a USD/CNY payment, only sent when filled in. */
-  readonly paying = signal<{ id?: number | null; amount: number | null; amountInput: string; currency: Currency; paidOn: string; label: string; payee: Payee; files: File[]; settles: boolean; instalmentDue: PurchasePayment['instalmentDue']; amountEurInput?: string; amountEur?: number | null } | null>(null);
+  readonly paying = signal<PurchasePaymentDraft | null>(null);
   readonly paymentStateError = signal<string | null>(null);
   readonly paymentStateLoading = signal(false);
   private paymentRefreshVersion = 0;
@@ -2086,6 +2093,69 @@ export class PurchaseEditor {
     this.paying.update(pay => pay ? { ...pay, amountEurInput: raw == null ? '' : String(raw), amountEur: parsePurchasePaymentAmount(raw) } : pay);
   }
 
+  /** 'Dekt meer dan de goederen': the sea freight or the inspection the supplier billed, in the payment's currency. */
+  setPaymentPart(part: 'freight' | 'separate', raw: string | number | null): void {
+    if (this.payingBusy()) return;
+    const input = raw == null ? '' : String(raw);
+    const amount = parsePurchasePaymentAmount(raw);
+    this.paying.update(pay => pay ? (part === 'freight'
+      ? { ...pay, freightAmountInput: input, freightAmount: amount }
+      : { ...pay, separateAmountInput: input, separateAmount: amount }) : pay);
+  }
+
+  /** The transfer as the ledger will store it: the goods and the extra streams, and what leaves the bank in euro. */
+  readonly paymentTransfer = computed(() => {
+    const pay = this.paying();
+    return pay && pay.amount !== null ? splitTransfer({ ...pay, amount: pay.amount }, (amount, currency) => this.eurOf(amount, currency)) : null;
+  });
+  /** The euro of the whole transfer: the goods as the draft values them (a stored euro survives), the parts on top, parts of an earlier attempt as saved. */
+  readonly paymentTransferEur = computed(() => {
+    const pay = this.paying();
+    const split = this.paymentTransfer();
+    if (!pay || pay.amount === null || !split) return 0;
+    const goodsEur = split.writes[0].amountEur ?? Math.round(this.eurOf(pay.amount, pay.currency) * 100) / 100;
+    const savedParts = (pay.partIds ?? []).reduce((sum, id) => sum + ((this.payments() ?? []).find(payment => payment.id === id)?.amountEur ?? 0), 0);
+    return Math.round((this.paymentDraftEur() + split.bankEur - goodsEur + savedParts) * 100) / 100;
+  });
+  readonly paymentCif = computed(() => { const data = this.view(); return !!data && purchaseCif(data); });
+
+  /* ---- 'Ook als bankbeweging noteren': the one line of a transfer, and which payments already sit on the bank */
+  private readonly banking = inject(BankingApi);
+  private readonly bankAccounts = inject(BankAccountsStore);
+  /** Every bank line, once per order screen: the text markers of lines older than the hard link. */
+  readonly bankLines = signal<BankStatementLine[] | null>(null);
+  readonly bankedPaymentIds = computed(() => {
+    const ids = new Set<number>();
+    for (const markers of lineMarkers(this.bankLines() ?? []).values()) {
+      for (const marker of markers) if (marker.kind === 'containerbetaling') ids.add(marker.id);
+    }
+    return ids;
+  });
+  /** A payment already on the bank gets no second line: the hard link first, an older line's marker as fallback. */
+  paymentOnBank(pay: { id?: number | null }): boolean {
+    if (!pay.id) return false;
+    return (this.payments() ?? []).some(payment => payment.id === pay.id && payment.bankStatementLineId != null) || this.bankedPaymentIds().has(pay.id);
+  }
+  readonly payingOnBank = computed(() => { const pay = this.paying(); return !!pay && this.paymentOnBank(pay); });
+  readonly paymentBankAccount = computed(() => defaultBankAccount(this.bankAccounts.options(), this.paying()?.bankAccount ?? '', readPayToBank(globalThis.localStorage).accountKey));
+
+  private async loadBankLines(): Promise<void> {
+    if (this.bankLines() !== null) return;
+    try { this.bankLines.set(await this.banking.list()); } catch { /* the marks are a hint; without them the sheet still asks */ }
+  }
+
+  /** The one outgoing bank line of a transfer: every payment of it linked, the marker kept for older readers. */
+  private transferLine(pay: PurchasePaymentDraft, orderNumber: string, ids: number[], amountEur: number, account: string): BankMovementRequest {
+    const now = receiptLocalParts(Date.now(), BANK_ZONE);
+    return {
+      account, amountEur, direction: 'OUTGOING',
+      bookedAt: receiptInstant(pay.paidOn, pay.paidOn === now.day ? now.time : '12:00:00', BANK_ZONE), timeZone: BANK_ZONE,
+      reference: `${pay.label || 'Betaling'} · ${orderNumber} · ${bankMarker('containerbetaling', ids[0])}`,
+      counterparty: pay.payee === 'SUPPLIER' ? this.supplier()?.name ?? PAYEE_LABEL.SUPPLIER : PAYEE_LABEL[pay.payee],
+      purchasePaymentIds: ids, requestId: crypto.randomUUID(),
+    };
+  }
+
   /** The euro value of the draft: the bank amount when filled in, else the stored value of unchanged money, else the order rate. */
   readonly paymentDraftEur = computed(() => {
     const pay = this.paying();
@@ -2112,7 +2182,8 @@ export class PurchaseEditor {
     this.paying.set({ id: payment.id, amount: payment.amount, amountInput: String(payment.amount).replace('.', ','), currency: payment.currency, paidOn: payment.paidOn,
       label: payment.label ?? '', payee: payment.payee ?? 'SUPPLIER', files: [], settles: !!payment.settles,
       instalmentDue: payment.instalmentDue ?? null,
-      amountEurInput: foreign ? String(payment.amountEur).replace('.', ',') : '', amountEur: foreign ? payment.amountEur : null });
+      amountEurInput: foreign ? String(payment.amountEur).replace('.', ',') : '', amountEur: foreign ? payment.amountEur : null,
+      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '', invoiceFiles: [] });
   }
 
   paymentGroupLabel(payee: Payee): string {
@@ -2270,6 +2341,7 @@ export class PurchaseEditor {
       files: [],
       settles: false,
       instalmentDue: payee === 'SUPPLIER' && Array.isArray(this.view()?.reconciliation?.supplierInstalments) ? instalmentDue : null,
+      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '', invoiceFiles: [],
     });
   }
 
@@ -2300,21 +2372,39 @@ export class PurchaseEditor {
       this.ui.toast('Laad de order opnieuw voordat je een betaling aan een termijn koppelt.', 'err');
       return;
     }
-    if (pay.files.length > this.proofSlots(pay.id)) { this.ui.toast('Er passen maximaal vijf bewijzen bij één betaling. Verwijder eerst bestanden uit de selectie.', 'err'); return; }
+    const invoices = pay.invoiceFiles ?? [];
+    if (pay.files.length + invoices.length > this.proofSlots(pay.id)) { this.ui.toast('Er passen maximaal vijf bestanden bij één betaling. Verwijder eerst bestanden uit de selectie.', 'err'); return; }
+    /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; a payment already on the bank gets no second line. */
+    const bankOffered = typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay);
+    const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
+    if (bankOffered && pay.toBank && (!account || pay.paidOn > new Date().toISOString().slice(0, 10))) return;
+    const bankEur = this.paymentTransferEur();
     this.payingBusy.set(true);
     let paymentSaved = false;
     try {
       // The bank's euro amount travels only when it was filled in for a USD/CNY payment; the server keeps the order rate otherwise.
-      const bankEur = pay.currency !== 'EUR' && pay.amountEur != null && Number.isFinite(pay.amountEur) && pay.amountEur > 0 ? pay.amountEur : undefined;
-      const body = { paidOn: pay.paidOn, amount: pay.amount, currency: pay.currency, label: pay.label || null,
-        payee: pay.payee, settles: pay.settles, instalmentDue: pay.payee === 'SUPPLIER' ? pay.instalmentDue ?? null : null,
-        ...(bankEur !== undefined ? { amountEur: bankEur } : {}) };
+      const [goods, ...parts] = splitTransfer({ ...pay, amount: pay.amount }, (amount, currency) => this.eurOf(amount, currency)).writes;
       const saved = pay.id
-        ? await this.sourcing.updatePayment(data.order.id, pay.id, body)
-        : await this.sourcing.addPayment(data.order.id, body);
+        ? await this.sourcing.updatePayment(data.order.id, pay.id, goods)
+        : await this.sourcing.addPayment(data.order.id, goods);
       paymentSaved = true;
       if (this.view()?.order.id !== data.order.id) return;
       this.paying.update(current => current === pay ? { ...current, id: saved.id } : current);
+      // The extra streams of the transfer, one by one; a saved part leaves the draft, so a retry never posts it twice.
+      const ids = [saved.id, ...(pay.partIds ?? [])];
+      for (const part of parts) {
+        const freight = part.instalmentDue === 'FREIGHT';
+        let extra: PurchasePayment;
+        try { extra = await this.sourcing.addPayment(data.order.id, part); }
+        catch (failure: unknown) {
+          await this.refreshPaymentState(data.order.id);
+          if (this.view()?.order.id === data.order.id) this.ui.toast(`Betaling bewaard, maar het deel ${freight ? 'zeevracht (CIF)' : 'inspectie'} is niet genoteerd. ${messageOf(failure, 'Probeer het opnieuw.')}`, 'err');
+          return;
+        }
+        ids.push(extra.id);
+        this.paying.update(current => current?.id === saved.id ? { ...current, partIds: ids.slice(1),
+          ...(freight ? { freightAmount: null, freightAmountInput: '' } : { separateAmount: null, separateAmountInput: '' }) } : current);
+      }
       for (const file of pay.files.slice(0, 5)) {
         const document = await this.sourcing.addDocument(data.order.id, file, 'PAYMENT_PROOF', pay.label || null, saved.id);
         if (this.view()?.order.id === data.order.id) this.documents.update(current => [...(current ?? []), document]);
@@ -2322,10 +2412,29 @@ export class PurchaseEditor {
         // creates a second payment nor uploads the successful proof twice.
         this.paying.update(current => current?.id === saved.id ? { ...current, files: current.files.filter(item => item !== file) } : current);
       }
-      await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length ? this.loadDocuments(data.order.id) : Promise.resolve()]);
+      const invoice = invoiceDocument(pay.payee);
+      for (const file of invoices.slice(0, 5)) {
+        const document = await this.sourcing.addDocument(data.order.id, file, invoice.kind, invoice.label, saved.id);
+        if (this.view()?.order.id === data.order.id) this.documents.update(current => [...(current ?? []), document]);
+        this.paying.update(current => current?.id === saved.id ? { ...current, invoiceFiles: (current.invoiceFiles ?? []).filter(item => item !== file) } : current);
+      }
+      // The bank line comes last, with every payment of the transfer in it: a failed line never leaves an orphan.
+      let bank: 'none' | 'noted' | 'failed' = 'none';
+      if (account) {
+        try {
+          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, bankEur, account.label));
+          this.bankLines.update(lines => [line, ...(lines ?? [])]);
+          bank = 'noted';
+        } catch { bank = 'failed'; }
+      }
+      if (bankOffered) writePayToBank(globalThis.localStorage, { on: !!pay.toBank, accountKey: account?.key ?? readPayToBank(globalThis.localStorage).accountKey });
+      await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length || invoices.length ? this.loadDocuments(data.order.id) : Promise.resolve()]);
       if (this.view()?.order.id !== data.order.id) return;
       this.paying.set(null);
-      this.ui.toast(pay.id ? 'Betaling aangepast' : (pay.files.length ? 'Betaling en bewijs bewaard' : 'Betaling bewaard'), 'ok');
+      const filed = [...(pay.files.length ? ['bewijs'] : []), ...(invoices.length ? ['factuur'] : [])];
+      this.ui.toast(bank === 'noted' ? `Betaling genoteerd · ook op ${account!.label}` : bank === 'failed' ? 'Betaling genoteerd, maar de bankbeweging is niet bewaard.'
+        : pay.id ? 'Betaling aangepast' : filed.length === 2 ? 'Betaling, bewijs en factuur bewaard' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',
+        bank === 'failed' ? 'err' : 'ok');
     } catch (failure: unknown) {
       if (paymentSaved && this.view()?.order.id === data.order.id) await this.refreshPaymentState(data.order.id);
       if (this.view()?.order.id === data.order.id) this.ui.toast(messageOf(failure,
@@ -2375,6 +2484,7 @@ export class PurchaseEditor {
       settled: payee => purchaseGroupSettled(data, this.payments(), payee), toleranceEur: PAYMENT_TOLERANCE_EUR,
       totalLabel: totals.separateCostsEur ? separateCostsTotalLabel(totals) : 'Totaal geland',
       planLabel: this.planLabel(data.order),
+      bankedPaymentIds: this.bankedPaymentIds(),
     });
   });
   readonly paymentState = computed<'loading' | 'refreshing' | 'error' | 'ready'>(() => this.paymentStateError() ? 'error'
@@ -3476,6 +3586,7 @@ export class PurchaseEditor {
     this.families.set(families);
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
+    void this.loadBankLines();
     void this.loadPartnerDocs(orderId);
     this.savedOrder.set(JSON.stringify(view.order));
     const [products, categories, suppliers, locations, freightRates] = await Promise.all([
@@ -4084,6 +4195,8 @@ export class PurchaseEditor {
   }
 }
 
+/** Container payments are booked on the bank as Belgian local time, like the costs. */
+const BANK_ZONE = 'Europe/Brussels';
 /** The product lines of the container as a quote would carry them: product and pieces. */
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 

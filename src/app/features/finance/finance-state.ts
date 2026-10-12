@@ -23,6 +23,8 @@ import type { SalesChannel } from '../sales/sales-channels';
 import { bankAccountKey, bankCheckpoint, reconciledBank } from './bank-reconciliation';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
 import type { MarkerKind } from './bank-markers';
+import { readPayToBank, writePayToBank } from './pay-to-bank-preference';
+import type { PayToBankPreference } from './pay-to-bank-preference';
 import { categoryLabel } from './cost-categories';
 import { CONTAINER_PAYMENT_CATEGORIES, CostLedgerRow, costLedger, costLedgerCsv } from './cost-ledger';
 import { financeAttention } from './finance-attention';
@@ -49,7 +51,6 @@ const SOURCE_NAMES: Readonly<Record<FinanceSource, string>> = {
 };
 const MAIN_SOURCES: readonly FinanceSource[] = ['costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs'];
 const BANK_ZONE = 'Europe/Brussels';
-const PAY_TO_BANK_KEY = 'enrosed.finance.payToBank';
 const INACTIVE = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -90,12 +91,6 @@ export interface PayOptions {
   paidOn: string;
   /** The account key to note a bank line on, or null for only "paid". */
   bankAccount: string | null;
-}
-
-/** The remembered "Ook als bankbeweging noteren" choice of this device. */
-export interface PayToBankPreference {
-  on: boolean;
-  accountKey: string;
 }
 
 /** An open invoice in Te ontvangen. */
@@ -911,18 +906,13 @@ export class FinanceState {
     this.paySheet.set({ costs: open });
   }
 
+  /** The remembered "Ook als bankbeweging noteren" choice of this device, shared with the container payment sheet. */
   payToBank(): PayToBankPreference {
-    try {
-      const raw = globalThis.localStorage?.getItem(PAY_TO_BANK_KEY);
-      const parsed = raw ? JSON.parse(raw) as Partial<PayToBankPreference> : null;
-      return { on: parsed?.on === true, accountKey: typeof parsed?.accountKey === 'string' ? parsed.accountKey : '' };
-    } catch {
-      return { on: false, accountKey: '' };
-    }
+    return readPayToBank(globalThis.localStorage);
   }
 
   rememberPayToBank(preference: PayToBankPreference): void {
-    try { globalThis.localStorage?.setItem(PAY_TO_BANK_KEY, JSON.stringify(preference)); } catch { /* private mode: this visit only */ }
+    writePayToBank(globalThis.localStorage, preference);
   }
 
   /** The full swipe on a phone: paid today, onto the bank when this device said so before. */
@@ -1041,6 +1031,7 @@ export class FinanceState {
       bookedAt: receiptInstant(paidOn, paidOn === now.day ? now.time : '12:00:00', BANK_ZONE), timeZone: BANK_ZONE,
       reference: this.markedReference(cost.reference || cost.description, bankMarker('kost', cost.id!)),
       counterparty: (cost.party ?? '').trim().slice(0, 300) || null, requestId: crypto.randomUUID(),
+      companyCostId: cost.id,
     };
   }
 

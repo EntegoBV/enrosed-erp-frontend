@@ -59,7 +59,7 @@ function setup() {
     paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
     families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
     stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''),
-    loadPayments: async () => {}, loadPartnerDocs: async () => {},
+    loadPayments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
     sourcing: {
       documents: (id: number) => { calls.push(`GET documents ${id}`); return api.documents(id); },
       purchaseOrder: (id: number) => { calls.push(`GET order ${id}`); return api.purchaseOrder(id); },

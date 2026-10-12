@@ -6,6 +6,9 @@ import ts from 'typescript';
 import { signal, computed } from '@angular/core';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { paymentPlanError } from '../src/app/features/purchasing/payment-plan.ts';
+import { invoiceDocument, splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
+import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
 import { preservePurchaseDraft } from '../src/app/features/purchasing/purchase-payment-refresh.ts';
 
 test('bank amounts accept Dutch decimal commas, thousands and plain API decimals', () => {
@@ -35,7 +38,8 @@ const parsed = ts.createSourceFile('purchase-editor.ts', source, ts.ScriptTarget
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseEditor')!;
 const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', 'paymentPlanBusy', 'paymentPlanFailure',
   'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
-  'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount']);
+  'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount',
+  'setPaymentPart', 'paymentTransfer', 'paymentTransferEur', 'bankLines', 'bankedPaymentIds', 'paymentOnBank']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -57,7 +61,8 @@ function deferred<T>() {
 function setup() {
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(javascript, { exports, signal, computed, parsePurchasePaymentAmount, purchasePaymentOverage,
-    paymentPlanError, preservePurchaseDraft, messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
+    paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocument, lineMarkers, defaultBankAccount, readPayToBank, writePayToBank,
+    messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   const writes: any[] = []; const uploads: string[] = []; const toasts: any[] = [];
   const api = {

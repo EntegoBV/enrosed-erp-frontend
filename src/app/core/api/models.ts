@@ -1267,6 +1267,8 @@ export interface PurchasePayment {
   settles?: boolean;
   /** Supplier instalment receiving this payment; null distributes it over the plan. */
   instalmentDue?: Instalment['due'] | null;
+  /** The bank line that carried this payment, once it was noted on the bank. */
+  bankStatementLineId?: number | null;
 }
 
 /** What the editor sends for a container payment (POST and PUT …/payments). */
@@ -1360,6 +1362,7 @@ export interface PurchasePaymentRow {
   amountEur: number;
   label: string | null;
   payee?: Payee | null;
+  bankStatementLineId?: number | null;
 }
 
 export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
@@ -2623,6 +2626,8 @@ export interface CompanyCost {
   paid?: boolean;
   /** The recurring definition that booked this cost automatically; null for a hand-booked cost. */
   recurringCostId?: number | null;
+  /** The bank line that paid this cost, once it was noted on the bank. */
+  bankStatementLineId?: number | null;
 }
 
 /** A name in the "Aan wie" list: whom the company pays, with the defaults a new cost to that name takes. */
