@@ -15,9 +15,11 @@ import { isSourceLink } from '../files/files-collections';
  * The files of one product, right on its page: every library asset linked
  * to the product, with upload, enlarge, download and unlink in place. The
  * bytes stay in the central library (Documenten & media); this card only
- * links them. Photos the product editor manages (adopted by the library's
- * indexer) are unlinked there, not here. The host carries the surrounding
- * card classes of the page it sits on.
+ * links them. It is the place for documents: a file added here is an
+ * internal link and never becomes a product photo, so the card says so and
+ * points to the photo section ("Foto's") of the editor. Photos the editor
+ * manages (adopted by the library's indexer) are unlinked there, not here.
+ * The host carries the surrounding card classes of the page it sits on.
  */
 @Component({
   selector: 'app-product-media-card',
@@ -27,9 +29,9 @@ import { isSourceLink } from '../files/files-collections';
     <div class="mc__head">
       <div><h2>Documenten &amp; media</h2><p>{{ summary() }}</p></div>
       <div class="mc__actions">
-        <label class="btn btn--sm btn--primary mc__upload" [class.is-busy]="uploading()">
+        <label class="btn btn--sm mc__upload" [class.is-busy]="uploading()">
           <input type="file" multiple [disabled]="uploading()" (change)="upload($event)" />
-          {{ uploading() ? 'Bezig…' : 'Bestand toevoegen' }}
+          {{ uploading() ? 'Bezig…' : 'Document toevoegen' }}
         </label>
         <a class="btn btn--sm" [routerLink]="['/files']" [queryParams]="filesQuery()">In Documenten &amp; media ›</a>
       </div>
@@ -39,7 +41,7 @@ import { isSourceLink } from '../files/files-collections';
     } @else if (error(); as error) {
       <p class="mc__empty">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
     } @else if (!assets().length) {
-      <p class="mc__empty">Nog geen bestanden aan dit product gekoppeld. Voeg hier een foto, tekening of certificaat toe, of koppel een bestaand bestand vanuit <a [routerLink]="['/files']" [queryParams]="filesQuery()">Documenten &amp; media</a>.</p>
+      <p class="mc__empty">Nog geen documenten bij dit product. Voeg hier een tekening, certificaat of ander bestand toe. Productfoto’s voor website, catalogus en offertes beheer je bij Foto’s. <a [routerLink]="photosLink()" [queryParams]="photosQuery">Naar Foto’s</a></p>
     } @else {
       <ul class="mc__grid" [class.mc__grid--compact]="compact()">
         @for (asset of assets(); track asset.id) {
@@ -54,7 +56,7 @@ import { isSourceLink } from '../files/files-collections';
             </button>
             <span class="mc__copy"><b>{{ asset.name }}</b><small>{{ meta(asset) }}</small></span>
             @if (managedBySource(asset)) {
-              <span class="mc__source" title="Deze foto beheer je in de producteditor">Via bron</span>
+              <span class="mc__source">Productfoto · <a [routerLink]="photosLink()" [queryParams]="photosQuery">beheer bij Foto’s</a></span>
             } @else {
               <button class="mc__unlink" type="button" [disabled]="busyId() === asset.id" (click)="unlink(asset)"
                       title="Loskoppelen van dit product (het bestand blijft in Documenten &amp; media)" aria-label="Loskoppelen">×</button>
@@ -79,7 +81,7 @@ import { isSourceLink } from '../files/files-collections';
     .mc__empty{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
     .mc__empty a{color:var(--accent)}
     .mc__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px;margin:0;padding:0;list-style:none}
-    .mc__tile{position:relative;display:grid;gap:6px;min-width:0}
+    .mc__tile{position:relative;display:grid;align-content:start;gap:6px;min-width:0}
     .mc__open{display:block;width:100%;aspect-ratio:4/3;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface-2);cursor:zoom-in}
     .mc__open img{display:block;width:100%;height:100%;object-fit:cover}
     .mc__ext{display:flex;align-items:center;justify-content:center;height:100%;color:var(--accent);font-style:normal;font-size:15px;font-weight:800;letter-spacing:.06em}
@@ -93,8 +95,10 @@ import { isSourceLink } from '../files/files-collections';
     .mc__grid--compact .mc__open{aspect-ratio:1;border-radius:10px}
     .mc__grid--compact .mc__ext{font-size:11px}
     .mc__grid--compact .mc__unlink{position:static;opacity:1;background:var(--surface-2);color:var(--muted)}
-    .mc__source{position:absolute;top:6px;right:6px;padding:2px 7px;white-space:nowrap;border-radius:999px;background:rgb(20 14 12 / 62%);color:#fff;font-size:10.5px;font-weight:700}
-    .mc__grid--compact .mc__source{position:static;background:var(--surface-2);color:var(--muted)}
+    .mc__source{color:var(--muted);font-size:11.5px;line-height:1.35}
+    .mc__source a{color:var(--rose-dark);font-weight:600}
+    .mc__grid--compact .mc__source{grid-column:2/-1;margin-top:-14px}
+    .mc__grid--compact .mc__source a{display:inline-block;padding-block:14px}
     @media(hover:none){.mc__unlink{opacity:1}}
   `,
 })
@@ -133,12 +137,15 @@ export class ProductMediaCard {
 
   readonly summary = computed(() => {
     const count = this.assets().length;
-    if (!count) return 'Foto’s, tekeningen en certificaten die bij dit product horen';
+    if (!count) return 'Tekeningen, certificaten en andere bestanden die bij dit product horen';
     return `${count} bestand${count === 1 ? '' : 'en'} gekoppeld aan dit product · ook te vinden in Documenten & media`;
   });
 
   /** Opens Documenten & media on exactly this product's files. */
   readonly filesQuery = computed(() => ({ view: 'product', doel: this.productId() }));
+  /** Product photos are managed in the photo section of the editor, not in this card. */
+  readonly photosLink = computed(() => ['/products', this.productId(), 'edit']);
+  readonly photosQuery = { tab: 'media' };
 
   private loadVersion = 0;
 

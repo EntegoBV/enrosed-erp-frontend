@@ -1,21 +1,35 @@
 import {
+  afterRenderEffect,
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
+  ElementRef,
   inject,
   input,
   output,
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product, ProductFamily } from '../../core/api/models';
 import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { Skeleton } from '../../shared/skeleton';
-import { catalogueFamilies, cataloguePhoto, CatalogueFamilySelection } from './catalog-studio';
+import {
+  CATALOGUE_PHOTO_LINK_LABEL,
+  CATALOGUE_PHOTO_LINK_QUERY,
+  CATALOGUE_STUDIO_VIEW_KEY,
+  catalogueFamilies,
+  cataloguePhoto,
+  cataloguePhotoLink,
+  CatalogueFamilySelection,
+  CatalogueStudioView,
+  parseStudioView,
+  serializeStudioView,
+} from './catalog-studio';
 import { CataloguePhotoSelectionChange, CataloguePhotoSelectionEditor } from './catalogue-photo-selection';
 import {
   deselectProductIds,
@@ -29,16 +43,31 @@ type MenuSubject =
   | { kind: 'product'; product: Product; anchor: MenuPoint }
   | { kind: 'category'; categoryId: number | null; name: string; anchor: MenuPoint };
 
+/** This tab's open cards; storage can be blocked, the studio then simply starts closed. */
+function storedStudioView(): CatalogueStudioView {
+  try { return parseStudioView(sessionStorage.getItem(CATALOGUE_STUDIO_VIEW_KEY)); }
+  catch { return parseStudioView(null); }
+}
+
+function storeStudioView(view: CatalogueStudioView): void {
+  try { sessionStorage.setItem(CATALOGUE_STUDIO_VIEW_KEY, serializeStudioView(view)); }
+  catch { /* Remembering the open cards is a convenience; the studio works without it. */ }
+}
+
 /**
  * Which products go into the catalogue. The list reads like the catalogue
  * itself, category by category, and every row and chip has a menu behind
  * a right-click or a long press for the choices that touch more than one
  * product: the whole family, the whole category, only this one.
+ *
+ * Every colour row links to that colour's catalogue photo in the product
+ * editor ("Catalogusfoto wijzigen"). The open cards are remembered for the
+ * tab, so the back button returns to the series the owner came from.
  */
 @Component({
   selector: 'app-catalog-product-selection',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, FormsModule, Skeleton, ContextMenu, MenuTrigger, CataloguePhotoSelectionEditor],
+  imports: [AuthImage, FormsModule, RouterLink, Skeleton, ContextMenu, MenuTrigger, CataloguePhotoSelectionEditor],
   template: `
     <section class="card product-selector" aria-labelledby="catalog-products-title">
       <div class="product-selector__head">
@@ -57,7 +86,7 @@ type MenuSubject =
           }
         </div>
       </div>
-      <details class="selection-editor" [open]="!!loadError()" (toggle)="selectionEditorOpen.set($any($event.target).open)">
+      <details class="selection-editor" [open]="selectionEditorOpen() || !!loadError()" (toggle)="selectionEditorOpen.set($any($event.target).open)">
         <summary><span>Assortiment aanpassen<small>Kies productgroepen of afzonderlijke kleuren en maten</small></span><i aria-hidden="true">+</i></summary>
       @if (selectionEditorOpen()) {
       <div class="selection-tools">
@@ -173,13 +202,23 @@ type MenuSubject =
                           @if (photoFor(product); as photo) { <img [appAuthSrc]="photo.url" alt="" draggable="false" /> }
                           @else { <span class="product-choice__empty" aria-hidden="true">◇</span> }
                         </label>
-                        <label class="product-choice__copy" [attr.for]="'catalog-product-' + product.id">
-                          <b>{{ variantLabel(product) }}</b><small>{{ product.sku || 'Zonder SKU' }}</small>
-                          @if (product.carton.piecesPerCarton; as carton) { <small>{{ carton }} stuks per omdoos</small> }
-                          @if (showReferencePrices()) {
-                            <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / stuk</i> }</span>
+                        <div class="product-choice__main">
+                          <label class="product-choice__copy" [attr.for]="'catalog-product-' + product.id">
+                            <b>{{ variantLabel(product) }}</b><small>{{ product.sku || 'Zonder SKU' }}</small>
+                            @if (product.carton.piecesPerCarton; as carton) { <small>{{ carton }} stuks per omdoos</small> }
+                            @if (showReferencePrices()) {
+                              <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / stuk</i> }</span>
+                            }
+                          </label>
+                          <!-- One tap to this colour's catalogue picker in the product editor; back returns to this card. -->
+                          @if (product.id !== null) {
+                            <a class="product-choice__photo-link" [attr.data-catalogue-photo-link]="product.id"
+                               [routerLink]="disabled() ? null : ['/products', product.id, 'edit']" [queryParams]="photoLinkQuery"
+                               [attr.aria-disabled]="disabled() ? 'true' : null"
+                               [attr.aria-label]="photoLinkLabel + ': ' + variantLabel(product)"
+                               (click)="rememberReturn(product)">{{ photoLinkLabel }}</a>
                           }
-                        </label>
+                        </div>
                         <button class="product-choice__more" type="button" [disabled]="disabled()"
                                 [attr.aria-label]="'Meer keuzes voor ' + product.name" (click)="moreClicked($event, product)">⋯</button>
                       </div>
@@ -272,7 +311,11 @@ type MenuSubject =
     .product-choice > input { width: 20px; height: 20px; accent-color: var(--rose); }
     .product-choice__photo { cursor: pointer; }
     .product-choice img, .product-choice__empty { display: grid; width: 48px; height: 52px; place-items: center; box-sizing: border-box; padding: 3px; border-radius: 7px; background: #fff; object-fit: contain; pointer-events: none; }
+    .product-choice__main { display: grid; min-width: 0; justify-items: start; }
     .product-choice__copy { display: grid; min-width: 0; gap: 2px; cursor: pointer; }
+    .product-choice__photo-link { display: inline-flex; align-items: center; min-height: 32px; color: var(--rose-dark); font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+    .product-choice__photo-link[aria-disabled='true'] { opacity: .45; cursor: default; }
+    @media (pointer: coarse) { .product-choice__photo-link { min-height: 44px; } }
     .product-choice__copy > b { color: var(--ink); font-size: 13px; line-height: 1.4; }
     .product-choice__copy > small { color: var(--muted); font-size: 11px; line-height: 1.4; }
     .product-choice__price { display: block; margin-top: 4px; color: var(--rose-dark); font-size: 12px; }
@@ -309,6 +352,7 @@ type MenuSubject =
 })
 export class CatalogProductSelection {
   private readonly router = inject(Router);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly referencePriceFormat = new Intl.NumberFormat('nl-BE', {
     style: 'currency',
     currency: 'EUR',
@@ -319,9 +363,16 @@ export class CatalogProductSelection {
   readonly products = input<Product[]>([]);
   readonly categories = input<Category[]>([]);
   readonly families = input<ProductFamily[]>([]);
-  readonly expandedFamilies = signal<ReadonlySet<string>>(new Set());
-  readonly selectionEditorOpen = signal(false);
+  /** What this tab had open when the owner left the studio (for instance to change a catalogue photo). */
+  private readonly remembered = storedStudioView();
+  readonly expandedFamilies = signal<ReadonlySet<string>>(new Set(this.remembered.expanded));
+  readonly selectionEditorOpen = signal(this.remembered.editorOpen);
+  /** The colour row the owner left through "Catalogusfoto wijzigen": shown again once the list is back. */
+  private returnProductId = this.remembered.returnProductId;
   readonly photoFor = cataloguePhoto;
+  readonly photoLinkLabel = CATALOGUE_PHOTO_LINK_LABEL;
+  /** The row link and the menu item lead to the same place (`cataloguePhotoLink`). */
+  readonly photoLinkQuery = CATALOGUE_PHOTO_LINK_QUERY;
   readonly selected = input<ReadonlySet<number>>(new Set());
   readonly loading = input(false);
   readonly loadError = input<string | null>(null);
@@ -330,6 +381,38 @@ export class CatalogProductSelection {
   readonly selectedChange = output<Set<number>>();
   readonly retry = output<void>();
   readonly cataloguePhotosRequested = output<CataloguePhotoSelectionChange>();
+
+  constructor() {
+    /* The open cards follow every fold and unfold; a plain visit never keeps a row to return to. */
+    effect(() => storeStudioView({
+      editorOpen: this.selectionEditorOpen(),
+      expanded: [...this.expandedFamilies()],
+      returnProductId: null,
+    }));
+    /* Back from the product editor: every navigation starts at the top of the page, so the row
+       the owner left from is brought back into view once, after the list has been drawn again. */
+    afterRenderEffect(() => {
+      const productId = this.returnProductId;
+      if (productId === null || this.loading() || !this.products().length) return;
+      this.returnProductId = null;
+      /* After the router's own scroll to the top, which runs right after the navigation ended. */
+      setTimeout(() => requestAnimationFrame(() => {
+        const link = this.host.nativeElement.querySelector<HTMLElement>(`[data-catalogue-photo-link="${productId}"]`);
+        link?.closest('.product-choice')?.scrollIntoView({ block: 'center' });
+        link?.focus({ preventScroll: true });
+      }));
+    });
+  }
+
+  /** Leaving for the product editor: the cards stay open and this row is the one to come back to. */
+  rememberReturn(product: Product): void {
+    if (this.disabled() || product.id === null) return;
+    storeStudioView({
+      editorOpen: this.selectionEditorOpen(),
+      expanded: [...this.expandedFamilies()],
+      returnProductId: product.id,
+    });
+  }
 
   familyMetadata(group: CatalogueFamilySelection): ProductFamily | undefined {
     return this.families().find(family => family.id !== null && family.id === group.products[0]?.familyId);
@@ -516,7 +599,8 @@ export class CatalogProductSelection {
       { id: 'category-all', label: `Alles uit ${categoryName} opnemen`, hint: `${categoryMembers.length} producten`, icon: '☑', divider: true, disabled: categoryChosen === categoryMembers.length },
       { id: 'category-none', label: `Alles uit ${categoryName} weghalen`, hint: `${categoryChosen} opgenomen`, icon: '☐', disabled: categoryChosen === 0 },
       { id: 'only', label: 'Alleen dit product', hint: 'Al het andere valt weg', icon: '◎', divider: true },
-      { id: 'open', label: 'Product openen', hint: 'Naar de productkaart', icon: '↗', divider: true, disabled: product.id === null },
+      { id: 'catalogue-photo', label: CATALOGUE_PHOTO_LINK_LABEL, hint: 'Naar de foto’s van deze kleur', icon: '✎', divider: true, disabled: product.id === null },
+      { id: 'open', label: 'Product openen', hint: 'Naar de productkaart', icon: '↗', disabled: product.id === null },
     );
     return items;
   }
@@ -535,6 +619,13 @@ export class CatalogProductSelection {
       case 'category-only': this.selectedChange.emit(new Set(this.categoryProducts(categoryId).flatMap((row) => row.id === null ? [] : [row.id]))); break;
       case 'category-filter': this.categoryFilter.set(categoryId); break;
       case 'only': if (product?.id !== null && product?.id !== undefined) this.selectedChange.emit(new Set([product.id])); break;
+      case 'catalogue-photo':
+        if (product && product.id !== null) {
+          const link = cataloguePhotoLink(product.id);
+          this.rememberReturn(product);
+          void this.router.navigate(link.commands, { queryParams: link.queryParams });
+        }
+        break;
       case 'open': if (product?.id !== null && product?.id !== undefined) void this.router.navigate(['/products', product.id]); break;
       default: break;
     }
