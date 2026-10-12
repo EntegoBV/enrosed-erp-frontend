@@ -3,6 +3,9 @@ import { DateField } from '../../shared/date-field';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { FinanceState, MovementDraft } from './finance-state';
+import { PartyField } from './party-field';
+import { partyKey } from './party-suggestions';
+import type { PartyCandidate } from './party-suggestions';
 
 /**
  * 'Bankbeweging noteren': what the statement says, typed over. Money in or
@@ -12,7 +15,7 @@ import { FinanceState, MovementDraft } from './finance-state';
 @Component({
   selector: 'app-bank-movement-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, DateField, Segmented],
+  imports: [Sheet, DateField, Segmented, PartyField],
   template: `
     @if (state.movementDraft(); as draft) {
       <app-sheet variant="ios" title="Bankbeweging noteren" (closed)="state.closeMovement()">
@@ -50,8 +53,8 @@ import { FinanceState, MovementDraft } from './finance-state';
             </div>
           </div>
           <div class="fin-group" [class.ios-group]="!state.desk()">
-            <label class="fin-field"><span>Van / aan wie</span>
-              <input class="input" maxlength="300" [value]="draft.counterparty" (input)="patch({ counterparty: $any($event.target).value })" (keydown.enter)="save()" /></label>
+            <div class="fin-field fin-field--combo"><span><label for="move-party">Van / aan wie</label></span>
+              <app-party-field fieldId="move-party" [value]="draft.counterparty" [candidates]="candidates()" [maxlength]="300" (valueChange)="patch({ counterparty: $event })" /></div>
             <label class="fin-field"><span>Mededeling</span>
               <input class="input" maxlength="500" placeholder="Bijvoorbeeld het factuurnummer" [value]="draft.reference" (input)="patch({ reference: $any($event.target).value })" (keydown.enter)="save()" /></label>
           </div>
@@ -74,6 +77,26 @@ export class BankMovementSheet {
     const account = this.state.movementDraft()?.account ?? '';
     return !account || this.state.accountOptions().some((option) => option.label === account);
   });
+  /** Money in comes from customers: their names and the earlier incoming counterparties, by how often they paid. */
+  private readonly incomingCandidates = computed<PartyCandidate[]>(() => {
+    const rows = new Map<string, PartyCandidate>();
+    for (const customer of this.state.customers()) {
+      const key = partyKey(customer.company);
+      if (key && !rows.has(key)) rows.set(key, { name: customer.company.trim(), stored: true, count: 0, detail: 'Klant' });
+    }
+    for (const line of this.state.bankStatements()) {
+      if (line.amountEur <= 0) continue;
+      const key = partyKey(line.counterparty);
+      if (!key) continue;
+      const known = rows.get(key);
+      if (known) known.count += 1;
+      else rows.set(key, { name: line.counterparty.trim().replace(/\s+/g, ' '), stored: false, count: 1 });
+    }
+    for (const row of rows.values()) if (!row.stored) row.detail = `${row.count} ${row.count === 1 ? 'ontvangst' : 'ontvangsten'}`;
+    return [...rows.values()];
+  });
+  /** Money out goes to the Aan wie names; money in comes from customers. Nothing else is prefilled. */
+  readonly candidates = computed(() => (this.state.movementDraft()?.direction === 'OUTGOING' ? this.state.partySuggestions() : this.incomingCandidates()));
 
   patch(changes: Partial<MovementDraft>): void {
     if (this.state.movementBusy()) return;
