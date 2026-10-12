@@ -24,7 +24,7 @@ const document = () => ({ order: { id: 72, number: 'INV-72', purpose: 'STANDARD'
 const split = () => ({ ...document(), fulfillment: { groupId: 'group', part: 1, status: 'PLANNED', financialsLocked: true } });
 function harness(initial: any = document()) {
   const editor = new Editor(), calls: string[] = [], toasts: string[] = [];
-  Object.assign(editor, { products: signal([{ id: 7, carton: { piecesPerCarton: 24 } }]), view: signal(initial), savedOrder: signal(JSON.stringify(initial.order)), saving: signal(false), sending: signal(false), invoiceConversionBusy: signal(false), advanceAgreement: () => null, saveError: signal(null), previewError: signal(null), picking: signal(false), previewTimer: null, previewVersion: 0, linePending: signal({}),
+  Object.assign(editor, { products: signal([{ id: 7, carton: { piecesPerCarton: 24 } }]), view: signal(initial), savedOrder: signal(JSON.stringify(initial.order)), saving: signal(false), sending: signal(false), invoiceConversionBusy: signal(false), advanceAgreement: () => null, saveError: signal(null), previewError: signal(null), figuresWaiting: signal(false), picking: signal(false), previewTimer: null, previewVersion: 0, linePending: signal({}),
     ui: { toast: (message: string) => toasts.push(message), confirm: () => calls.push('CONFIRM') },
     schedulePreview: () => calls.push('PREVIEW'), refreshWorkQueue: () => calls.push('REFRESH'), reloadLatestOrder: () => calls.push('RELOAD'), piecesPerCarton: () => 24,
     sales: { updateDeliveryTerms: async () => { calls.push('DELIVERY WRITE'); return initial; } },

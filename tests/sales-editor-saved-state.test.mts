@@ -38,7 +38,7 @@ function harness(initial = document()) {
   Object.setPrototypeOf(screen, Desk.prototype);
   Object.assign(screen, {
     documentMutationBusy: signal(false), advanceAgreement: () => null, view: signal(initial),
-    savedOrder: signal(JSON.stringify(initial.order)), saveError: signal(null), previewError: signal(null), saving: signal(false),
+    savedOrder: signal(JSON.stringify(initial.order)), saveError: signal(null), previewError: signal(null), figuresWaiting: signal(false), saving: signal(false),
     previewVersion: 0, previewTimer: null, linePending: signal({}), shipSheet: signal({}),
     loadHistory: async () => { calls.push('GET history'); }, schedulePreview: () => { calls.push('POST preview'); },
     ui: { toast: (text: string) => toasts.push(text) },

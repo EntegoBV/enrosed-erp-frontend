@@ -156,7 +156,7 @@ function editor(initial: any, api: Record<string, (...args: any[]) => any> = {})
   const screen = new Editor(), calls: string[] = [], toasts: string[] = [], reloads: number[] = [];
   const record = (name: string, answer: (...args: any[]) => any) => async (...args: any[]) => { calls.push(`${name} ${JSON.stringify(args)}`); return answer(...args); };
   Object.assign(screen, {
-    view: signal(initial), advanceAgreement: () => null, revisions: signal([]), previewError: signal(null), saving: signal(false), linePending: signal({}),
+    view: signal(initial), advanceAgreement: () => null, revisions: signal([]), previewError: signal(null), figuresWaiting: signal(false), saving: signal(false), linePending: signal({}),
     transportSaving: () => false, customerEmail: signal('inkoop@bloemist.example'), sendIssues: () => [], loadCreditContext: () => undefined, schedulePreview: () => undefined,
     flushTransport: async () => true, flushPendingEdits: async () => true, loadHistory: async () => undefined, lineUnit: () => ({ short: 'st' }), refreshWorkQueue: () => undefined,
     reload: async (id: number) => { reloads.push(id); }, scrollToSection: () => undefined,
@@ -462,4 +462,19 @@ test('a plain document keeps its old markup, and a website order is never called
   assert.match(phone, /sendForApproval\(\) \? 'Versturen ter goedkeuring' : 'Versturen'/, 'the phone dock uses the contract label');
   assert.match(phone, /isWebOrder\(\) \? 'bestelde' : 'aangevraagde'/);
   for (const source of [desk, phone]) assert.match(source, /\[disabled\]="saving\(\) \|\| saveConflict\(\)"/, 'Opslaan is off while only loading the latest version helps');
+});
+
+test('a refused save still prices the quantity that was waiting for its figures', async () => {
+  const refused = editor(doc({}, block()), { updateOrder: () => { throw new Error('offline'); } });
+  let priced = 0; refused.screen.preview = async () => { priced++; };
+  refused.edit('Teamnotitie'); refused.screen.figuresWaiting.set(true);
+  assert.equal(await refused.screen.save(), false);
+  assert.equal(priced, 1, 'the save cleared the waiting recalculation, so it runs now');
+
+  const saved = editor(doc({}, block()));
+  let again = 0; saved.screen.preview = async () => { again++; };
+  saved.edit('Teamnotitie'); saved.screen.figuresWaiting.set(true);
+  assert.equal(await saved.screen.save(), true);
+  assert.equal(again, 0, 'a save that went through shows the saved figures');
+  assert.equal(saved.screen.figuresWaiting(), false);
 });
