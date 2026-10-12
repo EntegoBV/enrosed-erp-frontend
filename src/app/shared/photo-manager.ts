@@ -260,20 +260,20 @@ export interface PendingPhotoUploadResult {
         @if (isOwnPhoto(photo)) {
           <div class="photo-details__primary">
             <span>{{ isEffectivePrimary(photo) ? 'Hoofdfoto in lijsten en op documenten' : 'Gebruik als hoofdfoto in lijsten en op documenten' }}</span>
-            @if (!isEffectivePrimary(photo)) { <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="makePrimary(photo)">Maak hoofdfoto</button> }
+            @if (!isEffectivePrimary(photo)) { <button class="btn btn--sm" type="button" [disabled]="interactionDisabled()" (click)="makePrimary(photo)">Gebruik op offertes en facturen</button> }
           </div>
         }
         <fieldset class="photo-role-settings">
-          <legend>Eerste foto per kanaal</legend>
+          <legend>Gebruik deze foto voor</legend>
           <div class="photo-card__roles">
             <button class="photo-role" type="button" [class.photo-role--on]="leads(photo, 'WEBSITE')"
                     [disabled]="interactionDisabled() || productId() === null" [attr.aria-pressed]="leads(photo, 'WEBSITE')"
-                    (click)="toggleLead(photo, 'WEBSITE')"><span aria-hidden="true">{{ leads(photo, 'WEBSITE') ? '✓' : '+' }}</span> Website</button>
+                    (click)="toggleLead(photo, 'WEBSITE')"><span aria-hidden="true">{{ leads(photo, 'WEBSITE') ? '✓' : '+' }}</span> Offertes en facturen</button>
             <button class="photo-role" type="button" [class.photo-role--on]="leads(photo, 'CATALOGUE')"
                     [disabled]="interactionDisabled() || productId() === null" [attr.aria-pressed]="leads(photo, 'CATALOGUE')"
                     (click)="toggleLead(photo, 'CATALOGUE')"><span aria-hidden="true">{{ leads(photo, 'CATALOGUE') ? '✓' : '+' }}</span> Catalogus</button>
           </div>
-          <p>Geen voorkeur? Dan wordt de eerste beschikbare foto gebruikt. Dit wijzigt de publicatie niet.</p>
+          <p>Geen voorkeur? Dan wordt de eerste beschikbare foto gebruikt.@if (!inheritedPhotos().length) { Dit product staat niet op de website: het hoort niet bij een reeks. }</p>
         </fieldset>
         @if (productId() !== null) {
           <app-photo-rendition-controls [endpoint]="'/api/products/' + productId() + '/photos/' + photo.id + '/renditions'" [filename]="photo.originalFilename" [disabled]="interactionDisabled()" />
@@ -1330,8 +1330,8 @@ export class PhotoManager {
       const product = await this.catalog.setPhotoLead(productId, photo.id, role, !this.leads(photo, role));
       this.changed.emit(product);
       this.ui.toast(this.leads(photo, role)
-        ? (role === 'WEBSITE' ? 'Website opent weer met de eerste foto' : 'Catalogus opent weer met de eerste foto')
-        : (role === 'WEBSITE' ? 'Deze foto opent nu de website' : 'Deze foto opent nu de catalogus'));
+        ? (role === 'WEBSITE' ? 'Offertes en facturen tonen weer de eerste foto' : 'Catalogus opent weer met de eerste foto')
+        : (role === 'WEBSITE' ? 'Offertes en facturen tonen nu deze foto' : 'Deze foto opent nu de catalogus'));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Fotokeuze opslaan mislukt'), 'err');
     } finally {

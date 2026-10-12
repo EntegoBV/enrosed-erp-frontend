@@ -11,7 +11,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Category, LandedCostLine, Product, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 import { salesPhoto } from '../../shared/sales-photo';
-import { hoofdfotoFirst, slideBadges } from './product-photos-state';
+import { photoKeyForProductPhoto, placeCards, resolvedPlaces, tileUses, variantShortLabel } from './product-photos-state';
+import { ProductPlaceLine, ProductPlacesLine } from './product-places-line';
 
 interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
 interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
@@ -61,7 +62,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
-    PageHeader, Icon, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    ProductPlacesLine, PageHeader, Icon, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -104,7 +105,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 
       <div class="content product-view-page erp-workspace erp-workspace--product erp-workspace--view">
         <div class="product-view-canvas erp-workspace__main">
-          <section class="pd-overview" id="product-overview" aria-labelledby="product-title">
+          <section class="pd-overview" [class.pd-overview--places]="!!placeLine()" id="product-overview" aria-labelledby="product-title">
             @if (!desktop.active()) {
               <div class="pd-bar">
                 <button class="pd-back" type="button" aria-label="Terug" (click)="goBack()"><span aria-hidden="true">‹</span></button>
@@ -134,7 +135,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                         aria-keyshortcuts="ArrowLeft ArrowRight Home End" [attr.aria-label]="'Foto ' + (galleryIndex() + 1) + ' van ' + photos.length + (currentSlideBadges().length ? ' (' + currentSlideBadges().join(', ') + ')' : '') + ' vergroten'">
                   <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
                   @if (currentSlideBadges().length) {
-                    <span class="pd-photo-badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span [class.is-main]="badge === 'Hoofdfoto'">{{ badge }}</span> }</span>
+                    <span class="pd-photo-badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span>{{ badge }}</span> }</span>
                   }
                   <span class="pd-photo-count">{{ galleryIndex() + 1 }} / {{ photos.length }} <span aria-hidden="true">⤢</span></span>
                 </button>
@@ -147,12 +148,15 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                     }
                   </div>
                 }
-                <a class="pd-photo-manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s beheren ›</a>
+                <a class="btn btn--sm pd-photo-manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s beheren</a>
                 <span class="sr-only" role="status" aria-live="polite">Foto {{ galleryIndex() + 1 }} van {{ photos.length }}</span>
               } @else {
-                <a class="pd-no-photo" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }"><app-icon name="media" [size]="30" /><span>Nog geen foto</span><small>Foto’s toevoegen ›</small></a>
+                <div class="pd-no-photo"><app-icon name="media" [size]="30" /><span>Nog geen foto</span>
+                  <a class="btn btn--sm" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s toevoegen</a></div>
               }
             </div>
+            <!-- What customers see for this colour, as the server resolved it; the two links open that picker in the editor. -->
+            @if (placeLine(); as line) { <app-product-places-line class="pd-places" [line]="line" /> }
 
             @if (familyLoading()) {
               <div class="pd-variants pd-variant-state" role="status">Varianten laden…</div>
@@ -945,18 +949,58 @@ export class ProductView {
   protected readonly ui = inject(Ui);
 
   readonly product = signal<Product | null>(null);
-  /** The carousel opens on the Hoofdfoto, the photo lists, quotes and invoices show as well. */
+  /** The carousel opens on the photo the ERP lists, quotes and invoices show; the others keep their order. */
   readonly galleryPhotos = computed(() => {
     const product = this.product();
-    return product ? hoofdfotoFirst(product.photos, salesPhoto(product)) : [];
+    if (!product) return [];
+    const first = salesPhoto(product);
+    const index = first ? product.photos.findIndex((photo) => photo.id === first.id) : -1;
+    return index <= 0 ? [...product.photos]
+      : [product.photos[index], ...product.photos.slice(0, index), ...product.photos.slice(index + 1)];
   });
-  /** Where each photo is used, for the badges on the current slide; optional enhancement. */
+  /** What every place shows for this colour; fetched for a series product with photos, an optional enhancement. */
   readonly photoOverview = signal<ProductPhotoOverview | null>(null);
+  /**
+   * Where customers see the current slide: "Website", "Catalogus", "Bestelpagina",
+   * read from the places (built from the old fields for a server that sends none).
+   */
   readonly currentSlideBadges = computed(() => {
-    const product = this.product();
     const photo = this.galleryPhotos()[this.galleryIndex()];
-    if (!product || !photo) return [];
-    return slideBadges(photo, photo.id === salesPhoto(product)?.id, this.photoOverview());
+    if (!photo) return [];
+    const uses = tileUses({ key: photoKeyForProductPhoto(photo) }, resolvedPlaces(this.photoOverview()));
+    return [
+      ...(uses.website ? ['Website'] : []),
+      ...(uses.catalogue ? ['Catalogus'] : []),
+      ...(uses.series.includes('quote') ? ['Bestelpagina'] : []),
+    ];
+  });
+  /** The colour as the photo section names it ("Kersenroze", or with its size when two colours share the name). */
+  readonly photoColour = computed(() => {
+    const product = this.product();
+    return product ? variantShortLabel(product, this.family()?.members ?? [], this.photoOverview()?.variantLabel ?? null) : '';
+  });
+  /**
+   * "Dit zien klanten bij {kleur}": the photo of Website, Catalogus and Offertes
+   * en facturen. Only a server that resolves the places can say it; Website and
+   * Catalogus link to their picker while that card has one to open.
+   */
+  readonly placeLine = computed<ProductPlaceLine | null>(() => {
+    const product = this.product();
+    const overview = this.photoOverview();
+    if (!product || product.id === null || !overview?.places) return null;
+    const colour = this.photoColour();
+    return {
+      productId: product.id,
+      heading: `Dit zien klanten bij ${colour}`,
+      items: placeCards(overview, colour, product).map((card) => {
+        const pick = card.key === 'documents' ? null : card.actions.find((action) => action.id === 'pick') ?? null;
+        return {
+          key: card.key, name: card.name, photoUrl: card.photo?.smallUrl ?? null, alt: card.alt, empty: card.chip,
+          kies: pick ? (card.key === 'website' ? 'website' as const : 'catalogus' as const) : null,
+          linkLabel: pick?.ariaLabel ?? null,
+        };
+      }),
+    };
   });
   readonly gpCapacity = computed(() => {
     const product = this.product();
@@ -1397,7 +1441,7 @@ export class ProductView {
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
     if (version !== this.loadVersion) return;
     this.product.set(product);
-    /* Website and quote badges only exist for a series; a loose product needs no extra request. */
+    /* The places only exist for a series; a loose product needs no extra request. */
     if (product.id !== null && product.familyId != null && product.photos.length) void this.loadPhotoOverview(product.id, version);
     this.stockLevels.set(null);
     if (product.id !== null) {
@@ -1461,7 +1505,7 @@ export class ProductView {
       const overview = await this.catalog.productPhotoOverview(productId);
       if (version === this.loadVersion) this.photoOverview.set(overview);
     } catch {
-      /* The badges are a bonus; the carousel itself never waits for them. */
+      /* The badges and the places line are a bonus; the carousel itself never waits for them. */
     }
   }
 

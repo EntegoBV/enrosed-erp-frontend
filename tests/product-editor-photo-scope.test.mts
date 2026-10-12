@@ -12,7 +12,7 @@ const parsed = ts.createSourceFile('product-editor.ts', source, ts.ScriptTarget.
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'ProductEditor');
 assert.ok(original);
 const names = new Set(['photoWorkspace', 'mediaPhotoCount', 'heroPhoto', 'dirty', 'familyDirty', 'workspaceDirty', 'photoUploading',
-  'onPhotosChanged', 'refreshPhotoState', 'mergeFamilyPhotoState', 'flushPendingPhotos', 'updateWithPendingPhotos', 'canDeactivate']);
+  'saveBusy', 'photoPick', 'dockPhotoNote', 'clearPhotoPick', 'onPhotosChanged', 'refreshPhotoState', 'mergeFamilyPhotoState', 'flushPendingPhotos', 'updateWithPendingPhotos', 'canDeactivate']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -38,6 +38,7 @@ function harness({ familyId = 3 as number | null, savedFamilyId = 3 as number | 
   const calls: { operation: string; id?: number | null; force?: boolean }[] = [];
   const notices: string[] = [];
   const replaced: unknown[] = [];
+  const navigations: any[] = [];
   const manager = {
     busy: signal(false),
     roleBusy: signal<number | null>(null),
@@ -53,6 +54,8 @@ function harness({ familyId = 3 as number | null, savedFamilyId = 3 as number | 
     draft: signal(product), baseline: signal(JSON.stringify(product)), family: signal<any>(family()), savedFamily: signal<any>(family()),
     photoManager: () => manager, photosPanel: () => ({ busy: panelBusy }), savedProductFamilyId: signal(savedFamilyId),
     productLoadVersion: 1,
+    activeTab: signal('identity'), kies: signal(''), editorReady: signal(true),
+    router: { navigate: async (commands: unknown[], extras: unknown) => { navigations.push([commands, extras]); return true; } },
     agreementDirty: signal(false), translationDirty: signal(false),
     saving: signal(false), translationSaving: signal(false), agreementBusy: signal(false),
     sharedFieldsBusy: signal(false), stockSaving: signal(false), takingCode: signal(false), leaveQuestion: signal<any>(null),
@@ -67,7 +70,7 @@ function harness({ familyId = 3 as number | null, savedFamilyId = 3 as number | 
       assignProductFamily: async () => { throw new Error('Photo work must not change family membership'); },
     },
   });
-  return { editor, manager, pending, panelBusy, calls, notices, replaced };
+  return { editor, manager, pending, panelBusy, calls, notices, replaced, navigations };
 }
 
 test('series photos need the product saved in its series; everything else keeps the own-photo manager', () => {
@@ -200,4 +203,50 @@ test('a matching photo response updates its own media while preserving unsaved p
   assert.equal(editor.draft().colour, 'Custom pink');
   assert.equal(editor.draft().fixedSalesPriceEur, 29.95);
   assert.equal(editor.draft().cartonCbm, 0.12);
+});
+
+test('on the photo tab the phone dock says photos are saved at once, only while nothing waits for Opslaan', () => {
+  const { editor, pending, panelBusy } = harness();
+  assert.equal(editor.dockPhotoNote(), false, 'Another tab keeps "Alles opgeslagen"');
+  editor.activeTab.set('media');
+  assert.equal(editor.dockPhotoNote(), true);
+  editor.draft.set({ ...editor.draft(), name: 'Unsaved name' });
+  assert.equal(editor.dockPhotoNote(), false, 'An open change brings the save text back');
+  editor.draft.set({ ...editor.draft(), name: 'Bowl rood' });
+  assert.equal(editor.dockPhotoNote(), true);
+  panelBusy.set(true);
+  assert.equal(editor.dockPhotoNote(), false, 'While a photo is being saved the dock shows the busy state');
+  panelBusy.set(false);
+  pending.set(1);
+  assert.equal(editor.dockPhotoNote(), false, 'A queued photo still needs Opslaan');
+  assert.equal(harness({ id: null, savedFamilyId: null }).editor.dockPhotoNote(), false, 'A new product saves its photos with the product');
+  assert.match(source, /product-editor-dock__photos" role="status"><strong>Foto’s worden meteen bewaard<\/strong><small>Hier hoef je niet op te slaan<\/small>/);
+});
+
+test('?kies= reaches the photo panel on the photo tab only and leaves the address once handled', () => {
+  const { editor, navigations } = harness();
+  editor.kies.set('catalogus');
+  assert.equal(editor.photoPick(), null, 'Not while another tab is open');
+  editor.activeTab.set('media');
+  assert.equal(editor.photoPick(), 'catalogus');
+  editor.kies.set('website');
+  assert.equal(editor.photoPick(), 'website');
+  editor.clearPhotoPick();
+  assert.deepEqual(structuredClone(navigations), [[[], { queryParams: { kies: null }, queryParamsHandling: 'merge', replaceUrl: true }]],
+    'The tab stays in the address; a reload does not open the picker again');
+  editor.kies.set('grote-foto');
+  assert.equal(editor.photoPick(), null, 'Only the two colour pickers can be asked for');
+  editor.kies.set('');
+  editor.clearPhotoPick();
+  assert.equal(navigations.length, 1);
+  assert.match(source, /\[pick\]="photoPick\(\)"\s+\(pickHandled\)="clearPhotoPick\(\)"/);
+});
+
+test('the section head has no count badge and the translations hint lives in the panel', () => {
+  assert.doesNotMatch(source, /mediaPhotoCount\(\) \}\}<\/span>/);
+  const start = source.indexOf('<section class="card editor-section erp-workspace__section" id="media"');
+  const section = source.slice(start, source.indexOf('</section>', start));
+  assert.ok(section.length > 500 && section.length < 5000, 'The photo section of the template');
+  assert.doesNotMatch(section, /vertalingen|reeksfoto|hoofdfoto|section-head__count/i);
+  assert.match(source, /photosPanel\(\)\?\.pillTemplate\(\)/);
 });

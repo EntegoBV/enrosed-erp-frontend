@@ -124,3 +124,34 @@ test('channel lead selection is guarded while disabled and during its request', 
   assert.equal(page.interactionDisabled(), false);
   assert.deepEqual(changes, [{ id: 45 }]);
 });
+
+test('a product without a series speaks of quotes, invoices and the catalogue, never of a website it is not on', async () => {
+  const text = await readFile(new URL('../src/app/shared/photo-manager.ts', import.meta.url), 'utf8');
+  assert.match(text, /<legend>Gebruik deze foto voor<\/legend>/);
+  assert.match(text, /leads\(photo, 'WEBSITE'\) \? '✓' : '\+' \}\}<\/span> Offertes en facturen<\/button>/);
+  assert.match(text, /leads\(photo, 'CATALOGUE'\) \? '✓' : '\+' \}\}<\/span> Catalogus<\/button>/);
+  assert.match(text, /Dit product staat niet op de website: het hoort niet bij een reeks\./);
+  assert.match(text, /\(click\)="makePrimary\(photo\)">Gebruik op offertes en facturen<\/button>/);
+  for (const old of ['Eerste foto per kanaal', 'Maak hoofdfoto', 'Deze foto opent nu de website', 'Dit wijzigt de publicatie niet']) {
+    assert.equal(text.includes(old), false, old);
+  }
+});
+
+test('a phone gets the small rendition for a list and the asked one only where a view opts in', async () => {
+  const text = await readFile(new URL('../src/app/core/api/auth-image.ts', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('auth-image.ts', text, ts.ScriptTarget.Latest, true);
+  const rule = parsed.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'renditionFor');
+  assert.equal(rule.length, 1);
+  const exported: any = {};
+  vm.runInNewContext(ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, rule)), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports: exported });
+  const { renditionFor } = exported;
+  assert.equal(renditionFor('medium', false), 'small', 'Default behaviour: every other screen stays light on a phone');
+  assert.equal(renditionFor('medium', false, true), 'medium', 'appAuthKeepSize');
+  assert.equal(renditionFor('medium', true), 'medium');
+  assert.equal(renditionFor('small', false, true), 'small');
+  assert.equal(renditionFor('original', false), 'original');
+  assert.match(text, /input\(false, \{ alias: 'appAuthKeepSize', transform: booleanAttribute \}\)/);
+  assert.match(text, /renditionFor\(requestedSize, this\.desktop\.active\(\), this\.keepSize\(\)\)/);
+});

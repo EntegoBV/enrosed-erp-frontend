@@ -919,19 +919,85 @@ and on copies. Without the blocks (older backend) every screen is as before.
   piece EAN with the product, outer ITF-14 with the carton.
 - Editor behind Bewerken; EXW price with currency select; CSV
   master-data and translations import/export live in Settings.
-- Photos (editor section "Foto's", 2026-09-22): a product saved in a
-  series uses `product-photos-panel.ts`, driven entirely by
-  `GET /api/products/{id}/photo-overview` plus `PUT …/photo-roles` and
-  `POST …/photos/promote`. Card "Waar staat welke foto?" (Hoofdfoto per
-  kleur = website lead = quote/invoice photo; "Vraag een offerte" per
-  reeks; catalogue choices), grid "Deze kleur / Hele reeks", one photo
-  sheet (Gebruik als, Zichtbaar op, Geldt voor, Zet in de reeks /
-  Dubbele foto opruimen). Every change saves at once; the editor then
-  refreshes product and family (`refreshPhotoState`) without making the
-  form dirty. Family-less or unsaved products keep `PhotoManager`. The
-  rules live import-free in `product-photos-state.ts` (node tests).
-  Every ERP thumbnail follows the Hoofdfoto rule of `shared/sales-photo.ts`
-  (website lead → first series projection → first photo), never photos[0].
+- Photos (editor section "Foto's", rebuilt 2026-10-12): a product saved
+  in a series uses `product-photos-panel.ts`. The server resolves what
+  every place really shows: `GET /api/products/{id}/photo-overview`
+  carries `places` (eight: `websiteColour`, `websiteOpening`, `documents`,
+  `websiteQuote`, `catalogueColour`, `catalogueDetail`, `catalogueOverview`,
+  `catalogueCompactRow`; each with `shownKey`, `chosenKey`, `state`
+  CHOSEN / AUTOMATIC / CHOSEN_NOT_SHOWN / NONE and a `reason`), plus
+  `otherPhotos`, `photos[].chosenFor`, `seriesLiveOnWebsite`,
+  `colourOnWebsite`, `websitePageUrl` and `catalogueAssumption` (the pdf
+  the catalogue places are computed for: a Handelscatalogus with every
+  non-demo colour, inactive ones included). The screen never guesses: it
+  draws the answer and nothing before it. Every new field is optional in
+  `models.ts`; against an older server `resolvedPlaces()` builds the
+  places from the old fields (`legacyPlaces`, weaker cards, no error).
+  - Screen, top to bottom: "Waar zien klanten {kleur}?" with three fixed
+    cards **Website**, **Catalogus**, **Offertes en facturen** (the photo
+    each place shows now, also when it is automatic; "Wijzig" on the
+    first two), standing notes, "Voor de hele reeks" (Productpagina,
+    Bestelpagina, Grote / Kleine catalogusfoto), "Andere kleuren van deze
+    reeks" (`product-photo-colours.ts`, looking and jumping only), then
+    "Alle foto's" where a tile says in words where the photo is used. The
+    status pill in the section head is the only place that speaks about
+    the live site (shared `WebsiteSyncStore`).
+  - The other colours are never kept: `loadOthers()` asks each colour's
+    own overview when the list opens, after every save while it is open
+    (`afterSave` -> `refreshOthers`), after the editor's own save (the
+    `revision` input) and when "Bekijk groot" opens in the Catalogus
+    picker (the strip "Zo staat hij naast de andere kleuren"). Another
+    colour's id goes to `productPhotoOverview` and to nothing else; a
+    test walks every saving road to hold that.
+  - Picker `product-photo-picker.ts` (presentational, one for all five
+    choosable places): bar "Nieuwe foto uploaden" (upload and use in one
+    flow, the panel's `uploadAndUse`), then the candidates; a tap chooses
+    and saves (`PUT …/photo-roles`), "Laat automatisch kiezen" clears,
+    "Bekijk groot" compares. Photo sheet `product-photo-sheet.ts`: the
+    photo next to what customers see, one row per place ("Gebruik
+    hier"), everything rare under the folds "Voor de hele reeks" and
+    "Meer instellingen". One step of undo ("Ongedaan maken").
+  - Every change saves at once; the editor then refreshes product and
+    family (`refreshPhotoState`) without making the form dirty. A
+    product without a saved series, or an unsaved one, keeps
+    `PhotoManager`.
+  - Deep link `/products/:id/edit?tab=media&kies=website|catalogus`: the
+    editor hands `kies` to the panel (`photoPick()` -> input `pick`), the
+    panel opens that card's picker once the overview is there and emits
+    `pickHandled`, and `clearPhotoPick()` removes the parameter with
+    `replaceUrl`, so a reload or the back button never reopens it.
+    Ignored (parameter still removed) without a saved series or when the
+    card has no "Wijzig" (inactive or demo colour). Two screens link
+    here: the product page and the Catalogusstudio.
+  - Product page (`product-view.ts`, `product-desk.ts`): button "Foto's
+    beheren", slide badges "Website" / "Catalogus" / "Bestelpagina" read
+    from the places (`tileUses`), and for a server with `places` the
+    line "Dit zien klanten bij {kleur}" (`product-places-line.ts`: three
+    56 px pictures; Website and Catalogus link to their picker).
+    "Documenten & media" (`product-media-card.ts`) is for documents: a
+    file added there never becomes a product photo, the card says so
+    and points to Foto's.
+  - Catalogusstudio: every colour row has "Catalogusfoto wijzigen"
+    (`cataloguePhotoLink` in `catalog-studio.ts`, also in the row menu).
+    The open cards and the row left from are kept in `sessionStorage`
+    (`erp.catalog-studio.open-cards`, parsed defensively), so the back
+    button returns to the same series card and row. Its photo block
+    edits the two series photos in the same words ("Kleine catalogusfoto
+    (overzicht)", "Grote catalogusfoto").
+  - Vocabulary, one name per concept (ui-spec of the round): Website,
+    Catalogus, Offertes en facturen, Productpagina, Bestelpagina, Grote /
+    Kleine catalogusfoto, Handelscatalogus / Compact overzicht, "Zelf
+    gekozen" / "Automatisch gekozen", "Je keuze wordt niet getoond",
+    reeks. Never on screen: Hoofdfoto, kleurfoto, brochure, export,
+    kanaal, assortiment, reeksfoto as a title, dot-joined place names.
+    The rules and every sentence live import-free in
+    `product-photos-state.ts`; `tests/product-photos-state.test.mts`
+    scans what it can return for the banned words. The panel, editor and
+    product page tests pick class members by name (update the name list
+    with the member).
+  - Every ERP thumbnail still follows the rule of `shared/sales-photo.ts`
+    (website choice → first series projection → first photo), never
+    photos[0]; the product page carousel opens on that photo.
 - Unit (2026-09-22): `packaging.unitKey` names what one piece is called on
   documents ("stuk", "bowl", "stolp", …; list from the cached
   `CatalogApi.unitNames()` = `GET /api/products/unit-names`, Dutch). Chips

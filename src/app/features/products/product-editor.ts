@@ -10,7 +10,7 @@ import {
   input,
   signal,
   viewChild, untracked } from '@angular/core';
-import { Location } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -81,7 +81,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet,
   ],
   template: `
     @if (!desktop.active()) {
@@ -653,7 +653,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span class="section-head__number erp-workspace__section-index" aria-hidden="true">02</span>
           <div><h2 id="media-title">Foto's</h2></div>
           <span class="spacer"></span>
-          <span class="badge badge--neutral">{{ mediaPhotoCount() }}</span>
+          <!-- The photo panel owns the website status pill; it is drawn here, next to the title. -->
+          @if (photoWorkspace() === 'series') {
+            @if (photosPanel()?.pillTemplate(); as pill) { <ng-container [ngTemplateOutlet]="pill" /> }
+          }
         </div>
         <div class="card__body photo-workspace">
           @if (photoWorkspace() === 'series') {
@@ -664,11 +667,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               [members]="family()?.members ?? []"
               [revision]="photoRevision()"
               [disabled]="saving() || sharedFieldsBusy() || translationSaving() || translationDirty()"
+              [pick]="photoPick()"
+              (pickHandled)="clearPhotoPick()"
               (changed)="refreshPhotoState()"
             />
-            @if (translationDirty() || translationSaving()) {
-              <p class="photo-scope-hint">Bewaar eerst de vertalingen; daarna pas je de foto’s weer aan.</p>
-            }
           }
           <!-- Products outside a saved series keep the own-photo manager. It stays mounted
                so a queue picked before the first save survives the switch to the series panel. -->
@@ -681,8 +683,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             />
             @if (family()) {
               <p class="photo-scope-hint">{{ isNew()
-                ? 'Na het aanmaken beheer je hier ook de reeksfoto’s en kies je de hoofdfoto per kleur.'
-                : 'Sla het product op in deze reeks; daarna beheer je hier ook de reeksfoto’s.' }}</p>
+                ? 'Na het aanmaken beheer je hier ook de foto’s van de reeks en kies je per kleur de foto voor website en catalogus.'
+                : 'Sla het product op in deze reeks; daarna beheer je hier ook de foto’s van de reeks.' }}</p>
             }
           </div>
         </div>
@@ -1390,7 +1392,12 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @if (!desktop.active()) {
       <nav class="erp-workspace__mobile-actions product-editor-dock"
            aria-label="Product opslaan">
-        <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : 'Je kunt verder bewerken' }}</small></span>
+        @if (dockPhotoNote()) {
+          <!-- Photos are saved the moment they change: on this tab the dock says so instead of "Alles opgeslagen". -->
+          <span class="product-editor-dock__context product-editor-dock__photos" role="status"><strong>Foto’s worden meteen bewaard</strong><small>Hier hoef je niet op te slaan</small></span>
+        } @else {
+          <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : 'Je kunt verder bewerken' }}</small></span>
+        }
         <button class="btn product-editor-dock__save" type="button"
                 [class.btn--primary]="workspaceDirty()"
                 [class.erp-workspace__primary--dirty]="workspaceDirty()"
@@ -2125,6 +2132,8 @@ export class ProductEditor implements OnDestroy {
   readonly id = input<string>('');
   /** ?tab=stock opens that section straight away (the view page links here). */
   readonly tab = input<string>('');
+  /** ?tab=media&kies=catalogus (or website) opens that picker of the photo section once. */
+  readonly kies = input<string>('');
   readonly action = input<string>('');
   readonly supplier = input<string>('');
   readonly returnTo = input<string>('');
@@ -2602,6 +2611,21 @@ export class ProductEditor implements OnDestroy {
   readonly selectedCategoryName = computed(() =>
     this.categories().find((category) => category.id === this.draft().categoryId)?.name ?? '');
 
+  /** The picker a link asked for, while the photo section is the open tab. */
+  readonly photoPick = computed<'website' | 'catalogus' | null>(() => {
+    const wanted = this.kies();
+    return this.activeTab() === 'media' && (wanted === 'website' || wanted === 'catalogus') ? wanted : null;
+  });
+  /** Phone dock on the photo tab: nothing waits for "Opslaan", photos of a saved product are saved at once. */
+  readonly dockPhotoNote = computed(() =>
+    this.activeTab() === 'media' && this.draft().id !== null && !this.saveBusy() && !this.workspaceDirty());
+
+  /** The asked picker opened (or cannot): the parameter leaves the address, so a reload does not open it again. */
+  clearPhotoPick(): void {
+    if (!this.kies()) return;
+    void this.router.navigate([], { queryParams: { kies: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   /** One shared action state for the app bar, workspace hero and mobile dock. */
   readonly saveBusy = computed(() =>
     !this.editorReady() || this.saving() || this.photoUploading() || this.agreementBusy()
@@ -2707,6 +2731,10 @@ export class ProductEditor implements OnDestroy {
       const current = this.activeTab();
       const valid = visibleProductEditorTab(current, this.visibleTabs().map(tab => tab.id));
       if (valid !== current) untracked(() => this.showTab(valid));
+    });
+    /* A product without a saved series has no pickers: the request is dropped, not kept for later. */
+    effect(() => {
+      if (this.photoPick() && this.editorReady() && this.photoWorkspace() === 'own') untracked(() => this.clearPhotoPick());
     });
     void this.loadReference();
     void this.loadFamilies();

@@ -304,6 +304,91 @@ export interface ProductPhotoOverviewPhoto {
   duplicateOfKey: string | null;
   familyPosition: number | null;
   ownPosition: number | null;
+  /**
+   * Every colour of the series that stored this photo as its website or
+   * catalogue choice; absent from older servers.
+   */
+  chosenFor?: PhotoChosenFor[];
+}
+
+/** A colour that stored a photo as its own choice (MAIN = website, quotes and invoices). */
+export interface PhotoChosenFor {
+  productId: number;
+  variantLabel: string;
+  role: 'MAIN' | 'CATALOGUE_VARIANT';
+}
+
+/**
+ * CHOSEN = a stored choice is the photo shown; AUTOMATIC = no stored choice,
+ * something is shown; CHOSEN_NOT_SHOWN = a stored choice exists but the place
+ * shows another photo or nothing; NONE = no stored choice, nothing shown.
+ */
+export type PhotoPlaceState = 'CHOSEN' | 'AUTOMATIC' | 'CHOSEN_NOT_SHOWN' | 'NONE';
+
+export type PhotoPlaceReason =
+  | 'NO_SERIES' | 'NO_PHOTO' | 'COLOUR_NOT_ACTIVE' | 'SERIES_NOT_ACTIVE'
+  | 'OWN_COLOUR_SERIES_PHOTO' | 'ALL_COLOURS_SERIES_PHOTO' | 'OWN_PHOTO_FALLBACK'
+  | 'FIRST_IN_SERIES_ORDER' | 'FIRST_SERIES_PHOTO' | 'FIRST_OWN_PHOTO'
+  | 'FIRST_COLOUR_WEBSITE_PHOTO' | 'OWN_PHOTO_FIRST'
+  | 'THIS_COLOUR_LEAD' | 'OTHER_COLOUR_LEAD_OVERRIDES' | 'OWN_PHOTO_FILLER'
+  | 'SAME_AS_LARGE_PHOTO'
+  | 'NOT_PUBLISHED_FOR_WEBSITE' | 'NOT_PUBLISHED_FOR_CATALOGUE' | 'NOT_PUBLISHABLE'
+  | 'ALL_COLOURS_PHOTO_NOT_USED_PER_COLOUR' | 'SINGLE_COLOUR_SERIES'
+  | 'CHOICE_NOT_AVAILABLE' | 'PHOTO_UNREADABLE';
+
+/** What one place (website, catalogue, documents) really shows, resolved by the server. */
+export interface PhotoPlace {
+  /** Key of the photo this place shows now; null = nothing. In photos[] or otherPhotos[]. */
+  shownKey: string | null;
+  /** Key of the stored choice, also when it is not shown; null = no choice stored. */
+  chosenKey: string | null;
+  state: PhotoPlaceState;
+  /** Null only for CHOSEN. A newer server may send a reason this list does not know yet. */
+  reason: PhotoPlaceReason | null;
+  /** Role to send to PUT /photo-roles to change this place; null = not choosable here. */
+  role: ProductPhotoRoleKey | null;
+  /** COLOUR = the choice is for this colour only, SERIES = for every colour of the series. */
+  scope: 'COLOUR' | 'SERIES';
+  /** The colour the shown photo belongs to, or whose choice decides; null = all colours or not applicable. */
+  relatedProductId: number | null;
+  relatedLabel: string | null;
+  /** True when relatedProductId is this product. */
+  thisColour: boolean;
+}
+
+export interface PhotoPlaces {
+  websiteColour: PhotoPlace;
+  websiteOpening: PhotoPlace;
+  documents: PhotoPlace;
+  websiteQuote: PhotoPlace;
+  catalogueColour: PhotoPlace;
+  catalogueDetail: PhotoPlace;
+  catalogueOverview: PhotoPlace;
+  catalogueCompactRow: PhotoPlace;
+}
+
+/** Another colour's own photo that a place refers to. Never selectable for this colour. */
+export interface OtherPhoto {
+  key: string;
+  /** The colour that owns the photo. */
+  productId: number;
+  variantLabel: string;
+  originalFilename: string;
+  widthPx: number | null;
+  heightPx: number | null;
+  smallUrl: string;
+  mediumUrl: string;
+  largeUrl: string;
+}
+
+/** The pdf the three catalogue places are computed for. */
+export interface CatalogueAssumption {
+  layout: 'BROCHURE';
+  photosPerSeries: 1;
+  /** Non-demo colours of the series (active or not) in variant order; [productId] without a series. */
+  productIds: number[];
+  /** False when this product is a demo and therefore not in productIds. */
+  includesThisColour: boolean;
 }
 
 export interface ProductPhotoChoice {
@@ -327,6 +412,20 @@ export interface ProductPhotoOverview {
   catalogueDetail: ProductPhotoChoice | null;
   /** Null for a product outside a series: the size is a series choice. */
   catalogueDetailSize: 'STANDARD' | 'LARGE' | null;
+  /*
+   * The fields below are absent from a server older than the places contract;
+   * product-photos-state.ts then builds the places from the fields above.
+   */
+  /** What each of the eight places shows now. */
+  places?: PhotoPlaces;
+  /** Photos of other colours that a place refers to and photos[] does not hold. */
+  otherPhotos?: OtherPhoto[];
+  /** The website feed carries this series; says nothing about the last rebuild. */
+  seriesLiveOnWebsite?: boolean;
+  colourOnWebsite?: boolean;
+  /** Public address of the series' product page; null when the series is not live. */
+  websitePageUrl?: string | null;
+  catalogueAssumption?: CatalogueAssumption;
 }
 
 

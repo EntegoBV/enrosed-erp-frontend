@@ -10,6 +10,7 @@ import { PageHeader } from '../../shared/page-header';
 import { CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
 import { ProductMediaCard } from './product-media-card';
+import { ProductPlacesLine } from './product-places-line';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
 
@@ -33,7 +34,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, PageHeader,
+  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
   ],
   template: `
@@ -194,7 +195,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     <img [appAuthSrc]="photo.mediumUrl || photo.url" appAuthSize="medium" [alt]="product.name + ' — foto ' + (galleryIndex() + 1)" draggable="false" />
                   </button>
                   @if (currentSlideBadges().length) {
-                    <span class="pd-gallery__badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span [class.is-main]="badge === 'Hoofdfoto'">{{ badge }}</span> }</span>
+                    <span class="pd-gallery__badges" aria-hidden="true">@for (badge of currentSlideBadges(); track badge) { <span>{{ badge }}</span> }</span>
                   }
                   @if (photos.length > 1) {
                     <button class="pd-gallery__step pd-gallery__step--prev" type="button" (click)="stepGallery(-1, photos.length)" aria-label="Vorige foto">‹</button>
@@ -212,14 +213,15 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                     }
                   </div>
                 }
-                <a class="pd-gallery__manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
-                  {{ photos.length }} foto{{ photos.length === 1 ? '' : '’s' }} · beheren ›
-                </a>
+                <a class="btn btn--sm pd-gallery__manage" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s beheren</a>
               } @else {
-                <a class="pd-gallery__empty" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">
-                  <b>Nog geen foto</b><small>Voeg er een toe ›</small>
-                </a>
+                <div class="pd-gallery__empty">
+                  <b>Nog geen foto</b>
+                  <a class="btn btn--sm" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'media' }">Foto’s toevoegen</a>
+                </div>
               }
+              <!-- What customers see for this colour, as the server resolved it; the two links open that picker in the editor. -->
+              @if (placeLine(); as line) { <app-product-places-line class="pd-gallery__places" [line]="line" /> }
             </div>
 
             <div>
@@ -690,12 +692,13 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-gallery__step{position:absolute;top:50%;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:rgb(255 255 255/.85);color:var(--ink);font-size:18px;line-height:1;box-shadow:var(--sh-1);cursor:pointer;transform:translateY(-50%);opacity:0;transition:opacity .12s}
     .pd-gallery__step--prev{left:8px}.pd-gallery__step--next{right:8px}.pd-gallery__stage:hover .pd-gallery__step,.pd-gallery__step:focus-visible{opacity:1}
     .pd-gallery__badges{position:absolute;top:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 16px);pointer-events:none}
-    .pd-gallery__badges span{padding:2px 8px;border-radius:999px;background:var(--surface);color:var(--ink-2);box-shadow:0 1px 3px rgb(0 0 0/.12);font-size:10.5px;font-weight:700}.pd-gallery__badges .is-main{background:var(--rose);color:#fff}
+    .pd-gallery__badges span{padding:2px 8px;border-radius:999px;background:var(--surface);color:var(--ink-2);box-shadow:0 1px 3px rgb(0 0 0/.12);font-size:10.5px;font-weight:700}
     .pd-gallery__count{position:absolute;right:8px;bottom:8px;padding:2px 8px;border-radius:999px;background:rgb(16 13 12/.62);color:#fff;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}
     .pd-gallery__thumbs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}.pd-gallery__thumbs button{flex:none;width:48px;height:48px;padding:0;border:2px solid transparent;border-radius:10px;background:var(--surface-2);overflow:hidden;cursor:pointer}
     .pd-gallery__thumbs button.on{border-color:var(--rose)}.pd-gallery__thumbs img{display:block;width:100%;height:100%;object-fit:contain}
-    .pd-gallery__manage{color:var(--muted);font-size:11.5px;text-decoration:none}.pd-gallery__manage:hover{color:var(--rose-dark);text-decoration:underline}
-    .pd-gallery__empty{display:grid;place-content:center;gap:2px;aspect-ratio:1;border:1px dashed var(--line-strong);border-radius:14px;color:var(--muted);text-align:center;text-decoration:none}.pd-gallery__empty b{color:var(--ink-2);font-size:13px}.pd-gallery__empty small{font-size:11.5px}
+    .pd-gallery__manage{justify-self:start;margin-top:2px}
+    .pd-gallery__empty{display:grid;place-content:center;justify-items:center;gap:8px;aspect-ratio:1;border:1px dashed var(--line-strong);border-radius:14px;color:var(--muted);text-align:center}.pd-gallery__empty b{color:var(--ink-2);font-size:13px}
+    .pd-gallery__places{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
 
     /* ---- stock and website */
     .pd-duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.pd-duo>.pd-card{margin-top:0}

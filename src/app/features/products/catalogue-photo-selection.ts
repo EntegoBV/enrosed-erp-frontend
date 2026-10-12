@@ -5,14 +5,19 @@ import { CataloguePhotoOption, CataloguePhotoSelection, ProductFamily } from '..
 
 export interface CataloguePhotoSelectionChange { familyId: number; selection: CataloguePhotoSelection; }
 
-/** Print choices are independent of website publication and variant colour photos. */
+/**
+ * The two series-wide photos of the Handelscatalogus, in the words of the
+ * product photo section: "Kleine catalogusfoto" (overview) and "Grote
+ * catalogusfoto". They are independent of the website; the catalogue photo of
+ * one colour is chosen with that colour ("Catalogusfoto wijzigen" on its row).
+ */
 @Component({
   selector: 'app-catalogue-photo-selection',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage],
   template: `
     <section class="catalogue-photos" aria-label="Foto’s voor de catalogus">
-      <div class="catalogue-photos__heading"><b>Foto’s voor de catalogus</b><small>Kies apart voor het assortimentsoverzicht en de grote foto op de productpagina.</small></div>
+      <div class="catalogue-photos__heading"><b>Foto’s voor de catalogus</b><small>Twee foto’s voor de hele reeks, alleen in de Handelscatalogus.</small></div>
       <div class="catalogue-photos__choices">
         @for (role of roles; track role.key) {
           <label class="catalogue-photo">
@@ -23,12 +28,12 @@ export interface CataloguePhotoSelectionChange { familyId: number; selection: Ca
               @for (photo of options(); track photo.id) { <option [ngValue]="photo.id">{{ optionLabel(photo) }}</option> }
             </select>
             @if (option(choice(role.key)); as photo) { <img [appAuthSrc]="photo.smallUrl" [alt]="role.label + ': ' + photo.originalFilename" /> }
-            @else { <span class="catalogue-photo__automatic">{{ choice(role.key) === null ? 'De catalogus bepaalt de foto uit de beschikbare selectie.' : 'Kies een beschikbare foto of Automatisch.' }}</span> }
+            @else { <span class="catalogue-photo__automatic">{{ choice(role.key) === null ? 'De catalogus kiest de foto bij het maken van de pdf.' : 'Kies een beschikbare foto of ‘Automatisch kiezen’.' }}</span> }
           </label>
         }
       </div>
-      <label class="catalogue-photo catalogue-photo--size"><span>Formaat van de grote productfoto</span><select class="select" [ngModel]="detailSize()" (ngModelChange)="detailSize.set($event)" [disabled]="disabled()"><option value="STANDARD">Standaard</option><option value="LARGE">Groot en breed</option></select><small>Groot en breed geeft één hoofdfoto meer breedte. Het volledige product en de kleurfoto’s blijven zichtbaar.</small></label>
-      <div class="catalogue-photos__foot"><small>Kleurfoto’s blijven per variant gekozen. Deze keuzes veranderen de websitefoto’s niet.</small><button class="btn btn--sm" type="button" [disabled]="disabled() || !dirty() || unavailableChoice()" (click)="saveRequested.emit(selection())">Fotokeuzes opslaan</button></div>
+      <label class="catalogue-photo catalogue-photo--size"><span>Formaat van de grote catalogusfoto</span><select class="select" [ngModel]="detailSize()" (ngModelChange)="detailSize.set($event)" [disabled]="disabled()"><option value="STANDARD">Standaard</option><option value="LARGE">Groot en breed</option></select><small>Groot en breed geeft de grote catalogusfoto meer breedte. Het volledige product en de foto’s per kleur blijven zichtbaar.</small></label>
+      <div class="catalogue-photos__foot"><small>De catalogusfoto per kleur kies je bij het product: tik op ‘Catalogusfoto wijzigen’ bij de kleur.</small><button class="btn btn--sm" type="button" [disabled]="disabled() || !dirty() || unavailableChoice()" (click)="saveRequested.emit(selection())">Fotokeuzes opslaan</button></div>
     </section>
   `,
   styles: `
@@ -57,7 +62,7 @@ export class CataloguePhotoSelectionEditor {
   readonly overview = signal<number | null>(null);
   readonly detail = signal<number | null>(null);
   readonly detailSize = signal<'STANDARD' | 'LARGE'>('STANDARD');
-  readonly roles = [{ key: 'overview', label: 'Assortimentsoverzicht' }, { key: 'detail', label: 'Grote foto op productpagina' }] as const;
+  readonly roles = [{ key: 'overview', label: 'Kleine catalogusfoto (overzicht)' }, { key: 'detail', label: 'Grote catalogusfoto' }] as const;
   readonly options = computed(() => this.family().cataloguePhotoOptions ?? []);
   readonly selection = computed<CataloguePhotoSelection>(() => ({ catalogueOverviewPhotoId: this.overview(), catalogueDetailPhotoId: this.detail(), catalogueDetailSize: this.detailSize() }));
   readonly dirty = computed(() => this.overview() !== (this.family().catalogueOverviewPhotoId ?? null)

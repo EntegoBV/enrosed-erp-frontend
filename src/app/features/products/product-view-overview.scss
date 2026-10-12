@@ -107,11 +107,9 @@
   .pd-thumbnails .is-selected { border-color: var(--rose); box-shadow: 0 0 0 1px var(--rose); background: var(--rose-soft); }
   .pd-photo-badges { position: absolute; top: 9px; left: 9px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 18px); pointer-events: none; }
   .pd-photo-badges span { padding: 2px 7px; border-radius: 999px; background: var(--surface); color: var(--ink-2); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); font-size: 10px; font-weight: 700; }
-  .pd-photo-badges .is-main { background: var(--rose); color: #fff; }
-  .pd-photo-manage { display: inline-flex; align-items: center; min-height: 44px; color: var(--muted); font-size: 11.5px; text-decoration: none; }
-  .pd-photo-manage:hover { color: var(--rose-dark); text-decoration: underline; }
-  .pd-no-photo { display: grid; place-content: center; justify-items: center; gap: 7px; min-height: 190px; border-radius: 18px; background: var(--surface-2); color: var(--muted); font-size: 12px; text-decoration: none; }
-  .pd-no-photo small { font-size: 10px; }
+  .pd-photo-manage { margin-top: 8px; }
+  .pd-no-photo { display: grid; place-content: center; justify-items: center; gap: 9px; min-height: 190px; padding: 12px; border-radius: 18px; background: var(--surface-2); color: var(--muted); font-size: 12px; text-align: center; }
+  .pd-places { grid-area: places; min-width: 0; }
   .pd-variants { grid-area: variants; min-width: 0; }
   .pd-section-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; font-size: 12px; }
   .pd-section-label span { color: var(--muted); font-size: 11px; }
@@ -187,12 +185,17 @@
 
   @media (min-width: 680px) {
     .pd-overview { grid-template-columns: minmax(230px, .85fr) minmax(0, 1.15fr); grid-template-areas: 'gallery identity' 'gallery variants' 'gallery facts' 'expected expected'; column-gap: 26px; }
+    .pd-overview--places { grid-template-areas: 'gallery identity' 'gallery variants' 'gallery facts' 'places places' 'expected expected'; }
     .pd-identity { align-self: start; }
   }
 
   @media (max-width: 679px) {
     .product-view-page { padding-bottom: calc(var(--tabbar-h) + var(--safe-b) + 100px); }
     .pd-overview { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-areas: 'bar bar' 'gallery identity' 'variants variants' 'facts facts' 'expected expected'; gap: 15px 14px; padding: 12px 14px 14px; border-radius: 22px; }
+    /* The three places need the whole width: three 56 px pictures do not fit the photo column. */
+    .pd-overview--places { grid-template-areas: 'bar bar' 'gallery identity' 'places places' 'variants variants' 'facts facts' 'expected expected'; }
+    .pd-photo-manage { width: 100%; min-height: 44px; }
+    .pd-no-photo .btn { min-height: 44px; }
     .pd-identity h1 { margin: 0 0 10px; font-size: clamp(20px, 5.5vw, 24px); }
     .pd-option { flex-wrap: wrap; font-size: 12px; }
     .pd-sku { font-size: 10px; line-height: 1.4; }

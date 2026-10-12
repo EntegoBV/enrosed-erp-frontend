@@ -170,6 +170,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         @case ('chevron-up') { <path d="m5.5 14.5 6.5-6.5 6.5 6.5" /> }
         @case ('chevron-down') { <path d="m5.5 9.5 6.5 6.5 6.5-6.5" /> }
         @case ('external') { <path d="M13.5 4.5h6v6" /><path d="M19.5 4.5 11 13" /><path d="M17.5 14v4.5A1.5 1.5 0 0 1 16 20H5.5A1.5 1.5 0 0 1 4 18.5V8a1.5 1.5 0 0 1 1.5-1.5H10" /> }
+        @case ('expand') { <path d="M14 4.5h5.5V10M19.5 4.5 13 11M10 19.5H4.5V14M4.5 19.5 11 13" /> }
+        @case ('order') { <path d="M8 5v14M5 8l3-3 3 3M16 19V5M13 16l3 3 3-3" /> }
         @case ('tag') { <path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.7 6.7a1.4 1.4 0 0 1-2 0z" /><circle cx="8" cy="8" r="1.4" /> }
         @case ('copy') { <rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2" /><path d="M15.5 8.5v-3A1.5 1.5 0 0 0 14 4H5.5A1.5 1.5 0 0 0 4 5.5V14a1.5 1.5 0 0 0 1.5 1.5h3" /> }
       }
