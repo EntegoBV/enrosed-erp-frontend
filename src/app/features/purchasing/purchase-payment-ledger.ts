@@ -142,6 +142,8 @@ export interface LedgerRow {
   proofs: PurchaseDocument[] | null;
   proofCount: number;
   hasProof: boolean | null;
+  /** Noted on the bank: the line's hard link, or the 'containerbetaling #id' marker of an older line. */
+  onBank: boolean;
   actor: string | null;
   recordedAt: string;
   /** This payment offsets a credit of another container: its amount belongs to that credit. */
@@ -332,6 +334,8 @@ export interface PaymentLedgerInput {
   toleranceEur: number;
   totalLabel: string;
   planLabel: string;
+  /** Payments an older bank line marks by text; the host reads the markers, this module only shows them. */
+  bankedPaymentIds?: ReadonlySet<number>;
 }
 
 export interface PaymentLedger {
@@ -374,7 +378,7 @@ export function purchasePaymentLedger(input: PaymentLedgerInput): PaymentLedger 
   const instalments = view.reconciliation?.supplierInstalments;
   const canonical = Array.isArray(instalments);
   const concept = view.order.status === 'CONCEPT';
-  const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? []);
+  const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? [], input.bankedPaymentIds);
   const terms = ledgerTerms(input.terms, instalments, payments, canonical, concept);
   const payees = PAYEE_ORDER.map(payee => payeeLedger(payee, input, rows, payee === 'SUPPLIER' ? terms : [], canonical, concept));
   const summary = ledgerSummary(input, payees, rows, concept);
@@ -718,6 +722,7 @@ function ledgerTerms(
 function ledgerRows(
   payments: readonly PurchasePayment[], documents: readonly PurchaseDocument[] | null,
   instalments: readonly PurchaseInstalmentReconciliation[] | undefined, offsets: readonly PurchaseCreditOffset[],
+  banked?: ReadonlySet<number>,
 ): LedgerRow[] {
   return [...payments].sort(byNewest).map(payment => {
     const payee = payeeOf(payment);
@@ -744,6 +749,7 @@ function ledgerRows(
       proofs,
       proofCount: proofs?.length ?? 0,
       hasProof: proofs === null ? null : proofs.length > 0,
+      onBank: payment.bankStatementLineId != null || (banked?.has(payment.id) ?? false),
       actor: payment.actor,
       recordedAt: payment.recordedAt,
       creditOffset,

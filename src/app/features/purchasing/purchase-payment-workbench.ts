@@ -351,6 +351,7 @@ type MenuState =
                             @if (row.foreign) { <span class="wk-td__sub pw-when-mid">{{ row.amount | cur: row.currency }}</span> }</span>
                           <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="mid">{{ row.settlesLabel || '' }}</span>
                           <span class="wk-td pw-proof" role="gridcell">
+                            @if (row.onBank) { <span class="wk-pill pw-bank" title="Als bankbeweging genoteerd"><app-icon name="bank" [size]="12" /> op de bank</span> }
                             @if (row.hasProof === true) {
                               <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn" type="button" [title]="proofNames(row)" [attr.aria-label]="row.proofCount === 1 ? 'Bewijs openen: ' + row.proofs![0].originalFilename : row.proofCount + ' bewijzen'" (click)="$event.stopPropagation(); openProof(row, $event)"><app-icon name="clip" [size]="14" /><span class="pw-proof__name">{{ row.proofCount === 1 ? row.proofs![0].originalFilename : row.proofCount + ' bewijzen' }}</span></button>
                             } @else if (row.hasProof === false) {
