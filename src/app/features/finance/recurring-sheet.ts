@@ -4,18 +4,18 @@ import { RecurringCost, RecurringInterval } from '../../core/api/models';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { SALES_CHANNELS } from '../sales/sales-channels';
 import { categoryChoices } from './cost-categories';
 import { INTERVALS, addDays, inclOf, monthlyEquivalentEur, occurrencesBetween, previewBacklog, yearlyEur } from './finance-metrics';
 import { blankRecurring } from './finance-sections';
 import { FinanceState } from './finance-state';
+import { PartyField } from './party-field';
 import { VatChoice } from './vat-choice';
 
 /** The recurring cost form: what, how much, how often, from when, and whether the bank pays it by itself. */
 @Component({
   selector: 'app-recurring-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe, VatChoice],
+  imports: [FormsModule, Sheet, DateField, EurPipe, DateNlPipe, VatChoice, PartyField],
   template: `
     <app-sheet variant="ios" [title]="draft().id ? 'Vaste kost bewerken' : 'Vaste kost instellen'" [wide]="true" (closed)="state.recurringDraft.set(null)">
       <div body class="fin-sheet fin-form">
@@ -46,8 +46,9 @@ import { VatChoice } from './vat-choice';
               <option value="__other__">Eigen categorie…</option>
             </select>
             @if (customCategory()) { <input class="input" aria-label="Eigen categorie" placeholder="bijv. OPLEIDING" [ngModel]="draft().category" (ngModelChange)="patch({ category: ($event || '').toUpperCase() })" /> }</label>
-          <label class="fin-field"><span>Aan wie</span>
-            <input class="input" placeholder="bijv. Immo Ham" [ngModel]="draft().party" (ngModelChange)="patch({ party: $event })" /></label>
+          <div class="fin-field fin-field--combo"><span><label for="r-party">Aan wie</label></span>
+            <app-party-field fieldId="r-party" placeholder="bijv. Immo Ham" [value]="draft().party ?? ''" [candidates]="state.partySuggestions()" [maxlength]="200"
+                             (valueChange)="patch({ party: $event })" (picked)="applyParty()" (committed)="applyParty()" /></div>
           <div class="fin-field"><span class="req">Eerste keer op</span>
             <app-date-field fieldId="r-start" [value]="draft().startDate" (valueChange)="patch({ startDate: $event })" />
             @if (backlog() > 0 && !draft().id) { <span class="fin-hint fin-hint--warn">{{ backlog() }} {{ backlog() === 1 ? 'periode' : 'periodes' }} tot vandaag worden meteen geboekt.</span> }</div>
@@ -67,7 +68,10 @@ import { VatChoice } from './vat-choice';
           <label class="fin-field"><span>Hoort bij verkoopkanaal</span>
             <select class="select" [ngModel]="draft().salesChannel ?? ''" (ngModelChange)="patch({ salesChannel: $event || null })">
               <option value="">Algemene kost</option>
-              @for (channel of channels; track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
+              @for (channel of channels(); track channel.code) { <option [value]="channel.code">{{ channel.label }}</option> }
+              @if (fairs().length) {
+                <optgroup label="Beurzen">@for (fair of fairs(); track fair.code) { <option [value]="fair.code">{{ fair.label }}</option> }</optgroup>
+              }
             </select></label>
           <label class="fin-field"><span>Referentie</span>
             <input class="input" placeholder="contractnummer, klantnummer" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></label>
@@ -90,7 +94,8 @@ import { VatChoice } from './vat-choice';
 })
 export class RecurringSheet {
   readonly state = inject(FinanceState);
-  readonly channels = SALES_CHANNELS;
+  readonly channels = computed(() => this.state.channelChoices().filter((channel) => channel.hint !== 'Beurs'));
+  readonly fairs = computed(() => this.state.channelChoices().filter((channel) => channel.hint === 'Beurs'));
   readonly intervals = INTERVALS;
   readonly inclOf = inclOf;
   readonly draft = linkedSignal<RecurringCost>(() => this.state.recurringDraft() ?? blankRecurring(this.state.today()));
@@ -141,5 +146,18 @@ export class RecurringSheet {
     }
     this.customCategory.set(false);
     this.patch({ category: value });
+  }
+
+  /** A known name fills in category, VAT and channel, the same rule as the cost form: only while those are still untouched. */
+  applyParty(): void {
+    const draft = this.draft();
+    if (draft.id || this.customCategory()) return;
+    const known = this.state.partyDefaultsFor(draft.party);
+    const fresh = blankRecurring(this.state.today());
+    if (!known || draft.category !== fresh.category || draft.vatPct !== fresh.vatPct || draft.salesChannel) return;
+    const category = known.category ?? draft.category;
+    const vatPct = known.vatPct ?? draft.vatPct;
+    if (category === draft.category && vatPct === draft.vatPct && !known.salesChannel) return;
+    this.patch({ category, vatPct, salesChannel: known.salesChannel });
   }
 }

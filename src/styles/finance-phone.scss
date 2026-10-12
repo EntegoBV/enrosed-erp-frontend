@@ -33,8 +33,8 @@
     /* ---- forms, inset grouped (kit sheet rule): label left, value right; chips, segments and notes stack */
     .fin-group > .fin-field, .fin-group .fin-field-row > .fin-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: var(--ios-row); padding: 4px 16px; font-size: 16px;
       > span:first-child { flex: none; max-width: 48%; color: var(--ink); font-size: 16px; font-weight: 400; }
-      > .input, > .select, > app-date-field { flex: 1; min-width: 0; }
-      > .input, > .select, app-date-field .input { min-height: 44px; padding: 0; border: 0; border-radius: 0; background-color: transparent; box-shadow: none; text-align: right; text-align-last: right; }
+      > .input, > .select, > app-date-field, > app-party-field > .input { flex: 1; min-width: 0; }
+      > .input, > .select, app-date-field .input, > app-party-field > .input { min-height: 44px; padding: 0; border: 0; border-radius: 0; background-color: transparent; box-shadow: none; text-align: right; text-align-last: right; }
       > .select { padding-right: 18px; background-position: right 2px center; }
       app-date-field .input { padding-right: 40px; }
       > .select + .input { flex-basis: 100%; text-align: left; }
@@ -46,6 +46,14 @@
       > span:first-child { max-width: none; }
       > .input, > .textarea { text-align: left; text-align-last: auto; }
       > .textarea { min-height: 64px; padding: 0; border: 0; background: transparent; box-shadow: none; } }
+    /* the Aan wie list runs in flow under its row, group-wide (the row's 16px padding undone), as hairline cells; it never inherits the right-aligned input text */
+    .fin-group > .fin-field > app-party-field > .fin-combo__list { position: static; flex: 0 0 calc(100% + 32px); max-height: none; margin: 0 -16px; padding: 0; overflow: visible;
+      border: 0; border-top: .5px solid var(--ios-sep); border-radius: 0; box-shadow: none; text-align: left;
+      > li + li { position: relative; &::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep); } } }
+    .fin-combo__option { min-height: 44px; padding: 5px 16px; border-radius: 0; font-size: 16px; b { font-weight: 400; } small { font-size: 13px; }
+      &:active { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); } }
+    .fin-amount-mode { display: grid; }
+    .fin-fair-add > .ios-capsule { flex: none; }
     .fin-group .fin-field-row { display: grid; gap: 0; }
     .fin-group .fin-field-row > .fin-field + .fin-field { position: relative;
       &::before { content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep); } }
