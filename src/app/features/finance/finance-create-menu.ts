@@ -4,14 +4,16 @@ import { FinanceState } from './finance-state';
 
 /**
  * The phone's '+': an action sheet with what can be added, the section's own
- * kind first. 'Foto van een bon' opens the camera (or the files) and then a
- * blank cost with the photo queued; it uploads after the first save.
+ * kind first. 'Bon of factuur fotograferen' opens the camera (images only,
+ * so Safari goes straight to it; a PDF goes through 'Kost boeken' →
+ * 'Bestand kiezen') and then a blank cost with the photo queued; it uploads
+ * after the first save.
  */
 @Component({
   selector: 'app-finance-create-menu',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <input #photo class="fin-hidden" type="file" accept="image/*,application/pdf" capture="environment" tabindex="-1" aria-hidden="true" (change)="picked($event)" />
+    <input #photo class="fin-hidden" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" (change)="picked($event)" />
   `,
 })
 export class FinanceCreateMenu {
@@ -25,7 +27,7 @@ export class FinanceCreateMenu {
       /* On Aan wie & beurzen the list's own kinds lead. */
       ...(lists ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
       { id: 'cost', label: 'Kost boeken', iconName: 'receipt' },
-      { id: 'photo', label: 'Foto van een bon', iconName: 'camera' },
+      { id: 'photo', label: 'Bon of factuur fotograferen', iconName: 'camera' },
       { id: 'movement', label: 'Bankbeweging noteren', iconName: 'bank' },
       { id: 'balance', label: 'Saldo invullen', iconName: 'pencil' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },

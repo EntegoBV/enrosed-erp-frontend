@@ -18,6 +18,8 @@ test('historical container payments appear alongside company costs with independ
   assert.deepEqual(rows.map((row) => [row.key, row.date, row.amountEur]), [['cost:1', '2026-09-01', 121], ['payment:1', '2025-12-31', 554.77]]);
   assert.equal(rows[1].cost, null, 'a payment never becomes a second expense or invents VAT');
   assert.equal(costLedger([{ ...cost, amountExclEur: 82.64, amountInclEur: 100 }], [])[0].amountEur, 100, 'an entered inclusive total is the row total');
+  assert.match(costLedgerCsv(costLedger([{ ...cost, amountExclEur: 82.64, amountInclEur: 100 }], []), (code) => code).split('\r\n')[1],
+    /;82,64;21,00;17,36;100,00;/, 'the CSV shows the VAT the invoice shows, not 82.64 × 21 % = 17.35');
   assert.equal(rows[1].reference, 'PO-2026-001 · Zomerrozen');
   assert.equal(rows[1].paidOn, rows[1].date);
   assert.deepEqual(costLedgerTotals(rows), { containerCount: 1, containerPaidEur: 554.77, paidEur: 675.77 });

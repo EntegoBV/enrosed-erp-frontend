@@ -10,9 +10,13 @@ test('an inclusive total splits into excl. and btw without drifting', () => {
   assert.equal(exclFromIncl(12345.67, 21), 10203.03, 'rounded to the cent, half up');
 });
 
-test('without a rate both sides are the same figure', () => {
+test('without a rate both sides are the same figure, to the cent', () => {
   assert.equal(exclFromIncl(100, null), 100);
   assert.equal(exclFromIncl(100, 0), 100);
+  assert.equal(exclFromIncl(1.005, 0), 1.01, 'half up in cents, as the server scales it; not the float 1.00499…');
+  assert.equal(exclFromIncl(8.145, 0), 8.15);
+  assert.equal(vatFromIncl(8.145, exclFromIncl(8.145, 0)), 0);
+  assert.equal(vatFromIncl(8.145, 8.15), 0);
   assert.equal(inclFromExcl(100, null), 100);
   assert.equal(inclFromExcl(100, 0), 100);
   assert.equal(vatFromIncl(100, 100), 0);

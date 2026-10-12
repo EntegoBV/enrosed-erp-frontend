@@ -103,6 +103,13 @@ test('patching a section starts from its defaults; a filter patch keeps the rest
   assert.deepEqual([patchLocation(ranged, { period: 'month' }).from, patchLocation(ranged, { period: 'month' }).to], ['', '']);
 });
 
+test('Aan wie & beurzen honours only the search', () => {
+  const lists = parse({ view: 'costs', tab: 'lists', q: 'tica', cat: 'HUUR', status: 'open', channel: 'TICA', period: 'month' });
+  assert.deepEqual([lists.view, lists.tab, lists.q], ['costs', 'lists', 'tica']);
+  assert.deepEqual([lists.cat, lists.status, lists.channel], ['', '', '']);
+  assert.deepEqual(financeQueryParams({ ...lists, cat: 'HUUR' }), { view: 'costs', tab: 'lists', q: 'tica' });
+});
+
 test('the segment ids match the labelled segments', () => {
   for (const view of Object.keys(TAB_IDS) as FinanceView[]) {
     assert.deepEqual(FINANCE_TABS[view].map((tab) => tab.id), [...TAB_IDS[view]], view);

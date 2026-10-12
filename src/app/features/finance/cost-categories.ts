@@ -24,10 +24,14 @@ export const COST_CATEGORIES: readonly CostCategory[] = [
   { code: 'ANDERE', label: 'Andere', hint: 'Wat nergens anders past', tone: 'grey' },
 ];
 
+/** Retired codes whose rows may still exist: what they read, rather than the generic 'Tica'. */
+const LEGACY_LABELS: Record<string, string> = { TICA: 'TICA' };
+
 export function categoryLabel(code: string | null | undefined): string {
   const normalised = (code ?? '').trim().toUpperCase();
   if (!normalised) return 'Zonder categorie';
   return COST_CATEGORIES.find((category) => category.code === normalised)?.label
+    ?? LEGACY_LABELS[normalised]
     ?? normalised.charAt(0) + normalised.slice(1).toLowerCase().replace(/_/g, ' ');
 }
 

@@ -2634,7 +2634,6 @@ export interface CostParty {
   /** A built-in channel or a fair code. */
   salesChannel: string | null;
   iban: string | null;
-  notes: string | null;
   createdAt?: string | null;
 }
 

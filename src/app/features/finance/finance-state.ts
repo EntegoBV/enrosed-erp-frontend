@@ -23,6 +23,7 @@ import type { SalesChannel } from '../sales/sales-channels';
 import { bankAccountKey, bankCheckpoint, reconciledBank } from './bank-reconciliation';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
 import type { MarkerKind } from './bank-markers';
+import { mergeChannels } from './channel-choices';
 import { categoryLabel } from './cost-categories';
 import { CONTAINER_PAYMENT_CATEGORIES, CostLedgerRow, costLedger, costLedgerCsv } from './cost-ledger';
 import { financeAttention } from './finance-attention';
@@ -505,14 +506,9 @@ export class FinanceState {
 
   /* channels: the built-in ones and the fairs, which are channel codes too */
   private readonly fairLabels = computed(() => new Map(this.fairs().map((fair) => [fair.code.trim().toUpperCase(), fair.label])));
-  /** The channel pickers: the built-in channels, then every fair (active, or inactive but still on a cost), flagged by hint 'Beurs'. */
-  readonly channelChoices = computed<SalesChannel[]>(() => {
-    const inUse = new Set([...this.costs(), ...this.recurring()].map((row) => (row.salesChannel ?? '').trim().toUpperCase()).filter(Boolean));
-    const fairs = this.fairs().filter((fair) => fair.active || inUse.has(fair.code.trim().toUpperCase()))
-      .map((fair) => ({ code: fair.code.trim().toUpperCase(), label: fair.label, hint: 'Beurs' }));
-    const codes = new Set(fairs.map((fair) => fair.code));
-    return [...SALES_CHANNELS.filter((channel) => !codes.has(channel.code)), ...fairs];
-  });
+  /** The channel pickers: every fair (active, or inactive but still on a cost) flagged by hint 'Beurs', then the built-in channels that are no fair. */
+  readonly channelChoices = computed<SalesChannel[]>(() =>
+    mergeChannels(SALES_CHANNELS, this.fairs(), [...this.costs(), ...this.recurring()].map((row) => row.salesChannel)));
   /** What a channel code is called: the fair's name when it is one, else the sales label. */
   readonly channelName = (code: string | null | undefined): string => this.fairLabels().get((code ?? '').trim().toUpperCase()) ?? channelLabel(code);
 
@@ -549,9 +545,6 @@ export class FinanceState {
       .map(([, row]) => ({ name: row.name, stored: false, count: row.count, detail: `${row.count} ${row.count === 1 ? 'kost' : 'kosten'}` }));
     return [...stored, ...seen];
   });
-  /** Names seen in bookings that are not in the list yet, the most used first. */
-  readonly unstoredParties = computed(() => [...this.partyBookings().entries()].filter(([key]) => !this.partyByKey().has(key)).map(([, row]) => row)
-    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'nl')));
   /** Per name key: this year's costs (count, total excl. btw) and the last cost date, for the Aan wie list and sheet. */
   readonly partyFigures = computed(() => {
     const year = this.today().slice(0, 4);
@@ -786,9 +779,11 @@ export class FinanceState {
   /**
    * Books or corrects a cost. With `bankAccountKey` ("Ook als bankbeweging
    * noteren" in the form) a cost that becomes paid in this save goes onto
-   * that account straight away; otherwise the toast offers it.
+   * that account straight away, in one toast whose undo reverts the paid
+   * date and the line together; otherwise the toast offers the movement
+   * form. The form closes once the line is in, so a failed line is seen.
    */
-  async saveCost(draft: CompanyCost, bankAccountKey: string | null = null): Promise<CompanyCost | null> {
+  async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null } = {}): Promise<CompanyCost | null> {
     if (this.saving()) return null;
     this.saving.set(true);
     const before = draft.id ? this.costs().find((row) => row.id === draft.id) : null;
@@ -801,9 +796,24 @@ export class FinanceState {
       /* A cost that just became paid can go onto the bank in one more tap, or right away when the form said so. */
       const newlyPaid = !!saved.paidOn && !before?.paidOn && !!saved.id;
       this.duplicating = false;
+      const accountKey = options.bankAccountKey ?? '';
+      const toBank = newlyPaid && !!accountKey && this.accountOptions().some((option) => option.key === bankAccountKey(accountKey));
+      if (!toBank) {
+        this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
+      } else {
+        const account = this.accountLabel(accountKey);
+        try {
+          const line = await this.banking.create(this.payLine(saved, saved.paidOn!, account));
+          this.bankStatements.update((rows) => [line, ...rows.filter((row) => row.id !== line.id)]);
+          void this.refreshBank();
+          this.ui.toast(`Kost geboekt · ook op ${account} genoteerd`, 'ok',
+            { label: 'Ongedaan maken', run: () => void this.undoPaid([{ cost: saved, paidOn: saved.paidOn!, line }]) });
+        } catch {
+          this.ui.toast('Kost geboekt, maar de bankbeweging is niet bewaard.', 'err',
+            { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) });
+        }
+      }
       this.costDraft.set(null);
-      if (newlyPaid && bankAccountKey) await this.noteCostOnBank(saved, bankAccountKey);
-      else this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
       /* The server learned the name; the Aan wie list follows. */
       if (saved.party) void this.reload(['parties']);
       return saved;
@@ -992,29 +1002,6 @@ export class FinanceState {
       : `${done.length} kosten betaald op ${shortDay(options.paidOn)}`;
     this.ui.toast(text, 'ok', { label: 'Ongedaan maken', run: () => void this.undoPaid(done) });
     return true;
-  }
-
-  /**
-   * The outgoing bank line of a cost just saved as paid ("Ook als
-   * bankbeweging noteren" in the cost form): on the account, remembered as
-   * this device's choice, toasted together with the booking. When the line
-   * fails the booking stands and the toast offers the movement form instead.
-   */
-  async noteCostOnBank(cost: CompanyCost, accountKey: string): Promise<boolean> {
-    const known = this.accountOptions().some((option) => option.key === bankAccountKey(accountKey));
-    if (!cost.id || !cost.paidOn || !known) return false;
-    const account = this.accountLabel(accountKey);
-    try {
-      const line = await this.banking.create(this.payLine(cost, cost.paidOn, account));
-      this.bankStatements.update((rows) => [line, ...rows.filter((row) => row.id !== line.id)]);
-      this.rememberPayToBank({ on: true, accountKey: bankAccountKey(accountKey) });
-      this.ui.toast(`Kost geboekt · ook op ${account} genoteerd`, 'ok');
-      void this.refreshBank();
-      return true;
-    } catch {
-      this.ui.toast('Kost geboekt, maar de bankbeweging is niet bewaard.', 'err', { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(cost)) });
-      return false;
-    }
   }
 
   /**
@@ -1332,17 +1319,14 @@ export class FinanceState {
     this.saving.set(true);
     try {
       const body: CostParty = { ...draft, name, category: (draft.category ?? '').trim().toUpperCase() || null,
-        salesChannel: (draft.salesChannel ?? '').trim().toUpperCase() || null, iban: (draft.iban ?? '').replace(/\s+/g, '').toUpperCase() || null, notes: draft.notes?.trim() || null };
+        salesChannel: (draft.salesChannel ?? '').trim().toUpperCase() || null, iban: (draft.iban ?? '').replace(/\s+/g, '').toUpperCase() || null };
       const saved = draft.id ? await this.finance.updateCostParty(draft.id, body) : await this.finance.createCostParty(body);
       this.costParties.update((rows) => (draft.id ? rows.map((row) => (row.id === saved.id ? saved : row)) : [...rows, saved]).sort(byName));
       const renamed = !!before && before.name !== saved.name;
+      /* The rename ran through the costs, recurring costs and bank lines on the server: show them renamed before saying so. */
+      if (renamed) await this.reload(['costs', 'recurring', 'statements', 'parties']);
       this.ui.toast(!draft.id ? `${saved.name} staat in de lijst Aan wie` : renamed ? `Hernoemd naar ${saved.name}; de boekingen zijn mee aangepast` : 'Aan wie bewaard', 'ok');
       this.costPartyDraft.set(null);
-      /* The rename ran through the costs, recurring costs and bank lines on the server. */
-      if (renamed) {
-        void this.refreshCosts();
-        void this.reload(['statements']);
-      }
       return saved;
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Bewaren mislukt'), 'err');
@@ -1352,18 +1336,11 @@ export class FinanceState {
     }
   }
 
-  /** 'Bewaren' on a name only seen in bookings: into the list with that booking's category, btw and channel. */
-  storeSeenParty(name: string): Promise<CostParty | null> {
-    const seen = this.partyBookings().get(partyKey(name));
-    if (!seen) return Promise.resolve(null);
-    return this.saveCostParty({ ...blankCostParty(seen.name), category: seen.category, vatPct: seen.vatPct, salesChannel: seen.salesChannel });
-  }
-
   deleteCostParty(party: CostParty): void {
     if (!party.id) return;
     this.ui.confirm({
       title: 'Uit de lijst Aan wie halen',
-      message: `${escapeHtml(party.name)} verdwijnt uit de lijst. Boekingen op deze naam blijven staan.`,
+      message: `${escapeHtml(party.name)} verdwijnt uit de lijst. Boekingen op deze naam blijven staan; de naam komt terug in de lijst zodra je er opnieuw op boekt.`,
       confirmLabel: 'Verwijderen', danger: true,
     }, async () => {
       try {

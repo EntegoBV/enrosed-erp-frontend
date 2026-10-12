@@ -10,9 +10,9 @@ import { FinanceState, formatEuro } from './finance-state';
 const IBAN = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
 
 /**
- * One name of the Aan wie list: the name itself and the defaults a new
- * cost to it takes (category, btw, channel or fair), the IBAN and notes.
- * Renaming runs through the bookings on the old name (the server cascades).
+ * One name of the Aan wie list: the name itself, the defaults a new cost
+ * to it takes (category, btw, channel or fair) and the IBAN. Renaming runs
+ * through the bookings on the old name (the server cascades).
  */
 @Component({
   selector: 'app-cost-party-sheet',
@@ -60,10 +60,6 @@ const IBAN = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
             <input class="input" maxlength="42" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="BE68 5390 0754 7034"
                    [ngModel]="draft().iban" (ngModelChange)="patch({ iban: $event })" />
             @if (ibanWrong()) { <span class="fin-hint fin-hint--warn">Dit is geen geldig IBAN.</span> }</label>
-        </div>
-        <div class="fin-group" [class.ios-group]="!state.desk()">
-          <label class="fin-field fin-field--wide fin-field--stack"><span>Notities</span>
-            <textarea class="textarea" rows="2" maxlength="2000" [ngModel]="draft().notes" (ngModelChange)="patch({ notes: $event })"></textarea></label>
         </div>
         @if (draft().id && !state.desk()) {
           <div class="ios-group fin-field--wide"><button class="ios-cell ios-cell--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCostParty(draft())">Uit de lijst halen</button></div>

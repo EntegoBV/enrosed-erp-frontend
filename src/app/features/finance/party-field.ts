@@ -24,7 +24,8 @@ let nextId = 0;
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     style: 'display: contents',
-    '(document:pointerdown)': 'outside($event)',
+    '(document:pointerdown)': 'outsideDown($event)',
+    '(document:click)': 'outsideClick($event)',
   },
   template: `
     <input #field class="input" type="text" role="combobox" autocomplete="off" spellcheck="false" aria-autocomplete="list"
@@ -144,8 +145,21 @@ export class PartyField {
     }
   }
 
-  /** A pointer down anywhere but on the field or its list closes it. */
-  outside(event: Event): void {
+  /** On a desk the floating list goes the moment a pointer lands elsewhere. */
+  outsideDown(event: Event): void {
+    if (this.desk()) this.outside(event);
+  }
+
+  /**
+   * On a phone the list sits in flow: it goes once the tap has landed, not
+   * at touchstart, or the rows under it would move up under the finger
+   * before the click is dispatched.
+   */
+  outsideClick(event: Event): void {
+    if (!this.desk()) this.outside(event);
+  }
+
+  private outside(event: Event): void {
     if (!this.open() || this.host.nativeElement.contains(event.target as Node)) return;
     this.hide();
   }

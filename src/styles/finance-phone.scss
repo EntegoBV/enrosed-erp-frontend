@@ -65,7 +65,8 @@
     .fin-insp-link { align-items: center; }
     .fin-doc-buttons .ios-capsule { flex: 1; }
 
-    /* ---- Aan wie & beurzen: a 'Bewaren' capsule and a switch sit at the end of their cells */
-    .ios-cell > .ios-capsule, .ios-cell > .ios-switch { flex: none; }
+    /* ---- Aan wie & beurzen: the switch sits at the end of its cell; a fair that is off reads muted */
+    .ios-cell > .ios-switch { flex: none; }
+    .ios-cell__title.wk-tr--muted { color: var(--muted); }
   }
 }

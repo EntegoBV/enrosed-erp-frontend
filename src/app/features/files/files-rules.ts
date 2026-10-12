@@ -298,14 +298,23 @@ export function totalSize(assets: readonly Pick<MediaAssetSummary, 'sizeBytes'>[
  * The line under a cost in the link picker: party, date and amount. The one
  * place a customer-safe mode would hide the amount.
  */
-export function costTargetMeta(cost: { party: string | null; date: string | null; amountInclEur?: number | null; amountExclEur?: number | null }): string {
+export function costTargetMeta(cost: { party: string | null; date: string | null; amountInclEur?: number | null; amountExclEur?: number | null; vatPct?: number | null }): string {
   const date = /^(\d{4})-(\d{2})-(\d{2})/.exec(cost.date ?? '');
-  const amount = cost.amountInclEur ?? cost.amountExclEur;
+  const amount = costTotal(cost);
   return [
     cost.party?.trim() || '',
     date ? `${date[3]}/${date[2]}/${date[1]}` : '',
     amount === null || amount === undefined ? '' : new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(amount),
   ].filter(Boolean).join(' · ');
+}
+
+/** The invoice total: the entered one, else excl. plus the VAT its rate gives (the cost list's rule). */
+function costTotal(cost: { amountInclEur?: number | null; amountExclEur?: number | null; vatPct?: number | null }): number | null {
+  if (typeof cost.amountInclEur === 'number' && cost.amountInclEur > 0) return cost.amountInclEur;
+  if (typeof cost.amountExclEur !== 'number') return null;
+  const excl = cost.amountExclEur;
+  const round2 = (value: number): number => Math.round(value * 100) / 100;
+  return round2(excl + round2(excl * Math.max(0, cost.vatPct ?? 0) / 100));
 }
 
 /* ================================================================ sorting and groups */

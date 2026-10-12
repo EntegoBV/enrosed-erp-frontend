@@ -396,7 +396,7 @@ export class CostSheet {
     /* The switch was on screen: remember its state either way, then book, and note the line when it was on. */
     const toBank = this.becomingPaid() && this.toBank();
     if (this.becomingPaid()) this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
-    const saved = await this.state.saveCost(this.draft(), toBank ? this.account() || null : null);
+    const saved = await this.state.saveCost(this.draft(), { bankAccountKey: toBank ? this.account() || null : null });
     if (saved?.id && files.length) void this.state.attach(saved.id, files);
     if (saved) this.state.costFiles.set([]);
   }

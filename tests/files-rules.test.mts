@@ -147,6 +147,10 @@ test('costTargetMeta: party, date and amount', () => {
   const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(1234.5);
   assert.equal(costTargetMeta({ party: 'Proximus', date: '2026-09-03', amountInclEur: 1234.5, amountExclEur: 1020 }), `Proximus · 03/09/2026 · ${euro}`);
   assert.equal(costTargetMeta({ party: null, date: '2026-09-03', amountExclEur: 10 }).startsWith('03/09/2026 · '), true);
+  const total = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(12.1);
+  assert.equal(costTargetMeta({ party: null, date: '2026-09-03', amountExclEur: 10, vatPct: 21, amountInclEur: null }), `03/09/2026 · ${total}`,
+    'a cost entered excl. shows its invoice total, € 12,10');
+  assert.equal(total.endsWith('12,10'), true);
   assert.equal(costTargetMeta({ party: ' ', date: null }), '');
 });
 

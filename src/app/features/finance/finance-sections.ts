@@ -112,7 +112,7 @@ export function blankRecurring(today: string): RecurringCost {
 
 /** A new name for the Aan wie list, without defaults until the sheet sets them. */
 export function blankCostParty(name = ''): CostParty {
-  return { id: null, name, category: null, vatPct: null, salesChannel: null, iban: null, notes: '' };
+  return { id: null, name, category: null, vatPct: null, salesChannel: null, iban: null };
 }
 
 /** A new fair; the server derives the code from the label. */

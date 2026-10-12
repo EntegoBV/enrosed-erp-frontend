@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, forwardRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, forwardRef, inject } from '@angular/core';
 import { CostParty, Fair } from '../../core/api/models';
 import type { ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -24,15 +24,17 @@ interface PartyRow {
 
 interface FairRow {
   fair: Fair;
+  /** Every cost and recurring cost on the code, any year: what the server's delete guard counts. */
+  inUse: number;
+  /** This year's costs on the code. */
   count: number;
   exclEur: number;
 }
 
 /**
  * Uitgaven › Aan wie & beurzen: the stored names with their defaults and
- * this year's figures, the names the bookings know but the list does not
- * yet (folded), and the fairs with their switch. The search box filters
- * all three.
+ * this year's figures (the server adds every name a booking carries), and
+ * the fairs with their switch. The search box filters both.
  */
 @Component({
   selector: 'app-cost-lists-panel',
@@ -73,34 +75,6 @@ interface FairRow {
               <p class="wk-empty__text">{{ query() ? 'Geen naam in de lijst Aan wie past bij je zoekterm.' : 'Elke kost of bankbeweging met een naam komt hier vanzelf bij.' }}</p></div>
           }
         </section>
-        @if (seen().length) {
-          <section class="wk-card">
-            <header class="wk-card__head">
-              <button class="fin-lists__toggle" type="button" [attr.aria-expanded]="seenOpen()" (click)="seenOpen.set(!seenOpen())">
-                <app-icon [name]="seenOpen() ? 'chevron-down' : 'chevron-right'" [size]="14" /><h2 class="wk-card__title">Nog niet in de lijst</h2></button>
-              <span class="wk-card__trail">{{ seen().length }}</span></header>
-            @if (seenOpen()) {
-              <div class="wk-table fin-table fin-table--seen" role="grid" aria-label="Nog niet in de lijst">
-                <div class="wk-thead" role="row">
-                  <span class="wk-th" role="columnheader">Naam</span>
-                  <span class="wk-th wk-th--num" role="columnheader">Boekingen</span>
-                  <span class="wk-th wk-th--num" role="columnheader">Kosten dit jaar</span>
-                  <span class="wk-th wk-th--num" role="columnheader">Totaal excl.</span>
-                  <span class="wk-th" role="columnheader"></span>
-                </div>
-                @for (row of seen(); track row.name) {
-                  <div class="wk-tr" role="row">
-                    <span class="wk-td" role="gridcell"><b>{{ row.name }}</b></span>
-                    <span class="wk-td wk-td--num" role="gridcell">{{ row.count }}</span>
-                    <span class="wk-td wk-td--num" role="gridcell">{{ figures(row.name).count || '—' }}</span>
-                    <span class="wk-td wk-td--num" role="gridcell">@if (figures(row.name).count) { {{ figures(row.name).exclEur | eur }} } @else { — }</span>
-                    <span class="wk-td fin-td-end" role="gridcell"><button class="wk-btn wk-btn--sm" type="button" [disabled]="state.saving()" (click)="state.storeSeenParty(row.name)">Bewaren</button></span>
-                  </div>
-                }
-              </div>
-            }
-          </section>
-        }
         <section class="wk-card" aria-labelledby="fin-fairs-title">
           <header class="wk-card__head"><h2 class="wk-card__title" id="fin-fairs-title">Beurzen</h2><span class="wk-card__trail">{{ fairRows().length }}</span>
             <button class="wk-btn wk-btn--sm" type="button" (click)="state.openFair(null)"><app-icon name="plus" [size]="14" />Beurs toevoegen</button></header>
@@ -109,8 +83,8 @@ interface FairRow {
               <div class="wk-thead" role="row">
                 <span class="wk-th" role="columnheader">Naam</span>
                 <span class="wk-th fin-lists-sm" role="columnheader">Code</span>
-                <span class="wk-th wk-th--num" role="columnheader">Kosten dit jaar</span>
-                <span class="wk-th wk-th--num" role="columnheader">Totaal excl.</span>
+                <span class="wk-th wk-th--num" role="columnheader">In gebruik</span>
+                <span class="wk-th wk-th--num" role="columnheader">Dit jaar excl.</span>
                 <span class="wk-th" role="columnheader">Actief</span>
               </div>
               @for (row of fairRows(); track row.fair.id) {
@@ -118,7 +92,7 @@ interface FairRow {
                      appMenuTrigger (menuTrigger)="fairMenu(row, $event)">
                   <span class="wk-td" role="gridcell"><b>{{ row.fair.label }}</b></span>
                   <span class="wk-td fin-lists-sm" role="gridcell">{{ row.fair.code }}</span>
-                  <span class="wk-td wk-td--num" role="gridcell">{{ row.count || '—' }}</span>
+                  <span class="wk-td wk-td--num" role="gridcell">{{ row.inUse ? row.inUse + (row.inUse === 1 ? ' kost' : ' kosten') : '—' }}</span>
                   <span class="wk-td wk-td--num" role="gridcell">@if (row.count) { {{ row.exclEur | eur }} } @else { — }</span>
                   <span class="wk-td" role="gridcell">
                     <input class="fin-switch" type="checkbox" role="switch" [checked]="row.fair.active" [disabled]="state.saving()"
@@ -152,17 +126,6 @@ interface FairRow {
           }
         </div>
       </section>
-      @if (seen().length) {
-        <section class="ios-section">
-          <details class="ios-group ios-disclosure">
-            <summary>Nog niet in de lijst <span class="ios-section__trail">{{ seen().length }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
-            @for (row of seen(); track row.name) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ row.name }}</span><span class="ios-cell__sub">{{ row.count }} {{ row.count === 1 ? 'boeking' : 'boekingen' }}</span></span>
-                <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="state.saving()" (click)="state.storeSeenParty(row.name)">Bewaren</button></div>
-            }
-          </details>
-        </section>
-      }
       <section class="ios-section">
         <div class="ios-section__head"><h2>Beurzen</h2><button class="ios-section__link" type="button" (click)="state.openFair(null)">Toevoegen</button></div>
         <div class="ios-group">
@@ -170,7 +133,7 @@ interface FairRow {
             <div class="ios-cell">
               <button class="fin-cell-button" type="button" appMenuTrigger (menuTrigger)="fairMenu(row, null)" (click)="state.openFair(row.fair)">
                 <span class="ios-cell__body"><span class="ios-cell__title" [class.wk-tr--muted]="!row.fair.active">{{ row.fair.label }}</span>
-                  <span class="ios-cell__sub">{{ row.fair.code }}{{ row.count ? ' · ' + row.count + (row.count === 1 ? ' kost' : ' kosten') + ' dit jaar' : '' }}</span></span>
+                  <span class="ios-cell__sub">{{ row.fair.code }}{{ row.inUse ? ' · in gebruik op ' + row.inUse + (row.inUse === 1 ? ' kost' : ' kosten') : ' · nog niet gebruikt' }}</span></span>
                 @if (row.count) { <span class="ios-cell__trail"><span class="ios-cell__value">{{ row.exclEur | eur }}</span></span> }
               </button>
               <input class="ios-switch" type="checkbox" role="switch" [checked]="row.fair.active" [disabled]="state.saving()"
@@ -186,8 +149,6 @@ interface FairRow {
 })
 export class CostListsPanel implements FinanceSectionApi {
   readonly state = inject(FinanceState);
-  /** "Nog niet in de lijst" starts folded. */
-  readonly seenOpen = signal(false);
 
   readonly query = computed(() => normaliseParty(this.state.location().q));
   private readonly matches = (...parts: (string | null | undefined)[]): boolean => {
@@ -198,28 +159,36 @@ export class CostListsPanel implements FinanceSectionApi {
   readonly parties = computed<PartyRow[]>(() => this.state.costParties().map((party) => {
     const figures = this.state.partyFiguresFor(party.name);
     return { party, detail: this.state.partyDetail(party), iban: spaced(party.iban), ...figures };
-  }).filter((row) => this.matches(row.party.name, row.detail, row.iban, row.party.notes)));
+  }).filter((row) => this.matches(row.party.name, row.detail, row.iban)));
 
-  readonly seen = computed(() => this.state.unstoredParties().filter((row) => this.matches(row.name)));
-
+  /** Per fair: every cost and recurring cost on its code (what blocks a delete), and this year's costs with their total. */
   readonly fairRows = computed<FairRow[]>(() => {
     const year = this.state.today().slice(0, 4);
-    const figures = new Map<string, { count: number; exclEur: number }>();
+    const figures = new Map<string, { inUse: number; count: number; exclEur: number }>();
+    const figure = (code: string): { inUse: number; count: number; exclEur: number } => {
+      const row = figures.get(code) ?? { inUse: 0, count: 0, exclEur: 0 };
+      figures.set(code, row);
+      return row;
+    };
     for (const cost of this.state.costs()) {
       const code = (cost.salesChannel ?? '').trim().toUpperCase();
-      if (!code || !cost.date.startsWith(year)) continue;
-      const row = figures.get(code) ?? { count: 0, exclEur: 0 };
+      if (!code) continue;
+      const row = figure(code);
+      row.inUse += 1;
+      if (!cost.date.startsWith(year)) continue;
       row.count += 1;
       row.exclEur = Math.round((row.exclEur + (Number.isFinite(cost.amountExclEur) ? cost.amountExclEur : 0)) * 100) / 100;
-      figures.set(code, row);
     }
-    return this.state.fairs().map((fair) => ({ fair, ...(figures.get(fair.code.trim().toUpperCase()) ?? { count: 0, exclEur: 0 }) }))
+    for (const definition of this.state.recurring()) {
+      const code = (definition.salesChannel ?? '').trim().toUpperCase();
+      if (code) figure(code).inUse += 1;
+    }
+    return this.state.fairs().map((fair) => ({ fair, ...(figures.get(fair.code.trim().toUpperCase()) ?? { inUse: 0, count: 0, exclEur: 0 }) }))
       .filter((row) => this.matches(row.fair.label, row.fair.code));
   });
 
   readonly strip = computed<StripItem[]>(() => [
     { label: 'Aan wie', value: String(this.state.costParties().length), tone: 'strong' },
-    ...(this.state.unstoredParties().length ? [{ label: 'Nog niet in de lijst', value: String(this.state.unstoredParties().length), tone: 'muted' as const }] : []),
     { label: 'Beurzen', value: `${this.state.fairs().filter((fair) => fair.active).length} actief van ${this.state.fairs().length}` },
   ]);
   readonly status = computed(() => `Aan wie ${this.state.costParties().length} · Beurzen ${this.state.fairs().length}`);
@@ -231,10 +200,6 @@ export class CostListsPanel implements FinanceSectionApi {
       return true;
     }
     return false;
-  }
-
-  figures(name: string): { count: number; exclEur: number } {
-    return this.state.partyFiguresFor(name);
   }
 
   partyMenu(row: PartyRow, anchor: MenuPoint | null): void {
@@ -254,13 +219,14 @@ export class CostListsPanel implements FinanceSectionApi {
     const items: ContextMenuItem[] = [
       { id: 'edit', label: 'Bewerken', iconName: 'pencil' },
       row.fair.active ? { id: 'off', label: 'Uitzetten', iconName: 'recent' } : { id: 'on', label: 'Aanzetten', iconName: 'tick' },
-      { id: 'costs', label: 'Toon kosten', iconName: 'receipt', disabled: !row.count },
+      { id: 'costs', label: 'Toon kosten', iconName: 'receipt', disabled: !row.inUse },
       { id: 'delete', label: 'Verwijderen', iconName: 'trash', danger: true, divider: true },
     ];
     this.state.openMenu({ title: row.fair.label, items, anchor, cancelLabel: anchor ? '' : 'Annuleren', pick: (id) => {
       if (id === 'edit') this.state.openFair(row.fair);
       else if (id === 'on' || id === 'off') void this.state.setFairActive(row.fair, id === 'on');
-      else if (id === 'costs') this.state.go({ view: 'costs', tab: 'company', period: 'year', channel: row.fair.code });
+      /* This year when it has costs, else every year: a fair used only last year still shows them. */
+      else if (id === 'costs') this.state.go({ view: 'costs', tab: 'company', period: row.count ? 'year' : 'all', channel: row.fair.code });
       else if (id === 'delete') this.state.deleteFair(row.fair);
     } });
   }

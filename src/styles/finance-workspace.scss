@@ -227,11 +227,9 @@
   .fin-recurring { display: grid; gap: 16px; }
   .fin-agenda .wk-section__title { margin-top: 10px; }
 
-  /* ---- Uitgaven › Aan wie & beurzen: three cards, each a table */
+  /* ---- Uitgaven › Aan wie & beurzen: two cards, each a table */
   .fin-lists { display: grid; gap: 16px; .wk-card + .wk-card { margin-top: 0; } .wk-card__head > .wk-btn { margin-left: 8px; } }
-  .fin-lists__toggle { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
   .fin-table--parties { --wk-cols: minmax(160px, 1fr) minmax(0, 220px) 190px 110px 112px 84px; }
-  .fin-table--seen { --wk-cols: minmax(160px, 1fr) 100px 110px 112px 96px; }
   .fin-table--fairs { --wk-cols: minmax(160px, 1fr) 140px 110px 112px 64px; }
   .fin-iban { font-variant-numeric: tabular-nums; }
 
