@@ -17,10 +17,10 @@ const names = ['overview', 'loading', 'loadError', 'busy', 'view', 'reordering',
   'addScope', 'addWebsite', 'addCatalogue', 'addError', 'uploadProgress', 'orderOverride', 'announcement', 'lastChange', 'othersOpen', 'others',
   'loadVersion', 'othersVersion', 'lastOrderToast', 'productId', 'interactionDisabled', 'colour', 'places', 'live', 'cards', 'notes', 'rows',
   'syncPill', 'changedText', 'colourList', 'groups', 'duplicates', 'shownColour', 'shownGroups', 'orderList', 'orderRest', 'sheetList', 'picker',
-  'otherMembers', 'otherRows', 'compareNeighbours',
+  'otherMembers', 'otherRows', 'compareStrip', 'compareNeighbours',
   'openPicker', 'closePicker', 'openRequestedPicker', 'loadOthers', 'cardAction', 'pickRole', 'pickFromPicker', 'clearFromPicker',
   'uploadFromPicker', 'compareOpened', 'undo', 'repair', 'useWebsitePhotoForDocuments', 'uploadAndUse', 'setDetailSize', 'setChannels',
-  'setScope', 'remove', 'confirmUpload', 'moveOrder', 'run', 'afterSave', 'switchesOf', 'choiceHidden', 'refreshSync', 'load', 'apply',
+  'setScope', 'remove', 'confirmUpload', 'moveOrder', 'run', 'afterSave', 'refreshOthers', 'switchesOf', 'choiceHidden', 'refreshSync', 'load', 'apply',
   'reload', 'focusHandle'];
 const picked = panel.members.filter((member) => member.name && ts.isIdentifier(member.name) && names.includes(member.name.text));
 assert.equal(picked.length, names.length, 'The tests must run the current production members');
@@ -738,6 +738,85 @@ test('the other colours are fetched only when looked at, again after a save, and
   page.othersOpen.set(false);
   await page.pickRole('MAIN', 'F2');
   assert.equal(page.others(), null);
+  // The editor's own save (colour, activity, membership) makes the answer old the same way.
+  assert.match(text, /if \(productId !== shownProduct\) this\.resetFor\(productId\);\s+\/\*[^*]*\*\/\s+else this\.refreshOthers\(\);/,
+    'A new revision of the same product reaches the other colours');
+  page.othersOpen.set(true);
+  calls.length = 0;
+  page.refreshOthers();
+  assert.equal(page.others().state, 'loading', 'The old rows go at once');
+  await new Promise((done) => setImmediate(done));
+  assert.deepEqual(calls, [['overview', 54]]);
+  page.othersOpen.set(false);
+  page.refreshOthers();
+  assert.equal(page.others(), null);
+  // One colour that cannot be read: nothing is shown as known, and the list can ask again.
+  page.catalog.productPhotoOverview = async () => { throw { error: { message: 'offline' } }; };
+  page.othersOpen.set(true);
+  await page.loadOthers();
+  assert.deepEqual([page.others().state, page.others().overviews.length], ['failed', 0]);
+  assert.deepEqual(page.otherRows().map((row: any) => [row.website, row.catalogue]), [[null, null]]);
+});
+
+test('whatever the panel saves, the id of another colour only ever asks for its overview', async () => {
+  const { page, s, show, toasts } = withServer();
+  const sent: [string, unknown[]][] = [];
+  for (const name of Object.keys(page.catalog)) {
+    const real = page.catalog[name];
+    page.catalog[name] = (...args: unknown[]) => { sent.push([name, args]); return real(...args); };
+  }
+  const settled = () => new Promise((done) => setImmediate(done));
+  const holds = (value: unknown, id: number): boolean => value === id
+    || (!!value && typeof value === 'object' && Object.values(value).some((item) => holds(item, id)));
+  const byKey = (key: string) => page.overview().photos.find((item: any) => item.key === key);
+  // The list stays open the whole time: every save below also asks the other colour again.
+  page.othersOpen.set(true);
+  await page.loadOthers();
+  await page.pickRole('MAIN', 'F1');
+  await page.undo();
+  await page.pickRole('CATALOGUE_VARIANT', 'F2');
+  await page.undo();
+  page.openPicker('catalogue');
+  page.compareOpened();
+  await settled();
+  await page.uploadAndUse('catalogue', file('new.jpg'));
+  // A file that is Roze's photo: named, never taken over or moved to this colour.
+  await page.uploadAndUse('website', file('roze.jpg'));
+  assert.deepEqual(toasts.at(-1), ['Deze foto staat al in de reeks bij Roze. Er is niets gewijzigd.', 'err']);
+  await page.setChannels({ photo: byKey('F5'), channels: ['WEBSITE'] });
+  await page.setScope({ photo: byKey('F5'), variantProductId: null });
+  // Narrowing asks first; the confirmed call runs on its own.
+  await page.setScope({ photo: byKey('F1'), variantProductId: 53 });
+  await settled();
+  await page.moveOrder(0, 1, false);
+  await page.setDetailSize('LARGE');
+  s.documents = 'F5';
+  show();
+  await page.useWebsitePhotoForDocuments();
+  s.main = 'F6';
+  show();
+  await page.repair('website');
+  page.remove(byKey('F5'));
+  await settled();
+  page.staged.set([{ file: { name: 'extra.jpg' }, previewUrl: 'blob:9' }]);
+  await page.confirmUpload();
+  await settled();
+
+  const used = (id: number) => [...new Set(sent.filter(([, args]) => holds(args, id)).map(([name]) => name))];
+  assert.deepEqual(used(54), ['productPhotoOverview'], 'The other colour is read, never written');
+  for (const [name, args] of sent) {
+    if (name !== 'productPhotoOverview') assert.ok(args[0] === 53 || args[0] === 13, `${name} goes to this product or to its series`);
+  }
+  assert.deepEqual([...new Set(sent.map(([name]) => name))].sort(), [
+    'deleteProductFamilyImage', 'productFamily', 'productPhotoOverview', 'reorderProductFamilyImages', 'setProductPhotoRole',
+    'updateCataloguePhotos', 'updateProductFamilyImagePublication', 'updateProductFamilyImageVariant', 'uploadProductFamilyImage',
+  ], 'The tour went down every road that saves');
+  assert.equal(page.others().state, 'ready');
+  // In the source too: the id of a member is handed to the overview call and to nothing else.
+  assert.deepEqual(text.match(/this\.catalog\.\w+\([^)]*member\.productId/g), ['this.catalog.productPhotoOverview(member.productId']);
+  const list = await readFile(new URL('../src/app/features/products/product-photo-colours.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(list, /CatalogApi|MediaApi|HttpClient|inject\(/, 'The list itself has no road to the server');
+  assert.match(list, /\[routerLink\]="\['\/products', row\.productId, 'edit'\]" \[queryParams\]="\{ tab: 'media' \}"/, 'A row only leads to that colour’s own photo section');
 });
 
 test('‘Bekijk groot’ in the Catalogus picker gets the other colours’ catalogue photos, freshly fetched', async () => {
@@ -757,6 +836,33 @@ test('‘Bekijk groot’ in the Catalogus picker gets the other colours’ catal
   one.page.openPicker('catalogue');
   one.page.compareOpened();
   assert.deepEqual(one.calls, [], 'A one-colour series prints no colour strip');
+  // A colour that is not sold stands in no strip: nothing is asked, and an open list does not feed one either.
+  const off = withServer();
+  off.page.product.set({ ...off.page.product(), active: false });
+  off.page.openPicker('catalogue');
+  off.page.compareOpened();
+  assert.deepEqual(off.calls, []);
+  off.page.othersOpen.set(true);
+  await off.page.loadOthers();
+  assert.equal(off.page.others().state, 'ready');
+  assert.equal(off.page.compareNeighbours(), null);
+  // The strip is left out while the answer is under way and when it fails.
+  const slow = withServer();
+  slow.page.openPicker('catalogue');
+  let answer: (value: unknown) => void = () => undefined;
+  const real = slow.page.catalog.productPhotoOverview;
+  slow.page.catalog.productPhotoOverview = (id: number) => new Promise((done) => { answer = () => done(real(id)); });
+  slow.page.compareOpened();
+  assert.equal(slow.page.others().state, 'loading');
+  assert.equal(slow.page.compareNeighbours(), null);
+  answer(null);
+  await new Promise((done) => setImmediate(done));
+  assert.equal(slow.page.compareNeighbours().length, 1);
+  slow.page.catalog.productPhotoOverview = async () => { throw { error: { message: 'offline' } }; };
+  slow.page.compareOpened();
+  await new Promise((done) => setImmediate(done));
+  assert.equal(slow.page.others().state, 'failed');
+  assert.equal(slow.page.compareNeighbours(), null);
 });
 
 test('a link with ?kies= opens that card’s picker once and is always handed back', () => {

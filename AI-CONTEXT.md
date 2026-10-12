@@ -876,6 +876,13 @@ and on copies. Without the blocks (older backend) every screen is as before.
     "Alle foto's" where a tile says in words where the photo is used. The
     status pill in the section head is the only place that speaks about
     the live site (shared `WebsiteSyncStore`).
+  - The other colours are never kept: `loadOthers()` asks each colour's
+    own overview when the list opens, after every save while it is open
+    (`afterSave` -> `refreshOthers`), after the editor's own save (the
+    `revision` input) and when "Bekijk groot" opens in the Catalogus
+    picker (the strip "Zo staat hij naast de andere kleuren"). Another
+    colour's id goes to `productPhotoOverview` and to nothing else; a
+    test walks every saving road to hold that.
   - Picker `product-photo-picker.ts` (presentational, one for all five
     choosable places): bar "Nieuwe foto uploaden" (upload and use in one
     flow, the panel's `uploadAndUse`), then the candidates; a tap chooses

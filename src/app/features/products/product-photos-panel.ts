@@ -865,7 +865,18 @@ export class ProductPhotosPanel {
   readonly otherRows = computed(() => {
     const loaded = this.others();
     const overviews = loaded?.state === 'ready' ? loaded.overviews : [];
-    return this.otherMembers().map((member) => otherColourRow(member, overviews.find((item) => item.productId === member.productId) ?? null));
+    const members = this.members();
+    return this.otherMembers().map((member) => otherColourRow(member, overviews.find((item) => item.productId === member.productId) ?? null, members));
+  });
+  /**
+   * The Catalogus picker of a colour the pdf prints in a strip of colours:
+   * several colours, and this one sold. Only there "Bekijk groot" asks for the
+   * other colours.
+   */
+  private readonly compareStrip = computed(() => {
+    const overview = this.overview();
+    return this.picker()?.kind === 'catalogue' && !!overview?.places && this.otherMembers().length > 0
+      && !cataloguePlaceFor(overview.places).single && colourStatus(overview, this.product()) === 'active';
   });
   /**
    * "Bekijk groot" in the Catalogus picker: the catalogue photos of the other
@@ -873,11 +884,9 @@ export class ProductPhotosPanel {
    * a one-colour series, a colour that is not sold, no other colour with a photo).
    */
   readonly compareNeighbours = computed<PhotoCompareNeighbour[] | null>(() => {
-    const overview = this.overview();
     const loaded = this.others();
-    if (this.picker()?.kind !== 'catalogue' || !overview?.places || loaded?.state !== 'ready') return null;
-    if (cataloguePlaceFor(overview.places).single || colourStatus(overview, this.product()) !== 'active') return null;
-    const printed = overview.catalogueAssumption?.productIds;
+    if (!this.compareStrip() || loaded?.state !== 'ready') return null;
+    const printed = this.overview()?.catalogueAssumption?.productIds;
     const list = this.otherRows()
       .filter((row) => row.catalogue && (!printed || printed.includes(row.productId)))
       .map((row) => ({ label: row.name, photo: row.catalogue }));
@@ -896,6 +905,8 @@ export class ProductPhotosPanel {
       this.revision();
       untracked(() => {
         if (productId !== shownProduct) this.resetFor(productId);
+        /* The editor saved the product: colour, activity and membership shape what the other colours show too. */
+        else this.refreshOthers();
         shownProduct = productId;
         void this.load(productId);
       });
@@ -1117,7 +1128,7 @@ export class ProductPhotosPanel {
 
   /** "Bekijk groot" opened in the picker: the Catalogus strip shows the other colours as they are now. */
   compareOpened(): void {
-    if (this.picker()?.kind === 'catalogue' && this.otherMembers().length) void this.loadOthers();
+    if (this.compareStrip()) void this.loadOthers();
   }
 
   /**
@@ -1701,6 +1712,11 @@ export class ProductPhotosPanel {
   private afterSave(before: ResolvedPlaces | null): void {
     this.refreshSync(before);
     this.changed.emit();
+    this.refreshOthers();
+  }
+
+  /** The last answer about the other colours is old now: asked again while the list is open, dropped otherwise (never shown later as "nu"). */
+  private refreshOthers(): void {
     if (this.othersOpen()) void this.loadOthers();
     else {
       ++this.othersVersion;

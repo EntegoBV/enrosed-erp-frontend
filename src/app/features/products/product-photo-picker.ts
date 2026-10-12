@@ -143,7 +143,11 @@ interface PhotoCompareView {
               <div class="pk-cmp__next">
                 <b>Zo staat hij naast de andere kleuren in de catalogus</b>
                 <ul class="pk-cmp__row">
-                  <li class="pk-cmp__this"><img [appAuthSrc]="view.tile.photo.smallUrl" alt="" draggable="false" /><span>Deze foto</span></li>
+                  <li class="pk-cmp__this">
+                    <!-- A new element per photo here too: after a step the previous photo never stands over "Deze foto". -->
+                    @for (shown of [view.tile.photo]; track shown.key) { <img [appAuthSrc]="shown.smallUrl" alt="" draggable="false" /> }
+                    <span>Deze foto</span>
+                  </li>
                   @for (neighbour of neighbours; track $index) {
                     @if (neighbour.photo; as photo) {
                       <li><img [appAuthSrc]="photo.smallUrl" alt="" draggable="false" /><span>{{ neighbour.label }}</span></li>
@@ -249,6 +253,12 @@ interface PhotoCompareView {
       .pk-cmp__pair { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
       .pk-cmp__img { height: min(372px, 46dvh); padding: 12px; }
       .pk-cmp__img img { max-height: calc(min(372px, 46dvh) - 24px); }
+      /* One line on a laptop: the other colours stay on screen under the two pictures, also at 1440 x 800. */
+      .pk-cmp__next { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; padding: 8px 12px; }
+      .pk-cmp__next > b { max-width: 16em; line-height: 1.3; }
+      .pk-cmp__row { gap: 14px; }
+      .pk-cmp__row li { display: flex; align-items: center; gap: 8px; max-width: 220px; text-align: left; }
+      .pk-cmp__row img { flex: none; }
     }
   `,
 })

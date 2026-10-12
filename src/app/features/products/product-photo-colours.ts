@@ -16,7 +16,7 @@ import { OTHER_COLOURS_TEXTS, OtherColourRow } from './product-photos-state';
   imports: [AuthImage, Icon, RouterLink],
   template: `
     <details class="oc" [open]="open()" (toggle)="toggled.emit($any($event.target).open)">
-      <summary>
+      <summary #fold>
         <span class="oc__dots" aria-hidden="true">@for (row of rows(); track row.productId) { <i class="oc-dot" [style.background]="row.colourHex"></i> }</span>
         <span class="oc__title"><b>{{ texts.title }}</b><small>{{ names() }}</small></span>
         <app-icon class="oc__chev" name="chevron-down" [size]="18" />
@@ -45,7 +45,8 @@ import { OTHER_COLOURS_TEXTS, OtherColourRow } from './product-photos-state';
             }
           </ul>
         } @else if (state() === 'failed') {
-          <p class="oc__msg" role="alert">{{ texts.failed }} <button class="oc-link" type="button" (click)="retry.emit()">{{ texts.retry }}</button></p>
+          <!-- The button goes while the answer is fetched: the fold's own control takes the focus, so it is not dropped. -->
+          <p class="oc__msg" role="alert">{{ texts.failed }} <button class="oc-link" type="button" (click)="fold.focus(); retry.emit()">{{ texts.retry }}</button></p>
         } @else {
           <div class="oc__rows" aria-hidden="true">@for (row of rows(); track row.productId) { <div class="skel oc-skel"></div> }</div>
           <p class="sr-only" role="status">{{ texts.loading }}</p>
@@ -59,7 +60,8 @@ import { OTHER_COLOURS_TEXTS, OtherColourRow } from './product-photos-state';
     .oc :is(summary, a, button):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
     .oc > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px; border-radius: 16px; cursor: pointer; list-style: none; }
     .oc > summary::-webkit-details-marker { display: none; }
-    .oc__dots { display: flex; gap: 4px; }
+    /* Many colours: two rows of five dots at most; the names and the rows say the rest. */
+    .oc__dots { display: flex; flex: none; flex-wrap: wrap; gap: 4px; max-width: 76px; max-height: 28px; overflow: hidden; }
     .oc-dot { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--muted-2); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
     .oc__title { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-width: 0; font-size: 14px; line-height: 1.3; }
     /* The names join the title on a laptop only. */
@@ -68,12 +70,16 @@ import { OTHER_COLOURS_TEXTS, OtherColourRow } from './product-photos-state';
     .oc[open] .oc__chev { transform: rotate(180deg); }
     .oc__rows { display: grid; gap: 8px; margin: 0; padding: 0 12px 12px; list-style: none; }
     .oc__msg { padding: 0 12px 6px; color: var(--ink-2); font-size: 12.5px; }
-    .oc-skel { height: 64px; border-radius: 12px; }
-    .oc-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--line);
+    /* As high as a row with its two pictures: nothing under the list moves when the answer arrives, or after a save. */
+    .oc-skel { height: 142px; border-radius: 12px; }
+    /* Phone: name and link on one line, the pictures under them; a name too long for that sends the link to a line of its own. */
+    .oc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--line);
       border-radius: 12px; background: var(--surface); }
-    .oc-row__name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; overflow-wrap: anywhere; }
-    .oc-row__none { grid-column: 1 / -1; grid-row: 2; color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
-    .oc-row__pics { display: flex; grid-column: 1 / -1; grid-row: 2; gap: 12px; }
+    .oc-row__name { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+    .oc-row :is(.oc-row__pics, .oc-row__none) { flex: 1 0 100%; order: 1; }
+    .oc-row .oc-link { margin-left: auto; }
+    .oc-row__none { color: var(--ink-2); font-size: 12.5px; line-height: 1.4; }
+    .oc-row__pics { display: flex; gap: 12px; }
     .oc-row figure { display: grid; justify-items: center; gap: 2px; margin: 0; color: #6a615b; font-size: 12px; }
     .oc-row :is(img, .oc-row__dash) { width: 52px; height: 52px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; object-fit: contain; }
     .oc-row .oc-row__dash { border-style: dashed; background: var(--surface-2); }
@@ -81,8 +87,10 @@ import { OTHER_COLOURS_TEXTS, OtherColourRow } from './product-photos-state';
       font: inherit; font-size: 12.5px; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     @container pp (min-width: 700px) {
       .oc__title small { display: inline; }
-      .oc-row { grid-template-columns: minmax(140px, 1fr) auto auto; }
-      .oc-row :is(.oc-row__pics, .oc-row__none) { grid-column: auto; grid-row: auto; }
+      .oc-skel { height: 94px; }
+      /* A fixed name column: the pictures of all colours stand under each other. */
+      .oc-row { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; }
+      .oc-row :is(.oc-row__pics, .oc-row__none) { order: 0; }
       .oc-link { font-size: 13px; }
     }
     @media (prefers-reduced-motion: reduce) {

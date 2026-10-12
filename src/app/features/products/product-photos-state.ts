@@ -1977,10 +1977,14 @@ export const OTHER_COLOURS_TEXTS = {
  * overview. Looking and jumping only: nothing here writes.
  */
 export function otherColourRow(
-  member: Pick<ProductFamilyMember, 'productId' | 'name' | 'colour' | 'colourHex' | 'active'>,
+  member: Pick<ProductFamilyMember, 'productId' | 'name' | 'colour' | 'colourHex' | 'active'> & { size?: string | null },
   overview: ProductPhotoOverview | null,
+  members: readonly Pick<ProductFamilyMember, 'productId' | 'colour'>[] = [],
 ): OtherColourRow {
-  const name = member.colour?.trim() || member.name?.trim() || 'Andere kleur';
+  /* Two colours with one name are told apart by their size, like the colour of the page itself. */
+  const name = member.colour?.trim()
+    ? variantShortLabel({ id: member.productId, colour: member.colour, variantSize: member.size ?? null }, members)
+    : member.name?.trim() || 'Andere kleur';
   const places = overview?.places ?? null;
   const demo = overview?.catalogueAssumption?.includesThisColour === false;
   const sold = member.active !== false && !demo;

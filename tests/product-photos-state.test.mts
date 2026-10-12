@@ -1316,6 +1316,14 @@ test('other colours: one row per colour from its own overview, for looking and j
   assert.equal(otherColourRow({ ...rood, colour: null }, null).name, 'Half heart 40 cm rood');
   const single = oneColour(place('catalogueDetail', 'F250', 'AUTOMATIC', 'FIRST_IN_SERIES_ORDER', ALL));
   assert.equal(otherColourRow(rood, single).catalogue?.key, 'F250', 'The catalogue square follows that colour’s own card');
+  // Two colours with one name: the size tells them apart, in the name, the link and the sentence.
+  const twin = { productId: 127, name: 'Half heart 40 cm', colour: 'Kersenroze', colourHex: null, active: true, size: '7.5*8cm' };
+  const series = [{ productId: 100, colour: 'Kersenroze' }, { productId: 101, colour: 'Rood' }, { productId: 127, colour: 'Kersenroze' }];
+  const second = otherColourRow(twin, bare, series);
+  assert.deepEqual([second.name, second.label, second.linkLabel], ['Kersenroze · 7.5*8cm', 'Kersenroze · 7.5*8cm', 'Open Kersenroze · 7.5*8cm']);
+  assert.equal(second.empty, 'Kersenroze · 7.5*8cm heeft nog geen foto. Op de productpagina is deze kleur daardoor niet aan te tikken.');
+  assert.equal(otherColourRow(rood, null, series).name, 'Rood');
+  assert.equal(otherColourRow({ ...twin, size: null }, null, series).name, 'Kersenroze', 'Without a size there is nothing to add');
 });
 
 /* ------------------------------------------- older server (ui-spec section 12) */
