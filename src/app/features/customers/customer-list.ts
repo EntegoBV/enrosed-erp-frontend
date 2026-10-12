@@ -243,9 +243,16 @@ export class CustomerList {
 
   constructor() {
     /* Deep links (the sales hero) filter the list straight to one customer. */
-    const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
+    const route = inject(ActivatedRoute);
+    const query = route.snapshot.queryParamMap;
+    const q = query.get('q');
     if (q) this.query.set(q);
     void this.load();
+    /* The phone home's '+' lands here with ?nieuw=1: open the sheet once and drop the flag so a reload does not reopen it. */
+    if (query.get('nieuw') === '1') {
+      void this.router.navigate([], { queryParams: { nieuw: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: route });
+      this.open(null);
+    }
   }
 
   private async load(): Promise<void> {

@@ -1082,6 +1082,11 @@ export class SalesList {
     if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
     void this.work.refresh();
     void this.load();
+    /* The phone home's '+' lands here with ?nieuw=1: open the new-order sheet once and drop the flag so a reload does not reopen it. */
+    if (query.get('nieuw') === '1') {
+      void this.router.navigate([], { queryParams: { nieuw: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
+      this.startNew();
+    }
   }
 
   async load(): Promise<void> {
