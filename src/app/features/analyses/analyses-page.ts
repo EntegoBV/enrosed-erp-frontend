@@ -26,6 +26,7 @@ import { inventoryAnalysis, partnerFinancingAnalysis, resultAnalysis, salesAnaly
 import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
 import { categoryLabel } from '../finance/cost-categories';
+import { costChargeIn, openOf } from '../finance/finance-metrics';
 import { MarketAnalysis } from './market-analysis';
 import { ContainerCostAnalysis } from './container-cost-analysis';
 import { purchaseExternalCost } from '../purchasing/purchase-reconciliation-metrics';
@@ -511,7 +512,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark"><span class="metric-card__label">Omzet</span><strong>{{ result().revenueEur | eur: 0 }}</strong><p>{{ result().invoiceCount }} uitgegeven factuur/facturen · excl. btw</p></article>
           <article class="card metric-card metric-card--quality"><span class="metric-card__label">Marge op goederen</span><strong>{{ result().marginEur | eur: 0 }}</strong><p>{{ result().marginPct === null ? 'kost van de goederen ' + (result().goodsCostEur | eur: 0) : (result().marginPct | pct: 1) + ' · goederen kostten ' + (result().goodsCostEur | eur: 0) }}@if (result().missingCostLines) { · {{ result().missingCostLines }} regel(s) zonder kost }</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Eigen kosten</span><strong>{{ result().costsEur | eur: 0 }}</strong><p>@if (result().unpaidCostsEur) { {{ result().unpaidCostsEur | eur: 0 }} nog te betalen incl. btw } @else { alles betaald }</p></article>
+          <article class="card metric-card"><span class="metric-card__label">Eigen kosten</span><strong>{{ result().costsEur | eur: 0 }}</strong><p>@if (result().depreciationEur > 0) { waarvan {{ result().depreciationEur | eur: 0 }} afschrijvingen · }@if (result().unpaidCostsEur) { {{ result().unpaidCostsEur | eur: 0 }} nog te betalen incl. btw } @else { alles betaald }</p></article>
           <article class="card metric-card" [class.metric-card--danger]="result().resultEur < 0"><span class="metric-card__label">Resultaat</span><strong>{{ result().resultEur | eur: 0 }}</strong><p>marge min eigen kosten</p></article>
           <article class="card metric-card"><span class="metric-card__label">Ingekocht</span><strong>{{ result().purchasedEur | eur: 0 }}</strong><p>{{ result().receivedContainers }} container(s) ontvangen, externe kost volgens actuele afrekening</p></article>
         </div>
@@ -977,8 +978,9 @@ export class AnalysesPage {
   }));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers(), this.partnerSummaries()));
   readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
+  /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
   readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
-    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined,
+    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: costChargeIn, openEur: openOf,
   }));
   readonly channelLabel = channelLabel;
   readonly categoryLabel = categoryLabel;

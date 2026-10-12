@@ -54,7 +54,7 @@ import { FinancePeriod } from './finance-url';
           <button class="wk-chip" type="button" [attr.aria-pressed]="location.scope === 'all'" (click)="state.go({ scope: 'all' })">Alles</button>
         </div>
       }
-      @case ('analysis/') {
+      @case ('analysis/costs') {
         <app-segmented label="Jaar" [options]="yearOptions()" [value]="location.year" (changed)="state.go({ year: $event })" />
         @if (otherYears().length) { <button class="wk-btn wk-btn--sm" type="button" (click)="yearMenu($event)">Ander jaar <app-icon name="chevron-down" [size]="14" /></button> }
       }

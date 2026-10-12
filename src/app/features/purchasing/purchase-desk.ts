@@ -96,7 +96,7 @@ type DeskRow =
               <h1>{{ supplierName() }}</h1>
               <p>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
                 · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</p>
-              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (isReceived() && data.order.receivedOn) { · ontvangen {{ data.order.receivedOn | dateNl }} } @else if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }</p>
+              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (isReceived() && data.order.receivedOn) { · ontvangen {{ data.order.receivedOn | dateNl }} } @else if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }@if (!data.order.clearance) { · inklaring te bevestigen }</p>
             </div>
             <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
               @for (step of statusSteps; track step.value; let last = $last) {
@@ -532,6 +532,14 @@ type DeskRow =
                                  [value]="customPortInput(data.order.destinationPort, destinationPorts, customDestinationPort())" (blur)="setCustomDestinationPort($any($event.target).value)" />
                         }
                       </div>
+                    </div>
+                    <div class="field">
+                      <label for="dk-clearance">Inklaring</label>
+                      <select class="select" id="dk-clearance" [ngModel]="data.order.clearance ?? ''" (ngModelChange)="patch({ clearance: $event || null })">
+                        <option value="">Nog te bevestigen (voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }})</option>
+                        @for (option of clearanceOptions; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                      </select>
+                      <span class="hint">Bepaalt de btw-aangifte: 86/55/59 bij inklaring in Nederland, 81 en de invoer-btw bij inklaring in België.</span>
                     </div>
                     <div class="field">
                       <label for="dk-receiving">Lossen op</label>

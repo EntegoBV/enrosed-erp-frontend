@@ -42,6 +42,7 @@ import { PaySheet } from './pay-sheet';
 import { ReceivablesPanel } from './receivables-panel';
 import { RecurringPanel } from './recurring-panel';
 import { RecurringSheet } from './recurring-sheet';
+import { VatReturnPanel } from './vat-return-panel';
 
 /** A quiet refresh when the page comes back after this long. */
 const STALE_MS = 5 * 60_000;
@@ -61,7 +62,7 @@ const STALE_MS = 5 * 60_000;
   host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
     FinanceCreateMenu, FinanceInspector, FinanceOverview, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
-    RecurringPanel, CostListsPanel, CostAnalysis, CostSheet, RecurringSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
+    RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
     AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, BankAllocationSheet, CostPartySheet, FairSheet],
   template: `
     @if (state.desk()) {
@@ -114,8 +115,8 @@ const STALE_MS = 5 * 60_000;
           <button trail class="ios-circle" type="button" aria-label="Meer" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <div below class="ios-subbar" [hidden]="!phoneSegments().length">
             @if (phoneSegments().length) {
-              <app-segmented variant="ios" [semantics]="state.location().view === 'analysis' ? 'radio' : 'tabs'" label="Onderdeel"
-                             [options]="phoneSegments()" [value]="phoneSegmentValue()" (changed)="pickPhoneSegment($event)" />
+              <app-segmented variant="ios" semantics="tabs" label="Onderdeel"
+                             [options]="phoneSegments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
             }
           </div>
         </app-ios-nav>
@@ -147,7 +148,12 @@ const STALE_MS = 5 * 60_000;
               @default { <app-cost-list /> }
             }
           }
-          @case ('analysis') { <app-cost-analysis /> }
+          @case ('analysis') {
+            @switch (state.location().tab) {
+              @case ('vat') { <app-vat-return-panel /> }
+              @default { <app-cost-analysis /> }
+            }
+          }
           @default { <app-finance-overview /> }
         }
       }
@@ -203,16 +209,11 @@ export class CostsPage {
   /** Analyse is the phone's one sub-screen: pushed from Overzicht or ⋯, with a back chevron instead of '‹ App'. */
   readonly subScreen = computed(() => this.state.location().view === 'analysis');
 
-  /** The phone's sticky segmented control: the section's segments, or the year on Analyse. */
+  /** The phone's sticky segmented control: the section's segments (Analyse: Kosten · Btw; its year is a chip row in the panel). */
   readonly phoneSegments = computed<SegmentOption[]>(() => {
     const view = this.state.location().view;
-    if (view === 'analysis') return [{ id: '', label: 'Dit jaar' }, { id: String(Number(this.state.today().slice(0, 4)) - 1), label: 'Vorig jaar' }, { id: 'all', label: 'Alles' }];
     /* The segment behind a tab badge carries a dot, so the badge leads somewhere visible. */
     return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.short, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
-  });
-  readonly phoneSegmentValue = computed(() => {
-    const location = this.state.location();
-    return location.view === 'analysis' ? location.year : location.tab;
   });
 
   constructor() {
@@ -283,11 +284,6 @@ export class CostsPage {
         untracked(() => this.state.go({ period: 'all', from: '', to: '' }));
       }
     });
-  }
-
-  pickPhoneSegment(id: string): void {
-    if (this.state.location().view === 'analysis') this.state.go({ year: id });
-    else this.state.go({ tab: id });
   }
 
   phoneMore(): void {

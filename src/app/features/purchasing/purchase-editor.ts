@@ -33,6 +33,7 @@ import { invoiceDocument, splitTransfer } from './purchase-transfer-split';
 import { BankAccountsStore } from '../../core/api/bank-accounts';
 import { BankingApi, type BankMovementRequest, type BankStatementLine } from '../../core/api/banking-api';
 import { bankMarker, lineMarkers } from '../finance/bank-markers';
+import { clearanceSuggestion } from '../finance/vat-return';
 import { defaultBankAccount, readPayToBank, writePayToBank } from '../finance/pay-to-bank-preference';
 import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
@@ -49,7 +50,7 @@ import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type Suppl
 import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
-  Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
+  Allocation, Category, Clearance, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -180,6 +181,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 {{ data.order.orderDate | dateNl }}
                 @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
                 <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
+                @if (!data.order.clearance) { <span aria-hidden="true"> · </span>inklaring te bevestigen }
               </p>
             </div>
             <span class="po-status"
@@ -445,6 +447,20 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                  customDestinationPort())"
                                (blur)="setCustomDestinationPort($any($event.target).value)" />
                       }
+                    </div>
+                    <!-- Where the import VAT goes in the return (vat-return.ts): a
+                         suggestion follows the port until it is confirmed here. -->
+                    <div class="field">
+                      <label for="po-clearance">Inklaring</label>
+                      <select class="select" id="po-clearance"
+                              [ngModel]="data.order.clearance ?? ''"
+                              (ngModelChange)="patch({ clearance: $event || null })">
+                        <option value="">Nog te bevestigen (voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }})</option>
+                        @for (option of clearanceOptions; track option.value) {
+                          <option [value]="option.value">{{ option.label }}</option>
+                        }
+                      </select>
+                      <span class="hint">Bepaalt de btw-aangifte: 86/55/59 bij inklaring in Nederland, 81 en de invoer-btw bij inklaring in België.</span>
                     </div>
                     <!-- Where the container is unloaded: the stock of every
                          line lands there on Ontvangen. -->
@@ -3307,6 +3323,17 @@ export class PurchaseEditor {
   readonly departurePorts = CHINESE_DEPARTURE_PORTS;
   readonly destinationPorts = DESTINATION_PORTS;
   readonly otherPortValue = OTHER_PORT_VALUE;
+  /** Where the container clears customs, as the VAT return reads it; null stays 'te bevestigen' with the port's suggestion. */
+  readonly clearanceOptions: readonly { value: Clearance; label: string }[] = [
+    { value: 'BE_CUSTOMS', label: 'In België (douane)' },
+    { value: 'NL_FISCAL_REP_TO_BE', label: 'In Nederland via de fiscaal vertegenwoordiger · naar België' },
+    { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'In Nederland · daar verkocht' },
+  ];
+
+  suggestedClearanceLabel(destinationPort: string | null | undefined): string {
+    const suggested = clearanceSuggestion(destinationPort);
+    return this.clearanceOptions.find((option) => option.value === suggested)?.label ?? suggested;
+  }
   readonly customDeparturePort = signal(false);
   readonly customDestinationPort = signal(false);
 

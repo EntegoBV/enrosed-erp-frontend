@@ -7,7 +7,7 @@ import { AttentionItem } from './finance-attention';
 import { dayMonth } from './finance-format';
 import { FINANCE_SECTION, FinanceSectionApi } from './finance-section';
 import { periodRange } from './finance-sections';
-import { FinanceState } from './finance-state';
+import { FinanceState, formatEuro } from './finance-state';
 import { CostLedgerRow } from './cost-ledger';
 
 const ATTENTION_ROWS = 7;
@@ -47,6 +47,11 @@ const ATTENTION_ROWS = 7;
           <span class="fin-tile__label">Uitgegeven deze maand</span>
           <strong class="fin-tile__value">{{ spent().monthEur | eur }}</strong>
           <span class="fin-tile__sub">excl. btw · {{ spent().yearEur | eur }} dit jaar</span>
+        </button>
+        <button class="fin-tile" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
+          <span class="fin-tile__label">Btw dit kwartaal</span>
+          <strong class="fin-tile__value">{{ vatTile().value }}</strong>
+          <span class="fin-tile__sub" [class.is-warn]="vatTile().pending > 0">{{ vatTile().sub }}</span>
         </button>
       </div>
 
@@ -177,8 +182,13 @@ const ATTENTION_ROWS = 7;
         </div>
       </section>
       <div class="ios-group fin-ios-single">
+        <button class="ios-cell" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
+          <span class="ios-cell__body"><span class="ios-cell__title">Btw dit kwartaal</span><span class="ios-cell__sub" [class.fin-warn-text]="vatTile().pending > 0">{{ vatTile().sub }}</span></span>
+          <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ vatTile().value }}</span></span>
+          <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+        </button>
         <button class="ios-cell" type="button" (click)="state.openAnalysis()">
-          <span class="ios-cell__body"><span class="ios-cell__title">Analyse</span><span class="ios-cell__sub">Per categorie, btw per kwartaal</span></span>
+          <span class="ios-cell__body"><span class="ios-cell__title">Analyse</span><span class="ios-cell__sub">Per categorie, per maand, de btw-aangifte</span></span>
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
       </div>
@@ -252,6 +262,17 @@ export class FinanceOverview implements FinanceSectionApi {
   });
   /** Company costs and container payments dated today or earlier, newest first. */
   readonly recent = computed(() => this.state.ledger().filter((row) => row.date <= this.state.today()).slice(0, 6));
+  /** The running quarter's return: what it stands at so far, the filing date and what still waits for a confirmation. */
+  readonly vatTile = computed(() => {
+    const result = this.state.vatReturnCurrent();
+    const favour = result.totals.refundEur > 0;
+    const pending = result.unconfirmedCount + result.unknown.length;
+    return {
+      year: result.year, quarter: result.quarter, pending,
+      value: `${formatEuro(favour ? result.totals.refundEur : result.totals.payableEur)} ${favour ? 'in je voordeel' : 'te betalen'}`,
+      sub: `Q${result.quarter} · indienen vóór ${dayMonth(result.filingDeadline)}${pending ? ` · ${pending} te bevestigen` : ''}`,
+    };
+  });
 
   readonly strip = signal(null).asReadonly();
   readonly status = computed(() => `${this.state.attention().length} ${this.state.attention().length === 1 ? 'punt vraagt' : 'punten vragen'} aandacht`);
