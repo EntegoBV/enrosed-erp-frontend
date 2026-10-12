@@ -57,8 +57,8 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                 } @else if (row.amountEur > 0) {
                   <button class="wk-btn wk-btn--sm fin-link-btn" type="button" tabindex="-1" [disabled]="busy()" (click)="$event.stopPropagation(); openAllocation(row)"><app-icon name="link" [size]="14" />Koppelen</button>
                 } @else if (markerOf(row); as marker) {
-                  <button class="wk-pill fin-marker" [class.tone-teal]="marker.kind === 'kost'" [class.tone-blue]="marker.kind !== 'kost'" type="button" tabindex="-1"
-                          (click)="$event.stopPropagation(); inspectMarker(marker)">{{ marker.kind === 'kost' ? 'Kost' : 'Container' }}</button>
+                  <button class="wk-pill fin-marker" [class.tone-teal]="isCost(marker)" [class.tone-blue]="!isCost(marker)" type="button" tabindex="-1"
+                          (click)="$event.stopPropagation(); inspectMarker(marker)">{{ isCost(marker) ? 'Kost' : 'Container' }}</button>
                 } @else { <span class="wk-amount--muted">—</span> }
               </span>
               <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b></span>
@@ -112,7 +112,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                       <span class="ios-cell__sub">{{ accountName(row.account) }} · {{ clock(row) }}</span>
                       @if (detailsId() === row.id) { <span class="ios-cell__sub fin-wrap">{{ record(row) }}{{ row.reference && row.counterparty ? ' · ' + row.reference : '' }}</span> }</span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</span>
-                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (row.amountEur > 0) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ marker.kind === 'kost' ? 'Kost' : 'Container' }} }</span></span>
+                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (row.amountEur > 0) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span></span>
                   </button>
                 </div>
               </div>
@@ -273,10 +273,25 @@ export class BankMovementPanel {
     return diff === 0 ? 'Vandaag' : diff === 1 ? 'Gisteren' : WEEKDAY.format(new Date(`${day}T12:00:00Z`)).replace(/\./g, '');
   }
 
-  /** The kost/containerbetaling marker a line carries, if any. */
-  markerOf(row: BankStatementLine): { kind: string; id: number } | null { return this.state.lineMarkers().get(row.id)?.[0] ?? null; }
+  /** The payments on costs the server linked to a bank line, by line id: a line noted from the cost itself carries no marker in its reference. */
+  private readonly paymentLines = computed(() => new Map(this.state.costs().flatMap(cost => (cost.payments ?? [])
+    .filter(payment => payment.bankStatementLineId != null && !!payment.id).map(payment => [payment.bankStatementLineId!, payment.id!]))));
+  /** The kost/kostbetaling/containerbetaling marker a line carries, else the payment hard-linked to it. */
+  markerOf(row: BankStatementLine): { kind: string; id: number } | null {
+    const marker = this.state.lineMarkers().get(row.id)?.[0];
+    if (marker) return marker;
+    const paymentId = this.paymentLines().get(row.id);
+    return paymentId ? { kind: 'kostbetaling', id: paymentId } : null;
+  }
+  isCost(marker: { kind: string }): boolean { return marker.kind === 'kost' || marker.kind === 'kostbetaling'; }
   inspectMarker(marker: { kind: string; id: number }): void {
     if (marker.kind === 'kost') { this.state.inspectItem({ kind: 'cost', id: marker.id }); return; }
+    if (marker.kind === 'kostbetaling') {
+      const cost = this.state.costOfPayment(marker.id);
+      if (cost?.id) this.state.inspectItem({ kind: 'cost', id: cost.id });
+      else this.ui.toast('Deze betaling staat niet meer op een kost');
+      return;
+    }
     const orderId = this.state.payments().find(payment => payment.id === marker.id)?.orderId;
     if (orderId) this.state.inspectItem({ kind: 'container', id: orderId });
   }
@@ -299,7 +314,7 @@ export class BankMovementPanel {
     const items = [
       ...(!row.salesPaymentId ? [{ id: 'link', label: 'Aan factuur koppelen…', iconName: 'link' }] : [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }]),
       ...(row.salesOrderId ? [{ id: 'invoice', label: 'Factuur openen', iconName: 'document' }] : []),
-      ...(marker ? [{ id: 'marker', label: marker.kind === 'kost' ? 'Kost bekijken' : 'Container bekijken', iconName: 'eye' }] : []),
+      ...(marker ? [{ id: 'marker', label: this.isCost(marker) ? 'Kost bekijken' : 'Container bekijken', iconName: 'eye' }] : []),
       { id: 'details', label: this.detailsId() === row.id ? 'Details verbergen' : 'Details', iconName: 'info' },
       ...(!row.salesPaymentId ? [{ id: 'withdraw', label: 'Intrekken', iconName: 'trash', danger: true, divider: true }] : []),
     ];

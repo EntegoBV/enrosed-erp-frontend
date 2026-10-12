@@ -1,22 +1,25 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MediaAssetSummary } from '../../core/api/media-models';
-import { Payee, PurchaseOrderView, RecurringCost } from '../../core/api/models';
+import { CompanyCost, Payee, PurchaseOrderView, RecurringCost } from '../../core/api/models';
 import { formatBytes } from '../../shared/format-bytes';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
-import { bankAccountKey } from './bank-reconciliation';
 import { categoryLabel } from './cost-categories';
+import { countryName } from './cost-countries';
 import { paymentPayeeLabel } from './cost-ledger';
+import { CostPaymentsSection } from './cost-payments-section';
 import { PAYEE_TONES, dayMonth, dayMonthYear } from './finance-format';
-import { cashTotalOf, intervalLabel, monthlyEquivalentEur, occurrencesBetween, addDays, vatOf } from './finance-metrics';
-import { FinanceState, InspectTarget } from './finance-state';
+import { REVERSE_CHARGE, acquisitionValueOf, cashTotalOf, expenseOf, intervalLabel, isInvestment, kindOf, monthlyEquivalentEur, occurrencesBetween, addDays, openOf, paidOf, regimeLabel, revisionUntil, vatOf } from './finance-metrics';
+import { FinanceState, InspectTarget, formatEuro } from './finance-state';
 import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { daysBetween } from './payables';
 
 const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' };
+const KIND_LABEL: Readonly<Record<string, string>> = { GOODS: 'Goederen', SERVICES: 'Diensten', INVESTMENT: 'Investering' };
+const DAY = 86_400_000;
 
 /**
  * The detail of one row: a cost, a container, an invoice or a recurring
@@ -29,15 +32,15 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
   selector: 'app-finance-inspector',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
-  imports: [RouterLink, Icon, EurPipe, Skeleton],
+  imports: [RouterLink, Icon, EurPipe, Skeleton, CostPaymentsSection],
   template: `
     @let t = target();
     @if (layout() === 'foot') {
       @switch (t.kind) {
         @case ('cost') {
           @if (cost(); as cost) {
-            @if (cost.paidOn) { <button class="btn" type="button" [disabled]="state.saving()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
-            @else { <button class="btn btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+            @if (open(cost) > 0) { <button class="btn btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+            @else { <button class="btn" type="button" [disabled]="state.saving() || state.busy()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
             <button class="btn" type="button" (click)="state.openCost(cost)">Bewerken</button>
             <button class="ios-circle" type="button" aria-label="Meer" (click)="state.costMenu(cost, null)"><app-icon name="more" [size]="22" /></button>
           }
@@ -67,27 +70,36 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
             <section class="wk-section fin-insp-hero">
               @if (cost.party) { <span class="fin-insp-party">{{ cost.party }}</span> }
               <strong class="fin-insp-amount">{{ incl(cost) | eur }}</strong>
-              @if (cost.paidOn) { <span class="wk-pill tone-ok">Betaald {{ day(cost.paidOn) }}</span> }
+              @if (open(cost) === 0) {
+                @if (overpaid(cost) > 0) { <span class="wk-pill tone-blue">Te veel betaald · {{ overpaid(cost) | eur }}</span> }
+                @else { <span class="wk-pill tone-ok">Betaald {{ day(cost.paidOn) }}</span> }
+              } @else if (partial(cost)) { <span class="wk-pill tone-warn">Deels betaald · nog {{ open(cost) | eur }}</span> }
               @else { <span class="wk-pill tone-warn">Open{{ age(cost.date) > 0 ? ' · ' + age(cost.date) + ' d' : '' }}</span> }
             </section>
             <section class="wk-section">
               <dl class="wk-kv">
-                <div><dt>Datum</dt><dd>{{ dayYear(cost.date) }}</dd></div>
-                <div><dt>Categorie</dt><dd>{{ category(cost.category) }}</dd></div>
-                <div><dt>Excl. btw</dt><dd>{{ cost.amountExclEur | eur }}</dd></div>
-                <div><dt>Btw ({{ cost.vatPct ?? 0 }}%)</dt><dd>{{ vat(cost) | eur }}</dd></div>
-                <div><dt>Incl. btw</dt><dd>{{ incl(cost) | eur }}</dd></div>
+                <div><dt>{{ dateLabel(cost) }}</dt><dd>{{ dayYear(cost.date) }}</dd></div>
+                <div><dt>Categorie</dt><dd>{{ cost.vatRegime === 'IMPORT_VAT_PAID' ? 'Invoer-btw' : category(cost.category) }}</dd></div>
+                @if (cost.vatRegime !== 'IMPORT_VAT_PAID') { <div><dt>Excl. btw</dt><dd>{{ cost.amountExclEur | eur }}</dd></div> }
+                <div><dt>{{ vatLabel(cost) }}</dt><dd>{{ vat(cost) | eur }}</dd></div>
+                <div><dt>{{ totalLabel(cost) }}</dt><dd>{{ incl(cost) | eur }}</dd></div>
+                <div><dt>Btw-regeling</dt><dd>{{ regime(cost) }}
+                  @if (!cost.vatRegime) { <button class="wk-link fin-insp-link" type="button" (click)="state.openCost(cost, [], { regime: true })">Kiezen ›</button> }
+                  @else if (!cost.vatRegimeConfirmed) { <span class="wk-pill wk-pill--outline">te bevestigen</span>
+                    <button class="wk-link fin-insp-link" type="button" [disabled]="state.busy()" (click)="state.confirmRegime([cost])">Klopt</button> }
+                </dd></div>
+                @if (cost.vatRegime !== 'IMPORT_VAT_PAID' && cost.vatRegime !== 'OUT_OF_SCOPE') { <div><dt>Soort</dt><dd>{{ kind(cost) }}</dd></div> }
+                @if (deduction(cost); as text) { <div><dt>Aftrekbaar</dt><dd>{{ text }}</dd></div> }
+                @if (depreciation(cost); as text) { <div><dt>Afschrijving</dt><dd>{{ text }}</dd></div> }
+                @if (fiscal(cost); as amount) { <div><dt>Fiscaal aftrekbaar</dt><dd>{{ amount | eur }}</dd></div> }
                 @if (cost.reference) { <div><dt>Referentie</dt><dd>{{ cost.reference }}</dd></div> }
                 @if (cost.salesChannel) { <div><dt>Kanaal</dt><dd>{{ channel(cost.salesChannel) }}</dd></div> }
-                @if (cost.paidOn) { <div><dt>Betaald op</dt><dd>{{ dayYear(cost.paidOn) }}</dd></div> }
                 @if (recurringOf(cost.recurringCostId); as definition) {
                   <div><dt>Vaste kost</dt><dd><button class="wk-link fin-insp-link" type="button" (click)="state.inspectItem({ kind: 'recurring', id: definition.id! })">{{ definition.name }} ›</button></dd></div>
                 }
-                @if (cost.paidOn) {
-                  <div><dt>Op de bank</dt><dd>@if (bankedOn(cost.id); as account) { Genoteerd op {{ account }} } @else { <span class="wk-amount--warn">Nog niet op de bank</span> }</dd></div>
-                }
               </dl>
             </section>
+            <app-cost-payments-section [cost]="cost" />
             <section class="wk-section" (dragover)="dragOver($event)" (dragleave)="dropping.set(false)" (drop)="drop($event, cost.id!)">
               <h3 class="wk-section__title">Documenten
                 <a class="wk-link fin-insp-link" routerLink="/files" [queryParams]="{ view: 'cost', doel: cost.id }">In Documenten &amp; media ›</a></h3>
@@ -120,8 +132,8 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
             @if (cost.notes) { <section class="wk-section"><h3 class="wk-section__title">Notities</h3><p class="fin-notes">{{ cost.notes }}</p></section> }
             @if (layout() === 'pane') {
               <footer class="wk-inspector__foot">
-                @if (cost.paidOn) { <button class="wk-btn" type="button" [disabled]="state.saving()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
-                @else { <button class="wk-btn wk-btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+                @if (open(cost) > 0) { <button class="wk-btn wk-btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+                @else { <button class="wk-btn" type="button" [disabled]="state.saving() || state.busy()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
                 <button class="wk-btn" type="button" (click)="state.openCost(cost)">Bewerken</button>
                 <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" aria-label="Meer" (click)="state.costMenu(cost, anchor($event))"><app-icon name="more" [size]="16" /></button>
               </footer>
@@ -226,7 +238,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
             <section class="wk-section">
               <h3 class="wk-section__title">Geboekt dit jaar <span>{{ bookedThisYear().length }} · {{ bookedTotal() | eur }}</span></h3>
               @for (cost of bookedThisYear(); track cost.id) {
-                <button class="fin-pay-line fin-pay-line--link" type="button" (click)="state.inspectItem({ kind: 'cost', id: cost.id! })"><span>{{ day(cost.date) }}</span><span>{{ cost.paidOn ? 'betaald' : 'open' }}</span><b>{{ incl(cost) | eur }}</b></button>
+                <button class="fin-pay-line fin-pay-line--link" type="button" (click)="state.inspectItem({ kind: 'cost', id: cost.id! })"><span>{{ day(cost.date) }}</span><span>{{ open(cost) === 0 ? 'betaald' : partial(cost) ? 'deels · nog ' + (open(cost) | eur) : 'open' }}</span><b>{{ incl(cost) | eur }}</b></button>
               }
             </section>
             @if (layout() === 'pane') {
@@ -288,6 +300,52 @@ export class FinanceInspector {
 
   incl(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return cashTotalOf(row); }
   vat(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return vatOf(row); }
+  open(cost: CompanyCost): number { return openOf(cost); }
+  /** Something was paid, but not everything. */
+  partial(cost: CompanyCost): boolean { const open = openOf(cost); return open > 0 && Math.round(open * 100) < Math.round(cashTotalOf(cost) * 100); }
+  overpaid(cost: CompanyCost): number { return Math.max(0, Math.round((paidOf(cost) - cashTotalOf(cost)) * 100)) / 100; }
+  dateLabel(cost: CompanyCost): string {
+    const regime = cost.vatRegime;
+    if (regime === 'IMPORT_VAT_PAID') return 'Datum douanedocument';
+    return !regime || regime === 'OUT_OF_SCOPE' || regime === 'NO_INVOICE' ? 'Datum' : 'Factuurdatum';
+  }
+  vatLabel(cost: CompanyCost): string {
+    const pct = `${cost.vatPct ?? 0}%`;
+    if (cost.vatRegime === 'IMPORT_VAT_PAID') return 'Betaalde invoer-btw';
+    if (cost.vatRegime && REVERSE_CHARGE.has(cost.vatRegime)) return `Btw verlegd (${pct})`;
+    return cost.vatRegime === 'FOREIGN_VAT' ? `Buitenlandse btw (${pct})` : `Btw (${pct})`;
+  }
+  /** What leaves the bank: the invoice total for a Belgian or foreign-VAT invoice, the amount without VAT otherwise. */
+  totalLabel(cost: CompanyCost): string {
+    return !cost.vatRegime || cost.vatRegime === 'BE' || cost.vatRegime === 'FOREIGN_VAT' ? 'Incl. btw' : 'Te betalen';
+  }
+  regime(cost: CompanyCost): string {
+    const country = cost.supplierCountry && cost.supplierCountry !== 'BE' ? ` · ${countryName(cost.supplierCountry, this.state.countryChoices())}` : '';
+    return `${regimeLabel(cost.vatRegime)}${cost.vatRegime ? country : ''}`;
+  }
+  kind(cost: CompanyCost): string { return KIND_LABEL[kindOf(cost)]; }
+  /** 'x % btw · y % fiscaal', only when a share is not fully deductible. */
+  deduction(cost: CompanyCost): string {
+    if (cost.vatRegime === 'IMPORT_VAT_PAID' || cost.vatRegime === 'OUT_OF_SCOPE') return '';
+    const vat = cost.vatDeductiblePct ?? 100;
+    const tax = cost.taxDeductiblePct ?? 100;
+    return vat === 100 && tax === 100 ? '' : `${vat} % btw · ${tax} % fiscaal`;
+  }
+  /** '€ a per jaar · tot dd mmm jjjj · herziening tot dd mmm jjjj' for an investment. */
+  depreciation(cost: CompanyCost): string {
+    if (!isInvestment(cost)) return '';
+    const years = Number.isInteger(cost.depreciationYears) && (cost.depreciationYears as number) >= 1 ? cost.depreciationYears as number : 5;
+    const start = cost.depreciationStart || cost.date;
+    const annuity = Math.round(acquisitionValueOf(cost) * 100 / years) / 100;
+    const [year, month, day] = start.split('-').map(Number);
+    const until = new Date(Date.UTC(year + years, month - 1, day) - DAY).toISOString().slice(0, 10);
+    return `${formatEuro(annuity)} per jaar · tot ${dayMonthYear(until)} · herziening tot ${dayMonthYear(revisionUntil(start))}`;
+  }
+  /** The fiscally deductible share of the expense, only when it is not the whole. */
+  fiscal(cost: CompanyCost): number {
+    const pct = cost.taxDeductiblePct ?? 100;
+    return pct >= 100 ? 0 : Math.round(expenseOf(cost) * pct) / 100;
+  }
   day(date: string | null): string { return dayMonth(date); }
   dayYear(date: string | null): string { return dayMonthYear(date); }
   age(date: string): number { return date <= this.state.today() ? daysBetween(date, this.state.today()) : 0; }
@@ -303,10 +361,6 @@ export class FinanceInspector {
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
   streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0]): string { return reconciliationStatusLabel(stream); }
   recurringOf(id: number | null | undefined) { return id ? this.state.recurring().find((row) => row.id === id) ?? null : null; }
-  bankedOn(costId: number | null): string {
-    const line = costId ? this.state.bankedLines().get(`kost#${costId}`) : null;
-    return line ? this.state.accountLabel(bankAccountKey(line.account)) : '';
-  }
   anchor(event: MouseEvent): { x: number; y: number } {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     return { x: rect.left, y: rect.top - 8 };

@@ -33,6 +33,9 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
         </div>
         <div class="wk-toolbar__tools">
           <button class="wk-btn wk-btn--primary" type="button" [disabled]="state.busy()" (click)="state.openPay(selected())">Betaald zetten…</button>
+          @if (unconfirmed().length) {
+            <button class="wk-btn" type="button" [disabled]="state.busy()" [title]="unconfirmed().length + ' van ' + selected().length + ' met een afgeleide btw-regeling'" (click)="state.confirmRegime(unconfirmed())"><app-icon name="tick" [size]="16" />Btw-regeling bevestigen</button>
+          }
           <button class="wk-btn" type="button" [disabled]="state.busy()" (click)="pickCategory($event)"><app-icon name="tag" [size]="16" />Categorie…</button>
           <button class="wk-btn" type="button" [disabled]="state.busy()" (click)="state.downloadDocuments(selected())"><app-icon name="clip" [size]="16" />Documenten (zip)</button>
           <button class="wk-btn" type="button" (click)="exportSelection()"><app-icon name="download" [size]="16" />Exporteer</button>
@@ -86,7 +89,10 @@ export class FinanceToolbar {
   readonly title = computed(() => financeSection(this.state.location().view).label);
   readonly selected = computed(() => this.section()?.selectedCosts?.() ?? []);
   readonly selecting = computed(() => !!this.section()?.selecting?.() && this.selected().length > 0);
+  /** What leaves the bank for the selection, whatever the regime. */
   readonly selectedIncl = computed(() => Math.round(this.selected().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
+  /** The selected costs whose regime was only derived (the backfill): 'Btw-regeling bevestigen' confirms them in one go. */
+  readonly unconfirmed = computed(() => this.selected().filter((cost) => !!cost.vatRegime && !cost.vatRegimeConfirmed));
 
   /** Counts on Te betalen; a warn dot (and its count) where a sidebar badge points: Vaste kosten due, lines to link. */
   readonly segments = computed<SegmentOption[]>(() => {

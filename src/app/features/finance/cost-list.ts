@@ -87,6 +87,10 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
           <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().period === option.id" (click)="state.go({ period: option.id })">{{ option.label }}</button>
         }
         <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().period === 'custom'" (click)="openRange()">Eigen…</button>
+        @if (unconfirmedChip()) {
+          <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().regime === 'unconfirmed'" (click)="toggleUnconfirmed()">Te bevestigen
+            @if (state.unconfirmedRegimeCount()) { <span class="ios-chip__badge">{{ state.unconfirmedRegimeCount() }}</span> }</button>
+        }
         <button class="ios-chip" type="button" [attr.aria-pressed]="filterCount() > 0" (click)="filtersOpen.set(true)"><app-icon name="filter" [size]="16" />Filter
           @if (filterCount()) { <span class="ios-chip__badge">{{ filterCount() }}</span> }</button>
       </div>
@@ -144,7 +148,7 @@ export class CostList implements FinanceSectionApi {
     const range = this.state.rangeOf(location);
     return filterCostLedger(this.state.ledger(), {
       from: range.from || null, to: range.to || null, query: location.q, category: location.cat,
-      status: location.status || 'all', source: 'company', docs: location.docs || null, documentedIds: this.state.documentedIds(),
+      status: location.status || 'all', source: 'company', docs: location.docs || null, documentedIds: this.state.documentedIds(), regime: location.regime,
     }, this.state.categoryName, this.state.channelName).filter((row) => !location.channel || (row.cost?.salesChannel ?? '').toUpperCase() === location.channel);
   });
   readonly costs = computed(() => this.rows().map((row) => row.cost!));
@@ -164,8 +168,10 @@ export class CostList implements FinanceSectionApi {
   readonly keys = computed(() => this.sorted().map((row) => row.key));
   readonly filterCount = computed(() => {
     const location = this.state.location();
-    return Number(!!location.cat) + Number(!!location.status) + Number(!!location.channel) + Number(!!location.docs);
+    return Number(!!location.cat) + Number(!!location.status) + Number(!!location.channel) + Number(!!location.docs) + Number(!!location.regime);
   });
+  /** The 'Te bevestigen' chip on a phone: while derived regimes are left this year, or while that filter is on. */
+  readonly unconfirmedChip = computed(() => this.state.unconfirmedRegimeCount() > 0 || this.state.location().regime === 'unconfirmed');
   readonly phonePeriods = computed<{ id: FinancePeriod; label: string }[]>(() => [
     { id: 'month', label: 'Deze maand' }, { id: 'quarter', label: 'Kwartaal' }, { id: 'year', label: 'Dit jaar' },
     { id: 'lastYear', label: String(Number(this.state.today().slice(0, 4)) - 1) }, { id: 'all', label: 'Alles' },
@@ -248,7 +254,13 @@ export class CostList implements FinanceSectionApi {
   }
 
   reset(): void {
-    this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', cost: null });
+    this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', regime: '', cost: null });
+  }
+
+  /** The derived and unknown regimes of this year, where 'Klopt' or an edit confirms them. */
+  toggleUnconfirmed(): void {
+    const on = this.state.location().regime === 'unconfirmed';
+    this.state.go(on ? { regime: '' } : { regime: 'unconfirmed', period: 'year', from: '', to: '' });
   }
 
   periodMenu(event: MouseEvent): void {

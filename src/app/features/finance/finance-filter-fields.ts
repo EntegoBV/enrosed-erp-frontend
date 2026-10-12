@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { categoryChoices } from './cost-categories';
+import { VAT_REGIMES } from './finance-metrics';
 import { FinanceState } from './finance-state';
 import { FinancePurpose, NO_ACCOUNT } from './finance-url';
 
@@ -32,6 +33,12 @@ import { FinancePurpose, NO_ACCOUNT } from './finance-url';
           <option value="">Alle kanalen</option>
           @for (channel of channels(); track channel.code) { <option [value]="channel.code" [selected]="channel.code === location.channel">{{ channel.label }}{{ channel.hint === 'Beurs' ? ' (beurs)' : '' }}</option> }
         </select></label>
+      <label class="fin-field"><span>Btw-regeling</span>
+        <select class="select" [value]="location.regime" (change)="state.go({ regime: $any($event.target).value })">
+          <option value="">Alle regelingen</option>
+          @for (regime of regimes; track regime.code) { <option [value]="regime.code" [selected]="regime.code === location.regime">{{ regime.label }}</option> }
+          <option value="unconfirmed" [selected]="location.regime === 'unconfirmed'">Nog te bevestigen</option>
+        </select></label>
       <label class="fin-field fin-field--switch"><span>Zonder document<small>Alleen kosten zonder factuur of bon; vaste kosten tellen niet mee</small></span>
         <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="location.docs === 'missing'" (change)="state.go({ docs: $any($event.target).checked ? 'missing' : '' })" /></label>
       <button [class]="state.desk() ? 'wk-link fin-reset' : 'fin-row-action'" type="button" (click)="reset()">Standaard herstellen</button>
@@ -62,6 +69,8 @@ export class FinanceFilterFields {
   readonly channels = computed(() => this.state.channelChoices());
   readonly noAccount = NO_ACCOUNT;
   readonly categories = computed(() => categoryChoices(this.state.costs().map((cost) => cost.category)));
+  /** The nine regimes; 'Nog te bevestigen' (the derived and unknown ones) sits after them. */
+  readonly regimes = VAT_REGIMES;
   readonly statusOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'open', label: 'Open' }, { id: 'paid', label: 'Betaald' }];
   readonly directionOptions: SegmentOption[] = [{ id: '', label: 'Alle' }, { id: 'in', label: 'Ontvangst' }, { id: 'out', label: 'Terugbetaling' }, { id: 'offset', label: 'Verrekend' }];
   readonly purposes: { id: FinancePurpose; label: string }[] = [
@@ -70,6 +79,6 @@ export class FinanceFilterFields {
 
   /** Back to the list as it opens: this year, no search, no filters. */
   reset(): void {
-    this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', cost: null });
+    this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', regime: '', cost: null });
   }
 }
