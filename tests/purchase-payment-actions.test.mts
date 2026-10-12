@@ -269,14 +269,14 @@ test('moving a payment sends the new payee without term or settlement', async ()
   assert.equal(confirms.length, 1, 'Never over unsaved order edits');
 });
 
-test('receiving with a final payment stores the supplier total including it, then refreshes', async () => {
+test('receiving opens the shared final-payment sheet and counts only already confirmed payments', async () => {
   const { editor, calls } = setup();
   editor.receiving.set({ lines: [{ productId: 1, name: 'Roos', sku: 'R1', ordered: 10, received: 10, damaged: 0, unitValueEur: 1, note: '' }],
     bookStock: true, finalPayment: true, note: '' });
   await editor.confirmReceive();
-  assert.deepEqual(calls.map(call => call.type), ['POST', 'LOAD', 'RECEIVE', 'REFRESH']);
-  assert.deepEqual({ ...calls[0].body, paidOn: 'today' }, { paidOn: 'today', amount: 700, currency: 'EUR', label: 'Slotbetaling', payee: 'SUPPLIER', settles: true });
-  assert.equal(calls[2].body.paidTotalEur, 1000);
+  assert.deepEqual(calls.map(call => call.type), ['RECEIVE', 'REFRESH', 'OPEN']);
+  assert.deepEqual(calls[2].args, [700, 'Slotbetaling', 'SUPPLIER']);
+  assert.equal(calls[0].body.paidTotalEur, 300, 'the suggested final payment is not yet recorded');
   assert.equal(editor.statusCelebration(), 'RECEIVED');
   const plain = setup();
   plain.editor.receiving.set({ lines: [], bookStock: false, finalPayment: false, note: '' });

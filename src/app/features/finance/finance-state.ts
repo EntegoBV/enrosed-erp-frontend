@@ -893,12 +893,15 @@ export class FinanceState {
    * date and the line together; otherwise the toast offers the movement
    * form. The form closes once the line is in, so a failed line is seen.
    */
-  async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null } = {}): Promise<CompanyCost | null> {
+  async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null; bankTransaction?: BankStatementLine | null } = {}): Promise<CompanyCost | null> {
     if (this.saving()) return null;
+    if (options.bankTransaction && Math.round(Math.abs(options.bankTransaction.amountEur) * 100) !== Math.round(cashTotalOf(draft) * 100)) {
+      this.ui.toast('Het totaal inclusief btw moet gelijk zijn aan de gekozen banktransactie. Gebruik Betaling noteren voor een deelbetaling.', 'err'); return null;
+    }
     this.saving.set(true);
     const before = draft.id ? this.costs().find((row) => row.id === draft.id) : null;
     try {
-      const body: CompanyCost = { ...draft, party: draft.party || null, reference: draft.reference || null, notes: draft.notes || null,
+      const body: CompanyCost = { ...draft, ...(options.bankTransaction ? { paidOn: null } : {}), party: draft.party || null, reference: draft.reference || null, notes: draft.notes || null,
         amountInclEur: Number.isFinite(draft.amountInclEur as number) && (draft.amountInclEur as number) > 0 ? draft.amountInclEur : null };
       const saved = draft.id ? await this.finance.updateCost(draft.id, body) : await this.finance.createCost(body);
       this.costs.update((rows) => (draft.id ? rows.map((row) => (row.id === saved.id ? saved : row)) : [saved, ...rows]));
@@ -908,7 +911,20 @@ export class FinanceState {
       this.duplicating = false;
       const accountKey = options.bankAccountKey ?? '';
       const toBank = newlyPaid && !!accountKey && this.accountOptions().some((option) => option.key === bankAccountKey(accountKey));
-      if (!toBank) {
+      if (options.bankTransaction && saved.id) {
+        this.bankCostLinkPending.set({ costId: saved.id, line: options.bankTransaction });
+        this.bankCostLinkError.set('');
+        try {
+          const line = await this.banking.addCostPayment(options.bankTransaction.id, saved.id);
+          this.bankStatements.update(rows => [line, ...rows.filter(row => row.id !== line.id)]);
+          this.bankCostLinkPending.set(null);
+          void this.refreshBank(); void this.refreshCosts();
+          this.ui.toast('Kost bewaard en banktransactie gekoppeld', 'ok');
+        } catch (failure) {
+          this.bankCostLinkError.set(`Kost bewaard. De bankbetaling kon nog niet worden bevestigd: ${messageOf(failure, 'Probeer opnieuw.')} Opnieuw proberen maakt geen extra betaling.`);
+          this.paySheet.set({ costs: [saved] });
+        }
+      } else if (!toBank) {
         this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
       } else {
         const account = this.accountLabel(accountKey);
@@ -1029,7 +1045,7 @@ export class FinanceState {
 
   /* --------------------------------------------------------------- pay */
 
-  readonly paySheet = signal<{ costs: CompanyCost[] } | null>(null);
+  readonly paySheet = signal<{ costs: CompanyCost[]; existingPayment?: CostPayment } | null>(null);
 
   openPay(costs: readonly CompanyCost[]): void {
     const open = costs.filter((cost) => !!cost.id && openOf(cost) > 0);
@@ -1037,7 +1053,18 @@ export class FinanceState {
       this.ui.toast(costs.length === 1 ? 'Deze kost is al betaald' : 'Deze kosten zijn al betaald');
       return;
     }
+    this.bankCostLinkError.set('');
     this.paySheet.set({ costs: open });
+  }
+
+  openBankCostPayment(cost: CompanyCost, payment: CostPayment): void {
+    this.bankCostLinkError.set('');
+    this.paySheet.set({ costs: [cost], existingPayment: payment });
+  }
+
+  deferBankCostLink(): void {
+    this.bankCostLinkPending.set(null); this.bankCostLinkError.set(''); this.paySheet.set(null);
+    this.ui.toast('Je kunt de banktransactie later koppelen. Controleer de betalingen op deze kost voordat je handmatig een betaling toevoegt.');
   }
 
   /** The remembered "Ook als bankbeweging noteren" choice of this device, shared with the container payment sheet. */
@@ -1049,11 +1076,9 @@ export class FinanceState {
     writePayToBank(globalThis.localStorage, preference);
   }
 
-  /** The full swipe on a phone: paid today, onto the bank when this device said so before. */
+  /** A phone swipe opens the same payment sheet, including existing bank transactions. */
   swipePay(cost: CompanyCost): void {
-    const preference = this.payToBank();
-    const known = this.accountOptions().some((option) => option.key === preference.accountKey);
-    void this.markPaid([cost], { paidOn: this.today(), bankAccount: preference.on && known ? preference.accountKey : null });
+    if (!this.busy() && !this.saving()) this.openPay([cost]);
   }
 
   /**
@@ -1190,6 +1215,39 @@ export class FinanceState {
     }
   }
 
+  /** Keep the saved payment id until its selected bank line is linked; retries never create another payment. */
+  readonly bankCostLinkPending = signal<{ costId: number; paymentId?: number; line: BankStatementLine } | null>(null);
+  readonly bankCostLinkError = signal('');
+
+  async addPaymentFromBank(cost: CompanyCost, line: BankStatementLine, existingPayment: CostPayment | null = null): Promise<boolean> {
+    if (!cost.id || this.saving() || line.amountEur >= 0) return false;
+    if (existingPayment && Math.round(existingPayment.amountEur * 100) !== Math.round(Math.abs(line.amountEur) * 100)) {
+      this.bankCostLinkError.set('Het bedrag van de transactie moet gelijk zijn aan de bestaande betaling.'); return false;
+    }
+    const pending = this.bankCostLinkPending();
+    if (pending && (pending.costId !== cost.id || pending.line.id !== line.id)) {
+      this.bankCostLinkError.set('Rond eerst de openstaande bankkoppeling af of kies Koppeling later.'); return false;
+    }
+    this.saving.set(true); this.bankCostLinkError.set('');
+    try {
+      const paymentId = pending?.paymentId ?? existingPayment?.id;
+      this.bankCostLinkPending.set({ costId: cost.id, ...(paymentId ? { paymentId } : {}), line });
+      const linked = paymentId
+        ? await this.banking.linkPayments(line.id, { costPaymentId: paymentId })
+        : await this.banking.addCostPayment(line.id, cost.id);
+      this.bankStatements.update(rows => [linked, ...rows.filter(row => row.id !== linked.id)]);
+      this.bankCostLinkPending.set(null);
+      void this.refreshCosts(); void this.refreshBank();
+      this.ui.toast('Betaling bewaard en banktransactie gekoppeld', 'ok');
+      return true;
+    } catch (failure) {
+      this.bankCostLinkError.set(this.bankCostLinkPending()
+        ? `De bankbetaling kon nog niet worden bevestigd: ${messageOf(failure, 'Probeer opnieuw.')} Opnieuw proberen maakt geen extra betaling.`
+        : messageOf(failure, 'Betaling bewaren mislukt.'));
+      return false;
+    } finally { this.saving.set(false); }
+  }
+
   /** Takes one payment off a cost; a bank line it was on stays (the bank's truth), only the link goes. */
   async deletePayment(cost: CompanyCost, payment: CostPayment): Promise<boolean> {
     if (!cost.id || !payment.id || this.saving()) return false;
@@ -1233,7 +1291,7 @@ export class FinanceState {
         } else skipped = true;
         if (entry.line) {
           const line = this.bankStatements().find((row) => row.id === entry.line!.id);
-          if (line && line.salesPaymentId === null) {
+          if (line && line.salesPaymentId === null && line.source !== 'ODOO') {
             try {
               await this.banking.delete(line.id);
               this.bankStatements.update((rows) => rows.filter((row) => row.id !== line.id));

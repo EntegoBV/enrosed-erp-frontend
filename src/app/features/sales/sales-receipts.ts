@@ -3,6 +3,9 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import type { IncomingPaymentRow, SalesOrderView, SalesPayment } from '../../core/api/models';
+import { BankingApi, type BankStatementLine } from '../../core/api/banking-api';
+import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
+import { SalesPeppolPanel } from './sales-peppol-panel';
 import { SalesApi } from '../../core/api/sales-api';
 import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
@@ -22,7 +25,7 @@ import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-cre
 @Component({
   selector: 'app-sales-receipts',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, DateField, EurPipe, Sheet],
+  imports: [FormsModule, RouterLink, DateField, EurPipe, Sheet, BankTransactionPicker, SalesPeppolPanel],
   template: `
     @if (credit()) {
       <section class="receipts receipts--credit" aria-label="Tegoed en afhandeling">
@@ -90,11 +93,24 @@ import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-cre
         @if (containerId(); as id) { <a class="receipts__link" [routerLink]="['/purchasing', id]">Container, voorschotten &amp; slotafrekening ›</a> }
       </section>
     }
+    @if ((credit() || view().order.docType === 'FACTUUR') && view().order.status !== 'CONCEPT' && !dead()) {
+      <app-sales-peppol-panel [orderId]="view().order.id" [dirty]="dirty()" />
+    }
     @if (draft(); as draft) {
       <app-sheet [title]="draft.direction === 'REFUND' ? (draft.id ? 'Terugbetaling corrigeren' : 'Terugbetaling registreren') : (draft.id ? 'Ontvangst corrigeren' : 'Ontvangst registreren')" (closed)="close()">
         <div body>
           <p class="receipts__hint">{{ view().order.number }} · noteer de werkelijk uitgevoerde bankbeweging. Een registratie voert zelf geen bankbetaling uit.</p>
           @if (summary()?.legacyPaidMarker) { <p class="receipts__warning">Een nieuwe ontvangst telt bovenop de historische betaling. Gebruik Corrigeren bij de bestaande ontvangst om het oorspronkelijke bedrag of tijdstip recht te zetten.</p> }
+          <app-bank-transaction-picker [direction]="draft.direction === 'REFUND' ? 'OUTGOING' : 'INCOMING'" [amount]="draft.amount" [selected]="selectedBank()" [disabled]="busy()" (selectedChange)="chooseBank($event)" />
+          @if (selectedBank()) {
+            @if (!draft.id && existingBankPayments().length) {
+              <label class="field"><span>Betaling op deze factuur</span><select class="select" [ngModel]="bankPaymentId()" (ngModelChange)="bankPaymentId.set($event)">
+                @for (payment of existingBankPayments(); track payment.id) { <option [ngValue]="payment.id">Bestaande betaling · {{ stamp(payment.receivedAt, payment.timeZone) }} · {{ payment.amountEur | eur }}</option> }
+                <option [ngValue]="null">Nieuwe betaling registreren</option>
+              </select></label>
+              @if (bankPaymentId() === null) { <label class="receipts__hint"><input type="checkbox" [checked]="bankNewConfirmed()" (change)="bankNewConfirmed.set($any($event.target).checked)" /> Dit is een andere betaling dan de bestaande ontvangsten.</label> }
+            }
+          } @else {
           <div class="form-grid">
             <label class="field"><span>{{ draft.direction === 'REFUND' ? 'Terugbetaald bedrag (EUR)' : 'Ontvangen bedrag (EUR)' }}</span><input class="input" type="number" min="0.01" step="0.01" inputmode="decimal" [ngModel]="draft.amount" (ngModelChange)="patch({ amount: +$event })" /></label>
             <div class="field"><label>Bankdatum</label><app-date-field [value]="draft.day" (valueChange)="patch({ day: $event })" /></div>
@@ -115,9 +131,10 @@ import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-cre
             </div>
             <label class="field span-2"><span>Referentie / mededeling</span><input class="input" maxlength="500" placeholder="Mededeling op het bankafschrift" [ngModel]="draft.reference" (ngModelChange)="patch({ reference: $event })" /></label>
           </div>
+          }
           @if (error()) { <p class="receipts__error" role="alert">{{ error() }}</p> }
         </div>
-        <div foot style="display:contents">@if (draft.id) { <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove(draft.id)">Verwijderen</button> }<span class="spacer"></span><button class="btn" type="button" [disabled]="busy()" (click)="close()">Annuleren</button><button class="btn btn--primary" type="button" [disabled]="busy() || !accountReady()" (click)="save()">{{ busy() ? 'Bewaren…' : 'Bankbeweging bewaren' }}</button></div>
+        <div foot style="display:contents">@if (draft.id) { <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="remove(draft.id)">Verwijderen</button> }<span class="spacer"></span><button class="btn" type="button" [disabled]="busy()" (click)="close()">Annuleren</button><button class="btn btn--primary" type="button" [disabled]="busy() || (selectedBank() ? (!draft.id && existingBankPayments().length > 0 && bankPaymentId() === null && !bankNewConfirmed()) : !accountReady())" (click)="save()">{{ busy() ? 'Bewaren…' : selectedBank() ? 'Banktransactie koppelen' : 'Bankbeweging bewaren' }}</button></div>
       </app-sheet>
     }
   `,
@@ -136,6 +153,13 @@ export class SalesReceipts implements OnDestroy {
   /** A credit note asks its host to open the offset sheet: the invoice to preselect, or null for the list. */
   readonly applyRequested = output<number | null>();
   readonly draft = signal<ReceiptDraft | null>(null);
+  readonly selectedBank = signal<BankStatementLine | null>(null);
+  readonly bankPaymentId = signal<number | null>(null);
+  readonly bankNewConfirmed = signal(false);
+  readonly existingBankPayments = computed(() => {
+    const bank = this.selectedBank();
+    return bank ? (this.summary()?.payments ?? []).filter(payment => !isOffsetPayment(payment) && Math.round(payment.amountEur * 100) === Math.round(bank.amountEur * 100)) : [];
+  });
   readonly error = signal('');
   readonly busy = signal(false);
   readonly configuredAccount = signal<ReceiptBankAccount | null>(null);
@@ -179,6 +203,7 @@ export class SalesReceipts implements OnDestroy {
     return ({ UNPAID: 'Nog te ontvangen', PARTIAL: 'Deels ontvangen', PAID: this.summary()?.invoiceTotalEur && this.summary()!.invoiceTotalEur < 0 ? 'Volledig afgehandeld' : 'Volledig ontvangen', OVERPAID: 'Te veel ontvangen', CREDIT: 'Credit' })[this.summary()?.status ?? 'UNPAID'];
   });
   private readonly sales = inject(SalesApi);
+  private readonly banking = inject(BankingApi);
   private readonly ui = inject(Ui);
 
   constructor() {
@@ -223,6 +248,7 @@ export class SalesReceipts implements OnDestroy {
   }
   abs(value: number): number { return Math.abs(value); }
   private beginDraft(draft: ReceiptDraft): void {
+    this.selectedBank.set(null); this.bankPaymentId.set(null); this.bankNewConfirmed.set(false);
     this.draftVersion++; this.draftOrderId = this.view().order.id; this.accountTouched = false;
     this.originalAccount.set(draft.id ? draft.bankAccount ?? '' : null);
     this.configuredAccount.set(null); this.accountLoading.set(false); this.accountError.set('');
@@ -230,6 +256,7 @@ export class SalesReceipts implements OnDestroy {
     void this.loadBankAccount();
   }
   private clearDraft(): void {
+    this.selectedBank.set(null); this.bankPaymentId.set(null); this.bankNewConfirmed.set(false);
     this.draftVersion++; this.accountRequestVersion++; this.draftOrderId = null;
     this.draft.set(null); this.accountLoading.set(false);
   }
@@ -293,9 +320,32 @@ export class SalesReceipts implements OnDestroy {
     } catch (failure: unknown) { this.ui.toast(messageOf(failure, creditNote ? 'Creditnota uitreiken mislukt' : 'Factuur uitreiken mislukt'), 'err'); }
     finally { this.busy.set(false); }
   }
+  chooseBank(row: BankStatementLine | null): void {
+    if (this.busy()) return;
+    this.selectedBank.set(row); this.bankNewConfirmed.set(false); this.error.set('');
+    this.bankPaymentId.set(this.draft()?.id ?? this.existingBankPayments()[0]?.id ?? null);
+  }
+  async saveBankTransaction(row: BankStatementLine, draft: ReceiptDraft): Promise<void> {
+    if (!draft.id && this.existingBankPayments().length && this.bankPaymentId() === null && !this.bankNewConfirmed()) return;
+    const orderId = this.view().order.id;
+    this.busy.set(true);
+    let linked = false;
+    try {
+      await this.banking.allocate(row.id, orderId, draft.id ?? this.bankPaymentId());
+      linked = true; this.clearDraft();
+      const updated = await this.sales.order(orderId);
+      if (!this.destroyed && this.view().order.id === orderId) this.changed.emit(updated);
+      this.ui.toast('Banktransactie gekoppeld', 'ok');
+    } catch (failure) {
+      if (linked) this.ui.toast('Banktransactie gekoppeld. Vernieuw de factuur om de betaling te zien.', 'err');
+      else this.error.set(messageOf(failure, 'Banktransactie koppelen mislukt. Er is geen extra ontvangst geregistreerd.'));
+    } finally { this.busy.set(false); }
+  }
   async save(): Promise<void> {
     const draft = this.draft();
     if (!draft || this.busy() || this.dirty() || this.draftOrderId !== this.view().order.id) return;
+    const bank = this.selectedBank();
+    if (bank) { await this.saveBankTransaction(bank, draft); return; }
     let body;
     try { body = { ...receiptRequest(draft), bankAccount: receiptAccountValue(draft.bankAccount, this.configuredAccount(), this.originalAccount()) }; } catch (failure: unknown) { this.error.set((failure as Error).message); return; }
     this.busy.set(true);

@@ -3,6 +3,7 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { bankAccountKey } from './bank-reconciliation';
 import { BankMovementPanel } from './bank-movement-panel';
+import { OdooConnectionPanel } from './odoo-connection-panel';
 import { bankMarker } from './bank-markers';
 import { paymentPayeeLabel } from './cost-ledger';
 import { dayMonth } from './finance-format';
@@ -23,8 +24,9 @@ type AccountView = FinanceState['accountsView'] extends () => (infer T)[] ? T : 
   selector: 'app-bank-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => BankPanel) }],
-  imports: [Icon, EurPipe, BankMovementPanel],
+  imports: [Icon, EurPipe, BankMovementPanel, OdooConnectionPanel],
   template: `
+    <app-odoo-connection-panel />
     @if (state.location().tab === 'movements') {
       <app-bank-movement-panel />
     } @else if (state.desk()) {

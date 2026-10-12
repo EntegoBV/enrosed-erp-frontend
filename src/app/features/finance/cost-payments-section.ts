@@ -97,12 +97,14 @@ export class CostPaymentsSection {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const anchor = this.state.desk() ? { x: rect.left, y: rect.bottom + 6 } : null;
     const items = [
-      ...(!row.banked ? [{ id: 'bank', label: 'Op de bank noteren', iconName: 'bank' }] : []),
+      ...(!row.banked && row.payment ? [{ id: 'link', label: 'Banktransactie koppelen', iconName: 'link' }] : []),
+      ...(!row.banked ? [{ id: 'bank', label: 'Handmatige bankbeweging noteren', iconName: 'bank' }] : []),
       ...(row.payment ? [{ id: 'delete', label: 'Verwijderen', iconName: 'trash', danger: true, divider: !row.banked }] : []),
     ];
     if (!items.length) return;
     this.state.openMenu({ title: `${this.day(row.paidOn)} · ${formatEuro(row.amountEur)}`, items, anchor, cancelLabel: anchor ? '' : 'Annuleren', pick: (id) => {
-      if (id === 'bank') this.state.openMovement(this.state.costMovement(cost, row.payment));
+      if (id === 'link' && row.payment) this.state.openBankCostPayment(cost, row.payment);
+      else if (id === 'bank') this.state.openMovement(this.state.costMovement(cost, row.payment));
       else if (id === 'delete' && row.payment) void this.state.deletePayment(cost, row.payment);
     } });
   }

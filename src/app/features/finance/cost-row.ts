@@ -13,8 +13,8 @@ import { daysBetween } from './payables';
 /**
  * One company cost, in two shapes. On a desk a table row (Te betalen or
  * Uitgaven columns) that selects on click, opens its menu on right-click and
- * takes a dropped file. On a phone an inset row: leading swipe pays what is
- * still open (a full swipe pays today), trailing swipe deletes or opens the
+ * takes a dropped file. On a phone an inset row: leading swipe opens the payment sheet
+ * with the amount still open, trailing swipe deletes or opens the
  * menu, long press opens the same menu, a tap opens the detail sheet. A cost
  * paid in several transfers (the KBC invoice) reads 'Deels · nog € x' until
  * the last one.
@@ -77,12 +77,11 @@ import { daysBetween } from './payables';
         }
       </div>
     } @else {
-      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() > 0 ? 2 : 0" [swipeEnd]="2" swipeFull="start"
+      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() > 0 ? 1 : 0" [swipeEnd]="2" swipeFull="start"
            (swipeCommit)="$event === 'start' && state.swipePay(row)">
         @if (open() > 0) {
           <div class="ios-swipe__actions ios-swipe__actions--start">
-            <button class="ios-swipe__btn tone-ok" type="button" (click)="state.swipePay(row); sw.close()"><app-icon name="tick" [size]="20" />Betaald</button>
-            <button class="ios-swipe__btn tone-blue" type="button" (click)="state.openPay([row]); sw.close()"><app-icon name="calendar" [size]="20" />Datum…</button>
+            <button class="ios-swipe__btn tone-ok" type="button" (click)="state.swipePay(row); sw.close()"><app-icon name="tick" [size]="20" />Betaald…</button>
           </div>
         }
         <div class="ios-swipe__actions ios-swipe__actions--end">

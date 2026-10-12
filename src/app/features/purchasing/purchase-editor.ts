@@ -111,7 +111,7 @@ interface ReceiveDraft {
     note: string;
   }[];
   bookStock: boolean;
-  /** Note the open balance as a final payment while receiving. */
+  /** Open the shared final-payment sheet after receiving; payment is confirmed separately. */
   finalPayment: boolean;
   note: string;
   /** The day the container came in (ISO); today unless the buyer corrects it. */
@@ -1632,7 +1632,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               @if (remainingEur() > 0.005) {
                 <label class="receive-balance__final">
                   <input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" />
-                  <span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> aan de leverancier noteren en de leverancier afrekenen</span>
+                  <span>Na ontvangst de slotbetaling van <b>{{ remainingEur() | eur }}</b> controleren en een banktransactie kiezen</span>
                 </label>
               }
               <span class="hint">Douane, transport en inspectie noteer je apart bij Betalingen.</span>
@@ -2092,14 +2092,14 @@ export class PurchaseEditor {
     }
   }
 
-  /** A new foreign amount also clears the bank's euro amount: it belonged to the old figure. */
+  /** A selected bank transaction keeps its actual debit when foreign goods amounts change. */
   setPaymentAmount(raw: string | number | null): void {
     if (this.payingBusy()) return;
     this.paying.update(pay => {
-      if (!pay) return pay;
+      if (!pay || pay.bankLinkPending || (pay.bankTransaction && pay.currency === 'EUR')) return pay;
       const amount = parsePurchasePaymentAmount(raw);
       const changed = amount !== pay.amount;
-      return { ...pay, amountInput: raw == null ? '' : String(raw), amount, ...(changed ? { amountEurInput: '', amountEur: null } : {}) };
+      return { ...pay, amountInput: raw == null ? '' : String(raw), amount, ...(pay.bankTransaction ? { amountEurInput: String(Math.abs(pay.bankTransaction.amountEur)).replace('.', ','), amountEur: Math.abs(pay.bankTransaction.amountEur) } : changed ? { amountEurInput: '', amountEur: null } : {}) };
     });
   }
 
@@ -2114,9 +2114,16 @@ export class PurchaseEditor {
     if (this.payingBusy()) return;
     const input = raw == null ? '' : String(raw);
     const amount = parsePurchasePaymentAmount(raw);
-    this.paying.update(pay => pay ? (part === 'freight'
-      ? { ...pay, freightAmountInput: input, freightAmount: amount }
-      : { ...pay, separateAmountInput: input, separateAmount: amount }) : pay);
+    this.paying.update(pay => {
+      if (!pay || pay.bankLinkPending) return pay;
+      const changed = part === 'freight' ? { ...pay, freightAmountInput: input, freightAmount: amount }
+        : { ...pay, separateAmountInput: input, separateAmount: amount };
+      if (pay.bankTransaction && pay.currency === 'EUR') {
+        const goods = Math.round((Math.abs(pay.bankTransaction.amountEur) - (changed.freightAmount ?? 0) - (changed.separateAmount ?? 0)) * 100) / 100;
+        return { ...changed, amount: goods > 0 ? goods : null, amountInput: goods > 0 ? String(goods).replace('.', ',') : '' };
+      }
+      return changed;
+    });
   }
 
   /** The transfer as the ledger will store it: the goods and the extra streams, and what leaves the bank in euro. */
@@ -2415,9 +2422,12 @@ export class PurchaseEditor {
     const invoices = pay.invoiceFiles ?? [];
     if (pay.files.length + invoices.length > this.proofSlots(pay.id)) { this.ui.toast('Er passen maximaal vijf bestanden bij één betaling. Verwijder eerst bestanden uit de selectie.', 'err'); return; }
     /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; a payment already on the bank gets no second line. */
-    const bankOffered = typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay);
+    const bankOffered = !pay.bankTransaction && typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay);
     const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
     if (bankOffered && pay.toBank && (!account || pay.paidOn > this.bankToday())) return;
+    if (pay.bankTransaction && Math.round(this.paymentTransferEur() * 100) !== Math.round(Math.abs(pay.bankTransaction.amountEur) * 100)) {
+      this.ui.toast('Het totaal van de betaling moet gelijk zijn aan de gekozen banktransactie.', 'err'); return;
+    }
     this.payingBusy.set(true);
     let paymentSaved = false;
     try {
@@ -2426,15 +2436,26 @@ export class PurchaseEditor {
       const frozen = pay.planned;
       const [goods, ...fresh] = splitTransfer({ ...pay, amount: pay.amount, ...(frozen ? { amountEur: null, freightAmount: null, separateAmount: null } : {}) },
         (amount, currency) => this.eurOf(amount, currency)).writes;
-      const saved = pay.id
-        ? await this.sourcing.updatePayment(data.order.id, pay.id, goods)
-        : await this.sourcing.addPayment(data.order.id, goods);
+      let atomicLine: BankStatementLine | null = null;
+      let atomicIds: number[] | null = null;
+      let saved: PurchasePayment;
+      if (pay.bankTransaction && !pay.id) {
+        const result = await this.banking.addPurchasePayment(pay.bankTransaction.id, data.order.id, [goods, ...fresh]);
+        saved = result.payments[0];
+        atomicLine = result.line;
+        atomicIds = result.payments.map(payment => payment.id);
+      } else {
+        const retained = (pay.bankLinkPending || pay.bankLinkComplete) ? pay.bankSavedPayment ?? (this.payments() ?? []).find(payment => payment.id === pay.id) : null;
+        saved = retained ?? (pay.id ? await this.sourcing.updatePayment(data.order.id, pay.id, goods) : await this.sourcing.addPayment(data.order.id, goods));
+      }
       paymentSaved = true;
       if (this.view()?.order.id !== data.order.id) return;
       const planned = frozen ? { ...frozen, goodsEur: saved.amountEur } : fresh.length ? { goodsEur: saved.amountEur, parts: fresh } : undefined;
-      this.paying.update(current => current === pay ? { ...current, id: saved.id, ...(planned ? { planned } : {}) } : current);
-      // The extra streams of the transfer, one by one; a saved part leaves the draft, so a retry never posts it twice.
-      const ids = [saved.id, ...(pay.partIds ?? [])];
+      this.paying.update(current => current === pay ? { ...current, id: saved.id, ...(planned ? { planned } : {}),
+        ...(atomicIds ? { partIds: atomicIds.slice(1), bankLinkPending: true, bankLinkComplete: true, bankSavedPayment: saved, freightAmount: null, freightAmountInput: '', separateAmount: null, separateAmountInput: '' } : {}) } : current);
+      if (atomicLine) this.bankLines.update(lines => [atomicLine!, ...(lines ?? []).filter(line => line.id !== atomicLine!.id)]);
+      // The extra streams of a manual transfer, one by one; a saved part leaves the draft so retry never posts it twice.
+      const ids = atomicIds ?? [saved.id, ...(pay.partIds ?? [])];
       for (const part of planned?.parts.slice(ids.length - 1) ?? []) {
         const freight = part.instalmentDue === 'FREIGHT';
         let extra: PurchasePayment;
@@ -2463,7 +2484,18 @@ export class PurchaseEditor {
       }
       // The bank line comes last, with every payment of the transfer in it: a failed line never leaves an orphan.
       let bank: 'none' | 'noted' | 'failed' = 'none';
-      if (account) {
+      if (pay.bankTransaction) {
+        this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkPending: true, bankSavedPayment: saved, bankLinkError: '' } : current);
+        try {
+          const line = atomicLine ?? (pay.bankLinkComplete ? this.bankLines()?.find(line => line.id === pay.bankTransaction!.id) : null) ?? await this.banking.linkPayments(pay.bankTransaction.id, { purchasePaymentIds: ids });
+          this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkComplete: true } : current);
+          this.bankLines.update(lines => [line, ...(lines ?? []).filter(existing => existing.id !== line.id)]);
+          bank = 'noted';
+        } catch (failure) {
+          bank = 'failed';
+          this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkError: `Betaling bewaard. Alleen de bankkoppeling is nog niet gelukt: ${messageOf(failure, 'Probeer de koppeling opnieuw.')} Opnieuw proberen maakt geen extra betaling.` } : current);
+        }
+      } else if (account) {
         try {
           const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, this.paymentTransferEur(), account.label));
           this.bankLines.update(lines => [line, ...(lines ?? [])]);
@@ -2476,7 +2508,7 @@ export class PurchaseEditor {
       // A failed line keeps the sheet open with every id of the transfer, so one more 'bewaren' sends the line again.
       if (bank !== 'failed') this.paying.set(null);
       const filed = [...(pay.files.length ? ['bewijs'] : []), ...(invoices.length ? ['factuur'] : [])];
-      this.ui.toast(bank === 'noted' ? `Betaling genoteerd · ook op ${account!.label}` : bank === 'failed' ? 'Betaling genoteerd, maar de bankbeweging is niet bewaard.'
+      this.ui.toast(bank === 'noted' ? (pay.bankTransaction ? 'Betaling bewaard en banktransactie gekoppeld' : `Betaling genoteerd · ook op ${account!.label}`) : bank === 'failed' ? (pay.bankTransaction ? 'Betaling bewaard, banktransactie nog niet gekoppeld.' : 'Betaling genoteerd, maar de bankbeweging is niet bewaard.')
         : pay.id ? 'Betaling aangepast' : filed.length === 2 ? 'Betaling, bewijs en factuur bewaard' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',
         bank === 'failed' ? 'err' : 'ok');
     } catch (failure: unknown) {
@@ -3152,9 +3184,9 @@ export class PurchaseEditor {
   async confirmFirstInstalment(): Promise<void> {
     const first = this.firstInstalmentPrompt();
     if (!first || first.amount === null || !((first.amount ?? 0) > 0) || this.payingBusy() || this.paying()) return;
-    this.paying.set({ ...first, payee: 'SUPPLIER', settles: false, instalmentDue: first.due ?? null });
+    this.paying.set({ ...first, payee: 'SUPPLIER', settles: false, instalmentDue: first.due ?? null,
+      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '', invoiceFiles: [] });
     this.firstInstalmentPrompt.set(null);
-    await this.confirmPayment();
   }
 
   setFirstPaymentAmount(raw: string | number | null): void {
@@ -3273,16 +3305,10 @@ export class PurchaseEditor {
         productId: line.productId, received: line.received, damaged: line.damaged,
         unitValueEur: line.unitValueEur,
         issueNote: line.received !== line.ordered || line.damaged > 0 ? (line.note.trim() || null) : null }));
-      // Supplier-only, taken before any write; the reconciliation read later would miss the final payment.
-      let supplierPaidCents = Math.round(this.paidTotalEur() * 100);
-      if (draft.finalPayment && this.remainingEur() > 0.005) {
-        const amount = Math.round(this.remainingEur() * 100) / 100;
-        await this.sourcing.addPayment(data.order.id, {
-          paidOn: new Date().toISOString().slice(0, 10), amount,
-          currency: 'EUR', label: 'Slotbetaling', payee: 'SUPPLIER', settles: true });
-        supplierPaidCents += Math.round(amount * 100);
-        await this.loadPayments(data.order.id);
-      }
+      // Receive using only confirmed payments. The optional final payment opens the
+      // shared payment sheet afterwards, where the actual bank row can be selected.
+      const supplierPaidCents = Math.round(this.paidTotalEur() * 100);
+      const finalPaymentAmount = draft.finalPayment && this.remainingEur() > 0.005 ? Math.round(this.remainingEur() * 100) / 100 : null;
       const result = await this.sourcing.receivePurchaseOrder(data.order.id, {
         lines, bookStock: draft.bookStock, paidTotalEur: (supplierPaidCents / 100) || null,
         receivedOn: draft.receivedOn || null, note: draft.note || null,
@@ -3292,8 +3318,12 @@ export class PurchaseEditor {
       this.savedOrder.set(JSON.stringify(result.order));
       this.receiving.set(null);
       this.statusCelebration.set('RECEIVED');
-      void this.refreshPaymentState(result.order.id);
+      const refreshed = await this.refreshPaymentState(result.order.id);
       this.products.set(await this.catalog.products(result.order.supplierId));
+      if (finalPaymentAmount && refreshed && this.view()?.order.id === result.order.id) {
+        this.openPayment(finalPaymentAmount, 'Slotbetaling', 'SUPPLIER');
+        this.paying.update(payment => payment ? { ...payment, settles: true } : payment);
+      }
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ontvangen mislukt'), 'err');
     } finally {

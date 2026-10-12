@@ -18,7 +18,7 @@ export interface FirstInstalmentDraft {
 
 /**
  * Just ordered: the first instalment falls due now. Asked once, with room for
- * the bank statement; the editor records it through the normal payment save.
+ * the bank statement; continue to the shared payment sheet to choose a bank transaction.
  */
 @Component({
   selector: 'app-purchase-first-instalment-sheet',
@@ -30,7 +30,7 @@ export interface FirstInstalmentDraft {
       <div body class="first-sheet">
         <p>De bestelling staat vast. Volgens het betaalplan is nu <b>{{ first.label }}</b> aan de beurt:
           <b>{{ first.amount | eur }}</b> aan {{ supplierName() }}.</p>
-        <p class="hint">Al betaald? Noteer het hier, eventueel met het bankafschrift (max. 5 bestanden). Nog niet? Dan blijft de termijn open staan bij Betalingen.</p>
+        <p class="hint">Al betaald? Controleer hieronder het bedrag. In de volgende stap kun je een banktransactie kiezen of de betaling handmatig noteren. Nog niet betaald? Dan blijft de termijn open staan.</p>
         <div class="form-grid">
           <div class="field">
             <label for="first-amount">Betaald bedrag</label>
@@ -54,7 +54,7 @@ export interface FirstInstalmentDraft {
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="dismiss.emit()">Later noteren</button>
         <button class="btn btn--primary" type="button" [disabled]="busy() || !((first.amount ?? 0) > 0)" (click)="confirm.emit()">
-          {{ busy() ? 'Bezig…' : 'Betaling noteren' }}
+          {{ busy() ? 'Bezig…' : 'Verder naar betaling' }}
         </button>
       </div>
     </app-sheet>

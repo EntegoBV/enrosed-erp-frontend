@@ -1,7 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import type { BankStatementLine } from '../../core/api/banking-api';
+import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
+import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { BankAccountsStore } from '../../core/api/bank-accounts';
-import type { Currency, Payee, PurchaseCreditOffset, PurchasePaymentWrite } from '../../core/api/models';
+import type { Currency, Payee, PurchaseCreditOffset, PurchasePayment, PurchasePaymentWrite } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
@@ -44,6 +47,11 @@ export interface PurchasePaymentDraft {
   /** 'Ook als bankbeweging noteren' and the chosen account key; '' lets the remembered or the only account stand in. */
   toBank?: boolean;
   bankAccount?: string;
+  bankTransaction?: BankStatementLine | null;
+  bankLinkPending?: boolean;
+  bankLinkComplete?: boolean;
+  bankSavedPayment?: PurchasePayment;
+  bankLinkError?: string;
   /** 'Factuur': the supplier's or forwarder's invoice, filed with the goods payment. */
   invoiceFiles?: File[];
 }
@@ -57,12 +65,12 @@ let nextSheetId = 0;
 @Component({
   selector: 'app-purchase-payment-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, Segmented, DateField, PaymentProofPicker, PurchasePaymentScope, Icon, EurPipe],
+  imports: [FormsModule, Sheet, Segmented, DateField, PaymentProofPicker, PurchasePaymentScope, Icon, EurPipe, BankTransactionPicker],
   template: `
     @let pay = draft();
     <app-sheet [title]="pay.id ? 'Betaling aanpassen' : 'Betaling noteren'" variant="ios" [wide]="true" (closed)="cancel.emit()">
       <div body class="pay-sheet" [attr.inert]="busy() ? '' : null">
-        <div class="pay-sheet__who">
+        <div class="pay-sheet__who" [attr.inert]="pay.bankLinkPending ? '' : null">
           <span class="pay-sheet__label">Aan wie?</span>
           <app-segmented label="Aan wie?" [variant]="desk() ? 'desk' : 'ios'" [options]="payeeOptions()"
                          [value]="pay.payee" (changed)="payeeChange.emit($any($event))" />
@@ -74,20 +82,24 @@ let nextSheetId = 0;
         @if (!pay.id && pay.payee === 'SUPPLIER' && chips().length) {
           <div class="pay-sheet__chips" role="group" aria-label="Snel invullen">
             @for (chip of chips(); track chip.label) {
-              <button class="pay-sheet__chip" type="button" [disabled]="busy() || loading()"
+              <button class="pay-sheet__chip" type="button" [disabled]="busy() || loading() || !!pay.bankLinkPending || !!pay.bankTransaction"
                       (click)="patch.emit({ amount: chip.amount, amountInput: ('' + chip.amount).replace('.', ','), currency: 'EUR', label: chip.label, instalmentDue: chip.due ?? null, settles: false })">
                 {{ chip.label }}<small>{{ chip.amount | eur }}</small>
               </button>
             }
           </div>
         }
-        <div class="form-grid pay-sheet__grid">
+        @if (!bankLinked() && !creditOffset()) {
+          <app-bank-transaction-picker direction="OUTGOING" [amount]="transferEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />
+        }
+        @if (pay.bankLinkError) { <p class="pay-sheet__note pay-sheet__note--warn" role="alert">{{ pay.bankLinkError }}</p> }
+        <div class="form-grid pay-sheet__grid" [attr.inert]="pay.bankLinkPending ? '' : null">
           <div class="field pay-sheet__amount">
             <label [for]="ids + '-amount'">Bedrag</label>
             <div class="input-affix">
-              <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset()"
+              <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || (!!pay.bankTransaction && pay.currency === 'EUR')"
                      [ngModel]="pay.amountInput" (ngModelChange)="amountInput.emit($event)" />
-              <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy() || !!creditOffset()" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
+              <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy() || !!creditOffset() || !!pay.bankTransaction" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
                 <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
               </select>
             </div>
@@ -103,13 +115,15 @@ let nextSheetId = 0;
           </div>
           <div class="field">
             <label [for]="ids + '-date'">Betaald op</label>
-            <app-date-field [fieldId]="ids + '-date'" [value]="pay.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
+            @if (pay.bankTransaction) { <span class="input">{{ pay.paidOn }}</span> } @else {
+              <app-date-field [fieldId]="ids + '-date'" [value]="pay.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
+            }
           </div>
           @if (pay.currency !== 'EUR') {
             <div class="field span-2 pay-sheet__bank">
               <label [for]="ids + '-eur'">Afgeschreven in euro <span class="opt"></span></label>
               <div class="input-affix">
-                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || frozen()"
+                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || frozen() || !!pay.bankTransaction"
                        [placeholder]="rateEur() > 0 ? rateText() : ''" [ngModel]="pay.amountEurInput ?? ''" (ngModelChange)="amountEurInput.emit($event)" />
                 <span class="input-affix__suffix">EUR</span>
               </div>
@@ -151,29 +165,31 @@ let nextSheetId = 0;
           <div class="field span-2">
             <label [for]="ids + '-label'">Omschrijving <span class="opt"></span></label>
             <input class="input" [id]="ids + '-label'" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
-                   [disabled]="busy()" [ngModel]="pay.label" (ngModelChange)="patch.emit({ label: $event })" />
+                   [disabled]="busy() || !!pay.bankLinkPending" [ngModel]="pay.label" (ngModelChange)="patch.emit({ label: $event })" />
           </div>
         </div>
         @if (pay.payee !== 'OTHER') {
           <details class="pay-sheet__scope" [open]="scopeOpen()" (toggle)="scopeOpen.set($any($event.target).open)">
             <summary><span>Termijn en afrekenen</span><small>{{ scopeSummary() }}</small><app-icon name="chevron-right" [size]="16" /></summary>
             <app-purchase-payment-scope [payee]="pay.payee" [instalmentDue]="pay.instalmentDue ?? null" [settles]="pay.settles"
-                                        [options]="instalmentOptions()" [groupLabel]="groupLabel()" [busy]="busy() || loading()"
+                                        [options]="instalmentOptions()" [groupLabel]="groupLabel()" [busy]="busy() || loading() || !!pay.bankLinkPending"
                                         (changed)="patch.emit($event)" />
           </details>
         }
-        @if (bankLinked()) {
+        @if (pay.bankTransaction) {
+          <p class="pay-sheet__note">De bestaande banktransactie wordt gekoppeld. Er komt geen extra bankbeweging bij.</p>
+        } @else if (bankLinked()) {
           <p class="pay-sheet__note pay-sheet__linked" role="note"><app-icon name="bank" [size]="14" /> Staat op de bank</p>
         } @else {
           <div class="pay-sheet__tobank">
             <label class="pay-sheet__switch"><span>Ook als bankbeweging noteren<small>Eén uitgaande beweging voor deze overschrijving, met een verwijzing naar de betaling</small></span>
-              <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.toBank" [disabled]="busy()"
+              <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.toBank" [disabled]="busy() || !!pay.bankLinkPending"
                      (change)="patch.emit({ toBank: $any($event.target).checked })" /></label>
             @if (pay.toBank) {
               @if (accounts().length) {
                 <div class="pay-sheet__accounts" role="group" aria-label="Rekening">
                   @for (option of accounts(); track option.key) {
-                    <button class="pay-sheet__chip pay-sheet__account" type="button" [attr.aria-pressed]="bankAccount() === option.key" [disabled]="busy()"
+                    <button class="pay-sheet__chip pay-sheet__account" type="button" [attr.aria-pressed]="bankAccount() === option.key" [disabled]="busy() || !!pay.bankLinkPending"
                             (click)="patch.emit({ bankAccount: option.key })">{{ option.label }}</button>
                   }
                 </div>
@@ -188,18 +204,18 @@ let nextSheetId = 0;
             }
           </div>
         }
-        <app-payment-proof-picker title="Bewijs (bankafschrift)" [files]="pay.files" [maxFiles]="proofSlots() - invoiceFiles().length" [disabled]="busy()"
+        <app-payment-proof-picker title="Bewijs (bankafschrift)" [files]="pay.files" [maxFiles]="proofSlots() - invoiceFiles().length" [disabled]="busy() || !!pay.bankLinkPending"
                                   (filesChange)="patch.emit({ files: $event })" />
-        <app-payment-proof-picker title="Factuur" [files]="invoiceFiles()" [maxFiles]="proofSlots() - pay.files.length" [disabled]="busy()"
+        <app-payment-proof-picker title="Factuur" [files]="invoiceFiles()" [maxFiles]="proofSlots() - pay.files.length" [disabled]="busy() || !!pay.bankLinkPending"
                                   (filesChange)="patch.emit({ invoiceFiles: $event })" />
         @if (pay.id; as id) {
-          <button class="pay-sheet__delete" type="button" [disabled]="busy()" (click)="remove.emit(id)">Verwijderen</button>
+          <button class="pay-sheet__delete" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="remove.emit(id)">Verwijderen</button>
         }
       </div>
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="cancel.emit()">Annuleren</button>
         <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length + invoiceFiles().length > proofSlots() || !pay.paidOn || partsInvalid() || bankBlocked()"
-                (click)="confirm.emit()">{{ busy() ? 'Bezig…' : (pay.id ? 'Wijziging bewaren' : 'Betaling bewaren') }}</button>
+                (click)="confirm.emit()">{{ busy() ? 'Bezig…' : pay.bankLinkPending ? 'Koppeling opnieuw proberen' : (pay.id ? 'Wijziging bewaren' : 'Betaling bewaren') }}</button>
       </div>
     </app-sheet>
   `,
@@ -307,9 +323,20 @@ export class PurchasePaymentSheet {
   readonly accountLabel = computed(() => this.accounts().find(option => option.key === this.bankAccount())?.label ?? '');
   readonly future = computed(() => this.draft().paidOn > this.today());
   /** The switch is on but the line could not be written: a day the bank has not reached, or no account once the readings are in. */
-  readonly bankBlocked = computed(() => !!this.draft().toBank && !this.bankLinked() && (this.future() || (!this.bankAccount() && !this.accountsLoading())));
+  readonly bankBlocked = computed(() => !this.draft().bankTransaction && !!this.draft().toBank && !this.bankLinked() && (this.future() || (!this.bankAccount() && !this.accountsLoading())));
   readonly invoiceFiles = computed(() => this.draft().invoiceFiles ?? []);
 
+  chooseBank(row: BankStatementLine | null): void {
+    const pay = this.draft();
+    if (this.busy() || pay.bankLinkPending) return;
+    if (!row) { this.patch.emit({ bankTransaction: null, bankLinkError: '' }); return; }
+    const total = Math.abs(row.amountEur);
+    const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0);
+    const goods = Math.round((total - parts) * 100) / 100;
+    this.patch.emit({ bankTransaction: row, toBank: false, bankAccount: row.account, paidOn: bankTransactionDay(row), bankLinkError: '',
+      ...(pay.currency === 'EUR' ? { amount: goods, amountInput: String(goods).replace('.', ',') }
+        : { amountEur: total, amountEurInput: String(total).replace('.', ',') }) });
+  }
   constructor() {
     void this.bankAccounts.load();
   }

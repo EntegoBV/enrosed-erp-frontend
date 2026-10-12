@@ -16,7 +16,7 @@ const account = companyReceiptAccount(profile)!;
 const source = await readFile(new URL('../src/app/features/sales/sales-receipts.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('sales-receipts.ts', source, ts.ScriptTarget.Latest, true);
 const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesReceipts'); assert.ok(cls);
-const names = ['configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy',
+const names = ['selectedBank', 'bankPaymentId', 'bankNewConfirmed', 'existingBankPayments', 'chooseBank', 'saveBankTransaction', 'configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy',
   'summary', 'credit', 'settlement', 'dead', 'settled', 'original', 'originalOpenEur', 'applyMaxEur', 'canSettle', 'canRecord', 'canRefund', 'statusLabel', 'originalVersion', 'loadOriginal', 'offset', 'abs', 'withdraw'];
 const members = cls.members.filter(m => m.name && names.includes(m.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
@@ -165,7 +165,8 @@ test('template provides labelled select, loading/error/retry, wrapped mobile acc
   assert.match(template, /label for="receipt-bank-account"/); assert.match(template, /select[^>]*id="receipt-bank-account"/);
   assert.match(template, /Opnieuw laden/); assert.match(template, /receipts__account-selected/);
   assert.doesNotMatch(template, /<input[^>]*draft.bankAccount/);
-  assert.match(template, /disabled\]="busy\(\) \|\| !accountReady\(\)"/);
+  assert.match(template, /disabled\]="busy\(\) \|\| \(selectedBank\(\) \?/);
+  assert.match(template, /: !accountReady\(\)\)"/);
 });
 
 test('a credit note offers no receipt, splits offsets from refunds, and issues without opening a receipt draft', async () => {
@@ -193,4 +194,43 @@ test('a credit note offers no receipt, splits offsets from refunds, and issues w
   assert.equal(emitted.length, 1); assert.equal(component.draft(), null, 'issuing a credit note opens no receipt draft');
   component.view.set({ ...view, paymentSummary: { ...view.paymentSummary, creditEur: 0, refundableEur: 0, status: 'PAID' } });
   assert.equal(component.settled(), true); assert.equal(component.statusLabel(), 'Afgehandeld'); assert.equal(component.canSettle(), false);
+});
+
+test('an imported bank receipt reuses a same signed amount with historical account label', async () => {
+  const { component, calls } = harness(async () => { throw { status: 503 }; });
+  component.view.set({ ...component.view(), paymentSummary: { ...component.summary(), payments: [payment('KBC'), { ...payment('other'), id: 8, amountEur: -333.33 }] } });
+  component.banking = { allocate: async (...args: any[]) => { calls.push({ method: 'allocate', args }); } };
+  component.sales.order = async () => component.view();
+  component.add(); await tick();
+  assert.equal(component.accountReady(), false);
+  component.chooseBank({ id: 44, amountEur: 333.33, account: 'BE123456', source: 'ODOO' });
+  assert.equal(component.existingBankPayments().length, 1);
+  assert.equal(component.bankPaymentId(), 7);
+  await component.save();
+  assert.deepEqual(calls.find(c => c.method === 'allocate').args, [44, 65, 7]);
+  assert.equal(calls.some(c => /payment$/.test(c.method)), false, 'allocate alone performs the atomic receipt link');
+  assert.equal(component.draft(), null);
+});
+
+test('a new receipt with the same amount as an existing one requires explicit confirmation', async () => {
+  const { component, calls } = harness();
+  component.view.set({ ...component.view(), paymentSummary: { ...component.summary(), payments: [payment('KBC')] } });
+  component.banking = { allocate: async (...args: any[]) => { calls.push({ method: 'allocate', args }); } };
+  component.sales.order = async () => component.view();
+  component.add(); await tick(); component.chooseBank({ id: 44, amountEur: 333.33, account: 'BE123456' });
+  component.bankPaymentId.set(null); await component.save();
+  assert.equal(calls.some(c => c.method === 'allocate'), false);
+  component.bankNewConfirmed.set(true); await component.save();
+  assert.deepEqual(calls.find(c => c.method === 'allocate').args, [44, 65, null]);
+});
+
+test('a successful bank link is never submitted twice when the subsequent invoice refresh fails', async () => {
+  const { component, calls } = harness();
+  component.banking = { allocate: async () => { calls.push({ method: 'allocate' }); } };
+  component.sales.order = async () => { throw new Error('Refresh failed'); };
+  component.add(); await tick(); component.chooseBank({ id: 44, amountEur: 333.33, account: 'BE123456' });
+  await component.save(); await component.save();
+  assert.equal(calls.filter(c => c.method === 'allocate').length, 1);
+  assert.equal(component.draft(), null);
+  assert.equal(component.busy(), false);
 });

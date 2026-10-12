@@ -314,3 +314,66 @@ test('a late agreement response does not overwrite a newly opened container', as
   wait.resolve({ order: order() }); await saving;
   assert.equal(editor.view().order.id, 51); assert.equal(JSON.parse(editor.savedOrder()).id, 51);
 });
+
+test('a new imported transfer uses one atomic call and a lost response retries the same immutable split', async () => {
+  const { editor, writes, lines } = setup(); const requests: any[] = []; let fails = true;
+  editor.banking.addPurchasePayment = async (id: number, orderId: number, payments: any[]) => {
+    requests.push(clone({ id, orderId, payments }));
+    if (fails) throw new Error('Bank temporarily unavailable');
+    return { line: { id, amountEur: -1234.56, account: 'BE123456', source: 'ODOO', allocated: true }, payments: payments.map((body, i) => ({ ...payment(), ...body, id: 81 + i })) };
+  };
+  editor.paying.set({ ...splitDraft(), toBank: false, bankTransaction: { id: 44, amountEur: -1234.56, account: 'BE123456', source: 'ODOO' } });
+  await editor.confirmPayment(); assert.equal(editor.paying().id, null);
+  fails = false; await editor.confirmPayment();
+  assert.equal(requests.length, 2); assert.deepEqual(requests[0], requests[1]);
+  assert.equal(requests[0].payments.length, 3); assert.equal(requests[0].payments.reduce((sum: number, row: any) => sum + row.amountEur, 0), 1234.56);
+  assert.equal(writes.length, 0, 'the separate payment API is never called');
+  assert.equal(lines.length, 0); assert.equal(editor.paying(), null);
+});
+
+test('an atomic imported transfer followed by a failed proof upload retries only the missing proof', async () => {
+  const { editor, api, writes, uploads } = setup(); let creates = 0;
+  const proof = new File(['proof'], 'proof.pdf');
+  editor.banking.addPurchasePayment = async (id: number, _orderId: number, payments: any[]) => {
+    creates++;
+    return { line: { id, amountEur: -1234.56, source: 'ODOO' }, payments: payments.map((body, i) => ({ ...payment(), ...body, id: 81 + i })) };
+  };
+  let fails = true; api.addDocument = async () => { if (fails) throw new Error('Upload failed'); return { id: 99, originalFilename: 'proof.pdf', paymentId: 81 }; };
+  editor.paying.set({ ...splitDraft(), files: [proof], bankTransaction: { id: 44, amountEur: -1234.56, source: 'ODOO' } });
+  await editor.confirmPayment(); assert.equal(editor.paying().bankLinkComplete, true); assert.deepEqual(Array.from(editor.paying().partIds), [82, 83]);
+  fails = false; await editor.confirmPayment();
+  assert.equal(creates, 1); assert.equal(writes.length, 0); assert.deepEqual(uploads, ['proof.pdf', 'proof.pdf']); assert.equal(editor.paying(), null);
+});
+
+test('an imported transfer with a different total cannot save payments before linking', async () => {
+  const { editor, writes, lines, toasts } = setup();
+  editor.paying.set({ ...splitDraft(), bankTransaction: { id: 44, amountEur: -999, account: 'BE123456' } });
+  await editor.confirmPayment();
+  assert.equal(writes.length, 0); assert.equal(lines.length, 0);
+  assert.match(toasts.at(-1)[0], /gelijk/);
+});
+
+test('a selected bank debit remains fixed while foreign goods or EUR freight shares are edited', () => {
+  const { editor } = setup();
+  const bankTransaction = { id: 44, amountEur: -1234.56, account: 'BE123456' };
+  editor.paying.set({ ...splitDraft(), bankTransaction });
+  editor.setPaymentAmount('1500');
+  assert.equal(editor.paying().amountEur, 1234.56); assert.equal(editor.paymentTransferEur(), 1234.56);
+  editor.paying.set({ ...splitDraft(), bankTransaction, currency: 'EUR', amount: 1234.56, amountEur: null, freightAmount: null, separateAmount: null });
+  editor.setPaymentPart('freight', '200');
+  assert.equal(editor.paying().amount, 1034.56); assert.equal(editor.paymentTransferEur(), 1234.56);
+  editor.setPaymentPart('separate', '100');
+  assert.equal(editor.paying().amount, 934.56); assert.equal(editor.paymentTransferEur(), 1234.56);
+  editor.setPaymentPart('freight', '1200'); assert.equal(editor.paying().amount, null, 'parts greater than the debit need correction');
+});
+
+
+test('the first-instalment shortcut opens the bank-enabled payment sheet without writing immediately', async () => {
+  const { editor, writes } = setup();
+  const file = new File(['proof'], 'proof.pdf');
+  editor.firstInstalmentPrompt.set({ label: 'Voorschot', amount: 250, amountInput: '250', currency: 'USD', paidOn: '2026-10-01', due: 'ORDERED', files: [file] });
+  await editor.confirmFirstInstalment();
+  assert.equal(writes.length, 0); assert.equal(editor.firstInstalmentPrompt(), null);
+  assert.equal(editor.paying().amount, 250); assert.equal(editor.paying().currency, 'USD'); assert.equal(editor.paying().instalmentDue, 'ORDERED');
+  assert.equal(editor.paying().files[0], file); assert.equal(typeof editor.paying().toBank, 'boolean');
+});

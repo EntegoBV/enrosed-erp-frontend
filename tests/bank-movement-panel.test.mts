@@ -189,7 +189,7 @@ test('manual invoice selection finds an existing receipt outside the eight retur
   assert.equal(panel.canAllocate(), true);
 });
 
-test('existing receipt fallback respects direction, account and prior bank links', async () => {
+test('existing receipt fallback accepts historical account labels but respects direction and prior links', async () => {
   const { panel, state } = harness();
   state.salesOrders.set([invoice(1)]);
   state.incomingPayments.set([
@@ -199,7 +199,7 @@ test('existing receipt fallback respects direction, account and prior bank links
   state.bankStatements.set([{ ...movement(2), salesPaymentId: 5 }]);
   await panel.openAllocation(movement());
   panel.chooseInvoice(1);
-  assert.deepEqual(Array.from(panel.manualMatches(), match => match.existingPaymentId), [4, 1]);
+  assert.deepEqual(Array.from(panel.manualMatches(), match => match.existingPaymentId), [4, 3, 1]);
 });
 
 test('a late suggestion response cannot overwrite a subsequently opened bank movement', async () => {
@@ -334,6 +334,58 @@ test('"Te koppelen" shows only money in that is not linked to an invoice', () =>
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id), [1]);
   panel.linkFilter.set('UNLINKED');
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [1, 3]);
+});
+
+test('an Odoo transaction cannot be withdrawn directly or with the Delete shortcut', () => {
+  const { panel, state, confirms } = harness();
+  const row: BankStatementLine = { ...movement(91, -125), source: 'ODOO', sourceId: 'odoo:91' };
+  state.bankStatements.set([row]);
+  panel.focusId.set(row.id);
+  assert.equal(panel.canRemove(row), false);
+  panel.remove(row);
+  assert.equal(panel.handle('delete'), false);
+  assert.equal(confirms.length, 0, 'No destructive confirmation is offered for imported bank facts');
+  assert.equal(state.bankStatements().length, 1);
+});
+
+test('Odoo dates never display the synthetic midnight as an actual bank booking time', () => {
+  const { panel } = harness();
+  const row: BankStatementLine = { ...movement(91, -125), source: 'ODOO', bookedAt: '2026-09-07T22:00:00Z' };
+  assert.equal(panel.movementStamp(row), '08/09/2026');
+  assert.equal(panel.clock(row), 'Tijdstip niet beschikbaar');
+  assert.match(panel.record(row), /boekingsdatum, zonder tijdstip/);
+  assert.equal(panel.movementStamp(movement()), panel.stamp(movement().bookedAt, movement().timeZone));
+});
+
+test('a movement allocated to a cost stays linked in filters and cannot receive a second allocation', async () => {
+  const { panel, state, confirms } = harness();
+  const linked: BankStatementLine = { ...movement(92, -125), allocated: true, allocationLabel: 'Bedrijfskost' };
+  state.bankStatements.set([linked, movement(93, -20)]);
+  panel.linkFilter.set('UNLINKED');
+  assert.deepEqual(Array.from(panel.filteredLines(), row => row.id), [93]);
+  panel.linkFilter.set('LINKED');
+  assert.deepEqual(Array.from(panel.filteredLines(), row => row.id), [92]);
+  await panel.openAllocation(linked);
+  assert.equal(panel.selected(), null);
+  panel.remove(linked);
+  assert.equal(confirms.length, 0);
+});
+
+test('unlinking an outgoing cost payment preserves the bank movement and uses the payment-link endpoint', async () => {
+  const { panel, state, api, loads, confirms } = harness();
+  const linked: BankStatementLine = { ...movement(94, -125), source: 'ODOO', allocated: true, allocationLabel: 'Bedrijfskost' };
+  state.bankStatements.set([linked]);
+  const unlinked: number[] = [];
+  const refreshed: string[][] = [];
+  (api as unknown as { unlinkPayments(id: number): Promise<void> }).unlinkPayments = async id => { unlinked.push(id); };
+  (state as unknown as { reload(sources: string[]): Promise<void> }).reload = async sources => { refreshed.push(sources); };
+  panel.unlink(linked);
+  await new Promise(done => setTimeout(done, 0));
+  assert.deepEqual(unlinked, [94]);
+  assert.equal(state.bankStatements().length, 1);
+  assert.equal(loads.refreshBank, 1);
+  assert.deepEqual(refreshed.map(sources => Array.from(sources)), [['costs', 'payments']]);
+  assert.match(confirms[0].message, /betaling op je uitgave blijft bewaard/);
 });
 
 test('a credit note with an open tegoed is offered for an outgoing line only, and a verrekening row never matches', async () => {

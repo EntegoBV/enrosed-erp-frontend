@@ -1131,7 +1131,7 @@ type DeskRow =
               <small>Leverancier: {{ paidTotalEur() | eur }} betaald van {{ supplierOwed() | eur }} · {{ remainingEur() | eur }} open</small>
               @for (open of receiveOpenPayees(); track open.label) { <small>{{ open.label }}: {{ open.openEur | eur }} open</small> }
               @if (remainingEur() > 0.005) {
-                <label class="receive-balance__final"><input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" /><span>Slotbetaling van <b>{{ remainingEur() | eur }}</b> aan de leverancier noteren en de leverancier afrekenen</span></label>
+                <label class="receive-balance__final"><input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" /><span>Na ontvangst de slotbetaling van <b>{{ remainingEur() | eur }}</b> controleren en een banktransactie kiezen</span></label>
               }
               <span class="hint">Douane, transport en inspectie noteer je apart bij Betalingen.</span>
             </div>

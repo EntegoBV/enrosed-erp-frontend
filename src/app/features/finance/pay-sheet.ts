@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import type { BankStatementLine } from '../../core/api/banking-api';
+import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
 import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
@@ -19,10 +21,21 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
 @Component({
   selector: 'app-pay-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, DateField, EurPipe, Segmented],
+  imports: [Sheet, DateField, EurPipe, Segmented, BankTransactionPicker],
   template: `
-    <app-sheet variant="ios" [title]="costs().length === 1 ? 'Betaald zetten' : costs().length + ' kosten betaald zetten'" (closed)="state.paySheet.set(null)">
+    <app-sheet variant="ios" [title]="existingPayment() ? 'Betaling aan bank koppelen' : costs().length === 1 ? 'Betaald zetten' : costs().length + ' kosten betaald zetten'" (closed)="state.paySheet.set(null)">
       <div body class="fin-sheet">
+        @if (!single()) { <p class="fin-hint">Bestaande banktransacties koppel je per kost. Open daarvoor de betaling bij die kost.</p> }
+        @if (single()) {
+          @if (existingPayment(); as payment) { <p class="fin-sheet__lead">{{ single()!.description }} · {{ payment.amountEur | eur }} betaald op {{ payment.paidOn }}</p> }
+          <app-bank-transaction-picker direction="OUTGOING" [amount]="existingPayment()?.amountEur ?? amount()" [selected]="selectedBank()" [disabled]="state.saving() || !!state.bankCostLinkPending()" (selectedChange)="selectedBank.set($event)" />
+        }
+        @if (state.bankCostLinkError()) { <p class="fin-hint fin-hint--warn" role="alert">{{ state.bankCostLinkError() }}</p> }
+        @if (state.bankCostLinkPending()) {
+          @if (!state.bankCostLinkError()) { <p class="fin-hint">De bankkoppeling wacht op bevestiging. Probeer opnieuw of koppel later.</p> }
+          <button class="btn btn--sm" type="button" [disabled]="state.saving()" (click)="state.deferBankCostLink()">Koppeling later</button>
+        }
+        @if (!selectedBank() && !existingPayment()) {
         @if (single(); as cost) {
           <p class="fin-sheet__lead">{{ cost.description }} · @if (partial()) { nog {{ open() | eur }} open van {{ total() | eur }} } @else { {{ total() | eur }} incl. btw }</p>
           <label class="fin-amount fin-field--wide">
@@ -59,15 +72,17 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
           @if (future()) { <p class="fin-hint fin-hint--warn">Een bankbeweging kan niet in de toekomst liggen.</p> }
           @else if (accountHint(); as hint) { <p class="fin-hint">{{ hint }}</p> }
         }
+        }
       </div>
       <div foot style="display:contents">
-        <button class="btn btn--primary" type="button" [disabled]="!canSave()" (click)="save()">{{ state.busy() || state.saving() ? 'Bezig…' : primaryLabel() }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="!canSave()" (click)="save()">{{ state.busy() || state.saving() ? 'Bezig…' : selectedBank() ? (state.bankCostLinkPending() ? 'Koppeling opnieuw proberen' : 'Betaling koppelen') : primaryLabel() }}</button>
       </div>
     </app-sheet>
   `,
 })
 export class PaySheet {
   readonly state = inject(FinanceState);
+  readonly existingPayment = computed(() => this.state.paySheet()?.existingPayment ?? null);
   readonly costs = computed(() => this.state.paySheet()?.costs ?? []);
   /** The cost when the sheet is for exactly one; the amount field only exists then. */
   readonly single = computed(() => (this.costs().length === 1 ? this.costs()[0] : null));
@@ -84,6 +99,7 @@ export class PaySheet {
   /** The field starts on the remainder and is not rebound while typing. */
   readonly initialAmount = this.open();
   readonly amount = signal(this.open());
+  readonly selectedBank = signal<BankStatementLine | null>(this.state.bankCostLinkPending()?.costId === this.single()?.id ? this.state.bankCostLinkPending()!.line : null);
 
   /** 'Kostdatum' only when the costs share one date. */
   readonly choices = computed<SegmentOption[]>(() => {
@@ -125,7 +141,7 @@ export class PaySheet {
       default: return '';
     }
   });
-  readonly canSave = computed(() => !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none'
+  readonly canSave = computed(() => this.selectedBank() ? !this.state.busy() && !this.state.saving() : !this.existingPayment() && !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none'
     && (!this.toBank() || (!!this.account() && !this.future())));
 
   /** Whether the line lands after the account's last check (and so moves its balance); the cost form shows the same hint. */
@@ -138,6 +154,11 @@ export class PaySheet {
 
   save(): void {
     if (!this.canSave()) return;
+    const selectedBank = this.selectedBank();
+    if (selectedBank && this.single()) {
+      void this.state.addPaymentFromBank(this.single()!, selectedBank, this.existingPayment()).then(done => { if (done) this.state.paySheet.set(null); });
+      return;
+    }
     this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
     const bankAccount = this.toBank() ? this.account() : null;
     const single = this.single();

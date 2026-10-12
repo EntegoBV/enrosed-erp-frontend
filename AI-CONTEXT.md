@@ -122,11 +122,30 @@ the workspaces. All CSS lives in one global partial,
   and payee; supplier terms replace the stream, never both. reached() is a
   copy of purchase-instalment-state.ts. Payee words follow Inkoop's
   PAYEE_LABEL (cost-ledger.ts, asserted in tests).
-- Betaald zetten: PaySheet with a date and an optional outgoing bank line per
-  cost carrying a 'kost #id' marker (bank-markers.ts); undo reverts only
-  what nobody touched since. Outgoing lines cannot be allocated to a cost or
-  a container payment (needs the backend): markers and a ±7-day amount match
-  only drive 'Nog niet op de bank' and link chips, never money maths.
+- BankTransactionPicker is inline in sales receipts, purchase payments and
+  cost payments: search reference/amount/counterparty/date, optional exact
+  EUR filter, source/account badges and disabled allocated rows. Manual
+  payment entry remains available. Purchase first-instalment and receiving
+  final-payment shortcuts now open the shared payment sheet before recording
+  money; the cost full-swipe does likewise. Bulk costs retain manual payment
+  entry with a hint to link existing transactions per cost. Odoo rows preserve their imported identity
+  and cannot be deleted; unlinking preserves the bank row and payment.
+- Existing outgoing payments link via POST bank-statements/{id}/links with
+  exact summed EUR equality. New cost and purchase payments use atomic
+  /cost-payment and /purchase-payment endpoints: the bank row is the retry
+  identity, and purchase responses retain ordered goods/part ids before
+  proof uploads. Never infer a new cost payment id from a stale payments list.
+  Sales allocation reuses an equal signed receipt even if its historical
+  account label differs from the imported IBAN; only an explicit selection
+  creates another same-amount receipt. Legacy markers remain for display.
+- OdooConnectionPanel imports bank rows and browses incoming/outgoing Odoo
+  files. SalesPeppolPanel is collapsed on issued invoices/credit notes:
+  local preview works without connection settings; named customer match,
+  immutable preview, Odoo draft and explicit final-send confirmation are
+  separate steps. Unknown/blocked outcomes allow status refresh only.
+  Outbound/send flags and mapping checks are enforced by the backend;
+  credentials never enter the browser. New API contracts are in banking-api,
+  odoo-api and odoo-outbox-api. No automatic Peppol sending on invoice save.
 - FinanceState (page-scoped) owns data, reload(sources), the forms (cost,
   recurring, balance, movement, pay, check), the inspector target and the one
   page-level context menu. Sections provide FINANCE_SECTION (strip, status,

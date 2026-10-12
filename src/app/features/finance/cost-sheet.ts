@@ -2,6 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, sig
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CompanyCost, VatRegime } from '../../core/api/models';
+import type { BankStatementLine } from '../../core/api/banking-api';
+import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
+import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { DateField } from '../../shared/date-field';
 import { formatBytes } from '../../shared/format-bytes';
 import { Icon } from '../../shared/icon';
@@ -35,7 +38,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
 @Component({
   selector: 'app-cost-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Sheet, DateField, EurPipe, DateNlPipe, Icon, VatChoice, Segmented, PartyField, CostRegimeFields],
+  imports: [FormsModule, RouterLink, Sheet, DateField, EurPipe, DateNlPipe, Icon, VatChoice, Segmented, PartyField, CostRegimeFields, BankTransactionPicker],
   template: `
     <app-sheet variant="ios" [title]="draft().id ? 'Kost bewerken' : 'Kost boeken'" [wide]="true" (closed)="close()">
       <div body class="fin-sheet fin-form">
@@ -133,10 +136,13 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
             <label class="fin-field fin-field--switch fin-field--wide"><span>Betaald<small>{{ draft().paidOn ? 'Op ' + (draft().paidOn ?? '') : 'Nog open: staat bij Te betalen' }}</small></span>
               <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!draft().paidOn" (change)="togglePaid($any($event.target).checked)" /></label>
             @if (draft().paidOn) {
-              <div class="fin-field"><span>Betaald op</span><app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /></div>
+              <div class="fin-field"><span>Betaald op</span>@if (selectedBank() && becomingPaid()) { <span>{{ draft().paidOn }}</span> } @else { <app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /> }</div>
             }
           }
           @if (becomingPaid()) {
+            <div class="fin-field fin-field--wide"><app-bank-transaction-picker direction="OUTGOING" [amount]="cashTotalOf(draft())" [selected]="selectedBank()" [disabled]="state.saving()" (selectedChange)="chooseBank($event)" /></div>
+            @if (selectedBank()) { <p class="fin-hint fin-field--wide">Datum en rekening komen van de bank. Het totaal inclusief btw moet gelijk zijn aan de transactie.</p> }
+            @else {
             <label class="fin-field fin-field--switch fin-field--wide"><span>Ook als bankbeweging noteren<small>Een uitgaande beweging met een verwijzing naar deze kost</small></span>
               <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="toBank()" (change)="toBank.set($any($event.target).checked)" /></label>
             @if (toBank()) {
@@ -153,6 +159,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
                 @if (future()) { <span class="fin-hint fin-hint--warn">Een bankbeweging kan niet in de toekomst liggen.</span> }
                 @else if (accountHint(); as hint) { <span class="fin-hint">{{ hint }}</span> }
               </div>
+            }
             }
           }
         </div>
@@ -326,6 +333,7 @@ export class CostSheet {
   private readonly preference = this.state.payToBank();
   readonly before = computed(() => (this.draft().id ? this.state.costs().find((row) => row.id === this.draft().id) ?? null : null));
   readonly becomingPaid = computed(() => !!this.draft().paidOn && !this.payments().length && (!this.draft().id || !this.before()?.paidOn));
+  readonly selectedBank = signal<BankStatementLine | null>(null);
   readonly toBank = signal(this.preference.on);
   /** The remembered account, or the only one, as soon as the accounts are in. */
   readonly account = linkedSignal(() => {
@@ -335,7 +343,7 @@ export class CostSheet {
   readonly future = computed(() => (this.draft().paidOn ?? '') > this.state.today());
   readonly accountHint = computed(() => this.state.accountHint(this.account(), this.draft().paidOn ?? this.state.today()));
   /** The switch is on without an account (once the accounts are known) or with a date still ahead. */
-  readonly bankBlocked = computed(() => this.becomingPaid() && this.toBank() && ((!this.account() && !!this.state.loadedAt()) || this.future()));
+  readonly bankBlocked = computed(() => this.becomingPaid() && !this.selectedBank() && this.toBank() && ((!this.account() && !!this.state.loadedAt()) || this.future()));
 
   patch(changes: Partial<CompanyCost>): void {
     this.draft.update((draft) => ({ ...draft, ...changes }));
@@ -530,14 +538,19 @@ export class CostSheet {
     return formatBytes(bytes);
   }
 
+  chooseBank(line: BankStatementLine | null): void {
+    this.selectedBank.set(line);
+    if (line) this.patch({ paidOn: bankTransactionDay(line) });
+  }
   async save(): Promise<void> {
     this.tried.set(true);
     if (!this.canSave()) return;
     const files = this.pending();
     /* The switch was on screen: remember its state either way, then book, and note the line when it was on. */
-    const toBank = this.becomingPaid() && this.toBank();
+    const bank = this.becomingPaid() ? this.selectedBank() : null;
+    const toBank = this.becomingPaid() && !bank && this.toBank();
     if (this.becomingPaid()) this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
-    const saved = await this.state.saveCost(this.draft(), { bankAccountKey: toBank ? this.account() || null : null });
+    const saved = await this.state.saveCost({ ...this.draft(), ...(bank ? { paidOn: bankTransactionDay(bank) } : {}) }, { bankAccountKey: toBank ? this.account() || null : null, bankTransaction: bank });
     if (saved?.id && files.length) void this.state.attach(saved.id, files);
     if (saved) this.state.costFiles.set([]);
   }
