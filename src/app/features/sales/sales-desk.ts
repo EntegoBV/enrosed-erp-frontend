@@ -412,7 +412,7 @@ interface JourneyStep {
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
               <!-- A credit note has no margin column: the grid drops it whole (head, cells, foot). -->
-              <table class="desk-table" [class.desk-table--editing]="commercialEditable()" [class.desk-table--no-margin]="!showsMargin()">
+              <table class="desk-table" [class.desk-table--editing]="commercialEditable()" [class.desk-table--no-margin]="!showsMargin()" [class.desk-table--waiting]="figuresWaiting()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
@@ -512,7 +512,8 @@ interface JourneyStep {
                           @if (commercialEditable()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
                                    [attr.aria-label]="'Aantal ' + line.description"
-                                   [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, $event)" />
+                                   [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, $event)"
+                                   (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
                           } @else {
                             <b>{{ line.quantity | num }}</b>
                           }
@@ -1371,6 +1372,9 @@ interface JourneyStep {
     .desk-delivery{display:grid;gap:1px;font-size:11.5px}.desk-delivery b{color:var(--warn);font-weight:650}.desk-delivery--ok b{color:var(--ok)}.desk-delivery--bad b{color:var(--danger)}.desk-delivery small{color:var(--muted);font-size:10.5px}
     .desk-week{margin-top:6px}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    /* The figures of a quantity still being typed: only the text fades, a faded cell would show as a lighter patch on the row. */
+    .desk-table--waiting td.c-money>*{opacity:.45}
+    .desk-table--waiting .desk-group td.c-money,.desk-table--waiting tfoot th:not(.c-product){color:color-mix(in srgb,currentColor 45%,transparent)}
     .desk-table tfoot th.c-money small{display:block;margin-top:2px;color:var(--muted);font-size:10px;font-weight:500;letter-spacing:0;text-transform:none}
     .desk-table tfoot th.c-product{text-align:left;padding-left:16px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-table tfoot th.is-bad{color:var(--danger)}
     /* A narrow desk (an unfolded Fold, a small tablet): the table gives up

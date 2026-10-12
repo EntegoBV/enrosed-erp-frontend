@@ -712,7 +712,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                     </span> }
                   </div>
                   </a>
-                  <div class="order-line__amount">
+                  <div class="order-line__amount" [class.order-line__amount--waiting]="figuresWaiting()">
                     <strong>@if (lineUnavailable(line.productId)) { — } @else { {{ line.net | eur }} }</strong>
                     @if (!lineUnavailable(line.productId) && line.discountPct) {
                       <span>Regelkorting −{{ line.discountPct | pct: 1 }}</span>
@@ -737,7 +737,8 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                     <input class="input num" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [ngModel]="line.quantity"
-                           (ngModelChange)="setLineQuantity(line.productId, $event)" />
+                           (ngModelChange)="setLineQuantity(line.productId, $event)"
+                           (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
                     @if (linePending()[line.productId]; as to) {
                       <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
                     }
@@ -1793,6 +1794,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
     .order-line__amount { display:flex;flex-direction:column;align-items:flex-end }
     .order-line__amount strong { font-size:14px;font-variant-numeric:tabular-nums }
     .order-line__amount span { color:var(--ok);font-size:10px }
+    .order-line__amount--waiting { opacity:.45 }
     .line-quick-controls { margin-top:10px;display:grid;grid-template-columns:minmax(108px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch }
     .order-line--unavailable { border-style:dashed; background:var(--surface-2) }.order-line--unavailable .order-line__photo{opacity:.7}.line-availability{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 0;font-size:11px;color:var(--muted)}.line-availability>button{min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-weight:600}.line-availability--paused>div{display:grid;gap:5px;min-width:0}.line-availability b{font-size:12px;color:var(--ink)}.line-availability span{line-height:1.6}.line-availability-notice{padding:13px;border-radius:12px;background:var(--rose-soft);font-size:12px;line-height:1.6}.line-availability--paused>.btn{flex:none}@media(max-width:420px){.line-availability{align-items:flex-start;flex-direction:column}.line-availability--paused>.btn{width:100%}}
     .mobile-split-entry { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin:0 0 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface) }.mobile-split-entry>div{min-width:0;display:grid;gap:5px}.mobile-split-entry b{font-size:12px}.mobile-split-entry span{font-size:11px;line-height:1.5;color:var(--muted)}.mobile-split-entry>.btn{min-height:44px;flex:none}@media(max-width:420px){.mobile-split-entry{align-items:stretch;flex-direction:column}.mobile-split-entry>.btn{width:100%}}
@@ -2733,6 +2735,8 @@ export class SalesEditor {
   readonly referenceError = signal('');
   readonly saveError = signal<string | null>(null);
   readonly previewError = signal<string | null>(null);
+  /** A typed quantity waits for its figures: the amounts on screen still belong to the previous number. */
+  readonly figuresWaiting = signal(false);
   readonly customers = signal<Customer[]>([]);
   readonly carriers = signal<Carrier[]>([]);
 
@@ -3343,17 +3347,18 @@ export class SalesEditor {
     this.savedOrder.set(JSON.stringify(view.order));
     this.saveError.set(null);
     this.previewError.set(null);
+    this.figuresWaiting.set(false);
     this.loadCreditContext(view);
   }
 
-  /** Applies a change to the draft and re-prices it. */
-  private enqueue(make: (order: SalesOrder) => SalesOrder | null): void {
+  /** Applies a change to the draft and re-prices it; a typed quantity re-prices after the typing pause. */
+  private enqueue(make: (order: SalesOrder) => SalesOrder | null, typing = false): void {
     const data = this.view();
     if (!data || !this.canEdit()) return;
     const next = make(data.order);
     if (!next || !this.mobileAcceptsDraft(data, next)) return;
     this.view.set({ ...data, order: next });
-    this.schedulePreview();
+    this.schedulePreview(typing);
   }
 
   /** Split products and their pricing stay frozen while the allowed commercial overrides remain editable. */
@@ -3380,9 +3385,27 @@ export class SalesEditor {
     return true;
   }
 
-  private schedulePreview(): void {
+  /**
+   * The server rounds a quantity up to whole cartons, and its answer is
+   * what the quantity field shows. An answer between two digits rewrote
+   * the field under the fingers (9, then 0, became 300), so a typed
+   * quantity waits five seconds - or until the field is left or Enter is
+   * pressed, see flushPreview. Every other edit re-prices at once.
+   */
+  private schedulePreview(typing = false): void {
     if (this.previewTimer !== null) clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.preview(); }, 250);
+    /* An answer still under way prices an older draft: it no longer counts. */
+    ++this.previewVersion;
+    if (typing) this.figuresWaiting.set(true);
+    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.preview(); }, typing ? 5000 : 250);
+  }
+
+  /** Done typing: the figures follow now instead of after the pause. */
+  flushPreview(): void {
+    if (this.previewTimer === null) return;
+    clearTimeout(this.previewTimer);
+    this.previewTimer = null;
+    void this.preview();
   }
 
   private async preview(): Promise<void> {
@@ -3395,8 +3418,10 @@ export class SalesEditor {
       if (version !== this.previewVersion || !current) return;
       this.view.set({ ...fresh, order: current.order });
       this.previewError.set(null);
+      this.figuresWaiting.set(false);
     } catch (failure: unknown) {
       if (version !== this.previewVersion) return;
+      this.figuresWaiting.set(false);
       this.previewError.set(messageOf(
         failure,
         'Controleer de verbinding voordat je de offerte opslaat of verstuurt.',
@@ -3487,6 +3512,8 @@ export class SalesEditor {
       return false;
     } finally {
       this.saving.set(false);
+      /* The save took the waiting recalculation along; a refused save would leave the typed quantity unpriced. */
+      if (this.figuresWaiting() && this.previewTimer === null) void this.preview();
     }
   }
 
@@ -3580,7 +3607,7 @@ export class SalesEditor {
     const cap = this.creditLineCap(productId);
     if (cap) {
       this.linePending.update((map) => { const next = { ...map }; delete next[productId]; return next; });
-      this.setLine(productId, { quantity: Math.max(1, Math.min(cap.max, Math.round(raw))) });
+      this.setLine(productId, { quantity: Math.max(1, Math.min(cap.max, Math.round(raw))) }, true);
       return;
     }
     if (raw === 0 && this.currentQuantity(productId) > 0 && this.canToggleLineAvailability(productId)) {
@@ -3596,7 +3623,7 @@ export class SalesEditor {
       else delete next[productId];
       return next;
     });
-    this.setLine(productId, { quantity: wanted });
+    this.setLine(productId, { quantity: wanted }, true);
   }
 
   /** Saves the draft before an action reads the order on the server. */
@@ -3617,7 +3644,7 @@ export class SalesEditor {
 
   setLine(productId: number,
           changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
-                     deliveryWeek?: string }): void {
+                     deliveryWeek?: string }, typing = false): void {
     if (changes.unitPriceEur !== undefined) {
       const cap = this.creditLineCap(productId);
       if (cap) {
@@ -3643,7 +3670,7 @@ export class SalesEditor {
       ...order,
       lines: order.lines.map((line) =>
         line.productId === productId ? { ...line, ...changes } : line),
-    }));
+    }), typing);
   }
 
   private async saveDeliveryWeek(productId: number, deliveryWeek: string | null): Promise<void> {

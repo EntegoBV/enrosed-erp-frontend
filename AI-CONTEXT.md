@@ -406,7 +406,10 @@ weekly by the backend's Drewry scrape).
 ### Sales editor (the heart)
 - Card sections: status/history (newest first, latest event on the bar),
   Order (customer, country, incoterm, payment terms pick-list with "Van
-  de klant" default and "Anders…"), lines (picker prefills one carton; carton snap after 2 s pause,
+  de klant" default and "Anders…"), lines (picker prefills one carton; a typed quantity is
+  re-priced without saving 5 s after the last digit, or at once on blur/Enter (`flushPreview`) -
+  never between two digits, because the server's carton-rounded quantity is what the field shows;
+  meanwhile the amounts fade (`figuresWaiting`); every other edit re-prices after 250 ms;
   per-line delivery week via week-field), totals (journey layout, freight
   "aanpassen" inline panel: TE_BEPALEN or own amount), revision handling
   with two-line buttons (Wijzigen/Overnemen explain themselves, Afwijzen
