@@ -286,9 +286,12 @@ const EXTRA_SWITCHES: ReadonlyArray<{ channel: CatalogChannel; label: string; he
     .ps .ps-link:focus-visible { outline: 0; }
     .ps-link:focus-visible span { border-radius: 3px; outline: 2px solid var(--ink); outline-offset: 3px; }
     .ps-fold { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-    .ps-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 12px; font-size: 14px; white-space: nowrap; cursor: pointer; list-style: none; }
+    /* The sub line stands under the title and wraps: "verwijderen" is never cut off. */
+    .ps-fold > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 52px; padding: 6px 12px;
+      font-size: 14px; line-height: 1.3; cursor: pointer; list-style: none; }
     .ps-fold > summary::-webkit-details-marker { display: none; }
-    .ps-fold > summary small { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 12.5px; text-overflow: ellipsis; }
+    .ps-fold > summary small { grid-column: 1; min-width: 0; color: var(--ink-2); font-size: 12.5px; }
+    .ps-fold > summary app-icon { grid-column: 2; grid-row: 1 / span 2; }
     .ps-fold[open] > summary app-icon { transform: rotate(180deg); }
     .ps-more { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 14px 12px; border-top: 1px solid var(--line); }
     .ps-more section { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 8px; }

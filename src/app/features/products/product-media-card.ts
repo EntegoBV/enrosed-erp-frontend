@@ -74,7 +74,7 @@ import { isSourceLink } from '../files/files-collections';
     .mc__head>div:first-child{flex:1 1 180px;min-width:0}
     .mc__head h2{margin:0;font-size:16px;font-weight:700}
     .mc__head p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
-    .mc__actions{display:flex;flex:none;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+    .mc__actions{display:flex;flex:0 1 auto;flex-wrap:wrap;gap:8px;justify-content:flex-end;max-width:100%}
     .mc__upload{position:relative;overflow:hidden;cursor:pointer}
     .mc__upload input{position:absolute;inset:0;opacity:0;cursor:pointer}
     .mc__upload.is-busy{opacity:.7;pointer-events:none}
@@ -95,7 +95,7 @@ import { isSourceLink } from '../files/files-collections';
     .mc__grid--compact .mc__open{aspect-ratio:1;border-radius:10px}
     .mc__grid--compact .mc__ext{font-size:11px}
     .mc__grid--compact .mc__unlink{position:static;opacity:1;background:var(--surface-2);color:var(--muted)}
-    .mc__source{color:var(--muted);font-size:12px;line-height:1.35}
+    .mc__source{color:var(--ink-2);font-size:12px;line-height:1.35}
     .mc__source a{color:var(--rose-dark);font-weight:600}
     .mc__grid--compact .mc__source{grid-column:2/-1;margin-top:-14px}
     .mc__grid--compact .mc__source a{display:inline-block;padding-block:14px}

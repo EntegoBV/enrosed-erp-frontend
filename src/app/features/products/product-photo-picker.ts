@@ -219,6 +219,9 @@ interface PhotoCompareView {
       text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .pk-link:disabled { opacity: .5; cursor: wait; }
 
+    /* The foot of "Bekijk groot" on a narrow phone: the back button shrinks and wraps, so "Gebruik deze foto" stays whole on the screen. */
+    .pk-back { flex: 0 1 auto; min-width: 0; white-space: normal; line-height: 1.2; }
+    .pk-use { flex: none; }
     .pk-cmp, .pk-cmp__pair { display: grid; gap: 10px; min-width: 0; }
     .pk-cmp__fig { display: grid; grid-template-rows: auto 1fr; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px;
       background: #fff; }
