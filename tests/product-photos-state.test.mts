@@ -62,6 +62,8 @@ import {
   seriesLive,
   seriesPhotoGroups,
   seriesRows,
+  sheetRows,
+  sheetStage,
   signedIdForPhotoKey,
   slideBadges,
   splitPhotoFiles,
@@ -1457,6 +1459,127 @@ test('cleaning a duplicate keeps the reach of the series photo it reuses', () =>
   assert.equal(cleanupScope(data, { ...duplicate, duplicateOfKey: 'F999' }), 'THIS_VARIANT');
 });
 
+/* ------------------------------------------------------- photo sheet rows */
+
+const sheetRow = (data: ProductPhotoOverview, key: string, row: string) => {
+  const built = sheetRows(data, byKey(data, key), K);
+  return [...built.colour, ...built.series].find((item) => item.key === row)!;
+};
+const brief = (data: ProductPhotoOverview, key: string, row: string) => {
+  const found = sheetRow(data, key, row);
+  return [found.state, found.sub];
+};
+
+test('sheet rows: an unused photo can be used everywhere it fits, and says where it cannot', () => {
+  const data = example();
+  const rows = sheetRows(data, byKey(data, 'F243'), K);
+  assert.deepEqual(rows.colour.map((row) => [row.name, row.state, row.sub, row.role, row.shown?.key ?? null]), [
+    ['Website', 'use', 'Als een klant Kersenroze kiest', 'MAIN', 'F242'],
+    ['Catalogus', 'use', 'Bij Kersenroze in de pdf-catalogus', 'CATALOGUE_VARIANT', 'F242'],
+    ['Offertes en facturen', 'plain', 'Zelfde foto als de website', null, 'F242'],
+  ]);
+  assert.equal(rows.colour[0].label, 'Website: niet in gebruik. Gebruik hier.');
+  assert.equal(rows.colour[2].label, '', 'quotes and invoices have no choice of their own');
+  assert.deepEqual(rows.series.map((row) => [row.name, row.state, row.sub, row.role]), [
+    ['Bestelpagina', 'use', 'Voor alle kleuren', 'QUOTE'],
+    ['Grote catalogusfoto', 'use', 'Voor alle kleuren', 'CATALOGUE_DETAIL'],
+    ['Kleine catalogusfoto', 'use', 'Voor alle kleuren', 'CATALOGUE_OVERVIEW'],
+    // Not in the website gallery: the order has no position for it, so no dead link to reorder mode.
+    ['Productpagina', 'blocked', 'Deze foto staat niet in de fotogalerij op de website.', null],
+  ]);
+  assert.equal(rows.seriesSummary, 'nergens in gebruik');
+});
+
+test('sheet rows: the photo in use offers back to automatic or pinning, never "Gebruik hier"', () => {
+  const data = example();
+  const rows = sheetRows(data, byKey(data, 'F242'), K);
+  assert.deepEqual(rows.colour.map((row) => [row.state, row.sub, row.shown]), [
+    ['chosen', 'Zelf gekozen', null], ['chosen', 'Zelf gekozen', null], ['on', 'Zelfde foto als de website', null],
+  ]);
+  assert.equal(rows.colour[0].label, 'Website: in gebruik, zelf gekozen. Terug naar automatisch.');
+  assert.deepEqual(rows.series.map((row) => [row.state, row.sub]), [
+    ['automatic', 'Automatisch gekozen'], ['automatic', 'Automatisch gekozen'], ['automatic', 'Automatisch gekozen'],
+    ['order', 'Opent met de eerste foto van de reeks'],
+  ]);
+  assert.equal(rows.series[0].label, 'Bestelpagina: in gebruik, automatisch gekozen. Zelf vastzetten.');
+  assert.equal(rows.series[3].label, 'Volgorde op de website wijzigen');
+  assert.equal(rows.seriesSummary, 'op 3 plekken in gebruik');
+  assert.deepEqual(brief(data, 'F214', 'opening'), ['on', 'Eerste foto van de reeks']);
+  assert.equal(sheetRows(data, byKey(data, 'F214'), K).seriesSummary, 'op 1 plek in gebruik');
+});
+
+test('sheet rows: photos of all colours and of another colour', () => {
+  const data = example();
+  assert.deepEqual(brief(data, 'F250', 'website'), ['use', 'Als een klant Kersenroze kiest']);
+  assert.deepEqual(brief(data, 'F250', 'catalogue'),
+    ['blocked', 'Kan niet: in de Handelscatalogus komt bij een kleur alleen een foto van die kleur zelf.']);
+  assert.deepEqual(brief(data, 'F214', 'website'), ['blocked', 'Deze foto hoort bij Rood.']);
+  assert.deepEqual(brief(data, 'F214', 'catalogue'), ['blocked', 'Deze foto hoort bij Rood.']);
+  assert.deepEqual(brief(data, 'F214', 'quote'), ['use', 'Voor alle kleuren']);
+  assert.equal(sheetRow(data, 'F214', 'website').label, '');
+  // One colour in the series: no colour strip, so a photo of all colours can be the catalogue picture.
+  const single = oneColour(place('catalogueDetail', 'F250', 'AUTOMATIC', 'FIRST_IN_SERIES_ORDER', ALL));
+  assert.deepEqual(brief(single, 'F243', 'catalogue'), ['use', 'In de pdf-catalogus']);
+  assert.deepEqual(brief(single, 'F250', 'catalogue'), ['automatic', 'Automatisch gekozen']);
+  assert.equal(sheetRow(single, 'F250', 'catalogue').role, 'CATALOGUE_VARIANT');
+  const chosen = oneColour(place('catalogueDetail', 'F242', 'AUTOMATIC', 'THIS_COLOUR_LEAD'), 'F242');
+  assert.deepEqual(brief(chosen, 'F242', 'catalogue'), ['chosen', 'Zelf gekozen']);
+});
+
+test('sheet rows: a stored choice that is not shown can only go back to automatic', () => {
+  const data = example({ websiteColour: place('websiteColour', 'F244', 'CHOSEN_NOT_SHOWN', 'NOT_PUBLISHED_FOR_WEBSITE', { chosenKey: 'F242' }) });
+  const hidden = sheetRow(data, 'F242', 'website');
+  assert.deepEqual([hidden.state, hidden.sub, hidden.role, hidden.shown?.key], ['hidden', 'Je gekozen foto staat niet op de website.', 'MAIN', 'F244']);
+  assert.equal(hidden.label, 'Website: zelf gekozen, maar niet getoond. Terug naar automatisch.');
+  // The photo shown instead is there automatically and can be pinned.
+  assert.deepEqual(brief(data, 'F244', 'website'), ['automatic', 'Automatisch gekozen']);
+  assert.deepEqual(brief(data, 'F243', 'documents'), ['plain', 'Andere foto dan de website']);
+  const series = example({ catalogueDetail: place('catalogueDetail', 'F242', 'CHOSEN_NOT_SHOWN', 'CHOICE_NOT_AVAILABLE', { chosenKey: 'F243' }) });
+  assert.deepEqual(brief(series, 'F243', 'detail'), ['hidden', 'Je keuze wordt niet getoond.']);
+});
+
+test('sheet rows: a colour that is not sold has no website row to tap, a demo no catalogue row either', () => {
+  const inactive = inactiveColour([...examplePhotos(), photo('P5501')]);
+  assert.deepEqual(brief(inactive, 'F243', 'website'), ['blocked', 'Kersenroze is niet actief en staat daarom niet op de website.']);
+  assert.deepEqual(brief(inactive, 'F243', 'catalogue'), ['blocked', 'Kersenroze is niet actief. Maak de kleur eerst actief om deze foto te kiezen.']);
+  // The server marks such a photo as not publishable; the row still names the real reason.
+  inactive.photos[1] = { ...inactive.photos[1], publishable: false };
+  assert.deepEqual(brief(inactive, 'F243', 'catalogue'), ['blocked', 'Kersenroze is niet actief. Maak de kleur eerst actief om deze foto te kiezen.']);
+  assert.deepEqual(brief(inactive, 'P5501', 'catalogue'), ['automatic', 'Automatisch gekozen']);
+  assert.deepEqual(brief(inactive, 'F243', 'documents'), ['plain', 'Kersenroze staat niet op de website']);
+  assert.equal(sheetRow(inactive, 'F242', 'website').shown, null, 'nothing is drawn for a place that shows nothing');
+  const demo = demoColour();
+  assert.deepEqual(brief(demo, 'F243', 'website'), ['blocked', 'Kersenroze is een demo-product en staat daarom niet op de website.']);
+  assert.deepEqual(brief(demo, 'F243', 'catalogue'), ['blocked', 'Kersenroze is een demo-product en komt daarom niet in een catalogus.']);
+  assert.deepEqual(brief(demo, 'F243', 'detail'), ['use', 'Voor alle kleuren']);
+});
+
+test('sheet rows: an own photo, a photo that cannot be shown, an older server', () => {
+  const data = example();
+  data.photos.push(photo('P5501'), photo('F260', { publishable: false }));
+  assert.deepEqual(brief(data, 'P5501', 'website'), ['use', 'Als een klant Kersenroze kiest']);
+  assert.deepEqual(brief(data, 'P5501', 'quote'), ['blocked', 'Kan niet: deze foto hoort alleen bij dit product.']);
+  assert.deepEqual(brief(data, 'P5501', 'opening'), ['blocked', 'Kan niet: deze foto hoort alleen bij dit product.']);
+  assert.deepEqual(brief(data, 'F260', 'website'), ['blocked', 'Deze foto kan nog niet getoond worden. Controleer bij welke kleur hij hoort.']);
+  const old = legacy();
+  assert.deepEqual(brief(old, 'F242', 'website'), ['chosen', 'Zelf gekozen']);
+  assert.equal(sheetRow(old, 'F243', 'catalogue').state, 'use');
+  assert.deepEqual(sheetRows(null, photo('F243'), K), { colour: [], series: [], seriesSummary: 'nergens in gebruik' });
+  assert.deepEqual(sheetRows({ ...data, familyId: null }, byKey(data, 'F243'), K).series, []);
+});
+
+test('sheet stage: the pair only when Website and Catalogus show one other photo', () => {
+  const data = example();
+  const reference = byKey(data, 'F242');
+  assert.equal(sheetStage({ key: 'F243' }, places(data), reference), 'pair');
+  assert.equal(sheetStage({ key: 'F242' }, places(data), reference), 'single', 'a photo this colour uses stands alone');
+  const differ = example({ catalogueColour: place('catalogueColour', 'F244', 'CHOSEN') });
+  assert.equal(sheetStage({ key: 'F243' }, places(differ), null), 'thumbs');
+  assert.equal(sheetStage({ key: 'F244' }, places(differ), null), 'single');
+  assert.equal(sheetStage({ key: 'F243' }, places(demoColour()), null), 'single', 'nothing to compare with');
+  assert.equal(sheetStage({ key: 'F243' }, null, null), 'single');
+});
+
 /* ------------------------------------------------------ vocabulary guard */
 
 // ui-spec section 2: the words the owner should never read in this section.
@@ -1491,6 +1614,7 @@ function everything(data: ProductPhotoOverview, product: { active?: boolean; dem
     catalogueAssumptionLine(data, [{ productId: 100, active: true }, { productId: 101, active: false }]),
     otherColourRow({ productId: 100, name: 'Half heart', colour: K, colourHex: null, active: product?.active !== false }, data),
     seriesPhotoGroups(data, K).map((group) => group.label),
+    data.photos.map((item) => sheetRows(data, item, K)),
   ];
   for (const kind of ['website', 'catalogue', 'quote', 'detail', 'overview'] as const) {
     const picker = pickerModel(data, kind, K, product)!;

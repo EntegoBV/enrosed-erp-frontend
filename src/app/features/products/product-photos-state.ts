@@ -1715,6 +1715,156 @@ export function scopeConfirm(
   };
 }
 
+/* ------------------------------------------------------------ photo sheet */
+
+export type SheetRowKey = PhotoPickerKind | 'documents' | 'opening';
+
+/** One line of "Gebruik deze foto voor" in the photo sheet. */
+export interface SheetRow {
+  key: SheetRowKey;
+  /** The role a tap is sent with; null = the row has no choice of its own. */
+  role: ProductPhotoRoleKey | null;
+  name: string;
+  sub: string;
+  /**
+   * use = "Gebruik hier"; chosen = in use, "Terug naar automatisch";
+   * automatic = in use, "Zelf vastzetten"; hidden = the stored choice of a
+   * place that does not show it, "Terug naar automatisch"; on = in use,
+   * nothing to tap; plain = "Geen eigen keuze"; order = "Volgorde wijzigen";
+   * blocked = no control, `sub` says why.
+   */
+  state: 'use' | 'chosen' | 'automatic' | 'hidden' | 'on' | 'plain' | 'order' | 'blocked';
+  /** Accessible name of the control; empty when the row has none. */
+  label: string;
+  /** What the place shows now when that is another photo. */
+  shown: PlacePhoto | null;
+}
+
+const SHEET_ROW_NAME: Readonly<Record<PhotoPickerKind, string>> = {
+  website: 'Website', catalogue: 'Catalogus', quote: 'Bestelpagina', detail: 'Grote catalogusfoto', overview: 'Kleine catalogusfoto',
+};
+
+function sheetChoiceRow(
+  overview: ProductPhotoOverview,
+  places: ResolvedPlaces,
+  kind: PhotoPickerKind,
+  photo: ProductPhotoOverviewPhoto,
+  colour: string,
+  status: ColourStatus,
+): SheetRow {
+  const target = pickerTarget(places, kind);
+  const name = SHEET_ROW_NAME[kind];
+  const perColour = kind === 'website' || kind === 'catalogue';
+  // The card of a colour that is not sold is fed by the colour place, also in a one-colour series.
+  const gate = kind === 'website' ? places.websiteColour : kind === 'catalogue' ? places.catalogueColour : target.place;
+  const off = gate.reason === 'COLOUR_NOT_ACTIVE';
+  const shownHere = !off && target.place.shownKey === photo.key;
+  const row = (state: SheetRow['state'], sub: string, label = ''): SheetRow => ({
+    key: kind, role: target.role, name, sub, state, label,
+    shown: off || shownHere ? null : photoByKey(overview, target.place.shownKey),
+  });
+  if (off) {
+    return row('blocked', kind === 'website'
+      ? (status === 'demo' ? `${colour} is een demo-product en staat daarom niet op de website.` : `${colour} is niet actief en staat daarom niet op de website.`)
+      : kind === 'catalogue' ? `${colour} is een demo-product en komt daarom niet in een catalogus.`
+        : 'Deze reeks heeft alleen demo-producten en komt niet in een catalogus.');
+  }
+  if (shownHere) {
+    if (target.chosen) return row('chosen', 'Zelf gekozen', `${name}: in gebruik, zelf gekozen. Terug naar automatisch.`);
+    return canUseForRole(photo, target.role)
+      ? row('automatic', 'Automatisch gekozen', `${name}: in gebruik, automatisch gekozen. Zelf vastzetten.`)
+      : row('on', 'Automatisch gekozen');
+  }
+  // Sending the stored key again would change nothing: the way out is back to automatic, or the switch under "Meer instellingen".
+  if (target.chosenKey === photo.key) {
+    const why = kind === 'website' ? websiteNotShown(target.place).reason
+      : kind === 'catalogue' ? catalogueNotShown(target.place, colour).reason : null;
+    return row('hidden', why?.strong || 'Je keuze wordt niet getoond.', `${name}: zelf gekozen, maar niet getoond. Terug naar automatisch.`);
+  }
+  if (perColour && photo.kind === 'SERIES' && photo.scope === 'OTHER_VARIANT') {
+    return row('blocked', `Deze foto hoort bij ${photo.variantLabel || 'een andere kleur'}.`);
+  }
+  if (target.role === 'CATALOGUE_VARIANT' && !target.allowAllColours && photo.kind === 'SERIES' && photo.scope === 'ALL_VARIANTS') {
+    return row('blocked', 'Kan niet: in de Handelscatalogus komt bij een kleur alleen een foto van die kleur zelf.');
+  }
+  // The server refuses to switch the catalogue on for a series photo of a colour that is not active.
+  if (perColour && status === 'inactive' && photo.kind !== 'OWN') {
+    return row('blocked', `${colour} is niet actief. Maak de kleur eerst actief om deze foto te kiezen.`);
+  }
+  if (!canUseForRole(photo, target.role)) {
+    return row('blocked', photo.kind === 'OWN' ? 'Kan niet: deze foto hoort alleen bij dit product.'
+      : 'Deze foto kan nog niet getoond worden. Controleer bij welke kleur hij hoort.');
+  }
+  return row('use', kind === 'website' ? `Als een klant ${colour} kiest`
+    : kind === 'catalogue' ? (target.allowAllColours ? 'In de pdf-catalogus' : `Bij ${colour} in de pdf-catalogus`)
+      : 'Voor alle kleuren', `${name}: niet in gebruik. Gebruik hier.`);
+}
+
+function sheetDocumentsRow(overview: ProductPhotoOverview, places: ResolvedPlaces, photo: ProductPhotoOverviewPhoto, colour: string): SheetRow {
+  const documents = places.documents;
+  const on = documents.shownKey === photo.key;
+  const relation = documentsState(places, colour);
+  const sub = relation.row === 'differs' ? 'Andere foto dan de website'
+    : relation.row === 'documents-only' ? 'De website toont geen foto'
+      : relation.row === 'none' ? 'Geen foto'
+        : relation.row === 'colour-off' ? `${colour} staat niet op de website`
+          : relation.row === 'legacy' && documents.state !== 'CHOSEN' ? 'Automatisch gekozen'
+            : 'Zelfde foto als de website';
+  return {
+    key: 'documents', role: null, name: 'Offertes en facturen', sub, state: on ? 'on' : 'plain', label: '',
+    shown: on ? null : photoByKey(overview, documents.shownKey),
+  };
+}
+
+function sheetOpeningRow(places: ResolvedPlaces, photo: ProductPhotoOverviewPhoto): SheetRow {
+  const row = (state: SheetRow['state'], sub: string, label = ''): SheetRow => ({
+    key: 'opening', role: null, name: 'Productpagina', sub, state, label, shown: null,
+  });
+  if (places.websiteOpening.shownKey === photo.key) return row('on', 'Eerste foto van de reeks');
+  if (photo.kind === 'OWN') return row('blocked', 'Kan niet: deze foto hoort alleen bij dit product.');
+  // The order holds the photos the website receives; another one has no position to move.
+  if (!photo.visibility.website) return row('blocked', 'Deze foto staat niet in de fotogalerij op de website.');
+  return row('order', 'Opent met de eerste foto van de reeks', 'Volgorde op de website wijzigen');
+}
+
+/**
+ * The rows of the photo sheet: the two choices of this colour with what
+ * quotes and invoices print, and the four places of the series. A row never
+ * offers a tap the server would refuse or that would change nothing.
+ */
+export function sheetRows(
+  overview: ProductPhotoOverview | null,
+  photo: ProductPhotoOverviewPhoto,
+  colour: string,
+): { colour: SheetRow[]; series: SheetRow[]; seriesSummary: string } {
+  const places = resolvedPlaces(overview);
+  if (!overview || !places) return { colour: [], series: [], seriesSummary: 'nergens in gebruik' };
+  const status = colourStatus(overview);
+  const choice = (kind: PhotoPickerKind) => sheetChoiceRow(overview, places, kind, photo, colour, status);
+  const series = overview.familyId ? [choice('quote'), choice('detail'), choice('overview'), sheetOpeningRow(places, photo)] : [];
+  const used = series.filter((row) => row.state === 'chosen' || row.state === 'automatic' || row.state === 'on').length;
+  return {
+    colour: [choice('website'), choice('catalogue'), sheetDocumentsRow(overview, places, photo, colour)],
+    series,
+    seriesSummary: used === 0 ? 'nergens in gebruik' : used === 1 ? 'op 1 plek in gebruik' : `op ${used} plekken in gebruik`,
+  };
+}
+
+/**
+ * What the picture side of the photo sheet draws. "pair" puts the photo
+ * next to what customers see now, which only says something when Website and
+ * Catalogus show one and the same other photo; when they differ the rows
+ * carry a thumbnail each ("thumbs"); a photo this colour uses stands alone.
+ */
+export function sheetStage(photo: Pick<PlacePhoto, 'key'>, places: ResolvedPlaces | null, reference: PlacePhoto | null): 'pair' | 'thumbs' | 'single' {
+  const uses = tileUses(photo, places);
+  if (!places || uses.website || uses.catalogue) return 'single';
+  if (reference && reference.key !== photo.key) return 'pair';
+  const website = places.websiteColour.reason === 'COLOUR_NOT_ACTIVE' ? null : places.websiteColour.shownKey;
+  const catalogue = places.catalogueColour.reason === 'COLOUR_NOT_ACTIVE' ? null : cataloguePlaceFor(places).place.shownKey;
+  return website || catalogue ? 'thumbs' : 'single';
+}
+
 /* -------------------------------------------------------------- add sheet */
 
 /**
