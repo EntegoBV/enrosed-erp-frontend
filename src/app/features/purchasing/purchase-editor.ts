@@ -50,7 +50,7 @@ import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseOrder,
-  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
@@ -1467,7 +1467,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
-          [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()"
+          [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
       }
@@ -2108,14 +2108,33 @@ export class PurchaseEditor {
     const pay = this.paying();
     return pay && pay.amount !== null ? splitTransfer({ ...pay, amount: pay.amount }, (amount, currency) => this.eurOf(amount, currency)) : null;
   });
-  /** The euro of the whole transfer: the goods as the draft values them (a stored euro survives), the parts on top, parts of an earlier attempt as saved. */
+  /**
+   * The euro of the whole transfer. Once the goods payment is posted the split
+   * stands: the ledger's figures for what is saved, the planned shares for the
+   * rest. Before that a typed debit already covers goods and parts; without
+   * one the goods count as the draft values them (a stored euro survives) and
+   * the parts at the order rate on top.
+   */
   readonly paymentTransferEur = computed(() => {
     const pay = this.paying();
     const split = this.paymentTransfer();
     if (!pay || pay.amount === null || !split) return 0;
-    const goodsEur = split.writes[0].amountEur ?? Math.round(this.eurOf(pay.amount, pay.currency) * 100) / 100;
-    const savedParts = (pay.partIds ?? []).reduce((sum, id) => sum + ((this.payments() ?? []).find(payment => payment.id === id)?.amountEur ?? 0), 0);
-    return Math.round((this.paymentDraftEur() + split.bankEur - goodsEur + savedParts) * 100) / 100;
+    if (pay.planned) {
+      const payments = this.payments() ?? [];
+      const parts = pay.planned.parts.reduce((sum, part, index) => sum + (payments.find(payment => payment.id === pay.partIds?.[index])?.amountEur ?? this.writeEur(part)), 0);
+      return Math.round((pay.planned.goodsEur + parts) * 100) / 100;
+    }
+    if (split.writes[0].amountEur != null) return split.bankEur;
+    return Math.round((this.paymentDraftEur() + split.bankEur - this.writeEur(split.writes[0])) * 100) / 100;
+  });
+  /** The euro of one planned write: its share of the typed debit, else the order rate. */
+  private writeEur(write: PurchasePaymentWrite): number {
+    return write.amountEur ?? Math.round(this.eurOf(write.amount, write.currency) * 100) / 100;
+  }
+  /** The goods payment alone, for the overage hint: its frozen figure, its share of the typed debit, else the draft's value. */
+  readonly paymentGoodsEur = computed(() => {
+    const pay = this.paying();
+    return pay?.planned ? pay.planned.goodsEur : this.paymentTransfer()?.writes[0].amountEur ?? this.paymentDraftEur();
   });
   readonly paymentCif = computed(() => { const data = this.view(); return !!data && purchaseCif(data); });
 
@@ -2139,10 +2158,15 @@ export class PurchaseEditor {
   readonly payingOnBank = computed(() => { const pay = this.paying(); return !!pay && this.paymentOnBank(pay); });
   readonly paymentBankAccount = computed(() => defaultBankAccount(this.bankAccounts.options(), this.paying()?.bankAccount ?? '', readPayToBank(globalThis.localStorage).accountKey));
 
+  /** The bank side of the order screen: the accounts for the sheet's chips, and the lines once. */
   private async loadBankLines(): Promise<void> {
+    void this.bankAccounts.load();
     if (this.bankLines() !== null) return;
     try { this.bankLines.set(await this.banking.list()); } catch { /* the marks are a hint; without them the sheet still asks */ }
   }
+
+  /** The bank's day: a payment dated after it cannot be on a statement yet. */
+  bankToday(): string { return receiptLocalParts(Date.now(), BANK_ZONE).day; }
 
   /** The one outgoing bank line of a transfer: every payment of it linked, the marker kept for older readers. */
   private transferLine(pay: PurchasePaymentDraft, orderNumber: string, ids: number[], amountEur: number, account: string): BankMovementRequest {
@@ -2255,7 +2279,7 @@ export class PurchaseEditor {
     const owed = this.owedFor(pay.payee);
     if (!(owed > 0)) return 0;
     const previous = (this.payments() ?? []).find(payment => payment.id === pay.id && (payment.payee ?? 'SUPPLIER') === pay.payee);
-    return purchasePaymentOverage(owed, this.paidTo(pay.payee), this.paymentDraftEur(), previous?.amountEur ?? 0);
+    return purchasePaymentOverage(owed, this.paidTo(pay.payee), this.paymentGoodsEur(), previous?.amountEur ?? 0);
   });
 
   eurOf(amount: number, currency: Currency): number {
@@ -2377,22 +2401,25 @@ export class PurchaseEditor {
     /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; a payment already on the bank gets no second line. */
     const bankOffered = typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay);
     const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
-    if (bankOffered && pay.toBank && (!account || pay.paidOn > new Date().toISOString().slice(0, 10))) return;
-    const bankEur = this.paymentTransferEur();
+    if (bankOffered && pay.toBank && (!account || pay.paidOn > this.bankToday())) return;
     this.payingBusy.set(true);
     let paymentSaved = false;
     try {
       // The bank's euro amount travels only when it was filled in for a USD/CNY payment; the server keeps the order rate otherwise.
-      const [goods, ...parts] = splitTransfer({ ...pay, amount: pay.amount }, (amount, currency) => this.eurOf(amount, currency)).writes;
+      // Once the goods payment is posted the split stands: the goods go without a euro (the stored share survives unchanged money), only the pending parts follow.
+      const frozen = pay.planned;
+      const [goods, ...fresh] = splitTransfer({ ...pay, amount: pay.amount, ...(frozen ? { amountEur: null, freightAmount: null, separateAmount: null } : {}) },
+        (amount, currency) => this.eurOf(amount, currency)).writes;
       const saved = pay.id
         ? await this.sourcing.updatePayment(data.order.id, pay.id, goods)
         : await this.sourcing.addPayment(data.order.id, goods);
       paymentSaved = true;
       if (this.view()?.order.id !== data.order.id) return;
-      this.paying.update(current => current === pay ? { ...current, id: saved.id } : current);
+      const planned = frozen ? { ...frozen, goodsEur: saved.amountEur } : fresh.length ? { goodsEur: saved.amountEur, parts: fresh } : undefined;
+      this.paying.update(current => current === pay ? { ...current, id: saved.id, ...(planned ? { planned } : {}) } : current);
       // The extra streams of the transfer, one by one; a saved part leaves the draft, so a retry never posts it twice.
       const ids = [saved.id, ...(pay.partIds ?? [])];
-      for (const part of parts) {
+      for (const part of planned?.parts.slice(ids.length - 1) ?? []) {
         const freight = part.instalmentDue === 'FREIGHT';
         let extra: PurchasePayment;
         try { extra = await this.sourcing.addPayment(data.order.id, part); }
@@ -2422,7 +2449,7 @@ export class PurchaseEditor {
       let bank: 'none' | 'noted' | 'failed' = 'none';
       if (account) {
         try {
-          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, bankEur, account.label));
+          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, this.paymentTransferEur(), account.label));
           this.bankLines.update(lines => [line, ...(lines ?? [])]);
           bank = 'noted';
         } catch { bank = 'failed'; }
@@ -2430,7 +2457,8 @@ export class PurchaseEditor {
       if (bankOffered) writePayToBank(globalThis.localStorage, { on: !!pay.toBank, accountKey: account?.key ?? readPayToBank(globalThis.localStorage).accountKey });
       await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length || invoices.length ? this.loadDocuments(data.order.id) : Promise.resolve()]);
       if (this.view()?.order.id !== data.order.id) return;
-      this.paying.set(null);
+      // A failed line keeps the sheet open with every id of the transfer, so one more 'bewaren' sends the line again.
+      if (bank !== 'failed') this.paying.set(null);
       const filed = [...(pay.files.length ? ['bewijs'] : []), ...(invoices.length ? ['factuur'] : [])];
       this.ui.toast(bank === 'noted' ? `Betaling genoteerd · ook op ${account!.label}` : bank === 'failed' ? 'Betaling genoteerd, maar de bankbeweging is niet bewaard.'
         : pay.id ? 'Betaling aangepast' : filed.length === 2 ? 'Betaling, bewijs en factuur bewaard' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',

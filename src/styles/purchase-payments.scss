@@ -192,7 +192,7 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__parts{display:grid;gap:12px;padding:2px 14px 14px}
 .pay-sheet__total{margin:0;font-size:13px}.pay-sheet__total b{font-variant-numeric:tabular-nums}
 /* 'Ook als bankbeweging noteren': the switch, the account chips and the guard under them */
-.pay-sheet__bank{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.pay-sheet__tobank{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .pay-sheet__switch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;cursor:pointer}
 .pay-sheet__switch>span{display:grid;gap:3px;min-width:0;font-size:14px;font-weight:650}
 .pay-sheet__switch small{color:var(--muted);font-size:12px;font-weight:500;line-height:1.4}
@@ -217,7 +217,7 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
  .pay-sheet__scope>summary{padding-inline:4px}
  .pay-sheet__scope>app-purchase-payment-scope{padding:0}
  .pay-sheet__parts{padding:0 4px 8px}
- .pay-sheet__bank{padding:4px 4px 8px;border:0;background:transparent}
+ .pay-sheet__tobank{padding:4px 4px 8px;border:0;background:transparent}
  .pay-sheet__switch>span{font-size:16px}.pay-sheet__switch small{font-size:13px}}
 
 /* ---- the scope control: a segmented choice on a desk, a checkmark list on a phone */

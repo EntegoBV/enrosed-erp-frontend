@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { BankAccountsStore } from '../../core/api/bank-accounts';
-import type { Currency, Payee, PurchaseCreditOffset } from '../../core/api/models';
+import type { Currency, Payee, PurchaseCreditOffset, PurchasePaymentWrite } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
@@ -33,7 +33,13 @@ export interface PurchasePaymentDraft {
   freightAmountInput?: string;
   separateAmount?: number | null;
   separateAmountInput?: string;
-  /** Parts an earlier attempt already saved, so a retry links them to the bank line without posting them again. */
+  /**
+   * Frozen when the goods payment was first posted: its euro as the ledger
+   * stored it and the parts in order, so a retry posts only what is still
+   * pending, unchanged, and the bank line keeps the typed debit.
+   */
+  planned?: { goodsEur: number; parts: PurchasePaymentWrite[] };
+  /** The ids of the planned parts already saved, in order, so a retry links them to the bank line without posting them again. */
   partIds?: number[];
   /** 'Ook als bankbeweging noteren' and the chosen account key; '' lets the remembered or the only account stand in. */
   toBank?: boolean;
@@ -103,7 +109,7 @@ let nextSheetId = 0;
             <div class="field span-2 pay-sheet__bank">
               <label [for]="ids + '-eur'">Afgeschreven in euro <span class="opt"></span></label>
               <div class="input-affix">
-                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset()"
+                <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || frozen()"
                        [placeholder]="rateEur() > 0 ? rateText() : ''" [ngModel]="pay.amountEurInput ?? ''" (ngModelChange)="amountEurInput.emit($event)" />
                 <span class="input-affix__suffix">EUR</span>
               </div>
@@ -120,7 +126,7 @@ let nextSheetId = 0;
                   <div class="field">
                     <label [for]="ids + '-freight'">Zeevracht (CIF) <span class="opt"></span></label>
                     <div class="input-affix">
-                      <input class="input num right" [id]="ids + '-freight'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                      <input class="input num right" [id]="ids + '-freight'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || frozen()"
                              [ngModel]="pay.freightAmountInput ?? ''" (ngModelChange)="partInput.emit({ part: 'freight', raw: $event })" />
                       <span class="input-affix__suffix">{{ pay.currency }}</span>
                     </div>
@@ -131,7 +137,7 @@ let nextSheetId = 0;
                 <div class="field">
                   <label [for]="ids + '-separate'">Inspectie & andere kosten <span class="opt"></span></label>
                   <div class="input-affix">
-                    <input class="input num right" [id]="ids + '-separate'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                    <input class="input num right" [id]="ids + '-separate'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || frozen()"
                            [ngModel]="pay.separateAmountInput ?? ''" (ngModelChange)="partInput.emit({ part: 'separate', raw: $event })" />
                     <span class="input-affix__suffix">{{ pay.currency }}</span>
                   </div>
@@ -159,7 +165,7 @@ let nextSheetId = 0;
         @if (bankLinked()) {
           <p class="pay-sheet__note pay-sheet__linked" role="note"><app-icon name="bank" [size]="14" /> Staat op de bank</p>
         } @else {
-          <div class="pay-sheet__bank">
+          <div class="pay-sheet__tobank">
             <label class="pay-sheet__switch"><span>Ook als bankbeweging noteren<small>Eén uitgaande beweging voor deze overschrijving, met een verwijzing naar de betaling</small></span>
               <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.toBank" [disabled]="busy()"
                      (change)="patch.emit({ toBank: $any($event.target).checked })" /></label>
@@ -174,6 +180,8 @@ let nextSheetId = 0;
                 @if (future()) { <span class="hint hint--warn" role="status">Een bankbeweging kan niet in de toekomst liggen.</span> }
                 @else if (!bankAccount()) { <span class="hint">Kies de rekening waarvan de betaling vertrok.</span> }
                 @else { <span class="hint">{{ transferEur() | eur }} gaat als uitgaande beweging op {{ accountLabel() }}.</span> }
+              } @else if (accountsLoading()) {
+                <span class="hint">Rekeningen laden…</span>
               } @else {
                 <span class="hint">Nog geen rekening: vul eerst een saldo in bij Kosten & bank.</span>
               }
@@ -199,8 +207,9 @@ let nextSheetId = 0;
 export class PurchasePaymentSheet {
   private readonly viewport = inject(DesktopViewport);
   private readonly bankAccounts = inject(BankAccountsStore);
-  private readonly today = new Date().toISOString().slice(0, 10);
   readonly draft = input.required<PurchasePaymentDraft>();
+  /** The bank's day, as the host books the line: a later 'Betaald op' cannot be on a statement yet. */
+  readonly today = input.required<string>();
   readonly chips = input<readonly { label: string; amount: number; due?: Due | null }[]>([]);
   readonly instalmentOptions = input<readonly { due: Due; label: string }[]>([]);
   /** What is still open for the chosen term or payee. */
@@ -289,13 +298,16 @@ export class PurchasePaymentSheet {
     const pay = this.draft();
     return (!!pay.freightAmountInput && pay.freightAmount === null) || (!!pay.separateAmountInput && pay.separateAmount === null);
   });
+  /** The goods payment is posted and the split stands: a retry only notes what is still missing. */
+  readonly frozen = computed(() => !!this.draft().planned);
 
   /* ---- 'Ook als bankbeweging noteren' */
   readonly accounts = this.bankAccounts.options;
+  readonly accountsLoading = this.bankAccounts.loading;
   readonly accountLabel = computed(() => this.accounts().find(option => option.key === this.bankAccount())?.label ?? '');
-  readonly future = computed(() => this.draft().paidOn > this.today);
-  /** The switch is on but the line could not be written: no account, or a day the bank has not reached. */
-  readonly bankBlocked = computed(() => !!this.draft().toBank && !this.bankLinked() && (!this.bankAccount() || this.future()));
+  readonly future = computed(() => this.draft().paidOn > this.today());
+  /** The switch is on but the line could not be written: a day the bank has not reached, or no account once the readings are in. */
+  readonly bankBlocked = computed(() => !!this.draft().toBank && !this.bankLinked() && (this.future() || (!this.bankAccount() && !this.accountsLoading())));
   readonly invoiceFiles = computed(() => this.draft().invoiceFiles ?? []);
 
   constructor() {

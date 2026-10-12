@@ -21,6 +21,8 @@ export class BankAccountsStore {
   private readonly balances = signal<readonly BankBalance[]>([]);
   private pending: Promise<void> | null = null;
   private loaded = false;
+  /** A fetch is in flight: a form shows 'Rekeningen laden…' instead of 'Nog geen rekening'. */
+  readonly loading = signal(false);
 
   readonly options = computed<BankAccountOption[]>(() => {
     const newestFirst = [...this.balances()].sort((left, right) => right.date.localeCompare(left.date) || (right.id ?? 0) - (left.id ?? 0));
@@ -39,10 +41,13 @@ export class BankAccountsStore {
   }
 
   refresh(): Promise<void> {
-    this.pending ??= this.finance.bankBalances()
-      .then((rows) => { this.balances.set(rows); this.loaded = true; })
-      .catch(() => { /* the chips stay as they were; the form says when there is no account */ })
-      .finally(() => { this.pending = null; });
+    if (!this.pending) {
+      this.loading.set(true);
+      this.pending = this.finance.bankBalances()
+        .then((rows) => { this.balances.set(rows); this.loaded = true; })
+        .catch(() => { /* the chips stay as they were; the form says when there is no account */ })
+        .finally(() => { this.pending = null; this.loading.set(false); });
+    }
     return this.pending;
   }
 }
