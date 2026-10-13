@@ -1,3 +1,4 @@
+import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
@@ -16,12 +17,12 @@ const account = companyReceiptAccount(profile)!;
 const source = await readFile(new URL('../src/app/features/sales/sales-receipts.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('sales-receipts.ts', source, ts.ScriptTarget.Latest, true);
 const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesReceipts'); assert.ok(cls);
-const names = ['selectedBank', 'bankPaymentId', 'bankNewConfirmed', 'existingBankPayments', 'chooseBank', 'saveBankTransaction', 'configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy',
+const names = ['selectedBank', 'bankPaymentId', 'bankNewConfirmed', 'existingBankPayments', 'selectedBankDifference', 'chooseBank', 'saveBankTransaction', 'configuredAccount', 'originalAccount', 'accountLoading', 'accountError', 'accountChoices', 'selectedAccount', 'accountReady', 'draftVersion', 'accountRequestVersion', 'draftOrderId', 'accountTouched', 'destroyed', 'beginDraft', 'clearDraft', 'loadBankAccount', 'selectAccount', 'add', 'refund', 'edit', 'patch', 'close', 'issue', 'save', 'ngOnDestroy',
   'summary', 'credit', 'settlement', 'dead', 'settled', 'original', 'originalOpenEur', 'applyMaxEur', 'canSettle', 'canRecord', 'canRefund', 'statusLabel', 'originalVersion', 'loadOriginal', 'offset', 'abs', 'withdraw'];
 const members = cls.members.filter(m => m.name && names.includes(m.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, salesAllProductsUnavailable, creditNoteSettlement, isCreditNote, isOffsetPayment, Date });
+const exports: any = {}; vm.runInNewContext(js, { exports, computed, signal, bankAmountsMatch, bankAmountDifference, companyReceiptAccount, receiptAccountChoices, receiptAccountValue, receiptLocalParts, receiptRequest, messageOf, salesAllProductsUnavailable, creditNoteSettlement, isCreditNote, isOffsetPayment, Date });
 const Component = exports.SalesReceipts;
 const payment = (bankAccount: string | null) => ({ id: 7, bankAccount, amountEur: 333.33, receivedAt: '2026-09-08T08:30:00Z', timeZone: 'Europe/Brussels', reference: 'Betaling 1' });
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -233,4 +234,17 @@ test('a successful bank link is never submitted twice when the subsequent invoic
   assert.equal(calls.filter(c => c.method === 'allocate').length, 1);
   assert.equal(component.draft(), null);
   assert.equal(component.busy(), false);
+});
+
+
+test('an existing sales receipt can differ two cents without rewriting it; three cents cannot link', async () => {
+  const { component, calls } = harness(); const original = payment('KBC');
+  component.view.set({ ...component.view(), paymentSummary: { ...component.summary(), payments: [original] } });
+  component.banking = { allocate: async (...args: any[]) => { calls.push({ method: 'allocate', args }); } };
+  component.sales.order = async () => component.view(); component.add(); await tick();
+  component.chooseBank({ id: 44, amountEur: 333.35, account: 'BE123456' });
+  assert.equal(component.existingBankPayments().length, 1); assert.equal(component.selectedBankDifference(), 0.02);
+  await component.save(); assert.deepEqual(calls.find(c => c.method === 'allocate').args, [44, 65, 7]); assert.equal(original.amountEur, 333.33);
+  component.add(); await tick(); component.chooseBank({ id: 45, amountEur: 333.36, account: 'BE123456' }); component.bankPaymentId.set(7);
+  await component.save(); assert.equal(calls.filter(c => c.method === 'allocate').length, 1);
 });

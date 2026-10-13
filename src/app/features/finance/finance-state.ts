@@ -22,6 +22,7 @@ import { Ui, escapeHtml } from '../../shared/ui';
 import { SALES_CHANNELS, channelLabel } from '../sales/sales-channels';
 import type { SalesChannel } from '../sales/sales-channels';
 import { bankAccountKey, canonicalBankAccount, bankCheckpoint, reconciledBank } from './bank-reconciliation';
+import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
 import type { MarkerKind, OutgoingRow } from './bank-markers';
 import { mergeChannels } from './channel-choices';
@@ -372,7 +373,7 @@ export class FinanceState {
   readonly ledger = computed(() => costLedger(this.costs(), this.purchaseFiguresVisible() ? this.payments() : [], cashTotalOf));
 
   /** Costs with something still to pay (partly paid ones included), the oldest first: that is the order they should be paid in. */
-  readonly openCosts = computed<OpenCost[]>(() => this.costs().filter((cost) => openOf(cost) > 0)
+  readonly openCosts = computed<OpenCost[]>(() => this.costs().filter((cost) => openOf(cost) !== 0)
     .map((cost) => ({ ...cost, openEur: openOf(cost), cashTotalEur: cashTotalOf(cost) }))
     .sort((left, right) => left.date.localeCompare(right.date) || (left.id ?? 0) - (right.id ?? 0)));
   readonly openCostsInclEur = computed(() => round2(this.openCosts().reduce((sum, cost) => sum + cost.openEur, 0)));
@@ -824,7 +825,7 @@ export class FinanceState {
     const items: ContextMenuItem[] = [
       ...(open?.kind === 'cost' && open.id === cost.id ? [] : [{ id: 'open', label: 'Openen', iconName: 'eye' }]),
       { id: 'edit', label: 'Bewerken', iconName: 'pencil' },
-      openOf(cost) > 0 ? { id: 'pay', label: 'Betaald zetten…', iconName: 'tick' } : { id: 'unpaid', label: 'Weer open zetten', iconName: 'restore' },
+      openOf(cost) !== 0 ? { id: 'pay', label: 'Betaald zetten…', iconName: 'tick' } : { id: 'unpaid', label: 'Weer open zetten', iconName: 'restore' },
       ...regimeItems,
       { id: 'duplicate', label: 'Dupliceren', iconName: 'copy' },
       { id: 'document', label: 'Document toevoegen…', iconName: 'clip' },
@@ -912,8 +913,8 @@ export class FinanceState {
    */
   async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null; bankTransaction?: BankStatementLine | null } = {}): Promise<CompanyCost | null> {
     if (this.saving()) return null;
-    if (options.bankTransaction && Math.round(Math.abs(options.bankTransaction.amountEur) * 100) !== Math.round(cashTotalOf(draft) * 100)) {
-      this.ui.toast('Het totaal inclusief btw moet gelijk zijn aan de gekozen banktransactie. Gebruik Betaling noteren voor een deelbetaling.', 'err'); return null;
+    if (options.bankTransaction && !bankAmountsMatch(-options.bankTransaction.amountEur, cashTotalOf(draft))) {
+      this.ui.toast('Het totaal inclusief btw mag maximaal € 0,02 afwijken van de gekozen banktransactie. Gebruik Betaling noteren voor een deelbetaling.', 'err'); return null;
     }
     this.saving.set(true);
     const before = draft.id ? this.costs().find((row) => row.id === draft.id) : null;
@@ -973,7 +974,8 @@ export class FinanceState {
   /** The bank movement that goes with a payment on a cost (its amount and day), or with what is still open on it; the marker finds it back. */
   costMovement(cost: CompanyCost, payment: CostPayment | null = null): MovementPrefill {
     const marker = payment?.id ? bankMarker('kostbetaling', payment.id) : cost.id ? bankMarker('kost', cost.id) : null;
-    return { direction: 'OUTGOING', amount: payment ? payment.amountEur : openOf(cost) || cashTotalOf(cost), day: payment?.paidOn ?? cost.paidOn ?? this.today(),
+    const amount = payment ? payment.amountEur : openOf(cost) || cashTotalOf(cost);
+    return { direction: amount < 0 ? 'INCOMING' : 'OUTGOING', amount: Math.abs(amount), day: payment?.paidOn ?? cost.paidOn ?? this.today(),
       counterparty: (cost.party ?? '').slice(0, 300),
       reference: marker ? this.markedReference(cost.reference || cost.description, marker) : cost.reference || cost.description };
   }
@@ -1065,7 +1067,7 @@ export class FinanceState {
   readonly paySheet = signal<{ costs: CompanyCost[]; existingPayment?: CostPayment } | null>(null);
 
   openPay(costs: readonly CompanyCost[]): void {
-    const open = costs.filter((cost) => !!cost.id && openOf(cost) > 0);
+    const open = costs.filter((cost) => !!cost.id && openOf(cost) !== 0);
     if (!open.length) {
       this.ui.toast(costs.length === 1 ? 'Deze kost is al betaald' : 'Deze kosten zijn al betaald');
       return;
@@ -1107,7 +1109,7 @@ export class FinanceState {
    */
   async markPaid(costs: readonly CompanyCost[], options: PayOptions): Promise<boolean> {
     if (options.bankAccount && !this.manualAccountAllowed(options.bankAccount)) { this.ui.toast('Kies voor deze rekening een opgehaalde banktransactie.', 'err'); return false; }
-    const targets = costs.filter((cost) => !!cost.id && openOf(cost) > 0);
+    const targets = costs.filter((cost) => !!cost.id && openOf(cost) !== 0);
     if (!targets.length || this.busy()) return false;
     const account = options.bankAccount ? this.canonicalAccount(options.bankAccount) : null;
     const done: PaidEntry[] = [];
@@ -1186,7 +1188,7 @@ export class FinanceState {
   private payLine(cost: CompanyCost, paidOn: string, account: string, paymentId: number | null, amountEur: number): BankMovementRequest {
     const now = receiptLocalParts(Date.now(), BANK_ZONE);
     return {
-      account, amountEur: round2(amountEur), direction: 'OUTGOING',
+      account, amountEur: Math.abs(round2(amountEur)), direction: amountEur < 0 ? 'INCOMING' : 'OUTGOING',
       bookedAt: receiptInstant(paidOn, paidOn === now.day ? now.time : '12:00:00', BANK_ZONE), timeZone: BANK_ZONE,
       reference: this.markedReference(cost.reference || cost.description, paymentId ? bankMarker('kostbetaling', paymentId) : bankMarker('kost', cost.id!)),
       counterparty: (cost.party ?? '').trim().slice(0, 300) || null, requestId: crypto.randomUUID(),
@@ -1222,7 +1224,7 @@ export class FinanceState {
         }
       }
       const open = openOf(saved);
-      this.ui.toast(open > 0 ? `Betaling van ${formatEuro(payment?.amountEur ?? options.amountEur)} genoteerd · nog ${formatEuro(open)} open${banked}`
+      this.ui.toast(open !== 0 ? `Betaling van ${formatEuro(payment?.amountEur ?? options.amountEur)} genoteerd · nog ${formatEuro(open)} open${banked}`
         : `${saved.description} volledig betaald${banked}`, 'ok');
       void this.refreshCosts();
       return true;
@@ -1239,9 +1241,9 @@ export class FinanceState {
   readonly bankCostLinkError = signal('');
 
   async addPaymentFromBank(cost: CompanyCost, line: BankStatementLine, existingPayment: CostPayment | null = null): Promise<boolean> {
-    if (!cost.id || this.saving() || line.amountEur >= 0) return false;
-    if (existingPayment && Math.round(existingPayment.amountEur * 100) !== Math.round(Math.abs(line.amountEur) * 100)) {
-      this.bankCostLinkError.set('Het bedrag van de transactie moet gelijk zijn aan de bestaande betaling.'); return false;
+    if (!cost.id || this.saving() || Math.sign(cashTotalOf(cost)) !== -Math.sign(line.amountEur)) return false;
+    if (existingPayment && !bankAmountsMatch(existingPayment.amountEur, -line.amountEur)) {
+      this.bankCostLinkError.set('Het bedrag van de transactie mag maximaal € 0,02 afwijken van de bestaande betaling.'); return false;
     }
     const pending = this.bankCostLinkPending();
     if (pending && (pending.costId !== cost.id || pending.line.id !== line.id)) {

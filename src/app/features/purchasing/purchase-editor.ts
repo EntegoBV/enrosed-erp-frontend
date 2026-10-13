@@ -1,3 +1,4 @@
+import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
@@ -2426,8 +2427,8 @@ export class PurchaseEditor {
     const bankOffered = !pay.bankTransaction && typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay);
     const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
     if (bankOffered && pay.toBank && (!account || pay.paidOn > this.bankToday())) return;
-    if (pay.bankTransaction && Math.round(this.paymentTransferEur() * 100) !== Math.round(Math.abs(pay.bankTransaction.amountEur) * 100)) {
-      this.ui.toast('Het totaal van de betaling moet gelijk zijn aan de gekozen banktransactie.', 'err'); return;
+    if (pay.bankTransaction && !bankAmountsMatch(this.paymentTransferEur(), Math.abs(pay.bankTransaction.amountEur))) {
+      this.ui.toast('Het totaal van de betaling mag maximaal € 0,02 afwijken van de gekozen banktransactie.', 'err'); return;
     }
     this.payingBusy.set(true);
     let paymentSaved = false;

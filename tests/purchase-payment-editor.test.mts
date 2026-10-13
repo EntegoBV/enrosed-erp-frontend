@@ -1,3 +1,4 @@
+import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -63,7 +64,7 @@ function deferred<T>() {
 }
 function setup() {
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports, signal, computed, parsePurchasePaymentAmount, purchasePaymentOverage,
+  vm.runInNewContext(javascript, { exports, signal, computed, bankAmountsMatch, parsePurchasePaymentAmount, purchasePaymentOverage,
     paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocument, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
     PAYEE_LABEL, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
@@ -350,7 +351,7 @@ test('an imported transfer with a different total cannot save payments before li
   editor.paying.set({ ...splitDraft(), bankTransaction: { id: 44, amountEur: -999, account: 'BE123456' } });
   await editor.confirmPayment();
   assert.equal(writes.length, 0); assert.equal(lines.length, 0);
-  assert.match(toasts.at(-1)[0], /gelijk/);
+  assert.match(toasts.at(-1)[0], /0,02/);
 });
 
 test('a selected bank debit remains fixed while foreign goods or EUR freight shares are edited', () => {
@@ -376,4 +377,15 @@ test('the first-instalment shortcut opens the bank-enabled payment sheet without
   assert.equal(writes.length, 0); assert.equal(editor.firstInstalmentPrompt(), null);
   assert.equal(editor.paying().amount, 250); assert.equal(editor.paying().currency, 'USD'); assert.equal(editor.paying().instalmentDue, 'ORDERED');
   assert.equal(editor.paying().files[0], file); assert.equal(typeof editor.paying().toBank, 'boolean');
+});
+
+
+test('a selected purchase bank row can differ two cents from the original split without rewriting goods or parts', async () => {
+  const { editor, writes } = setup(); const atomic: any[] = [];
+  editor.banking.addPurchasePayment = async (id: number, _order: number, payments: any[]) => { atomic.push(...payments); return { line: { id }, payments: payments.map((body, i) => ({ ...payment(), ...body, id: 81 + i })) }; };
+  const bank = { id: 44, amountEur: -1234.58, account: 'BE123456', source: 'ODOO' };
+  editor.paying.set({ ...splitDraft(), bankTransaction: bank }); await editor.confirmPayment();
+  assert.equal(writes.length, 0); assert.equal(atomic.length, 3);
+  assert.equal(Math.round(atomic.reduce((sum, payment) => sum + payment.amountEur, 0) * 100), 123456);
+  assert.equal(bank.amountEur, -1234.58); assert.equal(editor.paying(), null);
 });

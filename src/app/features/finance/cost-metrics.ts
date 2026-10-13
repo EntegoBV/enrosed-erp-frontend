@@ -37,7 +37,7 @@ export function costSummary(costs: readonly CompanyCost[], money: CostMoney): Co
   const exclEur = round2(costs.reduce((sum, cost) => sum + money.expenseOf(cost), 0));
   const vatEur = round2(costs.reduce((sum, cost) => sum + money.returnVatOf(cost), 0));
   const inclEur = round2(costs.reduce((sum, cost) => sum + money.cashTotalOf(cost), 0));
-  const unpaid = costs.map((cost) => money.openOf(cost)).filter((open) => open > 0);
+  const unpaid = costs.map((cost) => money.openOf(cost)).filter((open) => open !== 0);
   const importVatEur = round2(costs.filter((cost) => cost.vatRegime === 'IMPORT_VAT_PAID').reduce((sum, cost) => sum + money.cashTotalOf(cost), 0));
   const groups = <K extends string | null>(key: (cost: CompanyCost) => K) => {
     const map = new Map<K, { count: number; exclEur: number }>();

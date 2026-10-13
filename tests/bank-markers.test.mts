@@ -90,3 +90,13 @@ test('an imported Odoo row is never considered reconciled by a matching amount o
   const linked = { ...payment, linkedLineId: 7 };
   assert.equal(matchOutgoings([linked], [imported]).get(linked)?.id, 7);
 });
+
+
+test('supplier refunds remain a matching task until an incoming Odoo row carries their saved hard link', () => {
+  const refund = row(8, '2026-10-01', -95.58, 'kostbetaling');
+  const bank = { ...line(7, 95.6, '2026-10-01T12:00:00Z'), source: 'ODOO' };
+  assert.equal(unbankedOutgoings([refund], [bank], '2026-01-01').length, 1);
+  const linked = { ...refund, linkedLineId: 7 };
+  assert.equal(matchOutgoings([linked], [bank]).get(linked)?.id, 7);
+  assert.equal(unbankedOutgoings([linked], [bank], '2026-01-01').length, 0);
+});

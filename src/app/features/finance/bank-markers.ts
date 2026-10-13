@@ -83,10 +83,10 @@ const cents = (value: number): number => Math.round(value * 100);
  */
 export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines: readonly BankLineLike[]): Map<T, BankLineLike> {
   const matched = new Map<T, BankLineLike>();
-  const paid = rows.filter((row) => !!row.paidOn && row.amountEur > 0);
+  const paid = rows.filter((row) => !!row.paidOn && row.amountEur !== 0);
   const byId = new Map(lines.map((line) => [line.id, line]));
   // An imported movement is reconciled only by a saved link, never by a guess.
-  const outgoing = lines.filter((line) => line.amountEur < 0 && line.source !== 'ODOO');
+  const outgoing = lines.filter((line) => line.amountEur !== 0 && line.source !== 'ODOO');
   const markers = lineMarkers(outgoing);
   const byMarker = new Map<string, BankLineLike>();
   for (const line of outgoing) {
@@ -104,7 +104,7 @@ export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines:
   for (const row of paid) {
     if (matched.has(row)) continue;
     const line = byMarker.get(`${row.kind}#${row.id}`) ?? (row.legacyCostId ? byMarker.get(`kost#${row.legacyCostId}`) : undefined);
-    if (line && !taken.has(line.id)) { matched.set(row, line); taken.add(line.id); }
+    if (line && Math.sign(line.amountEur) === -Math.sign(row.amountEur) && !taken.has(line.id)) { matched.set(row, line); taken.add(line.id); }
     else open.push(row);
   }
   const free = outgoing.filter((line) => !markers.has(line.id) && !taken.has(line.id)).map((line) => ({ line, day: localDay(line.bookedAt, line.timeZone) }));
@@ -133,7 +133,7 @@ export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines:
  */
 export function unbankedOutgoings<T extends OutgoingRow>(rows: readonly T[], lines: readonly BankLineLike[], sinceDay: string | null): T[] {
   if (!sinceDay) return [];
-  const candidates = rows.filter((row) => !!row.paidOn && row.paidOn >= sinceDay && row.amountEur > 0);
+  const candidates = rows.filter((row) => !!row.paidOn && row.paidOn >= sinceDay && row.amountEur !== 0);
   const matched = matchOutgoings(candidates, lines);
   return candidates.filter((row) => !matched.has(row));
 }

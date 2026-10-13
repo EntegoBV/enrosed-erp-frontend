@@ -1,3 +1,4 @@
+import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
@@ -113,7 +114,7 @@ function harness() {
   const tokens = { state: Symbol('FinanceState'), api: Symbol('BankingApi'), ui: Symbol('Ui') };
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
-    exports, signal, computed, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
+    exports, signal, computed, bankAmountsMatch, bankAmountDifference, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui,
     inject: (token: symbol) => {
@@ -450,4 +451,95 @@ test('revealing historical manual rows keeps them outside bank movement totals',
   assert.equal(panel.filteredLines().length, 1); assert.equal(panel.historicalCount(), 1);
   panel.showHistorical.set(true); assert.equal(panel.filteredLines().length, 2);
   assert.equal(panel.totals().incoming, 50);
+});
+
+
+function receivedDocument(id = 10, extra: any = {}): any {
+  return { id, name: `BILL/${id}`, reference: `SUP-${id}`, partner: 'Leverancier', date: '2026-10-01', moveType: 'in_invoice', state: 'draft', currency: 'EUR', total: 100,
+    peppolState: 'done', peppolMessageId: null, attachments: [{ id: 99, name: 'invoice.xml', kind: 'XML' }], registered: false, companyCostId: null, eligible: true, unavailableReason: null, ...extra };
+}
+function receivedPreview(document = receivedDocument(), extra: any = {}): any {
+  return { document, snapshotHash: `snapshot-${document.id}`, invoiceTotalEur: 100, netEur: 82.64, vatEur: 17.36, paymentAmountEur: 100, differenceEur: -0.02, supplierCountry: 'BE', companyCostId: null, existingCandidates: [], eligible: true, unavailableReason: null, ...extra };
+}
+
+test('received document pagination keeps identity, searches supplier/reference and reports Peppol only with evidence', async () => {
+  const { panel, api } = harness(); await panel.openAllocation(movement(1, -100.02));
+  const cursors: number[] = [];
+  (api as any).receivedOdooInvoices = async (_id: number, cursor: number) => { cursors.push(cursor); return cursor === 0
+    ? { documents: [receivedDocument(20)], nextAfterId: 20, hasMore: true }
+    : { documents: [receivedDocument(20), receivedDocument(19, { peppolState: null })], nextAfterId: null, hasMore: false }; };
+  await panel.loadReceivedInvoices(); await panel.loadReceivedInvoices(true);
+  assert.deepEqual(cursors, [0, 20]); assert.deepEqual(Array.from(panel.receivedInvoices(), d => d.id), [20, 19]);
+  panel.receivedSearch.set('leverancier SUP-19'); assert.equal(panel.visibleReceivedInvoices()[0].id, 19);
+  assert.equal(panel.receivedSource(receivedDocument()), 'Ontvangen via Peppol');
+  assert.equal(panel.receivedSource(receivedDocument(19, { peppolState: 'draft', peppolMessageId: null })), 'Odoo');
+  assert.equal(panel.receivedHasMore(), false);
+});
+
+test('late received previews and document loads cannot overwrite a newer selection or another bank transaction', async () => {
+  const { panel, api } = harness(); await panel.openAllocation(movement(1, -100.02));
+  const first = deferred<any>(), second = deferred<any>();
+  (api as any).previewReceivedOdooInvoice = (_id: number, invoiceId: number) => invoiceId === 10 ? first.promise : second.promise;
+  const one = panel.selectReceivedInvoice(receivedDocument(10)), two = panel.selectReceivedInvoice(receivedDocument(11));
+  second.resolve(receivedPreview(receivedDocument(11))); await two;
+  first.resolve(receivedPreview(receivedDocument(10))); await one;
+  assert.equal(panel.receivedPreview()!.document.id, 11);
+  const list = deferred<any>(); (api as any).receivedOdooInvoices = () => list.promise;
+  const loading = panel.loadReceivedInvoices(); await panel.openAllocation(movement(2, 100));
+  list.resolve({ documents: [receivedDocument()], hasMore: false }); await loading;
+  assert.equal(panel.receivedInvoices().length, 0); assert.equal(panel.receivedPreview(), null);
+});
+
+test('received source registration requires a chosen existing candidate and retries the same snapshot without creating another cost', async () => {
+  const { panel, api, state } = harness(); const bank = movement(1, -100.02); state.bankStatements.set([bank]); await panel.openAllocation(bank);
+  const preview = receivedPreview(receivedDocument(), { existingCandidates: [{ id: 77, description: 'Bestaande factuur', totalEur: 100, openEur: 0 }] });
+  (api as any).previewReceivedOdooInvoice = async () => preview;
+  await panel.selectReceivedInvoice(preview.document); assert.equal(panel.canLinkReceived(), false);
+  panel.receivedExistingCostId.set(999); assert.equal(panel.canLinkReceived(), false);
+  panel.receivedExistingCostId.set(77); assert.equal(panel.canLinkReceived(), true);
+  const writes: any[] = []; let first = true;
+  (api as any).linkReceivedOdooInvoice = async (id: number, body: any) => { writes.push({ id, ...body }); if (first) { first = false; throw new Error('Response verloren'); }
+    return { line: { ...bank, allocated: true, allocationDifferenceEur: -0.02 }, companyCostId: 77, alreadyRegistered: true, documentsSaved: 1 }; };
+  await panel.linkReceivedInvoice(); assert.equal(panel.selected()!.id, 1); assert.match(panel.error(), /Response verloren/);
+  await panel.linkReceivedInvoice(); await panel.linkReceivedInvoice();
+  assert.equal(writes.length, 2); assert.deepEqual(writes[0], writes[1]); assert.equal(writes[0].existingCompanyCostId, 77);
+  assert.equal(state.bankStatements()[0].amountEur, -100.02); assert.equal(state.bankStatements()[0].allocationDifferenceEur, -0.02); assert.equal(panel.selected(), null);
+});
+
+test('supplier credit notes match bank receipts and two-cent difference, never opposite signs or three cents', async () => {
+  const { panel } = harness(); await panel.openAllocation(movement(1, 95.58));
+  const doc = receivedDocument(10, { moveType: 'in_refund', total: 95.6 });
+  panel.receivedPreview.set(receivedPreview(doc, { invoiceTotalEur: -95.6, netEur: -79.01, vatEur: -16.59, paymentAmountEur: -95.6, differenceEur: -0.02 }));
+  assert.equal(panel.canLinkReceived(), true);
+  panel.receivedPreview.update(p => ({ ...p!, paymentAmountEur: 95.6 })); assert.equal(panel.canLinkReceived(), false);
+  panel.receivedPreview.update(p => ({ ...p!, paymentAmountEur: -95.61, differenceEur: -0.03 })); assert.equal(panel.canLinkReceived(), false);
+});
+
+test('existing supplier refund candidates are signed and match with a two-cent difference', async () => {
+  const { panel, state } = harness(); state.costs.set([{ id: 5, description: 'Credit leverancier', payments: [{ id: 8, amountEur: -95.6, bankStatementLineId: null, paidOn: '2026-10-01' }] }]);
+  await panel.openAllocation(movement(1, 95.58)); panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.equal(panel.canLinkOutgoing(), true); assert.equal(panel.outgoingDifference(), -0.02);
+  panel.selected.set(movement(1, 95.57)); assert.equal(panel.canLinkOutgoing(), false);
+});
+
+
+test('choosing an existing source candidate refreshes its actual payment amount before enabling submit', async () => {
+  const { panel, api } = harness(); await panel.openAllocation(movement(1, -100.02));
+  const base = receivedPreview(receivedDocument(), { existingCandidates: [{ id: 77, description: 'Bestaande kost', totalEur: 100, openEur: 0 }] });
+  panel.receivedPreview.set(base); const pending = deferred<any>(); const requests: any[] = [];
+  (api as any).previewReceivedOdooInvoice = (_line: number, _invoice: number, costId?: number) => { requests.push(costId); return pending.promise; };
+  panel.selectReceivedCost(77); assert.equal(panel.receivedPreviewLoading(), true); assert.equal(panel.canLinkReceived(), false);
+  pending.resolve({ ...base, paymentAmountEur: 100.01, differenceEur: -0.01 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requests, [77]); assert.equal(panel.receivedExistingCostId(), 77); assert.equal(panel.receivedPreview()!.differenceEur, -0.01); assert.equal(panel.canLinkReceived(), true);
+});
+
+test('received picker uses the supplier-document direction and actual currency, and a failed load remains retryable', async () => {
+  const { panel, api } = harness(); await panel.openAllocation(movement(1, 95.58));
+  panel.receivedInvoices.set([receivedDocument(1), receivedDocument(2, { moveType: 'in_refund', currency: 'USD' })]);
+  assert.deepEqual(Array.from(panel.visibleReceivedInvoices(), d => d.id), [2]); assert.match(panel.receivedAmount(panel.visibleReceivedInvoices()[0]), /US\$|USD/);
+  (api as any).receivedOdooInvoices = async () => { throw new Error('Odoo offline'); };
+  await panel.loadReceivedInvoices(); assert.equal(panel.receivedLoading(), false); assert.equal(panel.receivedLoaded(), false); assert.match(panel.receivedError(), /offline/);
+  (api as any).receivedOdooInvoices = async () => ({ documents: [], hasMore: false }); await panel.loadReceivedInvoices();
+  assert.equal(panel.receivedLoaded(), true); assert.equal(panel.receivedError(), '');
 });

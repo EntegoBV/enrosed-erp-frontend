@@ -37,3 +37,12 @@ test('how much of the payments the bank holds, and the marker a line carries', (
   assert.equal(paymentsBanked([{ bankStatementLineId: 4 }, { bankStatementLineId: 9 }]), 'all');
   assert.equal(paymentMarker(7), 'kostbetaling #7');
 });
+
+
+test('supplier credit notes remain open until refunded and keep signed money', () => {
+  assert.deepEqual(paymentTotals(-95.58, []), { paidEur: 0, openEur: -95.58, overpaidEur: 0, paid: false, paidOn: null });
+  const partial = paymentTotals(-95.58, [{ amountEur: -50, paidOn: '2026-10-01' }]);
+  assert.equal(partial.openEur, -45.58); assert.equal(partial.paid, false);
+  const paid = paymentTotals(-95.58, [{ amountEur: -95.58, paidOn: '2026-10-01' }]);
+  assert.equal(paid.paid, true); assert.equal(paid.paidEur, -95.58); assert.equal(paid.openEur, 0);
+});

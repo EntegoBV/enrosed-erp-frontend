@@ -2,7 +2,14 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
+import type { OdooDocument } from './odoo-api';
 import { BankBalance, CompanyCost, CostParty, CostPayment, Fair, RecurringCost } from './models';
+
+export interface CostOdooSource {
+  snapshot: { document: OdooDocument; netEur: number; vatEur: number; totalEur: number; supplierCountry: string | null };
+  documents: { odooAttachmentId: number; mediaAssetId: number; name: string; kind: string }[];
+  registeredAt: string;
+}
 
 /** The company's own money: costs, the recurring ones the server books, and what the bank holds. */
 @Injectable({ providedIn: 'root' })
@@ -14,6 +21,10 @@ export class FinanceApi {
     if (from) params = params.set('from', from);
     if (to) params = params.set('to', to);
     return firstValueFrom(this.http.get<CompanyCost[]>(api('/api/costs'), { params }));
+  }
+
+  costOdooSource(id: number): Promise<CostOdooSource | null> {
+    return firstValueFrom(this.http.get<CostOdooSource | null>(api(`/api/costs/${id}/odoo-source`)));
   }
 
   createCost(cost: CompanyCost): Promise<CompanyCost> {

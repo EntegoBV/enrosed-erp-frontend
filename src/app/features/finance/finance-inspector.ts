@@ -39,7 +39,7 @@ const DAY = 86_400_000;
       @switch (t.kind) {
         @case ('cost') {
           @if (cost(); as cost) {
-            @if (open(cost) > 0) { <button class="btn btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+            @if (open(cost) !== 0) { <button class="btn btn--primary" type="button" (click)="state.openPay([cost])">{{ incl(cost) < 0 ? 'Terugbetaling…' : 'Betaald…' }}</button> }
             @else { <button class="btn" type="button" [disabled]="state.saving() || state.busy()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
             <button class="btn" type="button" (click)="state.openCost(cost)">Bewerken</button>
             <button class="ios-circle" type="button" aria-label="Meer" (click)="state.costMenu(cost, null)"><app-icon name="more" [size]="22" /></button>
@@ -132,7 +132,7 @@ const DAY = 86_400_000;
             @if (cost.notes) { <section class="wk-section"><h3 class="wk-section__title">Notities</h3><p class="fin-notes">{{ cost.notes }}</p></section> }
             @if (layout() === 'pane') {
               <footer class="wk-inspector__foot">
-                @if (open(cost) > 0) { <button class="wk-btn wk-btn--primary" type="button" (click)="state.openPay([cost])">Betaald…</button> }
+                @if (open(cost) !== 0) { <button class="wk-btn wk-btn--primary" type="button" (click)="state.openPay([cost])">{{ incl(cost) < 0 ? 'Terugbetaling…' : 'Betaald…' }}</button> }
                 @else { <button class="wk-btn" type="button" [disabled]="state.saving() || state.busy()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
                 <button class="wk-btn" type="button" (click)="state.openCost(cost)">Bewerken</button>
                 <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" aria-label="Meer" (click)="state.costMenu(cost, anchor($event))"><app-icon name="more" [size]="16" /></button>
@@ -302,8 +302,8 @@ export class FinanceInspector {
   vat(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return vatOf(row); }
   open(cost: CompanyCost): number { return openOf(cost); }
   /** Something was paid, but not everything. */
-  partial(cost: CompanyCost): boolean { const open = openOf(cost); return open > 0 && Math.round(open * 100) < Math.round(cashTotalOf(cost) * 100); }
-  overpaid(cost: CompanyCost): number { return Math.max(0, Math.round((paidOf(cost) - cashTotalOf(cost)) * 100)) / 100; }
+  partial(cost: CompanyCost): boolean { const open = openOf(cost); return open !== 0 && Math.abs(Math.round(open * 100)) < Math.abs(Math.round(cashTotalOf(cost) * 100)); }
+  overpaid(cost: CompanyCost): number { return Math.max(0, Math.round(Math.sign(cashTotalOf(cost)) * (paidOf(cost) - cashTotalOf(cost)) * 100)) / 100; }
   dateLabel(cost: CompanyCost): string {
     const regime = cost.vatRegime;
     if (regime === 'IMPORT_VAT_PAID') return 'Datum douanedocument';

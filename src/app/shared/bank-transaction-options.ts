@@ -1,5 +1,16 @@
 import type { BankStatementLine } from '../core/api/banking-api';
 
+/** Allowed reconciliation difference; compare integer cents without rewriting either amount. */
+export const BANK_MATCH_TOLERANCE_CENTS = 2;
+export function bankAmountDifference(bankAmount: number, recordedAmount: number): number {
+  return (Math.round(bankAmount * 100) - Math.round(recordedAmount * 100)) / 100;
+}
+export function bankAmountsMatch(bankAmount: number, recordedAmount: number): boolean {
+  return Number.isFinite(bankAmount) && Number.isFinite(recordedAmount)
+    && Math.round(bankAmount * 100) !== 0 && Math.round(recordedAmount * 100) !== 0 && Math.sign(bankAmount) === Math.sign(recordedAmount)
+    && Math.abs(Math.round(bankAmount * 100) - Math.round(recordedAmount * 100)) <= BANK_MATCH_TOLERANCE_CENTS;
+}
+
 export type BankDirection = 'INCOMING' | 'OUTGOING' | 'ANY';
 export function bankTransactionAllocated(row: BankStatementLine): boolean {
   return !!row.allocated || row.salesPaymentId != null;
@@ -16,7 +27,7 @@ export function bankTransactionOptions(rows: readonly BankStatementLine[], direc
   const words = query.trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
   return rows.filter(row => {
     if ((direction === 'INCOMING' && row.amountEur <= 0) || (direction === 'OUTGOING' && row.amountEur >= 0)) return false;
-    if (exact && cents !== null && Math.round(Math.abs(row.amountEur) * 100) !== cents) return false;
+    if (exact && cents !== null && Math.abs(Math.round(Math.abs(row.amountEur) * 100) - cents) > BANK_MATCH_TOLERANCE_CENTS) return false;
     const day = bankTransactionDay(row);
     const text = [row.reference, row.counterparty, row.account, row.amountEur.toFixed(2), Math.abs(row.amountEur).toLocaleString('nl-BE', { minimumFractionDigits: 2 }), day, day.split('-').reverse().join('/'), row.source === 'ODOO' ? 'Odoo' : 'Handmatig', row.allocationLabel].join(' ').toLocaleLowerCase('nl-BE');
     return words.every(word => text.includes(word));

@@ -155,3 +155,13 @@ test('the accountant CSV can append the file names per row', () => {
   assert.match(lines[1], /;"factuur\.pdf, bon; kopie\.jpg"$/);
   assert.match(lines[2], /;$/);
 });
+
+
+test('supplier credit notes reduce expenses and show open or partially refunded status instead of falsely paid', () => {
+  const credit = { ...cost, amountExclEur: -79, amountInclEur: -95.58, vatPct: null, openEur: -95.58, paidEur: 0, paidOn: null };
+  const open = ledger([credit], [])[0]; assert.equal(open.status, 'open'); assert.equal(open.amountEur, -95.58); assert.equal(open.openEur, -95.58);
+  const partial = ledger([{ ...credit, openEur: -45.58, paidEur: -50 }], [])[0]; assert.equal(partial.status, 'partial');
+  assert.equal(costLedgerTotals([partial]).paidEur, -50);
+  const paid = ledger([{ ...credit, openEur: 0, paidEur: -95.58, paidOn: '2026-10-01' }], [])[0]; assert.equal(paid.status, 'paid');
+  assert.match(costLedgerCsv([paid], code => code), /-95,58/);
+});

@@ -42,7 +42,7 @@ const cents = (value: number): number => Math.round(value * 100);
 
 /** The open amount of a cost: the server's figure, else the whole cash total until a paid date (older responses). */
 function openOf(cost: CompanyCost, cash: number): number {
-  if (Number.isFinite(cost.openEur as number)) return Math.max(0, cents(cost.openEur as number)) / 100;
+  if (Number.isFinite(cost.openEur as number)) return cents(cost.openEur as number) / 100;
   return cost.paidOn ? 0 : cash;
 }
 
@@ -58,7 +58,7 @@ export function costLedger(costs: readonly CompanyCost[], payments: readonly Pur
     return {
       key: `cost:${cost.id ?? `new-${index}`}`, source: 'company', date: cost.date, category: cost.category,
       description: cost.description, party: cost.party, reference: cost.reference, paidOn: cost.paidOn,
-      amountEur, openEur, status: openEur <= 0 ? 'paid' : cents(openEur) < cents(amountEur) ? 'partial' : 'open',
+      amountEur, openEur, status: cents(openEur) === 0 ? 'paid' : Math.abs(cents(openEur)) < Math.abs(cents(amountEur)) ? 'partial' : 'open',
       cost, payment: null,
     };
   });
@@ -164,7 +164,7 @@ export function costLedgerCsv(rows: readonly CostLedgerRow[], categoryLabel: (co
     const paidEur = round2(row.amountEur - row.openEur);
     return [row.date, cost ? 'Bedrijfskost' : 'Containerbetaling', categoryLabel(row.category), row.description, row.party, row.reference,
       cost?.amountExclEur, cost?.vatPct, cost ? (vat ? round2(vat(cost)) : round2(row.amountEur - money(cost.amountExclEur))) : null, cost ? row.amountEur : null,
-      paidEur > 0 ? paidEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
+      paidEur !== 0 ? paidEur : null, row.paidOn, row.payment ? String(row.payment.orderId) : null,
       row.payment ? String(row.payment.id) : null, cost?.salesChannel ? channelLabel(cost.salesChannel) : null, cost ? (cost.recurringCostId ? 'ja' : 'nee') : null,
       ...(cost ? regimeCells(cost) : [null, null, null, null, null, null]),
       cost?.notes ?? (row.payment ? 'Automatisch gekoppeld; beheren bij de container. Btw niet uit betaling afgeleid.' : null),

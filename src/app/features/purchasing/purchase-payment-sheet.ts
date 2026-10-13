@@ -1,3 +1,4 @@
+import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { BankStatementLine } from '../../core/api/banking-api';
@@ -334,7 +335,7 @@ export class PurchasePaymentSheet {
     const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0);
     const goods = Math.round((total - parts) * 100) / 100;
     this.patch.emit({ bankTransaction: row, toBank: false, bankAccount: row.account, paidOn: bankTransactionDay(row), bankLinkError: '',
-      ...(pay.currency === 'EUR' ? { amount: goods, amountInput: String(goods).replace('.', ',') }
+      ...(pay.id || bankAmountsMatch(this.transferEur(), total) ? {} : pay.currency === 'EUR' ? { amount: goods, amountInput: String(goods).replace('.', ',') }
         : { amountEur: total, amountEurInput: String(total).replace('.', ',') }) });
   }
   constructor() {

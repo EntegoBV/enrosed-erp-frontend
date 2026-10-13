@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import type { BankStatementLine } from '../../core/api/banking-api';
+import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
 import { DateField } from '../../shared/date-field';
 import { EurPipe } from '../../shared/pipes';
@@ -28,7 +29,7 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
         @if (!single()) { <p class="fin-hint">Bestaande banktransacties koppel je per kost. Open daarvoor de betaling bij die kost.</p> }
         @if (single()) {
           @if (existingPayment(); as payment) { <p class="fin-sheet__lead">{{ single()!.description }} · {{ payment.amountEur | eur }} betaald op {{ payment.paidOn }}</p> }
-          <app-bank-transaction-picker direction="OUTGOING" [amount]="existingPayment()?.amountEur ?? amount()" [selected]="selectedBank()" [disabled]="state.saving() || !!state.bankCostLinkPending()" (selectedChange)="selectedBank.set($event)" />
+          <app-bank-transaction-picker [direction]="total() < 0 ? 'INCOMING' : 'OUTGOING'" [amount]="abs(existingPayment()?.amountEur ?? amount())" [selected]="selectedBank()" [disabled]="state.saving() || !!state.bankCostLinkPending()" (selectedChange)="selectedBank.set($event)" />
         }
         @if (state.bankCostLinkError()) { <p class="fin-hint fin-hint--warn" role="alert">{{ state.bankCostLinkError() }}</p> }
         @if (state.bankCostLinkPending()) {
@@ -89,7 +90,7 @@ export class PaySheet {
   /** What is still open on the single cost, or the sum of the remainders. */
   readonly open = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + openOf(cost) * 100, 0)) / 100);
   readonly total = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
-  readonly partial = computed(() => Math.round(this.open() * 100) < Math.round(this.total() * 100));
+  readonly partial = computed(() => Math.abs(Math.round(this.open() * 100)) < Math.abs(Math.round(this.total() * 100)));
   private readonly preference = this.state.payToBank();
   readonly choice = signal<PaidChoice>('today');
   readonly otherDay = signal(this.state.today());
@@ -97,7 +98,7 @@ export class PaySheet {
   readonly account = signal(this.state.manualAccountOptions().some((option) => option.key === this.preference.accountKey)
     ? this.preference.accountKey : this.state.manualAccountOptions().length === 1 ? this.state.manualAccountOptions()[0].key : '');
   /** The field starts on the remainder and is not rebound while typing. */
-  readonly initialAmount = this.open();
+  readonly initialAmount = Math.abs(this.open());
   readonly amount = signal(this.open());
   readonly selectedBank = signal<BankStatementLine | null>(this.state.bankCostLinkPending()?.costId === this.single()?.id ? this.state.bankCostLinkPending()!.line : null);
 
@@ -121,35 +122,37 @@ export class PaySheet {
   /** Less than the remainder, the remainder, or more: the button says which. */
   readonly amountState = computed<'rest' | 'part' | 'over' | 'none'>(() => {
     if (!this.single()) return 'rest';
-    const amount = Math.round(this.amount() * 100);
+    const amount = Math.abs(Math.round(this.amount() * 100));
     if (amount <= 0) return 'none';
-    const open = Math.round(this.open() * 100);
+    const open = Math.abs(Math.round(this.open() * 100));
     return amount === open ? 'rest' : amount < open ? 'part' : 'over';
   });
   readonly primaryLabel = computed(() => {
     switch (this.amountState()) {
       case 'part': return 'Betaling noteren';
       case 'over': return 'Te veel: toch noteren';
-      default: return 'Betaald zetten';
+      default: return this.total() < 0 ? 'Terugbetaling noteren' : 'Betaald zetten';
     }
   });
   readonly amountHint = computed(() => {
     switch (this.amountState()) {
-      case 'part': return `Daarna nog ${formatEuro(Math.round((this.open() - this.amount()) * 100) / 100)} open`;
-      case 'over': return `${formatEuro(Math.round((this.amount() - this.open()) * 100) / 100)} meer dan wat open staat`;
+      case 'part': return `Daarna nog ${formatEuro(Math.abs(Math.round((this.open() - this.amount()) * 100) / 100))} open`;
+      case 'over': return `${formatEuro(Math.abs(Math.round((this.amount() - this.open()) * 100) / 100))} meer dan wat open staat`;
       case 'none': return 'Geef een bedrag groter dan nul op';
       default: return '';
     }
   });
-  readonly canSave = computed(() => this.selectedBank() ? !this.state.busy() && !this.state.saving() : !this.existingPayment() && !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none'
+  readonly canSave = computed(() => this.selectedBank() ? !this.state.busy() && !this.state.saving() && (!this.existingPayment() || bankAmountsMatch(this.existingPayment()!.amountEur, -this.selectedBank()!.amountEur)) : !this.existingPayment() && !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none'
     && (!this.toBank() || (!!this.account() && !this.future())));
 
   /** Whether the line lands after the account's last check (and so moves its balance); the cost form shows the same hint. */
   readonly accountHint = computed(() => this.state.accountHint(this.account(), this.paidOn()));
 
+  readonly abs = Math.abs;
+
   typed(value: string): void {
     const amount = Number(value);
-    this.amount.set(Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : 0);
+    this.amount.set(Number.isFinite(amount) && amount > 0 ? Math.sign(this.total()) * Math.round(amount * 100) / 100 : 0);
   }
 
   save(): void {

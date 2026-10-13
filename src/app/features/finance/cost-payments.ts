@@ -19,12 +19,13 @@ const cents = (value: number): number => Math.round((Number.isFinite(value) ? va
 export function paymentTotals(cashEur: number, payments: readonly { amountEur: number; paidOn: string }[]): PaymentTotals {
   const cash = cents(cashEur);
   const paidCents = payments.reduce((sum, payment) => sum + cents(payment.amountEur), 0);
-  const paid = payments.length > 0 && paidCents >= cash - 1;
+  const direction = Math.sign(cash) || 1;
+  const paid = payments.length > 0 && direction * paidCents >= Math.abs(cash) - 1;
   return {
     paidEur: paidCents / 100,
     /* Settled within a cent reads nothing open: the lists never say 'Deels' next to 'Betaald'. */
-    openEur: paid ? 0 : Math.max(0, cash - paidCents) / 100,
-    overpaidEur: Math.max(0, paidCents - cash) / 100,
+    openEur: paid ? 0 : direction * Math.max(0, direction * (cash - paidCents)) / 100,
+    overpaidEur: Math.max(0, direction * (paidCents - cash)) / 100,
     paid,
     paidOn: paid ? payments.reduce<string | null>((latest, payment) => (latest === null || payment.paidOn > latest ? payment.paidOn : latest), null) : null,
   };

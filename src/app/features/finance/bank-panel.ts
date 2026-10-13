@@ -265,7 +265,7 @@ export class BankPanel implements FinanceSectionApi {
 
   /** 'Noteren': the movement form prefilled with the amount, the day and the marker of this payment (a cost paid before the rows existed counts whole). */
   note(item: UnbankedItem): void {
-    if (this.state.hasOdooAccounts()) { this.movements('', 'out', true); return; }
+    if (this.state.hasOdooAccounts()) { this.movements('', item.amountEur < 0 ? 'in' : 'out', true); return; }
     const row = item.row;
     if (row.cost) {
       const payment = item.kind === 'kostbetaling' ? (row.cost.payments ?? []).find((candidate) => candidate.id === item.id) ?? null : null;

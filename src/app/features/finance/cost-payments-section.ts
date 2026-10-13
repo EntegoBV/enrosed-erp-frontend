@@ -78,14 +78,14 @@ export class CostPaymentsSection {
     return [{ key: 'legacy', payment: null, paidOn: cost.paidOn, amountEur: cashTotalOf(cost),
       account: line ? this.state.accountLabel(bankAccountKey(line.account)) : '', banked: !!line }];
   });
-  readonly overpaid = computed(() => Math.max(0, Math.round((paidOf(this.cost()) - cashTotalOf(this.cost())) * 100)) / 100);
+  readonly overpaid = computed(() => Math.max(0, Math.round(Math.sign(cashTotalOf(this.cost())) * (paidOf(this.cost()) - cashTotalOf(this.cost())) * 100)) / 100);
   readonly summary = computed(() => {
     const cost = this.cost();
     const n = this.rows().length;
     if (!n) return `nog ${formatEuro(openOf(cost))} open`;
     const count = `${n} ${n === 1 ? 'betaling' : 'betalingen'}`;
     const open = openOf(cost);
-    if (open > 0) return `${count} · ${formatEuro(paidOf(cost))} betaald · nog ${formatEuro(open)}`;
+    if (open !== 0) return `${count} · ${formatEuro(paidOf(cost))} betaald · nog ${formatEuro(open)}`;
     return `${count} · ${this.overpaid() > 0 ? `te veel betaald ${formatEuro(this.overpaid())}` : 'volledig betaald'}`;
   });
 

@@ -1,3 +1,4 @@
+import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -12,9 +13,9 @@ const names = ['bankCostLinkPending', 'bankCostLinkError', 'addPaymentFromBank',
 const members = cls.members.filter(member => member.name && names.includes(member.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-const exports: any = {}; vm.runInNewContext(js, { exports, signal, bankTransactionDay, messageOf: (e: any, fallback: string) => e.message || fallback });
+const exports: any = {}; vm.runInNewContext(js, { exports, signal, bankTransactionDay, bankAmountsMatch, cashTotalOf: (cost: any) => cost.amountInclEur, messageOf: (e: any, fallback: string) => e.message || fallback });
 const line = { id: 70, amountEur: -42, account: 'BE123456', bookedAt: '2026-10-01T22:15:00Z', timeZone: 'Europe/Brussels', source: 'ODOO', reference: 'Kost 1' };
-const cost = { id: 20, description: 'Kost 1', payments: [] };
+const cost = { id: 20, description: 'Kost 1', amountInclEur: 42, payments: [] };
 function setup() {
   const state = new exports.FinanceState(); const creates: any[] = []; const links: any[] = []; let fails = true;
   Object.assign(state, { saving: signal(false), bankStatements: signal([]), paySheet: signal({ costs: [cost] }), refreshCosts: async () => {}, refreshBank: async () => {}, ui: { toast() {} },
@@ -37,7 +38,7 @@ test('new cost payments retry the same atomic bank and cost pair without guessin
 test('existing cost payments link without a new payment and a mismatched amount is rejected before writing', async () => {
   const { state, creates, links, succeed } = setup(); succeed();
   assert.equal(await state.addPaymentFromBank(cost, line, { id: 10, amountEur: 41 }), false);
-  assert.equal(links.length, 0); assert.match(state.bankCostLinkError(), /gelijk/);
+  assert.equal(links.length, 0); assert.match(state.bankCostLinkError(), /0,02/);
   assert.equal(await state.addPaymentFromBank(cost, line, { id: 10, amountEur: 42 }), true);
   assert.equal(creates.length, 0); assert.deepEqual(links, [{ id: 70, costPaymentId: 10 }]);
 });
@@ -54,4 +55,18 @@ test('the mobile quick-payment gesture opens transaction selection without recor
   state.busy = signal(false); state.openPay = (costs: any[]) => opened.push(costs);
   state.swipePay(cost); assert.equal(opened[0][0].id, 20); assert.equal(creates.length, 0);
   state.saving.set(true); state.swipePay(cost); assert.equal(opened.length, 1);
+});
+
+
+test('cost linking preserves original payments at two cents and accepts signed supplier refunds', async () => {
+  for (const sign of [1, -1]) {
+    const { state, creates, links, succeed } = setup(); succeed();
+    const originalCost = { ...cost, amountInclEur: sign * 42 };
+    const bank = { ...line, amountEur: -sign * 42.02 };
+    const originalPayment = { id: 10, amountEur: sign * 42 };
+    assert.equal(await state.addPaymentFromBank(originalCost, bank, originalPayment), true);
+    assert.equal(originalPayment.amountEur, sign * 42); assert.equal(bank.amountEur, -sign * 42.02);
+    assert.equal(creates.length, 0); assert.equal(links.length, 1);
+    assert.equal(await state.addPaymentFromBank(originalCost, { ...bank, amountEur: -sign * 42.03 }, originalPayment), false);
+  }
 });

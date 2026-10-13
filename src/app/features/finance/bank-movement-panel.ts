@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { BankingApi, BankMatch, BankStatementLine } from '../../core/api/banking-api';
+import { BankingApi, BankMatch, BankStatementLine, ReceivedOdooInvoice, ReceivedOdooInvoicePreview } from '../../core/api/banking-api';
 import type { SalesOrderView, SalesPayment } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
+import { bankAmountsMatch, bankAmountDifference } from '../../shared/bank-transaction-options';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
@@ -68,6 +69,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                   <button class="wk-pill fin-marker" [class.tone-teal]="isCost(marker)" [class.tone-blue]="!isCost(marker)" type="button" tabindex="-1"
                           (click)="$event.stopPropagation(); inspectMarker(marker)">{{ isCost(marker) ? 'Kost' : 'Container' }}</button>
                 } @else { <span class="wk-amount--muted">—</span> }
+                @if (row.allocationDifferenceEur) { <span class="wk-td__sub">Verschil {{ row.allocationDifferenceEur | eur }}</span> }
               </span>
               <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b></span>
               <span class="wk-td fin-td-end" role="gridcell">
@@ -120,7 +122,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                       <span class="ios-cell__sub">{{ accountName(row.account) }} · {{ clock(row) }}@if (imported(row)) { · <span class="wk-pill tone-blue">Odoo</span> }</span>
                       @if (detailsId() === row.id) { <span class="ios-cell__sub fin-wrap">{{ record(row) }}{{ row.reference && row.counterparty ? ' · ' + row.reference : '' }}</span> }</span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</span>
-                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (allocated(row)) { {{ row.allocationLabel || 'Gekoppeld' }} } @else if (!allocated(row)) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span></span>
+                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (allocated(row)) { {{ row.allocationLabel || 'Gekoppeld' }} } @else if (!allocated(row)) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span>@if (row.allocationDifferenceEur) { <span class="ios-cell__meta">Verschil {{ row.allocationDifferenceEur | eur }}</span> }</span>
                   </button>
                 </div>
               </div>
@@ -165,18 +167,18 @@ export class BankMovementPanel {
   readonly choice = signal<BankMatch | null>(null);
   readonly manualInvoice = signal(0);
   readonly newBookingConfirmed = signal(false);
-  readonly allocationMode = signal<'expense' | 'sales'>('sales');
+  readonly allocationMode = signal<'expense' | 'sales' | 'received'>('sales');
   readonly outgoingSearch = signal('');
   readonly outgoingSelected = signal<string[]>([]);
   readonly outgoingCandidates = computed<OutgoingMatch[]>(() => {
     const result: OutgoingMatch[] = [];
     for (const cost of this.state.costs()) for (const payment of cost.payments ?? []) {
-      if (!payment.id || payment.bankStatementLineId != null || !(payment.amountEur > 0)) continue;
+      if (!payment.id || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== -Math.sign(this.selected()?.amountEur ?? -1)) continue;
       result.push({ key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
         detail: [cost.description, cost.reference, payment.note].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
     for (const payment of this.state.payments()) {
-      if (payment.bankStatementLineId != null || !(payment.amountEur > 0)) continue;
+      if (payment.bankStatementLineId != null || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
       result.push({ key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',
         detail: [payment.orderNumber, payment.label].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
@@ -188,11 +190,12 @@ export class BankMovementPanel {
   });
   readonly chosenOutgoing = computed(() => this.outgoingCandidates().filter(row => this.outgoingSelected().includes(row.key)));
   readonly outgoingTotal = computed(() => this.chosenOutgoing().reduce((sum, row) => sum + cents(row.amountEur), 0) / 100);
+  readonly outgoingDifference = computed(() => this.selected() ? bankAmountDifference(this.selected()!.amountEur, -this.outgoingTotal()) : 0);
   readonly canLinkOutgoing = computed(() => {
     const line = this.selected(), rows = this.chosenOutgoing();
-    return !this.busy() && !!line && line.amountEur < 0 && !this.allocated(line) && rows.length > 0
+    return !this.busy() && !!line && line.amountEur !== 0 && !this.allocated(line) && rows.length > 0
       && rows.length === this.outgoingSelected().length && rows.filter(row => row.kind === 'cost').length <= 1
-      && cents(this.outgoingTotal()) === -cents(line.amountEur);
+      && bankAmountsMatch(-this.outgoingTotal(), line.amountEur);
   });
   toggleOutgoing(row: OutgoingMatch): void {
     if (this.busy()) return;
@@ -209,6 +212,92 @@ export class BankMovementPanel {
       ++this.allocationVersion; this.selected.set(null); this.outgoingSelected.set([]);
       this.ui.toast('Bestaande betalingen gekoppeld');
       await this.state.refreshBank(); await this.state.reload(['costs', 'payments']);
+    });
+  }
+  readonly receivedInvoices = signal<ReceivedOdooInvoice[]>([]);
+  readonly receivedLoading = signal(false);
+  readonly receivedLoaded = signal(false);
+  readonly receivedHasMore = signal(false);
+  readonly receivedSearch = signal('');
+  readonly receivedError = signal('');
+  readonly receivedPreviewLoading = signal(false);
+  readonly receivedSelectedId = signal<number | null>(null);
+  readonly receivedPreview = signal<ReceivedOdooInvoicePreview | null>(null);
+  readonly receivedExistingCostId = signal<number | null>(null);
+  private receivedCursor = 0;
+  private receivedPreviewVersion = 0;
+  readonly visibleReceivedInvoices = computed(() => {
+    const words = this.receivedSearch().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
+    return this.receivedInvoices().filter(document => {
+      if (document.moveType !== ((this.selected()?.amountEur ?? -1) < 0 ? 'in_invoice' : 'in_refund')) return false;
+      const text = [document.name, document.reference, document.partner, document.date, document.total.toFixed(2), document.total.toFixed(2).replace('.', ','), this.receivedSource(document)].join(' ').toLocaleLowerCase('nl-BE');
+      return words.every(word => text.includes(word));
+    });
+  });
+  readonly canLinkReceived = computed(() => {
+    const preview = this.receivedPreview();
+    return !this.busy() && !this.receivedPreviewLoading() && !!this.selected() && !!preview?.eligible && !!preview.snapshotHash
+      && bankAmountsMatch(this.selected()!.amountEur, -preview.paymentAmountEur)
+      && Number.isFinite(preview.differenceEur) && Math.abs(Math.round(preview.differenceEur * 100)) <= 2
+      && (!preview.existingCandidates.length || !!preview.companyCostId || preview.existingCandidates.some(cost => cost.id === this.receivedExistingCostId()));
+  });
+  receivedSource(document: ReceivedOdooInvoice): string { return document.peppolMessageId || document.peppolState === 'done' ? 'Ontvangen via Peppol' : 'Odoo'; }
+  setAllocationMode(mode: 'expense' | 'sales' | 'received'): void {
+    if (this.busy()) return;
+    this.allocationMode.set(mode); this.error.set('');
+    if (mode === 'received' && !this.receivedLoaded()) void this.loadReceivedInvoices();
+  }
+  async loadReceivedInvoices(more = false): Promise<void> {
+    const bank = this.selected();
+    if (!bank || this.receivedLoading() || this.busy() || (more && !this.receivedHasMore())) return;
+    const version = this.allocationVersion, cursor = more ? this.receivedCursor : 0;
+    this.receivedLoading.set(true); this.receivedError.set('');
+    try {
+      const result = await this.api.receivedOdooInvoices(bank.id, cursor);
+      if (version !== this.allocationVersion || this.selected()?.id !== bank.id) return;
+      this.receivedInvoices.set([...new Map([...(more ? this.receivedInvoices() : []), ...result.documents].map(document => [document.id, document])).values()]);
+      this.receivedCursor = result.nextAfterId ?? 0;
+      this.receivedHasMore.set(result.hasMore && result.nextAfterId != null && result.nextAfterId !== cursor);
+      this.receivedLoaded.set(true);
+    } catch (failure) { if (version === this.allocationVersion) this.receivedError.set(messageOf(failure, 'Ontvangen facturen laden mislukt. Probeer opnieuw.')); }
+    finally { if (version === this.allocationVersion) this.receivedLoading.set(false); }
+  }
+  async selectReceivedInvoice(document: ReceivedOdooInvoice, existingCompanyCostId?: number): Promise<void> {
+    const bank = this.selected();
+    if (!bank || this.busy()) return;
+    const version = this.allocationVersion, previewVersion = ++this.receivedPreviewVersion;
+    this.receivedSelectedId.set(document.id); this.receivedPreview.set(null); this.receivedExistingCostId.set(null);
+    this.receivedPreviewLoading.set(true); this.receivedError.set(''); this.error.set('');
+    try {
+      const preview = await this.api.previewReceivedOdooInvoice(bank.id, document.id, existingCompanyCostId);
+      if (version !== this.allocationVersion || previewVersion !== this.receivedPreviewVersion || this.selected()?.id !== bank.id) return;
+      this.receivedPreview.set(preview); this.receivedExistingCostId.set(existingCompanyCostId ?? preview.companyCostId);
+    } catch (failure) { if (version === this.allocationVersion && previewVersion === this.receivedPreviewVersion) this.receivedError.set(messageOf(failure, 'Factuur controleren mislukt. Kies de factuur opnieuw.')); }
+    finally { if (version === this.allocationVersion && previewVersion === this.receivedPreviewVersion) this.receivedPreviewLoading.set(false); }
+  }
+  selectReceivedCost(id: number): void {
+    const preview = this.receivedPreview();
+    if (preview?.existingCandidates.some(cost => cost.id === id)) void this.selectReceivedInvoice(preview.document, id);
+  }
+  receivedAmount(document: ReceivedOdooInvoice): string {
+    try { return new Intl.NumberFormat('nl-BE', { style: 'currency', currency: document.currency || 'EUR' }).format(document.total); }
+    catch { return `${document.total.toFixed(2)} ${document.currency || ''}`; }
+  }
+  newBookingDifference(match: BankMatch): number | null {
+    const bank = this.selected();
+    return bank && !match.existingPaymentId && bankAmountsMatch(bank.amountEur, Math.sign(bank.amountEur) * match.openEur)
+      ? bankAmountDifference(bank.amountEur, Math.sign(bank.amountEur) * match.openEur) : null;
+  }
+  async linkReceivedInvoice(): Promise<void> {
+    const bank = this.selected(), preview = this.receivedPreview();
+    if (!bank || !preview || !this.canLinkReceived()) return;
+    const costId = this.receivedExistingCostId();
+    await this.run(async () => {
+      const result = await this.api.linkReceivedOdooInvoice(bank.id, { odooInvoiceId: preview.document.id, snapshotHash: preview.snapshotHash, ...(costId ? { existingCompanyCostId: costId } : {}) });
+      this.state.bankStatements.update(lines => [result.line, ...lines.filter(row => row.id !== result.line.id)]);
+      ++this.allocationVersion; this.selected.set(null); this.receivedPreview.set(null);
+      this.ui.toast(result.alreadyRegistered ? 'Ontvangen factuur gekoppeld' : 'Ontvangen factuur geregistreerd en gekoppeld', 'ok', { label: 'Bekijken', run: () => this.state.inspectItem({ kind: 'cost', id: result.companyCostId }) });
+      await this.state.refreshBank(); await this.state.reload(['costs', 'payments', 'attachments']);
     });
   }
   private allocationVersion = 0;
@@ -270,7 +359,7 @@ export class BankMovementPanel {
       if (payment.offsetPaymentId != null) return false;
       // The selected bank movement supplies the account; old receipts may only carry a label such as KBC.
       return !!invoice && this.active(invoice) && !linked.has(payment.id)
-        && cents(payment.amountEur) === cents(row.amountEur);
+        && bankAmountsMatch(payment.amountEur, row.amountEur);
     }).sort((left, right) => Date.parse(right.receivedAt) - Date.parse(left.receivedAt) || right.id - left.id)
       .map(payment => ({ salesOrderId: payment.salesOrderId, number: this.invoiceNumber(payment.salesOrderId),
         existingPaymentId: payment.id, openEur: this.available(this.invoiceMap().get(payment.salesOrderId)!), score: 0,
@@ -286,7 +375,13 @@ export class BankMovementPanel {
   });
   readonly chosenInvoiceHasExistingMatches = computed(() => this.existingMatches().some(match => match.salesOrderId === this.choice()?.salesOrderId)
     || this.matches().some(match => !!match.existingPaymentId && match.salesOrderId === this.choice()?.salesOrderId));
+  matchDifference(match: BankMatch): number | null {
+    const bank = this.selected();
+    const payment = match.existingPaymentId ? this.paymentMap().get(match.existingPaymentId) : null;
+    return bank && payment ? bankAmountDifference(bank.amountEur, payment.amountEur) : null;
+  }
   readonly canAllocate = computed(() => !!this.selected() && !!this.choice() && !this.busy() && !this.matchingLoading()
+    && (!this.choice()?.existingPaymentId || this.matchDifference(this.choice()!) === null || Math.abs(Math.round(this.matchDifference(this.choice()!)! * 100)) <= 2)
     && (!!this.choice()?.existingPaymentId || !this.chosenInvoiceHasExistingMatches() || this.newBookingConfirmed()));
 
   stamp(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }); }
@@ -302,7 +397,7 @@ export class BankMovementPanel {
   isCreditNote(id: number): boolean { return this.invoiceMap().get(id)?.order.docType === 'CREDITNOTA'; }
   private canCreateOn(view: SalesOrderView): boolean {
     const row = this.selected(); if (!row || !this.active(view)) return false;
-    return row.amountEur < 0 ? cents(view.paymentSummary?.refundableEur ?? 0) >= -cents(row.amountEur)
+    return row.amountEur < 0 ? cents(view.paymentSummary?.refundableEur ?? 0) + 2 >= -cents(row.amountEur)
       : (view.paymentSummary?.invoiceTotalEur ?? view.priced?.totals?.totalInclVat ?? 0) > 0;
   }
   matchKey(match: BankMatch): string { return `${match.salesOrderId}:${match.existingPaymentId ?? 'new'}`; }
@@ -423,6 +518,7 @@ export class BankMovementPanel {
   }
   async openAllocation(row: BankStatementLine): Promise<void> {
     if (this.busy() || this.allocated(row)) return;
+    this.receivedInvoices.set([]); this.receivedLoaded.set(false); this.receivedLoading.set(false); this.receivedHasMore.set(false); this.receivedSearch.set(''); this.receivedError.set(''); this.receivedPreview.set(null); this.receivedSelectedId.set(null); this.receivedPreviewLoading.set(false); this.receivedExistingCostId.set(null); ++this.receivedPreviewVersion;
     this.allocationMode.set(row.amountEur < 0 ? 'expense' : 'sales');
     this.outgoingSearch.set(''); this.outgoingSelected.set([]);
     const version = ++this.allocationVersion;
@@ -431,7 +527,7 @@ export class BankMovementPanel {
       const matches = await this.api.suggestions(row.id);
       if (version !== this.allocationVersion || this.selected()?.id !== row.id) return;
       this.matches.set(matches.filter(match => !!match.existingPaymentId || (row.amountEur < 0
-        ? cents(match.openEur) >= -cents(row.amountEur)
+        ? cents(match.openEur) + 2 >= -cents(row.amountEur)
         : this.invoiceMap().has(match.salesOrderId) ? this.canCreateOn(this.invoiceMap().get(match.salesOrderId)!) : match.openEur > 0)));
     } catch (failure) { if (version === this.allocationVersion && this.selected()?.id === row.id && row.amountEur > 0) this.error.set(messageOf(failure, 'Suggesties laden mislukt. Je kunt hieronder zelf een factuur kiezen.')); }
     finally { if (version === this.allocationVersion) this.matchingLoading.set(false); }

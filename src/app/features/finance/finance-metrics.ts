@@ -104,7 +104,7 @@ function regimeOf(row: VatRow): VatRegime | null {
 }
 const cents = (value: number | null | undefined): number => Math.round(finite(value) * 100);
 /** The entered inclusive total in cents, when there is one. */
-const storedInclCents = (row: VatRow): number | null => (Number.isFinite(row.amountInclEur as number) && (row.amountInclEur as number) > 0 ? cents(row.amountInclEur) : null);
+const storedInclCents = (row: VatRow): number | null => (Number.isFinite(row.amountInclEur as number) && (row.amountInclEur as number) !== 0 ? cents(row.amountInclEur) : null);
 /** HALF_UP on positive cents, the Java scale-2 rule. */
 const vatCents = (exclCents: number, pct: number | null | undefined): number => (finite(pct) > 0 ? Math.round(exclCents * finite(pct) / 100) : 0);
 
@@ -197,13 +197,13 @@ export function isInvestment(row: VatRow): boolean {
 
 /** What is still to pay: the server's figure, else (older responses, blank drafts) the whole cash total until a paid date. Never reads paidOn to decide 'open' when the server spoke. */
 export function openOf(cost: Pick<CompanyCost, 'openEur' | 'paidOn'> & VatRow): number {
-  if (Number.isFinite(cost.openEur as number)) return Math.max(0, cents(cost.openEur)) / 100;
+  if (Number.isFinite(cost.openEur as number)) return cents(cost.openEur) / 100;
   return cost.paidOn ? 0 : cashTotalOf(cost);
 }
 
 /** What was paid: the server's sum, else the whole cash total once a paid date is there. */
 export function paidOf(cost: Pick<CompanyCost, 'paidEur' | 'paidOn'> & VatRow): number {
-  if (Number.isFinite(cost.paidEur as number)) return Math.max(0, cents(cost.paidEur)) / 100;
+  if (Number.isFinite(cost.paidEur as number)) return cents(cost.paidEur) / 100;
   return cost.paidOn ? cashTotalOf(cost) : 0;
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bankTransactionAllocated, bankTransactionDay, bankTransactionOptions } from '../src/app/shared/bank-transaction-options.ts';
+import { bankAmountsMatch, bankAmountDifference, bankTransactionAllocated, bankTransactionDay, bankTransactionOptions } from '../src/app/shared/bank-transaction-options.ts';
 import type { BankStatementLine } from '../src/app/core/api/banking-api.ts';
 const row = (id: number, amountEur: number, extra = {}): BankStatementLine => ({ id, amountEur, account: 'BE12 1234 5678', bookedAt: '2026-10-01T22:15:00Z', timeZone: 'Europe/Brussels', reference: 'Factuur 42', counterparty: 'Enrosed klant', ...extra } as BankStatementLine);
 
@@ -20,4 +20,16 @@ test('search combines reference, localized amount, account, counterparty, source
   }
   assert.deepEqual(bankTransactionOptions(rows, 'OUTGOING', 'onbekend'), []);
   assert.deepEqual(bankTransactionOptions(rows, 'OUTGOING', 'handmatig').map(r => r.id), [2]);
+});
+
+
+test('matching permits two cents in either direction, rejects three cents, zero, opposite signs and non-finite values', () => {
+  for (const sign of [-1, 1]) for (const cents of [-3, -2, -1, 0, 1, 2, 3]) {
+    const bank = sign * (10000 + cents) / 100;
+    assert.equal(bankAmountsMatch(bank, sign * 100), Math.abs(cents) <= 2, `${bank}`);
+    assert.equal(bankAmountDifference(bank, sign * 100), (sign * cents / 100) || 0);
+  }
+  for (const [bank, recorded] of [[0, 0], [0.01, -0.01], [NaN, 10], [Infinity, Infinity]]) assert.equal(bankAmountsMatch(bank, recorded), false);
+  const rows = [-100.03, -100.02, -100, -99.98, -99.97].map((amount, i) => row(i, amount));
+  assert.deepEqual(bankTransactionOptions(rows, 'OUTGOING', '', 100, true).map(r => r.amountEur), [-100, -99.98, -100.02]);
 });

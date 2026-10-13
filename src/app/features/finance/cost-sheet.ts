@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, linkedSignal, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { FinanceApi, type CostOdooSource } from '../../core/api/finance-api';
+import { messageOf } from '../../core/api/errors';
 import { CompanyCost, VatRegime } from '../../core/api/models';
 import type { BankStatementLine } from '../../core/api/banking-api';
 import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
@@ -32,7 +34,7 @@ type AmountMode = 'excl' | 'incl';
 
 /** The regimes with an invoice behind them: the date field reads 'Factuurdatum'. */
 const INVOICE_REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FOREIGN_VAT', 'EXEMPT']);
-const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountInclEur as number) && (cost.amountInclEur as number) > 0 ? cost.amountInclEur as number : 0);
+const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountInclEur as number) && (cost.amountInclEur as number) !== 0 ? cost.amountInclEur as number : 0);
 
 /** The cost form: book one, correct one, settle one. The amount comes first. */
 @Component({
@@ -46,20 +48,23 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
         @if (draft().recurringCostId) {
           <p class="fin-hint fin-field--wide">Automatisch geboekt als vaste kost. Deze boeking mag je hier corrigeren; pas de vaste kost zelf aan om de volgende periodes te veranderen.</p>
         }
-        <div class="fin-amount-mode fin-field--wide">
+        @if (sourceLoading()) { <p class="fin-hint fin-field--wide" role="status">Bron van deze factuur controleren…</p> }
+        @if (sourceError()) { <p class="fin-error fin-field--wide" role="alert">{{ sourceError() }} <button class="fin-inline-btn" type="button" (click)="loadSource()">Opnieuw proberen</button></p> }
+        @if (source(); as original) { <p class="fin-hint fin-field--wide">Overgenomen uit Odoo · {{ original.snapshot.document.moveType === 'in_refund' ? 'Creditnota leverancier' : 'Leveranciersfactuur' }}. De oorspronkelijke factuurgegevens en bedragen blijven behouden. Btw op document: {{ original.snapshot.vatEur | eur }}; totaal: {{ original.snapshot.totalEur | eur }}.</p> }
+        @if (!sourceLocked()) { <div class="fin-amount-mode fin-field--wide">
           <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Bedrag" [options]="modes()" [value]="mode()" (changed)="setMode($any($event))" />
-        </div>
+        </div> }
         <label class="fin-amount fin-field--wide">
           <span class="fin-sr">{{ amountLabel() }}</span><i aria-hidden="true">€</i>
           <input type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0,00" [attr.data-initial-focus]="draft().id ? null : ''"
-                 [ngModel]="amount() || null" (ngModelChange)="setAmount(+($event || 0))" />
+                 [readOnly]="sourceLocked()" [ngModel]="amount() || null" (ngModelChange)="setAmount(+($event || 0))" />
         </label>
         @if (amountNote(); as note) { <p class="fin-hint fin-field--wide">{{ note }}</p> }
         @if (investmentSuggested()) {
           <div class="fin-amount-mode fin-field--wide"><button class="fin-choice__chip" type="button" (click)="bookAsInvestment()">Boven € 250 excl.: als investering boeken?</button></div>
         }
         <div class="fin-group" [class.ios-group]="!state.desk()">
-          @if (vatShown()) {
+          @if (vatShown() && (!sourceLocked() || reverseCharge())) {
             <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
               <app-vat-choice [value]="draft().vatPct" (changed)="setVat($event)" />
               <span class="fin-hint">
@@ -76,7 +81,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
           <label class="fin-field fin-field--wide"><span class="req">Omschrijving</span>
             <input class="input" placeholder="bijv. Standhuur TICA oktober" [ngModel]="draft().description" (ngModelChange)="patch({ description: $event })" /></label>
           <div class="fin-field"><span class="req">{{ dateLabel() }}</span>
-            <app-date-field fieldId="k-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /></div>
+            @if (sourceLocked()) { <span>{{ draft().date | dateNl }}</span> } @else { <app-date-field fieldId="k-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /> }</div>
           <label class="fin-field"><span class="req">Categorie</span>
             <select class="select" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
               @for (category of categories(); track category.code) { <option [value]="category.code">{{ category.label }}</option> }
@@ -110,11 +115,11 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
               }
             </select></label>
           <div class="fin-field fin-field--combo"><span><label for="k-party">Aan wie</label></span>
-            <app-party-field fieldId="k-party" placeholder="bijv. TICA Trends & Trade" [value]="draft().party ?? ''" [candidates]="state.partySuggestions()" [maxlength]="200"
-                             (valueChange)="typeParty($event)" (picked)="pickParty($event)" (committed)="commitParty()" />
+            @if (sourceLocked()) { <span>{{ draft().party }}</span> } @else { <app-party-field fieldId="k-party" placeholder="bijv. TICA Trends & Trade" [value]="draft().party ?? ''" [candidates]="state.partySuggestions()" [maxlength]="200"
+                             (valueChange)="typeParty($event)" (picked)="pickParty($event)" (committed)="commitParty()" /> }
             @if (newParty()) { <span class="fin-hint">Nieuw: komt na het boeken in de lijst Aan wie.</span> }</div>
           <label class="fin-field"><span>Factuurnummer</span>
-            <input class="input" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></label>
+            <input class="input" [readOnly]="sourceLocked()" [ngModel]="draft().reference" (ngModelChange)="patch({ reference: $event })" /></label>
         </div>
         @if (filledFrom(); as filled) {
           <p class="fin-hint fin-field--wide">Categorie, btw en {{ filled.regime ? 'btw-regeling' : 'kanaal' }} overgenomen {{ filled.party.stored ? 'uit de lijst Aan wie voor' : 'van je vorige kost aan' }} {{ filled.party.name }}.</p>
@@ -140,8 +145,8 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
             }
           }
           @if (becomingPaid()) {
-            <div class="fin-field fin-field--wide"><app-bank-transaction-picker direction="OUTGOING" [amount]="cashTotalOf(draft())" [selected]="selectedBank()" [disabled]="state.saving()" (selectedChange)="chooseBank($event)" /></div>
-            @if (selectedBank()) { <p class="fin-hint fin-field--wide">Datum en rekening komen van de bank. Het totaal inclusief btw moet gelijk zijn aan de transactie.</p> }
+            <div class="fin-field fin-field--wide"><app-bank-transaction-picker [direction]="cashTotalOf(draft()) < 0 ? 'INCOMING' : 'OUTGOING'" [amount]="abs(cashTotalOf(draft()))" [selected]="selectedBank()" [disabled]="state.saving()" (selectedChange)="chooseBank($event)" /></div>
+            @if (selectedBank()) { <p class="fin-hint fin-field--wide">Datum en rekening komen van de bank. Het totaal inclusief btw mag maximaal € 0,02 afwijken. Het factuurbedrag blijft behouden.</p> }
             @else {
             <label class="fin-field fin-field--switch fin-field--wide"><span>Ook als bankbeweging noteren<small>Een uitgaande beweging met een verwijzing naar deze kost</small></span>
               <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="toBank()" (change)="toBank.set($any($event.target).checked)" /></label>
@@ -218,7 +223,28 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
 })
 export class CostSheet {
   readonly state = inject(FinanceState);
+  private readonly financeApi = inject(FinanceApi);
+  readonly source = signal<CostOdooSource | null>(null);
+  readonly sourceLoading = signal(false);
+  readonly sourceError = signal('');
+  readonly sourceLocked = computed(() => !!this.source() || this.sourceLoading() || !!this.sourceError());
+  private readonly sourceCostId = computed(() => this.draft().id);
+  constructor() {
+    effect(() => {
+      this.sourceCostId();
+      untracked(() => { this.source.set(null); this.sourceError.set(''); this.sourceLoading.set(false); void this.loadSource(); });
+    });
+  }
+  async loadSource(): Promise<void> {
+    const id = this.draft().id;
+    if (!id || this.sourceLoading()) return;
+    this.sourceLoading.set(true); this.sourceError.set('');
+    try { const source = await this.financeApi.costOdooSource(id); if (this.draft().id === id) this.source.set(source); }
+    catch (failure) { if (this.draft().id === id) this.sourceError.set(messageOf(failure, 'De factuurbron kon niet worden gecontroleerd. Probeer opnieuw voor je bewaart.')); }
+    finally { if (this.draft().id === id) this.sourceLoading.set(false); }
+  }
   readonly cashTotalOf = cashTotalOf;
+  readonly abs = Math.abs;
   readonly vatOf = vatOf;
   readonly draft = linkedSignal<CompanyCost>(() => this.state.costDraft() ?? blankCost(this.state.today()));
   /** Excl. for a new cost; incl. when the cost being edited was entered that way. */
@@ -305,8 +331,8 @@ export class CostSheet {
     const draft = this.draft();
     return !!draft.date && !!(draft.category ?? '').trim() && !!(draft.description ?? '').trim();
   });
-  readonly canSave = computed(() => this.basics() && this.amount() > 0 && !this.bankBlocked() && !this.regimeProblem());
-  readonly showError = computed(() => this.tried() && !(this.amount() > 0));
+  readonly canSave = computed(() => this.basics() && (this.amount() > 0 || (!!this.source() && this.amount() < 0)) && !this.sourceLoading() && !this.sourceError() && !this.bankBlocked() && !this.regimeProblem());
+  readonly showError = computed(() => this.tried() && !(this.amount() > 0 || (!!this.source() && this.amount() < 0)));
 
   /* "Aan wie" */
   /** The name was left as typed (blur or Enter), so the 'Nieuw' hint may show; typing or picking clears it. */
@@ -353,12 +379,15 @@ export class CostSheet {
   readonly bankBlocked = computed(() => this.becomingPaid() && !this.selectedBank() && this.toBank() && ((!this.account() && !!this.state.loadedAt()) || this.future()));
 
   patch(changes: Partial<CompanyCost>): void {
-    this.draft.update((draft) => ({ ...draft, ...changes }));
+    this.draft.update((draft) => ({ ...draft, ...changes, ...(this.sourceLocked() ? {
+      date: draft.date, party: draft.party, reference: draft.reference, amountExclEur: draft.amountExclEur, amountInclEur: draft.amountInclEur,
+    } : {}) }));
   }
 
   /* ---- amount: the typed figure is kept, the other side follows */
 
   setAmount(value: number): void {
+    if (this.sourceLocked()) return;
     if (this.importVat()) this.patch({ amountInclEur: value, amountExclEur: 0 });
     else if (this.mode() === 'incl') this.patch({ amountInclEur: value, amountExclEur: exclFromIncl(value, this.draft().vatPct) });
     else this.patch({ amountExclEur: value, amountInclEur: null });
@@ -375,6 +404,7 @@ export class CostSheet {
 
   /** Excl. → incl. converts the figure; incl. → excl. keeps the excl. amount and drops the entered total. */
   setMode(mode: AmountMode): void {
+    if (this.sourceLocked()) return;
     if (mode === this.mode()) return;
     const draft = this.draft();
     if (mode === 'incl') this.patch({ amountInclEur: draft.amountExclEur > 0 ? cashTotalOf(draft) : null });
@@ -410,6 +440,7 @@ export class CostSheet {
    * regime puts no VAT on the invoice.
    */
   private fitAmountTo(regime: VatRegime | null, before: VatRegime | null): void {
+    if (this.sourceLocked()) return;
     const kindOf = (code: VatRegime | null): AmountKind => (code === 'IMPORT_VAT_PAID' ? 'import' : code && NO_VAT_REGIMES.has(code) ? 'none' : code && REVERSE_CHARGE.has(code) ? 'reverse' : 'invoice');
     const draft = this.draft();
     const next = fitAmountToRegime({ amountExclEur: draft.amountExclEur, amountInclEur: draft.amountInclEur ?? null, vatPct: draft.vatPct, mode: this.mode(), typedIncl: this.typedIncl, totalKept: this.totalKept },

@@ -1,3 +1,4 @@
+import { bankAmountsMatch, bankAmountDifference } from '../../shared/bank-transaction-options';
 import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -102,6 +103,7 @@ import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-cre
           <p class="receipts__hint">{{ view().order.number }} · noteer de werkelijk uitgevoerde bankbeweging. Een registratie voert zelf geen bankbetaling uit.</p>
           @if (summary()?.legacyPaidMarker) { <p class="receipts__warning">Een nieuwe ontvangst telt bovenop de historische betaling. Gebruik Corrigeren bij de bestaande ontvangst om het oorspronkelijke bedrag of tijdstip recht te zetten.</p> }
           <app-bank-transaction-picker [direction]="draft.direction === 'REFUND' ? 'OUTGOING' : 'INCOMING'" [amount]="draft.amount" [selected]="selectedBank()" [disabled]="busy()" (selectedChange)="chooseBank($event)" />
+          @if (selectedBankDifference() !== null && selectedBankDifference() !== 0) { <p class="receipts__hint">Verschil bank − bestaande betaling: {{ selectedBankDifference()! | eur }}. De oorspronkelijke bedragen blijven behouden; maximaal € 0,02 is toegestaan.</p> }
           @if (selectedBank()) {
             @if (!draft.id && existingBankPayments().length) {
               <label class="field"><span>Betaling op deze factuur</span><select class="select" [ngModel]="bankPaymentId()" (ngModelChange)="bankPaymentId.set($event)">
@@ -158,7 +160,13 @@ export class SalesReceipts implements OnDestroy {
   readonly bankNewConfirmed = signal(false);
   readonly existingBankPayments = computed(() => {
     const bank = this.selectedBank();
-    return bank ? (this.summary()?.payments ?? []).filter(payment => !isOffsetPayment(payment) && Math.round(payment.amountEur * 100) === Math.round(bank.amountEur * 100)) : [];
+    return bank ? (this.summary()?.payments ?? []).filter(payment => !isOffsetPayment(payment) && bankAmountsMatch(payment.amountEur, bank.amountEur)) : [];
+  });
+  readonly selectedBankDifference = computed(() => {
+    const bank = this.selectedBank();
+    const id = this.draft()?.id ?? this.bankPaymentId();
+    const payment = (this.summary()?.payments ?? []).find(row => row.id === id);
+    return bank && payment ? bankAmountDifference(bank.amountEur, payment.amountEur) : null;
   });
   readonly error = signal('');
   readonly busy = signal(false);
@@ -327,6 +335,9 @@ export class SalesReceipts implements OnDestroy {
   }
   async saveBankTransaction(row: BankStatementLine, draft: ReceiptDraft): Promise<void> {
     if (!draft.id && this.existingBankPayments().length && this.bankPaymentId() === null && !this.bankNewConfirmed()) return;
+    const existingId = draft.id ?? this.bankPaymentId();
+    const existing = (this.summary()?.payments ?? []).find(payment => payment.id === existingId);
+    if (existingId && (!existing || !bankAmountsMatch(row.amountEur, existing.amountEur))) { this.error.set('De banktransactie mag maximaal € 0,02 afwijken van de bestaande betaling.'); return; }
     const orderId = this.view().order.id;
     this.busy.set(true);
     let linked = false;

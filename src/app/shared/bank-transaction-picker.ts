@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { BankingApi, type BankStatementLine } from '../core/api/banking-api';
 import { messageOf } from '../core/api/errors';
 import { bankTransactionAllocated, bankTransactionDay, bankTransactionOptions, type BankDirection } from './bank-transaction-options';
+import { bankAmountDifference } from './bank-transaction-options';
 import { EurPipe } from './pipes';
 import { Skeleton } from './skeleton';
 
@@ -12,18 +13,18 @@ import { Skeleton } from './skeleton';
   imports: [EurPipe, Skeleton],
   template: `
     <section class="bank-picker" aria-label="Bestaande banktransactie">
-      <header><div><b>Banktransactie koppelen</b><small>Kies een bestaande beweging; bedrag, datum en rekening komen van de bank.</small></div>
+      <header><div><b>Banktransactie koppelen</b><small>Kies een bestaande beweging; datum en rekening komen van de bank; bestaande betaalbedragen blijven behouden.</small></div>
         <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : 'Transactie kiezen' }}</button>
       </header>
       @if (selected(); as row) {
-        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ row.account }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small></div>
+        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ row.account }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
           <button type="button" class="btn btn--sm" [disabled]="disabled()" (click)="selectedChange.emit(null)">Selectie wissen</button></div>
       }
       @if (expanded()) {
         <div class="bank-picker__filters">
           <label><span>Zoeken</span><input class="input" type="search" placeholder="Referentie, bedrag, tegenpartij of datum" [value]="query()" (input)="query.set($any($event.target).value)" /></label>
           @if (direction() === 'ANY') { <label><span>Richting</span><select class="select" [value]="filterDirection()" (change)="filterDirection.set($any($event.target).value)"><option value="ANY">Inkomend en uitgaand</option><option value="INCOMING">Inkomend</option><option value="OUTGOING">Uitgaand</option></select></label> }
-          @if ((amount() ?? 0) > 0) { <label class="bank-picker__exact"><input type="checkbox" [checked]="exact()" (change)="exact.set($any($event.target).checked)" /> Alleen {{ amount()! | eur }}</label> }
+          @if ((amount() ?? 0) > 0) { <label class="bank-picker__exact"><input type="checkbox" [checked]="exact()" (change)="exact.set($any($event.target).checked)" /> Rond {{ amount()! | eur }} (± € 0,02)</label> }
           <button type="button" class="btn btn--sm" [disabled]="loading() || disabled()" (click)="load()">Vernieuwen</button>
         </div>
         @if (loading()) { <div aria-label="Banktransacties laden" role="status"><app-skeleton kind="list" [rows]="3" /></div> }
@@ -66,6 +67,7 @@ export class BankTransactionPicker {
   readonly filterDirection = signal<BankDirection>('ANY');
   readonly matches = computed(() => bankTransactionOptions(this.rows(), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact()));
   readonly allocated = bankTransactionAllocated;
+  difference(row: BankStatementLine): number | null { const amount = this.amount(); return amount != null && amount > 0 ? bankAmountDifference(row.amountEur, Math.sign(row.amountEur) * amount) : null; }
   day(row: BankStatementLine): string { return bankTransactionDay(row).split('-').reverse().join('/'); }
   toggle(): void { this.expanded.update(open => !open); if (this.expanded()) void this.load(); }
   choose(row: BankStatementLine): void { if (this.disabled() || this.allocated(row)) return; this.selectedChange.emit(row); this.expanded.set(false); }

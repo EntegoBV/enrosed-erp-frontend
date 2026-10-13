@@ -131,7 +131,7 @@ the workspaces. All CSS lives in one global partial,
   entry with a hint to link existing transactions per cost. Odoo rows preserve their imported identity
   and cannot be deleted; unlinking preserves the bank row and payment.
 - Existing outgoing payments link via POST bank-statements/{id}/links with
-  exact summed EUR equality. New cost and purchase payments use atomic
+  same-sign summed EUR equality within €0.02 (integer cents). New cost and purchase payments use atomic
   /cost-payment and /purchase-payment endpoints: the bank row is the retry
   identity, and purchase responses retain ordered goods/part ids before
   proof uploads. Never infer a new cost payment id from a stale payments list.
@@ -149,9 +149,20 @@ the workspaces. All CSS lives in one global partial,
   Historical rows are still viewable. New Odoo checkpoints use end-of-day
   balances because imported dates have no bank timestamp; old readings stay intact.
   `Te koppelen` includes money in and out. Outgoing matching selects existing
-  cost/container payments with exact summed cents; imported rows never match
+  cost/container payments within €0.02 of the summed payment cents; imported rows never match
   by approximate date, amount or reference marker. Unlink an earlier manual
   row explicitly before reassigning its payment to an imported row.
+- Bank allocation also offers received Odoo/Peppol supplier invoices and
+  credit notes through `/bank-statements/{id}/odoo-purchase-invoices`, preview
+  and atomic `/odoo-purchase-invoice` registration/link. Supplier credits are
+  negative costs/payments matched to positive bank receipts. Preview locks the
+  snapshot, exposes VAT/document evidence, and requires explicit reuse of an
+  existing candidate; selecting one refreshes preview with existingCompanyCostId.
+  Retry preserves bank/document/hash identity. Stored allocationDifferenceEur
+  remains visible after linking; invoice/payment/bank amounts are never rewritten
+  solely to hide a rounding difference. Existing manual partial-payment flows remain.
+  CostSheet loads `/costs/{id}/odoo-source`, protects original fields/totals and
+  leaves classification separate; no source VAT regime is inferred by the UI.
 - OdooConnectionPanel imports bank rows and browses incoming/outgoing Odoo
   files. SalesPeppolPanel is collapsed on issued invoices/credit notes:
   local preview works without connection settings; named customer match,

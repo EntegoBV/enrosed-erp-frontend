@@ -351,3 +351,12 @@
 @media (prefers-reduced-motion: reduce) {
   #finance-workspace { .fin-tile, .fin-switch, .fin-switch::after { transition: none; } }
 }
+
+.fin-received-preview { border-top: 1px solid var(--line, #e5e7eb); padding-top: 16px; margin-top: 16px; }
+.fin-received-preview__amounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 24px; margin: 12px 0; }
+.fin-received-preview__amounts div { display: flex; justify-content: space-between; gap: 12px; }
+.fin-received-preview__amounts dt { color: var(--muted, #687385); }
+.fin-received-preview__amounts dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-received-preview__files { padding-left: 20px; overflow-wrap: anywhere; }
+
+.fin-received-list { max-height: min(340px, 40vh); overflow-y: auto; overscroll-behavior: contain; padding: 3px; }
