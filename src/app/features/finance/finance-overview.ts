@@ -183,7 +183,7 @@ const ATTENTION_ROWS = 7;
       </section>
       <div class="ios-group fin-ios-single">
         <button class="ios-cell" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
-          <span class="ios-cell__body"><span class="ios-cell__title">Btw dit kwartaal</span><span class="ios-cell__sub" [class.fin-warn-text]="vatTile().pending > 0">{{ vatTile().sub }}</span></span>
+          <span class="ios-cell__body"><span class="ios-cell__title">Btw dit kwartaal</span><span class="ios-cell__sub fin-wrap" [class.fin-warn-text]="vatTile().pending > 0">{{ vatTile().sub }}</span></span>
           <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ vatTile().amount | eur }}</span></span>
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
@@ -267,7 +267,7 @@ export class FinanceOverview implements FinanceSectionApi {
     const result = this.state.vatReturnCurrent();
     const favour = result.totals.refundEur > 0;
     const pending = result.unconfirmedCount + result.unknown.length;
-    /* The figure stands alone (a phrase behind it spills past a phone trail or a fifth desk tile); the direction leads the sub line. */
+    /* The figure stands alone (a phrase behind it spills past a phone trail or a fifth desk tile); the direction leads the sub line, which wraps on the phone. */
     return {
       year: result.year, quarter: result.quarter, pending,
       amount: favour ? result.totals.refundEur : result.totals.payableEur,

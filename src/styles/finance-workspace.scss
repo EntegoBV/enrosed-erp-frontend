@@ -95,9 +95,10 @@
     &[open] > summary app-icon { transform: rotate(90deg); }
     > .fin-disclosure__body { display: grid; gap: 12px; padding: 2px 14px 14px; } }
 
-  /* ---- the payments on a cost: date · amount · bank mark · ⋯, the account and the bank status on a second line so nothing is cut at 360 px */
+  /* ---- the payments on a cost: date · amount · bank mark · ⋯, the account and the bank status on a second line so nothing is cut at 360 px;
+     the day column is as wide as the widest day ('30 dec 2026'; 88px at the phone's size), so the amounts of the rows line up */
   .fin-payments { display: grid; margin: 0; padding: 0; list-style: none; }
-  .fin-payment { display: grid; grid-template-columns: max-content minmax(0, 1fr) 24px 32px; grid-template-areas: 'day amount bank menu' 'where where bank menu'; align-items: center; column-gap: 10px; row-gap: 2px; min-height: 40px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px;
+  .fin-payment { display: grid; grid-template-columns: minmax(78px, max-content) minmax(0, 1fr) 24px 32px; grid-template-areas: 'day amount bank menu' 'where where bank menu'; align-items: center; column-gap: 10px; row-gap: 2px; min-height: 40px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px;
     > span { min-width: 0; color: var(--ink-2); }
     > b { grid-area: amount; font-variant-numeric: tabular-nums; }
     > .fin-payment__day { grid-area: day; white-space: nowrap; }
@@ -231,8 +232,8 @@
     dt { color: var(--muted); font-size: 11px; } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; } }
   .fin-stream__term { display: flex; justify-content: space-between; gap: 8px; padding-top: 4px; color: var(--ink-2); }
 
-  /* ---- Overzicht */
-  .fin-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; > .fin-tile:first-child { grid-column: span 2; } }
+  /* ---- Overzicht: five tiles as 1 + 2 + 2, as 2 + 3 from a 730px pane and in one row from 1190px, the widths at which a six-digit amount (180px) still fits its tile */
+  .fin-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; > .fin-tile:first-child { grid-column: 1 / -1; } }
   .fin-tile { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s;
     &:hover { border-color: var(--line-strong); box-shadow: 0 4px 14px rgb(26 22 20 / 7%); } }
   .fin-tile__label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
@@ -331,9 +332,14 @@
     .fin-table--recent { --wk-cols: 72px minmax(140px, 1fr) 88px 108px; }
     .fin-table--vat { --wk-cols: minmax(100px, 1fr) 96px 88px 96px 64px; }
   }
+  @container wk-pane (min-width: 730px) {
+    .fin-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); > .fin-tile:first-child { grid-column: span 2; } }
+  }
   @container wk-pane (min-width: 1100px) {
-    .fin-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); > .fin-tile:first-child { grid-column: auto; } }
     .fin-recurring--agenda { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+  }
+  @container wk-pane (min-width: 1190px) {
+    .fin-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); > .fin-tile:first-child { grid-column: auto; } }
   }
 }
 

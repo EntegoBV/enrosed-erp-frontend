@@ -159,12 +159,12 @@ export class RecurringSheet {
     this.draft.update((draft) => ({ ...draft, ...changes }));
   }
 
-  /** A patch from the Btw-regeling fields; a new regime also refits the rate (excl.-only here). */
+  /** A patch from the Btw-regeling fields; a new regime also refits the rate (excl.-only here). A pick or 'Klopt' settles the regime, so the 'afgeleid' line goes. */
   applyRegime(patch: Partial<RegimeFields>): void {
     const before = this.draft().vatRegime;
     this.patch(patch);
+    if ('vatRegime' in patch || patch.vatRegimeConfirmed) this.derivedHint.set('');
     if (!('vatRegime' in patch)) return;
-    this.derivedHint.set('');
     const regime = patch.vatRegime ?? null;
     if (regime !== before) this.fitRateTo(regime, before);
   }
