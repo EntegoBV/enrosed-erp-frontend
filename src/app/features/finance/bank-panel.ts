@@ -43,16 +43,17 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
           @for (account of state.accountsView(); track account.account) {
             <article class="fin-account">
               <div class="fin-account__top">
-                <span class="fin-account__name"><b>{{ account.label }}</b>@if (tail(account.account)) { <small>{{ iban(account.account) }}</small> }</span>
+                <span class="fin-account__name"><b>{{ account.label }}</b></span>
                 <span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span>
                 <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" aria-label="Meer over deze rekening" (click)="accountMenu(account, $event)"><app-icon name="more" [size]="16" /></button>
               </div>
+              @if (tail(account.account)) { <p class="fin-account__iban">{{ iban(account.account) }}</p> }
               @if (account.source === 'ODOO') { <p class="fin-hint">Via Odoo · opgehaalde banktransacties</p> }
               <strong class="fin-account__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</strong>
               @if (account.reading; as reading) {
                 <dl class="wk-equation">
                   <div><dt>Saldo {{ stamp(reading.asOfAt, reading.date, reading.timeZone) }}</dt><dd>{{ reading.balanceEur | eur }}</dd></div>
-                  <div class="is-sub"><dt><span class="wk-equation__op">+</span>{{ account.movements.length }} {{ account.movements.length === 1 ? 'beweging' : 'bewegingen' }}</dt><dd>{{ account.deltaEur | eur }}</dd></div>
+                  <div class="is-sub"><dt><span class="wk-equation__op">+</span>{{ account.movements.length }} sinds saldocontrole</dt><dd>{{ account.deltaEur | eur }}</dd></div>
                 </dl>
               }
               <div class="fin-account__actions">
@@ -90,10 +91,11 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
       @for (account of state.accountsView(); track account.account) {
         <article class="ios-card ios-wallet">
           <div class="ios-wallet__top"><span>{{ account.label }}</span><span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span></div>
-          <p class="fin-hint">{{ iban(account.account) }}{{ account.source === 'ODOO' ? ' · Via Odoo' : '' }}</p>
+          @if (tail(account.account)) { <p class="fin-account__iban">{{ iban(account.account) }}</p> }
+          @if (account.source === 'ODOO') { <p class="fin-hint">Via Odoo · opgehaalde banktransacties</p> }
           <div class="ios-wallet__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</div>
           @if (account.reading; as reading) {
-            <div class="ios-wallet__sub">Saldo {{ day(reading.date) }} {{ reading.balanceEur | eur }} · + {{ account.movements.length }} {{ account.movements.length === 1 ? 'beweging' : 'bewegingen' }}</div>
+            <div class="ios-wallet__sub">Saldo {{ day(reading.date) }} {{ reading.balanceEur | eur }} · + {{ account.movements.length }} sinds saldocontrole</div>
           }
           <div class="ios-wallet__actions">
             <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.checkOrFill(account.account)">{{ account.source === 'ODOO' ? 'Afsluitsaldo invullen' : account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
