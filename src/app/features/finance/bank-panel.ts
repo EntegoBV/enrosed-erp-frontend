@@ -1,4 +1,7 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, forwardRef, inject, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, forwardRef, inject, signal, untracked, viewChild } from '@angular/core';
+import { BankingApi, BankAccount } from '../../core/api/banking-api';
+import { messageOf } from '../../core/api/errors';
+import { Ui } from '../../shared/ui';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { bankAccountKey } from './bank-reconciliation';
@@ -40,10 +43,11 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
           @for (account of state.accountsView(); track account.account) {
             <article class="fin-account">
               <div class="fin-account__top">
-                <span class="fin-account__name"><b>{{ account.label }}</b>@if (tail(account.account); as tail) { <small>…{{ tail }}</small> }</span>
+                <span class="fin-account__name"><b>{{ account.label }}</b>@if (tail(account.account)) { <small>{{ iban(account.account) }}</small> }</span>
                 <span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span>
                 <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" aria-label="Meer over deze rekening" (click)="accountMenu(account, $event)"><app-icon name="more" [size]="16" /></button>
               </div>
+              @if (account.source === 'ODOO') { <p class="fin-hint">Via Odoo · opgehaalde banktransacties</p> }
               <strong class="fin-account__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</strong>
               @if (account.reading; as reading) {
                 <dl class="wk-equation">
@@ -52,8 +56,8 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
                 </dl>
               }
               <div class="fin-account__actions">
-                <button class="wk-btn" type="button" (click)="state.checkOrFill(account.account)">{{ account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
-                <button class="wk-btn" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging noteren</button>
+                <button class="wk-btn" type="button" (click)="state.checkOrFill(account.account)">{{ account.source === 'ODOO' ? 'Afsluitsaldo invullen' : account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
+                @if (account.manualMovementsAllowed) { <button class="wk-btn" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging noteren</button> } @else { <button class="wk-btn" type="button" (click)="movements(account.account)">Transacties bekijken</button> }
               </div>
             </article>
           }
@@ -65,8 +69,8 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
       }
       @if (state.unbanked().length) {
         <section class="wk-card fin-unbanked">
-          <header class="wk-card__head"><h2 class="wk-card__title">Nog niet op de bank ({{ state.unbanked().length }})</h2></header>
-          <p class="fin-hint">Betaald gezet, maar geen bankbeweging gevonden na je laatste saldocontrole.</p>
+          <header class="wk-card__head"><h2 class="wk-card__title">Nog te koppelen ({{ state.unbanked().length }})</h2></header>
+          <p class="fin-hint">Deze betalingen staan in ENROSED en wachten op een bankkoppeling. Ze worden niet bij de Odoo-banktransacties opgeteld.</p>
           <div class="wk-table fin-table fin-table--unbanked" role="table">
             <div class="wk-thead" role="row"><span class="wk-th">Betaald op</span><span class="wk-th">Wat</span><span class="wk-th" data-hide="xs">Soort</span><span class="wk-th wk-th--num">Bedrag</span><span class="wk-th"></span></div>
             @for (item of state.unbanked(); track item.kind + '#' + item.id) {
@@ -75,7 +79,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
                 <span class="wk-td">{{ item.row.description }}<span class="wk-td__sub">{{ item.row.cost ? item.row.party : item.row.reference }}</span></span>
                 <span class="wk-td" data-hide="xs"><span class="wk-pill" [class.tone-teal]="!!item.row.cost" [class.tone-blue]="!item.row.cost">{{ item.row.cost ? 'Kost' : 'Container' }}</span></span>
                 <span class="wk-td wk-td--num">{{ item.amountEur | eur }}</span>
-                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="note(item)">Noteren</button></span>
+                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="note(item)">{{ state.hasOdooAccounts() ? 'Transactie zoeken' : 'Noteren' }}</button></span>
               </div>
             }
           </div>
@@ -86,41 +90,80 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
       @for (account of state.accountsView(); track account.account) {
         <article class="ios-card ios-wallet">
           <div class="ios-wallet__top"><span>{{ account.label }}</span><span [class]="'wk-pill ' + freshTone(account)">{{ freshLabel(account) }}</span></div>
+          <p class="fin-hint">{{ iban(account.account) }}{{ account.source === 'ODOO' ? ' · Via Odoo' : '' }}</p>
           <div class="ios-wallet__value">{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</div>
           @if (account.reading; as reading) {
             <div class="ios-wallet__sub">Saldo {{ day(reading.date) }} {{ reading.balanceEur | eur }} · + {{ account.movements.length }} {{ account.movements.length === 1 ? 'beweging' : 'bewegingen' }}</div>
           }
           <div class="ios-wallet__actions">
-            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.checkOrFill(account.account)">{{ account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
-            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging</button>
+            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.checkOrFill(account.account)">{{ account.source === 'ODOO' ? 'Afsluitsaldo invullen' : account.reading ? 'Klopt het saldo?' : 'Saldo invullen' }}</button>
+            @if (account.manualMovementsAllowed) { <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openMovement({ accountKey: account.account })">Beweging</button> } @else { <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="movements(account.account)">Transacties</button> }
           </div>
+          <button class="fin-wallet-link" type="button" (click)="manage(account)">Rekening beheren <app-icon name="chevron-right" [size]="14" /></button>
           <button class="fin-wallet-link" type="button" (click)="state.historyAccount.set(account.account)">Saldogeschiedenis <app-icon name="chevron-right" [size]="14" /></button>
         </article>
       }
       <div class="ios-group fin-ios-add"><button class="ios-cell ios-cell--action" type="button" (click)="state.openBank(null)"><app-icon name="plus" [size]="18" />Rekening toevoegen</button></div>
       @if (state.unbanked().length) {
         <section class="ios-section">
-          <div class="ios-section__head"><h2>Nog niet op de bank</h2><span class="ios-section__trail">{{ unbankedEur() | eur }}</span></div>
+          <div class="ios-section__head"><h2>Nog te koppelen</h2><span class="ios-section__trail">{{ unbankedEur() | eur }}</span></div>
           <div class="ios-group">
             @for (item of state.unbanked(); track item.kind + '#' + item.id) {
               <div class="ios-cell">
                 <span class="ios-cell__body"><span class="ios-cell__title">{{ item.row.description }}</span><span class="ios-cell__sub">{{ day(item.paidOn) }} · {{ item.row.cost ? 'Kost' : 'Container' }} · {{ item.amountEur | eur }}</span></span>
-                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="note(item)">Noteer</button>
+                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="note(item)">{{ state.hasOdooAccounts() ? 'Koppelen' : 'Noteer' }}</button>
               </div>
             }
           </div>
-          <p class="ios-section__foot">Betaald gezet, maar geen bankbeweging gevonden na je laatste saldocontrole.</p>
+          <p class="ios-section__foot">Deze betalingen staan in ENROSED en wachten op een bankkoppeling. Ze worden niet bij de Odoo-banktransacties opgeteld.</p>
         </section>
       }
       <p class="fin-ios-foot"><button class="ios-section__link" type="button" (click)="state.helpOpen.set(true)">Hoe werkt je banksaldo?</button></p>
     }
+    @if (state.location().tab !== 'movements') {
+      @if (pendingReceipts().length) {
+        <section class="ios-section">
+          <h2 class="wk-card__title">Ontvangsten en terugbetalingen nog te koppelen</h2>
+          <p class="fin-hint">Al op een factuur geregistreerd; nog niet gekoppeld aan een opgehaalde banktransactie.</p>
+          @for (payment of pendingReceipts(); track payment.id) {
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ payment.orderNumber }}</span><span class="ios-cell__sub">{{ payment.amountEur | eur }} · {{ state.accountLabel(payment.bankAccount) }}</span></span>
+              <button class="wk-btn wk-btn--sm" type="button" (click)="movements(state.canonicalAccount(payment.bankAccount), payment.amountEur < 0 ? 'out' : 'in', true)">Transactie zoeken</button></div>
+          }
+        </section>
+      }
+      @if (state.archivedAccounts().length) {
+        <section class="ios-section"><h2 class="wk-card__title">Gearchiveerde rekeningen</h2><p class="fin-hint">De financiële historiek blijft bewaard. Deze rekeningen tellen niet mee in het actieve totaal.</p>
+          @for (account of state.archivedAccounts(); track account.account) {
+            <div class="ios-cell"><span class="ios-cell__body">{{ account.label }} · {{ iban(account.account) }}</span><button class="wk-btn wk-btn--sm" type="button" (click)="movements(account.account)">Historiek</button><button class="wk-btn wk-btn--sm" type="button" [disabled]="restoring()" (click)="restore(account.account)">Terugzetten</button></div>
+          }
+        </section>
+      }
+    }
+
   `,
 })
 export class BankPanel implements FinanceSectionApi {
   readonly state = inject(FinanceState);
+  private readonly banking = inject(BankingApi);
+  private readonly ui = inject(Ui);
+  readonly restoring = signal(false);
+  readonly pendingReceipts = computed(() => {
+    const linked = new Set(this.state.bankStatements().map(line => line.salesPaymentId));
+    return this.state.incomingPayments().filter(payment => !linked.has(payment.id) && this.state.bankLedger().accounts.some(account => account.source === 'ODOO' && !account.archived && account.account === this.state.canonicalAccount(payment.bankAccount)));
+  });
+  manage(account: AccountView): void { this.state.bankAccountEditor.set({ key: account.account, label: account.label, source: account.source, archived: account.archived, aliases: account.aliases, odooJournalId: account.odooJournalId, manualMovementsAllowed: account.manualMovementsAllowed }); }
+  async restore(key: string): Promise<void> {
+    if (this.restoring()) return;
+    this.restoring.set(true);
+    try { await this.banking.restoreAccount(key); await this.state.refreshBank(); this.ui.toast('Rekening teruggezet'); }
+    catch (failure) { this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err'); }
+    finally { this.restoring.set(false); }
+  }
+  iban(key: string): string { return /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(key) ? key.match(/.{1,4}/g)!.join(' ') : key; }
+  movements(account = '', dir: '' | 'in' | 'out' = '', unlinked = false): void { this.state.go({ view: 'bank', tab: 'movements', account, dir, link: unlinked ? 'unlinked' : '', q: '', period: 'all', from: '', to: '' }); }
   readonly movementPanel = viewChild(BankMovementPanel);
 
-  readonly known = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
+  readonly known = computed(() => this.state.accountsView().some((account) => account.currentEur !== null));
   readonly unbankedEur = computed(() => Math.round(this.state.unbanked().reduce((sum, row) => sum + row.amountEur * 100, 0)) / 100);
   readonly headSub = computed(() => {
     const ages = this.state.accountsView().map((account) => account.ageDays).filter((age): age is number => age !== null);
@@ -162,7 +205,7 @@ export class BankPanel implements FinanceSectionApi {
         const range = this.state.rangeOf(location);
         const direction = location.dir === 'in' ? 'INCOMING' : location.dir === 'out' ? 'OUTGOING' : 'ALL';
         const link = location.link === 'unlinked' ? 'UNLINKED_IN' : 'ALL';
-        const account = location.account ? bankAccountKey(location.account) : '';
+        const account = location.account ? this.state.canonicalAccount(location.account) : '';
         if (!timer && panel.search() !== location.q) panel.search.set(location.q);
         if (panel.accountFilter() !== account) panel.accountFilter.set(account);
         if (panel.directionFilter() !== direction) panel.directionFilter.set(direction);
@@ -211,14 +254,16 @@ export class BankPanel implements FinanceSectionApi {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     this.state.openMenu({ title: account.label, anchor: { x: rect.left, y: rect.bottom + 6 },
       items: [
+        { id: 'manage', label: 'Rekening beheren', iconName: 'pencil' },
         { id: 'history', label: 'Saldogeschiedenis', iconName: 'recent' },
         ...(account.reading ? [{ id: 'fix', label: 'Saldo corrigeren', iconName: 'pencil' }] : []),
       ],
-      pick: (id) => (id === 'history' ? this.state.historyAccount.set(account.account) : this.state.openBank(account.reading)) });
+      pick: (id) => (id === 'manage' ? this.manage(account) : id === 'history' ? this.state.historyAccount.set(account.account) : this.state.openBank(account.reading)) });
   }
 
   /** 'Noteren': the movement form prefilled with the amount, the day and the marker of this payment (a cost paid before the rows existed counts whole). */
   note(item: UnbankedItem): void {
+    if (this.state.hasOdooAccounts()) { this.movements('', 'out', true); return; }
     const row = item.row;
     if (row.cost) {
       const payment = item.kind === 'kostbetaling' ? (row.cost.payments ?? []).find((candidate) => candidate.id === item.id) ?? null : null;

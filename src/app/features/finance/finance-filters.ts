@@ -102,7 +102,7 @@ export class FinanceFilters {
   ];
 
   readonly movementOptions = computed<SegmentOption[]>(() => {
-    const unlinked = this.state.bankStatements().filter((line) => line.amountEur > 0 && line.salesPaymentId === null).length;
+    const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line) && !line.allocated && line.salesPaymentId === null).length;
     return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Binnen' }, { id: 'out', label: 'Buiten' },
       { id: 'unlinked', label: 'Te koppelen', count: unlinked || null, dot: unlinked ? 'warn' : null }];
   });

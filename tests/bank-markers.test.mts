@@ -81,3 +81,12 @@ test('the since day starts after the earliest latest check, one day later for an
   assert.equal(unbankedSinceDay([{ day: '2026-09-10', endOfDay: true }], '2026-09-24'), '2026-09-11');
   assert.equal(unbankedSinceDay([{ day: '2025-01-01', endOfDay: false }], '2026-09-24'), '2026-06-26');
 });
+
+test('an imported Odoo row is never considered reconciled by a matching amount or embedded marker', () => {
+  const payment = row(22, '2026-09-10', 121, 'kostbetaling');
+  const imported = { ...line(7, -121, '2026-09-10T10:00:00Z', 'kostbetaling #22'), source: 'ODOO' };
+  assert.equal(matchOutgoings([payment], [imported]).size, 0);
+  assert.equal(matchOutgoings([payment], [{ ...imported, reference: null }]).size, 0);
+  const linked = { ...payment, linkedLineId: 7 };
+  assert.equal(matchOutgoings([linked], [imported]).get(linked)?.id, 7);
+});

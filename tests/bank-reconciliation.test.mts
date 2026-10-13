@@ -79,3 +79,36 @@ test('each account reads with the name as typed on its newest reading, else the 
   const endOfDay = reconciledBank([{ ...balance('KBC', 100, ''), asOfAt: null }], [], []);
   assert.equal(endOfDay.accounts[0].checkedAt, '2026-09-08T21:59:59.999Z');
 });
+
+test('Odoo imports establish source authority without configuration and never add recorded receipts or manual lines', () => {
+  const bank = 'BE94731074082814';
+  const imported = { ...line(11, bank, 50, '2026-09-08T13:00:00Z'), source: 'ODOO', allocated: true };
+  const result = reconciledBank([balance(bank, 100, '2026-09-08T10:00:00Z')], [imported, line(12, bank, 50, '2026-09-08T13:00:00Z')], [payment(11, bank, 50)]);
+  assert.equal(result.totalEur, 150);
+  assert.equal(result.accounts[0].source, 'ODOO');
+  assert.equal(result.accounts[0].manualMovementsAllowed, false);
+  assert.equal(result.accounts[0].historicalManualLines, 1);
+  assert.equal(result.accounts[0].unlinkedBookings, 1);
+  assert.equal(result.accounts[0].unallocatedLines, 0, 'linked expenses are allocated too');
+});
+
+test('explicit aliases share one checkpoint and Odoo balance; unrelated bank labels stay separate', () => {
+  const bank = 'BE94731074082814';
+  const registry = [{ key: bank, label: 'KBC zakelijk', aliases: ['Oude KBC'], source: 'ODOO', archived: false, manualMovementsAllowed: false, odooJournalId: null }];
+  const result = reconciledBank([balance('Oude KBC', 100, '2026-09-08T10:00:00Z'), balance('KBC', 20, '2026-09-08T10:00:00Z')],
+    [{ ...line(1, bank, -30, '2026-09-08T13:00:00Z'), source: 'ODOO' }], [payment(1, 'Oude KBC', 40)], registry);
+  assert.equal(result.accounts.length, 2);
+  assert.equal(result.accounts.find((a: any) => a.account === bank).currentEur, 70);
+  assert.equal(result.accounts.find((a: any) => a.account === bank).label, 'KBC zakelijk');
+  assert.equal(result.totalEur, 90, 'plain KBC is not guessed to be the same bank');
+});
+
+test('archive hides a balance from totals while retaining its history and restore reuses the same data', () => {
+  const registry = [{ key: 'KBC', label: 'KBC', aliases: [], source: 'MANUAL', archived: true, manualMovementsAllowed: false, odooJournalId: null }];
+  const balances = [balance('KBC', 100, '2026-09-08T10:00:00Z')];
+  const lines = [line(1, 'KBC', 25, '2026-09-08T13:00:00Z')];
+  const result = reconciledBank(balances, lines, [], registry);
+  assert.equal(result.totalEur, 0); assert.equal(result.accounts[0].currentEur, 125);
+  assert.equal(result.accounts[0].manualMovementsAllowed, false);
+  assert.equal(reconciledBank(balances, lines, [], [{ ...registry[0], archived: false, manualMovementsAllowed: true }]).totalEur, 125);
+});

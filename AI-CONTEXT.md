@@ -138,6 +138,20 @@ the workspaces. All CSS lives in one global partial,
   Sales allocation reuses an equal signed receipt even if its historical
   account label differs from the imported IBAN; only an explicit selection
   creates another same-amount receipt. Legacy markers remain for display.
+- Bank accounts have an API registry (`/api/bank-accounts`): explicit aliases
+  merge historical names with their canonical key; display labels never become
+  write identities. Archive/restore retains financial history and removes only
+  active account totals/options. The account editor is rendered at page-host
+  level with the other finance sheets.
+- An imported ODOO row establishes account authority even before registry load.
+  On these accounts only Odoo rows after the chosen balance checkpoint affect
+  cash; synthetic sales receipts and legacy manual rows remain outside it.
+  Historical rows are still viewable. New Odoo checkpoints use end-of-day
+  balances because imported dates have no bank timestamp; old readings stay intact.
+  `Te koppelen` includes money in and out. Outgoing matching selects existing
+  cost/container payments with exact summed cents; imported rows never match
+  by approximate date, amount or reference marker. Unlink an earlier manual
+  row explicitly before reassigning its payment to an imported row.
 - OdooConnectionPanel imports bank rows and browses incoming/outgoing Odoo
   files. SalesPeppolPanel is collapsed on issued invoices/credit notes:
   local preview works without connection settings; named customer match,

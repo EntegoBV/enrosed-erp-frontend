@@ -78,15 +78,15 @@ test('"kosten zonder factuur of bon" counts exactly the rows its Bekijken opens'
   assert.deepEqual(listed.map((row) => row.key).sort(), ['cost:1', 'cost:2']);
 });
 
-test('only incoming bank lines without an invoice wait to be linked', () => {
+test('both signs wait for a saved bank allocation and their absolute amounts do not cancel', () => {
   const items = financeAttention({ ...clear, bankLines: [
-    { amountEur: 50, salesPaymentId: null }, { amountEur: 25, salesPaymentId: null }, { amountEur: 10, salesPaymentId: 4 }, { amountEur: -30, salesPaymentId: null },
+    { amountEur: 50, salesPaymentId: null }, { amountEur: 25, salesPaymentId: null }, { amountEur: 10, salesPaymentId: 4 }, { amountEur: -30, salesPaymentId: null }, { amountEur: -500, salesPaymentId: null, allocated: true },
   ] });
   assert.equal(items.length, 1);
-  assert.deepEqual([items[0].kind, items[0].count, items[0].amountEur, items[0].action], ['unlinked-incoming', 2, 75, 'link']);
-  assert.equal(items[0].title, '2 ontvangen bankbewegingen nog niet aan een factuur gekoppeld');
+  assert.deepEqual([items[0].kind, items[0].count, items[0].amountEur, items[0].action], ['unlinked-incoming', 3, 105, 'link']);
+  assert.equal(items[0].title, '3 banktransacties nog te koppelen');
   assert.equal(financeAttention({ ...clear, bankLines: [{ amountEur: 5, salesPaymentId: null }] })[0].title,
-    '1 ontvangen bankbeweging nog niet aan een factuur gekoppeld');
+    '1 banktransactie nog te koppelen');
 });
 
 test('danger first, then warnings, then information; bigger amounts first within a tone', () => {

@@ -15,6 +15,7 @@ import { paymentLocalDay, paymentMomentLabel } from './incoming-money';
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
 /** UNLINKED_IN is 'Te koppelen': money in without an invoice. */
 type LinkFilter = 'ALL' | 'LINKED' | 'UNLINKED' | 'UNLINKED_IN';
+interface OutgoingMatch { key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number; }
 const cents = (amount: number): number => Math.round(amount * 100);
 const inactive = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -33,6 +34,11 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
   selector: 'app-bank-movement-panel', changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, EurPipe, Icon, SwipeActions, MenuTrigger],
   template: `
+    @if (historicalCount()) {
+      <p class="fin-hint">{{ historicalCount() }} eerdere handmatige registraties op een rekening via Odoo blijven bewaard en tellen niet mee in dit bankoverzicht.
+        <button class="fin-inline-btn" type="button" (click)="showHistorical.set(!showHistorical())">{{ showHistorical() ? 'Historische registraties verbergen' : 'Historische registraties tonen' }}</button>
+      </p>
+    }
     @if (error() && !selected()) { <p class="fin-error" role="alert">{{ error() }}</p> }
     @if (state.desk()) {
       @if (filteredLines().length) {
@@ -49,14 +55,14 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
             <div class="wk-tr" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
                  [attr.aria-selected]="focusId() === row.id" (focus)="focusId.set(row.id)" (click)="focusId.set(row.id)" appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
               <span class="wk-td" role="gridcell" [attr.title]="record(row)">{{ movementStamp(row) }}</span>
-              <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (imported(row)) { <span class="wk-pill tone-blue" title="Banktransactie opgehaald uit Odoo">Odoo</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
+              <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (imported(row)) { <span class="wk-pill tone-blue" title="Banktransactie opgehaald uit Odoo">Odoo</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
               <span class="wk-td" role="gridcell" data-hide="sm inspecting">{{ accountName(row.account) }}</span>
               <span class="wk-td" role="gridcell">
                 @if (row.salesOrderId) {
                   <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.amountEur < 0 ? 'Terugbetaling' : 'Factuur' }} {{ invoiceNumber(row.salesOrderId) }} ›</a>
                 } @else if (allocated(row)) {
                   <span class="wk-pill tone-teal">{{ row.allocationLabel || 'Gekoppeld' }}</span>
-                } @else if (row.amountEur > 0) {
+                } @else if (!allocated(row)) {
                   <button class="wk-btn wk-btn--sm fin-link-btn" type="button" tabindex="-1" [disabled]="busy()" (click)="$event.stopPropagation(); openAllocation(row)"><app-icon name="link" [size]="14" />Koppelen</button>
                 } @else if (markerOf(row); as marker) {
                   <button class="wk-pill fin-marker" [class.tone-teal]="isCost(marker)" [class.tone-blue]="!isCost(marker)" type="button" tabindex="-1"
@@ -114,7 +120,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                       <span class="ios-cell__sub">{{ accountName(row.account) }} · {{ clock(row) }}@if (imported(row)) { · <span class="wk-pill tone-blue">Odoo</span> }</span>
                       @if (detailsId() === row.id) { <span class="ios-cell__sub fin-wrap">{{ record(row) }}{{ row.reference && row.counterparty ? ' · ' + row.reference : '' }}</span> }</span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</span>
-                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (allocated(row)) { {{ row.allocationLabel || 'Gekoppeld' }} } @else if (row.amountEur > 0) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span></span>
+                      <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (allocated(row)) { {{ row.allocationLabel || 'Gekoppeld' }} } @else if (!allocated(row)) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span></span>
                   </button>
                 </div>
               </div>
@@ -141,6 +147,8 @@ export class BankMovementPanel {
   readonly error = signal('');
   /** The movement form is FinanceState's; the panel only reports whether one is open. */
   readonly draft = computed(() => this.state.movementDraft());
+  readonly showHistorical = signal(false);
+  readonly historicalCount = computed(() => this.state.bankStatements().filter(row => !this.state.officialBankLine(row)).length);
   readonly accountFilter = signal('');
   readonly directionFilter = signal<DirectionFilter>('ALL');
   readonly linkFilter = signal<LinkFilter>('ALL');
@@ -157,6 +165,52 @@ export class BankMovementPanel {
   readonly choice = signal<BankMatch | null>(null);
   readonly manualInvoice = signal(0);
   readonly newBookingConfirmed = signal(false);
+  readonly allocationMode = signal<'expense' | 'sales'>('sales');
+  readonly outgoingSearch = signal('');
+  readonly outgoingSelected = signal<string[]>([]);
+  readonly outgoingCandidates = computed<OutgoingMatch[]>(() => {
+    const result: OutgoingMatch[] = [];
+    for (const cost of this.state.costs()) for (const payment of cost.payments ?? []) {
+      if (!payment.id || payment.bankStatementLineId != null || !(payment.amountEur > 0)) continue;
+      result.push({ key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
+        detail: [cost.description, cost.reference, payment.note].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
+    }
+    for (const payment of this.state.payments()) {
+      if (payment.bankStatementLineId != null || !(payment.amountEur > 0)) continue;
+      result.push({ key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',
+        detail: [payment.orderNumber, payment.label].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
+    }
+    return result.sort((a, b) => b.paidOn.localeCompare(a.paidOn) || a.id - b.id);
+  });
+  readonly visibleOutgoing = computed(() => {
+    const search = this.outgoingSearch().trim().toLocaleLowerCase('nl-BE');
+    return this.outgoingCandidates().filter(row => !search || [row.title, row.detail, row.paidOn, row.amountEur.toFixed(2), row.amountEur.toFixed(2).replace('.', ',')].join(' ').toLocaleLowerCase('nl-BE').includes(search));
+  });
+  readonly chosenOutgoing = computed(() => this.outgoingCandidates().filter(row => this.outgoingSelected().includes(row.key)));
+  readonly outgoingTotal = computed(() => this.chosenOutgoing().reduce((sum, row) => sum + cents(row.amountEur), 0) / 100);
+  readonly canLinkOutgoing = computed(() => {
+    const line = this.selected(), rows = this.chosenOutgoing();
+    return !this.busy() && !!line && line.amountEur < 0 && !this.allocated(line) && rows.length > 0
+      && rows.length === this.outgoingSelected().length && rows.filter(row => row.kind === 'cost').length <= 1
+      && cents(this.outgoingTotal()) === -cents(line.amountEur);
+  });
+  toggleOutgoing(row: OutgoingMatch): void {
+    if (this.busy()) return;
+    this.outgoingSelected.update(keys => keys.includes(row.key) ? keys.filter(key => key !== row.key)
+      : [...(row.kind === 'cost' ? keys.filter(key => !key.startsWith('cost:')) : keys), row.key]);
+  }
+  async linkOutgoing(): Promise<void> {
+    if (!this.canLinkOutgoing()) return;
+    const line = this.selected()!, rows = this.chosenOutgoing();
+    await this.run(async () => {
+      const cost = rows.find(row => row.kind === 'cost');
+      const saved = await this.api.linkPayments(line.id, { purchasePaymentIds: rows.filter(row => row.kind === 'purchase').map(row => row.id), ...(cost ? { costPaymentId: cost.id } : {}) });
+      this.state.bankStatements.update(lines => lines.map(row => row.id === saved.id ? saved : row));
+      ++this.allocationVersion; this.selected.set(null); this.outgoingSelected.set([]);
+      this.ui.toast('Bestaande betalingen gekoppeld');
+      await this.state.refreshBank(); await this.state.reload(['costs', 'payments']);
+    });
+  }
   private allocationVersion = 0;
   private readonly invoiceMap = computed(() => new Map(this.state.salesOrders().map(view => [view.order.id, view])));
   private readonly customerNames = computed(() => new Map(this.state.customers().map(customer => [customer.id, customer.company])));
@@ -164,24 +218,23 @@ export class BankMovementPanel {
     const payments = this.state.salesOrders().flatMap(view => view.paymentSummary?.payments ?? []);
     return new Map<number, SalesPayment>([...payments, ...this.state.incomingPayments()].map(payment => [payment.id, payment]));
   });
-  readonly ledgerAccounts = computed(() => [...new Set([
-    ...this.state.accounts(), ...this.state.bankStatements().map(row => row.account),
-    ...this.state.incomingPayments().map(row => row.bankAccount ?? ''),
-  ].map(bankAccountKey).filter(Boolean))].sort());
+  readonly ledgerAccounts = computed(() => this.state.accountOptions().map(account => account.key));
   readonly invalidPeriod = computed(() => !!this.from() && !!this.to() && this.from() > this.to());
   readonly hasFilters = computed(() => !!this.search().trim() || !!this.accountFilter() || this.directionFilter() !== 'ALL' || this.linkFilter() !== 'ALL' || !!this.from() || !!this.to());
   readonly filteredLines = computed(() => {
     if (this.invalidPeriod()) return [];
     const search = this.search().trim().toLocaleLowerCase('nl-BE');
     return this.state.bankStatements().filter(row => {
+      if (!this.showHistorical() && !this.state.officialBankLine(row)) return false;
+      if (this.state.archivedBankLine(row) && !this.accountFilter()) return false;
       const day = paymentLocalDay({ receivedAt: row.bookedAt, timeZone: row.timeZone });
       const invoice = row.salesOrderId ? this.invoiceMap().get(row.salesOrderId) : null;
       const text = [row.reference, row.counterparty, row.account, invoice?.order.number, invoice ? this.customerName(invoice.order.customerId) : ''].join(' ').toLocaleLowerCase('nl-BE');
       const link = this.linkFilter();
-      return (!this.accountFilter() || bankAccountKey(row.account) === this.accountFilter())
+      return (!this.accountFilter() || this.state.canonicalAccount(row.account) === this.state.canonicalAccount(this.accountFilter()))
         && (this.directionFilter() === 'ALL' || (this.directionFilter() === 'INCOMING' ? row.amountEur > 0 : row.amountEur < 0))
         && (link === 'ALL' || (link === 'LINKED' ? this.allocated(row) : link === 'UNLINKED' ? !this.allocated(row)
-          : !this.allocated(row) && row.amountEur > 0))
+          : !this.allocated(row)))
         && (!this.from() || day >= this.from()) && (!this.to() || day <= this.to()) && (!search || text.includes(search));
     }).sort((left, right) => Date.parse(right.bookedAt) - Date.parse(left.bookedAt) || right.id - left.id);
   });
@@ -202,10 +255,10 @@ export class BankMovementPanel {
     }
     return groups;
   });
-  readonly unlinkedCount = computed(() => this.state.bankStatements().filter(row => row.amountEur > 0 && !this.allocated(row)).length);
+  readonly unlinkedCount = computed(() => this.state.bankStatements().filter(row => this.state.officialBankLine(row) && !this.state.archivedBankLine(row) && !this.allocated(row)).length);
   readonly totals = computed(() => {
-    const incoming = this.filteredLines().reduce((sum, row) => sum + (row.amountEur > 0 ? cents(row.amountEur) : 0), 0);
-    const outgoing = this.filteredLines().reduce((sum, row) => sum + (row.amountEur < 0 ? -cents(row.amountEur) : 0), 0);
+    const incoming = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur > 0 ? cents(row.amountEur) : 0), 0);
+    const outgoing = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur < 0 ? -cents(row.amountEur) : 0), 0);
     return { incoming: incoming / 100, outgoing: outgoing / 100, net: (incoming - outgoing) / 100 };
   });
   readonly existingMatches = computed<BankMatch[]>(() => {
@@ -274,7 +327,7 @@ export class BankMovementPanel {
   point(event: MouseEvent): { x: number; y: number } { const rect = (event.currentTarget as HTMLElement).getBoundingClientRect(); return { x: rect.left, y: rect.bottom + 6 }; }
   /** 'Details': when and by whom the line was recorded, and when and how it was linked to an invoice. */
   record(row: BankStatementLine): string {
-    const recorded = `${this.imported(row) ? 'Opgehaald uit Odoo' : 'Geregistreerd'} ${this.stamp(row.recordedAt, row.timeZone)}${row.actor ? ` · ${row.actor}` : ''}`
+    const recorded = `${!this.state.officialBankLine(row) ? 'Historische registratie · telt niet mee in het banksaldo · ' : ''}${this.imported(row) ? 'Opgehaald uit Odoo' : 'Geregistreerd'} ${this.stamp(row.recordedAt, row.timeZone)}${row.actor ? ` · ${row.actor}` : ''}`
       + (this.imported(row) ? ' · Odoo levert de boekingsdatum, zonder tijdstip' : '');
     if (this.allocated(row) && !row.salesPaymentId) return `${recorded} · ${row.allocationLabel || 'Gekoppeld aan een uitgave'}`;
     if (!row.allocatedAt) return recorded;
@@ -291,7 +344,7 @@ export class BankMovementPanel {
     .filter(payment => payment.bankStatementLineId != null && !!payment.id).map(payment => [payment.bankStatementLineId!, payment.id!]))));
   /** The kost/kostbetaling/containerbetaling marker a line carries, else the payment hard-linked to it. */
   markerOf(row: BankStatementLine): { kind: string; id: number } | null {
-    const marker = this.state.lineMarkers().get(row.id)?.[0];
+    const marker = this.imported(row) ? null : this.state.lineMarkers().get(row.id)?.[0];
     if (marker) return marker;
     const paymentId = this.paymentLines().get(row.id);
     return paymentId ? { kind: 'kostbetaling', id: paymentId } : null;
@@ -325,7 +378,7 @@ export class BankMovementPanel {
     this.focusId.set(row.id);
     const marker = this.markerOf(row);
     const items = [
-      ...(!this.allocated(row) ? [{ id: 'link', label: 'Aan factuur koppelen…', iconName: 'link' }] : [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }]),
+      ...(!this.allocated(row) ? [{ id: 'link', label: row.amountEur < 0 ? 'Aan uitgave of terugbetaling koppelen…' : 'Aan factuur koppelen…', iconName: 'link' }] : [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }]),
       ...(row.salesOrderId ? [{ id: 'invoice', label: 'Factuur openen', iconName: 'document' }] : []),
       ...(marker ? [{ id: 'marker', label: this.isCost(marker) ? 'Kost bekijken' : 'Container bekijken', iconName: 'eye' }] : []),
       { id: 'details', label: this.detailsId() === row.id ? 'Details verbergen' : 'Details', iconName: 'info' },
@@ -370,6 +423,8 @@ export class BankMovementPanel {
   }
   async openAllocation(row: BankStatementLine): Promise<void> {
     if (this.busy() || this.allocated(row)) return;
+    this.allocationMode.set(row.amountEur < 0 ? 'expense' : 'sales');
+    this.outgoingSearch.set(''); this.outgoingSelected.set([]);
     const version = ++this.allocationVersion;
     this.selected.set(row); this.choice.set(null); this.manualInvoice.set(0); this.matches.set([]); this.newBookingConfirmed.set(false); this.error.set(''); this.matchingLoading.set(true);
     try {
@@ -378,7 +433,7 @@ export class BankMovementPanel {
       this.matches.set(matches.filter(match => !!match.existingPaymentId || (row.amountEur < 0
         ? cents(match.openEur) >= -cents(row.amountEur)
         : this.invoiceMap().has(match.salesOrderId) ? this.canCreateOn(this.invoiceMap().get(match.salesOrderId)!) : match.openEur > 0)));
-    } catch (failure) { if (version === this.allocationVersion && this.selected()?.id === row.id) this.error.set(messageOf(failure, 'Suggesties laden mislukt. Je kunt hieronder zelf een factuur kiezen.')); }
+    } catch (failure) { if (version === this.allocationVersion && this.selected()?.id === row.id && row.amountEur > 0) this.error.set(messageOf(failure, 'Suggesties laden mislukt. Je kunt hieronder zelf een factuur kiezen.')); }
     finally { if (version === this.allocationVersion) this.matchingLoading.set(false); }
   }
   closeAllocation(): void {

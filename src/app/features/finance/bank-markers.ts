@@ -48,6 +48,7 @@ export interface OutgoingRow {
 }
 
 export interface BankLineLike {
+  source?: string | null;
   id: number;
   amountEur: number;
   bookedAt: string;
@@ -84,7 +85,8 @@ export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines:
   const matched = new Map<T, BankLineLike>();
   const paid = rows.filter((row) => !!row.paidOn && row.amountEur > 0);
   const byId = new Map(lines.map((line) => [line.id, line]));
-  const outgoing = lines.filter((line) => line.amountEur < 0);
+  // An imported movement is reconciled only by a saved link, never by a guess.
+  const outgoing = lines.filter((line) => line.amountEur < 0 && line.source !== 'ODOO');
   const markers = lineMarkers(outgoing);
   const byMarker = new Map<string, BankLineLike>();
   for (const line of outgoing) {

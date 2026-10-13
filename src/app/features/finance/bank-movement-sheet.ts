@@ -30,12 +30,12 @@ import type { PartyCandidate } from './party-suggestions';
           <div class="fin-group" [class.ios-group]="!state.desk()">
             <div class="fin-field fin-field--stack"><span>Rekening</span>
               <div class="fin-choice" role="group" aria-label="Rekening">
-                @for (option of state.accountOptions(); track option.key) {
-                  <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!other() && draft.account === option.label" (click)="other.set(false); patch({ account: option.label })">{{ option.label }}</button>
+                @for (option of state.manualAccountOptions(); track option.key) {
+                  <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!other() && draft.account === option.key" (click)="other.set(false); patch({ account: option.key })">{{ option.label }}</button>
                 }
                 <button class="fin-choice__chip" type="button" [attr.aria-pressed]="other() || !knownAccount()" (click)="pickOther()">Andere…</button>
               </div>
-              @if (other() || !knownAccount() || !state.accountOptions().length) {
+              @if (other() || !knownAccount() || !state.manualAccountOptions().length) {
                 <input class="input" maxlength="120" placeholder="Rekeningnaam of IBAN" [value]="draft.account" (input)="other.set(true); patch({ account: $any($event.target).value })" />
               }
             </div>
@@ -58,6 +58,7 @@ import type { PartyCandidate } from './party-suggestions';
             <label class="fin-field"><span>Mededeling</span>
               <input class="input" maxlength="500" placeholder="Bijvoorbeeld het factuurnummer" [value]="draft.reference" (input)="patch({ reference: $any($event.target).value })" (keydown.enter)="save()" /></label>
           </div>
+          <p class="fin-hint">Rekeningen via Odoo gebruiken uitsluitend opgehaalde banktransacties. Koppel die via Bank → Bewegingen.</p>
           <p class="fin-hint">Tijdzone · {{ draft.timeZone }}</p>
           @if (state.movementError()) { <p class="fin-error" role="alert">{{ state.movementError() }}</p> }
         </div>
@@ -75,7 +76,7 @@ export class BankMovementSheet {
   readonly other = signal(false);
   readonly knownAccount = computed(() => {
     const account = this.state.movementDraft()?.account ?? '';
-    return !account || this.state.accountOptions().some((option) => option.label === account);
+    return !account || this.state.manualAccountOptions().some((option) => option.key === account);
   });
   /** Money in comes from customers: their names and the earlier incoming counterparties, by how often they paid. */
   private readonly incomingCandidates = computed<PartyCandidate[]>(() => {

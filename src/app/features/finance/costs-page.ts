@@ -16,6 +16,7 @@ import { AccountantPackageSheet } from './accountant-package-sheet';
 import { BankAllocationSheet } from './bank-allocation-sheet';
 import { BankMovementSheet } from './bank-movement-sheet';
 import { BankPanel } from './bank-panel';
+import { BankAccountSheet } from './bank-account-sheet';
 import { BankSheet } from './bank-sheet';
 import { ContainerPaymentsPanel } from './container-payments-panel';
 import { CostAnalysis } from './cost-analysis';
@@ -62,7 +63,7 @@ const STALE_MS = 5 * 60_000;
   host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
     FinanceCreateMenu, FinanceInspector, FinanceOverview, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
-    RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
+    RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankAccountSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
     AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, BankAllocationSheet, CostPartySheet, FairSheet],
   template: `
     @if (state.desk()) {
@@ -169,6 +170,7 @@ const STALE_MS = 5 * 60_000;
     @if (state.recurringDraft()) { <app-recurring-sheet /> }
     @if (state.costPartyDraft()) { <app-cost-party-sheet /> }
     @if (state.fairDraft()) { <app-fair-sheet /> }
+    @if (state.bankAccountEditor(); as account) { <app-bank-account-sheet [account]="account" (closed)="state.bankAccountEditor.set(null)" /> }
     @if (state.bankDraft()) { <app-bank-sheet /> }
     @if (state.movementDraft()) { <app-bank-movement-sheet /> }
     @if (state.paySheet()) { <app-pay-sheet /> }

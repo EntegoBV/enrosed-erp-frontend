@@ -37,7 +37,7 @@ export class AccountHistorySheet {
   readonly state = inject(FinanceState);
   readonly label = computed(() => this.state.accountLabel(this.state.historyAccount()));
   readonly readings = computed(() => this.state.balances()
-    .filter((row) => bankAccountKey(row.account) === this.state.historyAccount())
+    .filter((row) => this.state.canonicalAccount(row.account) === this.state.historyAccount())
     .sort((a, b) => bankCheckpoint(b) - bankCheckpoint(a) || (b.id ?? 0) - (a.id ?? 0)));
 
   moment(asOfAt: string | null | undefined, date: string, timeZone: string | null | undefined): string {

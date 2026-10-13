@@ -2497,7 +2497,7 @@ export class PurchaseEditor {
         }
       } else if (account) {
         try {
-          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, this.paymentTransferEur(), account.label));
+          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, this.paymentTransferEur(), account.key));
           this.bankLines.update(lines => [line, ...(lines ?? [])]);
           bank = 'noted';
         } catch { bank = 'failed'; }

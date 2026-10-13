@@ -4,7 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
-import { BankingApi, BankMovementRequest, BankStatementLine } from '../../core/api/banking-api';
+import { BankingApi, BankAccount, BankMovementRequest, BankStatementLine } from '../../core/api/banking-api';
 import { FinanceApi } from '../../core/api/finance-api';
 import { MediaApi } from '../../core/api/media-api';
 import { MediaAssetSummary } from '../../core/api/media-models';
@@ -21,7 +21,7 @@ import type { MenuPoint } from '../../shared/context-menu-position';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { SALES_CHANNELS, channelLabel } from '../sales/sales-channels';
 import type { SalesChannel } from '../sales/sales-channels';
-import { bankAccountKey, bankCheckpoint, reconciledBank } from './bank-reconciliation';
+import { bankAccountKey, canonicalBankAccount, bankCheckpoint, reconciledBank } from './bank-reconciliation';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
 import type { MarkerKind, OutgoingRow } from './bank-markers';
 import { mergeChannels } from './channel-choices';
@@ -52,14 +52,14 @@ import type { VatReturn } from './vat-return';
 
 /** A place the data comes from; each can fail on its own and keeps its last good value. */
 export type FinanceSource = 'costs' | 'recurring' | 'balances' | 'orders' | 'customers' | 'payments' | 'attachments'
-  | 'incoming' | 'statements' | 'containers' | 'parties' | 'fairs' | 'countries' | 'company';
+  | 'bankAccounts' | 'incoming' | 'statements' | 'containers' | 'parties' | 'fairs' | 'countries' | 'company';
 
 const SOURCE_NAMES: Readonly<Record<FinanceSource, string>> = {
-  costs: 'Bedrijfskosten', recurring: 'Vaste kosten', balances: 'Banksaldi', orders: 'Verkoopfacturen', customers: 'Klanten',
+  bankAccounts: 'Bankrekeningen', costs: 'Bedrijfskosten', recurring: 'Vaste kosten', balances: 'Banksaldi', orders: 'Verkoopfacturen', customers: 'Klanten',
   payments: 'Containerbetalingen', attachments: 'Kostendocumenten', incoming: 'Ontvangsten en terugbetalingen',
   statements: 'Bankbewegingen', containers: 'Containers', parties: 'Aan wie', fairs: 'Beurzen', countries: 'Landen', company: 'Bedrijf',
 };
-const MAIN_SOURCES: readonly FinanceSource[] = ['costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs', 'countries', 'company'];
+const MAIN_SOURCES: readonly FinanceSource[] = ['bankAccounts', 'costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs', 'countries', 'company'];
 const BANK_ZONE = 'Europe/Brussels';
 const INACTIVE = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -220,6 +220,8 @@ export class FinanceState {
   readonly costs = signal<CompanyCost[]>([]);
   readonly recurring = signal<RecurringCost[]>([]);
   readonly balances = signal<BankBalance[]>([]);
+  readonly bankAccountEditor = signal<BankAccount | null>(null);
+  readonly bankAccounts = signal<BankAccount[]>([]);
   readonly bankStatements = signal<BankStatementLine[]>([]);
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly customers = signal<Customer[]>([]);
@@ -253,7 +255,7 @@ export class FinanceState {
   readonly loadErrors = computed(() => Object.values(this.errorMap()).filter((text): text is string => !!text));
   readonly failedSources = computed(() => (Object.keys(this.errorMap()) as FinanceSource[]).map((source) => SOURCE_NAMES[source]));
   private readonly requests: Record<FinanceSource, number> = {
-    costs: 0, recurring: 0, balances: 0, orders: 0, customers: 0, payments: 0, attachments: 0, incoming: 0, statements: 0, containers: 0, parties: 0, fairs: 0, countries: 0, company: 0,
+    bankAccounts: 0, costs: 0, recurring: 0, balances: 0, orders: 0, customers: 0, payments: 0, attachments: 0, incoming: 0, statements: 0, containers: 0, parties: 0, fairs: 0, countries: 0, company: 0,
   };
   private loadTicket = 0;
   private containerTicket = 0;
@@ -308,7 +310,7 @@ export class FinanceState {
 
   /** After a bank action: the lines, the receipts, the invoices they touch and the readings. */
   refreshBank(): Promise<void> {
-    return this.reload(['statements', 'incoming', 'orders', 'balances']);
+    return this.reload(['statements', 'incoming', 'orders', 'balances', 'bankAccounts']);
   }
 
   refreshCosts(): Promise<void> {
@@ -319,6 +321,7 @@ export class FinanceState {
     switch (source) {
       case 'costs': return this.finance.costs();
       case 'recurring': return this.finance.recurringCosts();
+      case 'bankAccounts': return this.banking.accounts();
       case 'balances': return this.finance.bankBalances();
       case 'orders': return this.sales.orders();
       case 'customers': return this.sales.customers();
@@ -339,6 +342,7 @@ export class FinanceState {
     switch (source) {
       case 'costs': this.costs.set(value as CompanyCost[]); break;
       case 'recurring': this.recurring.set(value as RecurringCost[]); break;
+      case 'bankAccounts': this.bankAccounts.set(value as BankAccount[]); break;
       case 'balances': this.balances.set(value as BankBalance[]); break;
       case 'orders': this.salesOrders.set(value as SalesOrderView[]); break;
       case 'customers': this.customers.set(value as Customer[]); break;
@@ -362,7 +366,7 @@ export class FinanceState {
    */
   readonly purchaseFiguresVisible = computed(() => true);
 
-  readonly bankLedger = computed(() => reconciledBank(this.balances(), this.bankStatements(), this.incomingPayments()));
+  readonly bankLedger = computed(() => reconciledBank(this.balances(), this.bankStatements(), this.incomingPayments(), this.bankAccounts()));
   readonly currentBankEur = computed(() => this.bankLedger().totalEur);
   /** Company costs and container payments side by side; container rows follow their original payment. */
   readonly ledger = computed(() => costLedger(this.costs(), this.purchaseFiguresVisible() ? this.payments() : [], cashTotalOf));
@@ -382,8 +386,8 @@ export class FinanceState {
   readonly upcomingInclEur = computed(() => round2(this.upcoming().reduce((sum, row) => sum + row.amountInclEur, 0)));
   /** Definitions whose next occurrence is today or earlier. */
   readonly dueNow = computed(() => this.recurring().filter((definition) => definition.active && !!definition.nextDate && definition.nextDate <= this.today()));
-  /** Incoming bank lines not linked to an invoice yet: 'Te koppelen'. */
-  readonly unlinkedIncomingCount = computed(() => this.bankStatements().filter((line) => line.amountEur > 0 && line.salesPaymentId === null).length);
+  /** Bank lines without a saved invoice, cost or purchase payment allocation. */
+  readonly unlinkedIncomingCount = computed(() => this.bankStatements().filter((line) => this.officialBankLine(line) && !this.archivedBankLine(line) && !line.allocated && line.salesPaymentId === null).length);
 
   /**
    * The work a segment holds that its section's badge counts (Vaste kosten
@@ -422,12 +426,25 @@ export class FinanceState {
   readonly incomingThisMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), periodRange('month', this.today()).from, this.today()));
 
   /* accounts: keys merge, labels are what people read */
-  readonly accountOptions = computed(() => this.bankLedger().accounts
+  readonly accountOptions = computed(() => this.bankLedger().accounts.filter(account => !account.archived)
     .map((account) => ({ key: account.account, label: account.label }))
     .sort((left, right) => left.label.localeCompare(right.label, 'nl')));
+  readonly manualAccountOptions = computed(() => this.accountOptions().filter(option => this.manualAccountAllowed(option.key)));
+  readonly hasOdooAccounts = computed(() => this.bankLedger().accounts.some(account => account.source === 'ODOO' && !account.archived));
+  readonly archivedAccounts = computed(() => this.bankLedger().accounts.filter(account => account.archived));
+  canonicalAccount(key: string | null | undefined): string { return canonicalBankAccount(key, this.bankAccounts()); }
+  manualAccountAllowed(key: string): boolean {
+    return this.bankLedger().accounts.find(account => account.account === this.canonicalAccount(key))?.manualMovementsAllowed ?? true;
+  }
+  archivedBankLine(line: BankStatementLine): boolean {
+    return this.bankLedger().accounts.find(account => account.account === this.canonicalAccount(line.account))?.archived ?? false;
+  }
+  officialBankLine(line: BankStatementLine): boolean {
+    return line.source === 'ODOO' || this.bankLedger().accounts.find(account => account.account === this.canonicalAccount(line.account))?.source !== 'ODOO';
+  }
   /** Readable account names, for the older pickers. */
   readonly accounts = computed(() => this.accountOptions().map((option) => option.label));
-  readonly accountsView = computed(() => this.bankLedger().accounts.map((account) => ({
+  readonly accountsView = computed(() => this.bankLedger().accounts.filter(account => !account.archived).map((account) => ({
     ...account,
     ageDays: account.checkedAt ? Math.max(0, daysBetween(paymentLocalDay({ receivedAt: account.checkedAt, timeZone: account.reading?.timeZone || BANK_ZONE }), this.today())) : null,
   })));
@@ -435,8 +452,8 @@ export class FinanceState {
   accountLabel(key: string | null | undefined): string {
     if (!key) return '';
     if (key === NO_ACCOUNT) return 'Geen rekening';
-    const normalised = bankAccountKey(key);
-    return this.accountOptions().find((option) => option.key === normalised)?.label ?? key;
+    const normalised = this.canonicalAccount(key);
+    return this.bankLedger().accounts.find((option) => option.account === normalised)?.label ?? key;
   }
 
   /** Files per cost id. */
@@ -488,18 +505,18 @@ export class FinanceState {
     }
     return rows;
   });
-  readonly unbankedSince = computed(() => unbankedSinceDay(this.bankLedger().accounts.flatMap((account) => account.reading ? [{
+  readonly unbankedSince = computed(() => unbankedSinceDay(this.bankLedger().accounts.filter(account => !account.archived).flatMap((account) => account.reading ? [{
     day: account.reading.asOfAt ? paymentLocalDay({ receivedAt: account.reading.asOfAt, timeZone: account.reading.timeZone || BANK_ZONE }) : account.reading.date,
     endOfDay: !account.reading.asOfAt,
   }] : []), this.today()));
   /** Paid, but no bank line after the last check: 'Nog niet op de bank'. */
-  readonly unbanked = computed(() => unbankedOutgoings(this.paidOutgoings(), this.bankStatements(), this.unbankedSince())
+  readonly unbanked = computed(() => unbankedOutgoings(this.paidOutgoings(), this.bankStatements().filter(line => this.officialBankLine(line)), this.hasOdooAccounts() ? '0000-01-01' : this.unbankedSince())
     .sort((left, right) => (right.paidOn ?? '').localeCompare(left.paidOn ?? '')));
   /** The bank line that holds a paid row, by 'kostbetaling#7', 'kost#12' (a cost's only payment answers to both) or 'containerbetaling#3'. */
   readonly bankedLines = computed(() => {
     const map = new Map<string, BankStatementLine>();
     const lines = new Map(this.bankStatements().map((line) => [line.id, line]));
-    for (const [row, line] of matchOutgoings(this.paidOutgoings(), this.bankStatements())) {
+    for (const [row, line] of matchOutgoings(this.paidOutgoings(), this.bankStatements().filter(line => this.officialBankLine(line)))) {
       const full = lines.get(line.id);
       if (!full) continue;
       map.set(`${row.kind}#${row.id}`, full);
@@ -534,7 +551,7 @@ export class FinanceState {
 
   /** The account a receipt counts on: its own, else the one of the bank line it was linked to. */
   receiptAccountKey(row: { id: number; bankAccount?: string | null }): string {
-    return bankAccountKey(row.bankAccount) || bankAccountKey(this.lineByReceipt().get(row.id)?.account);
+    return this.canonicalAccount(this.lineByReceipt().get(row.id)?.account || row.bankAccount);
   }
 
   /** Receipts on invoices on no account at all, not even through a bank line: they never count in the bank. */
@@ -551,7 +568,7 @@ export class FinanceState {
       unconfirmedRegimes: { count: this.unconfirmedRegimeCount() },
       dueNowCount: this.dueNow().length,
       containerNow: { count: containersNow.length, eur: round2(containersNow.reduce((sum, row) => sum + row.remainingEur, 0)) },
-      bankLines: this.bankStatements(),
+      bankLines: this.bankStatements().filter(line => this.officialBankLine(line) && !this.archivedBankLine(line)),
       receiptsWithoutAccount: { count: unassigned.length, eur: round2(unassigned.reduce((sum, row) => sum + row.amountEur, 0)) },
       accounts: this.accountsView().map((account) => ({ key: account.account, label: account.label, hasReading: !!account.reading, ageDays: account.ageDays })),
       unbanked: { count: unbanked.length, eur: round2(unbanked.reduce((sum, row) => sum + row.amountEur, 0)) },
@@ -910,7 +927,7 @@ export class FinanceState {
       const newlyPaid = !!saved.paidOn && !before?.paidOn && !!saved.id;
       this.duplicating = false;
       const accountKey = options.bankAccountKey ?? '';
-      const toBank = newlyPaid && !!accountKey && this.accountOptions().some((option) => option.key === bankAccountKey(accountKey));
+      const toBank = newlyPaid && !!accountKey && this.manualAccountAllowed(accountKey) && this.manualAccountOptions().some((option) => option.key === bankAccountKey(accountKey));
       if (options.bankTransaction && saved.id) {
         this.bankCostLinkPending.set({ costId: saved.id, line: options.bankTransaction });
         this.bankCostLinkError.set('');
@@ -927,7 +944,7 @@ export class FinanceState {
       } else if (!toBank) {
         this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
       } else {
-        const account = this.accountLabel(accountKey);
+        const account = this.canonicalAccount(accountKey);
         /* The server wrote one full payment for the switch; the line links to it. */
         const payment = newPaymentOf(before, saved);
         try {
@@ -1089,9 +1106,10 @@ export class FinanceState {
    * undo both.
    */
   async markPaid(costs: readonly CompanyCost[], options: PayOptions): Promise<boolean> {
+    if (options.bankAccount && !this.manualAccountAllowed(options.bankAccount)) { this.ui.toast('Kies voor deze rekening een opgehaalde banktransactie.', 'err'); return false; }
     const targets = costs.filter((cost) => !!cost.id && openOf(cost) > 0);
     if (!targets.length || this.busy()) return false;
-    const account = options.bankAccount ? this.accountLabel(options.bankAccount) : null;
+    const account = options.bankAccount ? this.canonicalAccount(options.bankAccount) : null;
     const done: PaidEntry[] = [];
     let firstError = '';
     let bankFailed = false;
@@ -1183,7 +1201,8 @@ export class FinanceState {
    */
   async addPayment(cost: CompanyCost, options: { paidOn: string; amountEur: number; bankAccountKey: string | null; note?: string | null }): Promise<boolean> {
     if (!cost.id || this.saving()) return false;
-    const account = options.bankAccountKey ? this.accountLabel(options.bankAccountKey) : null;
+    if (options.bankAccountKey && !this.manualAccountAllowed(options.bankAccountKey)) { this.ui.toast('Kies voor deze rekening een opgehaalde banktransactie.', 'err'); return false; }
+    const account = options.bankAccountKey ? this.canonicalAccount(options.bankAccountKey) : null;
     this.saving.set(true);
     try {
       const saved = await this.finance.addCostPayment(cost.id, { paidOn: options.paidOn, amountEur: round2(options.amountEur), account, note: options.note ?? null });
@@ -1711,13 +1730,15 @@ export class FinanceState {
 
   /** A new reading for an account (its label prefilled), or an empty one for a new account. */
   openBank(balance: BankBalance | null, key = ''): void {
-    this.bankDraft.set(balance ? { ...balance } : blankBalance(this.today(), key ? this.accountLabel(key) : ''));
+    const account = this.bankLedger().accounts.find(row => row.account === this.canonicalAccount(key));
+    this.bankDraft.set(balance ? { ...balance } : blankBalance(account?.source === 'ODOO' ? addDays(this.today(), -1) : this.today(), key ? this.canonicalAccount(key) : ''));
   }
 
   /** 'Klopt het saldo?' for an account with a reading; the first reading otherwise. */
   checkOrFill(key: string): void {
     const account = this.accountsView().find((row) => row.account === key);
-    if (account?.reading) this.accountCheck.set({ key });
+    if (account?.source === 'ODOO') this.openBank(null, key);
+    else if (account?.reading) this.accountCheck.set({ key });
     else this.openBank(null, key);
   }
 
@@ -1725,7 +1746,7 @@ export class FinanceState {
     if (this.saving()) return false;
     this.saving.set(true);
     try {
-      const body: BankBalance = { ...draft, account: draft.account.trim().replace(/\s+/g, ' '), notes: draft.notes || null };
+      const body: BankBalance = { ...draft, account: this.canonicalAccount(draft.account), notes: draft.notes || null };
       const saved = draft.id ? await this.finance.updateBankBalance(draft.id, body) : await this.finance.createBankBalance(body);
       this.balances.update((rows) => (draft.id ? rows.map((row) => (row.id === saved.id ? saved : row)) : [saved, ...rows]));
       this.ui.toast(draft.id ? 'Saldo bewaard' : 'Saldo ingevuld', 'ok');
@@ -1748,7 +1769,7 @@ export class FinanceState {
     this.saving.set(true);
     try {
       const saved = await this.finance.createBankBalance({
-        id: null, account: account.label, date: receiptLocalParts(asOfAt, BANK_ZONE).day, asOfAt, timeZone: BANK_ZONE,
+        id: null, account: account.account, date: receiptLocalParts(asOfAt, BANK_ZONE).day, asOfAt, timeZone: BANK_ZONE,
         balanceEur: round2(balanceEur),
         notes: difference === 0 ? 'Gecontroleerd met bankapp' : `Gecontroleerd; verschil ${formatEuro(difference / 100)} met berekend saldo`,
       });
@@ -1790,14 +1811,14 @@ export class FinanceState {
 
   /** The movement form from anywhere; the account comes from the prefill, this device's pay account, or the only one. */
   openMovement(prefill: MovementPrefill = {}): void {
-    const options = this.accountOptions();
+    const options = this.manualAccountOptions();
     const remembered = this.payToBank().accountKey;
     const given = prefill.accountKey && prefill.accountKey !== NO_ACCOUNT ? prefill.accountKey : '';
     const key = given || (options.some((option) => option.key === remembered) ? remembered : '')
       || (options.length === 1 ? options[0].key : '');
     this.movementError.set('');
     this.movementDraft.set({
-      direction: prefill.direction ?? 'INCOMING', amount: prefill.amount ?? 0, account: key ? this.accountLabel(key) : '',
+      direction: prefill.direction ?? 'INCOMING', amount: prefill.amount ?? 0, account: key ? this.canonicalAccount(key) : '',
       day: prefill.day ?? this.today(), time: prefill.time ?? null, timeZone: BANK_ZONE,
       counterparty: prefill.counterparty ?? '', reference: prefill.reference ?? '', requestId: crypto.randomUUID(),
     });
@@ -1822,10 +1843,11 @@ export class FinanceState {
     let body: BankMovementRequest;
     try {
       if (!draft.account.trim()) throw new Error('Vul de bankrekening in.');
+      if (!this.manualAccountAllowed(draft.account)) throw new Error('Deze rekening ontvangt banktransacties via Odoo of is gearchiveerd. Koppel een bestaande banktransactie.');
       if (!Number.isFinite(draft.amount) || draft.amount <= 0) throw new Error('Vul een bedrag groter dan nul in.');
       if (Math.abs(draft.amount * 100 - Math.round(draft.amount * 100)) > 0.00001) throw new Error('Gebruik maximaal twee decimalen voor het bankbedrag.');
       const timing = receiptRequest({ amount: draft.amount, day: draft.day, time: this.movementTime(draft), timeZone: draft.timeZone, reference: draft.reference });
-      body = { account: draft.account.trim(), amountEur: timing.amountEur, direction: draft.direction,
+      body = { account: this.canonicalAccount(draft.account), amountEur: timing.amountEur, direction: draft.direction,
         bookedAt: timing.receivedAt, timeZone: timing.timeZone, reference: timing.reference,
         counterparty: draft.counterparty.trim() || null, requestId: draft.requestId };
     } catch (failure) {
@@ -1861,8 +1883,8 @@ export class FinanceState {
     const range = this.rangeOf(location);
     const text = [line.reference, line.counterparty, line.account].join(' ').toLocaleLowerCase('nl-BE');
     return (location.dir === 'in' && line.amountEur < 0) || (location.dir === 'out' && line.amountEur > 0)
-      || (location.link === 'unlinked' && line.amountEur < 0)
-      || (!!location.account && bankAccountKey(location.account) !== bankAccountKey(line.account))
+      || (location.link === 'unlinked' && (line.allocated || !!line.salesPaymentId))
+      || (!!location.account && this.canonicalAccount(location.account) !== this.canonicalAccount(line.account))
       || (!!location.q.trim() && !text.includes(location.q.trim().toLocaleLowerCase('nl-BE')))
       || (!!range.from && day < range.from) || (!!range.to && day > range.to);
   }

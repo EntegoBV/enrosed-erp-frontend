@@ -29,7 +29,7 @@ type Moment = 'now' | 'end' | 'moment';
             @if (state.accountOptions().length) {
               <div class="fin-choice" role="group" aria-label="Bestaande rekeningen">
                 @for (option of state.accountOptions(); track option.key) {
-                  <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!newAccount() && draft().account === option.label" (click)="newAccount.set(false); patch({ account: option.label })">{{ option.label }}</button>
+                  <button class="fin-choice__chip" type="button" [attr.aria-pressed]="!newAccount() && state.canonicalAccount(draft().account) === option.key" (click)="newAccount.set(false); patch({ account: option.key })">{{ option.label }}</button>
                 }
                 <button class="fin-choice__chip" type="button" [attr.aria-pressed]="newAccount() || !known()" (click)="newAccount.set(true); patch({ account: '' })">Nieuwe rekening</button>
               </div>
@@ -45,9 +45,10 @@ type Moment = 'now' | 'end' | 'moment';
           <button class="fin-sign" type="button" aria-label="Plus of min" title="Negatief of positief" (click)="flipSign(amount)">±</button>
         </label>
         <p class="fin-hint">Een negatief saldo kan ook: tik op ±.</p>
+        @if (odooAccount()) { <p class="fin-hint">Odoo levert banktransacties per boekingsdatum, zonder tijdstip. Neem voor een exact berekend saldo het afsluitsaldo van een afgelopen dag over uit je bank. Bestaande saldocontroles blijven bewaard.</p> }
         <div class="fin-group" [class.ios-group]="!state.desk()">
           <div class="fin-field fin-field--stack"><span>Wanneer?</span>
-            <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Wanneer geldt dit saldo?" [options]="moments" [value]="mode()" (changed)="mode.set($any($event))" />
+            <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Wanneer geldt dit saldo?" [options]="odooAccount() && !draft().id ? closingMoments : moments" [value]="mode()" (changed)="mode.set($any($event))" />
           </div>
           @if (mode() !== 'now') {
             <div class="fin-field-row">
@@ -75,6 +76,8 @@ type Moment = 'now' | 'end' | 'moment';
 export class BankSheet {
   readonly state = inject(FinanceState);
   readonly moments: SegmentOption[] = [{ id: 'now', label: 'Nu' }, { id: 'end', label: 'Einde van een dag' }, { id: 'moment', label: 'Ander moment' }];
+  readonly closingMoments: SegmentOption[] = [{ id: 'end', label: 'Einde van een dag' }];
+  readonly odooAccount = computed(() => this.state.bankLedger().accounts.find(account => account.account === this.state.canonicalAccount(this.draft().account))?.source === 'ODOO');
   readonly draft = linkedSignal<BankBalance>(() => this.state.bankDraft() ?? blankBalance(this.state.today()));
   /**
    * The amount field is written once and then left to the keyboard: writing
@@ -87,12 +90,12 @@ export class BankSheet {
   readonly zone = computed(() => (this.state.bankDraft()?.id && this.state.bankDraft()?.timeZone) || 'Europe/Brussels');
   readonly mode = linkedSignal<Moment>(() => {
     const draft = this.state.bankDraft();
-    return !draft?.id ? 'now' : draft.asOfAt ? 'moment' : 'end';
+    return !draft?.id ? (this.odooAccount() ? 'end' : 'now') : draft.asOfAt ? 'moment' : 'end';
   });
   readonly time = linkedSignal(() => receiptLocalParts(this.state.bankDraft()?.asOfAt || Date.now(), this.zone()).time.slice(0, 5));
   /** A new account is typed; an existing one is picked from the chips. '+ Rekening toevoegen' starts empty, so typing. */
   readonly newAccount = linkedSignal(() => !this.state.bankDraft()?.account);
-  readonly known = computed(() => this.state.accountOptions().some((option) => option.label === this.draft().account));
+  readonly known = computed(() => this.state.accountOptions().some((option) => option.key === this.state.canonicalAccount(this.draft().account)));
 
   readonly timeError = computed(() => {
     if (this.mode() !== 'moment') return '';

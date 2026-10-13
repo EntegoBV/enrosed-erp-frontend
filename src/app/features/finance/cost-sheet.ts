@@ -147,9 +147,9 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
               <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="toBank()" (change)="toBank.set($any($event.target).checked)" /></label>
             @if (toBank()) {
               <div class="fin-field fin-field--wide fin-field--stack"><span>Rekening</span>
-                @if (state.accountOptions().length) {
+                @if (state.manualAccountOptions().length) {
                   <div class="fin-choice" role="group" aria-label="Rekening">
-                    @for (option of state.accountOptions(); track option.key) {
+                    @for (option of state.manualAccountOptions(); track option.key) {
                       <button class="fin-choice__chip" type="button" [attr.aria-pressed]="account() === option.key" (click)="account.set(option.key)">{{ option.label }}</button>
                     }
                   </div>
@@ -337,7 +337,7 @@ export class CostSheet {
   readonly toBank = signal(this.preference.on);
   /** The remembered account, or the only one, as soon as the accounts are in. */
   readonly account = linkedSignal(() => {
-    const options = this.state.accountOptions();
+    const options = this.state.manualAccountOptions();
     return options.some((option) => option.key === this.preference.accountKey) ? this.preference.accountKey : options.length === 1 ? options[0].key : '';
   });
   readonly future = computed(() => (this.draft().paidOn ?? '') > this.state.today());

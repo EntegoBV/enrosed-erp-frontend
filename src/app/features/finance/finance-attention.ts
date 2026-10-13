@@ -41,8 +41,8 @@ export interface AttentionInput {
   unconfirmedRegimes: { count: number };
   dueNowCount: number;
   containerNow: { count: number; eur: number };
-  /** Bank lines as recorded: only incoming ones without an invoice count. */
-  bankLines: readonly { amountEur: number; salesPaymentId: number | null }[];
+  /** Official, active account bank lines without a saved allocation, in either direction. */
+  bankLines: readonly { amountEur: number; salesPaymentId: number | null; allocated?: boolean }[];
   receiptsWithoutAccount: { count: number; eur: number };
   accounts: readonly { key: string; label: string; hasReading: boolean; ageDays: number | null }[];
   unbanked: { count: number; eur: number };
@@ -97,12 +97,12 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
       target: { view: 'costs', tab: 'recurring' } });
   }
 
-  const unlinked = input.bankLines.filter((line) => line.amountEur > 0 && line.salesPaymentId === null);
+  const unlinked = input.bankLines.filter((line) => !line.allocated && line.salesPaymentId === null);
   if (unlinked.length) {
     const n = unlinked.length;
-    add({ kind: 'unlinked-incoming', tone: 'warn', count: n, amountEur: eur(unlinked.map((line) => line.amountEur)),
-      title: `${n} ontvangen ${plural(n, 'bankbeweging', 'bankbewegingen')} nog niet aan een factuur gekoppeld`,
-      detail: 'Koppel ze, dan telt het geld één keer', action: 'link', actionLabel: 'Koppelen',
+    add({ kind: 'unlinked-incoming', tone: 'warn', count: n, amountEur: eur(unlinked.map((line) => Math.abs(line.amountEur))),
+      title: `${n} ${plural(n, 'banktransactie', 'banktransacties')} nog te koppelen`,
+      detail: 'Koppel aan een factuur, kostenbetaling of containerbetaling', action: 'link', actionLabel: 'Koppelen',
       target: { view: 'bank', tab: 'movements', link: 'unlinked' } });
   }
 

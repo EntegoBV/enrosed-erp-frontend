@@ -14,6 +14,11 @@ export interface BankMovementRequest {
 }
 export interface BankMatch { salesOrderId: number; number: string; openEur: number; score: number; existingPaymentId: number | null; reason: string; receivedAt: string | null; reference: string | null; }
 export interface BankPaymentLinks { purchasePaymentIds?: number[]; companyCostId?: number; costPaymentId?: number; }
+export interface BankAccount {
+  key: string; label: string; source: 'MANUAL' | 'ODOO'; archived: boolean; aliases: string[];
+  odooJournalId: number | null; manualMovementsAllowed: boolean;
+}
+export type BankAccountWrite = Pick<BankAccount, 'label' | 'source' | 'aliases' | 'odooJournalId'>;
 export interface BankStatementLine {
   id: number; account: string; fingerprint: string; amountEur: number; bookedAt: string; timeZone: string;
   reference: string; counterparty: string; recordedAt: string; actor: string;
@@ -24,6 +29,10 @@ export interface BankStatementLine {
 @Injectable({ providedIn: 'root' })
 export class BankingApi {
   private readonly http = inject(HttpClient);
+  accounts(): Promise<BankAccount[]> { return firstValueFrom(this.http.get<BankAccount[]>(api('/api/bank-accounts'))); }
+  updateAccount(key: string, body: BankAccountWrite): Promise<BankAccount> { return firstValueFrom(this.http.put<BankAccount>(api(`/api/bank-accounts/${encodeURIComponent(key)}`), body)); }
+  archiveAccount(key: string): Promise<void> { return firstValueFrom(this.http.delete<void>(api(`/api/bank-accounts/${encodeURIComponent(key)}`))); }
+  restoreAccount(key: string): Promise<BankAccount> { return firstValueFrom(this.http.post<BankAccount>(api(`/api/bank-accounts/${encodeURIComponent(key)}/restore`), {})); }
   list(): Promise<BankStatementLine[]> { return firstValueFrom(this.http.get<BankStatementLine[]>(api('/api/bank-statements'))); }
   create(body: BankMovementRequest): Promise<BankStatementLine> { return firstValueFrom(this.http.post<BankStatementLine>(api('/api/bank-statements'), body)); }
   suggestions(id: number): Promise<BankMatch[]> { return firstValueFrom(this.http.get<BankMatch[]>(api(`/api/bank-statements/${id}/suggestions`))); }

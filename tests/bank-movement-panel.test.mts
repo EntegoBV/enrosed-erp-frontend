@@ -80,6 +80,12 @@ function harness() {
   const loads = { load: 0, refreshBank: 0 };
   const movementDraft = signal<{ accountKey?: string } | null>(null);
   const state = {
+    costs: signal<any[]>([]), payments: signal<any[]>([]),
+    canonicalAccount: (key: string) => bankExports.bankAccountKey!(key),
+    archivedBankLine: (_row: BankStatementLine) => false,
+    officialBankLine: (row: BankStatementLine) => true,
+    accountOptions: () => [],
+    reload: async (_sources: string[]) => {},
     salesOrders: signal<SalesOrderView[]>([]), incomingPayments: signal<IncomingPaymentRow[]>([]),
     bankStatements: signal<BankStatementLine[]>([]), customers: signal<Customer[]>([]), accounts: signal<string[]>([]),
     load: async () => { loads.load += 1; },
@@ -327,11 +333,11 @@ test('the withdraw confirmation escapes what was typed and shows the amount in e
   return Promise.resolve().then(() => new Promise((done) => setTimeout(done, 0))).then(() => assert.equal(loads.refreshBank, 1));
 });
 
-test('"Te koppelen" shows only money in that is not linked to an invoice', () => {
+test('"Te koppelen" includes incoming and outgoing bank rows without saved allocations', () => {
   const { panel, state } = harness();
   state.bankStatements.set([movement(1, 50), { ...movement(2, 40), salesPaymentId: 9 }, movement(3, -30), { ...movement(4, -20), salesPaymentId: 8 }]);
   panel.linkFilter.set('UNLINKED_IN');
-  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id), [1]);
+  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id), [3, 1]);
   panel.linkFilter.set('UNLINKED');
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [1, 3]);
 });
@@ -408,4 +414,40 @@ test('a credit note with an open tegoed is offered for an outgoing line only, an
   incoming.state.bankStatements.set([movement(2, 50)]);
   await incoming.panel.openAllocation(movement(2, 50));
   assert.deepEqual(incoming.panel.selectableInvoices().map(view => view.order.id), [1], 'money in never lands on a credit note');
+});
+
+test('existing outgoing parts link by their exact summed cents without creating any payment', async () => {
+  const { panel, state, api } = harness();
+  const bank = { ...movement(70, -100.03), source: 'ODOO' as const };
+  state.bankStatements.set([bank]);
+  state.costs.set([{ id: 11, party: 'Transport', description: 'Kost', payments: [{ id: 12, paidOn: '2026-09-08', amountEur: 20.01, bankStatementLineId: null }] }]);
+  state.payments.set([{ id: 21, orderId: 3, orderNumber: 'PO-3', label: 'Goederen', amountEur: 60.01, paidOn: '2026-09-08' }, { id: 22, orderId: 3, orderNumber: 'PO-3', label: 'Zeevracht', amountEur: 20.01, paidOn: '2026-09-08' }]);
+  const calls: any[] = [];
+  (api as any).linkPayments = async (id: number, body: any) => { calls.push({ id, ...body }); return { ...bank, allocated: true }; };
+  await panel.openAllocation(bank);
+  assert.equal(panel.allocationMode(), 'expense');
+  for (const choice of panel.outgoingCandidates()) panel.toggleOutgoing(choice);
+  assert.equal(panel.outgoingTotal(), 100.03); assert.equal(panel.canLinkOutgoing(), true);
+  await panel.linkOutgoing();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ id: 70, purchasePaymentIds: [21, 22], costPaymentId: 12 }]);
+  assert.equal(state.bankStatements()[0].allocated, true); assert.equal(panel.selected(), null);
+});
+
+test('outgoing matching rejects mismatches and a candidate linked elsewhere after selection', async () => {
+  const { panel, state } = harness();
+  state.payments.set([{ id: 21, orderId: 3, amountEur: 10, paidOn: '2026-09-08' }]);
+  await panel.openAllocation(movement(70, -11));
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]); assert.equal(panel.canLinkOutgoing(), false);
+  panel.selected.set(movement(70, -10)); assert.equal(panel.canLinkOutgoing(), true);
+  state.payments.set([{ id: 21, orderId: 3, amountEur: 10, paidOn: '2026-09-08', bankStatementLineId: 99 }]);
+  assert.equal(panel.canLinkOutgoing(), false);
+});
+
+test('revealing historical manual rows keeps them outside bank movement totals', () => {
+  const { panel, state } = harness();
+  state.officialBankLine = (row: BankStatementLine) => row.source === 'ODOO';
+  state.bankStatements.set([{ ...movement(1, 50), source: 'ODOO' }, movement(2, 50)]);
+  assert.equal(panel.filteredLines().length, 1); assert.equal(panel.historicalCount(), 1);
+  panel.showHistorical.set(true); assert.equal(panel.filteredLines().length, 2);
+  assert.equal(panel.totals().incoming, 50);
 });

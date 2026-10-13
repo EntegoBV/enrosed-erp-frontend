@@ -17,15 +17,35 @@ import { BankMovementPanel } from './bank-movement-panel';
   template: `
     @let p = panel();
     @if (p.selected(); as row) {
-      <app-sheet variant="ios" title="Factuur koppelen" [wide]="true" (closed)="p.closeAllocation()">
+      <app-sheet variant="ios" title="Banktransactie koppelen" [wide]="true" (closed)="p.closeAllocation()">
         <div body class="fin-sheet fin-alloc">
           <div class="fin-alloc__movement">
             <span>{{ row.amountEur > 0 ? 'Ontvangen op' : 'Betaald vanaf' }} {{ p.accountName(row.account) }}</span>
             <strong>{{ row.amountEur | eur }}</strong>
-            <small>{{ p.stamp(row.bookedAt, row.timeZone) }}{{ row.counterparty ? ' · ' + row.counterparty : '' }}</small>
+            <small>{{ p.movementStamp(row) }}{{ row.counterparty ? ' · ' + row.counterparty : '' }}</small>
             @if (row.reference) { <small>{{ row.reference }}</small> }
           </div>
-          @if (row.amountEur < 0) { <p class="fin-hint">Een uitgaande beweging koppel je alleen aan een terugbetaling op een factuur of aan het tegoed van een creditnota.</p> }
+          @if (row.amountEur < 0) {
+            <div class="fin-choice" role="group" aria-label="Soort koppeling">
+              <button class="fin-choice__chip" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'expense'" (click)="p.allocationMode.set('expense')">Uitgave of container</button>
+              <button class="fin-choice__chip" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales'" (click)="p.allocationMode.set('sales')">Terugbetaling klant</button>
+            </div>
+          }
+          @if (row.amountEur < 0 && p.allocationMode() === 'expense') {
+            <p class="fin-hint">Kies de betalingen die al in ENROSED staan. Je kunt meerdere containerdelen combineren met één kostenbetaling. Er wordt geen nieuwe betaling aangemaakt.</p>
+            <input class="input" type="search" placeholder="Zoek tegenpartij, container, mededeling of bedrag" aria-label="Zoek bestaande uitgaven" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" />
+            <div class="fin-alloc__cards" role="group" aria-label="Bestaande betalingen">
+              @for (item of p.visibleOutgoing(); track item.key) {
+                <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSelected().includes(item.key)" (click)="p.toggleOutgoing(item)">
+                  <span class="fin-match__kind">{{ item.kind === 'cost' ? 'Kostenbetaling' : 'Containerbetaling' }} · {{ item.paidOn }}</span>
+                  <b>{{ item.title }} · {{ item.amountEur | eur }}</b><small>{{ item.detail }}</small>
+                </button>
+              } @empty { <p class="fin-hint">Geen ongekoppelde betaling gevonden. Registreer een nieuwe uitgave via Kosten of Containers en kies daar deze banktransactie.</p> }
+            </div>
+            <p class="fin-hint" aria-live="polite">{{ p.chosenOutgoing().length }} geselecteerd · {{ p.outgoingTotal() | eur }} van {{ p.abs(row.amountEur) | eur }}.
+              @if (p.outgoingTotal() !== p.abs(row.amountEur)) { Het totaal moet exact overeenkomen. }
+            </p>
+          } @else {
           @if (p.matchingLoading()) { <p class="fin-hint" role="status">Voorstellen zoeken…</p> }
           @if (p.matches().length) {
             <h3 class="fin-alloc__label">Voorstellen</h3>
@@ -75,12 +95,13 @@ import { BankMovementPanel } from './bank-movement-panel';
                 <span>Ik heb de bestaande betalingen gecontroleerd; dit is een andere betaling.</span></label>
             }
           }
+          }
           @if (p.error()) { <p class="fin-error" role="alert">{{ p.error() }}</p> }
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" [disabled]="p.busy()" (click)="p.closeAllocation()">Annuleren</button>
           <span class="spacer"></span>
-          <button class="btn btn--primary" type="button" [disabled]="!p.canAllocate()" (click)="p.allocate()">{{ p.busy() ? 'Koppelen…' : 'Koppelen' }}</button>
+          <button class="btn btn--primary" type="button" [disabled]="p.allocationMode() === 'expense' ? !p.canLinkOutgoing() : !p.canAllocate()" (click)="p.allocationMode() === 'expense' ? p.linkOutgoing() : p.allocate()">{{ p.busy() ? 'Koppelen…' : 'Koppelen' }}</button>
         </div>
       </app-sheet>
     }
