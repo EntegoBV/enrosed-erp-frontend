@@ -60,7 +60,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
           @for (row of visibleLines(); track row.id) {
-            <div class="wk-tr" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
+            <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
                  [attr.aria-selected]="focusId() === row.id" (focusin)="focusId.set(row.id)" (click)="$event.defaultPrevented || openLine(row)" appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
               <span class="wk-td" role="gridcell" [attr.title]="record(row)">{{ movementStamp(row) }}</span>
               <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (imported(row)) { <span class="wk-pill tone-blue" title="Banktransactie opgehaald uit Odoo">Odoo</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
