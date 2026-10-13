@@ -229,7 +229,7 @@ export class CostAnalysis implements FinanceSectionApi {
   /* The four quarters as the return reads them (four returns, cheap): the link rows to the Btw-aangifte. */
   readonly quarters = computed(() => [1, 2, 3, 4].map((quarter) => {
     const result = this.state.vatReturnFor(this.year(), quarter);
-    const pending = result.unconfirmedCount + result.unknown.length;
+    const pending = result.unconfirmedCount + result.unknown.length + result.openClearanceCount;
     const favour = result.totals.refundEur > 0;
     const headline = `${formatEuro(favour ? result.totals.refundEur : result.totals.payableEur)} ${favour ? 'in je voordeel' : 'te betalen'}`;
     return {

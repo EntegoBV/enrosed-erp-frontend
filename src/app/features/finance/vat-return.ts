@@ -77,6 +77,8 @@ export interface VatReturn {
   /** 'ready' once the quarter is over and nothing waits for a confirmation. */
   status: 'provisional' | 'ready';
   unconfirmedCount: number;
+  /** Containers of the quarter whose clearance nobody confirmed yet: they count by the port's suggestion and keep the return provisional. */
+  openClearanceCount: number;
   /** Costs without a regime: outside the grids until one is picked. */
   unknown: ReturnLine[];
   notReceived: ContainerLine[];
@@ -114,6 +116,7 @@ const GRIDS: readonly { code: GridCode; kader: Grid['kader']; label: string }[] 
 const DEAD_STATUSES = new Set<string>(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const IMPORT_VAT_PCT = 21;
 const cents = (value: number | null | undefined): number => Math.round((Number.isFinite(value as number) ? value as number : 0) * 100);
+const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const pad = (value: number): string => String(value).padStart(2, '0');
 
 /* The same calendar as finance-metrics quarterOf / quarterRange / filingDeadline. */
@@ -230,17 +233,21 @@ export function vatReturn(year: number, quarter: number, lines: readonly ReturnL
   }
 
   const notReceived: ContainerLine[] = [];
-  let openClearance = false;
+  let openClearanceCount = 0;
   for (const container of containers) {
     if (!container.date) { notReceived.push(container); continue; }
     if (!inQuarter(container.date)) continue;
+    const open = container.clearance === null;
     const clearance = container.clearance ?? container.suggested;
     const name = container.alias ? `${container.number} · ${container.alias}` : container.number;
+    /* 'Stays in the Netherlands' is only assumed: say what the return leaves out and the base that moves into 86/55/59 once the goods come to Belgium. */
+    const assumed = open && clearance === 'NL_FISCAL_REP_SOLD_IN_NL'
+      ? [`voorlopig zonder 86/55/59${container.baseEur > 0 ? ` · basis ${EURO.format(container.baseEur)} als de goederen naar België komen` : ''}`] : [];
     const badges = [
-      ...(container.clearance === null ? ['inklaring te bevestigen'] : []),
+      ...(open ? ['inklaring te bevestigen', ...assumed] : []),
       ...(container.dateSource === 'expected' ? ['verwachte aankomst'] : []),
     ];
-    if (container.clearance === null) openClearance = true;
+    if (open) openClearanceCount += 1;
     const row = (baseEur: number, vatEur: number, extra: string[] = []): GridRow => ({
       kind: 'container', id: container.id, date: container.date!, title: name, sub: 'container', baseEur, vatEur, badges: [...badges, ...extra],
     });
@@ -266,13 +273,13 @@ export function vatReturn(year: number, quarter: number, lines: readonly ReturnL
   const eur = (code: GridCode): number => cents(grids.get(code)!.eur);
   const dueCents = eur('54') + eur('55') + eur('56') + eur('57') + eur('63');
   const deductibleCents = eur('59') + eur('64');
-  const ready = settings.today > to && unconfirmedCount === 0 && unknown.length === 0 && !openClearance;
+  const ready = settings.today > to && unconfirmedCount === 0 && unknown.length === 0 && openClearanceCount === 0;
   return {
     year, quarter, from, to, filingDeadline: filingDeadline(year, quarter),
     grids: [...grids.values()],
     totals: { dueEur: dueCents / 100, deductibleEur: deductibleCents / 100, payableEur: Math.max(0, dueCents - deductibleCents) / 100, refundEur: Math.max(0, deductibleCents - dueCents) / 100 },
     status: ready ? 'ready' : 'provisional',
-    unconfirmedCount, unknown, notReceived, lateCount,
+    unconfirmedCount, openClearanceCount, unknown, notReceived, lateCount,
   };
 }
 
@@ -283,7 +290,7 @@ export function vatReturnCsv(result: VatReturn): string {
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value;
     return /[;"\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
-  const status = result.status === 'ready' ? 'KLAAR' : `VOORLOPIG · ${result.unconfirmedCount + result.unknown.length} te bevestigen`;
+  const status = result.status === 'ready' ? 'KLAAR' : `VOORLOPIG · ${result.unconfirmedCount + result.unknown.length + result.openClearanceCount} te bevestigen`;
   const lines = [
     `${status} · btw-aangifte ${result.year} Q${result.quarter} · ${dayMonthYear(result.from)} tot ${dayMonthYear(result.to)} · indienen vóór ${dayMonthYear(result.filingDeadline)}`,
     ['Kader', 'Rooster', 'Omschrijving', 'Bedrag', 'Document', 'Datum', 'Partij', 'Referentie', 'Basis', 'Btw', 'Opmerking'].join(';'),

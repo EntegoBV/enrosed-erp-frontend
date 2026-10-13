@@ -5,7 +5,7 @@ import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Ui } from '../../shared/ui';
-import { cleanVatNumber, countryName, isEuMember, suggestRegime } from './cost-countries';
+import { cleanVatNumber, countryName, fairRegimeQuestion, isEuMember, suggestRegime } from './cost-countries';
 import type { CountryChoice } from './cost-countries';
 import { EXPENSE_PRESETS, REVERSE_CHARGE, VAT_REGIMES, acquisitionValueOf, addDays, kindOf, regimeLabel, revisionUntil } from './finance-metrics';
 import type { ExpensePreset, VatRegimeDef, VatRow } from './finance-metrics';
@@ -116,8 +116,21 @@ export function partyRegimeOf(name: string | null | undefined, party: CostParty 
   return { country: party?.country ?? newest?.supplierCountry ?? null, vatNumber: party?.vatNumber ?? null, vatRegime, regimeConfirmed: !!vatRegime };
 }
 
-/** The regime patch a name gives a fresh draft: the known regime confirmed, else the one its country suggests, unconfirmed with the reason. Null when nothing beats the Belgian default. */
-export function regimePrefill(known: PartyRegime | null, category: string | null): { patch: Partial<RegimeFields>; derived: string | null } | null {
+/**
+ * The regime patch a name gives a fresh draft: the known regime confirmed,
+ * else the one its country suggests, unconfirmed with the reason. Null when
+ * nothing beats the Belgian default.
+ *
+ * With fairQuestion (the cost form) a fair invoice to a name that carries no
+ * regime, country or VAT number keeps the Belgian default but unconfirms it,
+ * under the question whether the VAT is Belgian or reverse charged: the cost
+ * is booked 'te bevestigen' unless a regime is picked or 'Klopt' is tapped.
+ */
+export function regimePrefill(known: PartyRegime | null, category: string | null, options: { fairQuestion?: boolean } = {}): { patch: Partial<RegimeFields>; derived: string | null } | null {
+  if (options.fairQuestion) {
+    const question = fairRegimeQuestion({ category, regime: known?.vatRegime ?? null, country: known?.country ?? null, vatNumber: known?.vatNumber ?? null });
+    if (question) return { patch: { vatRegimeConfirmed: false }, derived: question };
+  }
   if (!known) return null;
   const number = cleanVatNumber(known.vatNumber);
   const country = (known.country ?? '').trim().toUpperCase() || (/^[A-Z]{2}/.test(number) ? number.slice(0, 2) : '') || null;
@@ -227,7 +240,7 @@ export class CostRegimeFields {
   readonly countries = input<readonly CountryChoice[]>([]);
   /** The cost date: where depreciation starts by default. */
   readonly date = input('');
-  /** A line under the select, e.g. 'Afgeleid van het land · controleer' after a party prefill. */
+  /** A line under the select after a party prefill, e.g. 'Afgeleid van het land · controleer' or the question a fair invoice raises. */
   readonly note = input('');
   /** Open or folded; the sheet decides at first paint, the user from then on. */
   readonly open = model(false);

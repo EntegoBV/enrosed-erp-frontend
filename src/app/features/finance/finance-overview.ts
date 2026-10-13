@@ -266,7 +266,7 @@ export class FinanceOverview implements FinanceSectionApi {
   readonly vatTile = computed(() => {
     const result = this.state.vatReturnCurrent();
     const favour = result.totals.refundEur > 0;
-    const pending = result.unconfirmedCount + result.unknown.length;
+    const pending = result.unconfirmedCount + result.unknown.length + result.openClearanceCount;
     /* The figure stands alone (a phrase behind it spills past a phone trail or a fifth desk tile); the direction leads the sub line, which wraps on the phone. */
     return {
       year: result.year, quarter: result.quarter, pending,

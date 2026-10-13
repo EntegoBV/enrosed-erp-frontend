@@ -12,8 +12,10 @@ import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { SALES_CHANNELS } from '../sales/sales-channels';
-import { exclFromIncl } from './cost-amount';
+import { exclFromIncl, fitAmountToRegime } from './cost-amount';
+import type { AmountKind } from './cost-amount';
 import { categoryChoices } from './cost-categories';
+import { FAIR_REGIME_QUESTION, isFairCategory } from './cost-countries';
 import { paymentTotals } from './cost-payments';
 import { CostRegimeFields, NO_VAT_REGIMES, depreciationYearsFor, partyRegimeOf, regimePrefill, regimeProblem } from './cost-regime-fields';
 import type { RegimeFields } from './cost-regime-fields';
@@ -28,8 +30,6 @@ import { duplicateCandidates } from './cost-suggestions';
 
 type AmountMode = 'excl' | 'incl';
 
-/** The categories that stand for a fair: the fair itself is then the cost's channel. */
-const FAIR_CATEGORIES = new Set(['BEURS', 'TICA']);
 /** The regimes with an invoice behind them: the date field reads 'Factuurdatum'. */
 const INVOICE_REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FOREIGN_VAT', 'EXEMPT']);
 const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountInclEur as number) && (cost.amountInclEur as number) > 0 ? cost.amountInclEur as number : 0);
@@ -225,6 +225,10 @@ export class CostSheet {
   readonly mode = signal<AmountMode>(storedIncl(this.draft()) ? 'incl' : 'excl');
   /** The figure in the field: what was typed, in the active mode. */
   readonly amount = computed(() => (this.mode() === 'incl' ? storedIncl(this.draft()) : this.draft().amountExclEur));
+  /** The total in the field was typed (or stored) incl. btw, not converted by the mode switch: a regime without VAT on the invoice keeps it whole. */
+  private typedIncl = storedIncl(this.draft()) > 0;
+  /** The excl. amount is such a kept total; a regime with VAT on the invoice takes it back as the total, unless a new figure was typed. */
+  private totalKept = false;
   readonly customCategory = signal(false);
   /** Files chosen before the cost exists (the '+' photo, a drop); they go up right after the booking. */
   readonly pending = signal<File[]>(this.state.costFiles());
@@ -273,15 +277,18 @@ export class CostSheet {
   readonly forwarderHint = computed(() => (this.draft().category ?? '').trim().toUpperCase() === 'TRANSPORT' && (this.regime() === 'EXEMPT' || this.importVat()));
   /** Open at first paint when the form was asked for it or the regime is still derived or unknown; the user takes over from there. */
   readonly regimeOpen = signal(this.state.costSheetFocus() === 'regime' || !this.draft().vatRegimeConfirmed || this.draft().vatRegime == null);
-  /** 'Afgeleid van het land · controleer' after a party prefill; gone once a regime is picked. */
+  /** 'Afgeleid van het land · controleer' after a party prefill, or the question a fair invoice raises; gone once a regime is picked or 'Klopt' is tapped. */
   readonly derivedHint = signal('');
+  /** The regime was picked or confirmed by hand: no name or category prefills it any more, also when it reads like the blank default again. */
+  private regimeTouched = false;
   readonly regimeProblem = computed(() => regimeProblem(this.draft()));
 
   /* channels and fairs: the select lists both, the chips only the fairs */
   readonly channels = computed(() => this.state.channelChoices().filter((channel) => channel.hint !== 'Beurs'));
   readonly fairChoices = computed(() => this.state.channelChoices().filter((channel) => channel.hint === 'Beurs'));
   readonly channelCode = computed(() => (this.draft().salesChannel ?? '').trim().toUpperCase());
-  readonly fairCategory = computed(() => FAIR_CATEGORIES.has((this.draft().category ?? '').trim().toUpperCase()));
+  /** A category that stands for a fair: the fair itself is then the cost's channel. */
+  readonly fairCategory = computed(() => isFairCategory(this.draft().category));
   /** The active fairs, plus the cost's own channel when it is a fair that was switched off or a code nobody knows. */
   readonly fairChips = computed(() => {
     const current = this.channelCode();
@@ -355,6 +362,8 @@ export class CostSheet {
     if (this.importVat()) this.patch({ amountInclEur: value, amountExclEur: 0 });
     else if (this.mode() === 'incl') this.patch({ amountInclEur: value, amountExclEur: exclFromIncl(value, this.draft().vatPct) });
     else this.patch({ amountExclEur: value, amountInclEur: null });
+    this.typedIncl = !this.importVat() && this.mode() === 'incl';
+    this.totalKept = false;
   }
 
   /** Every VAT-rate change goes through here: in incl. mode the excl. amount follows the stored total. */
@@ -371,12 +380,20 @@ export class CostSheet {
     if (mode === 'incl') this.patch({ amountInclEur: draft.amountExclEur > 0 ? cashTotalOf(draft) : null });
     else this.patch({ amountInclEur: null });
     this.mode.set(mode);
+    this.typedIncl = false;
+    this.totalKept = false;
   }
 
   /* ---- regime */
 
-  /** A patch from the Btw-regeling fields; a new regime also refits the amount block. A pick or 'Klopt' settles the regime, so the 'afgeleid' line goes. */
+  /** A patch from the Btw-regeling fields; a new regime also refits the amount block. A pick or 'Klopt' settles the regime, so the 'afgeleid' line goes and no prefill follows. */
   applyRegime(patch: Partial<RegimeFields>): void {
+    if ('vatRegime' in patch || patch.vatRegimeConfirmed) this.regimeTouched = true;
+    this.writeRegime(patch);
+  }
+
+  /** Regime fields into the draft, from the user or from a prefill. */
+  private writeRegime(patch: Partial<RegimeFields>): void {
     const before = this.draft().vatRegime;
     this.patch(patch);
     if ('vatRegime' in patch || patch.vatRegimeConfirmed) this.derivedHint.set('');
@@ -386,33 +403,21 @@ export class CostSheet {
   }
 
   /**
-   * The amount block follows the regime: reverse charge and the regimes
-   * without VAT are excl.-only, import VAT is one incl. figure, and an
-   * invoice with VAT gets its rate back when the previous regime had none.
+   * The amount block follows the regime (cost-amount.fitAmountToRegime):
+   * reverse charge and the regimes without VAT are excl.-only, import VAT is
+   * one incl. figure, and an invoice with VAT gets its rate back when the
+   * previous regime had none. A total typed incl. btw stays whole when the
+   * regime puts no VAT on the invoice.
    */
   private fitAmountTo(regime: VatRegime | null, before: VatRegime | null): void {
-    const figure = this.amount();
-    if (regime === 'IMPORT_VAT_PAID') {
-      this.patch({ amountExclEur: 0, amountInclEur: figure > 0 ? figure : null, vatPct: null });
-      this.mode.set('incl');
-      return;
-    }
-    if (before === 'IMPORT_VAT_PAID') {
-      this.patch({ amountExclEur: figure, amountInclEur: null });
-      this.mode.set('excl');
-    }
-    if (regime && NO_VAT_REGIMES.has(regime)) {
-      this.patch({ amountInclEur: null, vatPct: null });
-      this.mode.set('excl');
-      return;
-    }
-    const rate = this.draft().vatPct;
-    if (regime && REVERSE_CHARGE.has(regime)) {
-      this.patch({ amountInclEur: null, vatPct: (rate ?? 0) > 0 ? rate : 21 });
-      this.mode.set('excl');
-      return;
-    }
-    if (!((rate ?? 0) > 0) && (!before || NO_VAT_REGIMES.has(before) || before === 'IMPORT_VAT_PAID')) this.setVat(21);
+    const kindOf = (code: VatRegime | null): AmountKind => (code === 'IMPORT_VAT_PAID' ? 'import' : code && NO_VAT_REGIMES.has(code) ? 'none' : code && REVERSE_CHARGE.has(code) ? 'reverse' : 'invoice');
+    const draft = this.draft();
+    const next = fitAmountToRegime({ amountExclEur: draft.amountExclEur, amountInclEur: draft.amountInclEur ?? null, vatPct: draft.vatPct, mode: this.mode(), typedIncl: this.typedIncl, totalKept: this.totalKept },
+      kindOf(regime), before ? kindOf(before) : null);
+    this.patch({ amountExclEur: next.amountExclEur, amountInclEur: next.amountInclEur, vatPct: next.vatPct });
+    this.mode.set(next.mode);
+    this.typedIncl = next.typedIncl;
+    this.totalKept = next.totalKept;
   }
 
   /** The chip under the amount: book as an investment and show the depreciation fields. */
@@ -445,6 +450,8 @@ export class CostSheet {
    * else its last cost), as long as those are still untouched; its regime
    * and country come along while the draft still holds the Belgian default,
    * derived from the country (unconfirmed) when the name has no regime yet.
+   * A fair invoice to a name that says nothing about itself keeps that
+   * default but asks, unconfirmed (prefillRegime).
    */
   applyParty(): void {
     const draft = this.draft();
@@ -462,18 +469,54 @@ export class CostSheet {
         filled = true;
       }
     }
-    let regime = false;
-    const current = this.draft();
-    if (current.vatRegime === fresh.vatRegime && current.vatRegimeConfirmed && (current.supplierCountry ?? 'BE') === 'BE') {
-      const prefill = regimePrefill(partyRegimeOf(known.name, this.state.costPartyFor(known.name), this.state.costs()), current.category);
-      if (prefill) {
-        this.applyRegime(prefill.patch);
-        this.derivedHint.set(prefill.derived ?? '');
-        if (prefill.derived) this.regimeOpen.set(true);
-        regime = true;
-      }
-    }
+    const regime = this.prefillRegime(known.name);
     if (filled || regime) this.filledFrom.set({ party: known, regime });
+  }
+
+  /**
+   * What a known name gives the regime, only while nobody picked or confirmed
+   * one and the draft still holds the blank Belgian default. The fair
+   * question leaves that default in place (unconfirmed), so a later name or
+   * category may still answer it or take it back. Returns whether a regime
+   * was taken over.
+   */
+  private prefillRegime(name: string): boolean {
+    const current = this.draft();
+    const fresh = blankCost(this.state.today());
+    const asked = this.fairAsked();
+    if (this.regimeTouched || current.vatRegime !== fresh.vatRegime || (current.supplierCountry ?? 'BE') !== 'BE' || !(current.vatRegimeConfirmed || asked)) return false;
+    const prefill = regimePrefill(partyRegimeOf(name, this.state.costPartyFor(name), this.state.costs()), current.category, { fairQuestion: true });
+    if (!prefill) {
+      if (asked) this.withdrawFairQuestion();
+      return false;
+    }
+    if (asked && prefill.derived === FAIR_REGIME_QUESTION) return false;
+    this.writeRegime(prefill.patch);
+    this.derivedHint.set(prefill.derived ?? '');
+    if (prefill.derived) this.regimeOpen.set(true);
+    return !!prefill.patch.vatRegime;
+  }
+
+  /** The fair question stands on the draft: the Belgian default, unconfirmed, nobody answered yet. */
+  private fairAsked(): boolean {
+    return this.derivedHint() === FAIR_REGIME_QUESTION && !this.draft().vatRegimeConfirmed;
+  }
+
+  private withdrawFairQuestion(): void {
+    this.patch({ vatRegimeConfirmed: true });
+    this.derivedHint.set('');
+  }
+
+  /** The category changed: a fair category raises the fair question under a known name, any other category takes it back. */
+  private recheckFairQuestion(): void {
+    const draft = this.draft();
+    if (draft.id) return;
+    if (!isFairCategory(draft.category)) {
+      if (this.fairAsked()) this.withdrawFairQuestion();
+      return;
+    }
+    const known = this.customCategory() ? null : this.state.partyDefaultsFor(draft.party);
+    if (known) this.prefillRegime(known.name);
   }
 
   /* ---- fairs */
@@ -559,9 +602,10 @@ export class CostSheet {
     if (value === '__other__') {
       this.customCategory.set(true);
       this.patch({ category: '' });
-      return;
+    } else {
+      this.customCategory.set(false);
+      this.patch({ category: value });
     }
-    this.customCategory.set(false);
-    this.patch({ category: value });
+    this.recheckFairQuestion();
   }
 }

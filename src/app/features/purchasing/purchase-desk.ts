@@ -536,10 +536,10 @@ type DeskRow =
                     <div class="field">
                       <label for="dk-clearance">Inklaring</label>
                       <select class="select" id="dk-clearance" [ngModel]="data.order.clearance ?? ''" (ngModelChange)="patch({ clearance: $event || null })">
-                        <option value="">Nog te bevestigen (voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }})</option>
+                        <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }} (nog te bevestigen)</option>
                         @for (option of clearanceOptions; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
                       </select>
-                      <span class="hint">Bepaalt de btw-aangifte. Blijft in Nederland: alleen de aankoop (81). Komt naar België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
+                      <span class="hint">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Komt naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
                     </div>
                     <div class="field">
                       <label for="dk-receiving">Lossen op</label>

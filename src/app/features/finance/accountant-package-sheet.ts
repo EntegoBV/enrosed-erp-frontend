@@ -64,13 +64,18 @@ export class AccountantPackageSheet {
       missing: costs.filter((row) => missingDocument(row.cost!, this.state.documentedIds())).length,
     };
   });
-  /** The return's status line while it is still provisional: the regimes to confirm, or why else it is not final yet. */
+  /** The return's status line while it is still provisional: the regimes and clearances to confirm, each by its name, or that the quarter still runs. */
   readonly vatStatus = computed(() => {
     const result = this.state.vatReturnFor(this.year(), this.quarter());
     if (result.status === 'ready') return '';
-    const pending = result.unconfirmedCount + result.unknown.length;
-    if (pending) return `Voorlopig · ${pending} ${pending === 1 ? 'btw-regeling' : 'btw-regelingen'} te bevestigen`;
-    return this.state.today() <= result.to ? 'Voorlopig · het kwartaal loopt nog' : 'Voorlopig · inklaring van een container te bevestigen';
+    const regimes = result.unconfirmedCount + result.unknown.length;
+    const clearances = result.openClearanceCount;
+    const waiting = [
+      ...(regimes ? [`${regimes} ${regimes === 1 ? 'btw-regeling' : 'btw-regelingen'}`] : []),
+      ...(clearances ? [`${clearances} ${clearances === 1 ? 'inklaring' : 'inklaringen'}`] : []),
+    ];
+    if (waiting.length) return `Voorlopig · ${waiting.join(' en ')} te bevestigen`;
+    return this.state.today() <= result.to ? 'Voorlopig · het kwartaal loopt nog' : 'Voorlopig';
   });
 
   showMissing(): void {

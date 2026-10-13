@@ -47,13 +47,40 @@ export function isValidVatNumber(clean: string): boolean {
 export interface RegimeSuggestion { regime: VatRegime; reason: string }
 
 const REASON = 'Afgeleid van het land · controleer';
+/** The categories that stand for a fair: BEURS, and the retired TICA code that older costs and names still carry. */
+const FAIR_CATEGORIES: ReadonlySet<string> = new Set(['BEURS', 'TICA']);
+
+export function isFairCategory(category: string | null | undefined): boolean {
+  return FAIR_CATEGORIES.has((category ?? '').trim().toUpperCase());
+}
+
+/** A fair invoice from the EU: reverse charge is the rule, that country's VAT on the invoice the exception to look for. */
+function fairReason(country: string): string {
+  return `Beursfactuur: btw verlegd · staat er ${country === 'NL' ? 'Nederlandse' : 'buitenlandse'} btw op? Kies dan Buitenlandse btw`;
+}
+
+/** The line under the regime when a fair invoice goes to a name nothing is known about. */
+export const FAIR_REGIME_QUESTION = 'Beursfactuur: Belgische btw of btw verlegd? Controleer';
+
+/**
+ * A fair invoice to a name that carries no regime, no country and no VAT
+ * number: the Dutch organisers (TICA, Ede) reverse charge the stand, a
+ * Belgian one charges Belgian VAT, and the name alone cannot tell. The form
+ * then keeps the Belgian default but leaves it unconfirmed under this
+ * question; nothing is stored on the name until a regime is confirmed.
+ */
+export function fairRegimeQuestion(input: { category: string | null; regime: VatRegime | null; country: string | null; vatNumber: string | null }): string | null {
+  if (!isFairCategory(input.category) || input.regime) return null;
+  return (input.country ?? '').trim() || cleanVatNumber(input.vatNumber) ? null : FAIR_REGIME_QUESTION;
+}
 
 /**
  * The regime a supplier's country suggests, for the form to prefill
  * unconfirmed: a Belgian number or country is Belgian VAT; an EU supplier is
  * reverse charge (goods for Materiaal, services otherwise, a fair organiser's
- * stand included), except travel, which carries foreign VAT; a non-EU service
- * is reverse charge too, non-EU goods go through customs and get no suggestion.
+ * stand included, with a reason of its own), except travel, which carries
+ * foreign VAT; a non-EU service is reverse charge too, non-EU goods go
+ * through customs and get no suggestion.
  */
 export function suggestRegime(input: { country: string | null; vatNumber: string | null; category: string | null }): RegimeSuggestion | null {
   const number = cleanVatNumber(input.vatNumber);
@@ -66,6 +93,7 @@ export function suggestRegime(input: { country: string | null; vatNumber: string
   if (inEu) {
     /* A hotel or a train abroad carries that country's VAT. A fair organiser (TICA, Ede) invoices the stand with the VAT reverse charged. */
     if (category === 'REIS') return { regime: 'FOREIGN_VAT', reason: REASON };
+    if (FAIR_CATEGORIES.has(category)) return { regime: 'EU_SERVICES', reason: fairReason(country) };
     return { regime: goods ? 'EU_GOODS' : 'EU_SERVICES', reason: REASON };
   }
   return goods ? null : { regime: 'NON_EU_SERVICES', reason: REASON };

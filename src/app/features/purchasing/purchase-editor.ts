@@ -456,12 +456,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <select class="select" id="po-clearance"
                               [ngModel]="data.order.clearance ?? ''"
                               (ngModelChange)="patch({ clearance: $event || null })">
-                        <option value="">Nog te bevestigen (voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }})</option>
+                        <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }} (nog te bevestigen)</option>
                         @for (option of clearanceOptions; track option.value) {
                           <option [value]="option.value">{{ option.label }}</option>
                         }
                       </select>
-                      <span class="hint">Bepaalt de btw-aangifte. Blijft in Nederland: alleen de aankoop (81). Komt naar België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
+                      <span class="hint">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Komt naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
                     </div>
                     <!-- Where the container is unloaded: the stock of every
                          line lands there on Ontvangen. -->
@@ -3354,11 +3354,15 @@ export class PurchaseEditor {
   readonly departurePorts = CHINESE_DEPARTURE_PORTS;
   readonly destinationPorts = DESTINATION_PORTS;
   readonly otherPortValue = OTHER_PORT_VALUE;
-  /** Where the container clears customs, as the VAT return reads it; null stays 'te bevestigen' with the port's suggestion. */
+  /**
+   * Where the container clears customs, as the VAT return reads it; null stays
+   * 'te bevestigen' with the port's suggestion. The labels are short enough for
+   * a phone's select; the hint under it names the fiscal representative.
+   */
   readonly clearanceOptions: readonly { value: Clearance; label: string }[] = [
-    { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'In Nederland via de fiscaal vertegenwoordiger · blijft in Nederland' },
-    { value: 'NL_FISCAL_REP_TO_BE', label: 'In Nederland via de fiscaal vertegenwoordiger · komt naar België' },
-    { value: 'BE_CUSTOMS', label: 'In België (douane)' },
+    { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'Blijft in Nederland · daar verkocht' },
+    { value: 'NL_FISCAL_REP_TO_BE', label: 'Komt naar ons in België' },
+    { value: 'BE_CUSTOMS', label: 'Inklaring in België (douane)' },
   ];
 
   suggestedClearanceLabel(destinationPort: string | null | undefined): string {

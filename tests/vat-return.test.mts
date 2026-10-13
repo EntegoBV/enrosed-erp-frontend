@@ -31,6 +31,8 @@ function container(input: { id: number; status?: string; receivedOn?: string | n
 const settings = { importVatDeferred: false, today: '2026-10-12' };
 const eur = (result: VatReturn, code: string) => result.grids.find((grid) => grid.code === code)!.eur;
 const rows = (result: VatReturn, code: string) => result.grids.find((grid) => grid.code === code)!.rows;
+/** Intl puts a no-break space behind the euro sign; the assertions read it as a plain one. */
+const plain = (texts: readonly string[]) => texts.map((text) => text.replace(/\u00a0/g, ' '));
 
 test('every grid is listed, in its kader, and a Belgian invoice fills 82 and 59', () => {
   const result = vatReturn(2026, 3, lines([cost({ id: 1, amountExclEur: 100 })]), [], [], settings);
@@ -107,6 +109,7 @@ test('containers: the goods in 81, the import VAT by clearance', () => {
   assert.deepEqual([eur(viaRep, '81'), eur(viaRep, '86'), eur(viaRep, '55'), eur(viaRep, '59')], [20000, 23320, 4897.2, 4897.2]);
   assert.ok(rows(viaRep, '86')[0].badges.includes('via 24/7 Customs'));
   assert.equal(viaRep.status, 'ready');
+  assert.equal(viaRep.openClearanceCount, 0, 'a picked clearance is not open');
 
   const soldInNl = vatReturn(2026, 3, [], [], containerLines([container({ id: 2, receivedOn: '2026-08-15', clearance: 'NL_FISCAL_REP_SOLD_IN_NL' })], representative), settings);
   assert.deepEqual([eur(soldInNl, '81'), eur(soldInNl, '86'), eur(soldInNl, '55')], [20000, 0, 0]);
@@ -120,9 +123,25 @@ test('containers: the goods in 81, the import VAT by clearance', () => {
 
   const open = vatReturn(2026, 3, [], [], containerLines([container({ id: 4, expectedArrival: '2026-09-20', clearance: null, port: 'Rotterdam' })], representative), settings);
   assert.deepEqual([eur(open, '81'), eur(open, '86'), eur(open, '55'), eur(open, '59')], [20000, 0, 0, 0], 'the suggestion applies until the clearance is picked: the goods stay in the Netherlands');
-  assert.ok(rows(open, '81')[0].badges.includes('inklaring te bevestigen'));
-  assert.ok(rows(open, '81')[0].badges.includes('verwachte aankomst'));
+  assert.deepEqual(plain(rows(open, '81')[0].badges), ['inklaring te bevestigen', 'voorlopig zonder 86/55/59 · basis € 23.320,00 als de goederen naar België komen',
+    'verwachte aankomst', 'koers van de order 0.92', 'invoerrechten · bij de goederen, geen vak'], 'the assumption and the base at stake stand beside the open clearance');
   assert.equal(open.status, 'provisional');
+  assert.equal(open.openClearanceCount, 1);
+
+  const openAntwerp = containerLines([container({ id: 7, receivedOn: '2026-08-15', clearance: null, port: 'Antwerp' })], representative);
+  const antwerp = vatReturn(2026, 3, [], [], openAntwerp, { importVatDeferred: true, today: '2026-10-12' });
+  assert.deepEqual(rows(antwerp, '81')[0].badges, ['inklaring te bevestigen', 'koers van de order 0.92', 'invoerrechten · bij de goederen, geen vak'], 'an Antwerp suggestion assumes nothing about the Netherlands');
+  assert.deepEqual(rows(antwerp, '87')[0].badges, ['inklaring te bevestigen', 'ET 14000 · zelf aangegeven']);
+  assert.deepEqual([eur(antwerp, '87'), antwerp.openClearanceCount, antwerp.status], [23320, 1, 'provisional']);
+  const picked = vatReturn(2026, 3, [], [], containerLines([container({ id: 8, receivedOn: '2026-08-15', clearance: 'NL_FISCAL_REP_SOLD_IN_NL' })], representative), settings);
+  assert.deepEqual(rows(picked, '81')[0].badges, ['koers van de order 0.92', 'invoerrechten · bij de goederen, geen vak'], 'a confirmed stay in the Netherlands is no assumption');
+  const several = vatReturn(2026, 3, [], [], containerLines([
+    container({ id: 9, receivedOn: '2026-07-02', clearance: null }), container({ id: 10, expectedArrival: '2026-09-30', clearance: null, port: 'Antwerp' }),
+    container({ id: 11, receivedOn: '2026-10-01', clearance: null }), container({ id: 12, status: 'ONDERWEG', clearance: null }), container({ id: 13, receivedOn: '2026-08-01', clearance: 'BE_CUSTOMS' }),
+  ], representative), settings);
+  assert.equal(several.openClearanceCount, 2, 'only the containers of the quarter count: not the next quarter, not one without a date');
+  const noCosting = { ...containerLines([container({ id: 14, receivedOn: '2026-08-15', clearance: null })], representative)[0], baseEur: 0, vatEur: 0 };
+  assert.deepEqual(rows(vatReturn(2026, 3, [], [], [noCosting], settings), '81')[0].badges.slice(0, 2), ['inklaring te bevestigen', 'voorlopig zonder 86/55/59'], 'without a customs value there is no base to name');
   const notReceived = vatReturn(2026, 3, [], [], containerLines([container({ id: 5, status: 'ONDERWEG' }), container({ id: 6, status: 'CONCEPT', receivedOn: '2026-08-01' })], representative), settings);
   assert.deepEqual(notReceived.notReceived.map((row) => row.id), [5]);
   assert.equal(eur(notReceived, '81'), 0, 'concepts never count');
@@ -155,4 +174,9 @@ test('71 and 72 are never both filled; the CSV says what state the return is in'
   const unconfirmedCsv = vatReturnCsv(vatReturn(2026, 3, [], [], unconfirmed, settings));
   assert.ok(unconfirmedCsv.includes('inklaring te bevestigen'), 'an unconfirmed container says so');
   assert.ok(!unconfirmedCsv.includes('via fiscaal vertegenwoordiger'), 'and is not declared as an acquisition until it is said to come to Belgium');
+  assert.match(unconfirmedCsv.split('\r\n')[0], /^VOORLOPIG · 1 te bevestigen · btw-aangifte 2026 Q3/, 'the open clearance is what keeps the return provisional, and it is counted');
+  assert.ok(plain(unconfirmedCsv.split('\r\n')).includes('III;81;;;INK-2 · Rozen;2026-08-15;container;;20000,00;0,00;inklaring te bevestigen · voorlopig zonder 86/55/59 · basis € 23.320,00 als de goederen naar België komen · koers van de order 0.92 · invoerrechten · bij de goederen, geen vak'));
+  const mixed = vatReturn(2026, 3, lines([cost({ id: 2, amountExclEur: 10, vatRegimeConfirmed: false }), cost({ id: 3, amountExclEur: 10, vatPct: 0, vatRegime: null })]), [], unconfirmed, settings);
+  assert.deepEqual([mixed.unconfirmedCount, mixed.unknown.length, mixed.openClearanceCount], [1, 1, 1]);
+  assert.match(vatReturnCsv(mixed), /^VOORLOPIG · 3 te bevestigen/, 'regimes and clearances add up in the header');
 });

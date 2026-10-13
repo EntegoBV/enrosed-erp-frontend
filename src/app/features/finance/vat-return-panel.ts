@@ -66,10 +66,10 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
                             @for (row of grid.rows; track $index) {
                               <li class="fin-vat__row">
                                 <span>{{ day(row.date) }}</span>
-                                <span><button class="wk-link" type="button" (click)="openRow(row)">{{ row.title }}</button>@if (row.sub) { <span class="wk-amount--muted">· {{ row.sub }}</span> }
-                                  @if (row.badges.length) { <span class="fin-vat__badges">@for (badge of row.badges; track badge) { <span class="wk-pill wk-pill--outline">{{ badge }}</span> }</span> }</span>
+                                <span><button class="wk-link" type="button" (click)="openRow(row)">{{ row.title }}</button>@if (row.sub) { <span class="wk-amount--muted">· {{ row.sub }}</span> }</span>
                                 <i>{{ secondaryOf(grid, row) }}</i>
                                 <b>{{ primaryOf(grid, row) | eur }}</b>
+                                @if (row.badges.length) { <span class="fin-vat__badges">@for (badge of row.badges; track badge) { <span class="wk-pill wk-pill--outline">{{ badge }}</span> }</span> }
                               </li>
                             }
                           </ul>
@@ -190,11 +190,11 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
             <p class="fin-sheet__lead">{{ grid.label }} · {{ grid.eur | eur }}</p>
             <div class="ios-group">
               @for (row of grid.rows; track $index) {
-                <button class="ios-cell ios-cell--tall" type="button" (click)="openRow(row)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span><span class="ios-cell__sub">{{ row.sub ? row.sub + ' · ' : '' }}{{ day(row.date) }}</span>
-                    @if (row.badges.length) { <span class="fin-vat__badges">@for (badge of row.badges; track badge) { <span class="wk-pill wk-pill--outline">{{ badge }}</span> }</span> }</span>
+                <button class="ios-cell ios-cell--tall fin-vat__cell" type="button" (click)="openRow(row)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span><span class="ios-cell__sub">{{ row.sub ? row.sub + ' · ' : '' }}{{ day(row.date) }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ primaryOf(grid, row) | eur }}</span><span class="ios-cell__meta">{{ secondaryOf(grid, row) }}</span></span>
                   <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  @if (row.badges.length) { <span class="fin-vat__badges">@for (badge of row.badges; track badge) { <span class="wk-pill wk-pill--outline">{{ badge }}</span> }</span> }
                 </button>
               } @empty { <div class="ios-cell"><span class="ios-cell__sub">Niets in dit rooster.</span></div> }
             </div>
@@ -230,8 +230,9 @@ export class VatReturnPanel implements FinanceSectionApi {
   readonly late = computed(() => this.state.today() > this.result().filingDeadline && this.result().status === 'provisional');
   readonly favour = computed(() => this.result().totals.refundEur > 0);
   readonly amount = computed(() => (this.favour() ? this.result().totals.refundEur : this.result().totals.payableEur));
-  readonly pendingCount = computed(() => this.result().unconfirmedCount + this.result().unknown.length);
-  readonly openClearances = computed(() => this.grid('81').rows.filter((row) => row.badges.includes('inklaring te bevestigen')).length);
+  readonly openClearances = computed(() => this.result().openClearanceCount);
+  /** Everything that waits for a confirmation: derived regimes, costs without one and containers without a confirmed clearance. */
+  readonly pendingCount = computed(() => this.result().unconfirmedCount + this.result().unknown.length + this.openClearances());
 
   readonly headline = computed(() => ({
     label: this.running() ? `Btw Q${this.period().quarter} tot nu · ${this.favour() ? 'in je voordeel' : 'te betalen'}` : this.favour() ? 'Btw terug te krijgen' : 'Btw te betalen',
@@ -240,10 +241,10 @@ export class VatReturnPanel implements FinanceSectionApi {
   readonly statusText = computed(() => {
     if (this.result().status === 'ready') return 'Klaar voor de boekhouder';
     const pending = this.pendingCount();
-    if (pending) return `Voorlopig · ${pending} te bevestigen`;
-    if (this.running()) return 'Voorlopig · het kwartaal loopt nog';
     const open = this.openClearances();
-    return open ? `Voorlopig · ${open} ${open === 1 ? 'inklaring' : 'inklaringen'} te bevestigen` : 'Voorlopig';
+    if (pending && pending === open) return `Voorlopig · ${open} ${open === 1 ? 'inklaring' : 'inklaringen'} te bevestigen`;
+    if (pending) return `Voorlopig · ${pending} te bevestigen`;
+    return this.running() ? 'Voorlopig · het kwartaal loopt nog' : 'Voorlopig';
   });
 
   readonly yearOptions = computed<SegmentOption[]>(() => {
