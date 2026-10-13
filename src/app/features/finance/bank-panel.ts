@@ -63,7 +63,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
           <article class="fin-bank-account-row" role="listitem">
             <button class="fin-bank-account-row__open" type="button" (click)="openAccount(account.account)" [attr.aria-label]="account.label + ' openen'">
               <span class="fin-bank-account__icon"><app-icon name="bank" [size]="22" /></span>
-              <span class="fin-bank-account-row__name"><b>{{ account.label }}</b><span>{{ iban(account.account) }}</span><small>{{ account.source === 'ODOO' ? 'Via Odoo' : 'Handmatige rekening' }} · {{ transactionCount(account.account) }} transacties</small></span>
+              <span class="fin-bank-account-row__name"><b>{{ account.label }}</b><span>{{ iban(account.account) }}</span><small>{{ account.source === 'ODOO' ? 'Via Odoo' : 'Handmatige rekening' }} · {{ transactionCount(account.account) }} {{ transactionCount(account.account) === 1 ? 'transactie' : 'transacties' }}</small></span>
               <span class="fin-bank-account-row__balance"><b>{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</b><small>{{ freshLabel(account) }}</small></span>
               <span class="fin-bank-account-row__pending" [class.is-open]="openCount(account.account) > 0">{{ openCount(account.account) ? openCount(account.account) + ' te koppelen' : 'Alles gekoppeld' }}</span>
               <app-icon name="chevron-right" [size]="18" />

@@ -195,7 +195,7 @@
   .wk-body--split .fin-table--costs { @include costs-without-reference; }
   .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px; }
   .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) 124px 36px; }
-  .fin-table--moves { --wk-cols: 150px minmax(180px, 1fr) minmax(0, 150px) 170px 128px 36px; }
+  .fin-table--moves { --wk-cols: 150px minmax(220px, 1fr) 170px 128px 36px; }
   .wk-body--split .fin-table--moves { --wk-cols: 140px minmax(160px, 1fr) 150px 120px 36px; }
   .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px 36px; }
   .fin-table--unbanked { --wk-cols: 92px minmax(140px, 1fr) 96px 112px 96px; }
@@ -312,7 +312,7 @@
       .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
-    .fin-table--moves { --wk-cols: 140px minmax(160px, 1fr) minmax(0, 150px) 150px 120px 36px; }
+    .fin-table--moves { --wk-cols: 140px minmax(180px, 1fr) 150px 120px 36px; }
     .fin-table--vat { --wk-cols: minmax(120px, 1fr) 104px 96px 112px 72px; }
     .fin-ov-grid, .fin-analysis-grid, .fin-vat__kaders { grid-template-columns: minmax(0, 1fr); }
     .fin-expand { grid-template-columns: minmax(0, 1fr); }

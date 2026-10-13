@@ -54,7 +54,6 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
           <div class="wk-thead" role="row">
             <span class="wk-th" role="columnheader">Moment</span>
             <span class="wk-th" role="columnheader">Tegenpartij · mededeling</span>
-            <span class="wk-th" role="columnheader" data-hide="sm inspecting">Rekening</span>
             <span class="wk-th" role="columnheader">Koppeling</span>
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
@@ -64,7 +63,6 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                  [attr.aria-selected]="focusId() === row.id" (focus)="focusId.set(row.id)" (click)="focusId.set(row.id)" appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
               <span class="wk-td" role="gridcell" [attr.title]="record(row)">{{ movementStamp(row) }}</span>
               <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (imported(row)) { <span class="wk-pill tone-blue" title="Banktransactie opgehaald uit Odoo">Odoo</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
-              <span class="wk-td" role="gridcell" data-hide="sm inspecting">{{ accountName(row.account) }}</span>
               <span class="wk-td" role="gridcell">
                 @if (row.salesOrderId) {
                   <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.amountEur < 0 ? 'Terugbetaling' : 'Factuur' }} {{ invoiceNumber(row.salesOrderId) }} ›</a>
