@@ -52,7 +52,7 @@ test('the country suggests a regime, unconfirmed, with its reason', () => {
 });
 
 test('a fair invoice to a name nothing is known about raises the question, and only then', () => {
-  assert.equal(FAIR_REGIME_QUESTION, 'Beursfactuur: Belgische btw of btw verlegd? Controleer');
+  assert.equal(FAIR_REGIME_QUESTION, 'Beursfactuur: Belgische btw of btw verlegd? Bij verlegde btw kies je EU · dienst');
   const nothing = { regime: null, country: null, vatNumber: null };
   assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing }), FAIR_REGIME_QUESTION);
   assert.equal(fairRegimeQuestion({ category: ' beurs ', ...nothing, country: ' ', vatNumber: ' . ' }), FAIR_REGIME_QUESTION, 'blanks are nothing');

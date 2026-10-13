@@ -60,7 +60,7 @@ function fairReason(country: string): string {
 }
 
 /** The line under the regime when a fair invoice goes to a name nothing is known about. */
-export const FAIR_REGIME_QUESTION = 'Beursfactuur: Belgische btw of btw verlegd? Controleer';
+export const FAIR_REGIME_QUESTION = 'Beursfactuur: Belgische btw of btw verlegd? Bij verlegde btw kies je EU · dienst';
 
 /**
  * A fair invoice to a name that carries no regime, no foreign country and no

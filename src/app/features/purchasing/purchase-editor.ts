@@ -456,12 +456,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                       <select class="select" id="po-clearance"
                               [ngModel]="data.order.clearance ?? ''"
                               (ngModelChange)="patch({ clearance: $event || null })">
-                        <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }} (nog te bevestigen)</option>
+                        <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }}</option>
                         @for (option of clearanceOptions; track option.value) {
                           <option [value]="option.value">{{ option.label }}</option>
                         }
                       </select>
-                      <span class="hint">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Komt naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
+                      <span class="hint">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Via Nederland naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
                     </div>
                     <!-- Where the container is unloaded: the stock of every
                          line lands there on Ontvangen. -->
@@ -3361,13 +3361,14 @@ export class PurchaseEditor {
    */
   readonly clearanceOptions: readonly { value: Clearance; label: string }[] = [
     { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'Blijft in Nederland · daar verkocht' },
-    { value: 'NL_FISCAL_REP_TO_BE', label: 'Komt naar ons in België' },
+    { value: 'NL_FISCAL_REP_TO_BE', label: 'Via Nederland naar ons in België' },
     { value: 'BE_CUSTOMS', label: 'Inklaring in België (douane)' },
   ];
 
+  /** The suggestion in a few words: the closed select on a phone has room for about thirty characters after 'Voorstel: '. */
   suggestedClearanceLabel(destinationPort: string | null | undefined): string {
     const suggested = clearanceSuggestion(destinationPort);
-    return this.clearanceOptions.find((option) => option.value === suggested)?.label ?? suggested;
+    return suggested === 'BE_CUSTOMS' ? 'inklaring in België' : suggested === 'NL_FISCAL_REP_TO_BE' ? 'via Nederland naar België' : 'blijft in Nederland';
   }
   readonly customDeparturePort = signal(false);
   readonly customDestinationPort = signal(false);
