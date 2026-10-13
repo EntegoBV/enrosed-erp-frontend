@@ -100,8 +100,8 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
         <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="search.set('')"><app-icon name="close" [size]="14" /></button></label></div>
       <div class="ios-chips" role="group" aria-label="Richting">
         <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'ALL' && linkFilter() !== 'UNLINKED_IN'" (click)="setChip('ALL')">Alles</button>
-        <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'INCOMING'" (click)="setChip('INCOMING')">Binnen</button>
-        <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'OUTGOING'" (click)="setChip('OUTGOING')">Buiten</button>
+        <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'INCOMING'" (click)="setChip('INCOMING')">In</button>
+        <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'OUTGOING'" (click)="setChip('OUTGOING')">Uit</button>
         <button class="ios-chip" type="button" [attr.aria-pressed]="linkFilter() === 'UNLINKED_IN'" (click)="setChip('UNLINKED_IN')">Te koppelen
           @if (unlinkedCount()) { <span class="ios-chip__badge">{{ unlinkedCount() }}</span> }</button>
       </div>
@@ -123,7 +123,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                   <button class="ios-cell ios-cell--tall" type="button" (click)="lineMenu(row, null)">
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft fin-round" [class.tone-ok]="row.amountEur > 0" [class.tone-ink]="row.amountEur < 0"><app-icon [name]="row.amountEur > 0 ? 'arrow-in' : 'arrow-out'" [size]="18" /></span></span>
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ row.counterparty || row.reference || 'Bankbeweging' }}</span>
-                      <span class="ios-cell__sub">{{ accountName(row.account) }} · {{ clock(row) }}@if (imported(row)) { · <span class="wk-pill tone-blue">Odoo</span> }</span>
+                      <span class="ios-cell__sub">{{ row.reference || (imported(row) ? 'Banktransactie' : clock(row)) }}@if (imported(row)) { · <span class="wk-pill tone-blue">Odoo</span> }</span>
                       @if (detailsId() === row.id) { <span class="ios-cell__sub fin-wrap">{{ record(row) }}{{ row.reference && row.counterparty ? ' · ' + row.reference : '' }}</span> }</span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</span>
                       <span class="ios-cell__meta">@if (row.salesOrderId) { {{ invoiceNumber(row.salesOrderId) }} } @else if (allocated(row)) { {{ row.allocationLabel || 'Gekoppeld' }} } @else if (!allocated(row)) { <span class="fin-warn-text">Te koppelen</span> } @else if (markerOf(row); as marker) { {{ isCost(marker) ? 'Kost' : 'Container' }} }</span>@if (row.allocationDifferenceEur) { <span class="ios-cell__meta">Verschil {{ row.allocationDifferenceEur | eur }}</span> }</span>
@@ -136,7 +136,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
       } @empty {
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="bank" [size]="26" /></span>
           <p class="ios-empty__title">{{ state.bankStatements().length ? 'Geen bewegingen gevonden' : 'Nog geen bankbewegingen' }}</p>
-          <p class="ios-empty__text">{{ state.bankStatements().length ? 'Pas je zoekopdracht of filters aan.' : 'Noteer een bedrag van je rekening met +.' }}</p></div>
+          <p class="ios-empty__text">{{ state.bankStatements().length ? 'Pas je zoekopdracht of filters aan.' : (state.manualAccountAllowed(accountFilter()) ? 'Voeg een transactie toe met Transactie noteren.' : 'Haal de transacties van deze rekening op via de bankverbinding.') }}</p></div>
       }
       @if (visibleLines().length < filteredLines().length) {
         <div class="ios-group fin-ios-more"><button class="ios-cell ios-cell--action" type="button" (click)="shown.update(more)">Meer tonen</button></div>
