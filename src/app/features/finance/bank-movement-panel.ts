@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { BankingApi, BankMatch, BankStatementLine, ReceivedOdooInvoice, ReceivedOdooInvoicePreview } from '../../core/api/banking-api';
-import type { SalesOrderView, SalesPayment } from '../../core/api/models';
+import type { Currency, PurchaseDocument, SalesOrderView, SalesPayment } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
+import { SourcingApi } from '../../core/api/sourcing-api';
+import { saveBlob } from '../../core/api/download';
 import { bankAmountsMatch, bankAmountDifference } from '../../shared/bank-transaction-options';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
@@ -12,11 +14,16 @@ import { Ui, escapeHtml } from '../../shared/ui';
 import { FinanceState } from './finance-state';
 import { bankAccountKey } from './bank-reconciliation';
 import { paymentLocalDay, paymentMomentLabel } from './incoming-money';
+import { cashTotalOf, openOf } from './finance-metrics';
+import { containerPayables } from './payables';
+import { bankAllocationTargets, filterBankAllocationTargets, type BankAllocationTarget } from './bank-allocation-targets';
+import { bankTransactionDay } from '../../shared/bank-transaction-options';
+import { parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
 
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
 /** UNLINKED_IN is 'Te koppelen': money in without an invoice. */
 type LinkFilter = 'ALL' | 'LINKED' | 'UNLINKED' | 'UNLINKED_IN';
-interface OutgoingMatch { key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number; }
+interface OutgoingMatch { ownerId: number; key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number; }
 const cents = (amount: number): number => Math.round(amount * 100);
 const inactive = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -99,7 +106,6 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
         <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'OUTGOING'" (click)="setChip('OUTGOING')">Buiten</button>
         <button class="ios-chip" type="button" [attr.aria-pressed]="linkFilter() === 'UNLINKED_IN'" (click)="setChip('UNLINKED_IN')">Te koppelen
           @if (unlinkedCount()) { <span class="ios-chip__badge">{{ unlinkedCount() }}</span> }</button>
-        <button class="ios-chip" type="button" [attr.aria-pressed]="!!accountFilter()" (click)="accountMenu()">{{ accountFilter() ? accountName(accountFilter()) : 'Alle rekeningen' }} <app-icon name="chevron-down" [size]="14" /></button>
       </div>
       <div class="ios-figures ios-figures--3">
         <div><small>In</small><strong class="wk-amount--in" [attr.title]="totals().incoming | eur">{{ totals().incoming | eur: 0 }}</strong></div>
@@ -143,6 +149,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
 export class BankMovementPanel {
   readonly state = inject(FinanceState);
   private readonly api = inject(BankingApi);
+  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   readonly busy = signal(false);
   readonly matchingLoading = signal(false);
@@ -150,7 +157,7 @@ export class BankMovementPanel {
   /** The movement form is FinanceState's; the panel only reports whether one is open. */
   readonly draft = computed(() => this.state.movementDraft());
   readonly showHistorical = signal(false);
-  readonly historicalCount = computed(() => this.state.bankStatements().filter(row => !this.state.officialBankLine(row)).length);
+  readonly historicalCount = computed(() => this.state.bankStatements().filter(row => !this.state.officialBankLine(row) && this.onSelectedAccount(row)).length);
   readonly accountFilter = signal('');
   readonly directionFilter = signal<DirectionFilter>('ALL');
   readonly linkFilter = signal<LinkFilter>('ALL');
@@ -168,25 +175,153 @@ export class BankMovementPanel {
   readonly manualInvoice = signal(0);
   readonly newBookingConfirmed = signal(false);
   readonly allocationMode = signal<'expense' | 'sales' | 'received'>('sales');
+  readonly allocationStep = signal<'documents' | 'payments' | 'new'>('documents');
+  readonly localSearch = signal('');
+  readonly localSuppliers = signal<Map<number, string>>(new Map());
+  readonly localPurchaseFiles = signal<PurchaseDocument[]>([]);
+  readonly localPurchaseFilesLoading = signal(false);
+  readonly localPurchaseFilesError = signal('');
+  readonly localShown = signal(60);
+  readonly localKind = signal<'all' | 'cost' | 'sales' | 'purchase'>('all');
+  readonly localSelectedKey = signal<string | null>(null);
+  readonly localLoading = signal(false);
+  readonly localError = signal('');
+  readonly localNewConfirmed = signal(false);
+  readonly purchaseCurrency = signal<Currency>('EUR');
+  readonly purchaseAmountInput = signal('');
+  readonly localDocuments = computed(() => bankAllocationTargets(this.selected()?.amountEur ?? 0, this.state.costs(), this.state.salesOrders(),
+    containerPayables(this.state.purchaseViews()), id => this.customerName(id), cashTotalOf, openOf, id => {
+      const order = this.state.purchaseViews().find(view => view.order.id === id)?.order;
+      return { party: this.localSuppliers().get(order?.supplierId ?? -1) ?? '', date: order?.orderDate ?? '' };
+    }));
+  readonly localMatches = computed(() => filterBankAllocationTargets(this.localDocuments().filter(row => this.localKind() === 'all' || row.kind === this.localKind()), this.localSearch(), this.selected() ?? { amountEur: 0 }));
+  readonly visibleLocalDocuments = computed(() => this.localMatches().slice(0, this.localShown()));
+  readonly localDocument = computed(() => this.localDocuments().find(row => row.key === this.localSelectedKey()) ?? null);
+  readonly localExistingPayments = computed(() => {
+    const target = this.localDocument(); if (!target || target.kind === 'sales') return [];
+    return this.outgoingCandidates().filter(row => row.ownerId === target.id && row.kind === (target.kind === 'cost' ? 'cost' : 'purchase')
+      && bankAmountsMatch(-row.amountEur, this.selected()?.amountEur ?? 0));
+  });
+  readonly localExistingSales = computed(() => this.existingMatches().filter(row => this.localDocument()?.kind === 'sales' && row.salesOrderId === this.localDocument()?.id));
+  readonly localPossibleDuplicate = computed(() => {
+    const target = this.localDocument(), bank = this.selected(); if (!target || !bank) return false;
+    if (target.kind === 'sales') return this.localExistingSales().length > 0;
+    if (this.localExistingPayments().length) return true;
+    if (target.kind !== 'cost') return false;
+    const linked = new Map(this.state.bankStatements().map(line => [line.id, line]));
+    return (this.state.costs().find(cost => cost.id === target.id)?.payments ?? []).some(payment => bankAmountsMatch(-payment.amountEur, bank.amountEur)
+      && (payment.bankStatementLineId == null || linked.get(payment.bankStatementLineId)?.source !== 'ODOO'));
+  });
+  readonly localPreview = computed(() => {
+    const bank = this.selected(), target = this.localDocument(); if (!bank || !target) return null;
+    const open = target.openBankEur, sameDirection = Math.sign(open) === Math.sign(bank.amountEur);
+    const payment = target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
+      : bankAmountsMatch(bank.amountEur, open) ? open : bank.amountEur;
+    const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment)
+      : sameDirection && (Math.abs(bank.amountEur) <= Math.abs(open) || bankAmountsMatch(bank.amountEur, open) || (target.kind === 'sales' && bank.amountEur > 0));
+    return { paymentEur: payment, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(payment))) / 100,
+      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
+      eligible: amountValid && (target.kind === 'purchase' || open !== 0) };
+  });
+  readonly localBankProblem = computed(() => {
+    const selected = this.selected(); if (!selected) return '';
+    const current = this.state.bankStatements().find(line => line.id === selected.id); if (!current) return '';
+    if (this.allocated(current)) return 'Deze banktransactie is intussen gekoppeld. Sluit dit scherm en vernieuw het overzicht.';
+    return current.amountEur !== selected.amountEur || current.bookedAt !== selected.bookedAt || this.state.canonicalAccount(current.account) !== this.state.canonicalAccount(selected.account)
+      ? 'Deze banktransactie is intussen gewijzigd. Sluit dit scherm en kies de transactie opnieuw.' : '';
+  });
+  readonly canLinkLocal = computed(() => !this.localBankProblem() && !!this.localDocument() && !!this.localPreview()?.eligible && !this.localLoading() && !this.localError() && !this.busy()
+    && (!(this.localPossibleDuplicate() || (this.localDocument()?.kind === 'sales' && (this.localPreview()?.overpaidEur ?? 0) > 0)) || this.localNewConfirmed()));
+  setAllocationStep(step: 'documents' | 'payments' | 'new'): void {
+    if (this.busy()) return;
+    this.allocationStep.set(step); this.error.set('');
+    if (step === 'new') this.setAllocationMode('received');
+  }
+  chooseLocalDocument(target: BankAllocationTarget): void {
+    if (this.busy()) return;
+    this.localSelectedKey.set(target.key); this.localNewConfirmed.set(false); this.error.set('');
+    this.purchaseCurrency.set('EUR'); this.purchaseAmountInput.set(Math.abs(this.selected()?.amountEur ?? 0).toFixed(2));
+    this.localPurchaseFiles.set([]); this.localPurchaseFilesError.set('');
+    if (target.kind === 'purchase') void this.loadLocalPurchaseFiles(target.id);
+  }
+  changePurchaseCurrency(currency: Currency): void {
+    if (this.busy()) return;
+    this.purchaseCurrency.set(currency); this.purchaseAmountInput.set(currency === 'EUR' ? Math.abs(this.selected()?.amountEur ?? 0).toFixed(2) : '');
+  }
+  async loadLocalDocuments(): Promise<void> {
+    const bank = this.selected(); if (!bank || this.localLoading() || this.busy()) return;
+    const version = this.allocationVersion; this.localLoading.set(true); this.localError.set('');
+    try {
+      const sources = ['costs', 'orders', 'payments', 'containers', 'incoming', 'statements'] as const;
+      const [, suppliers] = await Promise.all([this.state.reload(sources), this.sourcing.suppliers()]);
+      if (version === this.allocationVersion) this.localSuppliers.set(new Map(suppliers.filter(supplier => supplier.id != null).map(supplier => [supplier.id!, supplier.name])));
+      const failures = this.state.sourceErrors(sources);
+      if (failures.length && version === this.allocationVersion) this.localError.set(failures.join(' · '));
+    }
+    catch (failure) { if (version === this.allocationVersion) this.localError.set(messageOf(failure, 'Facturen en uitgaven laden mislukt. Probeer opnieuw.')); }
+    finally { if (version === this.allocationVersion) this.localLoading.set(false); }
+  }
+  async loadLocalPurchaseFiles(orderId: number): Promise<void> {
+    const version = this.allocationVersion; this.localPurchaseFilesLoading.set(true); this.localPurchaseFilesError.set('');
+    try {
+      const documents = await this.sourcing.documents(orderId);
+      if (version === this.allocationVersion && this.localDocument()?.kind === 'purchase' && this.localDocument()?.id === orderId) this.localPurchaseFiles.set(documents.filter(document => document.kind === 'COMMERCIAL_INVOICE'));
+    } catch (failure) { if (version === this.allocationVersion && this.localDocument()?.id === orderId) this.localPurchaseFilesError.set(messageOf(failure, 'Inkoopfacturen laden mislukt.')); }
+    finally { if (version === this.allocationVersion && this.localDocument()?.id === orderId) this.localPurchaseFilesLoading.set(false); }
+  }
+  async openPurchaseInvoice(document: PurchaseDocument): Promise<void> {
+    await this.run(async () => saveBlob(await this.sourcing.documentFile(document.orderId, document.id), document.originalFilename));
+  }
+  reuseLocalPayment(payment: OutgoingMatch): void {
+    if (this.busy()) return;
+    this.outgoingSelected.set([payment.key]); this.allocationMode.set('expense'); this.allocationStep.set('payments');
+  }
+  reuseLocalSales(match: BankMatch): void { if (!this.busy()) { this.chooseMatch(match); this.allocationMode.set('sales'); this.allocationStep.set('payments'); } }
+  newCostFromBank(): void {
+    const bank = this.selected(); if (!bank || bank.amountEur >= 0 || this.busy()) return;
+    this.closeAllocation(); this.state.openCostFromBank(bank);
+  }
+  async linkLocalDocument(): Promise<void> {
+    const bank = this.selected(), target = this.localDocument(); if (!bank || !target || !this.canLinkLocal()) return;
+    const amount = parsePurchasePaymentAmount(this.purchaseAmountInput()), currency = this.purchaseCurrency();
+    const confirmNew = this.localNewConfirmed();
+    await this.run(async () => {
+      let saved: BankStatementLine;
+      if (target.kind === 'cost') saved = await this.api.addCostPayment(bank.id, target.id, confirmNew);
+      else if (target.kind === 'sales') saved = await this.api.allocate(bank.id, target.id, null);
+      else {
+        const result = await this.api.addPurchasePayment(bank.id, target.id, [{ paidOn: bankTransactionDay(bank), amount: amount!, currency,
+          amountEur: currency === 'EUR' ? null : Math.abs(bank.amountEur), label: target.reference || 'Bankbetaling',
+          payee: target.container!.payee, instalmentDue: target.container!.due, settles: false }]);
+        saved = result.line;
+      }
+      this.state.bankStatements.update(rows => [saved, ...rows.filter(row => row.id !== saved.id)]);
+      ++this.allocationVersion; this.selected.set(null); this.localSelectedKey.set(null);
+      this.ui.toast(`Bankbetaling gekoppeld aan ${target.title}`, 'ok');
+      await this.state.refreshBank(); await this.state.reload(['costs', 'payments', 'containers']);
+    });
+  }
+
   readonly outgoingSearch = signal('');
   readonly outgoingSelected = signal<string[]>([]);
   readonly outgoingCandidates = computed<OutgoingMatch[]>(() => {
     const result: OutgoingMatch[] = [];
     for (const cost of this.state.costs()) for (const payment of cost.payments ?? []) {
       if (!payment.id || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== -Math.sign(this.selected()?.amountEur ?? -1)) continue;
-      result.push({ key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
+      result.push({ ownerId: cost.id!, key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
         detail: [cost.description, cost.reference, payment.note].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
     for (const payment of this.state.payments()) {
       if (payment.bankStatementLineId != null || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
-      result.push({ key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',
+      result.push({ ownerId: payment.orderId, key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',
         detail: [payment.orderNumber, payment.label].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
     return result.sort((a, b) => b.paidOn.localeCompare(a.paidOn) || a.id - b.id);
   });
   readonly visibleOutgoing = computed(() => {
     const search = this.outgoingSearch().trim().toLocaleLowerCase('nl-BE');
-    return this.outgoingCandidates().filter(row => !search || [row.title, row.detail, row.paidOn, row.amountEur.toFixed(2), row.amountEur.toFixed(2).replace('.', ',')].join(' ').toLocaleLowerCase('nl-BE').includes(search));
+    const words = search.split(/\s+/).filter(Boolean);
+    return this.outgoingCandidates().filter(row => words.every(word => [row.title, row.detail, row.paidOn, row.paidOn.split('-').reverse().join('/'), row.amountEur.toFixed(2), row.amountEur.toFixed(2).replace('.', ',')].join(' ').toLocaleLowerCase('nl-BE').includes(word)));
   });
   readonly chosenOutgoing = computed(() => this.outgoingCandidates().filter(row => this.outgoingSelected().includes(row.key)));
   readonly outgoingTotal = computed(() => this.chosenOutgoing().reduce((sum, row) => sum + cents(row.amountEur), 0) / 100);
@@ -309,7 +444,7 @@ export class BankMovementPanel {
   });
   readonly ledgerAccounts = computed(() => this.state.accountOptions().map(account => account.key));
   readonly invalidPeriod = computed(() => !!this.from() && !!this.to() && this.from() > this.to());
-  readonly hasFilters = computed(() => !!this.search().trim() || !!this.accountFilter() || this.directionFilter() !== 'ALL' || this.linkFilter() !== 'ALL' || !!this.from() || !!this.to());
+  readonly hasFilters = computed(() => !!this.search().trim() || this.directionFilter() !== 'ALL' || this.linkFilter() !== 'ALL' || !!this.from() || !!this.to());
   readonly filteredLines = computed(() => {
     if (this.invalidPeriod()) return [];
     const search = this.search().trim().toLocaleLowerCase('nl-BE');
@@ -344,7 +479,7 @@ export class BankMovementPanel {
     }
     return groups;
   });
-  readonly unlinkedCount = computed(() => this.state.bankStatements().filter(row => this.state.officialBankLine(row) && !this.state.archivedBankLine(row) && !this.allocated(row)).length);
+  readonly unlinkedCount = computed(() => this.state.bankStatements().filter(row => this.state.officialBankLine(row) && !this.state.archivedBankLine(row) && this.onSelectedAccount(row) && !this.allocated(row)).length);
   readonly totals = computed(() => {
     const incoming = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur > 0 ? cents(row.amountEur) : 0), 0);
     const outgoing = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur < 0 ? -cents(row.amountEur) : 0), 0);
@@ -367,6 +502,15 @@ export class BankMovementPanel {
   });
   readonly selectableInvoices = computed(() => this.state.salesOrders().filter(view => this.active(view)
     && (this.canCreateOn(view) || this.existingMatches().some(match => match.salesOrderId === view.order.id))));
+  readonly visibleExistingSales = computed(() => {
+    const words = this.outgoingSearch().trim().toLocaleLowerCase('nl-BE').split(/\s+/).filter(Boolean);
+    return this.existingMatches().filter(match => words.every(word => [match.number, match.reference, this.matchStamp(match), this.existingSalesAmount(match).toFixed(2), this.existingSalesAmount(match).toFixed(2).replace('.', ',')].join(' ').toLocaleLowerCase('nl-BE').includes(word)));
+  });
+  existingSalesAmount(match: BankMatch): number { return match.existingPaymentId ? this.paymentMap().get(match.existingPaymentId)?.amountEur ?? 0 : 0; }
+  toggleExistingPayment(payment: OutgoingMatch): void {
+    if (this.busy()) return;
+    this.choice.set(null); this.allocationMode.set('expense'); this.toggleOutgoing(payment);
+  }
   readonly manualMatches = computed(() => this.existingMatches().filter(match => match.salesOrderId === this.manualInvoice()));
   readonly manualNewMatch = computed<BankMatch | null>(() => {
     const view = this.invoiceMap().get(this.manualInvoice());
@@ -403,7 +547,8 @@ export class BankMovementPanel {
   matchKey(match: BankMatch): string { return `${match.salesOrderId}:${match.existingPaymentId ?? 'new'}`; }
   isChosen(match: BankMatch): boolean { const choice = this.choice(); return !!choice && this.matchKey(choice) === this.matchKey(match); }
   matchStamp(match: BankMatch): string { return this.stamp(match.receivedAt ?? '', (match.existingPaymentId ? this.paymentMap().get(match.existingPaymentId)?.timeZone : null) || this.selected()?.timeZone || 'Europe/Brussels'); }
-  clearFilters(): void { this.search.set(''); this.accountFilter.set(''); this.directionFilter.set('ALL'); this.linkFilter.set('ALL'); this.from.set(''); this.to.set(''); this.shown.set(12); }
+  onSelectedAccount(row: BankStatementLine): boolean { return !this.accountFilter() || this.state.canonicalAccount(row.account) === this.state.canonicalAccount(this.accountFilter()); }
+  clearFilters(): void { this.search.set(''); this.directionFilter.set('ALL'); this.linkFilter.set('ALL'); this.from.set(''); this.to.set(''); this.shown.set(12); }
   accountName(account: string): string { return this.state.accountLabel(bankAccountKey(account)) || account; }
   abs(amount: number): number { return Math.abs(amount); }
   imported(row: BankStatementLine): boolean { return row.source === 'ODOO'; }
@@ -520,9 +665,11 @@ export class BankMovementPanel {
     if (this.busy() || this.allocated(row)) return;
     this.receivedInvoices.set([]); this.receivedLoaded.set(false); this.receivedLoading.set(false); this.receivedHasMore.set(false); this.receivedSearch.set(''); this.receivedError.set(''); this.receivedPreview.set(null); this.receivedSelectedId.set(null); this.receivedPreviewLoading.set(false); this.receivedExistingCostId.set(null); ++this.receivedPreviewVersion;
     this.allocationMode.set(row.amountEur < 0 ? 'expense' : 'sales');
+    this.allocationStep.set('documents'); this.localSearch.set(''); this.localKind.set('all'); this.localShown.set(60); this.localSelectedKey.set(null); this.localNewConfirmed.set(false); this.localLoading.set(false); this.localError.set('');
     this.outgoingSearch.set(''); this.outgoingSelected.set([]);
     const version = ++this.allocationVersion;
     this.selected.set(row); this.choice.set(null); this.manualInvoice.set(0); this.matches.set([]); this.newBookingConfirmed.set(false); this.error.set(''); this.matchingLoading.set(true);
+    void this.loadLocalDocuments();
     try {
       const matches = await this.api.suggestions(row.id);
       if (version !== this.allocationVersion || this.selected()?.id !== row.id) return;

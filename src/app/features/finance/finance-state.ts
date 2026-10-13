@@ -22,7 +22,7 @@ import { Ui, escapeHtml } from '../../shared/ui';
 import { SALES_CHANNELS, channelLabel } from '../sales/sales-channels';
 import type { SalesChannel } from '../sales/sales-channels';
 import { bankAccountKey, canonicalBankAccount, bankCheckpoint, reconciledBank } from './bank-reconciliation';
-import { bankAmountsMatch } from '../../shared/bank-transaction-options';
+import { bankAmountsMatch, bankTransactionDay } from '../../shared/bank-transaction-options';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
 import type { MarkerKind, OutgoingRow } from './bank-markers';
 import { mergeChannels } from './channel-choices';
@@ -255,6 +255,11 @@ export class FinanceState {
   /** Failed sources in Dutch; their last good data stays on screen. */
   readonly loadErrors = computed(() => Object.values(this.errorMap()).filter((text): text is string => !!text));
   readonly failedSources = computed(() => (Object.keys(this.errorMap()) as FinanceSource[]).map((source) => SOURCE_NAMES[source]));
+  /** Reconciliation must not use retained data when one of its required sources failed to refresh. */
+  sourceErrors(sources: readonly FinanceSource[]): string[] {
+    const errors = this.errorMap();
+    return [...new Set(sources)].map(source => errors[source]).filter((message): message is string => !!message);
+  }
   private readonly requests: Record<FinanceSource, number> = {
     bankAccounts: 0, costs: 0, recurring: 0, balances: 0, orders: 0, customers: 0, payments: 0, attachments: 0, incoming: 0, statements: 0, containers: 0, parties: 0, fairs: 0, countries: 0, company: 0,
   };
@@ -885,6 +890,11 @@ export class FinanceState {
   /* ------------------------------------------------------------- costs */
 
   readonly costDraft = signal<CompanyCost | null>(null);
+  /** The existing bank row that opened a new manual cost; never create a second bank movement for it. */
+  readonly costBankTransaction = signal<BankStatementLine | null>(null);
+  /** A lost response must resend the exact original operation, including after closing and reopening its form. */
+  readonly costBankCreatePending = signal<{ requestId: string; line: BankStatementLine; cost: CompanyCost; files: readonly File[] } | null>(null);
+  readonly costBankCreateConflict = signal('');
   /** Files picked before the cost exists (the '+' photo, a drop); they go up after the first save. */
   readonly costFiles = signal<File[]>([]);
   private duplicating = false;
@@ -892,9 +902,43 @@ export class FinanceState {
   /** The cost form; `regime: true` opens it on the Btw-regeling disclosure. */
   openCost(cost: CompanyCost | null, files: readonly File[] = [], options: { regime?: boolean } = {}): void {
     this.duplicating = false;
+    this.costBankTransaction.set(null);
     this.costFiles.set([...files]);
     this.costSheetFocus.set(options.regime ? 'regime' : null);
     this.costDraft.set(cost ? { ...cost } : blankCost(this.today()));
+  }
+
+  /** Starts from known cash facts only; the document must supply its VAT treatment and invoice date. */
+  openCostFromBank(line: BankStatementLine): void {
+    if (this.saving()) return;
+    const current = this.bankStatements().find(row => row.id === line.id) ?? line;
+    const registration = this.costBankCreatePending();
+    if (registration) {
+      if (registration.line.id !== line.id) {
+        this.ui.toast('Bevestig eerst de vorige kostregistratie. Open daarvoor dezelfde banktransactie.', 'err'); return;
+      }
+      this.openCost({ ...registration.cost, paidOn: bankTransactionDay(registration.line) }, registration.files);
+      this.costBankTransaction.set(registration.line);
+      return;
+    }
+    const pending = this.bankCostLinkPending();
+    if (pending) {
+      const cost = this.costs().find(row => row.id === pending.costId);
+      if (cost) this.paySheet.set({ costs: [cost] });
+      this.ui.toast('Rond eerst de bewaarde kost en haar bankkoppeling af. Er wordt geen tweede kost aangemaakt.', 'err');
+      return;
+    }
+    if (!Number.isFinite(current.amountEur) || current.amountEur >= 0 || current.allocated || current.salesPaymentId != null || this.archivedBankLine(current)) {
+      this.ui.toast('Kies een vrije uitgaande transactie van een actieve bankrekening.', 'err');
+      return;
+    }
+    const day = bankTransactionDay(current), gross = -current.amountEur;
+    const party = (current.counterparty ?? '').trim();
+    this.openCost({ ...blankCost(day), date: day, paidOn: day, description: party.slice(0, 300), party: party.slice(0, 200) || null,
+      reference: (current.reference ?? '').slice(0, 100) || null, amountExclEur: gross, amountInclEur: gross,
+      vatPct: null, vatRegime: null, vatRegimeConfirmed: false, supplierCountry: null,
+      costKind: null, expenseType: null, vatDeductiblePct: null, taxDeductiblePct: null }, [], { regime: true });
+    this.costBankTransaction.set(current);
   }
 
   /** A copy dated today, open, not tied to a recurring definition; its documents and payments stay with the original. */
@@ -913,6 +957,14 @@ export class FinanceState {
    */
   async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null; bankTransaction?: BankStatementLine | null } = {}): Promise<CompanyCost | null> {
     if (this.saving()) return null;
+    if (!draft.id && options.bankTransaction) return this.createCostFromBank(draft, options.bankTransaction);
+    const pending = this.bankCostLinkPending();
+    if (options.bankTransaction && pending) {
+      const cost = this.costs().find(row => row.id === pending.costId);
+      if (cost) this.paySheet.set({ costs: [cost] });
+      this.ui.toast('De kost is al bewaard. Probeer de openstaande bankkoppeling opnieuw; maak geen nieuwe kost.', 'err');
+      return null;
+    }
     if (options.bankTransaction && !bankAmountsMatch(-options.bankTransaction.amountEur, cashTotalOf(draft))) {
       this.ui.toast('Het totaal inclusief btw mag maximaal € 0,02 afwijken van de gekozen banktransactie. Gebruik Betaling noteren voor een deelbetaling.', 'err'); return null;
     }
@@ -920,7 +972,7 @@ export class FinanceState {
     const before = draft.id ? this.costs().find((row) => row.id === draft.id) : null;
     try {
       const body: CompanyCost = { ...draft, ...(options.bankTransaction ? { paidOn: null } : {}), party: draft.party || null, reference: draft.reference || null, notes: draft.notes || null,
-        amountInclEur: Number.isFinite(draft.amountInclEur as number) && (draft.amountInclEur as number) > 0 ? draft.amountInclEur : null };
+        amountInclEur: Number.isFinite(draft.amountInclEur as number) && (draft.amountInclEur as number) !== 0 ? draft.amountInclEur : null };
       const saved = draft.id ? await this.finance.updateCost(draft.id, body) : await this.finance.createCost(body);
       this.costs.update((rows) => (draft.id ? rows.map((row) => (row.id === saved.id ? saved : row)) : [saved, ...rows]));
       const text = this.duplicating && !draft.id ? 'Kost gedupliceerd' : draft.id ? 'Kost bewaard' : 'Kost geboekt';
@@ -960,6 +1012,7 @@ export class FinanceState {
         }
       }
       this.costDraft.set(null);
+      this.costBankTransaction.set(null);
       /* The server learned the name; the Aan wie list follows. */
       if (saved.party) void this.reload(['parties']);
       return saved;
@@ -969,6 +1022,61 @@ export class FinanceState {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  private async createCostFromBank(draft: CompanyCost, line: BankStatementLine): Promise<CompanyCost | null> {
+    if (line.amountEur >= 0 || !bankAmountsMatch(-line.amountEur, cashTotalOf(draft))) {
+      this.ui.toast('Kies een uitgaande banktransactie die maximaal € 0,02 van het factuurtotaal verschilt.', 'err'); return null;
+    }
+    const cost: CompanyCost = { ...draft, id: null, paidOn: null, party: draft.party || null,
+      reference: draft.reference || null, notes: draft.notes || null,
+      amountInclEur: Number.isFinite(draft.amountInclEur as number) && draft.amountInclEur !== 0 ? draft.amountInclEur : null };
+    const pending = this.costBankCreatePending();
+    if (pending && (pending.line.id !== line.id || JSON.stringify(pending.cost) !== JSON.stringify(cost))) {
+      this.ui.toast('De vorige registratie is nog niet bevestigd. Open dezelfde banktransactie opnieuw en bevestig de oorspronkelijke gegevens.', 'err'); return null;
+    }
+    const operation = pending ?? { requestId: crypto.randomUUID(), line, cost, files: [...this.costFiles()] };
+    this.costBankCreatePending.set(operation);
+    this.costBankCreateConflict.set('');
+    this.saving.set(true);
+    try {
+      const result = await this.finance.createCostFromBank(line.id, { requestId: operation.requestId, cost: operation.cost });
+      this.costs.update(rows => [result.cost, ...rows.filter(row => row.id !== result.cost.id)]);
+      this.bankStatements.update(rows => [result.line, ...rows.filter(row => row.id !== result.line.id)]);
+      this.costBankCreatePending.set(null); this.costBankTransaction.set(null); this.costDraft.set(null);
+      this.duplicating = false;
+      this.ui.toast('Kost bewaard en banktransactie gekoppeld', 'ok');
+      void this.refreshBank(); void this.refreshCosts();
+      if (result.cost.party) void this.reload(['parties']);
+      return result.cost;
+    } catch (failure: unknown) {
+      const status = failure && typeof failure === 'object' && 'status' in failure ? Number(failure.status) : 0;
+      // A validation rejection precedes every write; uncertain outcomes keep their immutable retry identity.
+      if (status === 400 || status === 422) this.costBankCreatePending.set(null);
+      if (status === 409) this.costBankCreateConflict.set(messageOf(failure, 'Deze banktransactie heeft intussen een andere registratie. Vernieuw de banktransactie om de bestaande koppeling te bekijken.'));
+      this.ui.toast(messageOf(failure, 'De registratie kon niet worden bevestigd. Probeer opnieuw; dezelfde kostregistratie wordt hergebruikt.'), 'err');
+      return null;
+    } finally { this.saving.set(false); }
+  }
+
+  /** A definite conflict may abandon its local draft after a fresh bank read; financial records are never undone. */
+  async reviewCostBankConflict(): Promise<void> {
+    const operation = this.costBankCreatePending();
+    if (!operation || !this.costBankCreateConflict() || this.saving()) return;
+    this.saving.set(true);
+    try {
+      await this.reload(['statements', 'costs', 'incoming', 'orders', 'payments']);
+      const errors = this.sourceErrors(['statements', 'costs']);
+      if (errors.length) { this.ui.toast(errors.join(' · '), 'err'); return; }
+      const line = this.bankStatements().find(row => row.id === operation.line.id);
+      const cost = this.costs().find(row => row.bankStatementLineId === operation.line.id || row.payments?.some(payment => payment.bankStatementLineId === operation.line.id));
+      this.costBankCreatePending.set(null); this.costBankCreateConflict.set('');
+      this.costBankTransaction.set(null); this.costDraft.set(null);
+      this.go({ view: 'bank', tab: 'movements', account: line?.account ?? operation.line.account, q: '', link: '', dir: '', period: 'all', from: '', to: '' });
+      this.ui.toast((line?.allocated || line?.salesPaymentId ? 'De bestaande bankkoppeling is opnieuw geladen.' : 'De banktransactie is opnieuw geladen. Controleer de eerdere registratie.')
+        + (operation.files.length ? ' De gekozen bestanden zijn nog niet geüpload.' : ''), 'ok',
+        cost?.id ? { label: 'Kost bekijken', run: () => this.inspectItem({ kind: 'cost', id: cost.id! }) } : undefined);
+    } finally { this.saving.set(false); }
   }
 
   /** The bank movement that goes with a payment on a cost (its amount and day), or with what is still open on it; the marker finds it back. */
@@ -1028,7 +1136,8 @@ export class FinanceState {
       }
       this.ui.toast(done === 1 ? 'Document bij de kost gezet' : `${done} documenten bij de kost gezet`, 'ok');
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Opladen mislukt'), 'err');
+      this.ui.toast(`${messageOf(failure, 'Opladen mislukt')}. De kost blijft bewaard; voeg de ontbrekende bestanden opnieuw toe.`, 'err',
+        { label: 'Kost bekijken', run: () => this.inspectItem({ kind: 'cost', id: costId }) });
     } finally {
       await this.reloadAttachments();
       this.uploading.set(false);

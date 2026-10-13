@@ -1,0 +1,40 @@
+:host { display: contents; }
+.bank-alloc-movement { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 18px; border-radius: 14px; background: var(--surface-2, #f4f5f7); }
+.bank-alloc-movement > div { display: grid; gap: 4px; min-width: 0; }
+.bank-alloc-movement > div > span, .bank-alloc-movement small { color: var(--muted, #667085); font-size: 12px; }
+.bank-alloc-movement strong { font-size: 16px; overflow-wrap: anywhere; }
+.bank-alloc-movement > b { font-size: 22px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bank-alloc-movement p { flex: 1 1 100%; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.bank-alloc-tabs { display: flex; gap: 4px; padding: 4px; margin: 18px 0 14px; border: 1px solid var(--line, #dde1e6); border-radius: 12px; }
+.bank-alloc-tabs button { flex: 1; border: 0; background: transparent; border-radius: 8px; padding: 11px 8px; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.bank-alloc-tabs button[aria-pressed=true] { background: var(--rose-soft, #f7eef1); color: var(--rose-dark, #64253a); font-weight: 650; }
+.bank-alloc-tabs button:focus-visible, .bank-alloc-document:focus-visible { outline: 2px solid var(--rose-dark, #64253a); outline-offset: -2px; }
+.bank-alloc-search { display: grid; gap: 6px; margin: 14px 0; font-size: 12px; }
+.bank-alloc-list { max-height: min(330px, 39vh); overflow-y: auto; overscroll-behavior: contain; margin: 12px 0; border: 1px solid var(--line, #dde1e6); border-radius: 12px; }
+.bank-alloc-list > .fin-hint { padding: 12px; }
+.bank-alloc-document { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%; background: transparent; color: inherit; border: 0; border-bottom: 1px solid var(--line, #e4e7eb); padding: 13px 15px; text-align: left; cursor: pointer; }
+.bank-alloc-document:last-child { border-bottom: 0; }
+.bank-alloc-document[aria-pressed=true] { background: var(--rose-soft, #f7eef1); box-shadow: inset 3px 0 var(--rose-dark, #64253a); }
+.bank-alloc-document__identity, .bank-alloc-document__amount { display: grid; gap: 4px; min-width: 0; }
+.bank-alloc-document__identity { flex: 1; }
+.bank-alloc-document__identity b, .bank-alloc-document__identity span { overflow-wrap: anywhere; font-size: 13px; }
+.bank-alloc-document small { font-size: 11px; color: var(--muted, #667085); }
+.bank-alloc-document__amount { flex-shrink: 0; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bank-alloc-preview { border: 1px solid var(--line, #dde1e6); border-radius: 12px; padding: 16px; margin: 16px 0 0; }
+.bank-alloc-preview__title { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.bank-alloc-preview h3 { margin: 3px 0; font-size: 16px; }
+.bank-alloc-preview h4 { margin: 16px 0 8px; font-size: 13px; }
+.bank-alloc-preview__title p { margin: 0; font-size: 12px; color: var(--muted, #667085); overflow-wrap: anywhere; }
+.bank-alloc-preview__title small { color: var(--muted, #667085); font-size: 11px; }
+.bank-alloc-amounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; margin: 16px 0 8px; font-size: 13px; }
+.bank-alloc-amounts div { display: flex; gap: 12px; justify-content: space-between; }
+.bank-alloc-amounts dt { color: var(--muted, #667085); }
+.bank-alloc-amounts dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bank-alloc-purchase-fields { display: grid; grid-template-columns: 110px 1fr; gap: 12px; margin: 14px 0; }
+.bank-alloc-purchase-fields label { display: grid; gap: 5px; font-size: 12px; }
+.bank-alloc-create { display: flex; align-items: center; gap: 18px; justify-content: space-between; padding: 15px; margin: 14px 0 22px; border: 1px solid var(--line, #dde1e6); border-radius: 12px; }
+.bank-alloc-create p { font-size: 12px; color: var(--muted, #667085); margin: 5px 0 0; }
+.bank-alloc-create button { flex-shrink: 0; }
+@media (max-width: 600px) { .bank-alloc-amounts { grid-template-columns: 1fr; }.bank-alloc-tabs button { padding: 10px 4px; font-size: 12px; }.bank-alloc-create { align-items: flex-start; flex-direction: column; }.bank-alloc-document { padding: 12px; gap: 10px; }.bank-alloc-movement { padding: 14px; } }
+
+.bank-alloc-purchase-docs { display: grid; justify-items: start; gap: 7px; margin: 14px 0; font-size: 12px; overflow-wrap: anywhere; }

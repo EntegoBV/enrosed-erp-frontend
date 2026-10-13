@@ -40,9 +40,9 @@ test('six sections, five of them on the phone tab bar, in groups', () => {
   assert.deepEqual(FINANCE_SECTIONS.map((section) => section.id), ['overview', 'open', 'incoming', 'bank', 'costs', 'analysis']);
   assert.equal(FINANCE_SECTIONS.filter((section) => section.phoneTab).length, 5);
   assert.deepEqual(FINANCE_SECTIONS.filter((section) => section.phoneTab).map((section) => section.short),
-    ['Overzicht', 'Betalen', 'Ontvangen', 'Bank', 'Uitgaven']);
+    ['Overzicht', 'Betalen', 'Ontvangen', 'Bank', 'Kosten']);
   assert.deepEqual([...new Set(FINANCE_SECTIONS.map((section) => section.group))], ['Vandaag', 'Geld', 'Boekhouding']);
-  assert.equal(financeSection('bank').label, 'Bank');
+  assert.equal(financeSection('bank').label, 'Bankrekeningen');
   assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Cont.', 'Vast', 'Lijsten']);
   assert.deepEqual(FINANCE_TABS.analysis.map((tab) => [tab.id, tab.label, tab.short]), [['costs', 'Kosten', 'Kosten'], ['vat', 'Btw-aangifte', 'Btw']]);
   assert.equal(financeSection('analysis').hint, 'Per categorie, per maand, de btw-aangifte');

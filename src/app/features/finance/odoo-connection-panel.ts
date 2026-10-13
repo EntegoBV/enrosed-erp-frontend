@@ -15,32 +15,23 @@ import { FinanceState } from './finance-state';
   template: `
     <section class="odoo-card" aria-labelledby="odoo-title" [attr.aria-busy]="loading() || checking() || syncing()">
       <div class="odoo-head">
-        <span class="odoo-icon"><app-icon name="exchange" [size]="21" /></span>
-        <div class="odoo-heading"><h2 id="odoo-title">Odoo-verbinding</h2><p>Banktransacties en facturen in ENROSED</p></div>
-        @if (!loading()) {
-          <span class="odoo-badge" [class.odoo-badge--muted]="!ready()">{{ connectionLabel() }}</span>
-        }
-      </div>
-      @if (loading()) {
-        <div class="odoo-loading" aria-label="Odoo-verbinding controleren"><app-skeleton kind="lines" [rows]="2" /></div>
-      } @else {
-        <p class="odoo-description">{{ description() }}</p>
-        @if (status()?.companyName; as company) { <p class="odoo-meta">{{ company }}</p> }
-        <div class="odoo-actions">
-          <button class="odoo-button odoo-button--primary" type="button" [disabled]="!ready() || busy()" (click)="syncBank()">
-            <app-icon name="download" [size]="16" />{{ syncing() ? 'Banktransacties ophalen…' : 'Banktransacties ophalen' }}
-          </button>
-          <button class="odoo-button" type="button" [disabled]="busy()" (click)="checkConnection()">
-            {{ checking() ? 'Verbinding controleren…' : ready() ? 'Verbinding controleren' : 'Status vernieuwen' }}
-          </button>
+        <span class="odoo-icon"><app-icon name="exchange" [size]="18" /></span>
+        <div class="odoo-heading"><h2 id="odoo-title">Bankverbinding via Odoo</h2><p>{{ loading() ? 'Verbinding controleren…' : ready() ? 'Laatste import: ' + (status()?.lastSyncAt ? moment(status()!.lastSyncAt!) : 'nog niet uitgevoerd') : connectionLabel() }}</p></div>
+        <div class="odoo-head-actions">
+          @if (ready()) { <button class="odoo-button" type="button" [disabled]="busy()" (click)="syncBank()"><app-icon name="refresh" [size]="15" />{{ syncing() ? 'Ophalen…' : 'Transacties ophalen' }}</button> }
+          <button class="odoo-button odoo-button--details" type="button" [attr.aria-expanded]="detailsOpen()" aria-controls="odoo-connection-details" (click)="detailsOpen.set(!detailsOpen())">Details <app-icon [name]="detailsOpen() ? 'chevron-up' : 'chevron-down'" [size]="14" /></button>
         </div>
-        <div class="odoo-sync-meta">
-          <span>Laatste import: <b>{{ status()?.lastSyncAt ? moment(status()!.lastSyncAt!) : 'nog niet uitgevoerd' }}</b></span>
-          @if (status()?.lastCheckAt; as checkedAt) { <span>Verbinding gecontroleerd {{ moment(checkedAt) }}</span> }
+      </div>
+      @if (detailsOpen()) {
+        <div id="odoo-connection-details">
+          <p class="odoo-description">{{ description() }}</p>
+          @if (status()?.companyName; as company) { <p class="odoo-meta">{{ company }}</p> }
+          <div class="odoo-actions"><button class="odoo-button" type="button" [disabled]="busy()" (click)="checkConnection()">{{ checking() ? 'Verbinding controleren…' : 'Verbinding controleren' }}</button></div>
+          <div class="odoo-sync-meta">@if (status()?.lastCheckAt; as checkedAt) { <span>Verbinding gecontroleerd {{ moment(checkedAt) }}</span> }</div>
         </div>
       }
       @if (error()) { <p class="odoo-notice odoo-notice--error" role="alert">{{ error() }}</p> }
-      @if (syncResult(); as result) {
+      @if (visibleSyncResult(); as result) {
         <div class="odoo-notice" [class.odoo-notice--warning]="!result.complete || result.conflicts > 0 || result.skippedNonEur > 0" role="status">
           <strong>{{ result.complete ? 'Import afgerond' : 'Import nog niet volledig' }}</strong>
           <span>{{ result.created }} nieuw · {{ result.updated }} bijgewerkt · {{ result.unchanged }} ongewijzigd</span>
@@ -49,6 +40,7 @@ import { FinanceState } from './finance-state';
           @if (result.skippedNonEur) { <span>{{ result.skippedNonEur }} {{ result.skippedNonEur === 1 ? 'beweging in een andere munt is' : 'bewegingen in een andere munt zijn' }} niet overgenomen.</span> }
         </div>
       }
+      @if (detailsOpen()) {
       <div class="odoo-documents">
         <button class="odoo-disclosure" type="button" [attr.aria-expanded]="documentsOpen()" aria-controls="odoo-documents" (click)="toggleDocuments()">
           <app-icon name="document" [size]="18" /><span>Facturen uit Odoo<small>Inkomend, uitgaand en Peppol-statussen</small></span>
@@ -102,15 +94,18 @@ import { FinanceState } from './finance-state';
           </div>
         }
       </div>
+      }
     </section>
   `,
   styles: [`
     :host { display: block; margin-bottom: 22px; min-width: 0; }
-    .odoo-card { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; color: var(--ink); }
-    .odoo-head { display: flex; align-items: center; gap: 11px; padding: 18px 18px 0; }
-    .odoo-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 12px; color: var(--rose-dark); background: var(--rose-soft); }
+    .odoo-card { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; color: var(--ink); }
+    .odoo-head { display: flex; align-items: center; gap: 11px; padding: 13px 16px; }
+    .odoo-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 12px; color: var(--rose-dark); background: var(--rose-soft); }
+    .odoo-head-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .odoo-button--details { border-color: transparent; }
     .odoo-heading { flex: 1; min-width: 0; }
-    h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    h2 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
     .odoo-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
     .odoo-badge { padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; color: var(--rose-dark); background: var(--rose-soft); white-space: nowrap; }
     .odoo-badge--muted { color: var(--muted); background: var(--surface-2); }
@@ -155,7 +150,9 @@ import { FinanceState } from './finance-state';
     .odoo-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
     @media (max-width: 679px) {
       :host { margin: 0 0 20px; }
-      .odoo-head { padding: 16px 14px 0; gap: 9px; flex-wrap: wrap; }
+      .odoo-head { padding: 12px; gap: 9px; flex-wrap: wrap; }
+      .odoo-head-actions { width: 100%; margin-left: 44px; }
+      .odoo-head-actions .odoo-button { min-height: 36px; }
       .odoo-heading p { font-size: 11px; }
       .odoo-icon { width: 35px; height: 35px; }
       .odoo-badge { margin-left: 44px; margin-top: -3px; }
@@ -180,12 +177,17 @@ export class OdooConnectionPanel {
   private readonly api = inject(OdooApi);
   private readonly finance = inject(FinanceState);
   private readonly destroyRef = inject(DestroyRef);
+  readonly detailsOpen = signal(false);
   readonly status = signal<OdooConnectionStatus | null>(null);
   readonly loading = signal(true);
   readonly checking = signal(false);
   readonly syncing = signal(false);
   readonly error = signal('');
   readonly syncResult = signal<OdooBankSyncResult | null>(null);
+  readonly visibleSyncResult = computed(() => {
+    const result = this.syncResult();
+    return result && (this.detailsOpen() || !result.complete || result.conflicts > 0 || result.skippedNonEur > 0) ? result : null;
+  });
   readonly ready = computed(() => !!this.status()?.enabled && !!this.status()?.configured);
   readonly busy = computed(() => this.loading() || this.checking() || this.syncing());
   readonly connectionLabel = computed(() => {
@@ -255,9 +257,11 @@ export class OdooConnectionPanel {
     this.syncResult.set(null);
     try {
       const result = await this.api.syncBank();
+      // Account navigation can replace this component while the import is in flight.
+      // Its successful import still needs to refresh the shared bank register.
+      await this.finance.refreshBank();
       if (this.destroyRef.destroyed) return;
       this.syncResult.set(result);
-      await this.finance.refreshBank();
       // The last import time comes from the server, never the browser's clock.
       const status = await this.api.status();
       if (!this.destroyRef.destroyed) this.status.set(status);

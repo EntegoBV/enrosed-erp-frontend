@@ -44,6 +44,15 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
   template: `
     <app-sheet variant="ios" [title]="draft().id ? 'Kost bewerken' : 'Kost boeken'" [wide]="true" (closed)="close()">
       <div body class="fin-sheet fin-form">
+        @if (bankCreatePending()) {
+          @if (state.costBankCreateConflict(); as conflict) {
+            <p class="fin-error fin-field--wide" role="alert">{{ conflict }} <button class="fin-inline-btn" type="button" [disabled]="state.saving()" (click)="state.reviewCostBankConflict()">Banktransactie vernieuwen en bekijken</button></p>
+          } @else { <p class="fin-hint fin-field--wide" role="status">De vorige registratie is nog niet bevestigd. Bevestig hieronder opnieuw met dezelfde gegevens; er wordt geen tweede kost aangemaakt.</p> }
+        }
+        <fieldset [disabled]="bankCreatePending()" style="display:contents" aria-label="Kostgegevens">
+        @if (bankOrigin(); as bank) {
+          <p class="fin-hint fin-field--wide">Nieuwe kost bij {{ bank.amountEur | eur }} op {{ state.accountLabel(bank.account) }}. Datum en mededeling zijn overgenomen van de bank: controleer de factuurdatum en het factuurnummer. Kies de btw-regeling en het percentage volgens je factuur of bon.</p>
+        }
         @if (pendingNote(); as note) { <p class="fin-hint fin-field--wide">{{ note }}</p> }
         @if (draft().recurringCostId) {
           <p class="fin-hint fin-field--wide">Automatisch geboekt als vaste kost. Deze boeking mag je hier corrigeren; pas de vaste kost zelf aan om de volgende periodes te veranderen.</p>
@@ -66,9 +75,13 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
         <div class="fin-group" [class.ios-group]="!state.desk()">
           @if (vatShown() && (!sourceLocked() || reverseCharge())) {
             <div class="fin-field fin-field--wide fin-field--stack"><span>Btw</span>
-              <app-vat-choice [value]="draft().vatPct" (changed)="setVat($event)" />
+              @if (bankOrigin()) {
+                <input class="input" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="Kies het percentage" aria-label="Btw-percentage volgens factuur"
+                  [ngModel]="draft().vatPct" (ngModelChange)="setVat($event === null || $event === '' ? null : +$event)" />
+              } @else { <app-vat-choice [value]="draft().vatPct" (changed)="setVat($event)" /> }
               <span class="fin-hint">
-                @if (reverseCharge()) { btw verlegd {{ draft().vatPct ?? 0 }} % · <b>{{ vatOf(draft()) | eur }}</b> · niet aan de leverancier, wel in de aangifte }
+                @if (bankOrigin() && draft().vatPct == null) { Het bankbedrag bevat geen btw-informatie. Neem het percentage over van je factuur. }
+                @else if (reverseCharge()) { btw verlegd {{ draft().vatPct ?? 0 }} % · <b>{{ vatOf(draft()) | eur }}</b> · niet aan de leverancier, wel in de aangifte }
                 @else if (foreignVat()) { Buitenlandse btw <b>{{ vatOf(draft()) | eur }}</b> · niet aftrekbaar · telt als kost }
                 @else if (mode() === 'incl') { Excl. btw: <b>{{ draft().amountExclEur | eur }}</b> · btw <b>{{ vatOf(draft()) | eur }}</b> }
                 @else { Incl. btw: <b>{{ cashTotalOf(draft()) | eur }}</b> }
@@ -211,12 +224,13 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
         @if (draft().id && !state.desk()) {
           <div class="ios-group fin-field--wide"><button class="ios-cell ios-cell--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button></div>
         }
+        </fieldset>
       </div>
       <div foot style="display:contents">
         @if (draft().id && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button> }
         @if (regimeProblem(); as problem) { <span class="fin-foot-note">{{ problem }}</span> }
         <span class="spacer"></span>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem() || (bankCreatePending() && !!state.costBankCreateConflict())" (click)="save()">{{ state.saving() ? 'Bezig…' : bankCreatePending() ? 'Registratie bevestigen' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -307,7 +321,13 @@ export class CostSheet {
   readonly derivedHint = signal('');
   /** The regime was picked or confirmed by hand: no name or category prefills it any more, also when it reads like the blank default again. */
   private regimeTouched = false;
-  readonly regimeProblem = computed(() => regimeProblem(this.draft()));
+  readonly regimeProblem = computed(() => {
+    const draft = this.draft(), problem = regimeProblem(draft);
+    if (problem) return problem;
+    if (this.bankOrigin() && !draft.vatRegimeConfirmed) return 'Controleer en bevestig de btw-regeling van je factuur of bon';
+    if (this.bankOrigin() && this.vatShown() && draft.vatPct == null) return 'Kies het btw-percentage volgens je factuur';
+    return null;
+  });
 
   /* channels and fairs: the select lists both, the chips only the fairs */
   readonly channels = computed(() => this.state.channelChoices().filter((channel) => channel.hint !== 'Beurs'));
@@ -366,8 +386,10 @@ export class CostSheet {
   private readonly preference = this.state.payToBank();
   readonly before = computed(() => (this.draft().id ? this.state.costs().find((row) => row.id === this.draft().id) ?? null : null));
   readonly becomingPaid = computed(() => !!this.draft().paidOn && !this.payments().length && (!this.draft().id || !this.before()?.paidOn));
-  readonly selectedBank = signal<BankStatementLine | null>(null);
-  readonly toBank = signal(this.preference.on);
+  readonly bankOrigin = this.state.costBankTransaction;
+  readonly selectedBank = signal<BankStatementLine | null>(this.bankOrigin());
+  readonly bankCreatePending = computed(() => !this.draft().id && this.state.costBankCreatePending()?.line.id === this.selectedBank()?.id && !!this.state.costBankCreatePending());
+  readonly toBank = signal(this.bankOrigin() ? false : this.preference.on);
   /** The remembered account, or the only one, as soon as the accounts are in. */
   readonly account = linkedSignal(() => {
     const options = this.state.manualAccountOptions();
@@ -445,6 +467,11 @@ export class CostSheet {
     const draft = this.draft();
     const next = fitAmountToRegime({ amountExclEur: draft.amountExclEur, amountInclEur: draft.amountInclEur ?? null, vatPct: draft.vatPct, mode: this.mode(), typedIncl: this.typedIncl, totalKept: this.totalKept },
       kindOf(regime), before ? kindOf(before) : null);
+    // A bank statement proves the gross amount, never a VAT rate. Keep that choice explicit.
+    if (this.bankOrigin() && draft.vatPct == null && (kindOf(regime) === 'invoice' || kindOf(regime) === 'reverse')) {
+      next.vatPct = null;
+      if (next.mode === 'incl' && next.amountInclEur != null) next.amountExclEur = next.amountInclEur;
+    }
     this.patch({ amountExclEur: next.amountExclEur, amountInclEur: next.amountInclEur, vatPct: next.vatPct });
     this.mode.set(next.mode);
     this.typedIncl = next.typedIncl;
@@ -572,7 +599,8 @@ export class CostSheet {
   }
 
   close(): void {
-    this.state.costFiles.set([]);
+    if (!this.bankCreatePending()) this.state.costFiles.set([]);
+    this.state.costBankTransaction.set(null);
     this.state.costDraft.set(null);
   }
 
@@ -620,10 +648,11 @@ export class CostSheet {
     this.tried.set(true);
     if (!this.canSave()) return;
     const files = this.pending();
+    this.state.costFiles.set([...files]);
     /* The switch was on screen: remember its state either way, then book, and note the line when it was on. */
     const bank = this.becomingPaid() ? this.selectedBank() : null;
     const toBank = this.becomingPaid() && !bank && this.toBank();
-    if (this.becomingPaid()) this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
+    if (this.becomingPaid() && !bank && !this.bankOrigin()) this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
     const saved = await this.state.saveCost({ ...this.draft(), ...(bank ? { paidOn: bankTransactionDay(bank) } : {}) }, { bankAccountKey: toBank ? this.account() || null : null, bankTransaction: bank });
     if (saved?.id && files.length) void this.state.attach(saved.id, files);
     if (saved) this.state.costFiles.set([]);

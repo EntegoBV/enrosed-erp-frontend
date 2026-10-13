@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import type { OdooDocument } from './odoo-api';
+import type { BankStatementLine } from './banking-api';
 import { BankBalance, CompanyCost, CostParty, CostPayment, Fair, RecurringCost } from './models';
 
 export interface CostOdooSource {
@@ -29,6 +30,11 @@ export class FinanceApi {
 
   createCost(cost: CompanyCost): Promise<CompanyCost> {
     return firstValueFrom(this.http.post<CompanyCost>(api('/api/costs'), cost));
+  }
+
+  /** One retriable operation for a new document, its payment and the existing bank row. */
+  createCostFromBank(id: number, body: { requestId: string; cost: CompanyCost }): Promise<{ line: BankStatementLine; cost: CompanyCost }> {
+    return firstValueFrom(this.http.post<{ line: BankStatementLine; cost: CompanyCost }>(api(`/api/bank-statements/${id}/cost-registration`), body));
   }
 
   updateCost(id: number, cost: CompanyCost): Promise<CompanyCost> {

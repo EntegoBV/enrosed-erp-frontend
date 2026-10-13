@@ -37,7 +37,6 @@ import { FinancePeriod } from './finance-url';
       }
       @case ('bank/movements') {
         <app-segmented label="Richting" [options]="movementOptions()" [value]="movementValue()" (changed)="pickMovement($event)" />
-        <button class="wk-btn wk-btn--sm" type="button" (click)="accountMenu($event)">{{ location.account ? state.accountLabel(location.account) : 'Alle rekeningen' }} <app-icon name="chevron-down" [size]="14" /></button>
         <ng-container *ngTemplateOutlet="range" />
       }
       @case ('costs/company') {
@@ -102,8 +101,9 @@ export class FinanceFilters {
   ];
 
   readonly movementOptions = computed<SegmentOption[]>(() => {
-    const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line) && !line.allocated && line.salesPaymentId === null).length;
-    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Binnen' }, { id: 'out', label: 'Buiten' },
+    const account = this.state.canonicalAccount(this.state.location().account);
+    const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && this.state.canonicalAccount(line.account) === account && !line.allocated && line.salesPaymentId === null).length;
+    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Inkomend' }, { id: 'out', label: 'Uitgaand' },
       { id: 'unlinked', label: 'Te koppelen', count: unlinked || null, dot: unlinked ? 'warn' : null }];
   });
   readonly movementValue = computed(() => {

@@ -111,8 +111,8 @@ const STALE_MS = 5 * 60_000;
       }
     } @else {
       <div class="ios-page fin-ios">
-        <app-ios-nav [title]="current().label" [backLabel]="subScreen() ? '' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="subScreen() ? 'Terug' : 'Terug naar ' + ret.label()" (back)="state.leaveAnalysis()">
+        <app-ios-nav [title]="pageTitle()" [backLabel]="subScreen() ? '' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
+                     [backAriaLabel]="subScreen() ? 'Terug' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
           <button trail class="ios-circle" type="button" aria-label="Meer" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <div below class="ios-subbar" [hidden]="!phoneSegments().length">
             @if (phoneSegments().length) {
@@ -203,17 +203,24 @@ export class CostsPage {
   readonly readView = computed(() => ['overview', 'analysis'].includes(this.state.location().view));
   readonly hasFilters = computed(() => {
     const { view, tab } = this.state.location();
-    return view === 'incoming' || view === 'analysis' || (view === 'bank' && tab === 'movements') || (view === 'costs' && tab !== 'recurring');
+    return view === 'incoming' || view === 'analysis' || (view === 'costs' && tab !== 'recurring');
   });
   readonly createMenu = viewChild(FinanceCreateMenu);
   readonly dropping = signal(false);
 
   /** Analyse is the phone's one sub-screen: pushed from Overzicht or ⋯, with a back chevron instead of '‹ App'. */
-  readonly subScreen = computed(() => this.state.location().view === 'analysis');
+  readonly bankDetail = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements' && !!this.state.location().account);
+  readonly pageTitle = computed(() => this.bankDetail() ? this.state.accountLabel(this.state.location().account) : this.current().label);
+  readonly subScreen = computed(() => this.state.location().view === 'analysis' || this.bankDetail());
+  backFromSection(): void {
+    if (this.bankDetail()) this.state.go({ tab: 'accounts' }, 'push');
+    else this.state.leaveAnalysis();
+  }
 
   /** The phone's sticky segmented control: the section's segments (Analyse: Kosten · Btw; its year is a chip row in the panel). */
   readonly phoneSegments = computed<SegmentOption[]>(() => {
     const view = this.state.location().view;
+    if (view === 'bank') return [];
     /* The segment behind a tab badge carries a dot, so the badge leads somewhere visible. */
     return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.short, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
   });
@@ -261,7 +268,7 @@ export class CostsPage {
       });
     });
 
-    effect(() => this.title.setTitle(`Kosten & bank · ${this.current().label}`));
+    effect(() => this.title.setTitle(`Kosten & bank · ${this.pageTitle()}`));
 
     /*
      * On costs/company, a cost that arrives by ?cost=<id> outside the period
@@ -294,7 +301,7 @@ export class CostsPage {
       title: 'Kosten & bank', anchor: null, cancelLabel: 'Annuleren',
       items: [
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
-        { id: 'analysis', label: 'Analyse', iconName: 'analytics' },
+        { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
         { id: 'csv', label: 'Exporteer CSV', iconName: 'download' },
         { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },

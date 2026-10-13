@@ -45,7 +45,8 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
         </div>
       } @else {
         <div class="wk-toolbar__lead">
-          <h1 class="wk-toolbar__title fin-toolbar__title" [class.fin-sr]="tight()">{{ title() }}</h1>
+          @if (bankDetail()) { <button class="wk-btn wk-btn--ghost wk-btn--sm fin-bank-back" type="button" aria-label="Terug naar alle rekeningen" (click)="state.go({ tab: 'accounts' }, 'push')"><app-icon name="chevron-left" [size]="16" /><span>Rekeningen</span></button> }
+          <h1 class="wk-toolbar__title fin-toolbar__title" [class.fin-sr]="tight() && !bankDetail()">{{ title() }}</h1>
           @if (segments().length) {
             <app-segmented label="Onderdeel" semantics="tabs" controls="finance-pane" [options]="segments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
           }
@@ -86,7 +87,9 @@ export class FinanceToolbar {
   readonly compact = computed(() => this.width() > 0 && this.width() < 980);
   readonly tight = computed(() => this.width() > 0 && this.width() < 900);
 
-  readonly title = computed(() => financeSection(this.state.location().view).label);
+  readonly bankDetail = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements' && !!this.state.location().account);
+  readonly title = computed(() => this.bankDetail() ? this.state.accountLabel(this.state.location().account) : financeSection(this.state.location().view).label);
+  readonly canNoteMovement = computed(() => !this.bankDetail() || this.state.manualAccountAllowed(this.state.location().account));
   readonly selected = computed(() => this.section()?.selectedCosts?.() ?? []);
   readonly selecting = computed(() => !!this.section()?.selecting?.() && this.selected().length > 0);
   /** What leaves the bank for the selection, whatever the regime. */
@@ -97,6 +100,7 @@ export class FinanceToolbar {
   /** Counts on Te betalen; a warn dot (and its count) where a sidebar badge points: Vaste kosten due, lines to link. */
   readonly segments = computed<SegmentOption[]>(() => {
     const { view } = this.state.location();
+    if (view === 'bank') return [];
     const compact = this.compact();
     const counts = view === 'open' && !compact ? this.payableCounts() : null;
     return FINANCE_TABS[view].map((tab) => {
@@ -115,17 +119,17 @@ export class FinanceToolbar {
 
   readonly searchable = computed(() => {
     const { view, tab } = this.state.location();
-    return view === 'open' || view === 'incoming' || (view === 'bank' && tab === 'movements') || (view === 'costs' && tab !== 'recurring');
+    return view === 'open' || view === 'incoming' || this.bankDetail() || (view === 'costs' && tab !== 'recurring');
   });
 
   /** What 'Nieuw' does without opening its menu, per section. */
   readonly primary = computed<{ kind: CreateKind; label: string }>(() => {
     const { view, tab } = this.state.location();
-    if (view === 'incoming' || (view === 'bank' && tab === 'movements')) return { kind: 'movement', label: 'Bankbeweging noteren' };
-    if (view === 'bank') return { kind: 'balance', label: 'Saldo invullen' };
+    if (this.bankDetail()) return { kind: 'cost', label: 'Factuur toevoegen' };
+    if (view === 'bank') return { kind: 'balance', label: 'Rekening toevoegen' };
     if (view === 'costs' && tab === 'recurring') return { kind: 'recurring', label: 'Vaste kost instellen' };
     if (view === 'costs' && tab === 'lists') return { kind: 'party', label: 'Aan wie toevoegen' };
-    return { kind: 'cost', label: 'Kost boeken' };
+    return { kind: 'cost', label: 'Factuur of kost toevoegen' };
   });
 
   readonly refreshTitle = computed(() => {
@@ -190,10 +194,10 @@ export class FinanceToolbar {
     const { view, tab } = this.state.location();
     const items: ContextMenuItem[] = [
       ...(view === 'costs' && tab === 'lists' ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
-      { id: 'cost', label: 'Kost boeken', hint: 'N', iconName: 'receipt' },
+      { id: 'cost', label: 'Factuur of kost toevoegen', hint: 'N', iconName: 'receipt' },
       { id: 'cost-file', label: 'Kost met document…', iconName: 'clip' },
-      { id: 'movement', label: 'Bankbeweging noteren', hint: 'B', iconName: 'bank' },
-      { id: 'balance', label: 'Saldo invullen', iconName: 'pencil' },
+      ...(this.canNoteMovement() ? [{ id: 'movement', label: 'Handmatige banktransactie', hint: 'B', iconName: 'bank' }] : []),
+      { id: 'balance', label: 'Rekening of saldocontrole toevoegen', iconName: 'bank' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },
     ];
     this.state.openMenu({ title: 'Nieuw', items, anchor: this.anchorOf(event), pick: (id) => this.create(id as CreateKind) });

@@ -58,7 +58,7 @@ import type { PartyCandidate } from './party-suggestions';
             <label class="fin-field"><span>Mededeling</span>
               <input class="input" maxlength="500" placeholder="Bijvoorbeeld het factuurnummer" [value]="draft.reference" (input)="patch({ reference: $any($event.target).value })" (keydown.enter)="save()" /></label>
           </div>
-          <p class="fin-hint">Rekeningen via Odoo gebruiken uitsluitend opgehaalde banktransacties. Koppel die via Bank → Bewegingen.</p>
+          <p class="fin-hint">Rekeningen via Odoo gebruiken uitsluitend opgehaalde banktransacties. Open de rekening onder Bankrekeningen om deze transacties te koppelen.</p>
           <p class="fin-hint">Tijdzone · {{ draft.timeZone }}</p>
           @if (state.movementError()) { <p class="fin-error" role="alert">{{ state.movementError() }}</p> }
         </div>

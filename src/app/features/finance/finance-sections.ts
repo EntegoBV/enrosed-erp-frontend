@@ -28,9 +28,9 @@ export const FINANCE_SECTIONS: readonly FinanceSection[] = [
   { id: 'overview', label: 'Overzicht', short: 'Overzicht', group: 'Vandaag', icon: 'home', hint: 'Hoe staan we ervoor en wat vraagt mij nu?', phoneTab: true },
   { id: 'open', label: 'Te betalen', short: 'Betalen', group: 'Geld', icon: 'arrow-out', hint: 'Wat moet er nog betaald worden?', phoneTab: true },
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true },
-  { id: 'bank', label: 'Bank', short: 'Bank', group: 'Geld', icon: 'bank', hint: 'Klopt mijn banksaldo?', phoneTab: true },
-  { id: 'costs', label: 'Uitgaven', short: 'Uitgaven', group: 'Boekhouding', icon: 'receipt', hint: 'Waaraan geven we geld uit?', phoneTab: true },
-  { id: 'analysis', label: 'Analyse', short: 'Analyse', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
+  { id: 'bank', label: 'Bankrekeningen', short: 'Bank', group: 'Geld', icon: 'bank', hint: 'Rekeningen, transacties en facturen afpunten', phoneTab: true },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true },
+  { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
 ];
 
 export const FINANCE_GROUPS: readonly FinanceGroup[] = ['Vandaag', 'Geld', 'Boekhouding'];
@@ -61,7 +61,7 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
     { id: 'movements', label: 'Bewegingen', short: 'Bewegingen' },
   ],
   costs: [
-    { id: 'company', label: 'Bedrijfskosten', short: 'Kosten' },
+    { id: 'company', label: 'Facturen & kosten', short: 'Kosten' },
     /* Four segments here too: 'Cont.' on a 375px phone. */
     { id: 'containers', label: 'Containers', short: 'Cont.' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },

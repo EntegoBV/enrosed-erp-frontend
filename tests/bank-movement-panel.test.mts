@@ -1,3 +1,8 @@
+import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/features/finance/bank-allocation-targets.ts';
+import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
+import { containerPayables } from '../src/app/features/finance/payables.ts';
+import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
+import { bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -81,12 +86,12 @@ function harness() {
   const loads = { load: 0, refreshBank: 0 };
   const movementDraft = signal<{ accountKey?: string } | null>(null);
   const state = {
-    costs: signal<any[]>([]), payments: signal<any[]>([]),
+    costs: signal<any[]>([]), payments: signal<any[]>([]), purchaseViews: signal<any[]>([]),
     canonicalAccount: (key: string) => bankExports.bankAccountKey!(key),
     archivedBankLine: (_row: BankStatementLine) => false,
     officialBankLine: (row: BankStatementLine) => true,
     accountOptions: () => [],
-    reload: async (_sources: string[]) => {},
+    reload: async (_sources: readonly string[]) => {}, sourceErrors: (_sources: readonly string[]) => [] as string[],
     salesOrders: signal<SalesOrderView[]>([]), incomingPayments: signal<IncomingPaymentRow[]>([]),
     bankStatements: signal<BankStatementLine[]>([]), customers: signal<Customer[]>([]), accounts: signal<string[]>([]),
     load: async () => { loads.load += 1; },
@@ -111,14 +116,16 @@ function harness() {
       return { ...movement(id), salesOrderId, salesPaymentId: existingPaymentId ?? 999, allocationCreatedPayment: existingPaymentId === null };
     },
   };
-  const tokens = { state: Symbol('FinanceState'), api: Symbol('BankingApi'), ui: Symbol('Ui') };
+  const sourcing = { suppliers: async () => [], documents: async (_id: number) => [] };
+  const tokens = { state: Symbol('FinanceState'), api: Symbol('BankingApi'), ui: Symbol('Ui'), sourcing: Symbol('SourcingApi') };
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
-    exports, signal, computed, bankAmountsMatch, bankAmountDifference, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
+    exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
-    FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui,
+    FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
       if (token === tokens.state) return state;
+      if (token === tokens.sourcing) return sourcing;
       if (token === tokens.api) return api;
       if (token === tokens.ui) return ui;
       throw new Error(`Unexpected service injection: ${String(token)}`);
@@ -129,7 +136,7 @@ function harness() {
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
   const panel = new exports.BankMovementPanel();
-  return { panel, state, api, allocationCalls, loads, confirms };
+  return { panel, state, api, sourcing, allocationCalls, loads, confirms };
 }
 
 test('choosing a suggestion clears the manual invoice and allocates the visibly chosen invoice', async () => {
@@ -542,4 +549,119 @@ test('received picker uses the supplier-document direction and actual currency, 
   await panel.loadReceivedInvoices(); assert.equal(panel.receivedLoading(), false); assert.equal(panel.receivedLoaded(), false); assert.match(panel.receivedError(), /offline/);
   (api as any).receivedOdooInvoices = async () => ({ documents: [], hasMore: false }); await panel.loadReceivedInvoices();
   assert.equal(panel.receivedLoaded(), true); assert.equal(panel.receivedError(), '');
+});
+
+
+function localCost(id = 1, gross = 100, open = gross, payments: any[] = []): any {
+  return { id, description: 'Drukwerk', party: 'Drukkerij', date: '2026-10-01', reference: 'PRINT-2026-01', amountExclEur: gross, amountInclEur: gross,
+    vatPct: 0, vatRegime: null, paidOn: open ? null : '2026-10-02', openEur: open, paidEur: gross - open, payments };
+}
+function purchaseView(): any {
+  return { order: { id: 20, number: 'PO-20', alias: 'Zomerrozen', status: 'BESTELD' }, reconciliation: { streams: [{ payee: 'SUPPLIER', status: 'UNPAID', plannedEur: 1200, remainingEur: 1200, paidEur: 0, finalized: false }],
+    supplierInstalments: [{ due: 'ORDERED', label: 'Voorschot', plannedEur: 1200, remainingEur: 1200, paidEur: 0, finalized: false }] } };
+}
+
+test('local ordinary cost is the primary path and a partial bank debit pays only that part without a new bank movement', async () => {
+  const { panel, state, api } = harness(); state.costs.set([localCost()]); const bank = movement(7, -40); await panel.openAllocation(bank);
+  assert.equal(panel.allocationStep(), 'documents'); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localPreview()!.paymentEur, -40); assert.equal(panel.localPreview()!.remainingEur, 60); assert.equal(panel.canLinkLocal(), true);
+  const calls: any[] = []; (api as any).addCostPayment = async (...args: any[]) => { calls.push(args); return { ...bank, allocated: true }; };
+  await panel.linkLocalDocument(); assert.deepEqual(calls, [[7, 1, false]]); assert.equal(state.bankStatements()[0].amountEur, -40); assert.equal(panel.selected(), null);
+});
+
+test('local cost full settlement keeps original amount at two cents, blocks overpay at three and supports signed supplier refunds', async () => {
+  for (const sign of [1, -1]) {
+    const { panel, state } = harness(); state.costs.set([localCost(1, sign * 100)]); await panel.openAllocation(movement(1, -sign * 100.02));
+    panel.chooseLocalDocument(panel.localDocuments()[0]); assert.equal(panel.canLinkLocal(), true);
+    assert.equal(panel.localPreview()!.paymentEur, -sign * 100); assert.equal(panel.localPreview()!.differenceEur, -sign * 0.02);
+    panel.selected.set(movement(1, -sign * 100.03)); assert.equal(panel.canLinkLocal(), false);
+  }
+});
+
+test('possible existing cost payment needs explicit reuse or new-payment confirmation and failed response retries the same pair', async () => {
+  const { panel, state, api } = harness(); state.costs.set([localCost(1, 140, 100, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
+  const bank = movement(7, -40); await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localExistingPayments().length, 1); assert.equal(panel.localPossibleDuplicate(), true); assert.equal(panel.canLinkLocal(), false);
+  panel.reuseLocalPayment(panel.localExistingPayments()[0]); assert.equal(panel.allocationStep(), 'payments'); assert.equal(panel.canLinkOutgoing(), true);
+  panel.setAllocationStep('documents'); panel.localNewConfirmed.set(true); assert.equal(panel.canLinkLocal(), true);
+  const calls: any[] = []; (api as any).addCostPayment = async (...args: any[]) => { calls.push(args); if (calls.length === 1) throw new Error('Response verloren'); return { ...bank, allocated: true }; };
+  await panel.linkLocalDocument(); assert.equal(panel.selected()!.id, 7); await panel.linkLocalDocument();
+  assert.deepEqual(calls, [[7, 1, true], [7, 1, true]]);
+});
+
+test('fully paid local document is visible for reusing its payment and never creates an additional payment', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost(1, 40, 0, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
+  await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localPreview()!.eligible, false); assert.equal(panel.localExistingPayments().length, 1); panel.localNewConfirmed.set(true); assert.equal(panel.canLinkLocal(), false);
+});
+
+test('purchase term keeps expected budget distinct from entered original currency and authoritative bank EUR', async () => {
+  const { panel, state, api } = harness(); state.purchaseViews.set([purchaseView()]); const bank = movement(7, -800);
+  await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]); assert.equal(panel.localDocument()!.estimated, true);
+  panel.changePurchaseCurrency('USD'); assert.equal(panel.purchaseAmountInput(), ''); assert.equal(panel.canLinkLocal(), false);
+  panel.purchaseAmountInput.set('1.000,00'); assert.equal(panel.canLinkLocal(), true); assert.equal(panel.localPreview()!.remainingEur, 400);
+  const calls: any[] = []; (api as any).addPurchasePayment = async (...args: any[]) => { calls.push(args); return { line: { ...bank, allocated: true }, payments: [] }; };
+  await panel.linkLocalDocument(); const body = calls[0][2][0];
+  assert.equal(body.amount, 1000); assert.equal(body.currency, 'USD'); assert.equal(body.amountEur, 800); assert.equal(body.payee, 'SUPPLIER'); assert.equal(body.instalmentDue, 'ORDERED'); assert.equal(body.settles, false);
+});
+
+test('failed source refresh blocks local allocation even when FinanceState reload resolves with cached data', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost()]);
+  state.sourceErrors = () => ['Kosten: laden mislukt'];
+  await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localLoading(), false); assert.match(panel.localError(), /Kosten/); assert.equal(panel.canLinkLocal(), false);
+  state.sourceErrors = () => []; await panel.loadLocalDocuments(); assert.equal(panel.canLinkLocal(), true);
+});
+
+test('account context scopes unmatched/history counts and survives resetting the movement filters', () => {
+  const { panel, state } = harness(); const own = movement(1, -40), other = { ...movement(2, 50), account: 'OTHER' }, history = { ...movement(3, -40), source: null };
+  state.bankStatements.set([own, other, history]); state.officialBankLine = line => line.id !== 3;
+  panel.accountFilter.set('KBC'); panel.search.set('test'); panel.directionFilter.set('OUTGOING');
+  assert.equal(panel.unlinkedCount(), 1); assert.equal(panel.historicalCount(), 1);
+  panel.clearFilters(); assert.equal(panel.accountFilter(), 'KBC'); assert.equal(panel.search(), ''); assert.equal(panel.hasFilters(), false);
+});
+
+
+test('real allSettled finance refresh failures disable cached local targets until successful scoped retry', async () => {
+  const code = await readFile(new URL('../src/app/features/finance/finance-state.ts', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('finance-state.ts', code, ts.ScriptTarget.Latest, true);
+  const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'FinanceState')!;
+  const names = ['reload', 'sourceErrors']; const members = cls.members.filter(member => member.name && names.includes(member.name.getText(parsed))); assert.equal(members.length, 2);
+  const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
+  const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports: any = {}; vm.runInNewContext(js, { exports, SOURCE_NAMES: { costs: 'Kosten' }, messageOf: (error: any) => error.message });
+  const real = new exports.FinanceState(); let failing = true;
+  Object.assign(real, { requests: { costs: 0, orders: 0, payments: 0, containers: 0, incoming: 0, statements: 0 }, errorMap: signal({}), apply: () => {}, fetch: async (name: string) => { if (name === 'costs' && failing) throw new Error('Offline'); return []; } });
+  const { panel, state } = harness(); state.costs.set([localCost()]); state.reload = sources => real.reload(sources); state.sourceErrors = sources => real.sourceErrors(sources);
+  await panel.openAllocation(movement(7, -40)); await panel.loadLocalDocuments(); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.canLinkLocal(), false); assert.match(panel.localError(), /Kosten: Offline/);
+  failing = false; await panel.loadLocalDocuments(); assert.equal(panel.localError(), ''); assert.equal(panel.canLinkLocal(), true);
+});
+
+test('purchase lookup searches the actual supplier name and late invoice-file responses cannot replace another order', async () => {
+  const { panel, state, sourcing } = harness(); const first = purchaseView(), second = purchaseView();
+  first.order.supplierId = 8; second.order = { ...second.order, id: 21, number: 'PO-21', supplierId: 9 };
+  state.purchaseViews.set([first, second]); (sourcing as any).suppliers = async () => [{ id: 8, name: 'Yiwu Trading' }, { id: 9, name: 'Verhoeven' }];
+  await panel.openAllocation(movement(7, -800)); await panel.loadLocalDocuments(); panel.localSearch.set('verhoeven'); assert.equal(panel.localMatches()[0].id, 21);
+  const pending = deferred<any>(); (sourcing as any).documents = (id: number) => id === 20 ? pending.promise : Promise.resolve([{ id: 2, orderId: 21, kind: 'COMMERCIAL_INVOICE', originalFilename: 'INV-21.pdf' }]);
+  panel.chooseLocalDocument(panel.localDocuments().find(row => row.id === 20)!); panel.chooseLocalDocument(panel.localDocuments().find(row => row.id === 21)!);
+  await new Promise(resolve => setImmediate(resolve)); pending.resolve([{ id: 1, orderId: 20, kind: 'COMMERCIAL_INVOICE', originalFilename: 'INV-20.pdf' }]); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(panel.localPurchaseFiles()[0].id, 2);
+});
+
+test('purchase EUR entry permits two cents but rejects three and local cost handoff keeps original bank identity', async () => {
+  const { panel, state } = harness(); state.purchaseViews.set([purchaseView()]); const bank = movement(7, -100);
+  await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  panel.purchaseAmountInput.set('99,98'); assert.equal(panel.canLinkLocal(), true); assert.equal(panel.localPreview()!.differenceEur, -0.02);
+  panel.purchaseAmountInput.set('99,97'); assert.equal(panel.canLinkLocal(), false);
+  let handedOff: any = null; (state as any).openCostFromBank = (line: any) => { handedOff = line; };
+  panel.newCostFromBank(); assert.equal(handedOff, bank); assert.equal(panel.selected(), null);
+});
+
+
+test('a bank row changed or allocated during local document selection blocks submission with a visible reason', async () => {
+  const { panel, state } = harness(); const bank = movement(7, -40); state.costs.set([localCost()]); state.bankStatements.set([bank]);
+  await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]); assert.equal(panel.canLinkLocal(), true);
+  state.bankStatements.set([{ ...bank, amountEur: -41 }]); assert.equal(panel.canLinkLocal(), false); assert.match(panel.localBankProblem(), /gewijzigd/);
+  state.bankStatements.set([{ ...bank, allocated: true }]); assert.equal(panel.canLinkLocal(), false); assert.match(panel.localBankProblem(), /gekoppeld/);
 });

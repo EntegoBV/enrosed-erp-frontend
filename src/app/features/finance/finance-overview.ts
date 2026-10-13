@@ -188,7 +188,7 @@ const ATTENTION_ROWS = 7;
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
         <button class="ios-cell" type="button" (click)="state.openAnalysis()">
-          <span class="ios-cell__body"><span class="ios-cell__title">Analyse</span><span class="ios-cell__sub">Per categorie, per maand, de btw-aangifte</span></span>
+          <span class="ios-cell__body"><span class="ios-cell__title">Rapportage</span><span class="ios-cell__sub">Per categorie, per maand, de btw-aangifte</span></span>
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
       </div>

@@ -23,17 +23,18 @@ export class FinanceCreateMenu {
   open(): void {
     const { view, tab } = this.state.location();
     const lists = view === 'costs' && tab === 'lists';
+    const bankDetail = view === 'bank' && tab === 'movements' && !!this.state.location().account;
+    const canNoteMovement = !bankDetail || this.state.manualAccountAllowed(this.state.location().account);
     const items: ContextMenuItem[] = [
       /* On Aan wie & beurzen the list's own kinds lead. */
       ...(lists ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
-      { id: 'cost', label: 'Kost boeken', iconName: 'receipt' },
+      { id: 'cost', label: 'Factuur of kost toevoegen', iconName: 'receipt' },
       { id: 'photo', label: 'Bon of factuur fotograferen', iconName: 'camera' },
-      { id: 'movement', label: 'Bankbeweging noteren', iconName: 'bank' },
-      { id: 'balance', label: 'Saldo invullen', iconName: 'pencil' },
+      ...(canNoteMovement ? [{ id: 'movement', label: 'Handmatige banktransactie', iconName: 'bank' }] : []),
+      { id: 'balance', label: 'Rekening of saldocontrole toevoegen', iconName: 'bank' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },
     ];
-    const first = lists ? 'party' : view === 'incoming' || (view === 'bank' && tab === 'movements') ? 'movement'
-      : view === 'bank' ? 'balance' : view === 'costs' && tab === 'recurring' ? 'recurring' : 'cost';
+    const first = lists ? 'party' : bankDetail ? 'cost' : view === 'bank' ? 'balance' : view === 'costs' && tab === 'recurring' ? 'recurring' : 'cost';
     items.sort((a, b) => Number(b.id === first) - Number(a.id === first));
     this.state.openMenu({ title: 'Toevoegen', items, anchor: null, cancelLabel: 'Annuleren', pick: (id) => this.run(id) });
   }

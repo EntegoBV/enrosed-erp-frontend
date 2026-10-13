@@ -1160,3 +1160,22 @@ screens show them, collect decisions with a reason and build the writes.
   desk (`DesktopViewport.active()`).
 - Rollout: backend first. A new ERP on an old backend shows the hub with a
   load error.
+
+## Account-led banking and manual invoices (2026-10-13)
+
+- Bank opens the account list; selecting an account opens its register, balance,
+  filters and management. The old `tab=movements&account=...` URLs still work.
+  Never merge accounts silently: an unscoped link chooses the sole active account
+  or shows account selection while preserving the work-queue filters.
+- Allocation starts with local documents (costs, sales invoices, purchase terms),
+  then existing recorded payments, then missing documents (manual or Odoo/Peppol).
+  Purchase terms are expected budgets, not invented invoices; original currency
+  is explicit, and commercial invoice attachments can be opened for reference.
+- New local costs using a bank transaction call the atomic `cost-registration`
+  endpoint with a stable UUID and exact request body. Unknown outcomes keep that
+  operation for replay; conflicts reload the existing registration. Files upload
+  after a confirmed cost. Never fall back to separate create+payment calls.
+- Preserve signed amounts, source authority, existing payments and the aggregate
+  two-cent matching tolerance. Only unlinked transactions may acquire a new link.
+- Focused validation: `tests/bank*.test.mts`, `tests/cost*.test.mts`,
+  `tests/finance*.test.mts`, payment-preference and receipt-account tests.
