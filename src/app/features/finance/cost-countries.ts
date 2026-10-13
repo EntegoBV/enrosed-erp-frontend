@@ -63,15 +63,18 @@ function fairReason(country: string): string {
 export const FAIR_REGIME_QUESTION = 'Beursfactuur: Belgische btw of btw verlegd? Controleer';
 
 /**
- * A fair invoice to a name that carries no regime, no country and no VAT
- * number: the Dutch organisers (TICA, Ede) reverse charge the stand, a
+ * A fair invoice to a name that carries no regime, no foreign country and no
+ * VAT number: the Dutch organisers (TICA, Ede) reverse charge the stand, a
  * Belgian one charges Belgian VAT, and the name alone cannot tell. The form
  * then keeps the Belgian default but leaves it unconfirmed under this
- * question; nothing is stored on the name until a regime is confirmed.
+ * question. A bare 'BE' answers nothing: the server writes that country on
+ * every new name, also while the regime is still unconfirmed, so only a
+ * confirmed regime, a foreign country or a VAT number settles it.
  */
 export function fairRegimeQuestion(input: { category: string | null; regime: VatRegime | null; country: string | null; vatNumber: string | null }): string | null {
   if (!isFairCategory(input.category) || input.regime) return null;
-  return (input.country ?? '').trim() || cleanVatNumber(input.vatNumber) ? null : FAIR_REGIME_QUESTION;
+  const country = (input.country ?? '').trim().toUpperCase();
+  return (country && country !== 'BE') || cleanVatNumber(input.vatNumber) ? null : FAIR_REGIME_QUESTION;
 }
 
 /**

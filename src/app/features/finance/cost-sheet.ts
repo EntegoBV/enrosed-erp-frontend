@@ -457,7 +457,8 @@ export class CostSheet {
     const draft = this.draft();
     if (draft.id || this.customCategory()) return;
     const known = this.state.partyDefaultsFor(draft.party);
-    if (!known) return;
+    /* A name the form has never seen says nothing either: a fair invoice to it gets the question too. */
+    if (!known) { this.prefillRegime(draft.party ?? ''); return; }
     const fresh = blankCost(this.state.today());
     let filled = false;
     if (draft.category === fresh.category && draft.vatPct === fresh.vatPct && !draft.salesChannel) {
@@ -507,7 +508,7 @@ export class CostSheet {
     this.derivedHint.set('');
   }
 
-  /** The category changed: a fair category raises the fair question under a known name, any other category takes it back. */
+  /** The category changed: a fair category raises the fair question under any name that does not answer it, any other category takes it back. */
   private recheckFairQuestion(): void {
     const draft = this.draft();
     if (draft.id) return;
@@ -515,8 +516,7 @@ export class CostSheet {
       if (this.fairAsked()) this.withdrawFairQuestion();
       return;
     }
-    const known = this.customCategory() ? null : this.state.partyDefaultsFor(draft.party);
-    if (known) this.prefillRegime(known.name);
+    if (!this.customCategory()) this.prefillRegime(this.state.partyDefaultsFor(draft.party)?.name ?? draft.party ?? '');
   }
 
   /* ---- fairs */

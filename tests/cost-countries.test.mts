@@ -63,7 +63,8 @@ test('a fair invoice to a name nothing is known about raises the question, and o
   assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, regime: 'BE' }), null, 'a regime confirmed before answers it');
   assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, regime: 'EU_SERVICES' }), null);
   assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, country: 'NL' }), null, 'a country suggests a regime by itself');
-  assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, country: 'BE' }), null);
+  assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, country: 'BE' }), FAIR_REGIME_QUESTION, 'the server writes BE on every new name: that answers nothing');
+  assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, vatNumber: 'BE0123456749' }), null, 'a Belgian VAT number does');
   assert.equal(fairRegimeQuestion({ category: 'BEURS', ...nothing, vatNumber: 'nl 8586.17.262 B02' }), null, 'and so does a VAT number');
   assert.equal(isFairCategory('Beurs'), true);
   assert.equal(isFairCategory('REIS'), false);
