@@ -91,11 +91,11 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
           <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().regime === 'unconfirmed'" (click)="toggleUnconfirmed()">Te bevestigen
             @if (state.unconfirmedRegimeCount()) { <span class="ios-chip__badge">{{ state.unconfirmedRegimeCount() }}</span> }</button>
         }
-        <button class="ios-chip" type="button" [attr.aria-pressed]="filterCount() > 0" (click)="filtersOpen.set(true)"><app-icon name="filter" [size]="16" />Filter
-          @if (filterCount()) { <span class="ios-chip__badge">{{ filterCount() }}</span> }</button>
       </div>
       <div class="fin-cost-list-summary"><span>{{ rows().length }} {{ rows().length === 1 ? 'factuur of kost' : 'facturen en kosten' }}</span>
-        @if (filterCount() || state.location().q || state.location().period !== 'year') { <button type="button" class="wk-link" (click)="reset()">Filters wissen</button> }
+        <button class="ios-chip" type="button" [attr.aria-pressed]="filterCount() > 0" (click)="filtersOpen.set(true)"><app-icon name="filter" [size]="16" />Filter
+          @if (filterCount()) { <span class="ios-chip__badge">{{ filterCount() }}</span> }</button>
+        @if (filterCount() || state.location().q || state.location().period !== 'year') { <button type="button" class="wk-link fin-cost-list-clear" (click)="reset()">Filters wissen</button> }
       </div>
       <details class="fin-cost-list-totals"><summary><span>Totaal binnen selectie</span><strong>{{ summary().inclEur | eur }} <small>incl. btw</small></strong></summary>
       <div class="ios-figures">

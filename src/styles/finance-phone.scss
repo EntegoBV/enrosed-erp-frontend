@@ -41,8 +41,9 @@
     .fin-phone-section > span { color: var(--muted); font-size: 13px; }
     .fin-phone-section > select { flex: 1; min-width: 0; min-height: 44px; border: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; appearance: none; }
     .fin-phone-section > app-icon { flex: none; color: var(--muted); pointer-events: none; }
-    .fin-cost-list-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px 8px; color: var(--muted); font-size: 12px; }
+    .fin-cost-list-summary { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 0 12px; padding: 0 16px 8px; color: var(--muted); font-size: 12px; }
     .fin-cost-list-summary button { min-height: 44px; font-size: 13px; }
+    .fin-cost-list-summary .fin-cost-list-clear { grid-column: 1 / -1; justify-self: end; min-height: 36px; }
     .fin-cost-list-totals { margin: 0 16px 16px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
     .fin-cost-list-totals summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-size: 12px; cursor: pointer; }
     .fin-cost-list-totals summary::after { content: '+'; color: var(--muted); font-size: 18px; }

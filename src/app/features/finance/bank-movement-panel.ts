@@ -108,7 +108,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
           @if (unlinkedCount()) { <span class="ios-chip__badge">{{ unlinkedCount() }}</span> }</button>
       </div>
       <div class="bank-list-tools">
-        <span>{{ filteredLines().length }} transacties</span>
+        <span>{{ filteredLines().length }} {{ filteredLines().length === 1 ? 'transactie' : 'transacties' }}</span>
         <button class="fin-inline-btn" type="button" [attr.aria-expanded]="phoneFiltersOpen()" (click)="phoneFiltersOpen.set(!phoneFiltersOpen())"><app-icon name="filter" [size]="14" />Periode{{ from() || to() ? ' · actief' : '' }}</button>
         @if (hasFilters()) { <button class="fin-inline-btn" type="button" (click)="clearFilters()">Wis filters</button> }
       </div>
@@ -141,7 +141,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
                   @if (row.allocationDifferenceEur) { <span class="bank-phone-row__reference">Verschil {{ row.allocationDifferenceEur | eur }}</span> }
                 </button>
                 <button class="bank-phone-row__more" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="lineMenu(row, null)"><app-icon name="more" [size]="20" /></button>
-                @if (detailsId() === row.id) { <p class="bank-phone-row__details">{{ record(row) }}</p> }
+                @if (detailsId() === row.id) { <p class="bank-phone-row__details">{{ row.counterparty }}@if (row.counterparty && row.reference) { · }{{ row.reference }}<br />{{ record(row) }}</p> }
               </div>
             }
           </div>
