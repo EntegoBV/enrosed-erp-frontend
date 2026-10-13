@@ -12,7 +12,7 @@ import { countryName } from './cost-countries';
 import { paymentPayeeLabel } from './cost-ledger';
 import { CostPaymentsSection } from './cost-payments-section';
 import { PAYEE_TONES, dayMonth, dayMonthYear } from './finance-format';
-import { REVERSE_CHARGE, acquisitionValueOf, cashTotalOf, expenseOf, intervalLabel, isInvestment, kindOf, monthlyEquivalentEur, occurrencesBetween, addDays, openOf, paidOf, regimeLabel, revisionUntil, vatOf } from './finance-metrics';
+import { REVERSE_CHARGE, acquisitionValueOf, cashTotalOf, expenseOf, intervalLabel, isInvestment, monthlyEquivalentEur, occurrencesBetween, addDays, openOf, paidOf, regimeLabel, revisionUntil, vatOf } from './finance-metrics';
 import { FinanceState, InspectTarget, formatEuro } from './finance-state';
 import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { daysBetween } from './payables';
@@ -310,8 +310,9 @@ export class FinanceInspector {
     return !regime || regime === 'OUT_OF_SCOPE' || regime === 'NO_INVOICE' ? 'Datum' : 'Factuurdatum';
   }
   vatLabel(cost: CompanyCost): string {
-    const pct = `${cost.vatPct ?? 0}%`;
+    const pct = `${cost.vatPct}%`;
     if (cost.vatRegime === 'IMPORT_VAT_PAID') return 'Betaalde invoer-btw';
+    if (cost.vatPct == null) return 'Btw op document';
     if (cost.vatRegime && REVERSE_CHARGE.has(cost.vatRegime)) return `Btw verlegd (${pct})`;
     return cost.vatRegime === 'FOREIGN_VAT' ? `Buitenlandse btw (${pct})` : `Btw (${pct})`;
   }
@@ -323,7 +324,7 @@ export class FinanceInspector {
     const country = cost.supplierCountry && cost.supplierCountry !== 'BE' ? ` · ${countryName(cost.supplierCountry, this.state.countryChoices())}` : '';
     return `${regimeLabel(cost.vatRegime)}${cost.vatRegime ? country : ''}`;
   }
-  kind(cost: CompanyCost): string { return KIND_LABEL[kindOf(cost)]; }
+  kind(cost: CompanyCost): string { return KIND_LABEL[cost.costKind ?? ''] ?? 'Nog te bepalen'; }
   /** 'x % btw · y % fiscaal', only when a share is not fully deductible. */
   deduction(cost: CompanyCost): string {
     if (cost.vatRegime === 'IMPORT_VAT_PAID' || cost.vatRegime === 'OUT_OF_SCOPE') return '';

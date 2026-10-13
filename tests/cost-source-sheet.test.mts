@@ -35,3 +35,24 @@ test('source lookup failure locks original fields and saving until a successful 
   sheet.financeApi.costOdooSource = async () => ({ snapshot: { totalEur: -95.58 } }); await sheet.loadSource();
   assert.equal(sheet.sourceError(), ''); assert.equal(sheet.canSave(), true);
 });
+
+
+test('inspector labels do not invent zero percent VAT or a service classification for an imported document', async () => {
+  const inspectorSource = await readFile(new URL('../src/app/features/finance/finance-inspector.ts', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('finance-inspector.ts', inspectorSource, ts.ScriptTarget.Latest, true);
+  const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'FinanceInspector')!;
+  const names = ['vatLabel', 'kind'];
+  const members = cls.members.filter(member => member.name && names.includes(member.name.getText(parsed))); assert.equal(members.length, 2);
+  const labelConstant = parsed.statements.filter(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(d => d.name.getText(parsed) === 'KIND_LABEL'));
+  const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
+  const code = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [...labelConstant, isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports: any = {}; vm.runInNewContext(code, { exports, REVERSE_CHARGE: new Set(['EU_GOODS']) });
+  const inspector = new exports.FinanceInspector();
+  const credit = { vatPct: null, costKind: null, amountExclEur: -78.99, amountInclEur: -95.58, vatRegime: null };
+  assert.equal(inspector.vatLabel(credit), 'Btw op document'); assert.equal(inspector.kind(credit), 'Nog te bepalen');
+  assert.equal(inspector.vatLabel({ ...credit, vatRegime: 'BE' }), 'Btw op document');
+  assert.equal(inspector.vatLabel({ ...credit, vatPct: 0 }), 'Btw (0%)');
+  assert.equal(inspector.vatLabel({ ...credit, vatPct: 21, vatRegime: 'EU_GOODS' }), 'Btw verlegd (21%)');
+  assert.equal(inspector.kind({ ...credit, costKind: 'SERVICES' }), 'Diensten');
+  assert.equal(inspector.kind({ ...credit, costKind: 'GOODS' }), 'Goederen');
+});
