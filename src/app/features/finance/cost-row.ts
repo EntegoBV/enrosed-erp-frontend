@@ -46,7 +46,7 @@ import { daysBetween } from './payables';
           <span class="wk-td fin-clip" role="gridcell" data-hide="md">@if (documents()) { <app-icon name="clip" [size]="14" />{{ documents() }} }</span>
           <span class="wk-td wk-td--num" role="gridcell"><b>{{ open() | eur }}</b>@if (status() === 'partial') { <span class="wk-td__sub">van {{ incl() | eur }}</span> }</span>
           <span class="wk-td wk-td--actions" role="gridcell">
-            <button class="wk-btn wk-btn--sm" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">Betaald…</button>
+            <button class="wk-btn wk-btn--sm" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">{{ credit() ? 'Terugbetaling…' : 'Betaald…' }}</button>
           </span>
         } @else {
           <span class="wk-td" role="gridcell">{{ date() }}</span>
@@ -62,26 +62,26 @@ import { daysBetween } from './payables';
             @switch (status()) {
               @case ('paid') {
                 @if (overpaid() > 0) { <span class="wk-pill tone-blue">Te veel betaald · {{ overpaid() | eur }}</span> }
-                @else { <span class="wk-amount--muted">Betaald {{ paid() }}</span> }
+                @else { <span class="wk-amount--muted">{{ credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }}</span> }
               }
               @case ('partial') {
                 <span class="wk-pill tone-warn fin-status__open">Deels</span><span class="wk-amount--muted fin-status__open">nog {{ open() | eur }}</span>
-                <button class="wk-btn wk-btn--sm fin-status__pay" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">Betaald…</button>
+                <button class="wk-btn wk-btn--sm fin-status__pay" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">{{ credit() ? 'Terugbetaling…' : 'Betaald…' }}</button>
               }
               @default {
                 <span class="wk-pill tone-warn fin-status__open">Open</span>
-                <button class="wk-btn wk-btn--sm fin-status__pay" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">Betaald…</button>
+                <button class="wk-btn wk-btn--sm fin-status__pay" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openPay([row])">{{ credit() ? 'Terugbetaling…' : 'Betaald…' }}</button>
               }
             }
           </span>
         }
       </div>
     } @else {
-      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() > 0 ? 1 : 0" [swipeEnd]="2" swipeFull="start"
+      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() !== 0 ? 1 : 0" [swipeEnd]="2" swipeFull="start"
            (swipeCommit)="$event === 'start' && state.swipePay(row)">
-        @if (open() > 0) {
+        @if (open() !== 0) {
           <div class="ios-swipe__actions ios-swipe__actions--start">
-            <button class="ios-swipe__btn tone-ok" type="button" (click)="state.swipePay(row); sw.close()"><app-icon name="tick" [size]="20" />Betaald…</button>
+            <button class="ios-swipe__btn tone-ok" type="button" (click)="state.swipePay(row); sw.close()"><app-icon name="tick" [size]="20" />{{ credit() ? 'Terugbetaling…' : 'Betaald…' }}</button>
           </div>
         }
         <div class="ios-swipe__actions ios-swipe__actions--end">
@@ -89,29 +89,29 @@ import { daysBetween } from './payables';
           <button class="ios-swipe__btn tone-grey" type="button" (click)="state.costMenu(row, null); sw.close()"><app-icon name="more" [size]="20" />Meer</button>
         </div>
         <div class="ios-swipe__row">
-          <button class="ios-cell ios-cell--tall" type="button" appMenuTrigger (menuTrigger)="state.costMenu(row, null)"
+          <button class="ios-cell ios-cell--tall fin-cost-cell" type="button" appMenuTrigger (menuTrigger)="state.costMenu(row, null)"
                   (click)="state.inspectItem({ kind: 'cost', id: row.id! })">
-            <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft tone-' + tone()"><app-icon name="receipt" [size]="18" /></span></span>
+            <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--soft tone-' + tone()"><app-icon name="receipt" [size]="18" /></span></span>
             <span class="ios-cell__body">
-              <span class="ios-cell__title">{{ row.description }}</span>
+              <span class="ios-cell__title ios-cell__title--2">{{ row.description }}</span>
               <span class="ios-cell__sub">{{ row.party || category() }}</span>
             </span>
-            <!-- The status sits under the amount, so a long party name is what gets cut, never the age or 'Open'. -->
             <span class="ios-cell__trail">
               <span class="ios-cell__value ios-cell__value--strong">{{ (columns() === 'payable' ? open() : incl()) | eur }}</span>
-              <span class="ios-cell__meta">
-                @if (documents()) { <app-icon name="clip" [size]="12" /> }
-                @if (columns() === 'ledger') {
-                  @switch (status()) {
-                    @case ('paid') { @if (overpaid() > 0) { Te veel betaald · {{ overpaid() | eur }} } @else { Betaald {{ paid() }} } }
-                    @case ('partial') { <span class="fin-warn-text">Deels · nog {{ open() | eur }}</span> }
-                    @default { <span class="fin-warn-text">Open</span> }
-                  }
-                  @if (regimeNote()) { · {{ regimeNote() }} }
-                } @else if (status() === 'partial') { <span class="fin-warn-text">Deels</span> · van {{ incl() | eur }} }
-                @else if (age()) { <span [class.fin-warn-text]="age()! > 30">sinds {{ age() }} d</span> }
-              </span>
+              <span class="ios-cell__meta">{{ date() }}</span>
             </span>
+            <span class="fin-cost-cell__status">
+              <span [class.fin-warn-text]="status() !== 'paid'">
+                @switch (status()) {
+                  @case ('paid') { @if (overpaid() > 0) { {{ credit() ? 'Te veel terugbetaald' : 'Te veel betaald' }} · {{ overpaid() | eur }} } @else { {{ credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }} } }
+                  @case ('partial') { {{ credit() ? 'Deels terugbetaald' : 'Deels betaald' }} · nog {{ abs(open()) | eur }} }
+                  @default { {{ credit() ? 'Terug te ontvangen' : 'Open' }} }
+                }
+              </span>
+              @if (documents()) { <span><app-icon name="clip" [size]="12" />{{ documents() }} {{ documents() === 1 ? 'document' : 'documenten' }}</span> }
+              @if (banked() !== 'none') { <span><app-icon name="bank" [size]="12" />{{ banked() === 'some' ? 'Deels bankgekoppeld' : 'Bankgekoppeld' }}</span> }
+            </span>
+            @if (regimeNote()) { <span class="fin-cost-cell__vat">Btw: {{ regimeNote() }}</span> }
           </button>
         </div>
       </div>
@@ -136,10 +136,12 @@ export class CostRow {
   readonly vat = computed(() => vatOf(this.cost()));
   /** What is still to pay; the server's figure, so a cost paid in parts reads right everywhere. */
   readonly open = computed(() => openOf(this.cost()));
-  readonly overpaid = computed(() => Math.max(0, Math.round((paidOf(this.cost()) - cashTotalOf(this.cost())) * 100)) / 100);
+  readonly credit = computed(() => this.incl() < 0);
+  readonly abs = Math.abs;
+  readonly overpaid = computed(() => Math.max(0, Math.round(Math.sign(this.incl()) * (paidOf(this.cost()) - this.incl()) * 100)) / 100);
   readonly status = computed<'open' | 'partial' | 'paid'>(() => {
-    const open = Math.round(this.open() * 100);
-    return open <= 0 ? 'paid' : open < Math.round(this.incl() * 100) ? 'partial' : 'open';
+    const open = Math.abs(Math.round(this.open() * 100));
+    return open === 0 ? 'paid' : open < Math.abs(Math.round(this.incl() * 100)) ? 'partial' : 'open';
   });
   readonly date = computed(() => dayMonth(this.cost().date));
   readonly paid = computed(() => dayMonth(this.cost().paidOn));

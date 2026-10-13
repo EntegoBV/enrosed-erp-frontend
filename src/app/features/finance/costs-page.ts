@@ -111,11 +111,18 @@ const STALE_MS = 5 * 60_000;
       }
     } @else {
       <div class="ios-page fin-ios">
-        <app-ios-nav [title]="pageTitle()" [backLabel]="subScreen() ? '' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="subScreen() ? 'Terug' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
-          <button trail class="ios-circle" type="button" aria-label="Meer" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
+        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="bankDetail() ? 'Rekeningen' : subScreen() ? 'Terug' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
+                     [backAriaLabel]="bankDetail() ? 'Terug naar alle bankrekeningen' : subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
+          <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
+          <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <div below class="ios-subbar" [hidden]="!phoneSegments().length">
-            @if (phoneSegments().length) {
+            @if (phoneSegments().length > 2) {
+              <label class="fin-phone-section"><span>Toon</span>
+                <select [attr.aria-label]="'Onderdeel van ' + current().label" [value]="state.location().tab" (change)="state.go({ tab: $any($event.target).value })">
+                  @for (option of phoneSegments(); track option.id) { <option [value]="option.id">{{ option.label }}{{ option.dot ? ' · vraagt aandacht' : '' }}</option> }
+                </select><app-icon name="chevron-down" [size]="16" />
+              </label>
+            } @else if (phoneSegments().length) {
               <app-segmented variant="ios" semantics="tabs" label="Onderdeel"
                              [options]="phoneSegments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
             }
@@ -128,7 +135,7 @@ const STALE_MS = 5 * 60_000;
           </div>
         }
         <ng-container *ngTemplateOutlet="content" />
-        <app-finance-tabbar (add)="createMenu()?.open()" />
+        <app-finance-tabbar />
         <app-finance-create-menu />
       </div>
     }
@@ -160,10 +167,14 @@ const STALE_MS = 5 * 60_000;
       }
     </ng-template>
 
-    @if (!state.desk() && state.inspect(); as target) {
-      <app-sheet variant="ios" [title]="state.inspectTitle(target)" (closed)="state.closeInspector()">
-        <div body><app-finance-inspector [target]="target" layout="sheet" /></div>
-        <div foot style="display:contents"><app-finance-inspector [target]="target" layout="foot" /></div>
+    @if (phoneInspector(); as target) {
+      <app-sheet class="fin-inspector-sheet" variant="ios" title="Details" closeLabel="Details sluiten" (closed)="state.closeInspector()">
+        <div body>
+          <button class="fin-inspector-back" type="button" data-initial-focus (click)="state.backInspector()"><app-icon name="chevron-left" [size]="18" /><span>{{ state.inspectorBackLabel() }}</span></button>
+          <h2 class="fin-inspector-name">{{ state.inspectTitle(target) }}</h2>
+          <app-finance-inspector [target]="target" layout="sheet" />
+        </div>
+        <div foot class="fin-inspector-actions"><app-finance-inspector [target]="target" layout="foot" /></div>
       </app-sheet>
     }
     @if (state.costDraft()) { <app-cost-sheet /> }
@@ -208,9 +219,15 @@ export class CostsPage {
   readonly createMenu = viewChild(FinanceCreateMenu);
   readonly dropping = signal(false);
 
-  /** Analyse is the phone's one sub-screen: pushed from Overzicht or ⋯, with a back chevron instead of '‹ App'. */
+  /** Account details and reports have an explicit way back to their parent. */
   readonly bankDetail = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements' && !!this.state.location().account);
   readonly pageTitle = computed(() => this.bankDetail() ? this.state.accountLabel(this.state.location().account) : this.current().label);
+  readonly phoneSubtitle = computed(() => this.bankDetail() ? null : ({
+    overview: 'Kosten & bank · wat vraagt aandacht?', open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
+    bank: 'Saldi, transacties en bankkoppelingen', costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode',
+  }[this.state.location().view]));
+  readonly phoneInspector = computed(() => !this.state.desk() && !this.state.costDraft() && !this.state.paySheet()
+    && !this.state.recurringDraft() && !this.state.menu() ? this.state.inspect() : null);
   readonly subScreen = computed(() => this.state.location().view === 'analysis' || this.bankDetail());
   backFromSection(): void {
     if (this.bankDetail()) this.state.go({ tab: 'accounts' }, 'push');
@@ -222,7 +239,7 @@ export class CostsPage {
     const view = this.state.location().view;
     if (view === 'bank') return [];
     /* The segment behind a tab badge carries a dot, so the badge leads somewhere visible. */
-    return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.short, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
+    return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.label, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
   });
 
   constructor() {

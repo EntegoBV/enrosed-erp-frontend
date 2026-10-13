@@ -1179,3 +1179,17 @@ screens show them, collect decisions with a reason and build the writes.
   two-cent matching tolerance. Only unlinked transactions may acquire a new link.
 - Focused validation: `tests/bank*.test.mts`, `tests/cost*.test.mts`,
   `tests/finance*.test.mts`, payment-preference and receipt-account tests.
+
+### Linked document navigation and phone finance (2026-10-13)
+
+- Bank rows open their linked cost, sales document or purchase detail directly;
+  more actions have a separate button. Resolve actual saved relationships from
+  all cost/purchase payments, deduplicating by document. Multiple documents
+  offer a chooser. Imported references never imply a link. On missing/failed
+  sources, refresh and check sourceErrors; ignore late responses after leaving.
+- Phone bank registers use compact account summaries and document-labelled rows;
+  period filters and selection totals remain available. Odoo errors stay visible
+  through the connection disclosure. Cost detail has an explicit return trail,
+  and editing/payment sheets temporarily replace its phone overlay.
+- Mobile navigation uses full subsection labels. Negative supplier credits use
+  signed settlement status; do not label an unpaid credit as paid.

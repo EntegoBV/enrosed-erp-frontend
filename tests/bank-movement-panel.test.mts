@@ -1,3 +1,4 @@
+import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/features/finance/bank-allocation-targets.ts';
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
@@ -84,9 +85,16 @@ function newMatch(salesOrderId: number, openEur = 100): BankMatch {
 
 function harness() {
   const loads = { load: 0, refreshBank: 0 };
+  const opened: { kind: string; id: number }[] = [];
+  const menus: any[] = [];
+  const toasts: string[] = [];
   const movementDraft = signal<{ accountKey?: string } | null>(null);
   const state = {
     costs: signal<any[]>([]), payments: signal<any[]>([]), purchaseViews: signal<any[]>([]),
+    inspectItem: (target: { kind: string; id: number }) => opened.push({ ...target }),
+    openInvoice: (id: number) => opened.push({ kind: 'invoice', id }),
+    openMenu: (menu: any) => menus.push(menu),
+    lineMarkers: () => lineMarkers(state.bankStatements()),
     canonicalAccount: (key: string) => bankExports.bankAccountKey!(key),
     archivedBankLine: (_row: BankStatementLine) => false,
     officialBankLine: (row: BankStatementLine) => true,
@@ -102,7 +110,7 @@ function harness() {
   };
   const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
   const ui = {
-    toast: () => {},
+    toast: (message: string) => { toasts.push(message); },
     confirm: (options: { title: string; message: string; confirmLabel?: string; danger?: boolean }, onConfirm: () => void) => {
       confirms.push(options);
       onConfirm();
@@ -136,7 +144,7 @@ function harness() {
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
   const panel = new exports.BankMovementPanel();
-  return { panel, state, api, sourcing, allocationCalls, loads, confirms };
+  return { panel, state, api, sourcing, allocationCalls, loads, confirms, opened, menus, toasts };
 }
 
 test('choosing a suggestion clears the manual invoice and allocates the visibly chosen invoice', async () => {
@@ -664,4 +672,108 @@ test('a bank row changed or allocated during local document selection blocks sub
   await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]); assert.equal(panel.canLinkLocal(), true);
   state.bankStatements.set([{ ...bank, amountEur: -41 }]); assert.equal(panel.canLinkLocal(), false); assert.match(panel.localBankProblem(), /gewijzigd/);
   state.bankStatements.set([{ ...bank, allocated: true }]); assert.equal(panel.canLinkLocal(), false); assert.match(panel.localBankProblem(), /gekoppeld/);
+});
+
+
+test('an imported allocated cost opens directly and can be found by its invoice reference', async () => {
+  const { panel, state, opened } = harness();
+  const row = { ...movement(1, -121), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.costs.set([{ id: 5, description: 'Office supplies', reference: 'BILL-2026-99', payments: [{ id: 7, bankStatementLineId: 1 }] }]);
+  panel.search.set('BILL-2026-99');
+  assert.equal(panel.filteredLines().length, 1);
+  await panel.openLinked(row);
+  assert.deepEqual(opened, [{ kind: 'cost', id: 5 }]);
+  assert.match(panel.linkedLabel(row), /BILL-2026-99/);
+});
+
+test('purchase splits deduplicate by order and multiple orders offer every document', async () => {
+  const { panel, state, opened, menus } = harness();
+  const row = { ...movement(1, -200), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.payments.set([{ id: 10, orderId: 20, orderNumber: 'PO-20', bankStatementLineId: 1 },
+    { id: 11, orderId: 20, orderNumber: 'PO-20', bankStatementLineId: 1 },
+    { id: 12, orderId: 21, orderNumber: 'PO-21', bankStatementLineId: 1 }]);
+  assert.equal(panel.linkedDocuments(row).length, 2);
+  await panel.openLinked(row);
+  assert.equal(opened.length, 0);
+  assert.equal(menus[0].items.length, 2);
+  menus[0].pick('container:21');
+  assert.deepEqual(opened, [{ kind: 'container', id: 21 }]);
+});
+
+test('cost and purchase share a bank line without hiding a destination', async () => {
+  const { panel, state, menus } = harness();
+  const row = { ...movement(1, -200), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.costs.set([{ id: 5, description: 'Transport', bankStatementLineId: 1, payments: [{ id: 7, bankStatementLineId: 1 }] }]);
+  state.payments.set([{ id: 10, orderId: 20, orderNumber: 'PO-20', bankStatementLineId: 1 }]);
+  await panel.openLinked(row);
+  assert.equal(menus[0].items.length, 2);
+});
+
+test('paid sales invoice and credit refunds open their actual document with Enter', () => {
+  const { panel, state, opened } = harness();
+  const row = { ...movement(1, -50), allocated: true, salesOrderId: 88, salesPaymentId: 99 };
+  state.bankStatements.set([row]);
+  panel.focusId.set(1);
+  assert.equal(panel.handle('open'), true);
+  assert.deepEqual(opened, [{ kind: 'invoice', id: 88 }]);
+});
+
+test('an explicitly unlinked imported row ignores stale cost-payment cache and misleading markers', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(), source: 'ODOO' as const, allocated: false, reference: 'kost #5' };
+  state.costs.set([{ id: 5, description: 'Old link', payments: [{ id: 7, bankStatementLineId: 1 }] }]);
+  assert.equal(panel.linkedDocuments(row).length, 0);
+});
+
+test('missing destinations refresh once and never open a stale document after unlink', async () => {
+  const { panel, state, opened, toasts } = harness();
+  const row = { ...movement(), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  let reloads = 0;
+  state.reload = async () => { reloads++; state.bankStatements.set([{ ...row, allocated: false }]); };
+  await panel.openLinked(row);
+  assert.equal(reloads, 1);
+  assert.equal(opened.length, 0);
+  assert.match(toasts[0], /niet meer gekoppeld/);
+  assert.equal(panel.openingId(), null);
+});
+
+test('a failed refresh never uses retained document links', async () => {
+  const { panel, state, opened, toasts } = harness();
+  const row = { ...movement(), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.costs.set([{ id: 5, description: 'Retained', bankStatementLineId: 1 }]);
+  state.sourceErrors = () => ['Kosten laden mislukt'];
+  await panel.openLinked(row);
+  assert.equal(opened.length, 0);
+  assert.match(toasts[0], /niet geladen/);
+});
+
+test('legacy manual references expose all documents, never imported reference guesses', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(), reference: 'kost #5 containerbetaling #10 kostbetaling #7' };
+  state.bankStatements.set([row]);
+  state.costs.set([{ id: 5, description: 'Legacy', payments: [{ id: 7 }] }]);
+  state.payments.set([{ id: 10, orderId: 20, orderNumber: 'PO-20' }]);
+  assert.equal(panel.linkedDocuments(row).length, 2);
+  assert.equal(panel.linkedDocuments({ ...row, source: 'ODOO' }).length, 0);
+});
+
+
+test('a slow destination lookup cannot open a document after leaving its account', async () => {
+  const { panel, state, opened, toasts } = harness();
+  const row = { ...movement(), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  const pending = deferred<void>();
+  state.reload = async () => { await pending.promise; state.costs.set([{ id: 5, description: 'Late', bankStatementLineId: 1 }]); };
+  const work = panel.openLinked(row);
+  assert.equal(panel.openingId(), 1);
+  panel.ngOnDestroy();
+  pending.resolve();
+  await work;
+  assert.equal(opened.length, 0);
+  assert.equal(toasts.length, 0);
 });

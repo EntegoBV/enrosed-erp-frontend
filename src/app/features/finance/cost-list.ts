@@ -80,7 +80,7 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
       }
     } @else {
       <div class="ios-search fin-ios-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
-        <input type="search" placeholder="Zoeken" aria-label="Zoeken in kosten" [value]="state.location().q" (input)="search($any($event.target).value)" />
+        <input type="search" placeholder="Leverancier, factuurnummer, omschrijving" aria-label="Zoeken in facturen en kosten" [value]="state.location().q" (input)="search($any($event.target).value)" />
         <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="search('')"><app-icon name="close" [size]="14" /></button></label></div>
       <div class="ios-chips" role="group" aria-label="Periode">
         @for (option of phonePeriods(); track option.id) {
@@ -94,12 +94,17 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
         <button class="ios-chip" type="button" [attr.aria-pressed]="filterCount() > 0" (click)="filtersOpen.set(true)"><app-icon name="filter" [size]="16" />Filter
           @if (filterCount()) { <span class="ios-chip__badge">{{ filterCount() }}</span> }</button>
       </div>
+      <div class="fin-cost-list-summary"><span>{{ rows().length }} {{ rows().length === 1 ? 'factuur of kost' : 'facturen en kosten' }}</span>
+        @if (filterCount() || state.location().q || state.location().period !== 'year') { <button type="button" class="wk-link" (click)="reset()">Filters wissen</button> }
+      </div>
+      <details class="fin-cost-list-totals"><summary><span>Totaal binnen selectie</span><strong>{{ summary().inclEur | eur }} <small>incl. btw</small></strong></summary>
       <div class="ios-figures">
         <div><small>Excl. btw</small><strong>{{ summary().exclEur | eur }}</strong></div>
         <div><small>Btw</small><strong>{{ summary().vatEur | eur }}</strong></div>
         <div><small>Incl. btw</small><strong>{{ summary().inclEur | eur }}</strong></div>
         <div><small>Open ({{ summary().unpaidCount }})</small><strong [class.wk-amount--warn]="summary().unpaidCount > 0">{{ summary().unpaidEur | eur }}</strong></div>
       </div>
+      </details>
       @for (group of monthGroups(); track group.key) {
         <section class="ios-section">
           <div class="ios-section__head"><h2>{{ group.label }}</h2><span class="ios-section__trail">{{ group.inclEur | eur }} incl.</span></div>
@@ -110,7 +115,8 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
       } @empty {
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="receipt" [size]="26" /></span>
           <p class="ios-empty__title">{{ state.costs().length ? 'Geen kosten in deze periode' : 'Nog geen kosten geboekt' }}</p>
-          <p class="ios-empty__text">{{ state.costs().length ? 'Kies een andere periode of pas de filters aan.' : 'Boek de beurs, de boekhouder of de huur met +.' }}</p></div>
+          <p class="ios-empty__text">{{ state.costs().length ? 'Kies een andere periode of wis de filters.' : 'Voeg een factuur, bon of andere uitgave toe.' }}</p>
+          <button class="ios-capsule ios-capsule--tinted" type="button" (click)="state.costs().length ? reset() : state.openCost(null)">{{ state.costs().length ? 'Filters wissen' : 'Factuur of kost toevoegen' }}</button></div>
       }
       @if (filtersOpen()) {
         <app-sheet variant="ios" title="Filter" (closed)="filtersOpen.set(false)">

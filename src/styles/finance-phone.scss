@@ -30,6 +30,47 @@
     .fin-history { margin: 0; }
     .fin-foot-note { flex-basis: 100%; text-align: center; }
 
+    /* Keep all five destinations readable at 375px; creation sits in the sticky top bar. */
+    .fin-ios .ios-nav { grid-template-columns: auto minmax(0,1fr) auto; }
+    .fin-ios .ios-nav__title { min-width: 0; max-width: 100%; }
+    .fin-ios > app-finance-tabbar .ios-tabbar { --ios-tabbar-h: 64px; }
+    .fin-ios > app-finance-tabbar .ios-tab { font-size: 10.5px; }
+    .fin-phone-add::before { background: var(--rose-soft); }
+    .fin-phone-add { color: var(--rose-dark); }
+    .fin-phone-section { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .fin-phone-section > span { color: var(--muted); font-size: 13px; }
+    .fin-phone-section > select { flex: 1; min-width: 0; min-height: 44px; border: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; appearance: none; }
+    .fin-phone-section > app-icon { flex: none; color: var(--muted); pointer-events: none; }
+    .fin-cost-list-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px 8px; color: var(--muted); font-size: 12px; }
+    .fin-cost-list-summary button { min-height: 44px; font-size: 13px; }
+    .fin-cost-list-totals { margin: 0 16px 16px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .fin-cost-list-totals summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-size: 12px; cursor: pointer; }
+    .fin-cost-list-totals summary::after { content: '+'; color: var(--muted); font-size: 18px; }
+    .fin-cost-list-totals[open] summary::after { content: '−'; }
+    .fin-cost-list-totals summary strong { margin-left: auto; white-space: nowrap; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .fin-cost-list-totals summary small { color: var(--muted); font-size: 10px; font-weight: 400; }
+    .fin-cost-list-totals .ios-figures { margin: 0; padding: 8px 0 16px; }
+    .fin-cost-cell { display: grid; grid-template-columns: 30px minmax(0,1fr) auto; gap: 5px 9px; padding-block: 13px; }
+    .fin-cost-cell > .ios-cell__lead { align-self: start; padding-top: 2px; }
+    .fin-cost-cell > .ios-cell__trail { align-self: start; max-width: none; }
+    .fin-cost-cell .ios-cell__title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+    .fin-cost-cell .ios-cell__sub { font-size: 12px; }
+    .fin-cost-cell .ios-cell__value { font-size: 14px; }
+    .fin-cost-cell .ios-cell__meta { font-size: 11px; }
+    .fin-cost-cell__status { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .fin-cost-cell__status > span { display: inline-flex; align-items: center; gap: 3px; }
+    .fin-cost-cell__vat { grid-column: 2 / -1; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+    .fin-inspector-back { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 44px; padding: 6px 18px; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+    .fin-inspector-back app-icon { flex: none; }
+    .fin-inspector-name { margin: 4px 18px 12px; font-size: 21px; line-height: 1.3; letter-spacing: -.02em; overflow-wrap: anywhere; }
+    .fin-inspector-actions { display: flex; width: 100%; align-items: center; gap: 8px; }
+    .fin-inspector-actions > app-finance-inspector { display: contents; }
+    .fin-inspector-actions .btn { flex: 1 1 0; min-width: 0; padding-inline: 10px; font-size: 14px; }
+    .fin-inspector-actions .ios-circle { flex: none; }
+    .fin-inspector-sheet .wk-section__title { flex-wrap: wrap; gap: 5px 10px; }
+    .fin-inspector-sheet .wk-kv > div { gap: 12px; }
+    .fin-inspector-sheet .wk-kv dd { overflow-wrap: anywhere; }
+
     /* ---- forms, inset grouped (kit sheet rule): label left, value right; chips, segments and notes stack */
     .fin-group > .fin-field, .fin-group .fin-field-row > .fin-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: var(--ios-row); padding: 4px 16px; font-size: 16px;
       > span:first-child { flex: none; max-width: 48%; color: var(--ink); font-size: 16px; font-weight: 400; }

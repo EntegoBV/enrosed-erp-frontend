@@ -40,8 +40,7 @@ const DAY = 86_400_000;
         @case ('cost') {
           @if (cost(); as cost) {
             @if (open(cost) !== 0) { <button class="btn btn--primary" type="button" (click)="state.openPay([cost])">{{ incl(cost) < 0 ? 'Terugbetaling…' : 'Betaald…' }}</button> }
-            @else { <button class="btn" type="button" [disabled]="state.saving() || state.busy()" (click)="state.markUnpaid(cost)">Weer open zetten</button> }
-            <button class="btn" type="button" (click)="state.openCost(cost)">Bewerken</button>
+            <button class="btn" [class.btn--primary]="open(cost) === 0" type="button" (click)="state.openCost(cost)">Bewerken</button>
             <button class="ios-circle" type="button" aria-label="Meer" (click)="state.costMenu(cost, null)"><app-icon name="more" [size]="22" /></button>
           }
         }
@@ -72,9 +71,9 @@ const DAY = 86_400_000;
               <strong class="fin-insp-amount">{{ incl(cost) | eur }}</strong>
               @if (open(cost) === 0) {
                 @if (overpaid(cost) > 0) { <span class="wk-pill tone-blue">Te veel betaald · {{ overpaid(cost) | eur }}</span> }
-                @else { <span class="wk-pill tone-ok">Betaald {{ day(cost.paidOn) }}</span> }
-              } @else if (partial(cost)) { <span class="wk-pill tone-warn">Deels betaald · nog {{ open(cost) | eur }}</span> }
-              @else { <span class="wk-pill tone-warn">Open{{ age(cost.date) > 0 ? ' · ' + age(cost.date) + ' d' : '' }}</span> }
+                @else { <span class="wk-pill tone-ok">{{ incl(cost) < 0 ? 'Terugbetaald' : 'Betaald' }} {{ day(cost.paidOn) }}</span> }
+              } @else if (partial(cost)) { <span class="wk-pill tone-warn">{{ incl(cost) < 0 ? 'Deels terugbetaald' : 'Deels betaald' }} · nog {{ abs(open(cost)) | eur }}</span> }
+              @else { <span class="wk-pill tone-warn">{{ incl(cost) < 0 ? 'Terug te ontvangen' : 'Open' }}{{ age(cost.date) > 0 ? ' · ' + age(cost.date) + ' d' : '' }}</span> }
             </section>
             <section class="wk-section">
               <dl class="wk-kv">
@@ -95,7 +94,7 @@ const DAY = 86_400_000;
                 @if (cost.reference) { <div><dt>Referentie</dt><dd>{{ cost.reference }}</dd></div> }
                 @if (cost.salesChannel) { <div><dt>Kanaal</dt><dd>{{ channel(cost.salesChannel) }}</dd></div> }
                 @if (recurringOf(cost.recurringCostId); as definition) {
-                  <div><dt>Vaste kost</dt><dd><button class="wk-link fin-insp-link" type="button" (click)="state.inspectItem({ kind: 'recurring', id: definition.id! })">{{ definition.name }} ›</button></dd></div>
+                  <div><dt>Vaste kost</dt><dd><button class="wk-link fin-insp-link" type="button" (click)="state.inspectRelated({ kind: 'recurring', id: definition.id! })">{{ definition.name }} ›</button></dd></div>
                 }
               </dl>
             </section>
@@ -238,7 +237,7 @@ const DAY = 86_400_000;
             <section class="wk-section">
               <h3 class="wk-section__title">Geboekt dit jaar <span>{{ bookedThisYear().length }} · {{ bookedTotal() | eur }}</span></h3>
               @for (cost of bookedThisYear(); track cost.id) {
-                <button class="fin-pay-line fin-pay-line--link" type="button" (click)="state.inspectItem({ kind: 'cost', id: cost.id! })"><span>{{ day(cost.date) }}</span><span>{{ open(cost) === 0 ? 'betaald' : partial(cost) ? 'deels · nog ' + (open(cost) | eur) : 'open' }}</span><b>{{ incl(cost) | eur }}</b></button>
+                <button class="fin-pay-line fin-pay-line--link" type="button" (click)="state.inspectRelated({ kind: 'cost', id: cost.id! })"><span>{{ day(cost.date) }}</span><span>{{ open(cost) === 0 ? 'betaald' : partial(cost) ? 'deels · nog ' + (open(cost) | eur) : 'open' }}</span><b>{{ incl(cost) | eur }}</b></button>
               }
             </section>
             @if (layout() === 'pane') {
@@ -298,6 +297,7 @@ export class FinanceInspector {
     });
   }
 
+  readonly abs = Math.abs;
   incl(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return cashTotalOf(row); }
   vat(row: { amountExclEur: number; vatPct: number | null; amountInclEur?: number | null }): number { return vatOf(row); }
   open(cost: CompanyCost): number { return openOf(cost); }

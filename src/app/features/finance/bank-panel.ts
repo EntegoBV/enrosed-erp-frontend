@@ -30,19 +30,27 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
     @if (selectedAccount(); as account) {
       <section class="fin-bank-account" aria-label="Gekozen bankrekening">
         <div class="fin-bank-account__identity">
-          <span class="fin-bank-account__icon"><app-icon name="bank" [size]="22" /></span>
-          <div><p class="fin-bank-account__iban">{{ iban(account.account) }}</p><span class="fin-hint">{{ account.archived ? 'Gearchiveerde rekening · historiek' : account.source === 'ODOO' ? 'Banktransacties via Odoo' : 'Handmatig bijgehouden rekening' }}</span></div>
-          <button class="wk-btn wk-btn--sm" type="button" (click)="accountMenu(account, $event)">Rekening beheren <app-icon name="chevron-down" [size]="14" /></button>
+          <button class="fin-bank-account__choose" type="button" (click)="chooseAccount($event)" [attr.aria-label]="'Rekening kiezen, huidige rekening: ' + account.label" aria-haspopup="menu">
+            <span class="fin-bank-account__icon"><app-icon name="bank" [size]="20" /></span>
+            <span class="fin-bank-account__name"><b>{{ account.label }}</b><span class="fin-bank-account__iban">{{ iban(account.account) }}</span></span>
+            <app-icon name="chevron-down" [size]="14" />
+          </button>
+          <button class="wk-btn wk-btn--sm fin-bank-account__manage" type="button" (click)="accountMenu(account, $event)" [attr.aria-label]="account.label + ' beheren'" aria-haspopup="menu"><app-icon name="more" [size]="18" /><span>Beheer</span></button>
         </div>
         <div class="fin-bank-account__figures">
-          <div><span>Berekend saldo</span><strong>{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</strong><small>{{ account.reading ? 'Vanaf saldocontrole ' + stamp(account.reading.asOfAt, account.reading.date, account.reading.timeZone) : 'Voeg een saldocontrole toe om het saldo te berekenen' }}</small></div>
-          <button type="button" (click)="state.go({ link: 'unlinked', dir: '', q: '', period: 'all', from: '', to: '' })"><span>Te koppelen</span><strong>{{ openCount(account.account) }}</strong><small>Banktransacties zonder volledige koppeling</small></button>
-          <div><span>Banktransacties</span><strong>{{ transactionCount(account.account) }}</strong><small>{{ account.source === 'ODOO' ? 'Opgehaald van deze rekening' : 'Geregistreerd op deze rekening' }}</small></div>
+          <div><span>Berekend saldo</span><strong>{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</strong></div>
+          <button type="button" (click)="showUnlinked()" [attr.aria-label]="openCount(account.account) + ' te koppelen transacties bekijken'"><span>Te koppelen <app-icon name="chevron-right" [size]="12" /></span><strong>{{ openCount(account.account) }}</strong></button>
         </div>
+        <p class="fin-bank-account__context">{{ account.archived ? 'Gearchiveerd · alleen historiek' : account.source === 'ODOO' ? 'Via Odoo' : 'Handmatige rekening' }}<span aria-hidden="true"> · </span><span [attr.title]="account.reading ? 'Saldocontrole ' + stamp(account.reading.asOfAt, account.reading.date, account.reading.timeZone) : null">{{ freshLabel(account) }}</span></p>
       </section>
-      @if (account.source === 'ODOO') { <app-odoo-connection-panel /> }
+      @if (account.source === 'ODOO') {
+        <details class="fin-bank-connection" [open]="state.desk() || connectionAttention()">
+          <summary><app-icon name="exchange" [size]="16" /><span>{{ connectionPanel()?.syncing() ? 'Transacties ophalen…' : 'Transacties ophalen via Odoo' }}@if (connectionAttention()) { <small role="status">Controle nodig</small> }</span><app-icon name="chevron-down" [size]="14" /></summary>
+          <app-odoo-connection-panel />
+        </details>
+      }
       <section class="fin-bank-register" aria-label="Transacties van deze rekening">
-        <header class="fin-bank-register__head"><div><h2>Transacties</h2><p>Koppel een factuur, uitgave of bestaande betaling. Maximaal € 0,02 verschil.</p></div>
+        <header class="fin-bank-register__head"><div><h2>Transacties <span class="fin-bank-register__count">{{ transactionCount(account.account) }}</span></h2><p>Koppel aan een factuur, uitgave of betaling.</p></div>
           @if (account.manualMovementsAllowed && !account.archived) { <button class="wk-btn wk-btn--sm" type="button" (click)="state.openMovement({ accountKey: account.account })"><app-icon name="plus" [size]="14" />Transactie noteren</button> }
         </header>
         @if (state.desk()) {
@@ -54,7 +62,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
       </section>
     } @else {
       <header class="fin-bank-home">
-        <div><h2>Je bankrekeningen</h2><p>Open een rekening om transacties te bekijken en facturen af te punten.</p></div>
+        <div><h2>Je bankrekeningen</h2><p>Open een rekening om transacties te koppelen.</p></div>
         <div class="fin-bank-home__balance"><span>Totaal berekend saldo</span><strong>{{ known() ? (state.currentBankEur() | eur) : '—' }}</strong><small>{{ headSub() }}</small></div>
       </header>
       @if (state.location().tab === 'movements') { <p class="fin-hint">Kies hieronder de rekening waarvan je de transacties wilt bekijken.</p> }
@@ -65,7 +73,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
               <span class="fin-bank-account__icon"><app-icon name="bank" [size]="22" /></span>
               <span class="fin-bank-account-row__name"><b>{{ account.label }}</b><span>{{ iban(account.account) }}</span><small>{{ account.source === 'ODOO' ? 'Via Odoo' : 'Handmatige rekening' }} · {{ transactionCount(account.account) }} {{ transactionCount(account.account) === 1 ? 'transactie' : 'transacties' }}</small></span>
               <span class="fin-bank-account-row__balance"><b>{{ account.currentEur === null ? 'Nog geen saldo' : (account.currentEur | eur) }}</b><small>{{ freshLabel(account) }}</small></span>
-              <span class="fin-bank-account-row__pending" [class.is-open]="openCount(account.account) > 0">{{ openCount(account.account) ? openCount(account.account) + ' te koppelen' : 'Alles gekoppeld' }}</span>
+              <span class="fin-bank-account-row__pending" [class.is-open]="openCount(account.account) > 0">{{ pendingLabel(account.account) }}</span>
               <app-icon name="chevron-right" [size]="18" />
             </button>
             <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" [attr.aria-label]="account.label + ' beheren'" (click)="accountMenu(account, $event)"><app-icon name="more" [size]="18" /></button>
@@ -132,6 +140,41 @@ export class BankPanel implements FinanceSectionApi {
     if (this.state.location().tab === 'movements') this.state.go({ account }, 'push');
     else this.movements(account);
   }
+  /** Account switching preserves the transaction search; the overview remains an explicit destination. */
+  chooseAccount(event: MouseEvent): void {
+    const current = this.selectedAccount();
+    const accounts = [...this.state.accountsView()];
+    if (current?.archived) accounts.push(current);
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.state.openMenu({ title: 'Rekening kiezen', anchor: this.state.desk() ? { x: rect.left, y: rect.bottom + 6 } : null,
+      cancelLabel: this.state.desk() ? '' : 'Sluiten',
+      items: [
+        ...accounts.map(account => ({ id: 'account:' + account.account, label: account.label,
+          hint: this.iban(account.account) + (account.archived ? ' · Gearchiveerd' : ''), iconName: 'bank', checked: current?.account === account.account })),
+        { id: 'overview', label: 'Alle rekeningen', iconName: 'list', divider: true },
+      ],
+      pick: id => {
+        if (id === 'overview') this.state.go({ view: 'bank', tab: 'accounts' }, 'push');
+        else {
+          const account = accounts.find(account => id === 'account:' + account.account);
+          if (account && account.account !== current?.account) this.openAccount(account.account);
+        }
+      },
+    });
+  }
+  showUnlinked(): void { this.state.go({ link: 'unlinked', dir: '', q: '', period: 'all', from: '', to: '' }); }
+  pendingLabel(key: string): string {
+    const count = this.openCount(key);
+    return count ? count + ' te koppelen' : this.transactionCount(key) ? 'Alles gekoppeld' : 'Nog geen transacties';
+  }
+  readonly connectionPanel = viewChild(OdooConnectionPanel);
+  readonly connectionAttention = computed(() => {
+    const panel = this.connectionPanel();
+    if (!panel) return false;
+    if (panel.error() || panel.documentsError()) return true;
+    const result = panel.syncResult();
+    return (!panel.loading() && !panel.ready()) || !!(result && (!result.complete || result.conflicts > 0 || result.skippedNonEur > 0));
+  });
   readonly movementPanel = viewChild(BankMovementPanel);
 
   readonly known = computed(() => this.state.accountsView().some((account) => account.currentEur !== null));
@@ -220,9 +263,10 @@ export class BankPanel implements FinanceSectionApi {
 
   accountMenu(account: AccountView, event: MouseEvent): void {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    this.state.openMenu({ title: account.label, anchor: { x: rect.left, y: rect.bottom + 6 },
+    this.state.openMenu({ title: account.label, anchor: this.state.desk() ? { x: rect.left, y: rect.bottom + 6 } : null,
+      cancelLabel: this.state.desk() ? '' : 'Sluiten',
       items: [
-        { id: 'manage', label: 'Naam en rekeningbeheer', iconName: 'pencil' },
+        { id: 'manage', label: 'Rekeninggegevens en beheer', iconName: 'pencil' },
         { id: 'check', label: account.reading ? 'Saldo controleren' : 'Beginsaldo invullen', iconName: 'tick' },
         { id: 'history', label: 'Saldogeschiedenis', iconName: 'recent' },
         ...(account.reading ? [{ id: 'fix', label: 'Saldo corrigeren', iconName: 'pencil' }] : []),
@@ -241,8 +285,9 @@ export class BankPanel implements FinanceSectionApi {
   }
 
   freshLabel(account: AccountView): string {
-    if (!account.reading || account.ageDays === null) return 'Nog geen saldo';
-    return account.ageDays === 0 ? 'Vandaag gecontroleerd' : `${account.ageDays} d geleden`;
+    if (!account.reading) return 'Nog geen saldo';
+    if (account.ageDays === null) return 'Historische saldocontrole';
+    return account.ageDays === 0 ? 'Saldo vandaag gecontroleerd' : account.ageDays === 1 ? 'Saldo gisteren gecontroleerd' : `Saldo ${account.ageDays} d geleden gecontroleerd`;
   }
 
   /** The last digits of an IBAN key, so two accounts of one bank can be told apart. */

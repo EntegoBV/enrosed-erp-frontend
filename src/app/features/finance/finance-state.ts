@@ -39,7 +39,7 @@ import { FinanceIntake } from './finance-intake';
 import {
   addDays, cashOutlook, cashTotalOf, costRegimeCells, occurrencesBetween, openOf, previewBacklog, quarterOf, returnLineOf, returnVatOf, upcomingRecurring,
 } from './finance-metrics';
-import { blankBalance, blankCost, blankCostParty, blankFair, blankRecurring, localIsoDay, periodRange } from './finance-sections';
+import { blankBalance, blankCost, blankCostParty, blankFair, blankRecurring, FINANCE_TABS, financeSection, localIsoDay, periodRange } from './finance-sections';
 import type { PeriodId } from './finance-sections';
 import type { FinanceMenu } from './finance-section';
 import { FinanceLocation, NO_ACCOUNT, financeQueryParams, parseFinanceLocation, patchLocation } from './finance-url';
@@ -689,6 +689,19 @@ export class FinanceState {
   /* ------------------------------------------------------- page chrome */
 
   readonly inspect = signal<InspectTarget | null>(null);
+  private readonly inspectParents = signal<InspectTarget[]>([]);
+  private readonly inspectOrigin = signal<string | null>(null);
+  readonly inspectorBackLabel = computed(() => {
+    const parent = this.inspectParents().at(-1);
+    return parent ? `Terug naar ${this.inspectTitle(parent)}` : this.inspectOrigin() || this.inspectorOriginLabel();
+  });
+  private inspectorOriginLabel(): string {
+    const location = this.location();
+    if (location.view === 'bank' && location.tab === 'movements') return 'Terug naar transacties';
+    const tab = FINANCE_TABS[location.view].find(item => item.id === location.tab);
+    const label = location.view === 'costs' ? tab?.label : financeSection(location.view).label;
+    return `Terug naar ${(label || 'overzicht').toLocaleLowerCase('nl-BE')}`;
+  }
   readonly menu = signal<FinanceMenu | null>(null);
   readonly helpOpen = signal(false);
   readonly shortcutsOpen = signal(false);
@@ -712,9 +725,9 @@ export class FinanceState {
     effect(() => {
       const location = this.location();
       untracked(() => {
-        const here = `${location.view}/${location.tab}`;
+        const here = `${location.view}/${location.tab}/${location.view === 'bank' ? location.account : ''}`;
         if (location.cost) this.inspect.set({ kind: 'cost', id: location.cost });
-        else if (here !== section || (this.inspect()?.kind === 'cost' && here === 'costs/company')) this.inspect.set(null);
+        else if (here !== section || (this.inspect()?.kind === 'cost' && location.view === 'costs' && location.tab === 'company')) this.clearInspector();
         if (location.view !== 'analysis') this.analysisPushed = false;
         section = here;
       });
@@ -738,6 +751,29 @@ export class FinanceState {
    * else first takes the cost off it; elsewhere the target is set directly.
    */
   inspectItem(target: InspectTarget): void {
+    this.inspectOrigin.set(this.inspectorOriginLabel());
+    this.inspectParents.set([]);
+    this.selectInspector(target);
+  }
+
+  /** Related records keep a small detail trail; closing still returns to the original list. */
+  inspectRelated(target: InspectTarget): void {
+    const current = this.inspect();
+    if (current?.kind === target.kind && current.id === target.id) return;
+    if (!this.inspectOrigin()) this.inspectOrigin.set(this.inspectorOriginLabel());
+    if (current) this.inspectParents.update(parents => [...parents, current]);
+    this.selectInspector(target);
+  }
+
+  backInspector(): void {
+    const parents = this.inspectParents();
+    const parent = parents.at(-1);
+    if (!parent) { this.closeInspector(); return; }
+    this.inspectParents.set(parents.slice(0, -1));
+    this.selectInspector(parent);
+  }
+
+  private selectInspector(target: InspectTarget): void {
     const location = this.location();
     const company = location.view === 'costs' && location.tab === 'company';
     if (target.kind === 'cost' && company) {
@@ -801,7 +837,13 @@ export class FinanceState {
 
   closeInspector(): void {
     if (this.location().cost) this.go({ cost: null });
+    this.clearInspector();
+  }
+
+  private clearInspector(): void {
     this.inspect.set(null);
+    this.inspectParents.set([]);
+    this.inspectOrigin.set(null);
   }
 
   openMenu(menu: FinanceMenu): void {

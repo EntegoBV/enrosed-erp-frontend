@@ -23,16 +23,22 @@
   .fin-bank-account-row__pending.is-open { color: var(--rose-dark); background: var(--rose-soft); }
   .fin-bank-account { margin-bottom: 16px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
   .fin-bank-account__identity { display: flex; align-items: center; gap: 12px; }
-  .fin-bank-account__identity > div { flex: 1; min-width: 0; }
-  .fin-bank-account__iban { margin: 0 0 3px; font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .fin-bank-account__figures { display: grid; grid-template-columns: 1.3fr 1fr 1fr; margin-top: 20px; }
+  .fin-bank-account__choose { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .fin-bank-account__name { display: grid; gap: 4px; min-width: 0; }
+  .fin-bank-account__name b { font-size: 15px; overflow-wrap: anywhere; }
+  .fin-bank-account__choose > app-icon { flex: none; color: var(--muted); }
+  .fin-bank-account__iban { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .fin-bank-account__manage { flex: none; min-height: 44px; }
+  .fin-bank-account__figures { display: grid; grid-template-columns: minmax(0,1fr) minmax(110px,.65fr); max-width: 620px; margin-top: 18px; }
   .fin-bank-account__figures > * { display: grid; align-content: start; gap: 5px; padding: 0 22px; border: 0; border-left: 1px solid var(--line); background: none; text-align: left; color: inherit; font: inherit; }
   .fin-bank-account__figures > :first-child { padding-left: 0; border-left: 0; }
   .fin-bank-account__figures button { cursor: pointer; }
   .fin-bank-account__figures button:hover strong { color: var(--rose-dark); text-decoration: underline; }
-  .fin-bank-account__figures span { font-size: 12px; color: var(--muted); }
+  .fin-bank-account__figures span { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
   .fin-bank-account__figures strong { font-size: 23px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .fin-bank-account__figures small { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .fin-bank-account__context { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+  .fin-bank-connection > summary { display: none; }
+  .fin-bank-register__count { display: inline-block; margin-left: 4px; font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
   .fin-bank-register__head { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 24px 0 15px; }
   .fin-bank-register__head h2 { font-size: 16px; }
   .fin-bank-register__head p { font-size: 12px; }
@@ -49,7 +55,7 @@
   .fin-bank-pending__row small { color: var(--muted); font-size: 11px; }
   .fin-bank-pending__row strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-bank-back { flex-shrink: 0; }
-  .fin-bank-account-row__open:focus-visible, .fin-bank-account__figures button:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
+  .fin-bank-account-row__open:focus-visible, .fin-bank-account__choose:focus-visible, .fin-bank-connection summary:focus-visible, .fin-bank-account__figures button:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
 }
 @media (max-width: 1023px) {
   #finance-workspace {
@@ -61,31 +67,52 @@
 @media (max-width: 679px) {
   #finance-workspace {
     app-bank-panel { padding: 0 16px 24px; }
-    .fin-bank-home { flex-direction: column; gap: 18px; margin-top: 10px; }
-    .fin-bank-home h2 { font-size: 17px; }
-    .fin-bank-home__balance { text-align: left; }
+    .fin-bank-home { gap: 12px; margin: 4px 0 16px; flex-direction: column; }
+    .fin-bank-home h2 { font-size: 15px; margin-bottom: 3px; }
+    .fin-bank-home p { font-size: 12px; }
+    .fin-bank-home__balance { width: 100%; max-width: none; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 4px 12px; text-align: left; }
+    .fin-bank-home__balance strong { font-size: 22px; }
+    .fin-bank-home__balance small { grid-column: 1 / -1; font-size: 10px; }
+    .fin-bank-accounts { gap: 8px; margin-bottom: 16px; }
     .fin-bank-account-row { position: relative; padding-right: 0; }
-    .fin-bank-account-row > .wk-btn { position: absolute; top: 10px; right: 5px; }
-    .fin-bank-account-row__open { grid-template-columns: 34px minmax(0,1fr) 18px; gap: 10px; padding: 18px 14px; }
-    .fin-bank-account__icon { width: 34px; height: 34px; border-radius: 10px; }
-    .fin-bank-account-row__name { padding-right: 22px; grid-column: 2 / 4; }
+    .fin-bank-account-row > .wk-btn { position: absolute; top: 4px; right: 4px; min-width: 44px; min-height: 44px; }
+    .fin-bank-account-row__open { grid-template-columns: minmax(0,1fr) auto; gap: 10px 8px; padding: 14px; }
+    .fin-bank-account-row__open > .fin-bank-account__icon { display: none; }
+    .fin-bank-account-row__name { grid-column: 1 / -1; grid-row: 1; gap: 3px; padding-right: 34px; }
     .fin-bank-account-row__name b { font-size: 14px; }
     .fin-bank-account-row__name span { font-size: 11px; }
-    .fin-bank-account-row__balance { grid-column: 2; grid-row: 2; text-align: left; padding-top: 3px; }
-    .fin-bank-account-row__pending { grid-column: 2; grid-row: 3; }
-    .fin-bank-account-row__open > app-icon { grid-column: 3; grid-row: 2; }
-    .fin-bank-account { padding: 15px; }
-    .fin-bank-account__identity { flex-wrap: wrap; gap: 10px; }
-    .fin-bank-account__identity > div { min-width: 180px; }
-    .fin-bank-account__identity > button { margin-left: 44px; }
-    .fin-bank-account__iban { font-size: 12px; }
-    .fin-bank-account__identity .fin-hint { font-size: 11px; }
-    .fin-bank-account__figures { grid-template-columns: 1fr 1fr; gap: 16px 0; }
-    .fin-bank-account__figures > * { padding: 0 12px; }
-    .fin-bank-account__figures > :first-child { grid-column: 1 / -1; }
-    .fin-bank-account__figures > :nth-child(2) { border: 0; padding-left: 0; }
-    .fin-bank-account__figures strong { font-size: 21px; }
-    .fin-bank-register__head { align-items: flex-start; flex-direction: column; margin-top: 22px; }
+    .fin-bank-account-row__name small { font-size: 10px; }
+    .fin-bank-account-row__balance { grid-column: 1; grid-row: 2; text-align: left; }
+    .fin-bank-account-row__balance b { font-size: 19px; }
+    .fin-bank-account-row__balance small { display: none; }
+    .fin-bank-account-row__pending { grid-column: 2; grid-row: 2; justify-self: end; padding: 5px 7px; font-size: 10px; }
+    .fin-bank-account-row__open > app-icon { display: none; }
+    .fin-bank-account { padding: 12px 14px; margin-bottom: 8px; }
+    .fin-bank-account__identity { gap: 8px; }
+    .fin-bank-account__choose { gap: 7px; }
+    .fin-bank-account__choose > .fin-bank-account__icon { display: none; }
+    .fin-bank-account__name { gap: 3px; }
+    .fin-bank-account__name b { font-size: 13px; }
+    .fin-bank-account__iban { font-size: 11px; }
+    .fin-bank-account__manage { width: 44px; padding: 0; border-color: transparent; }
+    .fin-bank-account__manage span { display: none; }
+    .fin-bank-account__figures { grid-template-columns: minmax(0,1fr) minmax(90px,.65fr); margin-top: 12px; }
+    .fin-bank-account__figures > * { gap: 4px; padding: 0 0 0 14px; }
+    .fin-bank-account__figures > :first-child { padding-left: 0; }
+    .fin-bank-account__figures span { font-size: 11px; }
+    .fin-bank-account__figures strong { font-size: 21px; overflow-wrap: anywhere; }
+    .fin-bank-account__context { margin-top: 9px; font-size: 10px; }
+    .fin-bank-connection { margin-bottom: 10px; }
+    .fin-bank-connection > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 2px; color: var(--ink-2); font-size: 12px; font-weight: 550; list-style: none; cursor: pointer; }
+    .fin-bank-connection > summary::-webkit-details-marker { display: none; }
+    .fin-bank-connection > summary > span { flex: 1; }
+    .fin-bank-connection > summary small { margin-left: 6px; color: var(--rose-dark); font-size: 10px; font-weight: 650; }
+    .fin-bank-connection[open] > summary > app-icon:last-child { transform: rotate(180deg); }
+    .fin-bank-connection app-odoo-connection-panel { margin-bottom: 12px; }
+    .fin-bank-register__head { align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+    .fin-bank-register__head h2 { margin-bottom: 0; font-size: 15px; }
+    .fin-bank-register__head p { display: none; }
+    .fin-bank-register__head > button { min-height: 44px; }
     .fin-bank-register app-bank-movement-panel { display: block; margin: 0 -16px; }
     .fin-bank-pending__row { flex-wrap: wrap; }
     .fin-bank-pending__row > span { flex-basis: 60%; }
