@@ -448,8 +448,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                (blur)="setCustomDestinationPort($any($event.target).value)" />
                       }
                     </div>
-                    <!-- Where the import VAT goes in the return (vat-return.ts): a
-                         suggestion follows the port until it is confirmed here. -->
+                    <!-- What the container means for the VAT return (vat-return.ts): the
+                         purchase alone, an acquisition or import VAT. A suggestion follows
+                         the port until it is confirmed here. -->
                     <div class="field">
                       <label for="po-clearance">Inklaring</label>
                       <select class="select" id="po-clearance"

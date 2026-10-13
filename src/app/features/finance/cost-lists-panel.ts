@@ -15,7 +15,7 @@ import { normaliseParty } from './party-suggestions';
 
 interface PartyRow {
   party: CostParty;
-  /** "Beurs & stand · 21 % · TICA · Nederland · Buitenlandse btw", or ''. */
+  /** "Beurs & stand · 21 % · TICA · Nederland · EU · dienst", or ''. */
   detail: string;
   /** With a space every four characters. */
   iban: string;

@@ -129,12 +129,15 @@ function filingDeadline(year: number, quarter: number): string {
 }
 
 /**
- * Antwerp clears in Belgium. Every other port clears in the Netherlands
- * through the fiscal representative, and the goods usually stay there (at the
- * transport partner's) until they are sold: only the purchase counts, grid 81.
+ * The Belgian ports (Antwerp, Zeebrugge) clear in Belgium. Any other port is
+ * read as a Dutch one (Rotterdam, Amsterdam): cleared through the fiscal
+ * representative, and the goods usually stay there (at the transport
+ * partner's) until they are sold, so only the purchase counts, grid 81. A
+ * German, French or British port gets the same suggestion; the badge asks to
+ * confirm.
  */
 export function clearanceSuggestion(destinationPort: string | null | undefined): Clearance {
-  return /antwerp/i.test(destinationPort ?? '') ? 'BE_CUSTOMS' : 'NL_FISCAL_REP_SOLD_IN_NL';
+  return /antwerp|zeebrug/i.test(destinationPort ?? '') ? 'BE_CUSTOMS' : 'NL_FISCAL_REP_SOLD_IN_NL';
 }
 
 /** Issued invoices and credit notes (partner advances included); concepts and dead documents stay out. */

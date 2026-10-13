@@ -54,7 +54,7 @@ export interface VatRegimeDef {
 export const VAT_REGIMES: readonly VatRegimeDef[] = [
   { code: 'BE', label: 'België', hint: 'btw aftrekbaar', group: 'Belgisch', baseGrids: true, detailGrid: null, dueGrid: null, deductible: true, inExpenseTotals: true },
   { code: 'EU_GOODS', label: 'EU · goederen', hint: 'btw verlegd', group: 'Verlegd', baseGrids: true, detailGrid: 86, dueGrid: 55, deductible: true, inExpenseTotals: true },
-  { code: 'EU_SERVICES', label: 'EU · dienst', hint: 'btw verlegd (Google, Meta, software uit de EU)', group: 'Verlegd', baseGrids: true, detailGrid: 88, dueGrid: 55, deductible: true, inExpenseTotals: true },
+  { code: 'EU_SERVICES', label: 'EU · dienst', hint: 'btw verlegd (Google, Meta, software uit de EU, beursstand)', group: 'Verlegd', baseGrids: true, detailGrid: 88, dueGrid: 55, deductible: true, inExpenseTotals: true },
   { code: 'NON_EU_SERVICES', label: 'Buiten de EU · dienst', hint: 'btw verlegd (software uit de VS)', group: 'Verlegd', baseGrids: true, detailGrid: 87, dueGrid: 56, deductible: true, inExpenseTotals: true },
   { code: 'FOREIGN_VAT', label: 'Buitenlandse btw', hint: 'op de factuur, hier niet aftrekbaar (hotel, parking in NL)', group: 'Geen aftrek', baseGrids: true, detailGrid: null, dueGrid: null, deductible: false, inExpenseTotals: true },
   { code: 'EXEMPT', label: 'Vrijgesteld', hint: 'verzekering, post, zeevracht van de expediteur', group: 'Geen aftrek', baseGrids: true, detailGrid: null, dueGrid: null, deductible: false, inExpenseTotals: true },

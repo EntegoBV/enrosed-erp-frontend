@@ -128,6 +128,7 @@ test('containers: the goods in 81, the import VAT by clearance', () => {
   assert.equal(eur(notReceived, '81'), 0, 'concepts never count');
   assert.equal(clearanceSuggestion('Antwerp'), 'BE_CUSTOMS');
   assert.equal(clearanceSuggestion('Antwerpen'), 'BE_CUSTOMS');
+  assert.equal(clearanceSuggestion('Zeebrugge'), 'BE_CUSTOMS');
   assert.equal(clearanceSuggestion('Rotterdam'), 'NL_FISCAL_REP_SOLD_IN_NL');
   assert.equal(clearanceSuggestion(null), 'NL_FISCAL_REP_SOLD_IN_NL');
 });

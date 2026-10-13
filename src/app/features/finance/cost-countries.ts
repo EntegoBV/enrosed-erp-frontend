@@ -51,9 +51,9 @@ const REASON = 'Afgeleid van het land · controleer';
 /**
  * The regime a supplier's country suggests, for the form to prefill
  * unconfirmed: a Belgian number or country is Belgian VAT; an EU supplier is
- * reverse charge (goods for Materiaal, services otherwise), except fairs and
- * travel, which carry foreign VAT; a non-EU service is reverse charge too,
- * non-EU goods go through customs and get no suggestion.
+ * reverse charge (goods for Materiaal, services otherwise, a fair organiser's
+ * stand included), except travel, which carries foreign VAT; a non-EU service
+ * is reverse charge too, non-EU goods go through customs and get no suggestion.
  */
 export function suggestRegime(input: { country: string | null; vatNumber: string | null; category: string | null }): RegimeSuggestion | null {
   const number = cleanVatNumber(input.vatNumber);
