@@ -102,7 +102,7 @@ test('Kader II from the issued documents: rate, intra-EU, export, credit notes',
 test('containers: the goods in 81, the import VAT by clearance', () => {
   const representative = { importVatDeferred: false, representative: '24/7 Customs' };
   const nl = containerLines([container({ id: 1, receivedOn: '2026-08-15', clearance: 'NL_FISCAL_REP_TO_BE' })], representative);
-  assert.deepEqual([nl[0].goodsEur, nl[0].baseEur, nl[0].vatEur, nl[0].dutyEur, nl[0].dateSource, nl[0].suggested], [20000, 23320, 4897.2, 1320, 'received', 'NL_FISCAL_REP_TO_BE']);
+  assert.deepEqual([nl[0].goodsEur, nl[0].baseEur, nl[0].vatEur, nl[0].dutyEur, nl[0].dateSource, nl[0].suggested], [20000, 23320, 4897.2, 1320, 'received', 'NL_FISCAL_REP_SOLD_IN_NL']);
   const viaRep = vatReturn(2026, 3, [], [], nl, settings);
   assert.deepEqual([eur(viaRep, '81'), eur(viaRep, '86'), eur(viaRep, '55'), eur(viaRep, '59')], [20000, 23320, 4897.2, 4897.2]);
   assert.ok(rows(viaRep, '86')[0].badges.includes('via 24/7 Customs'));
@@ -119,7 +119,7 @@ test('containers: the goods in 81, the import VAT by clearance', () => {
   assert.ok(rows(deferred, '87')[0].badges.includes('ET 14000 · zelf aangegeven'));
 
   const open = vatReturn(2026, 3, [], [], containerLines([container({ id: 4, expectedArrival: '2026-09-20', clearance: null, port: 'Rotterdam' })], representative), settings);
-  assert.deepEqual([eur(open, '81'), eur(open, '86')], [20000, 23320], 'the suggestion applies until the clearance is picked');
+  assert.deepEqual([eur(open, '81'), eur(open, '86'), eur(open, '55'), eur(open, '59')], [20000, 0, 0, 0], 'the suggestion applies until the clearance is picked: the goods stay in the Netherlands');
   assert.ok(rows(open, '81')[0].badges.includes('inklaring te bevestigen'));
   assert.ok(rows(open, '81')[0].badges.includes('verwachte aankomst'));
   assert.equal(open.status, 'provisional');
@@ -128,8 +128,8 @@ test('containers: the goods in 81, the import VAT by clearance', () => {
   assert.equal(eur(notReceived, '81'), 0, 'concepts never count');
   assert.equal(clearanceSuggestion('Antwerp'), 'BE_CUSTOMS');
   assert.equal(clearanceSuggestion('Antwerpen'), 'BE_CUSTOMS');
-  assert.equal(clearanceSuggestion('Rotterdam'), 'NL_FISCAL_REP_TO_BE');
-  assert.equal(clearanceSuggestion(null), 'NL_FISCAL_REP_TO_BE');
+  assert.equal(clearanceSuggestion('Rotterdam'), 'NL_FISCAL_REP_SOLD_IN_NL');
+  assert.equal(clearanceSuggestion(null), 'NL_FISCAL_REP_SOLD_IN_NL');
 });
 
 test('71 and 72 are never both filled; the CSV says what state the return is in', () => {
@@ -148,6 +148,10 @@ test('71 and 72 are never both filled; the CSV says what state the return is in'
   const provisional = vatReturnCsv(vatReturn(2026, 3, lines([cost({ id: 2, amountExclEur: 10, vatRegimeConfirmed: false }), cost({ id: 3, amountExclEur: 10, vatPct: 0, vatRegime: null })]), [], [], settings)).split('\r\n');
   assert.match(provisional[0], /^VOORLOPIG · 2 te bevestigen/);
   assert.ok(provisional.includes(';Nog te bepalen;;;Kost 3;2026-08-10;Partij;F-3;10,00;;btw-regeling kiezen'), 'the accountant gets the amount to decide on');
-  const containerRows: ContainerLine[] = containerLines([container({ id: 1, receivedOn: '2026-08-15', clearance: null })], { importVatDeferred: false, representative: null });
-  assert.ok(vatReturnCsv(vatReturn(2026, 3, [], [], containerRows, settings)).includes('via fiscaal vertegenwoordiger'));
+  const toBelgium: ContainerLine[] = containerLines([container({ id: 1, receivedOn: '2026-08-15', clearance: 'NL_FISCAL_REP_TO_BE' })], { importVatDeferred: false, representative: null });
+  assert.ok(vatReturnCsv(vatReturn(2026, 3, [], [], toBelgium, settings)).includes('via fiscaal vertegenwoordiger'));
+  const unconfirmed: ContainerLine[] = containerLines([container({ id: 2, receivedOn: '2026-08-15', clearance: null })], { importVatDeferred: false, representative: null });
+  const unconfirmedCsv = vatReturnCsv(vatReturn(2026, 3, [], [], unconfirmed, settings));
+  assert.ok(unconfirmedCsv.includes('inklaring te bevestigen'), 'an unconfirmed container says so');
+  assert.ok(!unconfirmedCsv.includes('via fiscaal vertegenwoordiger'), 'and is not declared as an acquisition until it is said to come to Belgium');
 });

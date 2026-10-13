@@ -460,7 +460,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                           <option [value]="option.value">{{ option.label }}</option>
                         }
                       </select>
-                      <span class="hint">Bepaalt de btw-aangifte: 86/55/59 bij inklaring in Nederland, 81 en de invoer-btw bij inklaring in België.</span>
+                      <span class="hint">Bepaalt de btw-aangifte. Blijft in Nederland: alleen de aankoop (81). Komt naar België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
                     </div>
                     <!-- Where the container is unloaded: the stock of every
                          line lands there on Ontvangen. -->
@@ -3355,9 +3355,9 @@ export class PurchaseEditor {
   readonly otherPortValue = OTHER_PORT_VALUE;
   /** Where the container clears customs, as the VAT return reads it; null stays 'te bevestigen' with the port's suggestion. */
   readonly clearanceOptions: readonly { value: Clearance; label: string }[] = [
+    { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'In Nederland via de fiscaal vertegenwoordiger · blijft in Nederland' },
+    { value: 'NL_FISCAL_REP_TO_BE', label: 'In Nederland via de fiscaal vertegenwoordiger · komt naar België' },
     { value: 'BE_CUSTOMS', label: 'In België (douane)' },
-    { value: 'NL_FISCAL_REP_TO_BE', label: 'In Nederland via de fiscaal vertegenwoordiger · naar België' },
-    { value: 'NL_FISCAL_REP_SOLD_IN_NL', label: 'In Nederland · daar verkocht' },
   ];
 
   suggestedClearanceLabel(destinationPort: string | null | undefined): string {

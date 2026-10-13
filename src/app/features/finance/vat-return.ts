@@ -128,9 +128,13 @@ function filingDeadline(year: number, quarter: number): string {
   return quarter === 4 ? `${year + 1}-01-25` : `${year}-${pad(quarter * 3 + 1)}-25`;
 }
 
-/** Antwerp clears in Belgium; Rotterdam and Amsterdam through the Dutch fiscal representative, goods to Belgium. */
+/**
+ * Antwerp clears in Belgium. Every other port clears in the Netherlands
+ * through the fiscal representative, and the goods usually stay there (at the
+ * transport partner's) until they are sold: only the purchase counts, grid 81.
+ */
 export function clearanceSuggestion(destinationPort: string | null | undefined): Clearance {
-  return /antwerp/i.test(destinationPort ?? '') ? 'BE_CUSTOMS' : 'NL_FISCAL_REP_TO_BE';
+  return /antwerp/i.test(destinationPort ?? '') ? 'BE_CUSTOMS' : 'NL_FISCAL_REP_SOLD_IN_NL';
 }
 
 /** Issued invoices and credit notes (partner advances included); concepts and dead documents stay out. */

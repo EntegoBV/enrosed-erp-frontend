@@ -539,7 +539,7 @@ type DeskRow =
                         <option value="">Nog te bevestigen (voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }})</option>
                         @for (option of clearanceOptions; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
                       </select>
-                      <span class="hint">Bepaalt de btw-aangifte: 86/55/59 bij inklaring in Nederland, 81 en de invoer-btw bij inklaring in België.</span>
+                      <span class="hint">Bepaalt de btw-aangifte. Blijft in Nederland: alleen de aankoop (81). Komt naar België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
                     </div>
                     <div class="field">
                       <label for="dk-receiving">Lossen op</label>

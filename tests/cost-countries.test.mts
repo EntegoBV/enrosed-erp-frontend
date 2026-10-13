@@ -34,7 +34,7 @@ test('the country suggests a regime, unconfirmed, with its reason', () => {
   assert.deepEqual(suggestRegime({ country: 'IE', vatNumber: null, category: 'SOFTWARE' }), { regime: 'EU_SERVICES', reason });
   assert.deepEqual(suggestRegime({ country: null, vatNumber: 'IE6388047V', category: 'SOFTWARE' }), { regime: 'EU_SERVICES', reason }, 'the number tells the country');
   assert.deepEqual(suggestRegime({ country: 'DE', vatNumber: null, category: 'MATERIAAL' }), { regime: 'EU_GOODS', reason });
-  assert.deepEqual(suggestRegime({ country: 'NL', vatNumber: null, category: 'BEURS' }), { regime: 'FOREIGN_VAT', reason }, 'a fair invoice carries Dutch VAT');
+  assert.deepEqual(suggestRegime({ country: 'NL', vatNumber: null, category: 'BEURS' }), { regime: 'EU_SERVICES', reason }, 'a fair organiser (TICA, Ede) reverse charges the stand');
   assert.deepEqual(suggestRegime({ country: 'NL', vatNumber: null, category: 'REIS' }), { regime: 'FOREIGN_VAT', reason });
   assert.deepEqual(suggestRegime({ country: 'US', vatNumber: null, category: 'SOFTWARE' }), { regime: 'NON_EU_SERVICES', reason });
   assert.equal(suggestRegime({ country: 'CN', vatNumber: null, category: 'MATERIAAL' }), null, 'goods from outside the EU go through customs');

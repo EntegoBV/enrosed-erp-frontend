@@ -64,7 +64,8 @@ export function suggestRegime(input: { country: string | null; vatNumber: string
   if (!country) return null;
   const inEu = EU.has(country) || (country === 'XI' && goods);
   if (inEu) {
-    if (category === 'BEURS' || category === 'REIS') return { regime: 'FOREIGN_VAT', reason: REASON };
+    /* A hotel or a train abroad carries that country's VAT. A fair organiser (TICA, Ede) invoices the stand with the VAT reverse charged. */
+    if (category === 'REIS') return { regime: 'FOREIGN_VAT', reason: REASON };
     return { regime: goods ? 'EU_GOODS' : 'EU_SERVICES', reason: REASON };
   }
   return goods ? null : { regime: 'NON_EU_SERVICES', reason: REASON };
