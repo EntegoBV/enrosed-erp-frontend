@@ -10,10 +10,10 @@ import { dayMonth } from './finance-format';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
-import type { CostLedgerRow } from './cost-ledger';
 import { paymentMomentLabel } from './incoming-money';
 
 type AccountView = FinanceState['accountsView'] extends () => (infer T)[] ? T : never;
+type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : never;
 
 /**
  * Bank: only accounts and movements. Rekeningen answers "klopt mijn
@@ -69,13 +69,13 @@ type AccountView = FinanceState['accountsView'] extends () => (infer T)[] ? T : 
           <p class="fin-hint">Betaald gezet, maar geen bankbeweging gevonden na je laatste saldocontrole.</p>
           <div class="wk-table fin-table fin-table--unbanked" role="table">
             <div class="wk-thead" role="row"><span class="wk-th">Betaald op</span><span class="wk-th">Wat</span><span class="wk-th" data-hide="xs">Soort</span><span class="wk-th wk-th--num">Bedrag</span><span class="wk-th"></span></div>
-            @for (item of state.unbanked(); track item.row.key) {
+            @for (item of state.unbanked(); track item.kind + '#' + item.id) {
               <div class="wk-tr" role="row">
                 <span class="wk-td">{{ day(item.paidOn) }}</span>
                 <span class="wk-td">{{ item.row.description }}<span class="wk-td__sub">{{ item.row.cost ? item.row.party : item.row.reference }}</span></span>
                 <span class="wk-td" data-hide="xs"><span class="wk-pill" [class.tone-teal]="!!item.row.cost" [class.tone-blue]="!item.row.cost">{{ item.row.cost ? 'Kost' : 'Container' }}</span></span>
                 <span class="wk-td wk-td--num">{{ item.amountEur | eur }}</span>
-                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="note(item.row)">Noteren</button></span>
+                <span class="wk-td fin-td-end"><button class="wk-btn wk-btn--sm" type="button" (click)="note(item)">Noteren</button></span>
               </div>
             }
           </div>
@@ -102,10 +102,10 @@ type AccountView = FinanceState['accountsView'] extends () => (infer T)[] ? T : 
         <section class="ios-section">
           <div class="ios-section__head"><h2>Nog niet op de bank</h2><span class="ios-section__trail">{{ unbankedEur() | eur }}</span></div>
           <div class="ios-group">
-            @for (item of state.unbanked(); track item.row.key) {
+            @for (item of state.unbanked(); track item.kind + '#' + item.id) {
               <div class="ios-cell">
                 <span class="ios-cell__body"><span class="ios-cell__title">{{ item.row.description }}</span><span class="ios-cell__sub">{{ day(item.paidOn) }} · {{ item.row.cost ? 'Kost' : 'Container' }} · {{ item.amountEur | eur }}</span></span>
-                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="note(item.row)">Noteer</button>
+                <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="note(item)">Noteer</button>
               </div>
             }
           </div>
@@ -217,10 +217,12 @@ export class BankPanel implements FinanceSectionApi {
       pick: (id) => (id === 'history' ? this.state.historyAccount.set(account.account) : this.state.openBank(account.reading)) });
   }
 
-  /** 'Noteren': the movement form prefilled with the amount, the day and the marker. */
-  note(row: CostLedgerRow): void {
+  /** 'Noteren': the movement form prefilled with the amount, the day and the marker of this payment (a cost paid before the rows existed counts whole). */
+  note(item: UnbankedItem): void {
+    const row = item.row;
     if (row.cost) {
-      this.state.openMovement(this.state.costMovement(row.cost));
+      const payment = item.kind === 'kostbetaling' ? (row.cost.payments ?? []).find((candidate) => candidate.id === item.id) ?? null : null;
+      this.state.openMovement(this.state.costMovement(row.cost, payment));
       return;
     }
     const payment = row.payment!;

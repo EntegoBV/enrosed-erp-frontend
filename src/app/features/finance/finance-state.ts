@@ -27,7 +27,7 @@ import type { MarkerKind, OutgoingRow } from './bank-markers';
 import { mergeChannels } from './channel-choices';
 import { SUPPLIER_COUNTRIES } from './cost-countries';
 import type { CountryChoice } from './cost-countries';
-import { paymentsBanked } from './cost-payments';
+import { newPaymentOf, paymentsBanked } from './cost-payments';
 import { readPayToBank, writePayToBank } from './pay-to-bank-preference';
 import type { PayToBankPreference } from './pay-to-bank-preference';
 import { categoryLabel } from './cost-categories';
@@ -929,7 +929,7 @@ export class FinanceState {
       } else {
         const account = this.accountLabel(accountKey);
         /* The server wrote one full payment for the switch; the line links to it. */
-        const payment = saved.payments?.at(-1) ?? null;
+        const payment = newPaymentOf(before, saved);
         try {
           const line = await this.banking.create(this.payLine(saved, saved.paidOn!, account, payment?.id ?? null, payment?.amountEur ?? cashTotalOf(saved)));
           this.bankStatements.update((rows) => [line, ...rows.filter((row) => row.id !== line.id)]);
@@ -1103,7 +1103,7 @@ export class FinanceState {
           const remainder = openOf(cost);
           const saved = await this.finance.markCostPaid(cost.id!, options.paidOn);
           this.replaceCost(saved);
-          const payment = saved.payments?.at(-1) ?? null;
+          const payment = newPaymentOf(cost, saved);
           let line: BankStatementLine | null = null;
           if (account) {
             try {
@@ -1188,7 +1188,7 @@ export class FinanceState {
     try {
       const saved = await this.finance.addCostPayment(cost.id, { paidOn: options.paidOn, amountEur: round2(options.amountEur), account, note: options.note ?? null });
       this.replaceCost(saved);
-      const payment = saved.payments?.at(-1) ?? null;
+      const payment = newPaymentOf(cost, saved);
       let banked = '';
       if (account) {
         try {

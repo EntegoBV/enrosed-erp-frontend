@@ -491,6 +491,9 @@ test('with the money rule an investment charges its depreciation, import VAT is 
   assert.deepEqual(result.monthly.map((row) => [row.month, row.costsEur]), [['2026-09', 182.19], ['2026-10', 84.93]]);
   const plain = resultAnalysis([], [], costs, { from: '2026-09-01', to: '2026-10-31' });
   assert.deepEqual([plain.costsEur, plain.depreciationEur], [100, 0], 'without the rule only the excl. amounts dated in the period count');
+  const allYears = resultAnalysis([], [], costs, { costCharge: (cost, from, to) => costChargeIn(cost, from, to, '2026-10-12'), openEur: openOf });
+  assert.equal(allYears.depreciationEur, 284.93, "'Alle jaren' charges only the days elapsed: 504,11 × 104 / 184, not the whole life");
+  assert.equal(allYears.costsEur, 384.93);
 });
 
 test('issued credit notes come off Gefactureerd, the trend and the top lists, and ask for their tegoed instead of a payment', () => {

@@ -980,7 +980,7 @@ export class AnalysesPage {
   readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
   /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
   readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
-    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: costChargeIn, openEur: openOf,
+    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, TODAY), openEur: openOf,
   }));
   readonly channelLabel = channelLabel;
   readonly categoryLabel = categoryLabel;

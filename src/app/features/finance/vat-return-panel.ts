@@ -254,7 +254,7 @@ export class VatReturnPanel implements FinanceSectionApi {
 
   /** Costs without a regime, with the amount of the cost behind the line. */
   readonly unknownRows = computed(() => this.result().unknown.map((line) => ({
-    line, amountEur: this.costOf(line.costId)?.amountExclEur ?? 0,
+    line, amountEur: line.exclEur,
   })));
 
   readonly strip = computed<StripItem[]>(() => [
@@ -295,7 +295,8 @@ export class VatReturnPanel implements FinanceSectionApi {
     const totals = this.result().totals;
     if (kader === 'IV') return totals.dueEur;
     if (kader === 'V') return totals.deductibleEur;
-    const codes = kader === 'III' ? ['81', '82', '83'] : this.gridsOf('II').map((grid) => grid.code);
+    /* Kader II reads as the sales: 48 and 49 are the credit notes on them, listed in their rows but never added to the headline. */
+    const codes = kader === 'III' ? ['81', '82', '83'] : ['00', '01', '02', '03', '44', '45', '46', '47'];
     return round2(codes.reduce((sum, code) => sum + this.grid(code as GridCode).eur, 0));
   }
 

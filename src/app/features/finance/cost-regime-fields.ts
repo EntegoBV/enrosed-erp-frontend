@@ -158,6 +158,9 @@ export function regimePrefill(known: PartyRegime | null, category: string | null
         </select>
         @if (regimeHint(); as hint) { <span class="fin-hint">{{ hint }}</span> }
         @if (note()) { <span class="fin-hint fin-hint--warn">{{ note() }}</span> }
+        @if (value().vatRegime && !value().vatRegimeConfirmed) {
+          <div class="fin-choice" role="group" aria-label="Btw-regeling bevestigen"><button class="fin-choice__chip" type="button" (click)="confirm()">Klopt</button></div>
+        }
       </div>
       @if (countryRow()) {
         <div class="fin-field"><span>Land</span>
@@ -312,6 +315,11 @@ export class CostRegimeFields {
     }
     this.otherCountry.set(false);
     this.changed.emit(patch);
+  }
+
+  /** 'Klopt': a derived regime (the backfill, a party prefill) stands as it is; re-picking the same option in the select fires nothing. */
+  confirm(): void {
+    this.changed.emit({ vatRegimeConfirmed: true });
   }
 
   pickCountry(code: string): void {

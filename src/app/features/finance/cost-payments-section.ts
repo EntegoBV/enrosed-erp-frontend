@@ -37,9 +37,9 @@ interface PaymentRow {
         <ul class="fin-payments">
           @for (row of rows(); track row.key) {
             <li class="fin-payment">
-              <span>{{ day(row.paidOn) }}</span>
+              <span class="fin-payment__day">{{ day(row.paidOn) }}</span>
               <b>{{ row.amountEur | eur }}</b>
-              <span>
+              <span class="fin-payment__where">
                 @if (row.banked) { {{ row.account }} }
                 @else { @if (row.account) { {{ row.account }} · } <span class="wk-amount--warn">nog niet op de bank</span> }
               </span>

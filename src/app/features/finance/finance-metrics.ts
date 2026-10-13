@@ -250,6 +250,8 @@ export interface ReturnLine {
   investment: boolean;
   baseGrid: '81' | '82' | '83' | null;
   baseEur: number;
+  /** The amount excl. VAT as booked: what 'Nog te bepalen' shows and the CSV writes for a cost without a regime. */
+  exclEur: number;
   detailGrid: '86' | '87' | '88' | null;
   detailEur: number;
   dueGrid: '55' | '56' | null;
@@ -284,7 +286,7 @@ export function returnLineOf(cost: CompanyCost, documented: boolean): ReturnLine
   const deductible = regime ? deductibleCentsOf(cost) : 0;
   return {
     costId: cost.id, date: cost.date, year, quarter, regime, confirmed: !!regime && !!cost.vatRegimeConfirmed, kind, investment,
-    baseGrid: def?.baseGrids ? BASE_GRID[kind] : null, baseEur: baseCents / 100,
+    baseGrid: def?.baseGrids ? BASE_GRID[kind] : null, baseEur: baseCents / 100, exclEur: excl / 100,
     detailGrid: def?.detailGrid ? String(def.detailGrid) as '86' | '87' | '88' : null, detailEur: def?.detailGrid ? excl / 100 : 0,
     dueGrid: def?.dueGrid ? String(def.dueGrid) as '55' | '56' : null, dueEur: def?.dueGrid ? returnVatCentsOf(cost) / 100 : 0,
     deductibleEur: deductible / 100,
@@ -357,10 +359,12 @@ export function depreciationIn(asset: DepreciationAsset, from: string | null, to
 }
 
 /** What a cost charges a period with: its expense when made in it, or, for an investment, its depreciation of the period. */
-export function costChargeIn(cost: CompanyCost, from: string | null, to: string | null): { expenseEur: number; depreciationEur: number } {
+export function costChargeIn(cost: CompanyCost, from: string | null, to: string | null, today: string | null = null): { expenseEur: number; depreciationEur: number } {
   if (isInvestment(cost)) {
     const years = Number.isInteger(cost.depreciationYears) && (cost.depreciationYears as number) >= 1 ? cost.depreciationYears as number : 5;
-    return { expenseEur: 0, depreciationEur: depreciationIn({ acquisitionEur: acquisitionValueOf(cost), years, start: cost.depreciationStart || cost.date }, from, to) };
+    /* Never beyond today: an open-ended or future window ('Alle jaren') charges the days elapsed, not the years to come. */
+    const until = today && (!to || to > today) ? today : to;
+    return { expenseEur: 0, depreciationEur: depreciationIn({ acquisitionEur: acquisitionValueOf(cost), years, start: cost.depreciationStart || cost.date }, from, until) };
   }
   const inPeriod = (!from || cost.date >= from) && (!to || cost.date <= to);
   return { expenseEur: inPeriod ? expenseOf(cost) : 0, depreciationEur: 0 };

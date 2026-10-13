@@ -99,6 +99,9 @@ test('depreciation: linear, pro rata by days, the last year takes the rest', () 
   assert.equal(acquisitionValueOf({ amountExclEur: 1000, vatPct: 21, vatRegime: 'BE', vatDeductiblePct: 50 }), 1105, 'non-deductible VAT is capitalised');
   const investment = cost({ amountExclEur: 3000, costKind: 'INVESTMENT', depreciationYears: 3, depreciationStart: '2026-07-01' });
   assert.deepEqual(costChargeIn(investment, '2026-07-01', '2026-12-31'), { expenseEur: 0, depreciationEur: 504.11 });
+  assert.deepEqual(costChargeIn(investment, null, null, '2026-10-12'), { expenseEur: 0, depreciationEur: 284.93 }, 'an open window stops at today: 504,11 × 104 / 184');
+  assert.equal(costChargeIn(investment, '2026-07-01', '2026-12-31', '2026-10-12').depreciationEur, 284.93, 'a window past today is capped too');
+  assert.equal(costChargeIn(investment, '2026-07-01', '2026-09-30', '2026-10-12').depreciationEur, 252.06, 'a window before today is untouched: 504,11 × 92 / 184');
   assert.deepEqual(costChargeIn(cost({ amountExclEur: 100 }), '2026-08-01', '2026-08-31'), { expenseEur: 100, depreciationEur: 0 });
   assert.deepEqual(costChargeIn(cost({ amountExclEur: 100 }), '2026-09-01', '2026-09-30'), { expenseEur: 0, depreciationEur: 0 });
 });

@@ -22,11 +22,23 @@ export function paymentTotals(cashEur: number, payments: readonly { amountEur: n
   const paid = payments.length > 0 && paidCents >= cash - 1;
   return {
     paidEur: paidCents / 100,
-    openEur: Math.max(0, cash - paidCents) / 100,
+    /* Settled within a cent reads nothing open: the lists never say 'Deels' next to 'Betaald'. */
+    openEur: paid ? 0 : Math.max(0, cash - paidCents) / 100,
     overpaidEur: Math.max(0, paidCents - cash) / 100,
     paid,
     paidOn: paid ? payments.reduce<string | null>((latest, payment) => (latest === null || payment.paidOn > latest ? payment.paidOn : latest), null) : null,
   };
+}
+
+/**
+ * The payment an action just wrote: the row the cost did not have before.
+ * The server lists payments by date, so the newest row is not always the
+ * last one; ids are identity-generated, so the highest unknown id is it.
+ */
+export function newPaymentOf<T extends { id: number | null }>(before: { payments?: readonly T[] } | null | undefined, saved: { payments?: readonly T[] }): T | null {
+  const known = new Set((before?.payments ?? []).map((payment) => payment.id));
+  return [...(saved.payments ?? [])].filter((payment) => payment.id !== null && !known.has(payment.id))
+    .sort((left, right) => (right.id ?? 0) - (left.id ?? 0))[0] ?? null;
 }
 
 /** How much of a cost's payments the bank holds. */

@@ -290,7 +290,7 @@ export function vatReturnCsv(result: VatReturn): string {
   lines.push(['', '71', 'Btw te betalen', result.totals.payableEur].map(cell).join(';'));
   lines.push(['', '72', 'Btw terug te krijgen', result.totals.refundEur].map(cell).join(';'));
   for (const line of result.unknown) {
-    lines.push(['', 'Nog te bepalen', null, null, line.description, line.date, line.party ?? null, line.reference ?? null, null, null, 'btw-regeling kiezen'].map(cell).join(';'));
+    lines.push(['', 'Nog te bepalen', null, null, line.description, line.date, line.party ?? null, line.reference ?? null, line.exclEur, null, 'btw-regeling kiezen'].map(cell).join(';'));
   }
   return lines.join('\r\n');
 }

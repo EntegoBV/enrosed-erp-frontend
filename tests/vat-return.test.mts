@@ -147,7 +147,7 @@ test('71 and 72 are never both filled; the CSV says what state the return is in'
   assert.ok(csv.includes(';71;Btw te betalen;189,00'));
   const provisional = vatReturnCsv(vatReturn(2026, 3, lines([cost({ id: 2, amountExclEur: 10, vatRegimeConfirmed: false }), cost({ id: 3, amountExclEur: 10, vatPct: 0, vatRegime: null })]), [], [], settings)).split('\r\n');
   assert.match(provisional[0], /^VOORLOPIG · 2 te bevestigen/);
-  assert.ok(provisional.some((line) => line.startsWith(';Nog te bepalen;;;Kost 3;')));
+  assert.ok(provisional.includes(';Nog te bepalen;;;Kost 3;2026-08-10;Partij;F-3;10,00;;btw-regeling kiezen'), 'the accountant gets the amount to decide on');
   const containerRows: ContainerLine[] = containerLines([container({ id: 1, receivedOn: '2026-08-15', clearance: null })], { importVatDeferred: false, representative: null });
   assert.ok(vatReturnCsv(vatReturn(2026, 3, [], [], containerRows, settings)).includes('via fiscaal vertegenwoordiger'));
 });

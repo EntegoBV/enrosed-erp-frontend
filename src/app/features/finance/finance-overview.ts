@@ -7,7 +7,7 @@ import { AttentionItem } from './finance-attention';
 import { dayMonth } from './finance-format';
 import { FINANCE_SECTION, FinanceSectionApi } from './finance-section';
 import { periodRange } from './finance-sections';
-import { FinanceState, formatEuro } from './finance-state';
+import { FinanceState } from './finance-state';
 import { CostLedgerRow } from './cost-ledger';
 
 const ATTENTION_ROWS = 7;
@@ -50,7 +50,7 @@ const ATTENTION_ROWS = 7;
         </button>
         <button class="fin-tile" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
           <span class="fin-tile__label">Btw dit kwartaal</span>
-          <strong class="fin-tile__value">{{ vatTile().value }}</strong>
+          <strong class="fin-tile__value">{{ vatTile().amount | eur }}</strong>
           <span class="fin-tile__sub" [class.is-warn]="vatTile().pending > 0">{{ vatTile().sub }}</span>
         </button>
       </div>
@@ -184,7 +184,7 @@ const ATTENTION_ROWS = 7;
       <div class="ios-group fin-ios-single">
         <button class="ios-cell" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
           <span class="ios-cell__body"><span class="ios-cell__title">Btw dit kwartaal</span><span class="ios-cell__sub" [class.fin-warn-text]="vatTile().pending > 0">{{ vatTile().sub }}</span></span>
-          <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ vatTile().value }}</span></span>
+          <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ vatTile().amount | eur }}</span></span>
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
         <button class="ios-cell" type="button" (click)="state.openAnalysis()">
@@ -267,10 +267,11 @@ export class FinanceOverview implements FinanceSectionApi {
     const result = this.state.vatReturnCurrent();
     const favour = result.totals.refundEur > 0;
     const pending = result.unconfirmedCount + result.unknown.length;
+    /* The figure stands alone (a phrase behind it spills past a phone trail or a fifth desk tile); the direction leads the sub line. */
     return {
       year: result.year, quarter: result.quarter, pending,
-      value: `${formatEuro(favour ? result.totals.refundEur : result.totals.payableEur)} ${favour ? 'in je voordeel' : 'te betalen'}`,
-      sub: `Q${result.quarter} · indienen vóór ${dayMonth(result.filingDeadline)}${pending ? ` · ${pending} te bevestigen` : ''}`,
+      amount: favour ? result.totals.refundEur : result.totals.payableEur,
+      sub: `${favour ? 'in je voordeel' : 'te betalen'} · Q${result.quarter} · indienen vóór ${dayMonth(result.filingDeadline)}${pending ? ` · ${pending} te bevestigen` : ''}`,
     };
   });
 
