@@ -19,12 +19,23 @@ export function reconciliationStatusLabel(stream: ReconciliationStream, terms?: 
     case 'PAID': return stream.explicitlySettled || terms?.some(term => term.explicitlySettled) ? 'Betaald · afgerekend' : 'Betaald';
     // Nothing open and paid beyond the agreement: the ledger's 'Betaald · € 0,50 te veel'.
     case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald'
-      : Math.round(stream.remainingEur * 100) === 0 && stream.overpaidEur > 0 ? `Betaald · ${EURO.format(stream.overpaidEur)} te veel`
+      : Math.round(stream.remainingEur * 100) === 0 && stream.overpaidEur > 0 ? `Betaald · ${EURO.format(unsettledOverpaid(stream, terms))} te veel`
       : 'Te veel betaald · nakijken';
     case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
     case 'NOT_APPLICABLE': return 'Geen kosten';
     case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Betaald zonder afspraak';
   }
+}
+
+/**
+ * The overpayment nobody settled yet, as the ledger names it: a supplier term
+ * settled on its own keeps its confirmed overrun out of it. Without terms,
+ * the stream's own figure.
+ */
+function unsettledOverpaid(stream: ReconciliationStream, terms?: readonly PurchaseInstalmentReconciliation[]): number {
+  const open = terms?.length ? terms.filter(term => !term.finalized)
+    .reduce((sum, term) => sum + Math.round((Number.isFinite(term.overpaidEur) ? term.overpaidEur : 0) * 100), 0) : 0;
+  return open > 0 ? open / 100 : stream.overpaidEur;
 }
 
 /** A historical or cached response can still carry just the saved container calculation. */

@@ -1,6 +1,6 @@
 import type { ContextMenuItem } from '../../shared/context-menu';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, type LedgerCredit, type LedgerRow, type LedgerTerm, type LedgerTodo, type PayeeLedger,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, nettedCarrierDue, type LedgerCredit, type LedgerRow, type LedgerTerm, type LedgerTodo, type PayeeLedger,
   type PaymentLedger, type PurchaseSettleRequest,
 } from './purchase-payment-ledger';
 
@@ -134,12 +134,17 @@ export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy:
 /**
  * Settle on this very payment: its own term when it is tied to one, else the
  * whole payee. A term netted with another one is settled with the whole
- * supplier: alone it would leave the netting and reopen the other term.
+ * supplier: alone it would leave the netting and reopen the other term. The
+ * flag unties the payment, so it carries that settlement only when it
+ * belongs to the term nettedCarrierDue names; any other payment of a netted
+ * term would move money between the terms and wipe out their own + / −, and
+ * the sheet picks the carrier instead.
  */
 export function settleWith(row: LedgerRow, terms: readonly Pick<LedgerTerm, 'due' | 'offsetEur'>[] = []): PurchaseSettleRequest {
   const netted = terms.some(term => term.due === row.due && term.offsetEur !== 0);
   const term = row.payee === 'SUPPLIER' && !!row.due && !netted;
-  return { payee: row.payee, scope: term ? 'TERM' : 'GROUP', due: term ? row.due : null, paymentId: row.id };
+  const carries = !netted || row.due === nettedCarrierDue(terms);
+  return { payee: row.payee, scope: term ? 'TERM' : 'GROUP', due: term ? row.due : null, ...(carries ? { paymentId: row.id } : {}) };
 }
 
 /** The proof of one payment in words: unknown while the documents load, the file name, or how many there are. */

@@ -148,7 +148,7 @@ const DAY = 86_400_000;
             </section>
             @for (stream of view.reconciliation?.streams ?? []; track stream.payee) {
               <section class="wk-section">
-                <h3 class="wk-section__title"><span><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span> {{ payee(stream.payee) }}</span><span class="fin-insp-state">{{ streamStatus(stream) }}</span></h3>
+                <h3 class="wk-section__title"><span><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span> {{ payee(stream.payee) }}</span><span class="fin-insp-state">{{ streamStatus(stream, view.reconciliation?.supplierInstalments) }}</span></h3>
                 <dl class="wk-kv">
                   <div><dt>Afspraak</dt><dd>{{ stream.plannedEur | eur }}</dd></div>
                   <div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div>
@@ -360,7 +360,10 @@ export class FinanceInspector {
   moment(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }); }
   size(asset: MediaAssetSummary): string { return formatBytes(asset.sizeBytes); }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
-  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0]): string { return reconciliationStatusLabel(stream); }
+  /** The supplier's terms count too, as in Betalingen and Analyses: a term settled on its own is afgerekend, its overrun no longer to review. */
+  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0], terms: Parameters<typeof reconciliationStatusLabel>[1]): string {
+    return reconciliationStatusLabel(stream, stream.payee === 'SUPPLIER' ? terms : undefined);
+  }
   recurringOf(id: number | null | undefined) { return id ? this.state.recurring().find((row) => row.id === id) ?? null : null; }
   anchor(event: MouseEvent): { x: number; y: number } {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();

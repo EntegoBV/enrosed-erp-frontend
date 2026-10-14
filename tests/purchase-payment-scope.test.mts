@@ -9,7 +9,7 @@ import { computed, signal } from '@angular/core';
 const source = await readFile(new URL('../src/app/features/purchasing/purchase-payment-scope.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('scope.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchasePaymentScope')!;
-const names = new Set(['scope', 'knownDue', 'dueLabel', 'chooseDue', 'chooseScope']);
+const names = new Set(['scope', 'knownDue', 'netted', 'choices', 'dueLabel', 'chooseDue', 'chooseScope']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, undefined, original.name, undefined, undefined, members);
@@ -24,7 +24,7 @@ function setup(values: { instalmentDue?: string | null; settles?: boolean; payee
   const changes: any[] = [];
   Object.assign(ui, {
     payee: signal(values.payee ?? 'SUPPLIER'), instalmentDue: signal(values.instalmentDue ?? null),
-    settles: signal(values.settles ?? false), busy: signal(false),
+    settles: signal(values.settles ?? false), busy: signal(false), groupLabel: signal('Leverancier'),
     options: signal([{ due: 'ORDERED', label: '30% bij bestelling' }, { due: 'SHIPPED', label: '30% bij vertrek' }, { due: 'ARRIVED', label: '40% bij aankomst' }]),
     changed: { emit: (value: any) => changes.push(JSON.parse(JSON.stringify(value))) },
   });
@@ -119,4 +119,27 @@ test('mounting or replacing options preserves the assigned term without emitting
   assert.deepEqual(changes, [], 'Synchronizing the form model after options mount must not reopen a settled term');
   ui.chooseDue('SHIPPED');
   assert.deepEqual(changes, [{ instalmentDue: 'SHIPPED', settles: false }]);
+});
+
+test('PO 35: a term netted with another one is never closed on its own, from the payment sheet either', () => {
+  // The server netted 30 % (+ € 61,28) against 70 % (− € 60,78): closing one alone reopens the other.
+  const netted = [{ due: 'ORDERED', label: '30% bij bestelling', netted: true }, { due: 'SHIPPED', label: '70% bij vertrek', netted: true }];
+  for (const due of ['ORDERED', 'SHIPPED']) {
+    const { ui, changes, accept } = setup({ instalmentDue: due });
+    ui.options.set(netted);
+    const instalment = ui.choices().find((choice: { scope: string }) => choice.scope === 'INSTALMENT');
+    assert.deepEqual([instalment.disabled, instalment.hint], [true, 'Verrekend met een andere termijn · reken alles af'], due);
+    // The component runs in its own realm: copy its array before a deep comparison.
+    assert.deepEqual(Array.from(ui.choices().filter((choice: { disabled: boolean }) => !choice.disabled), (choice: { scope: string }) => choice.scope), ['NONE', 'GROUP']);
+    ui.chooseScope('INSTALMENT');
+    assert.deepEqual(changes, [], 'no term closure is emitted');
+    ui.chooseScope('GROUP'); accept();
+    assert.deepEqual(changes.at(-1), { instalmentDue: null, settles: true }, 'the whole supplier still can be settled');
+  }
+  // Nothing netted: the term can be closed as before.
+  const plain = setup({ instalmentDue: 'ORDERED' });
+  plain.ui.options.set(netted.map(option => ({ ...option, netted: false })));
+  assert.equal(plain.ui.choices().find((choice: { scope: string }) => choice.scope === 'INSTALMENT').disabled, false);
+  plain.ui.chooseScope('INSTALMENT');
+  assert.deepEqual(plain.changes.at(-1), { instalmentDue: 'ORDERED', settles: true });
 });

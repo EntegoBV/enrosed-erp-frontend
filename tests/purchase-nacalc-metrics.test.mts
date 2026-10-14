@@ -676,10 +676,14 @@ test('PO 35: the eindkost is what was paid, € 0,50 above the agreement, and ea
     ['review', 'te veel betaald · nakijken', 'Nakijken…', 'Betaald · € 0,50 te veel', 0, 31048.54, 0.5]);
   assert.deepEqual(supplier.settleDefault, { payee: 'SUPPLIER', scope: 'GROUP', due: null });
   assert.equal(supplier.termsMixed, true, 'one term paid more, the other less: the terms open by themselves');
+  // The 70 % pill already names the 30 % term: its reason is 'none', so the desk and the phone write 'verrekend met …' once.
   assert.deepEqual(plain(supplier.terms.map(item => [item.due, item.reason, item.reasonLabel, item.verschilEur, item.openEur, item.status.label])), [
     ['ORDERED', 'offset', 'verrekend met 70% bij vertrek', 61.28, 0, 'Betaald · € 0,50 te veel'],
-    ['SHIPPED', 'offset', 'verrekend met 30% bij bestelling', -60.78, 0, 'Betaald · verrekend met 30% bij bestelling'],
+    ['SHIPPED', 'none', 'verrekend met 30% bij bestelling', -60.78, 0, 'Betaald · verrekend met 30% bij bestelling'],
   ]);
+  const shown = (item: { reason: string; reasonLabel: string; status: { label: string } }) =>
+    [item.status.label, item.reason === 'offset' ? item.reasonLabel : ''].join(' · ');
+  assert.deepEqual(supplier.terms.map(item => shown(item).split('verrekend met').length - 1), [1, 1], 'never twice on one row');
   assert.equal(round(supplier.terms.reduce((sum, item) => sum + item.verschilEur, 0)), supplier.verschilEur, 'the term rows add up to the payee');
 });
 
@@ -693,8 +697,9 @@ test('a term only partly covered by another term keeps its netted rest open and 
   const result = story(view, [{ ...payments[0], amount: 9324.41, amountEur: 9324.41 }, payments[1]]);
   const supplier = row(result, 'SUPPLIER');
   assert.deepEqual([supplier.openEur, supplier.dueNowEur, supplier.verschilEur], [50.78, 50.78, 0]);
+  assert.equal(plain(supplier.terms[0].status.label), 'Betaald · verrekend met 70% bij vertrek', 'the pill says it, so nothing beside it');
   assert.deepEqual(plain(supplier.terms.map(item => [item.due, item.reason, item.reasonLabel, item.verschilEur, item.openEur])), [
-    ['ORDERED', 'offset', 'verrekend met 70% bij vertrek', 10, 0],
+    ['ORDERED', 'none', 'verrekend met 70% bij vertrek', 10, 0],
     ['SHIPPED', 'open', 'nog € 50,78 open · nu te betalen · € 10,00 verrekend met 30% bij bestelling', -10, 50.78],
   ]);
 });

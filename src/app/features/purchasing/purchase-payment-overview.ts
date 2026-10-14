@@ -322,11 +322,12 @@ export class PurchasePaymentOverview {
     if (!payee) return null;
     const kind = payee.status.kind;
     return {
-      amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? payee.higherEur : null,
+      amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? (payee.reviewEur > 0 ? payee.reviewEur : payee.higherEur) : null,
       text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
+  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** 'Verwachte eindkost € 70.204,31 · geen verschil', or where the Nacalculatie lives while it is not loaded. */
   readonly nacalcSub = computed(() => {
     const n = this.nacalc();

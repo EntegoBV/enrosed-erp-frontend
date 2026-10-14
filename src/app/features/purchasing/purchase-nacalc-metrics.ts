@@ -68,6 +68,7 @@ export interface NacalcTermRow {
   paidEur: number;
   openEur: number;
   verschilEur: number;
+  /** Why the term differs, beside its pill; 'none' when the pill says it all (a netted term's pill can name the other term). */
   reason: NacalcReason;
   reasonLabel: string;
   status: { label: string; tone: LedgerTone };
@@ -451,7 +452,9 @@ function termRow(term: LedgerTerm): NacalcTermRow {
   let reason: NacalcReason = 'none';
   let label = NACALC_REASON_LABEL.none;
   // A netted term explains its Verschil by the other term; the pill keeps what is left (te veel, afgerekend).
-  if (offset !== 0 && open === 0) { reason = 'offset'; label = verrekend; }
+  // A pill that already names the other term ('Betaald · verrekend met …') leaves nothing to say beside it:
+  // 'none', so the words never stand twice (the ledger's statusNote rule).
+  if (offset !== 0 && open === 0) { reason = term.status.label.includes(verrekend) ? 'none' : 'offset'; label = verrekend; }
   else if (term.lowerEur > 0 && open === 0) { reason = 'settled-lower'; label = NACALC_REASON_LABEL['settled-lower']; }
   else if (term.higherEur > 0) { reason = term.finalized ? 'settled-higher' : 'review'; label = NACALC_REASON_LABEL[reason]; }
   else if (open > 0 && term.lowerEur > 0) { reason = 'partly-settled'; label = `deels afgerekend · nog ${eur(term.openEur)} open`; }

@@ -11,6 +11,7 @@ import {
   purchasePaymentLedger, settleCarriers, sortLedgerRows, type PaymentLedger,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { reconciliationStatusLabel } from '../src/app/features/purchasing/purchase-reconciliation-metrics.ts';
+import { purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 
 type Status = PurchaseOrderView['order']['status'];
 
@@ -620,4 +621,39 @@ test('the CIF sea freight term can be covered by the goods terms, and names both
   assert.deepEqual(spaced([freight.label, freight.differenceEur, freight.offsetWith, freight.status.label]),
     ['Zeevracht (CIF)', -50, ['30% bij bestelling', '70% bij vertrek'], 'Betaald · verrekend met 30% bij bestelling en 70% bij vertrek']);
   assert.deepEqual([of(book, 'SUPPLIER').status.kind, of(book, 'SUPPLIER').differenceEur, book.todos.length], ['PAID', 0, 0]);
+});
+
+test('a term settled lower on its own is afgerekend while the next term is still open: a saving is never to review', () => {
+  const view = purchase({ status: 'BESTELD', streams: [
+    stream('SUPPLIER', { status: 'PARTIAL', plannedEur: 1000, paidEur: 250, remainingEur: 700, settledSavingEur: 50, paymentCount: 1 }), stream('LOGISTICS'),
+  ], instalments: [
+    instalment('ORDERED', { plannedEur: 300, paidEur: 250, settledSavingEur: 50, explicitlySettled: true, finalized: true }),
+    instalment('SHIPPED', { plannedEur: 700, remainingEur: 700 }),
+  ] });
+  const supplier = of(ledger(view, [payment(1, { amountEur: 250, instalmentDue: 'ORDERED', settles: true })], null), 'SUPPLIER');
+  assert.deepEqual([supplier.differenceEur, supplier.finalized, supplier.canUndoSettle, supplier.reviewEur, supplier.balanced], [-50, false, true, 0, true]);
+  assert.equal(payeeDifferenceState(supplier), 'afgerekend', '€ 50,00 minder · afgerekend, not nakijken');
+});
+
+test('an overrun confirmed on a term settled alone is not asked again: only the unsettled rest is te veel and to review', () => {
+  // 30 % settled on its own with + € 61,28 ('Afgerekend · meer betaald'); 70 % paid € 10,00 too much and not settled.
+  const instalments = [
+    instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 61.28, explicitlySettled: true, finalized: true }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_743.63, overpaidEur: 10 }),
+  ];
+  const supplierStream = stream('SUPPLIER', { status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_119.32, forecastEur: 31_119.32, varianceEur: 71.28,
+    overpaidEur: 71.28, paymentCount: 2 });
+  const view = purchase({ status: 'ONTVANGEN', ddp: true, streams: [supplierStream, stream('LOGISTICS'), stream('SEPARATE'), stream('OTHER')], instalments });
+  const book = ledger(view, [payment(1, { amountEur: 9_375.69, instalmentDue: 'ORDERED', settles: true }),
+    payment(2, { amountEur: 21_743.63, instalmentDue: 'SHIPPED' })], null);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.higherEur, supplier.reviewEur, supplier.differenceEur, supplier.openEur, supplier.balanced], [71.28, 10, 71.28, 0, true]);
+  assert.deepEqual(spaced(supplier.status), { kind: 'OVERPAID', label: 'Betaald · € 10,00 te veel', tone: 'warn' });
+  assert.equal(payeeDifferenceState(supplier), 'nakijken');
+  assert.deepEqual(spaced(supplier.terms.map(term => term.status.label)), ['Afgerekend · meer betaald', 'Te veel betaald · nakijken']);
+  assert.deepEqual(book.todos.map(todo => [todo.kind, 'amountEur' in todo ? todo.amountEur : null]), [['review', 10]]);
+  // Kosten & bank and Analyses pass the terms and say the same; the Nacalculatie's Na te kijken agrees.
+  assert.equal(spaced(reconciliationStatusLabel(supplierStream, instalments)), 'Betaald · € 10,00 te veel');
+  assert.equal(spaced(reconciliationStatusLabel(supplierStream)), 'Betaald · € 71,28 te veel', 'without the terms, the stream\'s own figure');
+  assert.equal(purchasePaymentResult(view)!.unsettledOverrunsEur, 10);
 });

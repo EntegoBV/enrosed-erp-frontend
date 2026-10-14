@@ -482,7 +482,8 @@ export class PurchasePaymentWorkbench {
   readonly additional = computed(() => this.ledger()?.visible.find(item => item.payee === 'OTHER') ?? null);
   /** The supplier's terms: a payment of a netted term is settled with the whole supplier (settleWith). */
   readonly supplierTerms = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER')?.terms ?? []);
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
+  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** The selected payee, or the only one that can be settled. */
   readonly settleTarget = computed(() => {
     const payees = this.ledger()?.payees ?? [];

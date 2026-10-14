@@ -241,6 +241,12 @@ export interface PayeeLedger {
   openEur: number;
   lowerEur: number;
   higherEur: number;
+  /**
+   * The part of higherEur nobody settled yet: what 'Betaald · € 0,50 te veel'
+   * and the review to-do name. A term settled on its own keeps its confirmed
+   * overrun out of it.
+   */
+  reviewEur: number;
   differenceEur: number;
   dueNowEur: number;
   laterEur: number;
@@ -451,6 +457,9 @@ function payeeLedger(
     if (paid > 0 && open <= cents(input.toleranceEur)) open = 0;
   }
   const balanced = other || !known || (agreed ?? 0) - paid - lower + higher === open;
+  // Paid beyond the agreement and settled by nobody yet: the server's terms tell a confirmed overrun (a term settled on its own) from one to review.
+  const review = other || finalized ? 0 : canonical && terms.length
+    ? terms.filter(term => !term.finalized).reduce((sum, term) => sum + cents(term.higherEur), 0) : higher;
 
   let dueNow = 0;
   let later = 0;
@@ -475,7 +484,7 @@ function payeeLedger(
 
   const settledRows = rows.some(row => row.settles);
   const status = payeeStatus({
-    payee, known, agreed, paid, open, lower, higher, finalized, explicitlySettled, settledRows, missingAmount, balanced,
+    payee, known, agreed, paid, open, lower, higher, review, finalized, explicitlySettled, settledRows, missingAmount, balanced,
     count: rows.length, dueNow, laterDue, concept, tolerance: cents(input.toleranceEur),
   });
   const composition = payeeComposition(payee, view, agreed === null ? null : euro(agreed));
@@ -513,6 +522,7 @@ function payeeLedger(
     openEur: euro(open),
     lowerEur: euro(lower),
     higherEur: euro(higher),
+    reviewEur: euro(review),
     differenceEur: euro(higher - lower),
     dueNowEur: euro(dueNow),
     laterEur: euro(later),
@@ -654,12 +664,13 @@ export function payeeRowAction(item: Pick<PayeeLedger, 'dueNowEur' | 'canSettle'
 }
 
 /**
- * Whether a payee's Verschil is final: 'afgerekend' once it was settled, the
- * whole payee or its terms one by one, else 'nakijken'. An overpayment that
- * nobody settled yet is never called afgerekend.
+ * Whether a payee's Verschil is final: 'nakijken' while part of it is an
+ * overpayment nobody settled yet, else 'afgerekend'. A saving only exists
+ * once settled, so a term settled lower stays afgerekend while the next term
+ * is still open.
  */
-export function payeeDifferenceState(item: Pick<PayeeLedger, 'finalized' | 'explicitlySettled' | 'canUndoSettle'>): 'afgerekend' | 'nakijken' {
-  return item.finalized && (item.explicitlySettled || item.canUndoSettle) ? 'afgerekend' : 'nakijken';
+export function payeeDifferenceState(item: Pick<PayeeLedger, 'reviewEur'>): 'afgerekend' | 'nakijken' {
+  return cents(item.reviewEur) > 0 ? 'nakijken' : 'afgerekend';
 }
 
 /**
@@ -668,7 +679,7 @@ export function payeeDifferenceState(item: Pick<PayeeLedger, 'finalized' | 'expl
  * a term's: that is exactly when the row offers to undo it.
  */
 function payeeStatus(values: {
-  payee: Payee; known: boolean; agreed: number | null; paid: number; open: number; lower: number; higher: number;
+  payee: Payee; known: boolean; agreed: number | null; paid: number; open: number; lower: number; higher: number; review: number;
   finalized: boolean; explicitlySettled: boolean; settledRows: boolean; missingAmount: boolean; balanced: boolean; count: number;
   dueNow: number; laterDue: Due | null; concept: boolean; tolerance: number;
 }): PayeeStatus {
@@ -678,7 +689,8 @@ function payeeStatus(values: {
   if (agreed === 0 && paid === 0) return STATUS.NONE;
   if (agreed === 0) return finalized ? STATUS.SETTLED_HIGHER : STATUS.UNBUDGETED;
   if (open === 0 && (lower > 0 || higher > 0)) {
-    if (!finalized && higher > 0) return { ...STATUS.OVERPAID, label: `Betaald · ${eur(higher)} te veel` };
+    // Only what is still to review: a term settled on its own already confirmed its overrun.
+    if (!finalized && higher > 0) return { ...STATUS.OVERPAID, label: `Betaald · ${eur(values.review > 0 ? values.review : higher)} te veel` };
     const net = higher - lower;
     return net > 0 ? STATUS.SETTLED_HIGHER : net < 0 ? STATUS.SETTLED_LOWER : STATUS.PAID;
   }
@@ -902,7 +914,7 @@ function ledgerTodos(payees: readonly PayeeLedger[], summary: LedgerSummary): Le
   }
   for (const payee of payees) {
     if (payee.status.kind === 'OVERPAID') {
-      todos.push({ kind: 'review', key: 'review:' + payee.payee, payee: payee.payee, amountEur: payee.higherEur,
+      todos.push({ kind: 'review', key: 'review:' + payee.payee, payee: payee.payee, amountEur: payee.reviewEur > 0 ? payee.reviewEur : payee.higherEur,
         request: { payee: payee.payee, scope: 'GROUP', due: null } });
     }
   }
@@ -998,13 +1010,28 @@ export function purchaseLandedBridge(view: PurchaseOrderView, totalLabel: string
 }
 
 /**
+ * The term whose payment can carry a whole-supplier settlement of netted
+ * terms: the earliest one another term's surplus covered. The flag unties
+ * the payment, and an untied payment fills the earliest open gap; no earlier
+ * term has one, so the money lands on this term again and every term keeps
+ * its own + / −. Null when nothing was netted.
+ */
+export function nettedCarrierDue(terms: readonly { due: Due; offsetEur?: number | null }[]): Due | null {
+  return [...terms].sort((left, right) => DUE_ORDER.indexOf(left.due) - DUE_ORDER.indexOf(right.due))
+    .find(term => cents(term.offsetEur) > 0)?.due ?? null;
+}
+
+/**
  * The payments that can carry a settlement flag, newest first. A whole-payee
  * settlement prefers the payment that already carries it, then one without a
- * term (flagging a term payment would spread it again); a term settlement
- * only takes the payments tied to that term.
+ * term (flagging a term payment would spread it again), then, for netted
+ * supplier terms, one of the term nettedCarrierDue names, so the settlement
+ * moves no money between the terms; a term settlement only takes the
+ * payments tied to that term.
  */
 export function settleCarriers(
   payments: readonly PurchasePayment[], payee: Payee, scope: 'GROUP' | 'TERM', due: Due | null,
+  terms: readonly { due: Due; offsetEur?: number | null }[] = [],
 ): { options: SettleCarrier[]; defaultId: number | null } {
   const own = payments.filter(payment => payeeOf(payment) === payee).sort(byNewest);
   const pool = scope === 'GROUP' ? own : payee === 'SUPPLIER' && due ? own.filter(payment => payment.instalmentDue === due) : [];
@@ -1013,10 +1040,12 @@ export function settleCarriers(
     amountEur: payment.amountEur, instalmentDue: payment.instalmentDue ?? null, label: payment.label ?? null,
     settles: !!payment.settles, reallocates: scope === 'GROUP' && payee === 'SUPPLIER' && payment.instalmentDue != null,
   }));
+  const carrierDue = scope === 'GROUP' && payee === 'SUPPLIER' ? nettedCarrierDue(terms) : null;
   const chosen = scope === 'TERM'
     ? options.find(option => option.settles) ?? options[0]
     : options.find(option => option.settles && option.instalmentDue === null)
-      ?? options.find(option => option.instalmentDue === null) ?? options[0];
+      ?? options.find(option => option.instalmentDue === null)
+      ?? (carrierDue ? options.find(option => option.instalmentDue === carrierDue) : undefined) ?? options[0];
   return { options, defaultId: chosen?.id ?? null };
 }
 
