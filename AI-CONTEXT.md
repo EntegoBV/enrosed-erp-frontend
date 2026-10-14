@@ -958,6 +958,26 @@ and on copies. Without the blocks (older backend) every screen is as before.
   and in the row menu; the desk hero meta says 'ontvangen dd/mm/jjjj' instead
   of 'verwacht …' and the last KPI tile carries it; the phone read view adds
   it to the hero line and an 'Ontvangen op' fact tile.
+- Status one step back (2026-10-14): a container set to Vertrokken
+  (ONDERWEG) or Besteld by mistake goes back through 'Status terugzetten…',
+  one place each, only on BESTELD/ONDERWEG: desk Afronden rail tab and phone
+  step Afronden, both inside 'Meer acties' above 'Calculatie verwijderen'
+  (not on the list row menu, where 'Terugzetten' means un-archive, nor the
+  phone read view). Pure helper `purchase-status-back.ts`
+  (`statusBackOptions`: Vertrokken → Besteld (default) or Concept, Besteld →
+  Concept, Concept/Ontvangen → none; Besteld is never blocked, Concept is
+  blocked like the server's guard: payments not loaded, any payment or a
+  non-zero legacy `paidTotalEur`, or a supplier credit) feeds
+  `purchase-status-back-sheet.ts` (inputs/outputs only, radio rows, short
+  consequences, 'Je openstaande wijzigingen worden mee opgeslagen.' when
+  dirty). `PurchaseEditor.confirmStepBack(to)` (desk inherits) puts
+  `{ status: to, shippedOn: null }` in the draft and calls the normal
+  `save()` (same PUT); a refused save restores both fields so the screen
+  never keeps a status the server refused; success closes the sheet and
+  toasts 'Status teruggezet naar …' with no celebration or first-instalment
+  prompt. The server clears `shippedOn`, sends no push and logs 'Status
+  teruggezet van … naar …'; Ontvangen never goes back. Tests:
+  `tests/purchase-status-back.test.mts`.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in
