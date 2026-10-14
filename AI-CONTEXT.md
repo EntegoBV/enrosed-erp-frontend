@@ -1112,8 +1112,8 @@ and on copies. Without the blocks (older backend) every screen is as before.
     `data-quantity-line` field that is not focused: [ngModel] skips an
     unchanged value, so 13 rounded back to the bound 24 stayed 13. The
     focused field catches up on blur unless a newer number waits. Desk:
-    cartons and m³ are separate meta items and the detail and rounding hint
-    wrap, so the product column's meta never runs under the quantity. Save
+    the quantity detail and rounding hint wrap to the width of the other meta,
+    so they no longer run under the quantity. Save
     toast "aantal afgerond op het bestelveelvoud"; the website review says
     "Aantallen volgen per product het bestelveelvoud (doos, display of
     stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and

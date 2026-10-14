@@ -478,7 +478,7 @@ interface JourneyStep {
                                 @if (lineUnavailable(line.productId)) {
                                   @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} {{ lineUnit(line.productId).short }} aangevraagd</span> }
                                 } @else {
-                                <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}</span><span>{{ line.cbm | cbm }}</span>
+                                <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
                                   <span class="desk-product__note is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
@@ -1358,14 +1358,14 @@ interface JourneyStep {
     .desk-row--variant td.c-product{box-shadow:inset 4px 0 0 var(--rose-line)}
     .desk-row--variant td.c-product{padding-left:34px}.desk-row--variant .desk-product__photo{width:36px;height:36px}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
-    .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;line-height:1.25}
+    .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0;line-height:1.25}
     .desk-product__name{color:inherit;text-decoration:none}.desk-product__name:hover strong{text-decoration:underline}.desk-product__copy strong{display:block;font-size:13.5px}.desk-product__copy small{display:block;color:var(--muted);font-size:11px}
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
     .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin-top:2px;color:var(--muted);font-size:11px}
     .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*:not(:last-child)::after{content:'·';margin:0 6px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
-    /* The product column is narrow next to the rail: cartons and m³ are two items and a sentence ("2 displays van 8 bowls",
-       "Per display van 8: wordt 16 bowls") wraps, so the meta stays inside the column instead of running under the quantity. */
+    /* The product column is narrow next to the rail: a sentence ("2 displays van 8 bowls", "Per display van 8: wordt 16 bowls")
+       wraps to the width of the other meta, so it stays in the column instead of running under the quantity. */
     .desk-product__meta>.desk-product__note{white-space:normal}
     .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 10px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{padding-right:6px}
