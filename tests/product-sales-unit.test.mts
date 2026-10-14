@@ -145,14 +145,23 @@ vm.runInNewContext(ts.transpileModule(sharedSource, {
 });
 const { PRODUCT_FAMILY_SHARED_FIELD_GROUPS, productFamilySharedFieldValue } = sharedModule.exports;
 
-test('the family PACKAGING bundle says it carries the unit and shows it', () => {
+test('the family PACKAGING bundle says it carries the unit and "verkocht per", and shows them', () => {
   rememberUnitNames(NAMES);
   const packaging = PRODUCT_FAMILY_SHARED_FIELD_GROUPS
     .flatMap((group: any) => group.fields).find((field: any) => field.key === 'PACKAGING');
   assert.match(packaging.summary, /eenheid/);
-  assert.equal(productFamilySharedFieldValue('PACKAGING', bowl()), 'Geen verkoopverpakking · eenheid bowl');
-  assert.equal(productFamilySharedFieldValue('PACKAGING', product()), 'Geen verkoopverpakking · eenheid stuk');
+  assert.match(packaging.summary, /verkocht per/);
+  assert.equal(productFamilySharedFieldValue('PACKAGING', bowl()), 'Geen verkoopverpakking · eenheid bowl · verkocht per volle omdoos');
+  assert.equal(productFamilySharedFieldValue('PACKAGING', product()), 'Geen verkoopverpakking · eenheid stuk · verkocht per volle omdoos');
+  assert.equal(productFamilySharedFieldValue('PACKAGING', product({ unitKey: 'stolp', orderStep: 'UNIT' })),
+    'Geen verkoopverpakking · eenheid stolp · verkocht per stolp');
   assert.equal(productFamilySharedFieldValue('PACKAGING', bowlDisplay('PIECE')),
-    'Display · 10 × 10 × 12 cm · 0,4 kg · 8 bowls · eenheid bowl · prijs en aantal per bowl');
+    'Display · 10 × 10 × 12 cm · 0,4 kg · 8 bowls · eenheid bowl · prijs en aantal per bowl · verkocht per volle omdoos');
+  assert.equal(productFamilySharedFieldValue('PACKAGING', bowl({ kind: 'DISPLAY', piecesPerUnit: 8, salesUnit: 'PIECE', orderStep: 'PACKAGE' })),
+    'Display · 10 × 10 × 12 cm · 0,4 kg · 8 bowls · eenheid bowl · prijs en aantal per bowl · verkocht per display');
+  // A display basis already counts displays: "per verpakking" is one display there, worded as the unit.
+  assert.match(productFamilySharedFieldValue('PACKAGING', bowl({ kind: 'DISPLAY', piecesPerUnit: 8, salesUnit: 'DISPLAY', orderStep: 'PACKAGE' })),
+    / · verkocht per display$/);
+  assert.match(productFamilySharedFieldValue('PACKAGING', bowl({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' })), / · verkocht per bowl$/);
   assert.match(productFamilySharedFieldValue('CARTON', { ...bowl(), carton: { ...bowl().carton, piecesPerCarton: 40 } }), / 40 bowls /);
 });

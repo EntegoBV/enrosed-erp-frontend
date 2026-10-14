@@ -1,4 +1,5 @@
 import { capitalize, primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
+import { orderStepLabel } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -302,6 +303,8 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 </b><small>{{ hasFixedSalesPrice(product)
                   ? 'vaste verkoopprijs'
                   : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></button>
+                <div class="tile"><span>Eenheid</span><b>{{ capitalize(salesUnit(product).piece.one) }}</b><small>op offertes en de website</small></div>
+                <div class="tile"><span>Verkocht per</span><b>{{ orderStep(product) }}</b><small>offertes, portaal en website</small></div>
                 <div class="tile"><span>HS-code</span><b class="mono">{{ product.hsCode || '—' }}</b></div>
                 @if (sourceOrderId(); as orderId) {
                   <a class="tile tile--link" [routerLink]="['/purchasing', orderId]">
@@ -931,6 +934,11 @@ export class ProductView {
   readonly secondaryPrice = secondarySalesPrice;
   readonly quantityDetail = salesQuantityDetail;
   readonly capitalize = capitalize;
+
+  /** "Verkocht per" in words: "Volle omdoos (12 stolpen)", "Per display (8 bowls)", "Per stolp". */
+  orderStep(product: Product): string {
+    return orderStepLabel(product, productSalesUnit(product));
+  }
   readonly lightbox = signal(-1);
   readonly galleryIndex = signal(0);
   readonly agreementLightbox = signal(-1);

@@ -16,7 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
+import { Category, Currency, HsCode, OrderStep, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -46,6 +46,7 @@ import {
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { productEditorReady, visibleProductEditorTab } from './product-editor-state';
+import { effectiveOrderStep, orderStepChoices, orderStepOf, packageStepPieces } from './product-order-step';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -53,7 +54,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     variantPosition: 0,
     inventoryKnown: true, sku: null, name: '',
     dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null },
-    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null, salesUnit: 'PIECE', unitKey: 'stuk' },
+    packaging: { kind: 'NONE', dimensions: { lengthCm: null, widthCm: null, heightCm: null, weightKg: null }, barcode: null, piecesPerUnit: null, salesUnit: 'PIECE', unitKey: 'stuk', orderStep: 'CARTON' },
     colour: null, colourHex: null, variantSize: null,
     description: null, categoryId: null, supplierId, supplierNote: null, active: true, demo: false,
     familyKey: null, publicHandle: null, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT',
@@ -887,6 +888,23 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               }
             </div>
             <span class="hint" aria-live="polite">{{ unitPreview() }}</span>
+          </div>
+
+          <!-- "Verkocht per": what a sales quantity is rounded up to. Stored in
+               packaging.orderStep; one setting for quotes, invoices, the
+               portal and the website. Prices stay per unit whatever the step. -->
+          <div class="field">
+            <label id="p-order-step-label">Verkocht per</label>
+            <div class="chips filter-rail" role="group" aria-labelledby="p-order-step-label">
+              @for (choice of orderStepChoiceList(); track choice.step) {
+                <button type="button" class="chip"
+                        [class.active]="selectedOrderStep() === choice.step"
+                        [attr.aria-pressed]="selectedOrderStep() === choice.step"
+                        [disabled]="formWriteBusy()"
+                        (click)="chooseOrderStep(choice.step)">{{ choice.label }}</button>
+              }
+            </div>
+            <span class="hint">Geldt voor offertes, het klantportaal en de website. Bestaande documenten veranderen niet.</span>
           </div>
 
           <fieldset class="price-method">
@@ -2950,6 +2968,16 @@ export class ProductEditor implements OnDestroy {
     if (key !== this.selectedUnitKey()) this.patchPackaging({ unitKey: key });
   }
 
+  /** "Verkocht per" as the draft stands; a display that no longer qualifies reads as one unit. */
+  readonly selectedOrderStep = computed(() => effectiveOrderStep(this.draft()));
+  /** Full carton, the display when it can be a step, one unit; counted from the draft, never the saved product. */
+  readonly orderStepChoiceList = computed(() => orderStepChoices(this.draft(), this.salesUnit(this.draft()),
+    this.draft().carton.piecesPerCarton || this.autoCartonPieces()));
+
+  chooseOrderStep(step: OrderStep): void {
+    if (step !== orderStepOf(this.draft())) this.patchPackaging({ orderStep: step });
+  }
+
   /** The margin as a share of the sales price, for the rail. */
   marginPercent(): number {
     const price = this.salesPrice();
@@ -3014,7 +3042,14 @@ export class ProductEditor implements OnDestroy {
   }
 
   patchPackaging(changes: Partial<Product['packaging']>): void {
-    this.draft.update((p) => ({ ...p, packaging: { ...this.packagingOf(p), ...changes } }));
+    this.draft.update((p) => {
+      const packaging = { ...this.packagingOf(p), ...changes };
+      /* Sold per display, then the display goes (another kind, fewer than two
+         pieces, a display basis): per unit at once, which is also what the
+         server rounds to; it refuses "per verpakking" without packaging. */
+      const lostDisplay = packaging.orderStep === 'PACKAGE' && packageStepPieces({ packaging }) === null;
+      return { ...p, packaging: lostDisplay ? { ...packaging, orderStep: 'UNIT' } : packaging };
+    });
   }
 
   patchPackagingDimensions(changes: Partial<Dimensions>): void {

@@ -304,6 +304,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <small>Catalogusprijs per {{ salesUnit(product).singular }}</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
+              <span>Verkocht per: {{ orderStep(product) }}</span>
               @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span> }
             </div>
             <i aria-hidden="true">=</i>
