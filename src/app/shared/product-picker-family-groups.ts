@@ -193,10 +193,15 @@ export function productPickerFamilySelectionState(
   return count === selectable.length ? 'all' : 'partial';
 }
 
-/** Select a complete range, or clear it when every available variant is selected. */
+/**
+ * Select a complete range, or clear it when every available variant is selected.
+ * A new variant starts on `defaultQuantity`: the picker passes one order step
+ * when selling, one carton when buying.
+ */
 export function toggleProductPickerFamilySelection(
   group: ProductPickerFamilyGroup,
   selected: ReadonlyMap<number, ProductPickerSelectionEntry>,
+  defaultQuantity: (product: Product) => number = (product) => product.carton.piecesPerCarton ?? 1,
 ): Map<number, ProductPickerSelectionEntry> {
   const deselect = productPickerFamilySelectionState(group, selected) === 'all';
   const next = new Map(selected);
@@ -206,7 +211,7 @@ export function toggleProductPickerFamilySelection(
     else if (!next.has(product.id)) {
       next.set(product.id, {
         product,
-        quantity: Math.max(1, product.carton.piecesPerCarton ?? 1),
+        quantity: Math.max(1, defaultQuantity(product)),
       });
     }
   }

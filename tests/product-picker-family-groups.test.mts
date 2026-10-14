@@ -128,6 +128,9 @@ test('family selection adds every available colour with its own carton default a
   assert.equal(all.get(1)?.quantity, 18, 'an existing quantity is preserved');
   assert.equal(all.get(2)?.quantity, 12, 'a new colour starts on its own full carton');
   assert.equal(toggleProductPickerFamilySelection(group, all).size, 0);
+  const selling = toggleProductPickerFamilySelection(group, new Map(), (product) => product.id === 2 ? 1 : 6);
+  assert.equal(selling.get(2)?.quantity, 1, 'selling starts each colour on the default the picker hands in (its order step)');
+  assert.equal(selling.get(1)?.quantity, 6);
 });
 
 function category(id: number, name: string, position: number): Category {
