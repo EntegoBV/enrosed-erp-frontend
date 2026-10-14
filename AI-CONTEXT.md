@@ -1082,22 +1082,28 @@ and on copies. Without the blocks (older backend) every screen is as before.
     "Volle omdoos · 12 stolpen" (or "doosinhoud ontbreekt"), "Per display ·
     8 bowls" only while the draft's display qualifies, "Per stolp" ("·
     geschenkverpakking" on a gift box); counted from the draft, never the
-    saved product. A packaging edit that disqualifies the display rewrites
+    saved product. Another packaging kind (no display any more) rewrites
     PACKAGE to UNIT in the draft at once (the server refuses PACKAGE without
-    packaging); a stored PACKAGE that no longer qualifies shows as per unit.
-    `blankProduct()` starts on CARTON. Product view tiles "Eenheid" and
-    "Verkocht per", desk price step "Verkocht per: …"; the family PACKAGING
-    bundle carries the setting and says so.
+    packaging). Retyping the display contents (8 → "1" → 12) or switching
+    the basis keeps the stored PACKAGE: meanwhile `effectiveOrderStep` shows
+    it as per unit, and `save()` calls `settleOrderStep()` so a PACKAGE that
+    still does not qualify is stored as UNIT - what the chips show is what
+    is saved. `blankProduct()` starts on CARTON. Product view tiles
+    "Eenheid" and "Verkocht per", desk price step "Verkocht per stolp"
+    (`orderStepSentence`, wraps); the family PACKAGING bundle carries the
+    setting and says so.
   - Server-owned figures are never sent back: `CatalogApi` strips
     `Product.unitsPerOrderStep`, `SalesApi.previewOrder/updateOrder` strip
     the line stamp `SalesOrderLine.unitsPerOrderStep` (the step the server
     last rounded that line to, so a step change never re-prices a sent or
     paid document).
   - Sales editor/desk: `unitsPerStep(productId)` (was `piecesPerCarton`) is
-    the priced line's `unitsPerOrderStep` - the effective step, 1 where the
-    server does not round (partner deal, CONTAINER_COST, credit note, split
-    allocation) - else the product's step for a line not priced yet; an
-    older server sends none and the product step is a full carton. The hint
+    what the next save rounds to: the priced line's `unitsPerOrderStep` when
+    it is 1 (the server does not round: partner deal, CONTAINER_COST, credit
+    note, split allocation), otherwise the product's step of today - a
+    loaded line carries the step it was stamped with, and a save or preview
+    re-stamps with today's. A line not priced yet takes the product's step;
+    an older server sends none and the product step is a full carton. The hint
     shows only when `roundToOrderStep(wanted, step) !== wanted` and the step
     is above 1: "Volle doos: wordt 24" / "Per display van 8: wordt 16"; per
     unit never. The 5 s typing pause and `flushPreview` are untouched. Save
@@ -1148,8 +1154,9 @@ and on copies. Without the blocks (older backend) every screen is as before.
 ### Portal (customer-facing, calm colours)
 Quote view in the customer's language (texts from the backend bundle),
 order-step rounding parity with the backend (`portalUnitsPerStep`: the
-line's or catalogue item's `unitsPerOrderStep`, the carton content from an
-older server; a step of 1 never snaps or announces; an addition starts on
+catalogue item's `unitsPerOrderStep` - the step the proposal is rounded
+to, also for products already on the quote - else the quote line's (the
+step it was last priced with), the carton content from an older server; a step of 1 never snaps or announces; an addition starts on
 ten cartons for a CARTON product, one display or unit otherwise; the notice
 names a display step with the existing `salesUnitsPerDisplay` key), the
 per-line "{n} dozen" stays (logistics), digital signing, change

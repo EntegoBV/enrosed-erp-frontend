@@ -1031,10 +1031,15 @@ export class PortalPage implements OnDestroy {
   openProposal(): void {
     const quote = this.quote();
     if (!quote || quote.advanceAgreement) return;
+    /* A quote line carries the step it was last priced with; a proposal is
+       rounded with the product's step of today, which the catalogue item
+       of the same quote carries. The line's own step is the fallback. */
+    const catalog = new Map(this.catalog().map((item) => [item.productId, item]));
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
-      orderStep: line.orderStep ?? null, unitsPerOrderStep: line.unitsPerOrderStep ?? null,
+      orderStep: catalog.get(line.productId)?.orderStep ?? line.orderStep ?? null,
+      unitsPerOrderStep: catalog.get(line.productId)?.unitsPerOrderStep ?? line.unitsPerOrderStep ?? null,
       salesUnit: line.salesUnit, piecesPerDisplay: line.piecesPerDisplay, unit: line.unit ?? null,
       unavailable: line.unavailable === true, requestedQuantity: line.requestedQuantity ?? null,
     })));

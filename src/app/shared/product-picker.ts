@@ -8,7 +8,7 @@ import { CurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 import { cartonQuantityNotice } from './carton-quantity-notice';
 import { productSalesUnit } from '../features/products/product-sales-unit';
-import { orderStepLabel, orderStepOf, unitsPerOrderStep } from '../features/products/product-order-step';
+import { orderStepOf, orderStepSentence, unitsPerOrderStep } from '../features/products/product-order-step';
 import { COLOUR_SWATCHES, STANDARD_COLOURS } from '../core/api/geo';
 import {
   ProductPickerCategoryKey,
@@ -833,8 +833,7 @@ export class ProductPicker implements OnDestroy {
 
   /** "Verkocht per display (8 bowls)", "Verkocht per stolp". */
   orderStepText(product: Product): string {
-    const label = orderStepLabel(product, productSalesUnit(product));
-    return `Verkocht ${label.charAt(0).toLocaleLowerCase('nl-BE')}${label.slice(1)}`;
+    return orderStepSentence(product, productSalesUnit(product));
   }
 
   /** Under the numbers of a batch: buying may take half a carton; selling starts each product on its own step. */

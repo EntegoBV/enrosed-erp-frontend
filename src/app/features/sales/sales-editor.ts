@@ -3640,15 +3640,18 @@ export class SalesEditor {
   }
 
   /**
-   * Sales units this line is rounded to: the server's own figure once it
-   * priced the line (1 where it does not round: partner deal, container-cost
-   * pricing, split allocation), the product's step for a line it has not
-   * priced yet. An older server sends none and rounds to full cartons.
+   * Sales units the next save rounds this line to. The server's 1 means it
+   * does not round here (partner deal, container-cost pricing, split
+   * allocation). Above 1 the document rounds, and a save rounds with the
+   * product's step of today, not the one a loaded line was stamped with
+   * before the product changed. A line not priced yet takes the product's
+   * step; an older server sends none and rounds to full cartons.
    */
   private unitsPerStep(productId: number): number {
     const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
-    return priced != null && Number.isSafeInteger(priced) && priced >= 1
-      ? priced : unitsPerOrderStep(this.products().find((product) => product.id === productId));
+    const product = this.products().find((candidate) => candidate.id === productId);
+    const server = priced != null && Number.isSafeInteger(priced) && priced >= 1 ? priced : null;
+    return server !== null && (server === 1 || !product) ? server : unitsPerOrderStep(product);
   }
 
   /** The product's "Verkocht per", for wording: the priced line's, else the catalogue's. */

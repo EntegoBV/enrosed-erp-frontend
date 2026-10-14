@@ -304,7 +304,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <small>Catalogusprijs per {{ salesUnit(product).singular }}</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
-              <span>Verkocht per: {{ orderStep(product) }}</span>
+              <span class="pd-flow__note">{{ orderStepSentence(product) }}</span>
               @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span> }
             </div>
             <i aria-hidden="true">=</i>
@@ -676,6 +676,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-flow__step small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
     .pd-flow__step b{font-size:17px;font-variant-numeric:tabular-nums;line-height:1.15}
     .pd-flow__step span{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .pd-flow__step .pd-flow__note{overflow:visible;white-space:normal}
     .pd-flow>i{align-self:center;flex:none;color:var(--muted);font-style:normal;font-size:15px;font-weight:700}
     .pd-flow__step--price b{color:var(--rose-dark)}
     .pd-flow__step--margin{border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.pd-flow__step--margin b{color:var(--ok)}

@@ -1,5 +1,5 @@
 import { capitalize, primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
-import { orderStepLabel } from './product-order-step';
+import { orderStepLabel, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -938,6 +938,10 @@ export class ProductView {
   /** "Verkocht per" in words: "Volle omdoos (12 stolpen)", "Per display (8 bowls)", "Per stolp". */
   orderStep(product: Product): string {
     return orderStepLabel(product, productSalesUnit(product));
+  }
+  /** The same as one phrase, for a line of its own: "Verkocht per stolp". */
+  orderStepSentence(product: Product): string {
+    return orderStepSentence(product, productSalesUnit(product));
   }
   readonly lightbox = signal(-1);
   readonly galleryIndex = signal(0);

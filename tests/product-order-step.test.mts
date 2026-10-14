@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Packaging, Product } from '../src/app/core/api/models.ts';
 import {
-  effectiveOrderStep, localUnitsPerOrderStep, orderStepChoices, orderStepLabel, orderStepMultiple, orderStepNotice,
+  effectiveOrderStep, localUnitsPerOrderStep, orderStepChoices, orderStepLabel, orderStepMultiple, orderStepNotice, orderStepSentence,
   orderStepOf, packageStepPieces, roundToOrderStep, unitsPerOrderStep,
 } from '../src/app/features/products/product-order-step.ts';
 
@@ -91,6 +91,14 @@ test('read-only views say the setting in a few words', () => {
   assert.equal(orderStepLabel(product({ orderStep: 'UNIT' }), STOLP), 'Per stolp');
   assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Per stolp (geschenkverpakking)');
   assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' }), STOLP), 'Per stolp (geschenkverpakking)');
+});
+
+test('as one phrase the setting reads without a doubled "per"', () => {
+  assert.equal(orderStepSentence(product(), STOLP), 'Verkocht per volle omdoos (12 stolpen)');
+  assert.equal(orderStepSentence(product({}, null), STOLP), 'Verkocht per volle omdoos (doosinhoud ontbreekt)');
+  assert.equal(orderStepSentence(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Verkocht per display (8 bowls)');
+  assert.equal(orderStepSentence(product({ orderStep: 'UNIT' }), STOLP), 'Verkocht per stolp');
+  assert.equal(orderStepSentence(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Verkocht per stolp (geschenkverpakking)');
 });
 
 test('notices name the step; a step of one needs no multiple', () => {

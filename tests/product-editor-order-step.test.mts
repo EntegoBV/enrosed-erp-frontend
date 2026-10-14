@@ -13,7 +13,7 @@ const source = await readFile(new URL('../src/app/features/products/product-edit
 const parsed = ts.createSourceFile('product-editor.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'ProductEditor');
 assert.ok(original);
-const names = new Set(['salesUnit', 'selectedOrderStep', 'orderStepChoiceList', 'chooseOrderStep', 'patchPackaging', 'packagingOf']);
+const names = new Set(['salesUnit', 'selectedOrderStep', 'orderStepChoiceList', 'chooseOrderStep', 'patchPackaging', 'settleOrderStep', 'packagingOf']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size, 'Every tested production member must still exist');
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -74,9 +74,9 @@ test('choosing writes packaging.orderStep; the same choice again changes nothing
   assert.equal(screen.draft().packaging.orderStep, 'UNIT');
 });
 
-test('a packaging edit that takes the display away turns "per display" into per unit at once', () => {
+test('another kind of packaging turns "per display" into per unit at once', () => {
   rememberUnitNames(NAMES);
-  for (const change of [{ kind: 'NONE' }, { kind: 'GIFT_BOX' }, { piecesPerUnit: 1 }, { piecesPerUnit: null }, { salesUnit: 'DISPLAY' }]) {
+  for (const change of [{ kind: 'NONE' }, { kind: 'GIFT_BOX' }]) {
     const screen = editor({ kind: 'DISPLAY', piecesPerUnit: 8, orderStep: 'PACKAGE' });
     screen.patchPackaging(change);
     assert.equal(screen.draft().packaging.orderStep, 'UNIT', JSON.stringify(change));
@@ -87,6 +87,39 @@ test('a packaging edit that takes the display away turns "per display" into per 
   const carton = editor({ kind: 'DISPLAY', piecesPerUnit: 8 });
   carton.patchPackaging({ kind: 'NONE' });
   assert.equal(carton.draft().packaging.orderStep, undefined, 'other settings are left as they are');
+});
+
+test('retyping the display contents or switching the basis keeps "per display"', () => {
+  rememberUnitNames(NAMES);
+  // 8 becomes 12: the field passes through "1" or an empty field on the way.
+  for (const between of [1, null]) {
+    const screen = editor({ kind: 'DISPLAY', piecesPerUnit: 8, orderStep: 'PACKAGE' });
+    screen.patchPackaging({ piecesPerUnit: between });
+    assert.equal(screen.draft().packaging.orderStep, 'PACKAGE', 'the stored choice stays while typing');
+    assert.equal(screen.selectedOrderStep(), 'UNIT', 'meanwhile the chips read it as one bowl, the step it has');
+    screen.patchPackaging({ piecesPerUnit: 12 });
+    assert.equal(screen.selectedOrderStep(), 'PACKAGE');
+    assert.deepEqual(labels(screen), ['Volle omdoos · 40 bowls', 'Per display · 12 bowls', 'Per bowl']);
+  }
+  const basis = editor({ kind: 'DISPLAY', piecesPerUnit: 8, orderStep: 'PACKAGE' });
+  basis.patchPackaging({ salesUnit: 'DISPLAY' });
+  basis.patchPackaging({ salesUnit: 'PIECE' });
+  assert.equal(basis.selectedOrderStep(), 'PACKAGE', 'there and back again');
+});
+
+test('a save stores what the chips show: "per display" without a display to count is per unit', () => {
+  rememberUnitNames(NAMES);
+  const lost = editor({ kind: 'DISPLAY', piecesPerUnit: 8, orderStep: 'PACKAGE' });
+  lost.patchPackaging({ piecesPerUnit: 1 });
+  lost.settleOrderStep();
+  assert.equal(lost.draft().packaging.orderStep, 'UNIT');
+  for (const packaging of [{ kind: 'DISPLAY', piecesPerUnit: 8, orderStep: 'PACKAGE' }, { orderStep: 'CARTON' }, {}]) {
+    const screen = editor(packaging);
+    const before = screen.draft();
+    screen.settleOrderStep();
+    assert.equal(screen.draft(), before, JSON.stringify(packaging));
+  }
+  assert.match(source, /this\.settleOrderStep\(\);\s*const missing = this\.missingFields\(\);/, 'save() settles it before it sends');
 });
 
 test('a stored "per verpakking" that no longer qualifies shows as per unit until staff choose again', () => {

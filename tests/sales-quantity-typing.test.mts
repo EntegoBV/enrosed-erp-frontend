@@ -162,10 +162,18 @@ test('the priced line decides: the server\'s step wins over the catalogue, a ste
   const exempt = stepHarness(stolp(), { unitsPerOrderStep: 1, orderStep: 'CARTON' });
   exempt.setLineQuantity(1, 13);
   assert.deepEqual({ ...exempt.linePending() }, {});
-  // A document stamped with an earlier step keeps it until it is saved again.
-  const stamped = stepHarness(stolp('UNIT'), { unitsPerOrderStep: 12, orderStep: 'CARTON' });
-  stamped.setLineQuantity(1, 13);
-  assert.equal(stamped.linePending()[1], 24);
+  // A loaded line stamped with an earlier step: the next save rounds with today's step, so the hint does too.
+  const nowPerUnit = stepHarness(stolp('UNIT'), { unitsPerOrderStep: 12, orderStep: 'UNIT' });
+  nowPerUnit.setLineQuantity(1, 13);
+  assert.deepEqual({ ...nowPerUnit.linePending() }, {}, 'sold per stolp since: 13 stays 13');
+  const fuller = stepHarness({ ...stolp(), carton: { piecesPerCarton: 24 } }, { unitsPerOrderStep: 12, orderStep: 'CARTON' });
+  fuller.setLineQuantity(1, 25);
+  assert.equal(fuller.linePending()[1], 48, 'the carton of today, not the one of 12');
+  // A product the screen does not know: the server's figure is all there is.
+  const unknown = stepHarness(stolp(), { unitsPerOrderStep: 12, orderStep: 'CARTON' });
+  unknown.products = () => [];
+  unknown.setLineQuantity(1, 13);
+  assert.equal(unknown.linePending()[1], 24);
   // Fixtures and older servers without any step read as full cartons.
   const older = stepHarness({ carton: { piecesPerCarton: 30 } });
   older.setLineQuantity(1, 31);

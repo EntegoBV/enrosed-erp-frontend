@@ -46,7 +46,7 @@ import {
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { productEditorReady, visibleProductEditorTab } from './product-editor-state';
-import { effectiveOrderStep, orderStepChoices, orderStepOf, packageStepPieces } from './product-order-step';
+import { effectiveOrderStep, orderStepChoices, orderStepOf } from './product-order-step';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -3044,12 +3044,20 @@ export class ProductEditor implements OnDestroy {
   patchPackaging(changes: Partial<Product['packaging']>): void {
     this.draft.update((p) => {
       const packaging = { ...this.packagingOf(p), ...changes };
-      /* Sold per display, then the display goes (another kind, fewer than two
-         pieces, a display basis): per unit at once, which is also what the
-         server rounds to; it refuses "per verpakking" without packaging. */
-      const lostDisplay = packaging.orderStep === 'PACKAGE' && packageStepPieces({ packaging }) === null;
+      /* Sold per display, then the display itself goes (another kind): per
+         unit at once; the server refuses "per verpakking" without packaging.
+         Retyping the count (8, then 1, then 12) or switching the basis keeps
+         the choice: the chips read it as per unit meanwhile, and save()
+         stores what they show. */
+      const lostDisplay = changes.kind != null && changes.kind !== 'DISPLAY' && packaging.orderStep === 'PACKAGE';
       return { ...p, packaging: lostDisplay ? { ...packaging, orderStep: 'UNIT' } : packaging };
     });
+  }
+
+  /** Saved as the chips read it: "per display" without a display to count is stored per unit. */
+  settleOrderStep(): void {
+    const step = effectiveOrderStep(this.draft());
+    if (step !== orderStepOf(this.draft())) this.patchPackaging({ orderStep: step });
   }
 
   patchPackagingDimensions(changes: Partial<Dimensions>): void {
@@ -3680,6 +3688,7 @@ export class ProductEditor implements OnDestroy {
     if (!this.draft().carton.weightKg && this.autoCartonWeight() !== null) {
       this.patchCarton({ weightKg: this.autoCartonWeight() });
     }
+    this.settleOrderStep();
     const missing = this.missingFields();
     if (missing.length) {
       const first = missing[0];

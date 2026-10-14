@@ -50,7 +50,7 @@ function harness() {
     agreementBusy: signal(false), agreementDirty: signal(false), sharedFieldsBusy: signal(false),
     leaveQuestion: signal(null), readinessIssues: signal([]), pendingPhotos: signal(0), photoRevision: signal(0),
     save: async () => {},
-    editorReady: signal(true), autoCartonPieces: signal(null), autoCartonWeight: signal(null), missingFields: signal([]),
+    editorReady: signal(true), autoCartonPieces: signal(null), autoCartonWeight: signal(null), settleOrderStep: () => {}, missingFields: signal([]),
     saveError: signal(null), savedProductFamilyId: signal(null), savedSupplierId: signal(null), savedHere: signal(false),
     returnTo: signal(null), loadStockHistory: async () => {}, loadStockLevels: async () => {},
     persistFamilyDraft: async () => { editor.savedFamily.set(structuredClone(editor.family())); },

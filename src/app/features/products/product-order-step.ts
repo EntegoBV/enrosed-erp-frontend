@@ -119,6 +119,16 @@ export function orderStepLabel(
   }
 }
 
+/** The setting as one phrase: "Verkocht per volle omdoos (12 stolpen)", "Verkocht per display (8 bowls)", "Verkocht per stolp". */
+export function orderStepSentence(
+  product: Pick<Product, 'packaging' | 'carton'>,
+  unit: OrderStepUnit,
+): string {
+  const label = orderStepLabel(product, unit);
+  const phrase = `${label.charAt(0).toLocaleLowerCase('nl-BE')}${label.slice(1)}`;
+  return `Verkocht ${effectiveOrderStep(product) === 'CARTON' ? 'per ' : ''}${phrase}`;
+}
+
 /**
  * What a quantity must be a multiple of, after "in": "volle dozen van 12
  * stolpen", "displays van 8 bowls". Null for a step of one: any whole number fits.

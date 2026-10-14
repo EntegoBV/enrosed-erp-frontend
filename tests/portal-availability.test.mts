@@ -149,3 +149,21 @@ test('proposals snap to the order step of each line: a display, nothing for one 
   page.setProposal(3, 25);
   assert.equal(page.pendingRound()[3], 48);
 });
+
+test('a proposal rounds with the step of today from the catalogue, not the step the quote line was priced with', () => {
+  const { page, timers } = harness();
+  page.quote.set({ lines: [
+    { productId: 1, description: 'Stolp', quantity: 12, piecesPerCarton: 12, orderStep: 'CARTON', unitsPerOrderStep: 12 },
+    { productId: 2, description: 'Roos', quantity: 24, piecesPerCarton: 24, orderStep: 'CARTON', unitsPerOrderStep: 24 },
+  ] });
+  // Product 1 is sold per stolp since the quote was saved; product 2 is not in the catalogue (inactive).
+  page.catalog.set([{ productId: 1, description: 'Stolp', piecesPerCarton: 12, orderStep: 'UNIT', unitsPerOrderStep: 1 }]);
+  page.openProposal();
+  assert.equal(page.proposalLines()[0].orderStep, 'UNIT');
+  page.setProposal(1, 13);
+  assert.equal(page.pendingRound()[1], undefined, 'the server accepts 13, so nothing snaps');
+  assert.equal(timers.length, 0);
+  assert.equal(page.proposalLines()[0].quantity, 13);
+  page.setProposal(2, 25);
+  assert.equal(page.pendingRound()[2], 48, 'without a catalogue item the line keeps its own step');
+});
