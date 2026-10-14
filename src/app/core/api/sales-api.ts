@@ -28,6 +28,15 @@ function revisionQuery(webOrderRevision: number | null | undefined): string {
   return typeof webOrderRevision === 'number' ? `?webOrderRevision=${webOrderRevision}` : '';
 }
 
+/**
+ * A line's applied order step (unitsPerOrderStep) is stamped by the server
+ * when it rounds; it never travels back, so a client cannot choose it.
+ */
+function orderWriteBody(order: SalesOrder): SalesOrder {
+  if (!order.lines?.some((line) => 'unitsPerOrderStep' in line)) return order;
+  return { ...order, lines: order.lines.map(({ unitsPerOrderStep: _stamp, ...line }) => line) };
+}
+
 @Injectable({ providedIn: 'root' })
 export class SalesApi {
   private readonly http = inject(HttpClient);
@@ -261,12 +270,12 @@ export class SalesApi {
 
   /** Prices the order as it stands on screen, without saving. */
   previewOrder(id: number, order: SalesOrder): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/preview`), order));
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/preview`), orderWriteBody(order)));
   }
 
   updateOrder(id: number, order: SalesOrder, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}${revisionQuery(webOrderRevision)}`), order));
+      api(`/api/sales-orders/${id}${revisionQuery(webOrderRevision)}`), orderWriteBody(order)));
   }
 
   /** Changes only delivery promises; safe after the commercial quote is locked. */

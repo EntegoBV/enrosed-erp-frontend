@@ -103,7 +103,9 @@ export class CatalogApi {
   }
 
   createProduct(product: Product): Promise<Product> {
-    return firstValueFrom(this.http.post<Product>(api('/api/products'), product));
+    /* unitsPerOrderStep is the server's own figure; the setting travels as packaging.orderStep. */
+    const { unitsPerOrderStep: _serverStep, ...body } = product;
+    return firstValueFrom(this.http.post<Product>(api('/api/products'), body));
   }
 
   updateProduct(id: number, product: Product): Promise<Product> {
@@ -145,8 +147,10 @@ export class CatalogApi {
    * keeps its per-language rows instead of losing them on this save.
    */
   private productWriteBody(product: Product): Product {
+    /* unitsPerOrderStep is the server's own figure; the setting travels as packaging.orderStep. */
+    const { unitsPerOrderStep: _serverStep, ...body } = product;
     return {
-      ...product,
+      ...body,
       /* The backend treats null as "legacy client omitted this field"; an empty
          string is the explicit command to clear a saved supplier note. */
       supplierNote: product.supplierNote ?? '',

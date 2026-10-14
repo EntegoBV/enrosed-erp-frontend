@@ -82,6 +82,14 @@ export interface Dimensions {
 
 export type PackagingKind = 'NONE' | 'GIFT_BOX' | 'DISPLAY';
 
+/**
+ * "Verkocht per": what a sales quantity of a product is rounded up to on
+ * quotations, invoices, the customer portal and the website. CARTON is a full
+ * outer carton (every product before 2026-10-14), PACKAGE one display of
+ * several pieces, UNIT one sales unit. Stored quantities never change unit.
+ */
+export type OrderStep = 'CARTON' | 'PACKAGE' | 'UNIT';
+
 /** One line in the stock book: what changed, to what, why, where and by whom. */
 export interface StockMovement {
   id: number;
@@ -154,6 +162,12 @@ export interface Packaging {
    * Omitted or null on a write keeps the stored unit; the server reads null as "stuk".
    */
   unitKey?: string | null;
+  /**
+   * "Verkocht per". Travels with the packaging, also for a loose article.
+   * Absent (an older server) or null reads as CARTON; null on a write keeps
+   * the stored value. PACKAGE needs a display or gift box.
+   */
+  orderStep?: OrderStep | null;
 }
 
 /** One entry of the unit pick-list, in Dutch: "bowl" / "bowls" / "per bowl". */
@@ -524,6 +538,12 @@ export interface Product {
   describedAs?: string;
   cartonCbm?: number;
   pieceCbm?: number;
+  /**
+   * Server-owned: sales units in one order step of this product as saved
+   * (pieces per carton, pieces per display, or 1). Absent from older servers;
+   * never sent back.
+   */
+  readonly unitsPerOrderStep?: number;
 }
 
 /**
@@ -1684,6 +1704,11 @@ export interface SalesOrderLine {
   deliveryWeek: string | null;
   /** What one piece cost us when the line was written; fixed, so an old document's margin never drifts. */
   unitCostEur?: number | null;
+  /**
+   * Server stamp: the order step this line was last rounded to. Read only -
+   * the API strips it from every write, the server alone decides it.
+   */
+  readonly unitsPerOrderStep?: number | null;
 }
 
 /** A hand-built pallet: label plus product/carton assignments. */
@@ -1820,6 +1845,14 @@ export interface PricedLine {
   deliveryDate: string | null;
   deliveryWeek: string | null;
   deliveryExplanation: string | null;
+  /** The product's "Verkocht per", for wording only; absent from older servers. */
+  orderStep?: OrderStep;
+  /**
+   * Sales units the server rounds this line to: 1 where it does not round
+   * (partner deal, container-cost pricing, credit note, split allocation).
+   * Absent from older servers, which round to full cartons.
+   */
+  unitsPerOrderStep?: number;
 }
 
 export interface PricedOrder {
@@ -2231,6 +2264,10 @@ export interface SalesSplitLine {
   unavailable?: boolean | null;
   requestedQuantity?: number | null;
   piecesPerCarton: number | null;
+  /** What both parts must be a multiple of; 1 when nothing is rounded. Absent from older servers (full cartons). */
+  unitsPerOrderStep?: number | null;
+  /** The product's "Verkocht per", for wording only. */
+  orderStep?: OrderStep | null;
   stockQuantity: number | null;
   inventoryKnown: boolean;
 }
@@ -2338,8 +2375,12 @@ export interface PortalLine {
   cartons: number;
   pallets: number;
   cbm?: number;
-  /** Carton content, for rounding quantities to full cartons. */
+  /** Carton content: the rounding step of older servers, and the boxes shown per line. */
   piecesPerCarton: number;
+  /** The product's "Verkocht per", for wording only; absent from older servers. */
+  orderStep?: OrderStep | null;
+  /** What the server rounds this line to on a proposal; 1 when it does not round. */
+  unitsPerOrderStep?: number | null;
   /** Agreement quotations expose products and terms, without definitive product prices. */
   unitPrice: number | null;
   discountPct: number | null;
@@ -2357,6 +2398,10 @@ export interface PortalCatalogItem {
   description: string;
   photoUrl: string | null;
   piecesPerCarton: number;
+  /** The product's "Verkocht per", for wording only; absent from older servers. */
+  orderStep?: OrderStep | null;
+  /** What the server rounds an addition to on this quotation; 1 when it does not round. */
+  unitsPerOrderStep?: number | null;
   unitPrice: number;
   salesUnit?: 'PIECE' | 'DISPLAY' | null;
   piecesPerDisplay?: number | null;
