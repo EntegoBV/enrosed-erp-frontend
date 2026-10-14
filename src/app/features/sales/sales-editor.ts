@@ -1,6 +1,7 @@
 import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
 import { canReopenSalesDocument } from './sales-reopen';
+import { QUANTITY_FIELD_SELECTOR, showServerQuantities } from './sales-quantity-fields';
 import { canCreateCreditNote, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, euro, isCreditNote, isDeadCreditNote } from './sales-credit-note';
 import { SalesOffsetSheet } from './sales-offset-sheet';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
@@ -21,7 +22,7 @@ import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, HostListener } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -682,7 +683,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                       @if (unavailableLineCount(familyGroup.lines) === familyGroup.lines.length) {
                         <small>Tijdelijk niet beschikbaar</small><b>—</b>
                       } @else {
-                        <small>{{ familyGroup.pieces | num }} {{ quantityLabel(familyGroup.lines) }} · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</small>
+                        <small>{{ familyGroup.pieces | num }} {{ quantityLabel(familyGroup.lines) }} · {{ familyGroup.cartons | num }} {{ familyGroup.cartons === 1 ? 'doos' : 'dozen' }} · {{ familyGroup.cbm | cbm }}</small>
                         @if (unavailableLineCount(familyGroup.lines); as unavailable) { <small>{{ unavailable }} niet beschikbaar</small> }
                         <b>{{ familyGroup.totalEur | eur }}</b>
                       }
@@ -737,7 +738,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                     <label [attr.for]="'q-' + line.productId">Aantal {{ lineUnit(line.productId).plural }}</label>
                     <input class="input num" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
-                           [ngModel]="line.quantity"
+                           [attr.data-quantity-line]="line.productId" [ngModel]="line.quantity"
                            (ngModelChange)="setLineQuantity(line.productId, $event)"
                            (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
                     @if (linePending()[line.productId]; as to) {
@@ -2337,6 +2338,8 @@ export class SalesEditor {
   protected readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   readonly canCreateInvoice = canCreateInvoiceFromQuote;
   readonly invoiceConversionBusy = signal(false);
@@ -3421,6 +3424,7 @@ export class SalesEditor {
       this.view.set({ ...fresh, order: current.order });
       this.previewError.set(null);
       this.figuresWaiting.set(false);
+      this.syncQuantityFields();
     } catch (failure: unknown) {
       if (version !== this.previewVersion) return;
       this.figuresWaiting.set(false);
@@ -3433,6 +3437,24 @@ export class SalesEditor {
 
   retryPreview(): void {
     void this.preview();
+  }
+
+  /**
+   * Once the answer is on screen, every quantity field shows the server's
+   * quantity of its line - [ngModel] skips a value that did not change, so a
+   * typed 13 that the server rounds back to the 24 already bound stayed 13.
+   * The field being typed in is left alone and catches up when it is left,
+   * unless a newer number in it is still waiting for its price.
+   */
+  private syncQuantityFields(): void {
+    afterNextRender(() => this.showServerQuantities(), { injector: this.injector });
+  }
+
+  private showServerQuantities(): void {
+    const host = this.host.nativeElement;
+    const focused = showServerQuantities(host.querySelectorAll<HTMLInputElement>(QUANTITY_FIELD_SELECTOR),
+      this.view()?.priced.lines ?? [], host.ownerDocument.activeElement);
+    focused?.addEventListener('blur', () => { if (!this.figuresWaiting()) this.showServerQuantities(); }, { once: true });
   }
 
   /** Serialize writes; a second click or autosave waits instead of silently doing nothing. */
@@ -3481,7 +3503,9 @@ export class SalesEditor {
       const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);
       this.adopt(saved);
       this.view.set({ ...saved, order: merged });
+      /* Still dirty: the preview after this answer brings the fields in line. */
       if (this.dirty()) this.schedulePreview();
+      else this.syncQuantityFields();
       /* The server rounds up to each product's order step (carton, display
          or unit); when it did, say so - a silently changed number reads as a bug. */
       const rounded = saved.order.lines.filter((line) =>

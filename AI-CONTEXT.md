@@ -1106,7 +1106,14 @@ and on copies. Without the blocks (older backend) every screen is as before.
     an older server sends none and the product step is a full carton. The hint
     shows only when `roundToOrderStep(wanted, step) !== wanted` and the step
     is above 1: "Volle doos: wordt 24" / "Per display van 8: wordt 16"; per
-    unit never. The 5 s typing pause and `flushPreview` are untouched. Save
+    unit never. The 5 s typing pause and `flushPreview` are untouched. After
+    a preview answer and after a save, `syncQuantityFields` (after render,
+    `sales-quantity-fields.ts`) writes the priced quantity into every
+    `data-quantity-line` field that is not focused: [ngModel] skips an
+    unchanged value, so 13 rounded back to the bound 24 stayed 13. The
+    focused field catches up on blur unless a newer number waits. Desk:
+    cartons and m³ are separate meta items and the detail and rounding hint
+    wrap, so the product column's meta never runs under the quantity. Save
     toast "aantal afgerond op het bestelveelvoud"; the website review says
     "Aantallen volgen per product het bestelveelvoud (doos, display of
     stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and
