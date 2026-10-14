@@ -216,6 +216,17 @@ export class BankMovementPanel {
       && bankAmountsMatch(-row.amountEur, this.selected()?.amountEur ?? 0));
   });
   readonly localExistingSales = computed(() => this.existingMatches().filter(row => this.localDocument()?.kind === 'sales' && row.salesOrderId === this.localDocument()?.id));
+  /** A settled cost can only reuse one unambiguous, free payment; never create another. */
+  readonly localReusablePayment = computed(() => {
+    const target = this.localDocument(), payments = this.localExistingPayments();
+    return target?.kind === 'cost' && target.openBankEur === 0 && payments.length === 1 ? payments[0] : null;
+  });
+  readonly localLinkedPayment = computed(() => {
+    const target = this.localDocument(), bank = this.selected();
+    if (target?.kind !== 'cost' || !bank) return null;
+    return this.state.costs().find(cost => cost.id === target.id)?.payments?.find(payment => payment.bankStatementLineId != null
+      && bankAmountsMatch(-payment.amountEur, bank.amountEur)) ?? null;
+  });
   readonly localPossibleDuplicate = computed(() => {
     const target = this.localDocument(), bank = this.selected(); if (!target || !bank) return false;
     if (target.kind === 'sales') return this.localExistingSales().length > 0;
@@ -228,12 +239,13 @@ export class BankMovementPanel {
   readonly localPreview = computed(() => {
     const bank = this.selected(), target = this.localDocument(); if (!bank || !target) return null;
     const open = target.openBankEur, sameDirection = Math.sign(open) === Math.sign(bank.amountEur);
-    const payment = target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
+    const reusable = this.localReusablePayment();
+    const payment = reusable ? -reusable.amountEur : target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
       : bankAmountsMatch(bank.amountEur, open) ? open : bank.amountEur;
     const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment)
       : sameDirection && (Math.abs(bank.amountEur) <= Math.abs(open) || bankAmountsMatch(bank.amountEur, open) || (target.kind === 'sales' && bank.amountEur > 0));
     return { paymentEur: payment, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(payment))) / 100,
-      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
+      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: reusable ? 0 : Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
       eligible: amountValid && (target.kind === 'purchase' || open !== 0) };
   });
   readonly localBankProblem = computed(() => {
@@ -245,6 +257,89 @@ export class BankMovementPanel {
   });
   readonly canLinkLocal = computed(() => !this.localBankProblem() && !!this.localDocument() && !!this.localPreview()?.eligible && !this.localLoading() && !this.localError() && !this.busy()
     && (!(this.localPossibleDuplicate() || (this.localDocument()?.kind === 'sales' && (this.localPreview()?.overpaidEur ?? 0) > 0)) || this.localNewConfirmed()));
+  /** The footer only composes existing allocation guards, including the fresh local-source gate. */
+  readonly allocationReady = computed(() => {
+    const bank = this.selected();
+    if (!bank || this.busy() || this.allocated(bank) || this.localBankProblem()) return false;
+    const step = this.allocationStep();
+    if (step === 'new') return this.canLinkReceived();
+    if (this.localLoading() || this.localError()) return false;
+    if (step === 'documents') return this.canLinkLocal() || !!this.localReusablePayment();
+    return this.allocationMode() === 'expense' ? this.canLinkOutgoing() : this.canAllocate();
+  });
+  readonly allocationActionLabel = computed(() => {
+    if (this.busy()) return 'Koppelen…';
+    if (this.allocationStep() === 'documents' && this.localReusablePayment()) return 'Bestaande betaling koppelen';
+    if (this.allocationStep() === 'new' && !this.receivedPreview()?.companyCostId && !this.receivedExistingCostId()) return 'Registreren en koppelen';
+    return 'Koppelen';
+  });
+  readonly allocationBlockedReason = computed(() => {
+    if (this.allocationReady()) return '';
+    const bank = this.selected();
+    if (!bank) return 'Kies eerst een banktransactie.';
+    if (this.busy()) return 'De koppeling wordt verwerkt. Wacht tot dit klaar is.';
+    if (this.localBankProblem()) return this.localBankProblem();
+    if (this.allocated(bank)) return 'Deze banktransactie is al gekoppeld. Sluit dit scherm en vernieuw het overzicht.';
+    const step = this.allocationStep();
+    if (step === 'new') {
+      const preview = this.receivedPreview();
+      if (this.receivedPreviewLoading()) return 'De factuurbedragen en bestaande registraties worden nog gecontroleerd.';
+      if (!preview && this.receivedLoading()) return 'De ontvangen documenten worden nog geladen.';
+      if (!preview && this.receivedError()) return this.receivedError();
+      if (!preview) return bank.amountEur < 0 ? 'Kies eerst een ontvangen factuur, of registreer hierboven zelf een uitgave.' : 'Kies eerst een ontvangen creditnota.';
+      if (preview.existingCandidates.length && !preview.companyCostId && !preview.existingCandidates.some(cost => cost.id === this.receivedExistingCostId()))
+        return 'Kies de bestaande kost die bij deze factuur hoort. Zo voorkom je een dubbele registratie.';
+      if (!preview.eligible) return preview.unavailableReason || preview.actionMessage || 'Deze factuur kan nog niet worden gekoppeld. Controleer de factuurgegevens hierboven.';
+      if (!preview.snapshotHash) return 'De factuurcontrole is niet volledig. Kies het document opnieuw.';
+      if (!bankAmountsMatch(bank.amountEur, -preview.paymentAmountEur) || !Number.isFinite(preview.differenceEur) || Math.abs(Math.round(preview.differenceEur * 100)) > 2)
+        return 'De betaalrichting of het bedrag past niet bij de banktransactie. Maximaal € 0,02 verschil is toegestaan.';
+    } else {
+      if (this.localLoading()) return 'Facturen en bestaande betalingen worden nog geladen.';
+      if (this.localError()) return 'De gegevens zijn niet volledig geladen. Probeer opnieuw te laden: ' + this.localError();
+      if (step === 'documents') {
+        const target = this.localDocument(), preview = this.localPreview();
+        if (!target) return this.localSelectedKey() ? 'Het gekozen document is niet meer beschikbaar. Kies het opnieuw.' : 'Kies eerst een factuur of uitgave uit de lijst hierboven.';
+        if (target.openBankEur === 0 && target.kind !== 'purchase') {
+          const count = this.localExistingPayments().length + this.localExistingSales().length;
+          if (count > 1) return 'Er zijn meerdere passende betalingen. Kies hieronder expliciet welke bestaande betaling je wilt koppelen.';
+          if (count) return 'Dit document is al betaald. Kies hieronder de bestaande betaling om die te hergebruiken.';
+          if (this.localLinkedPayment()) return 'De passende betaling heeft al een bankkoppeling. Open die eerdere koppeling en maak ze eerst los als je deze betaling wilt hergebruiken.';
+          return 'Dit document is al betaald, maar er is geen vrije passende betaling gevonden. Kies een bestaande betaling; er wordt geen extra betaling aangemaakt.';
+        }
+        if (!preview?.eligible) return target.kind === 'purchase'
+          ? 'Vul een geldig betaald bedrag in. Het EUR-bedrag mag maximaal € 0,02 afwijken van de banktransactie.'
+          : 'De betaalrichting of het openstaande bedrag past niet bij de banktransactie. Maximaal € 0,02 verschil is toegestaan.';
+        if (this.localPossibleDuplicate() && !this.localNewConfirmed()) return this.localLinkedPayment() && !this.localExistingPayments().length
+          ? 'Een passende betaling heeft al een eerdere bankkoppeling. Hergebruik die via de bestaande koppeling, of bevestig hierboven dat dit een nieuwe betaling is.'
+          : 'Er bestaat mogelijk al een passende betaling. Kies die betaling, of bevestig hierboven dat dit een nieuwe betaling is.';
+        if (target.kind === 'sales' && preview.overpaidEur > 0 && !this.localNewConfirmed()) return 'Bevestig hierboven dat je het hogere ontvangen bedrag op deze factuur wilt registreren.';
+      } else if (this.allocationMode() === 'expense') {
+        const chosen = this.chosenOutgoing();
+        if (!this.outgoingSelected().length) return 'Selecteer eerst één of meer bestaande betalingen.';
+        if (chosen.length !== this.outgoingSelected().length) return 'Een geselecteerde betaling is niet meer beschikbaar. Kies de bestaande betalingen opnieuw.';
+        if (chosen.filter(payment => payment.kind === 'cost').length > 1) return 'Kies maximaal één kostenbetaling; meerdere containerbetalingen kunnen samen worden gekoppeld.';
+        if (!bankAmountsMatch(-this.outgoingTotal(), bank.amountEur)) return 'Het totaal van de gekozen betalingen past niet bij de banktransactie. Maximaal € 0,02 verschil op het totaal is toegestaan.';
+      } else {
+        if (this.matchingLoading()) return 'De passende ontvangsten en terugbetalingen worden nog geladen.';
+        const choice = this.choice();
+        if (!choice) return 'Kies eerst een bestaande ontvangst of terugbetaling.';
+        const difference = this.matchDifference(choice);
+        if (choice.existingPaymentId && difference !== null && Math.abs(Math.round(difference * 100)) > 2) return 'De bestaande betaling wijkt meer dan € 0,02 af van de banktransactie. Kies een passende betaling.';
+        if (!choice.existingPaymentId && this.chosenInvoiceHasExistingMatches() && !this.newBookingConfirmed()) return 'Er bestaat al een passende betaling. Kies die betaling of bevestig expliciet een nieuwe betaling.';
+      }
+    }
+    return 'Controleer de gekozen betaling voordat je de banktransactie koppelt.';
+  });
+  async submitAllocation(): Promise<void> {
+    if (!this.allocationReady()) return;
+    if (this.allocationStep() === 'documents') {
+      const payment = this.localReusablePayment();
+      if (payment) { this.reuseLocalPayment(payment); await this.linkOutgoing(); }
+      else await this.linkLocalDocument();
+    } else if (this.allocationStep() === 'new') await this.linkReceivedInvoice();
+    else if (this.allocationMode() === 'expense') await this.linkOutgoing();
+    else await this.allocate();
+  }
   setAllocationStep(step: 'documents' | 'payments' | 'new'): void {
     if (this.busy()) return;
     this.allocationStep.set(step); this.error.set('');

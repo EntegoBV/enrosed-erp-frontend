@@ -38,3 +38,13 @@
 @media (max-width: 600px) { .bank-alloc-amounts { grid-template-columns: 1fr; }.bank-alloc-tabs button { padding: 10px 4px; font-size: 12px; }.bank-alloc-create { align-items: flex-start; flex-direction: column; }.bank-alloc-document { padding: 12px; gap: 10px; }.bank-alloc-movement { padding: 14px; } }
 
 .bank-alloc-purchase-docs { display: grid; justify-items: start; gap: 7px; margin: 14px 0; font-size: 12px; overflow-wrap: anywhere; }
+
+.bank-alloc-footer { display: grid; gap: 10px; width: 100%; }
+.bank-alloc-footer__reason { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted, #667085); overflow-wrap: anywhere; }
+.bank-alloc-footer__actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; width: 100%; }
+.bank-alloc-footer__actions .btn { min-height: 44px; }
+.bank-alloc-preview h3:focus { outline: none; }
+@media (max-width: 600px) {
+  .bank-alloc-footer__actions .spacer { display: none; }
+  .bank-alloc-footer__actions .btn { flex: 1; min-width: 0; padding-inline: 8px; white-space: normal; font-size: 14px; }
+}

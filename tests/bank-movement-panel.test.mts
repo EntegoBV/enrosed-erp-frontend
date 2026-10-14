@@ -777,3 +777,141 @@ test('a slow destination lookup cannot open a document after leaving its account
   assert.equal(opened.length, 0);
   assert.equal(toasts.length, 0);
 });
+
+test('footer explains empty document, payment and received-document selections without submitting', async () => {
+  const { panel } = harness(); await panel.openAllocation(movement(7, -40));
+  assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Kies eerst een factuur of uitgave/);
+  panel.setAllocationStep('payments'); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Selecteer eerst/);
+  panel.allocationStep.set('new'); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Kies eerst een ontvangen factuur/);
+  await panel.submitAllocation(); assert.equal(panel.selected()!.id, 7);
+});
+
+test('settled cost footer reuses its unique matching payment and preserves the original signed two-cent difference', async () => {
+  for (const sign of [1, -1]) {
+    const { panel, state, api } = harness(); const bank = movement(7, -sign * 40.02);
+    const cost = localCost(1, sign * 40, 0, [{ id: 9, amountEur: sign * 40, paidOn: '2026-09-01', bankStatementLineId: null }]);
+    state.costs.set([cost]); state.bankStatements.set([bank]);
+    const calls: any[] = []; let creations = 0;
+    (api as any).addCostPayment = async () => { creations++; throw new Error('Must never create'); };
+    (api as any).linkPayments = async (id: number, body: any) => { calls.push({ id, costPaymentId: body.costPaymentId, purchases: Array.from(body.purchasePaymentIds) }); return { ...bank, allocated: true }; };
+    await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+    assert.equal(panel.localReusablePayment()!.id, 9); assert.equal(panel.localPreview()!.paymentEur, -sign * 40);
+    assert.equal(panel.localPreview()!.differenceEur, -sign * .02); assert.equal(panel.localPreview()!.overpaidEur, 0);
+    assert.equal(panel.canLinkLocal(), false, 'creating another payment stays forbidden');
+    assert.equal(panel.allocationReady(), true); assert.equal(panel.allocationBlockedReason(), '');
+    assert.equal(panel.allocationActionLabel(), 'Bestaande betaling koppelen');
+    await panel.submitAllocation(); assert.equal(creations, 0);
+    assert.deepEqual(calls, [{ id: 7, costPaymentId: 9, purchases: [] }]);
+    assert.equal(state.costs()[0], cost); assert.equal(state.bankStatements()[0].amountEur, bank.amountEur);
+  }
+});
+
+test('paid cost reuse rejects a three-cent mismatch, opposite sign and payments of another cost', async () => {
+  for (const amount of [40.03, -40]) {
+    const { panel, state } = harness(); state.costs.set([localCost(1, 40, 0, [{ id: 9, amountEur: amount, paidOn: '2026-10-01', bankStatementLineId: null }]),
+      localCost(2, 40, 0, [{ id: 10, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
+    await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments().find(doc => doc.id === 1)!);
+    assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
+    assert.match(panel.allocationBlockedReason(), /geen vrije passende betaling/);
+  }
+});
+
+test('multiple free matching payments require an explicit selection even on a settled cost', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost(1, 80, 0, [9, 10].map(id => ({ id, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null })))]);
+  await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
+  assert.match(panel.allocationBlockedReason(), /meerdere passende betalingen/);
+  panel.localNewConfirmed.set(true); assert.equal(panel.allocationReady(), false);
+  panel.reuseLocalPayment(panel.localExistingPayments()[0]); assert.equal(panel.allocationReady(), true);
+});
+
+test('matching payments with an earlier bank link never become reusable through the footer', async () => {
+  for (const source of ['MANUAL', 'ODOO']) {
+    const { panel, state } = harness(); const bank = movement(7, -40);
+    state.costs.set([localCost(1, 40, 0, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: 8 }])]);
+    state.bankStatements.set([bank, { ...movement(8, -40), source: source as any, allocated: true }]);
+    await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+    assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
+    assert.match(panel.allocationBlockedReason(), /heeft al een bankkoppeling/);
+    assert.match(panel.allocationBlockedReason(), /eerst los/);
+  }
+});
+
+test('the unique reuse action remains blocked during source loading, errors, bank changes or concurrent linkage', async () => {
+  const { panel, state } = harness(); const bank = movement(7, -40);
+  const cost = localCost(1, 40, 0, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }]);
+  state.costs.set([cost]); state.bankStatements.set([bank]); await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  panel.localLoading.set(true); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /nog geladen/);
+  panel.localLoading.set(false); panel.localError.set('Kosten offline'); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Kosten offline/);
+  panel.localError.set(''); state.bankStatements.set([{ ...bank, amountEur: -41 }]); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /gewijzigd/);
+  state.bankStatements.set([{ ...bank, allocated: true }]); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /gekoppeld/);
+  state.bankStatements.set([bank]); state.costs.set([{ ...cost, payments: [{ ...cost.payments[0], bankStatementLineId: 8 }] }]);
+  assert.equal(panel.allocationReady(), false); assert.equal(panel.localReusablePayment(), null);
+});
+
+test('partial cost payments retain the duplicate confirmation and do not silently reuse', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost(1, 80, 40, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
+  await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
+  assert.match(panel.allocationBlockedReason(), /bevestig hierboven dat dit een nieuwe betaling/);
+  panel.localNewConfirmed.set(true); assert.equal(panel.allocationReady(), true); assert.equal(panel.allocationBlockedReason(), '');
+});
+
+test('existing payments footer keeps source refresh and aggregate two-cent guards', async () => {
+  const { panel, state } = harness(); const bank = movement(7, -100.02); state.bankStatements.set([bank]);
+  state.payments.set([{ id: 9, orderId: 1, amountEur: 60, paidOn: '2026-10-01' }, { id: 10, orderId: 1, amountEur: 40, paidOn: '2026-10-01' }]);
+  await panel.openAllocation(bank); panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /op het totaal/);
+  panel.toggleOutgoing(panel.outgoingCandidates()[1]); assert.equal(panel.allocationReady(), true);
+  panel.localError.set('Betalingen offline'); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Betalingen offline/);
+  panel.localError.set(''); panel.selected.set(movement(7, -100.03)); state.bankStatements.set([movement(7, -100.03)]);
+  assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /op het totaal/);
+  state.payments.update(payments => payments.map(payment => payment.id === 9 ? { ...payment, bankStatementLineId: 88 } : payment));
+  assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /niet meer beschikbaar/);
+});
+
+test('existing sales payment footer cannot bypass a source error or matching load', async () => {
+  const { panel, state, allocationCalls } = harness(); state.salesOrders.set([invoice(1)]); state.incomingPayments.set([receipt(9, 1, 50)]);
+  await panel.openAllocation(movement(7, 50)); panel.reuseLocalSales(panel.existingMatches()[0]);
+  assert.equal(panel.allocationReady(), true);
+  panel.matchingLoading.set(true); assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /nog geladen/);
+  panel.matchingLoading.set(false); panel.localError.set('Ontvangsten offline'); assert.equal(panel.allocationReady(), false);
+  await panel.submitAllocation(); assert.equal(allocationCalls.length, 0);
+  panel.localError.set(''); await panel.submitAllocation(); assert.deepEqual(allocationCalls, [{ id: 7, salesOrderId: 1, existingPaymentId: 9 }]);
+});
+
+test('new-source footer explains failed preview, candidate selection, snapshot and amount gates', async () => {
+  const { panel } = harness(); await panel.openAllocation(movement(7, -100)); panel.allocationStep.set('new');
+  panel.receivedError.set('Odoo offline'); assert.match(panel.allocationBlockedReason(), /Odoo offline/); panel.receivedError.set('');
+  panel.receivedPreviewLoading.set(true); assert.match(panel.allocationBlockedReason(), /nog gecontroleerd/); panel.receivedPreviewLoading.set(false);
+  panel.receivedPreview.set(receivedPreview(receivedDocument(), { existingCandidates: [{ id: 8 }] }));
+  assert.equal(panel.allocationReady(), false); assert.match(panel.allocationBlockedReason(), /Kies de bestaande kost/);
+  panel.receivedExistingCostId.set(8); assert.equal(panel.allocationReady(), true);
+  panel.receivedPreview.update(preview => ({ ...preview!, eligible: false, unavailableReason: 'Andere onderneming' })); assert.match(panel.allocationBlockedReason(), /Andere onderneming/);
+  panel.receivedPreview.update(preview => ({ ...preview!, eligible: true, snapshotHash: '' })); assert.match(panel.allocationBlockedReason(), /niet volledig/);
+  panel.receivedPreview.update(preview => ({ ...preview!, snapshotHash: 'new', differenceEur: .03 })); assert.match(panel.allocationBlockedReason(), /0,02 verschil/);
+});
+
+test('footer submit dispatches ordinary local and received-source paths without changing their identities', async () => {
+  const ordinary = harness(); ordinary.state.costs.set([localCost()]); const bank = movement(7, -40);
+  await ordinary.panel.openAllocation(bank); ordinary.panel.chooseLocalDocument(ordinary.panel.localDocuments()[0]);
+  const costCalls: any[] = []; (ordinary.api as any).addCostPayment = async (...args: any[]) => { costCalls.push(args); return { ...bank, allocated: true }; };
+  await ordinary.panel.submitAllocation(); assert.deepEqual(costCalls, [[7, 1, false]]);
+  const received = harness(); await received.panel.openAllocation(movement(8, -100)); received.panel.allocationStep.set('new');
+  received.panel.receivedPreview.set(receivedPreview()); assert.equal(received.panel.allocationActionLabel(), 'Registreren en koppelen');
+  const receivedCalls: any[] = []; (received.api as any).linkReceivedOdooInvoice = async (id: number, body: any) => {
+    receivedCalls.push({ id, ...body }); return { line: { ...movement(id, -100), allocated: true }, companyCostId: 11, alreadyRegistered: false };
+  };
+  await received.panel.submitAllocation(); assert.deepEqual(receivedCalls, [{ id: 8, odooInvoiceId: 10, snapshotHash: 'snapshot-10' }]);
+});
+
+test('uncertain reuse response remains an existing-payment retry and never creates another payment', async () => {
+  const { panel, state, api } = harness(); const bank = movement(7, -40); state.bankStatements.set([bank]);
+  state.costs.set([localCost(1, 40, 0, [{ id: 9, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
+  await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  let creations = 0; const calls: number[] = [];
+  (api as any).addCostPayment = async () => { creations++; };
+  (api as any).linkPayments = async (_id: number, body: any) => { calls.push(body.costPaymentId); if (calls.length === 1) throw new Error('Response verloren'); return { ...bank, allocated: true }; };
+  await panel.submitAllocation(); assert.equal(panel.allocationStep(), 'payments'); assert.equal(panel.allocationReady(), true);
+  await panel.submitAllocation(); assert.deepEqual(calls, [9, 9]); assert.equal(creations, 0);
+});

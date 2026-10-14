@@ -1193,3 +1193,16 @@ screens show them, collect decisions with a reason and build the writes.
   and editing/payment sheets temporarily replace its phone overlay.
 - Mobile navigation uses full subsection labels. Negative supplier credits use
   signed settlement status; do not label an unpaid credit as paid.
+
+### Allocation readiness and paid-cost reuse (2026-10-14)
+
+- Selecting a local document replaces the picker with its preview and focuses
+  the heading. The persistent footer explains every blocked action and exposes
+  source retry on both local-document and existing-payment tabs.
+- A fully paid ordinary cost with exactly one free, same-direction matching
+  payment offers “Bestaande betaling koppelen” directly. Submit uses existing
+  payment IDs through `linkPayments`; it never creates another payment. Multiple
+  matches require explicit selection; historical bank links must first be detached.
+- `canLinkLocal` remains the new-payment guard. `allocationReady` composes the
+  established routes with source, busy and current-bank checks. Reuse keeps the
+  original payment amount and the aggregate two-cent tolerance.

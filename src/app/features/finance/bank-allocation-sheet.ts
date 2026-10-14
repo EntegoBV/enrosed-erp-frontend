@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, input, viewChild } from '@angular/core';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { BankMovementPanel } from './bank-movement-panel';
+import type { BankAllocationTarget } from './bank-allocation-targets';
 
 /** One bank payment, local documents first. Rendered at page level with the other finance sheets. */
 @Component({
@@ -25,7 +26,12 @@ import { BankMovementPanel } from './bank-movement-panel';
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Bestaande betaling</button>
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Nog te registreren</button>
           </div>
+          @if (p.allocationStep() !== 'new') {
+            @if (p.localLoading()) { <p class="fin-hint" role="status">Facturen en uitgaven bijwerken…</p> }
+            @if (p.localError()) { <p class="fin-error" role="alert">{{ p.localError() }} <button class="fin-inline-btn" type="button" [disabled]="p.localLoading() || p.busy()" (click)="p.loadLocalDocuments()">Opnieuw laden</button></p> }
+          }
           @if (p.allocationStep() === 'documents') {
+            @if (!p.localDocument()) {
             <p class="fin-hint">Kies een factuur, uitgave of inkooptermijn die al in ENROSED staat. De bankbetaling wordt daarop afgepunt.</p>
             <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Leverancier, klant, factuurnummer, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
             <div class="fin-choice" role="group" aria-label="Documentsoort">
@@ -34,21 +40,20 @@ import { BankMovementPanel } from './bank-movement-panel';
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'sales'" (click)="p.localKind.set('sales')">{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Verkoopfacturen' }}</button>
               @if (row.amountEur < 0) { <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'purchase'" (click)="p.localKind.set('purchase')">Inkoop</button> }
             </div>
-            @if (p.localLoading()) { <p class="fin-hint" role="status">Facturen en uitgaven bijwerken…</p> }
-            @if (p.localError()) { <p class="fin-error" role="alert">{{ p.localError() }} <button class="fin-inline-btn" type="button" [disabled]="p.localLoading() || p.busy()" (click)="p.loadLocalDocuments()">Opnieuw laden</button></p> }
             <div class="bank-alloc-list" role="group" aria-label="Facturen en uitgaven in ENROSED">
               @for (document of p.visibleLocalDocuments(); track document.key) {
-                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.localSelectedKey() === document.key" (click)="p.chooseLocalDocument(document)">
+                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.localSelectedKey() === document.key" (click)="selectDocument(document)">
                   <span class="bank-alloc-document__identity"><small>{{ document.label }}{{ document.estimated ? ' · verwacht bedrag' : '' }}</small><b>{{ document.title }}</b><span>{{ document.party }}{{ document.reference && document.reference !== document.title ? ' · ' + document.reference : '' }}</span><small>{{ document.date || 'Volgens betaalafspraak' }}</small></span>
                   <span class="bank-alloc-document__amount"><b>{{ p.abs(document.openBankEur) | eur }}</b><small>{{ document.openBankEur ? 'nog open' : 'al betaald' }}</small><small>totaal {{ document.totalEur | eur }}</small></span>
                 </button>
               } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Nog te registreren</button>.</p> } }
             </div>
             @if (p.visibleLocalDocuments().length < p.localMatches().length) { <button class="btn btn--sm" type="button" (click)="p.localShown.set(p.localShown() + 60)">Meer tonen · nog {{ p.localMatches().length - p.visibleLocalDocuments().length }}</button> }
+            }
             @if (p.localDocument(); as document) {
               @if (p.localPreview(); as preview) {
                 <section class="bank-alloc-preview" aria-label="Gekozen document controleren">
-                  <div class="bank-alloc-preview__title"><div><small>{{ document.label }}</small><h3>{{ document.title }}</h3><p>{{ document.party }} · {{ document.reference }}</p></div><button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.localSelectedKey.set(null)">Andere kiezen</button></div>
+                  <div class="bank-alloc-preview__title"><div><small>{{ document.label }}</small><h3 #selectionHeading tabindex="-1">{{ document.title }}</h3><p>{{ document.party }} · {{ document.reference }}</p></div><button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.localSelectedKey.set(null)">Andere kiezen</button></div>
                   @if (document.kind === 'purchase') {
                     @if (p.localPurchaseFilesLoading()) { <p class="fin-hint" role="status">Inkoopfacturen laden…</p> }
                     @if (p.localPurchaseFilesError()) { <p class="fin-hint fin-hint--warn">{{ p.localPurchaseFilesError() }} <button class="fin-inline-btn" type="button" (click)="p.loadLocalPurchaseFiles(document.id)">Opnieuw laden</button></p> }
@@ -67,7 +72,7 @@ import { BankMovementPanel } from './bank-movement-panel';
                     <div><dt>Verschil bank − betaling</dt><dd>{{ preview.differenceEur | eur }}</dd></div>
                   </dl>
                   @if (preview.differenceEur) { <p class="fin-hint">Een afrondingsverschil tot € 0,02 is toegestaan. Oorspronkelijke bedragen blijven behouden.</p> }
-                  @if (!preview.eligible && document.kind !== 'purchase') { <p class="fin-hint fin-hint--warn">{{ document.openBankEur ? 'De bankbetaling is groter dan het openstaande bedrag. Je kunt maximaal € 0,02 meer afpunten.' : 'Dit document is al betaald. Koppel hieronder een bestaande betaling; er wordt geen extra betaling aangemaakt.' }}</p> }
+                  @if (!preview.eligible && document.kind !== 'purchase') { <p class="fin-hint fin-hint--warn">{{ p.localReusablePayment() ? 'Deze kost is al betaald. Met de knop onderaan koppel je de bestaande betaling; er wordt geen extra betaling aangemaakt.' : document.openBankEur ? 'De bankbetaling is groter dan het openstaande bedrag. Je kunt maximaal € 0,02 meer afpunten.' : 'Dit document is al betaald. Kies een passende bestaande betaling om die te hergebruiken.' }}</p> }
                   @if (!preview.eligible && document.kind === 'purchase') { <p class="fin-hint fin-hint--warn">Vul een geldig betaalbedrag in. Het EUR-bedrag mag maximaal € 0,02 afwijken van de banktransactie.</p> }
                   @if (p.localExistingPayments().length || p.localExistingSales().length) {
                     <h4>Deze betaling staat mogelijk al in ENROSED</h4>
@@ -76,10 +81,10 @@ import { BankMovementPanel } from './bank-movement-panel';
                       @for (payment of p.localExistingSales(); track payment.existingPaymentId) { <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.reuseLocalSales(payment)"><b>Bestaande betaling · {{ payment.number }}</b><small>{{ p.matchStamp(payment) }} · {{ payment.reference }}</small><span>Deze betaling hergebruiken ›</span></button> }
                     </div>
                   }
-                  @if (preview.overpaidEur > 0 && document.kind === 'sales') { <p class="fin-hint fin-hint--warn">{{ preview.overpaidEur | eur }} meer dan wat openstaat. Dit wordt als te veel ontvangen geregistreerd.</p> }
-                  @if (p.localPossibleDuplicate() || (preview.overpaidEur > 0 && document.kind === 'sales')) {
+                  @if (preview.eligible && preview.overpaidEur > 0 && document.kind === 'sales') { <p class="fin-hint fin-hint--warn">{{ preview.overpaidEur | eur }} meer dan wat openstaat. Dit wordt als te veel ontvangen geregistreerd.</p> }
+                  @if (preview.eligible && (p.localPossibleDuplicate() || (preview.overpaidEur > 0 && document.kind === 'sales'))) {
                     <label class="fin-check"><input type="checkbox" [disabled]="p.busy()" [checked]="p.localNewConfirmed()" (change)="p.localNewConfirmed.set($any($event.target).checked)" /><span>{{ p.localPossibleDuplicate() ? 'Ik heb de bestaande betalingen gecontroleerd; dit is een nieuwe betaling.' : 'Ik wil dit hogere ontvangen bedrag op de factuur registreren.' }}</span></label>
-                    @if (p.localPossibleDuplicate() && !p.localExistingPayments().length && !p.localExistingSales().length) { <p class="fin-hint">Een passende betaling heeft mogelijk nog een eerdere handmatige bankkoppeling. Maak die bij de bestaande betaling eerst los als je deze wilt hergebruiken.</p> }
+                    @if (p.localPossibleDuplicate() && !p.localExistingPayments().length && !p.localExistingSales().length) { <p class="fin-hint">Een passende betaling heeft mogelijk nog een eerdere handmatige bankkoppeling. Open de oorspronkelijke banktransactie en maak daar de koppeling los als je deze betaling wilt hergebruiken.</p> }
                   }
                 </section>
               }
@@ -157,9 +162,10 @@ import { BankMovementPanel } from './bank-movement-panel';
           }
           @if (p.error()) { <p class="fin-error" role="alert">{{ p.error() }}</p> }
         </div>
-        <div foot style="display:contents">
-          <button class="btn" type="button" [disabled]="p.busy()" (click)="p.closeAllocation()">Annuleren</button><span class="spacer"></span>
-          <button class="btn btn--primary" type="button" [disabled]="p.allocationStep() === 'documents' ? !p.canLinkLocal() : p.allocationStep() === 'new' ? !p.canLinkReceived() : p.allocationMode() === 'expense' ? !p.canLinkOutgoing() : !p.canAllocate()" (click)="p.allocationStep() === 'documents' ? p.linkLocalDocument() : p.allocationStep() === 'new' ? p.linkReceivedInvoice() : p.allocationMode() === 'expense' ? p.linkOutgoing() : p.allocate()">{{ p.busy() ? 'Koppelen…' : p.allocationStep() === 'new' && !p.receivedPreview()?.companyCostId && !p.receivedExistingCostId() ? 'Registreren en koppelen' : 'Koppelen' }}</button>
+        <div foot class="bank-alloc-footer">
+          @if (p.allocationBlockedReason(); as reason) { <p id="bank-allocation-reason" class="bank-alloc-footer__reason" role="status">{{ reason }}</p> }
+          <div class="bank-alloc-footer__actions"><button class="btn" type="button" [disabled]="p.busy()" (click)="p.closeAllocation()">Annuleren</button><span class="spacer"></span>
+          <button class="btn btn--primary" type="button" [disabled]="!p.allocationReady()" [attr.aria-describedby]="p.allocationBlockedReason() ? 'bank-allocation-reason' : null" (click)="p.submitAllocation()">{{ p.allocationActionLabel() }}</button></div>
         </div>
       </app-sheet>
     }
@@ -167,4 +173,10 @@ import { BankMovementPanel } from './bank-movement-panel';
 })
 export class BankAllocationSheet {
   readonly panel = input.required<BankMovementPanel>();
+  private readonly injector = inject(Injector);
+  private readonly selectionHeading = viewChild<ElementRef<HTMLElement>>('selectionHeading');
+  selectDocument(document: BankAllocationTarget): void {
+    this.panel().chooseLocalDocument(document);
+    afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), { injector: this.injector });
+  }
 }
