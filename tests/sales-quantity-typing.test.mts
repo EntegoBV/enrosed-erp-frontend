@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { signal } from '@angular/core';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import * as orderSteps from '../src/app/features/products/product-order-step.ts';
 
 const source = (file: string) => readFile(new URL(`../src/app/features/sales/${file}.ts`, import.meta.url), 'utf8');
 
@@ -16,11 +17,12 @@ async function isolate(names: string[]) {
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
   /* The timers are looked up per call, so the mocked clock of a test is the one the editor uses. */
-  vm.runInNewContext(js, { exports, signal, messageOf, Math, Number,
+  vm.runInNewContext(js, { exports, signal, messageOf, Math, Number, ...orderSteps,
     setTimeout: (run: () => void, ms: number) => globalThis.setTimeout(run, ms), clearTimeout: (id: any) => globalThis.clearTimeout(id) });
   return exports.SalesEditor;
 }
-const Editor = await isolate(['enqueue', 'schedulePreview', 'flushPreview', 'preview', 'setLine', 'setLineQuantity', 'currentQuantity', 'piecesPerCarton']);
+const Editor = await isolate(['enqueue', 'schedulePreview', 'flushPreview', 'preview', 'setLine', 'setLineQuantity', 'currentQuantity',
+  'unitsPerStep', 'lineOrderStep', 'lineStepNotice']);
 
 /** A quote with one line of 60 pieces in cartons of 30; the server prices whole cartons, as the real one does. */
 function harness() {
@@ -114,4 +116,70 @@ test('both quantity fields end the pause on blur and on Enter, and show which am
     assert.equal(text.match(/setLineQuantity\(line\.productId, \$event\)/g)?.length, 1, file);
     assert.match(text, /--waiting\]="figuresWaiting\(\)"/, file);
   }
+});
+
+/** The quote of the harness, with one product as the catalogue has it and, optionally, the server's answer for the line. */
+function stepHarness(product: Record<string, unknown>, pricedLine: Record<string, unknown> = {}) {
+  const screen = new Editor();
+  Object.assign(screen, {
+    view: signal({ order: { id: 78, lines: [{ productId: 1, quantity: 12 }] }, priced: { lines: [{ productId: 1, quantity: 12, ...pricedLine }] } }),
+    products: () => [{ id: 1, ...product }],
+    previewError: signal(null), figuresWaiting: signal(false), linePending: signal({}), creditPriceOver: signal({}),
+    previewTimer: null, previewVersion: 0,
+    canEdit: () => true, mobileCommercialEditable: () => true, mobileAcceptsDraft: () => true,
+    lineUnavailable: () => false, creditLineCap: () => null, canToggleLineAvailability: () => false,
+    sales: { previewOrder: () => new Promise(() => {}) },
+  });
+  return screen;
+}
+const stolp = (orderStep?: string) => ({ carton: { piecesPerCarton: 12 }, packaging: { kind: 'NONE', unitKey: 'stolp', orderStep } });
+const bowlDisplay = (orderStep?: string) => ({ carton: { piecesPerCarton: 40 },
+  packaging: { kind: 'DISPLAY', piecesPerUnit: 8, salesUnit: 'PIECE', unitKey: 'bowl', orderStep } });
+
+test('the hint follows the order step: a full carton, a display, never one unit', (t) => {
+  clock(t);
+  const carton = stepHarness(stolp());
+  carton.setLineQuantity(1, 13);
+  assert.equal(carton.linePending()[1], 24);
+  assert.equal(carton.lineStepNotice(1), 'Volle doos');
+
+  const display = stepHarness(bowlDisplay('PACKAGE'));
+  display.setLineQuantity(1, 10);
+  assert.equal(display.linePending()[1], 16);
+  assert.equal(display.lineStepNotice(1), 'Per display van 8');
+  display.setLineQuantity(1, 24);
+  assert.equal(display.linePending()[1], undefined, 'three whole displays need no notice');
+
+  const unit = stepHarness(stolp('UNIT'));
+  unit.setLineQuantity(1, 3);
+  assert.deepEqual({ ...unit.linePending() }, {}, 'per stolp every number stands');
+  assert.equal(unit.view().order.lines[0].quantity, 3, 'the draft keeps what was typed');
+});
+
+test('the priced line decides: the server\'s step wins over the catalogue, a step of one shows nothing', (t) => {
+  clock(t);
+  // A partner deal or a container-cost quote: the server does not round, so neither does the hint.
+  const exempt = stepHarness(stolp(), { unitsPerOrderStep: 1, orderStep: 'CARTON' });
+  exempt.setLineQuantity(1, 13);
+  assert.deepEqual({ ...exempt.linePending() }, {});
+  // A document stamped with an earlier step keeps it until it is saved again.
+  const stamped = stepHarness(stolp('UNIT'), { unitsPerOrderStep: 12, orderStep: 'CARTON' });
+  stamped.setLineQuantity(1, 13);
+  assert.equal(stamped.linePending()[1], 24);
+  // Fixtures and older servers without any step read as full cartons.
+  const older = stepHarness({ carton: { piecesPerCarton: 30 } });
+  older.setLineQuantity(1, 31);
+  assert.equal(older.linePending()[1], 60);
+  assert.equal(older.lineStepNotice(1), 'Volle doos');
+});
+
+test('both quantity hints name the step and the save toast no longer promises full cartons', async () => {
+  for (const file of ['sales-desk', 'sales-editor']) {
+    const text = await source(file);
+    assert.match(text, /\{\{ lineStepNotice\(line\.productId\) \}\}: wordt/, file);
+    assert.doesNotMatch(text, /Volle doos: wordt/, file);
+  }
+  const editor = await source('sales-editor');
+  assert.match(editor, /aantal afgerond op het bestelveelvoud/);
+  assert.doesNotMatch(editor, /naar volle dozen berekend/);
 });

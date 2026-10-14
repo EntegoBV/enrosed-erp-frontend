@@ -1,4 +1,5 @@
 import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
+import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
 import { canReopenSalesDocument } from './sales-reopen';
 import { canCreateCreditNote, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, euro, isCreditNote, isDeadCreditNote } from './sales-credit-note';
 import { SalesOffsetSheet } from './sales-offset-sheet';
@@ -35,7 +36,7 @@ import { mergeOrderAfterSave, shippingSnapshot, withoutShipping } from '../../co
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
+  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -352,7 +353,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                     </small>
                   }
                 } @else {
-                  <small>Aantallen zijn door de server naar volle dozen berekend.</small>
+                  <small>Aantallen volgen per product het bestelveelvoud (doos, display of stuk).</small>
                 }
                 <span class="website-review__go">Productregels controleren ›</span>
               </button>
@@ -740,7 +741,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                            (ngModelChange)="setLineQuantity(line.productId, $event)"
                            (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
                     @if (linePending()[line.productId]; as to) {
-                      <span class="hint warn-text" role="status">Volle doos: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
+                      <span class="hint warn-text" role="status">{{ lineStepNotice(line.productId) }}: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
                     }
                     @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
@@ -1449,7 +1450,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
       @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
-      @if (restoreLine(); as restore) { <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton" (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" /> }
+      @if (restoreLine(); as restore) { <app-sales-line-restore-sheet [description]="restore.description" [unitsPerStep]="restore.unitsPerStep" [multiple]="lineStepMultiple(restore.productId, restore.unitsPerStep)" [units]="lineUnit(restore.productId).plural" (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" /> }
 
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
@@ -2107,7 +2108,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 })
 export class SalesEditor {
   readonly unavailableLineCount = salesUnavailableLineCount;
-  readonly restoreLine = signal<{ orderId: number; productId: number; description: string; piecesPerCarton: number } | null>(null);
+  readonly restoreLine = signal<{ orderId: number; productId: number; description: string; unitsPerStep: number } | null>(null);
   readonly allProductsUnavailable = computed(() => salesAllProductsUnavailable(this.view()));
   lineUnavailable(productId: number): boolean { return salesLineUnavailable(this.view()?.order.lines.find(line => line.productId === productId)); }
   lineRequestedQuantity(productId: number): number | null { return salesLineRequestedQuantity(this.view()?.order.lines.find(line => line.productId === productId)); }
@@ -2126,7 +2127,7 @@ export class SalesEditor {
     if (salesLineUnavailable(line) && !salesLineRequestedQuantity(line)) {
       if (data.fulfillment?.financialsLocked) return;
       this.restoreLine.set({ orderId: data.order.id, productId,
-        description: data.priced.lines.find(line => line.productId === productId)?.description ?? 'Product', piecesPerCarton: this.piecesPerCarton(productId) });
+        description: data.priced.lines.find(line => line.productId === productId)?.description ?? 'Product', unitsPerStep: this.unitsPerStep(productId) });
       return;
     }
     this.changeLineAvailability(productId, !salesLineUnavailable(line));
@@ -2135,7 +2136,7 @@ export class SalesEditor {
     const restore = this.restoreLine();
     if (!restore || this.view()?.order.id !== restore.orderId || !this.canToggleLineAvailability(restore.productId)
       || !this.lineUnavailable(restore.productId) || this.mobileFinanciallyLocked()
-      || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity % restore.piecesPerCarton !== 0) return;
+      || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity % restore.unitsPerStep !== 0) return;
     this.changeLineAvailability(restore.productId, false, quantity); this.restoreLine.set(null);
   }
   private changeLineAvailability(productId: number, unavailable: boolean, restoreQuantity?: number): void {
@@ -3386,7 +3387,8 @@ export class SalesEditor {
   }
 
   /**
-   * The server rounds a quantity up to whole cartons, and its answer is
+   * The server rounds a quantity up to the product's order step (a full
+   * carton, a display or one unit), and its answer is
    * what the quantity field shows. An answer between two digits rewrote
    * the field under the fingers (9, then 0, became 300), so a typed
    * quantity waits five seconds - or until the field is left or Enter is
@@ -3480,14 +3482,14 @@ export class SalesEditor {
       this.adopt(saved);
       this.view.set({ ...saved, order: merged });
       if (this.dirty()) this.schedulePreview();
-      /* The server rounds up to whole cartons; when it did, say so - a
-         silently changed number reads as a bug. */
+      /* The server rounds up to each product's order step (carton, display
+         or unit); when it did, say so - a silently changed number reads as a bug. */
       const rounded = saved.order.lines.filter((line) =>
         sentQuantities.has(line.productId) && sentQuantities.get(line.productId) !== line.quantity);
       if (rounded.length) {
         const parts = rounded.map((line) =>
           `${sentQuantities.get(line.productId)} → ${line.quantity} ${this.lineUnit(line.productId).short}`);
-        this.ui.toast(`Opgeslagen — aantal afgerond op volle dozen: ${parts.join(' · ')}`);
+        this.ui.toast(`Opgeslagen — aantal afgerond op het bestelveelvoud: ${parts.join(' · ')}`);
       } else if (!this.transportSaving()) {
         this.ui.toast('Opgeslagen');
       }
@@ -3592,18 +3594,19 @@ export class SalesEditor {
     return this.view()?.order.lines.find((l) => l.productId === productId)?.deliveryWeek ?? '';
   }
 
-  /** Announced carton correction per line: the server rounds on save. */
+  /** Announced order-step correction per line: the server rounds on save. */
   readonly linePending = signal<Record<number, number>>({});
 
   /**
-   * The quantity lands in the draft at once. An off-carton figure is kept
-   * as typed with a notice of what the server will make of it on save -
-   * nothing is rounded under someone's fingers.
+   * The quantity lands in the draft at once. A figure off the order step is
+   * kept as typed with a notice of what the server will make of it on save -
+   * nothing is rounded under someone's fingers. A step of one (sold per
+   * unit, or a document the server does not round) has nothing to announce.
    */
   setLineQuantity(productId: number, raw: number | null | ''): void {
     if (!this.mobileCommercialEditable()) return;
     if (raw === null || raw === '' || !Number.isFinite(raw) || raw < 0 || this.lineUnavailable(productId)) return;
-    /* A credit note never exceeds what the invoice still allows, and prices the exact quantity: no carton snap. */
+    /* A credit note never exceeds what the invoice still allows, and prices the exact quantity: no order-step snap. */
     const cap = this.creditLineCap(productId);
     if (cap) {
       this.linePending.update((map) => { const next = { ...map }; delete next[productId]; return next; });
@@ -3614,12 +3617,12 @@ export class SalesEditor {
       this.changeLineAvailability(productId, true); return;
     }
     const wanted = raw;
-    const per = this.piecesPerCarton(productId);
-    const snapped = Math.ceil(wanted / per) * per;
-    const offCarton = snapped !== wanted && wanted > 0;
+    const step = this.unitsPerStep(productId);
+    const snapped = step > 1 ? roundToOrderStep(wanted, step) : wanted;
+    const offStep = snapped !== wanted && wanted > 0;
     this.linePending.update((map) => {
       const next = { ...map };
-      if (offCarton) next[productId] = snapped;
+      if (offStep) next[productId] = snapped;
       else delete next[productId];
       return next;
     });
@@ -3636,10 +3639,32 @@ export class SalesEditor {
     return true;
   }
 
-  private piecesPerCarton(productId: number): number {
-    const per = this.products().find((product) => product.id === productId)
-      ?.carton.piecesPerCarton;
-    return Math.max(1, per ?? 1);
+  /**
+   * Sales units this line is rounded to: the server's own figure once it
+   * priced the line (1 where it does not round: partner deal, container-cost
+   * pricing, split allocation), the product's step for a line it has not
+   * priced yet. An older server sends none and rounds to full cartons.
+   */
+  private unitsPerStep(productId: number): number {
+    const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
+    return priced != null && Number.isSafeInteger(priced) && priced >= 1
+      ? priced : unitsPerOrderStep(this.products().find((product) => product.id === productId));
+  }
+
+  /** The product's "Verkocht per", for wording: the priced line's, else the catalogue's. */
+  private lineOrderStep(productId: number): OrderStep {
+    return this.view()?.priced.lines.find((line) => line.productId === productId)?.orderStep
+      ?? orderStepOf(this.products().find((product) => product.id === productId));
+  }
+
+  /** "Volle doos" or "Per display van 8", before ": wordt 16". */
+  lineStepNotice(productId: number): string {
+    return orderStepNotice(this.lineOrderStep(productId), this.unitsPerStep(productId));
+  }
+
+  /** "volle dozen van 12 stolpen" / "displays van 8 bowls"; null when any whole number fits. */
+  lineStepMultiple(productId: number, unitsPerStep: number): string | null {
+    return orderStepMultiple(this.lineOrderStep(productId), unitsPerStep, this.lineUnit(productId));
   }
 
   setLine(productId: number,

@@ -10,15 +10,16 @@ import * as availability from '../src/app/features/sales/sales-line-availability
 import { salesSplitBlockReason } from '../src/app/features/sales/sales-split-state.ts';
 import { isCreditNote } from '../src/app/features/sales/sales-credit-note.ts';
 import { isAdvanceBillingInvoice } from '../src/app/features/sales/sales-advance-billing.ts';
+import { roundToOrderStep } from '../src/app/features/products/product-order-step.ts';
 
 const source = await readFile(new URL('../src/app/features/sales/sales-editor.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('sales-editor.ts', source, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesEditor'); assert.ok(original);
-const names = ['restoreLine', 'allProductsUnavailable', 'lineUnavailable', 'lineRequestedQuantity', 'lineAvailabilityRestoreHint', 'canToggleLineAvailability', 'toggleLineAvailability', 'confirmRestoreLine', 'changeLineAvailability', 'currentQuantity', 'piecesPerCarton', 'mobileSplitOpen', 'mobileSplitBusy', 'mobileSplitBlockReason', 'mobileFinanciallyLocked', 'advanceLocked', 'mobileCommercialEditable', 'mobileCustomerAuthoredMessage', 'mobileCustomerNote', 'openMobileSplit', 'closeMobileSplit', 'mobileSplitSaved', 'mobileFulfillmentChanged', 'mobileAcceptsDraft', 'enqueue', 'patch', 'setLine', 'setLineQuantity', 'documentMutationBusy', 'canEdit', 'canEditTerms', 'canDeactivate', 'warnBeforeUnload', 'adopt', 'openPicker', 'isCreditNoteDoc', 'creditOriginal', 'creditProposal', 'creditContextVersion', 'loadCreditContext', 'creditLineCap'];
+const names = ['restoreLine', 'allProductsUnavailable', 'lineUnavailable', 'lineRequestedQuantity', 'lineAvailabilityRestoreHint', 'canToggleLineAvailability', 'toggleLineAvailability', 'confirmRestoreLine', 'changeLineAvailability', 'currentQuantity', 'unitsPerStep', 'mobileSplitOpen', 'mobileSplitBusy', 'mobileSplitBlockReason', 'mobileFinanciallyLocked', 'advanceLocked', 'mobileCommercialEditable', 'mobileCustomerAuthoredMessage', 'mobileCustomerNote', 'openMobileSplit', 'closeMobileSplit', 'mobileSplitSaved', 'mobileFulfillmentChanged', 'mobileAcceptsDraft', 'enqueue', 'patch', 'setLine', 'setLineQuantity', 'documentMutationBusy', 'canEdit', 'canEditTerms', 'canDeactivate', 'warnBeforeUnload', 'adopt', 'openPicker', 'isCreditNoteDoc', 'creditOriginal', 'creditProposal', 'creditContextVersion', 'loadCreditContext', 'creditLineCap'];
 const members = original.members.filter(member => member.name && names.includes(member.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)), original.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, HostListener: () => () => undefined, customerMessageIsReadOnly, originalCustomerMessage, salesSplitBlockReason, isCreditNote, isAdvanceBillingInvoice, ...availability });
+const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, clearTimeout, HostListener: () => () => undefined, customerMessageIsReadOnly, originalCustomerMessage, salesSplitBlockReason, isCreditNote, isAdvanceBillingInvoice, roundToOrderStep, ...availability });
 const Editor = exports.SalesEditor;
 const document = () => ({ order: { id: 72, number: 'INV-72', purpose: 'STANDARD', docType: 'FACTUUR', status: 'CONCEPT', notes: 'Documenttekst', internalNotes: null, customerId: 1, countryCode: 'NL', salesChannel: 'DIRECT', freightPricingStrategy: 'FIXED', manualFreightEur: 12, extraDiscountPct: 5, extraLines: [], pallets: [], lines: [{ id: 101, productId: 7, quantity: 48, unitPriceEur: 10, manualDiscountPct: null, deliveryWeek: null }] }, priced: { lines: [] } });
 const split = () => ({ ...document(), fulfillment: { groupId: 'group', part: 1, status: 'PLANNED', financialsLocked: true } });
@@ -26,7 +27,7 @@ function harness(initial: any = document()) {
   const editor = new Editor(), calls: string[] = [], toasts: string[] = [];
   Object.assign(editor, { products: signal([{ id: 7, carton: { piecesPerCarton: 24 } }]), view: signal(initial), savedOrder: signal(JSON.stringify(initial.order)), saving: signal(false), sending: signal(false), invoiceConversionBusy: signal(false), advanceAgreement: () => null, saveError: signal(null), previewError: signal(null), figuresWaiting: signal(false), picking: signal(false), previewTimer: null, previewVersion: 0, linePending: signal({}),
     ui: { toast: (message: string) => toasts.push(message), confirm: () => calls.push('CONFIRM') },
-    schedulePreview: () => calls.push('PREVIEW'), refreshWorkQueue: () => calls.push('REFRESH'), reloadLatestOrder: () => calls.push('RELOAD'), piecesPerCarton: () => 24,
+    schedulePreview: () => calls.push('PREVIEW'), refreshWorkQueue: () => calls.push('REFRESH'), reloadLatestOrder: () => calls.push('RELOAD'), unitsPerStep: () => 24,
     sales: { updateDeliveryTerms: async () => { calls.push('DELIVERY WRITE'); return initial; } },
   });
   editor.dirty = computed(() => JSON.stringify(editor.view().order) !== editor.savedOrder());

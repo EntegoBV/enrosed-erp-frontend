@@ -77,7 +77,8 @@ interface JourneyStep {
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
-      <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton"
+      <app-sales-line-restore-sheet [description]="restore.description" [unitsPerStep]="restore.unitsPerStep"
+        [multiple]="lineStepMultiple(restore.productId, restore.unitsPerStep)" [units]="lineUnit(restore.productId).plural"
         (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" />
     }
 
@@ -480,7 +481,7 @@ interface JourneyStep {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (lineQuantityDetail(line); as detail) { <span>{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="is-warn" role="status">Volle doos: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
+                                  <span class="is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>

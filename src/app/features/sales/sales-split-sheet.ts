@@ -7,7 +7,7 @@ import { messageOf } from '../../core/api/errors';
 import { EurPipe, NumPipe, WeekNlPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { WeekField } from '../../shared/week-field';
-import { salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, type SalesSplitQuantities, type SalesSplitOverrides, type SalesSplitUnavailable } from './sales-split-state';
+import { salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, salesSplitStep, type SalesSplitQuantities, type SalesSplitOverrides, type SalesSplitUnavailable } from './sales-split-state';
 import { salesLineUnavailable, salesLineRequestedQuantity } from './sales-line-availability';
 
 type SplitLane = 'current' | 'later';
@@ -52,9 +52,9 @@ type SplitLane = 'current' | 'later';
                   <div class="split__cards">
                     @for (line of laneLines(lane.key); track line.lineId) {
                       <article class="split__card" [attr.data-split-line]="line.lineId" [draggable]="desktopDrag && !locked()" (dragstart)="startDrag($event, line)" (dragend)="endDrag()">
-                        <div class="split__product">@if (photo(line.productId); as url) { <img [appAuthSrc]="url" alt="" /> }<div><b>{{ line.description }}</b>@if (sku(line.productId); as code) { <small>{{ code }}</small> }<small>Besteld: {{ line.quantity | num }} stuks @if (line.piecesPerCarton) { · {{ line.piecesPerCarton | num }} per doos }</small></div></div>
+                        <div class="split__product">@if (photo(line.productId); as url) { <img [appAuthSrc]="url" alt="" /> }<div><b>{{ line.description }}</b>@if (sku(line.productId); as code) { <small>{{ code }}</small> }<small>Besteld: {{ line.quantity | num }} stuks @if (stepOf(line) > 1) { · {{ line.orderStep === 'PACKAGE' ? 'per display van ' + (stepOf(line) | num) : (stepOf(line) | num) + ' per doos' }} } @else if (line.piecesPerCarton) { · {{ line.piecesPerCarton | num }} per doos }</small></div></div>
                         <div class="split__allocation"><span>In dit deel</span><b>{{ lane.key === 'current' ? remaining(line) : laterQuantity(line) | num }} stuks</b></div>
-                        <div class="split__quantity"><label [for]="'split-' + lane.key + '-' + line.lineId">Later leveren</label><div class="split__stepper"><button type="button" [disabled]="locked() || laterQuantity(line) <= 0" [attr.aria-label]="'Minder later leveren: ' + line.description" (click)="step(line, -1)">−</button><input class="input" type="number" inputmode="numeric" min="0" [max]="line.quantity" [step]="line.piecesPerCarton || 1" [id]="'split-' + lane.key + '-' + line.lineId" [ngModel]="quantities()[line.lineId] ?? 0" [attr.aria-invalid]="quantityErrors()[line.lineId] ? 'true' : null" [attr.aria-describedby]="quantityErrors()[line.lineId] ? 'split-error-' + lane.key + '-' + line.lineId : null" [disabled]="locked()" (ngModelChange)="setQuantity(line, $event)" /><button type="button" [disabled]="locked() || laterQuantity(line) >= line.quantity" [attr.aria-label]="'Meer later leveren: ' + line.description" (click)="step(line, 1)">+</button></div></div>
+                        <div class="split__quantity"><label [for]="'split-' + lane.key + '-' + line.lineId">Later leveren</label><div class="split__stepper"><button type="button" [disabled]="locked() || laterQuantity(line) <= 0" [attr.aria-label]="'Minder later leveren: ' + line.description" (click)="step(line, -1)">−</button><input class="input" type="number" inputmode="numeric" min="0" [max]="line.quantity" [step]="stepOf(line)" [id]="'split-' + lane.key + '-' + line.lineId" [ngModel]="quantities()[line.lineId] ?? 0" [attr.aria-invalid]="quantityErrors()[line.lineId] ? 'true' : null" [attr.aria-describedby]="quantityErrors()[line.lineId] ? 'split-error-' + lane.key + '-' + line.lineId : null" [disabled]="locked()" (ngModelChange)="setQuantity(line, $event)" /><button type="button" [disabled]="locked() || laterQuantity(line) >= line.quantity" [attr.aria-label]="'Meer later leveren: ' + line.description" (click)="step(line, 1)">+</button></div></div>
                         @if (quantityErrors()[line.lineId]; as fieldError) { <p class="split__field-error" [id]="'split-error-' + lane.key + '-' + line.lineId">{{ fieldError }}</p> }
                         <button class="split__move" type="button" [disabled]="locked()" (click)="move(line, lane.key === 'current' ? 'later' : 'current')">{{ lane.key === 'current' ? 'Alles later' : 'Alles terug' }} <span aria-hidden="true">{{ lane.key === 'current' ? '→' : '←' }}</span></button>
                         <button class="split__pause" type="button" [disabled]="locked()" (click)="toggleUnavailable(line)">Tijdelijk niet beschikbaar</button>
@@ -175,7 +175,9 @@ export class SalesSplitSheet implements OnDestroy {
     this.quantityErrors.update(errors => { const next = { ...errors }; delete next[line.lineId]; return next; });
     this.invalidatePreview(); this.quantities.update(values => ({ ...values, [line.lineId]: value }));
   }
-  step(line: SalesSplitLine, direction: -1 | 1): void { this.setQuantity(line, Math.max(0, Math.min(line.quantity, this.laterQuantity(line) + direction * (line.piecesPerCarton || 1)))); }
+  /** The line's order step; the steppers move by it and the server checks both parts against it. */
+  stepOf(line: SalesSplitLine): number { return salesSplitStep(line); }
+  step(line: SalesSplitLine, direction: -1 | 1): void { this.setQuantity(line, Math.max(0, Math.min(line.quantity, this.laterQuantity(line) + direction * this.stepOf(line)))); }
   move(line: SalesSplitLine, target: SplitLane): void { this.setQuantity(line, target === 'later' ? line.quantity : 0); }
   setWeek(value: string): void { if (!this.locked()) { this.invalidatePreview(); this.deliveryWeek.set(value); } }
   freight(lane: SplitLane): number | null { return this.overrides()[lane === 'current' ? 'currentFreightEur' : 'laterFreightEur'] ?? null; }
