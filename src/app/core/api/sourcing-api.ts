@@ -95,9 +95,15 @@ export class SourcingApi {
     return firstValueFrom(this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}/partner`), request));
   }
 
-  updatePurchaseOrder(id: number, order: PurchaseOrder): Promise<PurchaseOrderView> {
+  /**
+   * Saves the whole order. The server refuses an earlier status unless
+   * stepBack says the user asked for it, so a screen loaded before a
+   * departure elsewhere can never quietly undo it.
+   */
+  updatePurchaseOrder(id: number, order: PurchaseOrder, options: { stepBack?: boolean } = {}): Promise<PurchaseOrderView> {
     return firstValueFrom(
-      this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}`), order));
+      this.http.put<PurchaseOrderView>(
+        api(`/api/purchase-orders/${id}${options.stepBack ? '?stepBack=true' : ''}`), order));
   }
 
   /** Purchase PDF in one of two A4 orientations, with explicit portrait display options. */

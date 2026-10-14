@@ -33,6 +33,7 @@ import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
+import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { FilePicker } from '../../shared/file-picker';
@@ -66,7 +67,7 @@ type DeskRow =
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
@@ -861,6 +862,9 @@ type DeskRow =
                     @if (!isReceived()) {
                       <details class="desk-danger">
                         <summary>Meer acties</summary>
+                        @if (data.order.status === 'BESTELD' || data.order.status === 'ONDERWEG') {
+                          <button class="btn btn--block mb-8" type="button" [disabled]="stepBackBusy()" (click)="openStepBack()">Status terugzetten…</button>
+                        }
                         <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                         <button class="btn btn--danger btn--block" type="button" [disabled]="deletingOrder() || saving()" (click)="remove()">{{ deletingOrder() ? 'Verwijderen…' : 'Calculatie verwijderen' }}</button>
                       </details>
@@ -960,6 +964,12 @@ type DeskRow =
             </button>
           </div>
         </app-sheet>
+      }
+
+      @if (stepBack() && stepBackSheet().options.length) {
+        <app-purchase-status-back-sheet [current]="stepBackSheet().status" [options]="stepBackSheet().options"
+                                        [dirty]="stepBackSheet().dirty" [busy]="stepBackBusy()"
+                                        (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
       }
 
       @if (libraryOpen()) {

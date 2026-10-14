@@ -80,6 +80,8 @@ import {
 } from './purchase-cost-labels';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
+import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
+import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
@@ -133,7 +135,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
@@ -1326,6 +1328,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <details class="danger-zone">
                   <summary>Meer acties</summary>
                   <div>
+                    @if (data.order.status === 'BESTELD' || data.order.status === 'ONDERWEG') {
+                      <!-- A status set by mistake goes back here; the sheet names what changes. -->
+                      <button class="btn btn--block mb-8" type="button" [disabled]="stepBackBusy()" (click)="openStepBack()">
+                        Status terugzetten…
+                      </button>
+                    }
                     <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
                     <button class="btn btn--danger btn--block" type="button"
                             [disabled]="deletingOrder() || saving()" (click)="remove()">
@@ -1674,6 +1682,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                      (closed)="statusCelebration.set(null)"
                                      (action)="celebrationAction(celebration)" />
       }
+      @if (stepBack() && stepBackSheet().options.length) {
+        <app-purchase-status-back-sheet [current]="stepBackSheet().status" [options]="stepBackSheet().options"
+                                        [dirty]="stepBackSheet().dirty" [busy]="stepBackBusy()"
+                                        (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
+      }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 [dirty]="dirty()" [saving]="saving()"
@@ -1984,6 +1997,68 @@ export class PurchaseEditor {
       (order) => ({ ...order, status: step.to as PurchaseOrder['status'] }),
       () => this.orderPlaced.set(true),
     );
+  }
+
+  /* ---- status one step back ----------------------------------------- */
+
+  /** The Status terugzetten sheet: a container set to Vertrokken or Besteld by mistake goes back. */
+  readonly stepBack = signal(false);
+  /** Where this container may go back to; Concept says why when the server would refuse it. */
+  readonly stepBackOptions = computed(() => {
+    const data = this.view();
+    if (!data) return [];
+    return statusBackOptions({
+      status: data.order.status, payments: this.payments(), paymentStateError: this.paymentStateError(),
+      paidEur: data.order.paidTotalEur, creditCount: (data.supplierCredits ?? []).length,
+    });
+  });
+  readonly stepBackBusy = computed(() => this.saving() || this.deletingOrder() || this.paymentPlanBusy() || this.payingBusy());
+  /**
+   * What the open sheet showed when its button was tapped. The draft carries
+   * the target status while the save runs, so the sheet keeps this until the
+   * server answers: no 'Nu: Besteld' before it agreed, and a refused save
+   * leaves the choice where it was instead of one step further back.
+   */
+  private readonly stepBackPending = signal<StatusBackSheetState | null>(null);
+  /** What the sheet shows: the container's status, its options and unsaved edits; frozen while a step back saves. */
+  readonly stepBackSheet = computed<StatusBackSheetState>(() => this.stepBackPending() ?? {
+    status: this.view()?.order.status ?? 'CONCEPT', options: this.stepBackOptions(), dirty: this.dirty(),
+  });
+
+  openStepBack(): void {
+    if (this.stepBackOptions().length) this.stepBack.set(true);
+  }
+
+  closeStepBack(): void {
+    this.stepBack.set(false);
+  }
+
+  /**
+   * Puts the container back on an earlier status through the normal save,
+   * draft included. The departure date goes with Vertrokken: a later real
+   * departure sets the true day. A refused save puts the status and the date
+   * back in the draft, so the screen never shows a status the server refused.
+   * No celebration and no first-instalment prompt: nothing was reached.
+   */
+  async confirmStepBack(to: StatusBackTarget): Promise<void> {
+    const data = this.view();
+    const option = this.stepBackOptions().find((item) => item.to === to);
+    if (!data || !option || option.blocked || this.stepBackBusy()) return;
+    const { status, shippedOn } = data.order;
+    this.stepBackPending.set(this.stepBackSheet());
+    try {
+      this.view.set({ ...data, order: { ...data.order, status: to, shippedOn: null } });
+      const saved = await this.save({ stepBack: true });
+      if (!saved) {
+        const current = this.view();
+        if (current?.order.id === data.order.id) this.view.set({ ...current, order: { ...current.order, status, shippedOn } });
+        return;
+      }
+      this.stepBack.set(false);
+      this.ui.toast(`Status teruggezet naar ${option.label}`, 'ok');
+    } finally {
+      this.stepBackPending.set(null);
+    }
   }
 
 
@@ -3785,8 +3860,12 @@ export class PurchaseEditor {
     }
   }
 
-  /** Writes the draft; the server answers with the order as it stands. */
-  async save(): Promise<PurchaseOrderView | null> {
+  /**
+   * Writes the draft; the server answers with the order as it stands.
+   * stepBack marks the one save that may put the status on an earlier step;
+   * its caller says what happened, so the plain 'Opgeslagen' stays out.
+   */
+  async save(options: { stepBack?: boolean } = {}): Promise<PurchaseOrderView | null> {
     const data = this.view();
     if (!data || this.saving() || this.deletingOrder() || this.paymentPlanBusy() || this.payingBusy()) return null;
     if (this.negativeExtra()) {
@@ -3796,14 +3875,14 @@ export class PurchaseEditor {
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     try {
-      const result = await this.sourcing.updatePurchaseOrder(data.order.id, data.order);
+      const result = await this.sourcing.updatePurchaseOrder(data.order.id, data.order, { stepBack: options.stepBack === true });
       ++this.previewVersion;
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.adjustments.set(result.adjustments ?? []);
       /* Loose purchasing quantities stay untouched. The quiet inline notice
          already explains the neighbouring full cartons while editing. */
-      this.ui.toast('Opgeslagen');
+      if (!options.stepBack) this.ui.toast('Opgeslagen');
       /* Stock levels may have just been booked. The order is already saved here,
          so a failed refresh is reported separately. */
       try {
