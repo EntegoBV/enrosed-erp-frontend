@@ -66,13 +66,23 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                     @if (p.purchaseCurrency() !== 'EUR') { <p class="fin-hint">Werkelijk afgeschreven: {{ p.abs(row.amountEur) | eur }}. Vul het bijbehorende bedrag op de betaling in {{ p.purchaseCurrency() }} in.</p> }
                   }
                   <dl class="bank-alloc-amounts">
+                    @if (document.kind === 'cost') { <div><dt>Factuurtotaal</dt><dd>{{ document.totalEur | eur }}</dd></div><div><dt>Nog open op de kost</dt><dd>{{ preview.openEur | eur }}</dd></div> }
                     <div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div>
-                    <div><dt>Toe te passen betaling</dt><dd>{{ preview.paymentEur | eur }}</dd></div>
-                    <div><dt>{{ document.estimated ? 'Daarna nog verwacht' : 'Daarna nog open' }}</dt><dd>{{ preview.remainingEur | eur }}</dd></div>
-                    <div><dt>Verschil bank − betaling</dt><dd>{{ preview.differenceEur | eur }}</dd></div>
+                    <div><dt>{{ preview.paymentKind === 'new' ? 'Toe te passen betaling' : 'Geregistreerde betaling' }}</dt><dd>@if (preview.paymentEur !== null) { {{ preview.paymentEur | eur }} } @else { — }</dd></div>
+                    @if (preview.paymentKind === 'new') { <div><dt>{{ document.estimated ? 'Daarna nog verwacht' : 'Daarna nog open' }}</dt><dd>{{ preview.remainingEur | eur }}</dd></div> }
+                    <div><dt>Verschil bank − betaling</dt><dd>@if (preview.differenceEur !== null) { {{ preview.differenceEur | eur }} } @else { — }</dd></div>
+                    @if (preview.paymentLinked !== null) { <div><dt>Bestaande bankkoppeling</dt><dd>{{ preview.paymentLinked ? 'Al gekoppeld' : 'Nog geen' }}</dd></div> }
                   </dl>
-                  @if (preview.differenceEur) { <p class="fin-hint">Een afrondingsverschil tot € 0,02 is toegestaan. Oorspronkelijke bedragen blijven behouden.</p> }
-                  @if (!preview.eligible && document.kind !== 'purchase') { <p class="fin-hint fin-hint--warn">{{ p.localReusablePayment() ? 'Deze kost is al betaald. Met de knop onderaan koppel je de bestaande betaling; er wordt geen extra betaling aangemaakt.' : document.openBankEur ? 'De bankbetaling is groter dan het openstaande bedrag. Je kunt maximaal € 0,02 meer afpunten.' : 'Dit document is al betaald. Kies een passende bestaande betaling om die te hergebruiken.' }}</p> }
+                  @if (preview.explanation) { <p class="fin-hint" [class.fin-hint--warn]="!p.allocationReady()">{{ preview.explanation }}</p> }
+                  @if (preview.paymentKind === 'choose-existing' && p.localRecordedCostPayments().length) {
+                    <h4>Geregistreerde betalingen op deze kost</h4>
+                    <ul class="bank-alloc-recorded-payments">@for (payment of p.localRecordedCostPayments(); track $index) {
+                      @let difference = p.localRecordedPaymentDifference(payment);
+                      <li><strong>{{ -payment.amountEur | eur }}</strong><span>{{ payment.paidOn }} · {{ payment.bankStatementLineId != null ? 'Al gekoppeld aan een banktransactie' : 'Nog zonder bankkoppeling' }}</span><small>Verschil met bank: @if (difference !== null) { {{ difference | eur }} } @else { — }</small></li>
+                    }</ul>
+                  }
+                  @if (preview.differenceEur && !preview.explanation) { <p class="fin-hint">Een afrondingsverschil tot € 0,02 is toegestaan. Oorspronkelijke bedragen blijven behouden.</p> }
+                  @if (!preview.eligible && document.kind !== 'purchase' && !preview.explanation) { <p class="fin-hint fin-hint--warn">{{ document.openBankEur ? 'De bankbetaling is groter dan het openstaande bedrag. Je kunt maximaal € 0,02 meer afpunten.' : 'Dit document is al betaald. Kies een passende bestaande betaling om die te hergebruiken.' }}</p> }
                   @if (!preview.eligible && document.kind === 'purchase') { <p class="fin-hint fin-hint--warn">Vul een geldig betaalbedrag in. Het EUR-bedrag mag maximaal € 0,02 afwijken van de banktransactie.</p> }
                   @if (p.localExistingPayments().length || p.localExistingSales().length) {
                     <h4>Deze betaling staat mogelijk al in ENROSED</h4>

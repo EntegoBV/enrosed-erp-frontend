@@ -63,7 +63,7 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
             <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
                  [attr.aria-selected]="focusId() === row.id" (focusin)="focusId.set(row.id)" (click)="$event.defaultPrevented || openLine(row)" appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
               <span class="wk-td" role="gridcell" [attr.title]="record(row)">{{ movementStamp(row) }}</span>
-              <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (imported(row)) { <span class="wk-pill tone-blue" title="Banktransactie opgehaald uit Odoo">Odoo</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
+              <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
               <span class="wk-td" role="gridcell">
                 @if (allocated(row)) {
                   <button class="wk-link bank-document-link" type="button" [disabled]="openingId() === row.id"
@@ -216,6 +216,15 @@ export class BankMovementPanel {
       && bankAmountsMatch(-row.amountEur, this.selected()?.amountEur ?? 0));
   });
   readonly localExistingSales = computed(() => this.existingMatches().filter(row => this.localDocument()?.kind === 'sales' && row.salesOrderId === this.localDocument()?.id));
+  /** Keep every recorded amount and bank link available, including nonmatching and already-linked payments. */
+  readonly localRecordedCostPayments = computed(() => {
+    const target = this.localDocument();
+    return target?.kind === 'cost' ? this.state.costs().find(cost => cost.id === target.id)?.payments ?? [] : [];
+  });
+  localRecordedPaymentDifference(payment: { amountEur: number }): number | null {
+    const bank = this.selected();
+    return bank && Number.isFinite(payment.amountEur) ? bankAmountDifference(bank.amountEur, -payment.amountEur) : null;
+  }
   /** A settled cost can only reuse one unambiguous, free payment; never create another. */
   readonly localReusablePayment = computed(() => {
     const target = this.localDocument(), payments = this.localExistingPayments();
@@ -240,13 +249,31 @@ export class BankMovementPanel {
     const bank = this.selected(), target = this.localDocument(); if (!bank || !target) return null;
     const open = target.openBankEur, sameDirection = Math.sign(open) === Math.sign(bank.amountEur);
     const reusable = this.localReusablePayment();
-    const payment = reusable ? -reusable.amountEur : target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
+    if (target.kind === 'cost' && open === 0) {
+      const recorded = this.localRecordedCostPayments();
+      const payment = reusable ? recorded.find(payment => payment.id === reusable.id) : recorded.length === 1 ? recorded[0] : null;
+      const paymentEur = payment && Number.isFinite(payment.amountEur) ? -payment.amountEur : null;
+      const differenceEur = paymentEur === null ? null : bankAmountDifference(bank.amountEur, paymentEur);
+      const paymentLinked = payment ? payment.bankStatementLineId != null : null;
+      let explanation: string;
+      if (!recorded.length) explanation = 'Deze kost staat als betaald, maar er is geen afzonderlijke betaling geregistreerd. Controleer de bestaande betalingsregistratie; er wordt geen extra betaling aangemaakt.';
+      else if (!payment) explanation = `Deze kost heeft ${recorded.length} geregistreerde betalingen. Kies expliciet welke bestaande betaling bij deze banktransactie hoort; er wordt geen bedrag verondersteld.`;
+      else if (paymentEur === null || differenceEur === null) explanation = 'Het bedrag van de geregistreerde betaling is niet beschikbaar. Vernieuw de gegevens voordat je een betaling kiest.';
+      else if (paymentLinked) explanation = 'De geregistreerde betaling heeft al een bankkoppeling. Open die eerdere koppeling en maak ze eerst los als je deze betaling wilt hergebruiken.';
+      else if (!bankAmountsMatch(bank.amountEur, paymentEur)) explanation = Math.sign(bank.amountEur) !== Math.sign(paymentEur)
+        ? 'De geregistreerde betaling heeft een andere betaalrichting dan de banktransactie. Deze betaling kan niet worden gekoppeld.'
+        : `De geregistreerde betaling van ${euro.format(Math.abs(paymentEur))} wijkt ${euro.format(Math.abs(differenceEur))} af van de banktransactie. Maximaal € 0,02 verschil is toegestaan; de bedragen blijven behouden.`;
+      else explanation = 'Deze kost is al betaald. De bestaande betaling wordt hergebruikt; er wordt geen extra betaling aangemaakt.';
+      return { paymentEur, openEur: 0, remainingEur: 0, differenceEur, overpaidEur: 0, eligible: false,
+        paymentKind: payment ? 'existing' as const : 'choose-existing' as const, paymentLinked, explanation };
+    }
+    const payment = target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
       : bankAmountsMatch(bank.amountEur, open) ? open : bank.amountEur;
     const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment)
       : sameDirection && (Math.abs(bank.amountEur) <= Math.abs(open) || bankAmountsMatch(bank.amountEur, open) || (target.kind === 'sales' && bank.amountEur > 0));
     return { paymentEur: payment, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(payment))) / 100,
-      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: reusable ? 0 : Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
-      eligible: amountValid && (target.kind === 'purchase' || open !== 0) };
+      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
+      eligible: amountValid && (target.kind === 'purchase' || open !== 0), paymentKind: 'new' as const, paymentLinked: null, explanation: null };
   });
   readonly localBankProblem = computed(() => {
     const selected = this.selected(); if (!selected) return '';
@@ -300,6 +327,7 @@ export class BankMovementPanel {
         const target = this.localDocument(), preview = this.localPreview();
         if (!target) return this.localSelectedKey() ? 'Het gekozen document is niet meer beschikbaar. Kies het opnieuw.' : 'Kies eerst een factuur of uitgave uit de lijst hierboven.';
         if (target.openBankEur === 0 && target.kind !== 'purchase') {
+          if (target.kind === 'cost' && preview?.explanation) return preview.explanation;
           const count = this.localExistingPayments().length + this.localExistingSales().length;
           if (count > 1) return 'Er zijn meerdere passende betalingen. Kies hieronder expliciet welke bestaande betaling je wilt koppelen.';
           if (count) return 'Dit document is al betaald. Kies hieronder de bestaande betaling om die te hergebruiken.';

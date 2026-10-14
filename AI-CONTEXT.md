@@ -1206,3 +1206,11 @@ screens show them, collect decisions with a reason and build the writes.
 - `canLinkLocal` remains the new-payment guard. `allocationReady` composes the
   established routes with source, busy and current-bank checks. Reuse keeps the
   original payment amount and the aggregate two-cent tolerance.
+
+- Settled-cost allocation previews use actual recorded payment amounts even when
+  they do not match the bank. Never substitute the bank amount as an existing
+  payment: that hides registration mistakes behind a false zero difference.
+  Ambiguous/missing payments show no assumed amount; show each recorded payment
+  and bank-link status. The original matching guard remains unchanged.
+- Bank transaction rows omit the repetitive Odoo badge; source metadata, sync
+  controls and the detailed provenance remain available.

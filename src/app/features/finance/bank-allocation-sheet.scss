@@ -44,6 +44,9 @@
 .bank-alloc-footer__actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; width: 100%; }
 .bank-alloc-footer__actions .btn { min-height: 44px; }
 .bank-alloc-preview h3:focus { outline: none; }
+.bank-alloc-recorded-payments { display: grid; gap: 12px; padding: 0; list-style: none; font-size: 13px; }
+.bank-alloc-recorded-payments li { display: grid; gap: 4px; padding-block: 10px; border-bottom: 1px solid var(--line, #dde1e6); }
+.bank-alloc-recorded-payments span, .bank-alloc-recorded-payments small { color: var(--muted, #667085); }
 @media (max-width: 600px) {
   .bank-alloc-footer__actions .spacer { display: none; }
   .bank-alloc-footer__actions .btn { flex: 1; min-width: 0; padding-inline: 8px; white-space: normal; font-size: 14px; }

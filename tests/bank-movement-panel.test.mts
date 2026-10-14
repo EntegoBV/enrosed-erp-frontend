@@ -812,7 +812,7 @@ test('paid cost reuse rejects a three-cent mismatch, opposite sign and payments 
       localCost(2, 40, 0, [{ id: 10, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null }])]);
     await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments().find(doc => doc.id === 1)!);
     assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
-    assert.match(panel.allocationBlockedReason(), /geen vrije passende betaling/);
+    assert.match(panel.allocationBlockedReason(), amount > 0 ? /wijkt.*af van de banktransactie/ : /andere betaalrichting/);
   }
 });
 
@@ -820,7 +820,7 @@ test('multiple free matching payments require an explicit selection even on a se
   const { panel, state } = harness(); state.costs.set([localCost(1, 80, 0, [9, 10].map(id => ({ id, amountEur: 40, paidOn: '2026-10-01', bankStatementLineId: null })))]);
   await panel.openAllocation(movement(7, -40)); panel.chooseLocalDocument(panel.localDocuments()[0]);
   assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
-  assert.match(panel.allocationBlockedReason(), /meerdere passende betalingen/);
+  assert.match(panel.allocationBlockedReason(), /2 geregistreerde betalingen.*Kies expliciet/);
   panel.localNewConfirmed.set(true); assert.equal(panel.allocationReady(), false);
   panel.reuseLocalPayment(panel.localExistingPayments()[0]); assert.equal(panel.allocationReady(), true);
 });
@@ -914,4 +914,72 @@ test('uncertain reuse response remains an existing-payment retry and never creat
   (api as any).linkPayments = async (_id: number, body: any) => { calls.push(body.costPaymentId); if (calls.length === 1) throw new Error('Response verloren'); return { ...bank, allocated: true }; };
   await panel.submitAllocation(); assert.equal(panel.allocationStep(), 'payments'); assert.equal(panel.allocationReady(), true);
   await panel.submitAllocation(); assert.deepEqual(calls, [9, 9]); assert.equal(creations, 0);
+});
+
+test('Expofit paid-cost preview shows its actual 423.04 payment against 349.62 bank and the honest 73.42 difference', async () => {
+  const { panel, state, api } = harness(); const bank = { ...movement(81, -349.62), counterparty: 'Expofit', bookedAt: '2026-09-24T00:00:00Z' };
+  const payment = { id: 2, amountEur: 423.04, paidOn: '2026-09-24', bankStatementLineId: null };
+  const cost = { ...localCost(10, 423.04, 0, [payment]), description: 'Beursbalie', party: 'Expofit', date: '2026-09-24' };
+  state.bankStatements.set([bank]); state.costs.set([cost]); await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localRecordedCostPayments()[0], payment);
+  const preview = panel.localPreview()!;
+  assert.equal(preview.paymentKind, 'existing'); assert.equal(preview.paymentEur, -423.04);
+  assert.equal(preview.differenceEur, 73.42); assert.equal(preview.paymentLinked, false);
+  assert.equal(preview.eligible, false); assert.equal(preview.overpaidEur, 0);
+  assert.equal(panel.localReusablePayment(), null); assert.equal(panel.allocationReady(), false);
+  assert.match(panel.allocationBlockedReason(), /423,04/); assert.match(panel.allocationBlockedReason(), /73,42/);
+  assert.match(panel.allocationBlockedReason(), /Maximaal € 0,02/);
+  let writes = 0; (api as any).addCostPayment = async () => { writes++; }; (api as any).linkPayments = async () => { writes++; };
+  await panel.submitAllocation(); assert.equal(writes, 0); assert.equal(state.costs()[0], cost); assert.equal(state.bankStatements()[0], bank);
+});
+
+test('paid supplier credit preview preserves signed amounts and reveals an existing bank link even when the amount differs', async () => {
+  const { panel, state } = harness(); const bank = movement(81, 349.62);
+  state.costs.set([localCost(10, -423.04, 0, [{ id: 2, amountEur: -423.04, paidOn: '2026-09-24', bankStatementLineId: 44 }])]);
+  await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  const preview = panel.localPreview()!;
+  assert.equal(preview.paymentEur, 423.04); assert.equal(preview.differenceEur, -73.42);
+  assert.equal(preview.paymentKind, 'existing'); assert.equal(preview.paymentLinked, true);
+  assert.match(preview.explanation!, /heeft al een bankkoppeling/); assert.equal(panel.allocationReady(), false);
+});
+
+test('multiple recorded payments without a unique matching free payment never fabricate a payment amount', async () => {
+  const { panel, state } = harness(); const recorded = [
+    { id: 1, amountEur: 200, paidOn: '2026-09-01', bankStatementLineId: null },
+    { id: 2, amountEur: 223.04, paidOn: '2026-09-24', bankStatementLineId: 44 },
+  ];
+  state.costs.set([localCost(10, 423.04, 0, recorded)]); await panel.openAllocation(movement(81, -349.62)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  const preview = panel.localPreview()!;
+  assert.equal(preview.paymentKind, 'choose-existing'); assert.equal(preview.paymentEur, null); assert.equal(preview.differenceEur, null); assert.equal(preview.paymentLinked, null);
+  assert.equal(panel.localRecordedCostPayments().length, 2); assert.equal(panel.localRecordedCostPayments()[1].bankStatementLineId, 44);
+  assert.match(preview.explanation!, /2 geregistreerde betalingen/); assert.equal(panel.allocationReady(), false);
+});
+
+test('a paid cost without recorded payments has no presumed payment amount or difference', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost(10, 423.04, 0, [])]);
+  await panel.openAllocation(movement(81, -349.62)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localPreview()!.paymentEur, null); assert.equal(panel.localPreview()!.differenceEur, null);
+  assert.match(panel.allocationBlockedReason(), /geen afzonderlijke betaling geregistreerd/); assert.equal(panel.allocationReady(), false);
+});
+
+test('multiple recorded payments retain the prior unique-free-match route and show only that real matching amount', async () => {
+  const { panel, state } = harness(); state.costs.set([localCost(10, 100, 0, [
+    { id: 1, amountEur: 60, paidOn: '2026-09-01', bankStatementLineId: 44 },
+    { id: 2, amountEur: 40, paidOn: '2026-09-24', bankStatementLineId: null },
+  ])]);
+  await panel.openAllocation(movement(81, -40.02)); panel.chooseLocalDocument(panel.localDocuments()[0]);
+  assert.equal(panel.localReusablePayment()!.id, 2); assert.equal(panel.localPreview()!.paymentEur, -40);
+  assert.equal(panel.localPreview()!.differenceEur, -.02); assert.equal(panel.localPreview()!.paymentLinked, false);
+  assert.equal(panel.localPreview()!.eligible, false); assert.equal(panel.allocationReady(), true);
+});
+
+
+test('each recorded payment shows its own signed difference without implying a selection', async () => {
+  const { panel } = harness(); assert.equal(panel.localRecordedPaymentDifference({ amountEur: 423.04 }), null);
+  await panel.openAllocation(movement(81, -349.62));
+  assert.equal(panel.localRecordedPaymentDifference({ amountEur: 423.04 }), 73.42);
+  assert.equal(panel.localRecordedPaymentDifference({ amountEur: 200 }), -149.62);
+  assert.equal(panel.localRecordedPaymentDifference({ amountEur: Number.NaN }), null);
+  panel.selected.set(movement(81, 349.62)); assert.equal(panel.localRecordedPaymentDifference({ amountEur: -423.04 }), -73.42);
+  assert.equal(panel.localSelectedKey(), null); assert.equal(panel.allocationReady(), false);
 });
