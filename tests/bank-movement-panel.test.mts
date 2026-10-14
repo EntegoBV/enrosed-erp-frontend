@@ -940,7 +940,10 @@ test('paid supplier credit preview preserves signed amounts and reveals an exist
   const preview = panel.localPreview()!;
   assert.equal(preview.paymentEur, 423.04); assert.equal(preview.differenceEur, -73.42);
   assert.equal(preview.paymentKind, 'existing'); assert.equal(preview.paymentLinked, true);
-  assert.match(preview.explanation!, /heeft al een bankkoppeling/); assert.equal(panel.allocationReady(), false);
+  assert.match(preview.explanation!, /423,04/); assert.match(preview.explanation!, /73,42/);
+  assert.doesNotMatch(preview.explanation!, /eerst los/);
+  assert.match(panel.allocationBlockedReason(), /wijkt.*af van de banktransactie/);
+  assert.doesNotMatch(panel.allocationBlockedReason(), /eerst los/); assert.equal(panel.allocationReady(), false);
 });
 
 test('multiple recorded payments without a unique matching free payment never fabricate a payment amount', async () => {

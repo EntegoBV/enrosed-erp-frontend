@@ -259,10 +259,10 @@ export class BankMovementPanel {
       if (!recorded.length) explanation = 'Deze kost staat als betaald, maar er is geen afzonderlijke betaling geregistreerd. Controleer de bestaande betalingsregistratie; er wordt geen extra betaling aangemaakt.';
       else if (!payment) explanation = `Deze kost heeft ${recorded.length} geregistreerde betalingen. Kies expliciet welke bestaande betaling bij deze banktransactie hoort; er wordt geen bedrag verondersteld.`;
       else if (paymentEur === null || differenceEur === null) explanation = 'Het bedrag van de geregistreerde betaling is niet beschikbaar. Vernieuw de gegevens voordat je een betaling kiest.';
-      else if (paymentLinked) explanation = 'De geregistreerde betaling heeft al een bankkoppeling. Open die eerdere koppeling en maak ze eerst los als je deze betaling wilt hergebruiken.';
       else if (!bankAmountsMatch(bank.amountEur, paymentEur)) explanation = Math.sign(bank.amountEur) !== Math.sign(paymentEur)
         ? 'De geregistreerde betaling heeft een andere betaalrichting dan de banktransactie. Deze betaling kan niet worden gekoppeld.'
         : `De geregistreerde betaling van ${euro.format(Math.abs(paymentEur))} wijkt ${euro.format(Math.abs(differenceEur))} af van de banktransactie. Maximaal € 0,02 verschil is toegestaan; de bedragen blijven behouden.`;
+      else if (paymentLinked) explanation = 'De geregistreerde betaling heeft al een bankkoppeling. Open die eerdere koppeling en maak ze eerst los als je deze betaling wilt hergebruiken.';
       else explanation = 'Deze kost is al betaald. De bestaande betaling wordt hergebruikt; er wordt geen extra betaling aangemaakt.';
       return { paymentEur, openEur: 0, remainingEur: 0, differenceEur, overpaidEur: 0, eligible: false,
         paymentKind: payment ? 'existing' as const : 'choose-existing' as const, paymentLinked, explanation };
