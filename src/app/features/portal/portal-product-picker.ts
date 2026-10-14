@@ -1,4 +1,4 @@
-import { portalCartonContents, portalPriceUnitKey, portalPrimaryPrice, portalQuantityUnit, portalQuantityUnitKey } from './portal-sales-unit';
+import { portalCartonContents, portalPriceUnitKey, portalPrimaryPrice, portalQuantityUnit, portalQuantityUnitKey, portalStartQuantity, portalStepContents, portalUnitsPerStep } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, input, output, signal,
 } from '@angular/core';
@@ -16,8 +16,9 @@ import { CartonQuantity } from '../../shared/carton-quantity';
  * customer gets delivery now or has to wait.
  *
  * Quantities behave exactly like on our side: the rounding notice appears
- * immediately, the field snaps to a full carton two seconds after the last
- * keystroke. A customer typing "240" passes through "2" too.
+ * immediately, the field snaps to the product's order step (a full carton,
+ * a display) two seconds after the last keystroke. A customer typing "240"
+ * passes through "2" too. A product sold per unit never snaps.
  */
 @Component({
   selector: 'app-portal-product-picker',
@@ -60,12 +61,12 @@ import { CartonQuantity } from '../../shared/carton-quantity';
               @if (carton.pending(); as note) {
                 <span class="hint warn-text">
                   {{ t()('portalRoundingNotice') }} <b>{{ note.to | num: 0: locale() }}</b>
-                  ({{ cartonContents(item) }})
+                  ({{ stepContents(item) }})
                 </span>
               } @else if (carton.applied(); as note) {
                 <span class="hint warn-text">
                   {{ note.from | num: 0: locale() }} → <b>{{ note.to | num: 0: locale() }}</b>
-                  ({{ cartonContents(item) }})
+                  ({{ stepContents(item) }})
                 </span>
               } @else {
                 <span class="hint">
@@ -181,7 +182,7 @@ export class PortalProductPicker implements OnDestroy {
   readonly query = signal('');
   readonly chosen = signal<PortalCatalogItem | null>(null);
   readonly carton = new CartonQuantity(
-    () => this.chosen()?.piecesPerCarton ?? 1, /* snap: */ () => true);
+    () => portalUnitsPerStep(this.chosen()), /* snap: */ () => true);
 
   readonly matches = computed(() => {
     const needle = this.query().toLowerCase().trim();
@@ -202,9 +203,15 @@ export class PortalProductPicker implements OnDestroy {
     return portalCartonContents(item, this.t(), this.locale());
   }
 
+  /** What a rounding is to: "8 bowls per display" for a display step, the carton contents otherwise. */
+  stepContents(item: PortalCatalogItem): string {
+    return portalStepContents(item, this.t(), this.locale());
+  }
+
   choose(item: PortalCatalogItem): void {
     this.chosen.set(item);
-    this.carton.reset(item.piecesPerCarton * 10);
+    /* Ten cartons as always; one display or one unit for a product sold that way. */
+    this.carton.reset(portalStartQuantity(item));
   }
 
   confirm(): void {

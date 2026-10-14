@@ -129,3 +129,23 @@ test('opening a proposal keeps the unit of each quote line', () => {
   page.addFromCatalog({ item: { productId: 3, description: 'Bowl', unit: BOWL }, quantity: 40 });
   assert.equal(page.additions().get(3).unit, BOWL);
 });
+
+test('proposals snap to the order step of each line: a display, nothing for one unit, cartons from older servers', () => {
+  const { page, timers } = harness();
+  page.quote.set({ lines: [
+    { productId: 1, description: 'Bowl', quantity: 16, piecesPerCarton: 40, orderStep: 'PACKAGE', unitsPerOrderStep: 8 },
+    { productId: 2, description: 'Stolp', quantity: 3, piecesPerCarton: 12, orderStep: 'UNIT', unitsPerOrderStep: 1 },
+    { productId: 3, description: 'Roos', quantity: 24, piecesPerCarton: 24 },
+  ] });
+  page.openProposal();
+  page.setProposal(1, 10);
+  assert.equal(page.pendingRound()[1], 16);
+  timers[0]();
+  assert.equal(page.proposalLines()[0].quantity, 16);
+  page.setProposal(2, 5);
+  assert.equal(page.pendingRound()[2], undefined, 'per unit nothing is rounded and nothing is announced');
+  assert.equal(timers.length, 1);
+  assert.equal(page.proposalLines()[1].quantity, 5);
+  page.setProposal(3, 25);
+  assert.equal(page.pendingRound()[3], 48);
+});
