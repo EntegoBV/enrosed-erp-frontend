@@ -2048,7 +2048,7 @@ export class PurchaseEditor {
     this.stepBackPending.set(this.stepBackSheet());
     try {
       this.view.set({ ...data, order: { ...data.order, status: to, shippedOn: null } });
-      const saved = await this.save();
+      const saved = await this.save({ stepBack: true });
       if (!saved) {
         const current = this.view();
         if (current?.order.id === data.order.id) this.view.set({ ...current, order: { ...current.order, status, shippedOn } });
@@ -3860,8 +3860,12 @@ export class PurchaseEditor {
     }
   }
 
-  /** Writes the draft; the server answers with the order as it stands. */
-  async save(): Promise<PurchaseOrderView | null> {
+  /**
+   * Writes the draft; the server answers with the order as it stands.
+   * stepBack marks the one save that may put the status on an earlier step;
+   * its caller says what happened, so the plain 'Opgeslagen' stays out.
+   */
+  async save(options: { stepBack?: boolean } = {}): Promise<PurchaseOrderView | null> {
     const data = this.view();
     if (!data || this.saving() || this.deletingOrder() || this.paymentPlanBusy() || this.payingBusy()) return null;
     if (this.negativeExtra()) {
@@ -3871,14 +3875,14 @@ export class PurchaseEditor {
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     try {
-      const result = await this.sourcing.updatePurchaseOrder(data.order.id, data.order);
+      const result = await this.sourcing.updatePurchaseOrder(data.order.id, data.order, { stepBack: options.stepBack === true });
       ++this.previewVersion;
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.adjustments.set(result.adjustments ?? []);
       /* Loose purchasing quantities stay untouched. The quiet inline notice
          already explains the neighbouring full cartons while editing. */
-      this.ui.toast('Opgeslagen');
+      if (!options.stepBack) this.ui.toast('Opgeslagen');
       /* Stock levels may have just been booked. The order is already saved here,
          so a failed refresh is reported separately. */
       try {

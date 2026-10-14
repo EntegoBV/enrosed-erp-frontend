@@ -126,6 +126,7 @@ function departed(status: PurchaseOrder['status'] = 'ONDERWEG'): PurchaseOrderVi
 
 function setup(view = departed()) {
   const puts: PurchaseOrder[] = [];
+  const flags: boolean[] = [];
   const toasts: [string, string | undefined][] = [];
   const api = {
     update: async (_id: number, order: PurchaseOrder): Promise<PurchaseOrderView> =>
@@ -139,16 +140,18 @@ function setup(view = departed()) {
     view: signal(view),
     negativeExtra: () => false,
     ui: { toast: (text: string, kind?: string) => toasts.push([text, kind]) },
-    sourcing: { updatePurchaseOrder: (id: number, order: PurchaseOrder) => { puts.push(clone(order)); return api.update(id, order); } },
+    sourcing: { updatePurchaseOrder: (id: number, order: PurchaseOrder, options: { stepBack?: boolean } = {}) => {
+      puts.push(clone(order)); flags.push(options.stepBack === true); return api.update(id, order);
+    } },
     catalog: { products: async () => [] },
   });
   editor.savedOrder.set(JSON.stringify(view.order));
   editor.payments.set([]);
-  return { editor, api, puts, toasts };
+  return { editor, api, puts, flags, toasts };
 }
 
 test('Vertrokken back to Besteld saves the status with the departure date cleared and keeps track & trace', async () => {
-  const { editor, puts, toasts } = setup();
+  const { editor, puts, flags, toasts } = setup();
   editor.openStepBack();
   assert.equal(editor.stepBack(), true);
   await editor.confirmStepBack('BESTELD');
@@ -160,10 +163,20 @@ test('Vertrokken back to Besteld saves the status with the departure date cleare
   assert.equal(editor.view().order.status, 'BESTELD');
   assert.equal(editor.dirty(), false);
   assert.equal(editor.stepBack(), false, 'the sheet closes on success');
+  assert.deepEqual(flags, [true], 'the server only steps a status back when the save says so');
+  assert.equal(toasts.some(([text]) => text === 'Opgeslagen'), false, 'no Opgeslagen before the step-back toast');
   assert.deepEqual(toasts.at(-1), ['Status teruggezet naar Besteld', 'ok']);
   assert.equal(editor.orderPlaced(), false, 'no ordered celebration');
   assert.equal(editor.statusCelebration(), null, 'no departure celebration');
   assert.equal(editor.firstInstalmentPrompt(), null, 'no first-instalment prompt');
+});
+
+test('a plain save never asks to step the status back and still says Opgeslagen', async () => {
+  const { editor, flags, toasts } = setup();
+  editor.view.update((data: PurchaseOrderView) => ({ ...data, order: { ...data.order, alias: 'Nieuwe naam' } }));
+  await editor.save();
+  assert.deepEqual(flags, [false]);
+  assert.deepEqual(toasts[0], ['Opgeslagen', undefined]);
 });
 
 test('Vertrokken back to Concept goes in one save when nothing was paid', async () => {

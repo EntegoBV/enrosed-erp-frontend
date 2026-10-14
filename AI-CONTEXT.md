@@ -971,8 +971,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `purchase-status-back-sheet.ts` (inputs/outputs only, radio rows, short
   consequences, 'Je openstaande wijzigingen worden mee opgeslagen.' when
   dirty). `PurchaseEditor.confirmStepBack(to)` (desk inherits) puts
-  `{ status: to, shippedOn: null }` in the draft and calls the normal
-  `save()` (same PUT); a refused save restores both fields so the screen
+  `{ status: to, shippedOn: null }` in the draft and calls
+  `save({ stepBack: true })`, the same PUT with `?stepBack=true` (the server
+  refuses an earlier status without it, so a screen loaded before a
+  departure elsewhere never undoes it; no 'Opgeslagen' toast for that save);
+  a refused save restores both fields so the screen
   never keeps a status the server refused; success closes the sheet and
   toasts 'Status teruggezet naar …' with no celebration or first-instalment
   prompt. The sheet binds to `stepBackSheet()`, which holds the status,
