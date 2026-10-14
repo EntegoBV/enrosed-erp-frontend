@@ -81,7 +81,7 @@ import {
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
-import { statusBackOptions, type StatusBackTarget } from './purchase-status-back';
+import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics';
@@ -1682,9 +1682,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                      (closed)="statusCelebration.set(null)"
                                      (action)="celebrationAction(celebration)" />
       }
-      @if (stepBack() && stepBackOptions().length) {
-        <app-purchase-status-back-sheet [current]="data.order.status" [options]="stepBackOptions()" [dirty]="dirty()"
-                                        [busy]="stepBackBusy()" (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
+      @if (stepBack() && stepBackSheet().options.length) {
+        <app-purchase-status-back-sheet [current]="stepBackSheet().status" [options]="stepBackSheet().options"
+                                        [dirty]="stepBackSheet().dirty" [busy]="stepBackBusy()"
+                                        (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
@@ -2012,6 +2013,17 @@ export class PurchaseEditor {
     });
   });
   readonly stepBackBusy = computed(() => this.saving() || this.deletingOrder() || this.paymentPlanBusy() || this.payingBusy());
+  /**
+   * What the open sheet showed when its button was tapped. The draft carries
+   * the target status while the save runs, so the sheet keeps this until the
+   * server answers: no 'Nu: Besteld' before it agreed, and a refused save
+   * leaves the choice where it was instead of one step further back.
+   */
+  private readonly stepBackPending = signal<StatusBackSheetState | null>(null);
+  /** What the sheet shows: the container's status, its options and unsaved edits; frozen while a step back saves. */
+  readonly stepBackSheet = computed<StatusBackSheetState>(() => this.stepBackPending() ?? {
+    status: this.view()?.order.status ?? 'CONCEPT', options: this.stepBackOptions(), dirty: this.dirty(),
+  });
 
   openStepBack(): void {
     if (this.stepBackOptions().length) this.stepBack.set(true);
@@ -2033,15 +2045,20 @@ export class PurchaseEditor {
     const option = this.stepBackOptions().find((item) => item.to === to);
     if (!data || !option || option.blocked || this.stepBackBusy()) return;
     const { status, shippedOn } = data.order;
-    this.view.set({ ...data, order: { ...data.order, status: to, shippedOn: null } });
-    const saved = await this.save();
-    if (!saved) {
-      const current = this.view();
-      if (current?.order.id === data.order.id) this.view.set({ ...current, order: { ...current.order, status, shippedOn } });
-      return;
+    this.stepBackPending.set(this.stepBackSheet());
+    try {
+      this.view.set({ ...data, order: { ...data.order, status: to, shippedOn: null } });
+      const saved = await this.save();
+      if (!saved) {
+        const current = this.view();
+        if (current?.order.id === data.order.id) this.view.set({ ...current, order: { ...current.order, status, shippedOn } });
+        return;
+      }
+      this.stepBack.set(false);
+      this.ui.toast(`Status teruggezet naar ${option.label}`, 'ok');
+    } finally {
+      this.stepBackPending.set(null);
     }
-    this.stepBack.set(false);
-    this.ui.toast(`Status teruggezet naar ${option.label}`, 'ok');
   }
 
 

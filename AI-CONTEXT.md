@@ -975,8 +975,12 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `save()` (same PUT); a refused save restores both fields so the screen
   never keeps a status the server refused; success closes the sheet and
   toasts 'Status teruggezet naar …' with no celebration or first-instalment
-  prompt. The server clears `shippedOn`, sends no push and logs 'Status
-  teruggezet van … naar …'; Ontvangen never goes back. Tests:
+  prompt. The sheet binds to `stepBackSheet()`, which holds the status,
+  options and dirty flag from the tap until the save returns (the draft
+  carries the target meanwhile), so it never reads 'Nu: Besteld' early and a
+  refused save keeps the choice made instead of moving it to Concept. The
+  server clears `shippedOn`, sends no push and logs 'Status teruggezet van
+  … naar …'; Ontvangen never goes back. Tests:
   `tests/purchase-status-back.test.mts`.
 
 ### Products

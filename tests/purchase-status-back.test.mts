@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { computed, signal } from '@angular/core';
+import { computed, linkedSignal, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 import type { PurchaseOrder, PurchaseOrderView, PurchasePayment } from '../src/app/core/api/models.ts';
 import {
@@ -88,20 +88,29 @@ test('the sheet starts on the nearest open option and keeps a choice while it st
 
 /* ---- the editor: the real members, transport and toasts mocked -------- */
 
+/** The class as plain JavaScript, decorator and imports dropped; `names` keeps only those members. */
+function isolatedClass(text: string, file: string, className: string, names?: ReadonlySet<string>): string {
+  const parsed = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === className);
+  assert.ok(original, className);
+  const members = names
+    ? original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text))
+    : original.members;
+  if (names) assert.equal(members.length, names.size, className);
+  const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
+    original.name, original.typeParameters, undefined, members);
+  return ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+}
+
 const source = await readFile(new URL('../src/app/features/purchasing/purchase-editor.ts', import.meta.url), 'utf8');
-const parsed = ts.createSourceFile('purchase-editor.ts', source, ts.ScriptTarget.Latest, true);
-const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseEditor');
-assert.ok(original);
-const names = new Set(['stepBack', 'stepBackOptions', 'stepBackBusy', 'openStepBack', 'closeStepBack', 'confirmStepBack',
+const javascript = isolatedClass(source, 'purchase-editor.ts', 'PurchaseEditor', new Set(['stepBack', 'stepBackOptions',
+  'stepBackBusy', 'stepBackPending', 'stepBackSheet', 'openStepBack', 'closeStepBack', 'confirmStepBack',
   'save', 'savedOrder', 'saving', 'deletingOrder', 'dirty', 'previewTimer', 'previewVersion', 'payments', 'paymentStateError',
-  'paymentPlanBusy', 'payingBusy', 'orderPlaced', 'statusCelebration', 'firstInstalmentPrompt', 'adjustments']);
-const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
-assert.equal(members.length, names.size);
-const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
-  original.name, original.typeParameters, undefined, members);
-const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-}).outputText;
+  'paymentPlanBusy', 'payingBusy', 'orderPlaced', 'statusCelebration', 'firstInstalmentPrompt', 'adjustments']));
+const sheetSource = await readFile(new URL('../src/app/features/purchasing/purchase-status-back-sheet.ts', import.meta.url), 'utf8');
+const sheetJavascript = isolatedClass(sheetSource, 'purchase-status-back-sheet.ts', 'PurchaseStatusBackSheet');
 
 function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)); }
 
@@ -253,6 +262,153 @@ test('a second confirm while the first save runs sends one PUT', async () => {
   assert.deepEqual(puts.map(order => order.status), ['BESTELD']);
 });
 
+/* ---- the open sheet while the step back saves ------------------------ */
+
+/**
+ * The real sheet class bound the way both templates bind it: shown while
+ * `stepBack() && stepBackSheet().options.length`, inputs set from
+ * `stepBackSheet()` and `stepBackBusy()`, (confirm) calling
+ * `confirmStepBack($event)`; a hidden sheet loses its choice.
+ */
+function mount(editor: any) {
+  let sheet: any = null;
+  let mounts = 0;
+  let confirming: Promise<void> = Promise.resolve();
+  return {
+    get mounts() { return mounts; },
+    /** The primary button: the sheet's own pick(), then the editor's save. */
+    async tapPrimary(): Promise<void> { sheet.pick(); await confirming; },
+    render(): any {
+      const state = editor.stepBackSheet();
+      if (!editor.stepBack() || !state.options.length) return (sheet = null);
+      if (!sheet) {
+        const exports: Record<string, new () => any> = {};
+        vm.runInNewContext(sheetJavascript, { exports, computed, linkedSignal, STATUS_BACK_LABEL, defaultStatusBack,
+          input: Object.assign((initial?: unknown) => signal(initial), { required: () => signal<unknown>(undefined) }),
+          output: () => ({ emit: () => undefined }) });
+        sheet = new exports['PurchaseStatusBackSheet']();
+        sheet.confirm = { emit: (to: string) => { confirming = editor.confirmStepBack(to); } };
+        mounts++;
+      }
+      sheet.current.set(state.status);
+      sheet.options.set(state.options);
+      sheet.dirty.set(state.dirty);
+      sheet.busy.set(editor.stepBackBusy());
+      return sheet;
+    },
+  };
+}
+
+/** Holds the PUT until `release` is called; a failure passed there refuses it. */
+function hold(api: { update: (id: number, order: PurchaseOrder) => Promise<PurchaseOrderView> }) {
+  let release!: (failure?: Error) => void;
+  const gate = new Promise<Error | undefined>(resolve => { release = resolve; });
+  const update = api.update;
+  api.update = async (id, order) => { const failure = await gate; if (failure) throw failure; return update(id, order); };
+  return (failure?: Error) => release(failure);
+}
+
+const sheetOf = (state: { status: string; options: readonly { to: string }[]; dirty: boolean }) =>
+  [state.status, state.options.map(option => option.to), state.dirty];
+
+test('while Vertrokken -> Besteld saves, the sheet keeps Vertrokken, both options and the Besteld choice', async () => {
+  const { editor, api } = setup();
+  const screen = mount(editor);
+  editor.openStepBack();
+  const sheet = screen.render();
+  const options = editor.stepBackSheet().options;
+  assert.equal(sheet.chosen(), 'BESTELD');
+
+  const release = hold(api);
+  const pending = editor.confirmStepBack('BESTELD');
+  assert.equal(editor.view().order.status, 'BESTELD', 'the draft carries the target to the PUT');
+  assert.deepEqual(sheetOf(editor.stepBackSheet()), ['ONDERWEG', ['BESTELD', 'CONCEPT'], false]);
+  assert.equal(editor.stepBackSheet().options, options, 'the same options the sheet already holds');
+  assert.equal(screen.render(), sheet, 'the sheet stays mounted');
+  assert.equal(sheet.currentLabel(), 'Vertrokken', 'never Nu: Besteld before the server agreed');
+  assert.equal(sheet.chosen(), 'BESTELD');
+  assert.equal(sheet.shown().to, 'BESTELD');
+  assert.equal(sheet.dirty(), false, 'the status in the draft is not an unsaved edit');
+  assert.equal(sheet.busy(), true);
+
+  release();
+  await pending;
+  assert.equal(screen.render(), null, 'success closes the sheet');
+  assert.deepEqual(sheetOf(editor.stepBackSheet()), ['BESTELD', ['CONCEPT'], false]);
+});
+
+test('a refused Vertrokken -> Besteld with Concept open leaves Besteld chosen, so a retry does not go two steps back', async () => {
+  const { editor, api, puts } = setup();
+  const screen = mount(editor);
+  editor.openStepBack();
+  const sheet = screen.render();
+  assert.equal(sheet.options()[1].blocked, undefined, 'Concept is open: nothing paid, no credit');
+
+  const update = api.update;
+  const release = hold(api);
+  const tapped = screen.tapPrimary();
+  screen.render();
+  assert.equal(sheet.chosen(), 'BESTELD');
+  release(new Error('Opslaan mislukt'));
+  await tapped;
+
+  assert.equal(screen.render(), sheet, 'the sheet stays open on the same choice');
+  assert.equal(screen.mounts, 1);
+  assert.deepEqual(sheetOf(editor.stepBackSheet()), ['ONDERWEG', ['BESTELD', 'CONCEPT'], false]);
+  assert.equal(sheet.currentLabel(), 'Vertrokken');
+  assert.equal(sheet.chosen(), 'BESTELD');
+  assert.equal(sheet.shown().label, 'Besteld', 'the primary button still reads Terugzetten naar Besteld');
+  assert.equal(sheet.busy(), false);
+
+  api.update = update;
+  await screen.tapPrimary();
+  assert.deepEqual(puts.map(order => order.status), ['BESTELD', 'BESTELD'], 'the retry asks for Besteld again');
+  assert.equal(editor.view().order.status, 'BESTELD');
+});
+
+test('while Besteld -> Concept saves the sheet stays mounted, and a refusal keeps it on Concept', async () => {
+  const { editor, api } = setup(departed('BESTELD'));
+  const screen = mount(editor);
+  editor.openStepBack();
+  const sheet = screen.render();
+  assert.equal(sheet.chosen(), 'CONCEPT');
+
+  const release = hold(api);
+  const pending = editor.confirmStepBack('CONCEPT');
+  assert.deepEqual(editor.stepBackOptions(), [], 'the draft alone would offer nothing');
+  assert.deepEqual(sheetOf(editor.stepBackSheet()), ['BESTELD', ['CONCEPT'], false]);
+  assert.equal(screen.render(), sheet, 'no unmount on the tap: the sheet shows Bezig…');
+  assert.equal(sheet.busy(), true);
+  assert.equal(sheet.currentLabel(), 'Besteld');
+
+  release(new Error('Terug naar Concept kan niet: er zijn al betalingen geboekt op deze container.'));
+  await pending;
+  assert.equal(screen.render(), sheet);
+  assert.equal(screen.mounts, 1);
+  assert.equal(sheet.chosen(), 'CONCEPT');
+  assert.equal(editor.view().order.status, 'BESTELD');
+});
+
+test('the unsaved-edits line follows the edits made before the tap, not the status the save carries', async () => {
+  for (const edited of [false, true]) {
+    const { editor, api } = setup();
+    if (edited) editor.view.update((data: PurchaseOrderView) => ({ ...data, order: { ...data.order, alias: 'Nieuwe naam' } }));
+    const screen = mount(editor);
+    editor.openStepBack();
+    const sheet = screen.render();
+    assert.equal(sheet.dirty(), edited);
+    const release = hold(api);
+    const pending = editor.confirmStepBack('BESTELD');
+    assert.equal(editor.dirty(), true, 'the draft differs from the saved order while the PUT runs');
+    screen.render();
+    assert.equal(sheet.dirty(), edited, `edited: ${edited}`);
+    release(new Error('Opslaan mislukt'));
+    await pending;
+    screen.render();
+    assert.equal(sheet.dirty(), edited, `after refusal, edited: ${edited}`);
+  }
+});
+
 /* ---- the templates: one place each, the sheet parses ----------------- */
 
 test('desk and phone offer the step back once, only for Besteld and Vertrokken, and render the sheet', async () => {
@@ -260,11 +416,12 @@ test('desk and phone offer the step back once, only for Besteld and Vertrokken, 
   for (const [name, text] of [['phone', source], ['desk', desk]] as const) {
     assert.equal(text.match(/\(click\)="openStepBack\(\)"/g)?.length, 1, name);
     assert.equal(text.match(/<app-purchase-status-back-sheet /g)?.length, 1, name);
+    /* The sheet reads the state frozen during a step back, never the draft status or the live dirty flag. */
+    assert.match(text, /@if \(stepBack\(\) && stepBackSheet\(\)\.options\.length\) \{\s*<app-purchase-status-back-sheet \[current\]="stepBackSheet\(\)\.status" \[options\]="stepBackSheet\(\)\.options"\s+\[dirty\]="stepBackSheet\(\)\.dirty" \[busy\]="stepBackBusy\(\)"/, name);
     assert.match(text, /@if \(data\.order\.status === 'BESTELD' \|\| data\.order\.status === 'ONDERWEG'\) \{\s*(<!--[^>]*-->\s*)?<button[^>]*openStepBack/, name);
     assert.match(text, /Status terugzetten…/, name);
   }
-  const sheet = await readFile(new URL('../src/app/features/purchasing/purchase-status-back-sheet.ts', import.meta.url), 'utf8');
-  const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(sheet)?.[1];
+  const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(sheetSource)?.[1];
   assert.ok(template);
   assert.equal(parseTemplate(template, 'purchase-status-back-sheet.html').errors, null);
   assert.match(template, /title="Status terugzetten"/);
@@ -272,5 +429,5 @@ test('desk and phone offer the step back once, only for Besteld and Vertrokken, 
   assert.match(template, /Nu: \{\{ currentLabel\(\) \}\}/);
   assert.match(template, /Je openstaande wijzigingen worden mee opgeslagen\./);
   assert.match(template, /'Terugzetten naar ' \+/);
-  assert.doesNotMatch(sheet, /inject\(/, 'the sheet only has inputs and outputs');
+  assert.doesNotMatch(sheetSource, /inject\(/, 'the sheet only has inputs and outputs');
 });

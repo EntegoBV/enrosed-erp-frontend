@@ -12,6 +12,13 @@ export interface StatusBackOption {
   blocked?: string;
 }
 
+/** What the Status terugzetten sheet is bound to: the status it starts from, its options, unsaved edits. */
+export interface StatusBackSheetState {
+  status: PurchaseOrder['status'];
+  options: readonly StatusBackOption[];
+  dirty: boolean;
+}
+
 export interface StatusBackInput {
   status: PurchaseOrder['status'];
   /** The container's payments (every payee, offsets included); null while they load. */

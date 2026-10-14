@@ -966,9 +966,10 @@ type DeskRow =
         </app-sheet>
       }
 
-      @if (stepBack() && stepBackOptions().length) {
-        <app-purchase-status-back-sheet [current]="data.order.status" [options]="stepBackOptions()" [dirty]="dirty()"
-                                        [busy]="stepBackBusy()" (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
+      @if (stepBack() && stepBackSheet().options.length) {
+        <app-purchase-status-back-sheet [current]="stepBackSheet().status" [options]="stepBackSheet().options"
+                                        [dirty]="stepBackSheet().dirty" [busy]="stepBackBusy()"
+                                        (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
       }
 
       @if (libraryOpen()) {
