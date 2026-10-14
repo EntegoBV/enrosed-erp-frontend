@@ -330,7 +330,7 @@ test('reason precedence: bijkomend, onvolledig, betaald zonder afspraak, te veel
   assert.deepEqual(plain([credit.reason, credit.label]), ['credit', 'tegoed leverancier − € 500,00 · € 200,00 te ontvangen']);
   assert.equal(plain(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 0, creditEur: 500, creditOpenEur: 0 }).label), 'tegoed leverancier − € 500,00');
   assert.equal(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 100, dueNowEur: 100, creditEur: 500 }).reason, 'open');
-  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 11);
+  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 12);
 });
 
 test('the row action mirrors the workbench: Noteer for anything due or open later, Afrekenen for a remainder, Nakijken only for an overpayment', () => {
@@ -628,4 +628,73 @@ test('todoCopy keeps the Te doen words of the Betalingen overview for every todo
     { title: 'Betaling zonder eurowaarde bij Leverancier', detail: 'Controleer het bedrag van deze betaling', action: 'Bekijken' });
   assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder bewijs', detail: 'Voeg het bankafschrift toe', action: 'Toon' });
   assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 1 }, 'read')), { title: '1 betaling zonder bewijs', detail: 'Bankafschrift ontbreekt', action: 'Toon' });
+});
+
+/** PO 35 (PO-2026-002): received, DDP, supplier only; the server netted the 30 % term's + € 61,28 against the 70 % term's − € 60,78. */
+function po35(): { view: PurchaseOrderView; payments: PurchasePayment[] } {
+  const view = {
+    order: { id: 35, number: 'PO-2026-002', status: 'ONTVANGEN', paymentTerms: 'DEPOSIT_30_70', partnerCustomerId: null, cnyToUsd: 0.14, usdToEurGoods: 0.9,
+      lines: [{ id: 3501, productId: 204, quantity: 3000, orderedQuantity: 3000, priceBasis: 'DDP' }] },
+    costing: { totals: { goodsEur: 31048.04, totalEur: 31048.04, totalWithSeparateCostsEur: 31048.04, separateCostsEur: 0, separateCostsInPiecePrice: false, extraRevenueEur: 0 } },
+    payable: { supplierEur: 31048.04, logisticsEur: 0, enrosedEur: 0, freightInSupplierPrice: false, ddp: true },
+    receiptReports: [],
+    reconciliation: {
+      totals: { plannedExternalEur: 31048.04, paidEur: 31048.54, remainingEur: 0, forecastExternalEur: 31048.54, varianceEur: 0.5, internalMarkupEur: 0,
+        plannedPricingEur: 31048.04, forecastPricingEur: 31048.54, finalized: false, orderedQuantity: 3000, receivedQuantity: 3000, damagedQuantity: 0, usableQuantity: 3000,
+        unitCostQuantity: 3000, unitCostBasis: 'ORDERED', forecastExternalUnitEur: 10.3495, forecastPricingUnitEur: 10.3495, receiptRecorded: false, legacyPaidTotalEur: null },
+      streams: [
+        stream('SUPPLIER', { status: 'OVERPAID', plannedEur: 31048.04, paidEur: 31048.54, forecastEur: 31048.54, varianceEur: 0.5, overpaidEur: 0.5, paymentCount: 2 }),
+        stream('LOGISTICS', { status: 'NOT_APPLICABLE', finalized: true }),
+        stream('SEPARATE', { status: 'NOT_APPLICABLE', finalized: true }),
+        stream('OTHER', { status: 'NOT_APPLICABLE', finalized: true }),
+      ],
+      supplierInstalments: [
+        term('ORDERED', '30% bij bestelling', { plannedEur: 9314.41, paidEur: 9375.69, overpaidEur: 0.5, offsetEur: -60.78 }),
+        term('SHIPPED', '70% bij vertrek', { plannedEur: 21733.63, paidEur: 21672.85, finalized: true, offsetEur: 60.78 }),
+      ],
+      lines: [line(204, 'Rozenbeer 25 cm rood', 3000, 31048.04, 31048.54, 10.3495, 10.3495)],
+      notes: [],
+    },
+  } as unknown as PurchaseOrderView;
+  const payments = [
+    payment(351, { orderId: 35, amount: 9375.69, amountEur: 9375.69, instalmentDue: 'ORDERED' }),
+    payment(352, { orderId: 35, amount: 21672.85, amountEur: 21672.85, instalmentDue: 'SHIPPED' }),
+  ];
+  return { view, payments };
+}
+
+test('PO 35: the eindkost is what was paid, € 0,50 above the agreement, and each term says what it was netted with', () => {
+  const { view, payments } = po35();
+  const result = story(view, payments);
+  const head = result.headline;
+  assert.deepEqual(plain([head.kind, head.label, head.sentence]), ['review', 'Verwachte eindkost', 'Na te kijken · € 0,50 te veel betaald aan Leverancier']);
+  assert.deepEqual([head.eindkostEur, head.begrootEur, head.paidEur, head.openEur, head.dueNowEur, head.laterEur, head.verschilEur, head.reviewEur],
+    [31048.54, 31048.04, 31048.54, 0, 0, 0, 0.5, 0.5]);
+  assert.deepEqual([result.explained.reviewEur, result.explained.openEur], [0.5, 0]);
+  const supplier = row(result, 'SUPPLIER');
+  assert.deepEqual(plain([supplier.reason, supplier.reasonLabel, supplier.actionLabel, supplier.status.label, supplier.openEur, supplier.eindkostEur, supplier.verschilEur]),
+    ['review', 'te veel betaald · nakijken', 'Nakijken…', 'Betaald · € 0,50 te veel', 0, 31048.54, 0.5]);
+  assert.deepEqual(supplier.settleDefault, { payee: 'SUPPLIER', scope: 'GROUP', due: null });
+  assert.equal(supplier.termsMixed, true, 'one term paid more, the other less: the terms open by themselves');
+  assert.deepEqual(plain(supplier.terms.map(item => [item.due, item.reason, item.reasonLabel, item.verschilEur, item.openEur, item.status.label])), [
+    ['ORDERED', 'offset', 'verrekend met 70% bij vertrek', 61.28, 0, 'Betaald · € 0,50 te veel'],
+    ['SHIPPED', 'offset', 'verrekend met 30% bij bestelling', -60.78, 0, 'Betaald · verrekend met 30% bij bestelling'],
+  ]);
+  assert.equal(round(supplier.terms.reduce((sum, item) => sum + item.verschilEur, 0)), supplier.verschilEur, 'the term rows add up to the payee');
+});
+
+test('a term only partly covered by another term keeps its netted rest open and says what was netted', () => {
+  const { view, payments } = po35();
+  const report = view.reconciliation!;
+  Object.assign(report.streams[0], { status: 'PARTIAL', paidEur: 30997.26, remainingEur: 50.78, forecastEur: 31048.04, varianceEur: 0, overpaidEur: 0 });
+  Object.assign(report.totals, { paidEur: 30997.26, remainingEur: 50.78, forecastExternalEur: 31048.04, varianceEur: 0 });
+  Object.assign(report.supplierInstalments![0], { paidEur: 9324.41, overpaidEur: 0, finalized: true, offsetEur: -10 });
+  Object.assign(report.supplierInstalments![1], { remainingEur: 50.78, finalized: false, offsetEur: 10 });
+  const result = story(view, [{ ...payments[0], amount: 9324.41, amountEur: 9324.41 }, payments[1]]);
+  const supplier = row(result, 'SUPPLIER');
+  assert.deepEqual([supplier.openEur, supplier.dueNowEur, supplier.verschilEur], [50.78, 50.78, 0]);
+  assert.deepEqual(plain(supplier.terms.map(item => [item.due, item.reason, item.reasonLabel, item.verschilEur, item.openEur])), [
+    ['ORDERED', 'offset', 'verrekend met 70% bij vertrek', 10, 0],
+    ['SHIPPED', 'open', 'nog € 50,78 open · nu te betalen · € 10,00 verrekend met 30% bij bestelling', -10, 50.78],
+  ]);
 });

@@ -466,7 +466,7 @@ export class PurchaseNacalcWorkbench {
 
   tone(tone: LedgerTone): string { return tone === 'warn' ? 'tone-warn' : tone === 'ok' ? 'tone-ok' : ''; }
   /** Next to the status pill only a reason that says more than the pill does: how much is open, what is historic, what has no agreement. */
-  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional' || reason === 'credit'; }
+  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional' || reason === 'credit' || reason === 'offset'; }
   pillClass(tone: NacalcTone): string { return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : ''; }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
   toggle(payee: Payee): void {

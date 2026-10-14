@@ -109,3 +109,21 @@ test('totals add up in cents', () => {
   const mixed = payableTotals(payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: [later] }));
   assert.deepEqual([mixed.containerLaterEur, mixed.containerNowEur, mixed.laterEur], [99.99, 0, 99.99]);
 });
+
+/** PO 35 (PO-2026-002) as the netting server sends it: the 30 % surplus covered the 70 % shortfall, € 0,50 too much in all. */
+function po35(shipped: { remainingEur: number; finalized: boolean } = { remainingEur: 0, finalized: true }): PurchaseOrderView {
+  return order(35, 'ONTVANGEN', [stream('SUPPLIER', shipped.remainingEur, { status: shipped.remainingEur > 0 ? 'PARTIAL' : 'OVERPAID', plannedEur: 31048.04,
+    paidEur: 31048.54, overpaidEur: shipped.remainingEur > 0 ? 0 : 0.5 })], [
+    { ...term('ORDERED', 0), label: '30% bij bestelling', plannedEur: 9314.41, paidEur: 9375.69, overpaidEur: shipped.remainingEur > 0 ? 0 : 0.5, offsetEur: -60.78 },
+    { ...term('SHIPPED', shipped.remainingEur, shipped.finalized), label: '70% bij vertrek', plannedEur: 21733.63, paidEur: 21672.85, offsetEur: 60.78 },
+  ] as ReturnType<typeof term>[]);
+}
+
+test('PO 35: terms netted by the server leave nothing to pay, so Kosten & bank lists no row for it', () => {
+  assert.deepEqual(containerPayables([po35()]), []);
+  const totals = payableTotals(payablesFor({ today: '2026-10-14', openCosts: [], upcoming30: [], containerRows: containerPayables([po35()]) }));
+  assert.deepEqual([totals.containerNowEur, totals.counts.container], [0, 0]);
+  // Whatever the server leaves open after netting is the amount, never the gross gap of the term.
+  const [rest] = containerPayables([po35({ remainingEur: 12.34, finalized: false })]);
+  assert.deepEqual([rest.due, rest.termLabel, rest.remainingEur, rest.bucket], ['SHIPPED', '70% bij vertrek', 12.34, 'now']);
+});

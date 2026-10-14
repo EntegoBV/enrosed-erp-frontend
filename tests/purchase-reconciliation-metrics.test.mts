@@ -51,6 +51,9 @@ test('offsetting supplier, customs and extra payments retain gross differences',
 
 test('overpayment status does not suggest final agreement until the stream is settled', () => {
   assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID' })), 'Te veel betaald · nakijken');
+  // Nothing open and paid beyond the agreement (PO 35 after netting): the same words as the Betalingen ledger.
+  assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID', paidEur: 1_000.5, remainingEur: 0, overpaidEur: 0.5 })).replace(/\u00a0/g, ' '),
+    'Betaald · € 0,50 te veel');
   assert.equal(reconciliationStatusLabel(stream({ status: 'OVERPAID', finalized: true })), 'Afgerekend · meer betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'SETTLED_LOWER' })), 'Afgerekend · minder betaald');
   assert.equal(reconciliationStatusLabel(stream({ status: 'PAID' })), 'Betaald');

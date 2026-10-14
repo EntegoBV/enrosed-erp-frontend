@@ -3,6 +3,8 @@ import type { PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseRecon
 export type ReconciliationStream = PurchaseReconciliation['streams'][number];
 export type ContainerCostFilter = 'active' | 'all' | 'open' | 'finalized' | 'higher' | 'lower';
 
+const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
+
 /**
  * Display vocabulary only: settlement decisions and all cost allocations belong to the server.
  * The words match the payee statuses of purchase-payment-ledger, so Betalingen and Analyses agree.
@@ -15,7 +17,10 @@ export function reconciliationStatusLabel(stream: ReconciliationStream, terms?: 
     case 'UNPAID': return 'Open';
     case 'PARTIAL': return 'Deels betaald';
     case 'PAID': return stream.explicitlySettled || terms?.some(term => term.explicitlySettled) ? 'Betaald · afgerekend' : 'Betaald';
-    case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald' : 'Te veel betaald · nakijken';
+    // Nothing open and paid beyond the agreement: the ledger's 'Betaald · € 0,50 te veel'.
+    case 'OVERPAID': return stream.finalized ? 'Afgerekend · meer betaald'
+      : Math.round(stream.remainingEur * 100) === 0 && stream.overpaidEur > 0 ? `Betaald · ${EURO.format(stream.overpaidEur)} te veel`
+      : 'Te veel betaald · nakijken';
     case 'SETTLED_LOWER': return 'Afgerekend · minder betaald';
     case 'NOT_APPLICABLE': return 'Geen kosten';
     case 'ADDITIONAL': return stream.payee === 'OTHER' ? 'Bijkomend' : 'Betaald zonder afspraak';

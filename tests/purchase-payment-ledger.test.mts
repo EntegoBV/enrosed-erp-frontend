@@ -7,8 +7,8 @@ import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
 import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
 import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
 import {
-  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, paymentOptionParts, payeeComposition, payeeRowAction, purchaseLandedBridge, purchasePaymentLedger,
-  settleCarriers, sortLedgerRows, type PaymentLedger,
+  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, paymentOptionParts, payeeComposition, payeeDifferenceState, payeeRowAction, purchaseLandedBridge,
+  purchasePaymentLedger, settleCarriers, sortLedgerRows, type PaymentLedger,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { reconciliationStatusLabel } from '../src/app/features/purchasing/purchase-reconciliation-metrics.ts';
 
@@ -20,7 +20,7 @@ function stream(payee: PurchaseReconciliationStream['payee'], values: Partial<Pu
 }
 
 function instalment(due: PurchaseInstalmentReconciliation['due'], values: Partial<PurchaseInstalmentReconciliation> = {}): PurchaseInstalmentReconciliation {
-  return { due, label: { ORDERED: '30% bij bestelling', SHIPPED: '70% bij vertrek', ARRIVED: '100% bij aankomst' }[due],
+  return { due, label: { ORDERED: '30% bij bestelling', SHIPPED: '70% bij vertrek', FREIGHT: 'Zeevracht (CIF)', ARRIVED: '100% bij aankomst' }[due],
     plannedEur: 0, paidEur: 0, remainingEur: 0, settledSavingEur: 0, overpaidEur: 0, explicitlySettled: false, finalized: false, ...values };
 }
 
@@ -484,4 +484,140 @@ test('payee statuses use the same words as the reconciliation labels in Analyses
     const item = of(ledger(view, values.paidEur ? [payment(1, { payee, amountEur: values.paidEur })] : []), payee);
     assert.equal(item.status.label, reconciliationStatusLabel(server), `${status} ${payee}`);
   }
+});
+
+/** Intl writes a non-breaking space after the euro sign; the expectations here read with a plain one. */
+const spaced = <T>(value: T): T => JSON.parse(JSON.stringify(value).replace(/ /g, ' '));
+const cents = (value: number) => Math.round(value * 100);
+
+/**
+ * PO 35 (PO-2026-002, received, supplier only, DDP) as the netting server
+ * sends it: the 30 % term was paid € 61,28 too much, the 70 % term € 60,78
+ * too little. Together € 0,50 too much.
+ */
+function po35(values: { supplier?: Partial<PurchaseReconciliationStream>; ordered?: Partial<PurchaseInstalmentReconciliation>;
+  shipped?: Partial<PurchaseInstalmentReconciliation> } = {}): PurchaseOrderView {
+  return purchase({ status: 'ONTVANGEN', ddp: true, streams: [
+    stream('SUPPLIER', { status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, remainingEur: 0, forecastEur: 31_048.54,
+      varianceEur: 0.5, overpaidEur: 0.5, paymentCount: 2, ...values.supplier }),
+    stream('LOGISTICS'), stream('SEPARATE'), stream('OTHER'),
+  ], instalments: [
+    instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 0.5, offsetEur: -60.78, ...values.ordered }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_672.85, finalized: true, offsetEur: 60.78, ...values.shipped }),
+  ] });
+}
+const po35Payments = (): PurchasePayment[] => [
+  payment(1, { paidOn: '2026-03-01', amount: 9_375.69, amountEur: 9_375.69, instalmentDue: 'ORDERED' }),
+  payment(2, { paidOn: '2026-06-01', amount: 21_672.85, amountEur: 21_672.85, instalmentDue: 'SHIPPED' }),
+];
+const termView = (book: PaymentLedger) => spaced(of(book, 'SUPPLIER').terms.map(term =>
+  [term.due, term.openEur, term.differenceEur, term.offsetEur, term.offsetWith, term.state, term.status, term.statusNote, term.canSettle, term.canConfirm]));
+
+test('PO 35: the surplus on the 30 % term covers the 70 % shortfall, so nothing is open and € 0,50 is left to review', () => {
+  const book = ledger(po35(), po35Payments(), null);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.agreedEur, supplier.paidEur, supplier.openEur, supplier.dueNowEur, supplier.laterEur, supplier.lowerEur, supplier.higherEur, supplier.differenceEur],
+    [31_048.04, 31_048.54, 0, 0, 0, 0, 0.5, 0.5]);
+  assert.equal(supplier.balanced, true);
+  assert.equal(identity(supplier), true, 'Afspraak − Betaald − Minder + Meer = Open');
+  assert.deepEqual(spaced(supplier.status), { kind: 'OVERPAID', label: 'Betaald · € 0,50 te veel', tone: 'warn' });
+  assert.equal(payeeDifferenceState(supplier), 'nakijken', 'an unsettled overpayment is never called afgerekend');
+  assert.deepEqual([supplier.next, supplier.action, supplier.canSettle], [null, 'settle', true]);
+  assert.deepEqual(supplier.settleDefault, { payee: 'SUPPLIER', scope: 'GROUP', due: null }, 'netted terms are settled together');
+  assert.deepEqual(termView(book), [
+    ['ORDERED', 0, 61.28, -60.78, ['70% bij vertrek'], 'paid', { label: 'Betaald · € 0,50 te veel', tone: 'warn' }, '€ 60,78 verrekend met 70% bij vertrek', false, false],
+    ['SHIPPED', 0, -60.78, 60.78, ['30% bij bestelling'], 'paid', { label: 'Betaald · verrekend met 30% bij bestelling', tone: 'ok' }, null, false, false],
+  ]);
+  assert.equal(cents(supplier.terms.reduce((sum, term) => sum + term.differenceEur, 0)), cents(supplier.differenceEur),
+    'the terms add up to the payee Verschil');
+  assert.deepEqual(book.todos, [{ kind: 'review', key: 'review:SUPPLIER', payee: 'SUPPLIER', amountEur: 0.5,
+    request: { payee: 'SUPPLIER', scope: 'GROUP', due: null } }], 'only the review item, nothing to pay');
+  const summary = book.summary;
+  assert.deepEqual([summary.agreedEur, summary.paidOnAgreementEur, summary.differenceEur, summary.openEur, summary.dueNowEur, summary.laterEur, summary.forecastEur],
+    [31_048.04, 31_048.54, 0.5, 0, 0, 0, 31_048.54]);
+  assert.deepEqual([summary.headline.kind, summary.headline.payee?.payee, summary.next, summary.balanced], ['review', 'SUPPLIER', null, true]);
+  assert.equal(summary.meter.duePct, 0);
+  // Kosten & bank and Analyses read the same words off the server stream.
+  assert.equal(spaced(reconciliationStatusLabel(po35().reconciliation!.streams[0])), 'Betaald · € 0,50 te veel');
+});
+
+test('PO 35 mirrored: a later surplus covers an earlier shortfall the same way', () => {
+  const view = po35({ ordered: { paidEur: 9_253.13, overpaidEur: 0, finalized: true, offsetEur: 61.28 },
+    shipped: { paidEur: 21_795.41, overpaidEur: 0.5, finalized: false, offsetEur: -61.28 } });
+  const book = ledger(view, [payment(1, { amountEur: 9_253.13, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 21_795.41, instalmentDue: 'SHIPPED' })], null);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.openEur, supplier.dueNowEur, supplier.differenceEur, supplier.status.kind], [0, 0, 0.5, 'OVERPAID']);
+  assert.deepEqual(termView(book), [
+    ['ORDERED', 0, -61.28, 61.28, ['70% bij vertrek'], 'paid', { label: 'Betaald · verrekend met 70% bij vertrek', tone: 'ok' }, null, false, false],
+    ['SHIPPED', 0, 61.78, -61.28, ['30% bij bestelling'], 'paid', { label: 'Betaald · € 0,50 te veel', tone: 'warn' }, '€ 61,28 verrekend met 30% bij bestelling', false, false],
+  ]);
+  assert.deepEqual(book.todos.map(todo => todo.kind), ['review']);
+});
+
+test('an unpaid future term differs by nothing; one partly covered asks the netted rest and names the term that covered it', () => {
+  const view = (status: Status) => purchase({ status, streams: [stream('SUPPLIER', { plannedEur: 1000, paidEur: 310, remainingEur: 690 }), stream('LOGISTICS')],
+    instalments: [instalment('ORDERED', { plannedEur: 300, paidEur: 310, finalized: true, offsetEur: -10 }),
+      instalment('SHIPPED', { plannedEur: 700, remainingEur: 690, offsetEur: 10 })] });
+  const payments = [payment(1, { amountEur: 310, instalmentDue: 'ORDERED' })];
+  const waiting = ledger(view('BESTELD'), payments, null);
+  assert.deepEqual(termView(waiting), [
+    ['ORDERED', 0, 10, -10, ['70% bij vertrek'], 'paid', { label: 'Betaald · verrekend met 70% bij vertrek', tone: 'ok' }, null, false, false],
+    ['SHIPPED', 690, -10, 10, ['30% bij bestelling'], 'later', { label: 'Later · bij vertrek', tone: 'neutral' }, '€ 10,00 verrekend met 30% bij bestelling', false, false],
+  ]);
+  const supplier = of(waiting, 'SUPPLIER');
+  assert.deepEqual([supplier.openEur, supplier.dueNowEur, supplier.laterEur, supplier.differenceEur, supplier.status.kind], [690, 0, 690, 0, 'PARTIAL']);
+  assert.deepEqual(supplier.next, { payee: 'SUPPLIER', due: 'SHIPPED', label: '70% bij vertrek', amountEur: 690, now: false, when: 'bij vertrek' });
+  const sailed = ledger(view('ONDERWEG'), payments, null);
+  assert.deepEqual(spaced(of(sailed, 'SUPPLIER').terms[1].status), { label: 'Deels betaald', tone: 'warn' });
+  assert.deepEqual(sailed.todos.map(todo => [todo.key, 'amountEur' in todo ? todo.amountEur : null]), [['pay:SUPPLIER:SHIPPED', 690]],
+    'the pay item asks the netted rest, never the gross gap of 700');
+  assert.equal(of(sailed, 'SUPPLIER').dueNowEur, 690);
+  const unpaid = ledger(purchase({ status: 'BESTELD', streams: [stream('SUPPLIER', { plannedEur: 1000, paidEur: 300, remainingEur: 700 })],
+    instalments: [instalment('ORDERED', { plannedEur: 300, paidEur: 300, finalized: true }), instalment('SHIPPED', { plannedEur: 700, remainingEur: 700 })] }),
+  [payment(1, { amountEur: 300, instalmentDue: 'ORDERED' })], null);
+  assert.deepEqual(of(unpaid, 'SUPPLIER').terms.map(term => [term.differenceEur, term.offsetEur, term.statusNote]), [[0, 0, null], [0, 0, null]]);
+});
+
+test('a whole-supplier settlement after netting closes every term and keeps the € 0,50 as a settled overrun', () => {
+  const view = po35({ supplier: { explicitlySettled: true, finalized: true },
+    ordered: { explicitlySettled: true, finalized: true }, shipped: { explicitlySettled: true, finalized: true } });
+  const payments = [payment(1, { amountEur: 9_375.69, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 21_672.85, settles: true })];
+  const book = ledger(view, payments, null);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.openEur, supplier.higherEur, supplier.lowerEur, supplier.status.kind, supplier.status.label], [0, 0.5, 0, 'SETTLED_HIGHER', 'Afgerekend · meer betaald']);
+  assert.equal(payeeDifferenceState(supplier), 'afgerekend');
+  assert.deepEqual(termView(book), [
+    ['ORDERED', 0, 61.28, -60.78, ['70% bij vertrek'], 'paid', { label: 'Afgerekend · meer betaald', tone: 'neutral' }, '€ 60,78 verrekend met 70% bij vertrek', false, false],
+    ['SHIPPED', 0, -60.78, 60.78, ['30% bij bestelling'], 'paid', { label: 'Betaald · verrekend met 30% bij bestelling', tone: 'ok' }, null, false, false],
+  ]);
+  assert.deepEqual(book.todos, []);
+  assert.equal(book.summary.headline.kind, 'done');
+});
+
+test('a term settled on its own stays out of the netting: its overrun is confirmed and the other shortfall stays open', () => {
+  // The ledger adds no netting of its own: with the server's figures for a closed 30 % term, the 70 % gap is still due.
+  const view = purchase({ status: 'ONTVANGEN', streams: [stream('SUPPLIER', { plannedEur: 31_048.04, paidEur: 31_048.54, remainingEur: 60.78, overpaidEur: 61.28 })],
+    instalments: [instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 61.28, explicitlySettled: true, finalized: true }),
+      instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_672.85, remainingEur: 60.78 })] });
+  const book = ledger(view, [payment(1, { amountEur: 9_375.69, instalmentDue: 'ORDERED', settles: true }), payment(2, { amountEur: 21_672.85, instalmentDue: 'SHIPPED' })], null);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.openEur, supplier.dueNowEur, supplier.differenceEur, supplier.balanced], [60.78, 60.78, 61.28, true]);
+  assert.deepEqual(termView(book), [
+    ['ORDERED', 0, 61.28, 0, [], 'paid', { label: 'Afgerekend · meer betaald', tone: 'neutral' }, null, false, false],
+    ['SHIPPED', 60.78, 0, 0, [], 'due', { label: 'Deels betaald', tone: 'warn' }, null, true, false],
+  ]);
+  assert.deepEqual(supplier.settleDefault, { payee: 'SUPPLIER', scope: 'TERM', due: 'SHIPPED' }, 'nothing netted: the one open term is settled on its own as before');
+});
+
+test('the CIF sea freight term can be covered by the goods terms, and names both', () => {
+  const view = purchase({ status: 'ONTVANGEN', streams: [stream('SUPPLIER', { plannedEur: 1200, paidEur: 1200, finalized: true }), stream('LOGISTICS')],
+    instalments: [instalment('ORDERED', { plannedEur: 300, paidEur: 330, finalized: true, offsetEur: -30 }),
+      instalment('SHIPPED', { plannedEur: 700, paidEur: 720, finalized: true, offsetEur: -20 }),
+      instalment('FREIGHT', { plannedEur: 200, paidEur: 150, finalized: true, offsetEur: 50 })] });
+  const book = ledger(view, [payment(1, { amountEur: 330, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 720, instalmentDue: 'SHIPPED' }),
+    payment(3, { amountEur: 150, instalmentDue: 'FREIGHT' })], null);
+  const freight = of(book, 'SUPPLIER').terms[2];
+  assert.deepEqual(spaced([freight.label, freight.differenceEur, freight.offsetWith, freight.status.label]),
+    ['Zeevracht (CIF)', -50, ['30% bij bestelling', '70% bij vertrek'], 'Betaald · verrekend met 30% bij bestelling en 70% bij vertrek']);
+  assert.deepEqual([of(book, 'SUPPLIER').status.kind, of(book, 'SUPPLIER').differenceEur, book.todos.length], ['PAID', 0, 0]);
 });

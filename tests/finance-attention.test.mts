@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CompanyCost } from '../src/app/core/api/models.ts';
+import type { CompanyCost, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import { costLedger, filterCostLedger } from '../src/app/features/finance/cost-ledger.ts';
+import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { financeAttention } from '../src/app/features/finance/finance-attention.ts';
 import type { AttentionInput } from '../src/app/features/finance/finance-attention.ts';
 
@@ -117,4 +118,27 @@ test('singular and plural wording', () => {
   assert.deepEqual(many.map((item) => item.title), ['3 containertermijnen nu te betalen', '2 vaste kosten staan klaar om te boeken',
     '2 factuurbetalingen zonder rekening', '2 betalingen nog niet op de bank']);
   assert.equal(many.find((item) => item.kind === 'recurring-due')?.action, 'book');
+});
+
+test('PO 35: terms the server netted raise no container-due item; a rest it leaves open does', () => {
+  // As finance-state builds containerNow: the container payables due now, summed.
+  const po35 = (shippedRemaining: number) => ({
+    order: { id: 35, number: 'PO-2026-002', alias: null, status: 'ONTVANGEN', archivedAt: null },
+    reconciliation: { totals: {}, lines: [], notes: [], streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: shippedRemaining > 0 ? 'PARTIAL' : 'OVERPAID',
+      plannedEur: 31048.04, paidEur: 31048.54, remainingEur: shippedRemaining, forecastEur: 31048.54 + shippedRemaining, varianceEur: 0.5 + shippedRemaining,
+      overpaidEur: shippedRemaining > 0 ? 0 : 0.5, settledSavingEur: 0, explicitlySettled: false, finalized: false, paymentCount: 2 }],
+    supplierInstalments: [
+      { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 9314.41, paidEur: 9375.69, remainingEur: 0, settledSavingEur: 0,
+        overpaidEur: shippedRemaining > 0 ? 0 : 0.5, explicitlySettled: false, finalized: shippedRemaining > 0, offsetEur: -60.78 },
+      { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 21733.63, paidEur: 21672.85, remainingEur: shippedRemaining, settledSavingEur: 0,
+        overpaidEur: 0, explicitlySettled: false, finalized: shippedRemaining === 0, offsetEur: 60.78 },
+    ] },
+  }) as unknown as PurchaseOrderView;
+  const containerNow = (view: PurchaseOrderView) => {
+    const rows = containerPayables([view]).filter((row) => row.bucket === 'now');
+    return { count: rows.length, eur: Math.round(rows.reduce((sum, row) => sum + row.remainingEur, 0) * 100) / 100 };
+  };
+  assert.deepEqual(kinds({ containerNow: containerNow(po35(0)) }), []);
+  const [rest] = financeAttention({ ...clear, containerNow: containerNow(po35(10)) });
+  assert.deepEqual([rest.kind, rest.count, rest.amountEur], ['container-due', 1, 10]);
 });

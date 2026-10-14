@@ -15,11 +15,17 @@ export interface PurchaseInstalmentState {
   amount: number;
   full: number;
   covered: number;
+  /** Netted with the other terms (server offsetEur): + another term's surplus covered this term, − this surplus covered another. */
+  offset: number;
   settled: boolean;
   state: 'paid' | 'due' | 'later';
 }
 
-/** The server owns allocation and settlement. A smaller settled term is not a fully paid plan. */
+/**
+ * The server owns allocation, netting and settlement. A smaller settled term
+ * is not a fully paid plan; a term whose shortfall another term's surplus
+ * covered is paid, and the open amount of a term is always the netted one.
+ */
 export function purchaseInstalmentState(
   view: PurchaseOrderView, plan: readonly Instalment[], payments: readonly PurchasePayment[] | null,
 ): PurchaseInstalmentState[] {
@@ -28,12 +34,15 @@ export function purchaseInstalmentState(
     : due === 'SHIPPED' || due === 'FREIGHT' ? ['ONDERWEG', 'ONTVANGEN'].includes(view.order.status) : view.order.status === 'ONTVANGEN';
   if (view.reconciliation?.supplierInstalments) {
     if (!view.reconciliation.supplierInstalments.some(term => term.plannedEur > 0)) return [];
-    return view.reconciliation.supplierInstalments.map(term => ({
-      due: term.due, label: term.label, full: term.plannedEur, covered: term.paidEur,
-      amount: term.remainingEur, settled: term.explicitlySettled && term.finalized,
-      state: term.remainingEur === 0 && (term.finalized || term.paidEur >= term.plannedEur)
-        ? 'paid' : reached(term.due) ? 'due' : 'later',
-    }));
+    return view.reconciliation.supplierInstalments.map(term => {
+      const offset = Number.isFinite(term.offsetEur) ? term.offsetEur as number : 0;
+      return {
+        due: term.due, label: term.label, full: term.plannedEur, covered: term.paidEur, offset,
+        amount: term.remainingEur, settled: term.explicitlySettled && term.finalized,
+        state: term.remainingEur === 0 && (term.finalized || term.paidEur + offset >= term.plannedEur - 0.005)
+          ? 'paid' : reached(term.due) ? 'due' : 'later',
+      };
+    });
   }
   // Compatibility with the former API. Never guess allocations for a scoped payment.
   if (payments === null || payments.some(payment => payment.instalmentDue != null)) return [];
@@ -52,7 +61,7 @@ export function purchaseInstalmentState(
     const covered = Math.min(full, left);
     left -= covered;
     const open = settled ? 0 : Math.max(0, full - covered);
-    return { due: step.due, label: step.label, full: full / 100, covered: covered / 100,
+    return { due: step.due, label: step.label, full: full / 100, covered: covered / 100, offset: 0,
       amount: open / 100, settled: !!settled, state: open === 0 ? 'paid' : reached(step.due) ? 'due' : 'later' };
   });
 }

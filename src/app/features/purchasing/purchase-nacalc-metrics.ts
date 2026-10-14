@@ -22,7 +22,7 @@ export type { NacalcKind, NacalcTone } from './purchase-payment-result-metrics';
  */
 
 export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' | 'settled-higher' | 'review' | 'additional'
-  | 'unbudgeted' | 'incomplete' | 'legacy' | 'credit';
+  | 'unbudgeted' | 'incomplete' | 'legacy' | 'credit' | 'offset';
 
 export interface NacalcHeadline {
   kind: NacalcKind;
@@ -204,7 +204,11 @@ export interface PurchaseNacalcInput {
   partner?: PartnerFinancing | null;
 }
 
-/** The static words per reason; 'open', 'partly-settled' and 'legacy' carry an amount and are formatted by nacalcReason. */
+/**
+ * The static words per reason; 'open', 'partly-settled' and 'legacy' carry an
+ * amount and are formatted by nacalcReason, 'offset' names the other terms
+ * (termRow).
+ */
 export const NACALC_REASON_LABEL: Readonly<Record<NacalcReason, string>> = {
   none: 'geen verschil',
   open: 'nog open',
@@ -217,6 +221,7 @@ export const NACALC_REASON_LABEL: Readonly<Record<NacalcReason, string>> = {
   incomplete: 'bedragen onvolledig',
   legacy: 'historisch betaald bij ontvangst · niet in het logboek',
   credit: 'tegoed leverancier',
+  offset: 'verrekend',
 };
 
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -225,6 +230,9 @@ const cents = (value: number | null | undefined): number => Number.isFinite(valu
 const euro = (value: number): number => value / 100;
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 const sum = (values: readonly number[]): number => values.reduce((total, value) => total + value, 0);
+/** 'a', 'a en b', 'a, b en c': the same join as the ledger's term words. */
+const listNl = (items: readonly string[]): string =>
+  items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' en ' + items[items.length - 1];
 
 /**
  * The supplier's credits in cents: the server totals first, the supplier
@@ -426,22 +434,31 @@ function payeeRow(
   };
 }
 
-/** The supplier's terms tell their own story once one of them carries a difference the others do not. */
+/**
+ * The supplier's terms tell their own story once one of them carries a
+ * difference the others do not, or the other way round (one paid more, the
+ * next less, netted).
+ */
 function termsMixed(terms: readonly LedgerTerm[]): boolean {
-  if (terms.length < 2 || !terms.some(term => term.lowerEur > 0 || term.higherEur > 0)) return false;
-  return new Set(terms.map(term => `${term.state}|${term.settled}|${term.lowerEur > 0 || term.higherEur > 0}`)).size > 1;
+  if (terms.length < 2 || !terms.some(term => cents(term.differenceEur) !== 0)) return false;
+  return new Set(terms.map(term => `${term.state}|${term.settled}|${Math.sign(cents(term.differenceEur))}`)).size > 1;
 }
 
 function termRow(term: LedgerTerm): NacalcTermRow {
   const open = cents(term.openEur);
+  const offset = cents(term.offsetEur);
+  const verrekend = 'verrekend met ' + listNl(term.offsetWith);
   let reason: NacalcReason = 'none';
   let label = NACALC_REASON_LABEL.none;
-  if (term.lowerEur > 0 && open === 0) { reason = 'settled-lower'; label = NACALC_REASON_LABEL['settled-lower']; }
+  // A netted term explains its Verschil by the other term; the pill keeps what is left (te veel, afgerekend).
+  if (offset !== 0 && open === 0) { reason = 'offset'; label = verrekend; }
+  else if (term.lowerEur > 0 && open === 0) { reason = 'settled-lower'; label = NACALC_REASON_LABEL['settled-lower']; }
   else if (term.higherEur > 0) { reason = term.finalized ? 'settled-higher' : 'review'; label = NACALC_REASON_LABEL[reason]; }
   else if (open > 0 && term.lowerEur > 0) { reason = 'partly-settled'; label = `deels afgerekend · nog ${eur(term.openEur)} open`; }
   else if (open > 0) {
     reason = 'open';
-    label = term.state === 'due' ? `nog ${eur(term.openEur)} open · nu te betalen` : `nog ${eur(term.openEur)} open · later ${term.moment}`;
+    label = (term.state === 'due' ? `nog ${eur(term.openEur)} open · nu te betalen` : `nog ${eur(term.openEur)} open · later ${term.moment}`)
+      + (offset > 0 ? ` · ${eur(euro(offset))} ${verrekend}` : '');
   }
   return {
     due: term.due,
@@ -449,7 +466,7 @@ function termRow(term: LedgerTerm): NacalcTermRow {
     agreedEur: term.fullEur,
     paidEur: term.paidEur,
     openEur: term.openEur,
-    verschilEur: euro(cents(term.higherEur) - cents(term.lowerEur)),
+    verschilEur: euro(cents(term.differenceEur)),
     reason,
     reasonLabel: label,
     status: term.status,

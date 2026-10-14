@@ -1643,6 +1643,13 @@ export interface PurchaseReconciliation {
   supplierInstalments?: PurchaseInstalmentReconciliation[];
 }
 
+/**
+ * One supplier term as the server reconciles it. The terms of a payee net:
+ * a surplus on one term covers a shortfall on another, so remainingEur,
+ * overpaidEur and settledSavingEur are the netted figures and paidEur stays
+ * what was booked on the term. A term settled on its own stays out of the
+ * netting.
+ */
 export interface PurchaseInstalmentReconciliation {
   due: Instalment['due'];
   label: string;
@@ -1653,6 +1660,12 @@ export interface PurchaseInstalmentReconciliation {
   overpaidEur: number;
   explicitlySettled: boolean;
   finalized: boolean;
+  /**
+   * Netted with the payee's other terms: above zero another term's surplus
+   * covered this shortfall, below zero this surplus covered another term.
+   * Missing in an older response, which counts as zero.
+   */
+  offsetEur?: number;
 }
 
 /* ----------------------------------------------------------------- sales */

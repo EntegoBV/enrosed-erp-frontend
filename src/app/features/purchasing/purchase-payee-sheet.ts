@@ -52,9 +52,10 @@ import {
             <div class="ios-group">
               @for (term of item.terms; track term.due) {
                 <button class="ios-cell" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span></span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}@if (term.differenceEur) { · {{ abs(term.differenceEur) | eur }} {{ term.differenceEur < 0 ? 'minder' : 'meer' }} }</span>
+                    @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
                   <span class="ios-cell__trail">
-                    @if (termActionable(term)) { <span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span> }
+                    @if (termActionable(term) || term.status.tone === 'warn') { <span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span> }
                     @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ term.status.label }}</span> }
                   </span>
                   @if (termTappable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
@@ -188,6 +189,7 @@ export class PurchasePayeeSheet {
   readonly tone = toneClass;
   readonly day = dayOf;
   readonly month = monthOf;
+  readonly abs = Math.abs;
   readonly proofLine = proofLine;
   readonly basis = computed(() => {
     const payee = this.payee();
@@ -253,7 +255,7 @@ export class PurchasePayeeSheet {
     switch (item.id) {
       case 'edit': this.act('edit', row.payment); break;
       case 'proof': this.close(() => this.proof.emit(row.payment)); break;
-      case 'settle': this.close(() => this.settle.emit(settleWith(row))); break;
+      case 'settle': this.close(() => this.settle.emit(settleWith(row, this.payee().terms))); break;
       case 'remove': this.close(() => this.remove.emit(row.payment)); break;
     }
   }
