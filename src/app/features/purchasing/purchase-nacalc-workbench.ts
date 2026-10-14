@@ -169,7 +169,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
                               <span class="wk-td" role="gridcell"></span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell" [class.wk-amount--in]="term.verschilEur < 0" [class.wk-amount--warn]="term.verschilEur > 0" [class.wk-amount--muted]="term.verschilEur === 0">{{ signed(term.verschilEur) }}@if (reasonBeyondStatus(term.reason)) { <span class="wk-td__sub nc-reason">{{ term.reasonLabel }}</span> }</span>
-                              <span class="wk-td" role="gridcell" data-nc-hide="mid"><span class="wk-pill" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
+                              <span class="wk-td wk-td--wrap" role="gridcell" data-nc-hide="mid"><span class="wk-pill" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
                               <span class="wk-td" role="gridcell"></span>
                             </div>
                           }

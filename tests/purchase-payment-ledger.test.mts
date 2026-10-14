@@ -531,6 +531,8 @@ test('PO 35: the surplus on the 30 % term covers the 70 % shortfall, so nothing 
   ]);
   assert.equal(cents(supplier.terms.reduce((sum, term) => sum + term.differenceEur, 0)), cents(supplier.differenceEur),
     'the terms add up to the payee Verschil');
+  // The desk's narrow Status column keeps the pill short and puts the rest of the same words under it.
+  assert.deepEqual(supplier.terms.map(term => term.statusSplit), [null, { pill: 'Betaald · verrekend', rest: 'met 30% bij bestelling' }]);
   assert.deepEqual(book.todos, [{ kind: 'review', key: 'review:SUPPLIER', payee: 'SUPPLIER', amountEur: 0.5,
     request: { payee: 'SUPPLIER', scope: 'GROUP', due: null } }], 'only the review item, nothing to pay');
   const summary = book.summary;
@@ -620,6 +622,7 @@ test('the CIF sea freight term can be covered by the goods terms, and names both
   const freight = of(book, 'SUPPLIER').terms[2];
   assert.deepEqual(spaced([freight.label, freight.differenceEur, freight.offsetWith, freight.status.label]),
     ['Zeevracht (CIF)', -50, ['30% bij bestelling', '70% bij vertrek'], 'Betaald · verrekend met 30% bij bestelling en 70% bij vertrek']);
+  assert.deepEqual(freight.statusSplit, { pill: 'Betaald · verrekend', rest: 'met 30% bij bestelling en 70% bij vertrek' });
   assert.deepEqual([of(book, 'SUPPLIER').status.kind, of(book, 'SUPPLIER').differenceEur, book.todos.length], ['PAID', 0, 0]);
 });
 

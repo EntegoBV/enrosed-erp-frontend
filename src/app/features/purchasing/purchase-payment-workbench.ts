@@ -126,7 +126,7 @@ type MenuState =
             <div class="pw-content" [class.is-loading]="state() === 'refreshing'" [attr.inert]="state() === 'refreshing' ? '' : null" [attr.aria-busy]="state() === 'refreshing'">
               <div class="pw-main">
                 <div class="pw-summary">
-                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@if (sum.lowerEur > 0) { − {{ sum.lowerEur | eur }} minder betaald }@if (sum.higherEur > 0) { + {{ sum.higherEur | eur }} meer betaald } = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
+                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@if (sum.lowerEur > 0) { − {{ sum.lowerEur | eur }} minder betaald}@if (sum.higherEur > 0) { + {{ sum.higherEur | eur }} meer betaald} = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
                   @if (sum.agreedEur > 0) {
                     <div class="pw-meter">
                       <div class="wk-meter" role="img" [attr.aria-label]="'Betaald ' + pct(sum.meter.paidPct) + '%, nu te betalen ' + pct(sum.meter.duePct) + '%, later ' + pct(sum.meter.laterPct) + '%'">
@@ -210,7 +210,8 @@ type MenuState =
                               }
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (term.state === 'due' && !term.settled && term.openEur > 0) { {{ term.openEur | eur }} }</span>
-                              <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(term.status.tone)">{{ term.status.label }}</span>
+                              <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(term.status.tone)">{{ term.statusSplit?.pill ?? term.status.label }}</span>
+                                @if (term.statusSplit; as split) { <span class="wk-td__sub pw-status-sub">{{ split.rest }}</span> }
                                 @if (term.statusNote) { <span class="wk-td__sub pw-status-sub">{{ term.statusNote }}</span> }</span>
                               <span class="wk-td wk-td--actions" role="gridcell">
                                 @if (term.openEur > 0 && !term.settled) {

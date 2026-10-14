@@ -51,7 +51,7 @@ import {
             <div class="ios-section__head"><h2>Termijnen</h2></div>
             <div class="ios-group">
               @for (term of item.terms; track term.due) {
-                <button class="ios-cell" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
+                <button class="ios-cell payee-sheet__term" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}@if (term.differenceEur) { · {{ abs(term.differenceEur) | eur }} {{ term.differenceEur < 0 ? 'minder' : 'meer' }} }</span>
                     @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
                   <span class="ios-cell__trail">

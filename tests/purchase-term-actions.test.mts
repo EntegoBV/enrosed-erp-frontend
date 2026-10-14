@@ -108,7 +108,7 @@ test('the term menu offers pay, settle or confirm, per-term undo and the tied pa
     due: 'SHIPPED', label: '70% bij vertrek', moment: 'bij vertrek', fullEur: 700, paidEur: 700, openEur: 0, lowerEur: 0, higherEur: 0,
     differenceEur: 0, offsetEur: 0, offsetWith: [],
     settled: false, finalized: true, state: 'paid', hasScopedPayment: true, paymentIds: [2], canSettle: false, canConfirm: true, canUndo: false,
-    status: { label: 'Betaald', tone: 'ok' }, statusNote: null,
+    status: { label: 'Betaald', tone: 'ok' }, statusNote: null, statusSplit: null,
   };
   assert.deepEqual(ids(termMenuItems(base, false)), ['settle', 'edit']);
   assert.equal(termMenuItems(base, false).find(item => item.id === 'settle')!.label, 'Termijn afrekenen');

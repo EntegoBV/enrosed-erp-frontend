@@ -211,6 +211,11 @@ export interface LedgerTerm {
   status: { label: string; tone: LedgerTone };
   /** What the pill leaves out, e.g. '€ 60,78 verrekend met 70% bij vertrek'; null when it says it all. */
   statusNote: string | null;
+  /**
+   * The same words for the desk's narrow Status column: the pill keeps 'Betaald · verrekend' and 'met 30% bij
+   * bestelling' goes on the line under it. Null when the label is short enough to stand as one pill.
+   */
+  statusSplit: { pill: string; rest: string } | null;
 }
 
 export interface CompositionLine { label: string; amountEur: number; hint: string | null; rounding: boolean }
@@ -782,6 +787,7 @@ function ledgerTerms(
       canUndo: scoped.some(payment => payment.settles),
       status,
       statusNote: offset !== 0 && !concept && !status.label.includes(verrekend) ? `${eur(Math.abs(offset))} ${verrekend}` : null,
+      statusSplit: status.label === 'Betaald · ' + verrekend ? { pill: 'Betaald · verrekend', rest: 'met ' + listNl(offsetWith) } : null,
     };
   });
 }

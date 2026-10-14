@@ -124,7 +124,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   @for (todo of todos(); track todo.key) {
                     <div class="ios-cell">
                       <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [class]="todoTone(todo)"><app-icon [name]="todoIcon(todo)" [size]="17" /></span></span>
-                      <span class="ios-cell__body"><span class="ios-cell__title">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
                       <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy() && todo.kind !== 'proof' && todo.kind !== 'incomplete'" (click)="runTodo(todo)">{{ todoAction(todo) }}</button>
                     </div>
                   }
