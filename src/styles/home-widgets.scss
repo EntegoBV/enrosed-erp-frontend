@@ -1,0 +1,150 @@
+/* ==========================================================================
+   Home figure blocks (spec-home §6): the shared frame (app-home-w), the
+   blocks and the Kas card and hero. Desk = wk-card + .home-w--desk, phone =
+   ios-widget + .home-w--phone; the pages place them (home-desk.scss,
+   home-phone.scss), the hosts are display:contents so the card itself is
+   the grid item.
+
+   One tap target per block: the title link (.home-w__go) is stretched over
+   the card; an inline link or "Opnieuw" sits above it (.home-w__raise),
+   never inside it. A block is a size container - it holds no sheet, menu or
+   bell, so the kit's trap rule does not bite - and its figure row follows
+   its own width on every page layout. Amounts and counts never wrap or cut.
+   ========================================================================== */
+
+app-dashboard-home, app-home-desk, app-home-phone { display: block; }
+app-home-w, app-home-kas, app-home-verkoop, app-home-inkoop, app-home-resultaat, app-home-ontvangen, app-home-voorraad, app-home-partners,
+app-home-website, app-home-markt { display: contents; }
+/* In an ios-group the row's host carries the group's separator line. */
+.ios-group > app-home-markt { display: block; }
+
+/* ---- frame */
+.home-w { position: relative; container-type: inline-size; display: grid; align-content: start; gap: 9px; min-width: 0; color: var(--ink); text-align: left; }
+.home-w--desk { padding: 13px 16px 15px; }
+.home-w--desk:hover { border-color: var(--rose-line); }
+.home-w--phone { gap: 8px; }
+.home-w__head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+.home-w__names { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+/* A half-width phone block: the icon above the title, so a long title ("Gerealiseerd partnerresultaat") keeps its words whole. */
+.home-w--phone:not(.ios-widget--wide) .home-w__head { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'icon . chev' 'names names names'; row-gap: 6px; }
+.home-w--phone:not(.ios-widget--wide) .home-w__icon { grid-area: icon; }
+.home-w--phone:not(.ios-widget--wide) .home-w__names { grid-area: names; }
+.home-w--phone:not(.ios-widget--wide) .home-w__chev { grid-area: chev; }
+.home-w__icon { width: 26px; height: 26px; border-radius: 8px; }
+.home-w--phone .home-w__icon { width: 24px; height: 24px; border-radius: 7px; }
+.home-w__title { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
+.home-w--phone .home-w__title { font-size: 13.5px; }
+.home-w__go { color: inherit; text-decoration: none; }
+.home-w__go::after { content: ''; position: absolute; inset: 0; z-index: 0; border-radius: 16px; }
+.home-w--phone .home-w__go::after { border-radius: 20px; }
+.home-w__go:focus-visible { outline: 0; }
+.home-w__go:focus-visible::after { outline: 3px solid color-mix(in srgb, var(--rose) 45%, transparent); outline-offset: 2px; }
+.home-w__sub { color: var(--muted); font-size: 12px; font-weight: 500; }
+.home-w__chev { color: var(--muted-2); font-size: 17px; line-height: 1; }
+.home-w__raise { position: relative; z-index: 1; }
+.home-w__failed { display: flex; align-items: center; gap: 12px; margin: 0; }
+.home-w__retry { min-height: 30px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--rose-dark);
+  font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+.home-w--phone .home-w__retry { min-height: 44px; padding: 0 16px; border-radius: 12px; font-size: 15px; }
+.home-w__retry:disabled { opacity: .5; cursor: default; }
+.home-w__loading { display: grid; gap: 2px; }
+
+/* ---- figures */
+.home-w__lead { display: grid; gap: 2px; min-width: 0; }
+.home-w__value { font-size: 26px; font-weight: 760; font-variant-numeric: tabular-nums; letter-spacing: -.025em; line-height: 1.1; white-space: nowrap; }
+.home-w--phone .home-w__value { font-size: 22px; }
+.home-w__value--none { color: var(--muted-2); }
+.home-w__line { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.home-w__line.is-warn { color: var(--warn); font-weight: 600; }
+.home-w__delta { color: var(--muted); font-size: 12px; font-weight: 600; }
+.home-w__delta.is-up { color: var(--ok); }
+.home-w__delta.is-down { color: var(--warn); }
+.home-w__empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+.home-w__split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px 14px; }
+.home-w__figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.home-w__fig { display: grid; align-content: start; gap: 1px; min-width: 0; color: inherit; text-decoration: none; }
+.home-w__fig-label { color: var(--muted); font-size: 11.5px; font-weight: 650; }
+.home-w__fig-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
+.home-w__fig-value--text { font-size: 13px; font-weight: 650; white-space: normal; }
+.home-w__fig-sub { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+.home-w__fig.is-warn .home-w__fig-value { color: var(--warn); }
+.home-w__fig.is-danger .home-w__fig-value { color: var(--danger); }
+.home-w__fig--link .home-w__fig-label { color: var(--rose-dark); }
+.home-w__fig--link:hover .home-w__fig-value { text-decoration: underline; text-underline-offset: 3px; }
+.home-w__figs-wide { grid-column: 1 / -1; align-self: center; }
+@container (min-width: 430px) {
+  .home-w__figs--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .home-w__figs--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 249.98px) {
+  .home-w__split { grid-template-columns: minmax(0, 1fr); }
+  .home-w__value { font-size: 23px; }
+  .home-w__fig-value { font-size: 14px; }
+}
+
+/* ---- bars (Verkoop months, Website days) */
+.home-w__bars { display: flex; align-items: stretch; gap: 5px; height: 56px; min-width: 0; }
+.home-w__bar-col { display: grid; flex: 1 1 0; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 3px; min-width: 0; }
+.home-w__bar { align-self: end; width: 100%; min-height: 3px; border-radius: 4px 4px 1px 1px; background: color-mix(in srgb, #3b945a 30%, var(--surface)); }
+.home-w__bar.is-current { background: repeating-linear-gradient(135deg, color-mix(in srgb, #3b945a 62%, var(--surface)) 0 3px, color-mix(in srgb, #3b945a 24%, var(--surface)) 3px 6px); }
+.home-w__bar-col small { color: var(--muted); font-size: 10.5px; line-height: 1; }
+.home-w--website .home-w__bar { background: color-mix(in srgb, #3b76b3 24%, var(--surface)); }
+.home-w--website .home-w__bar.is-current { background: #3b76b3; }
+
+/* ---- Inkoop & containers: the next arrivals */
+.home-w__events { display: grid; margin: 0; padding: 0; list-style: none; }
+.home-w__event { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 10px; padding: 5px 0 6px; color: inherit; font-size: 12.5px; text-decoration: none; }
+.home-w__event-name { min-width: 0; color: var(--muted); }
+.home-w__event-name b { color: var(--ink); font-weight: 650; }
+.home-w__event:hover .home-w__event-name b { text-decoration: underline; text-underline-offset: 2px; }
+.home-w__event-when { color: #3b76b3; font-weight: 650; white-space: nowrap; }
+.home-w__event-when.is-late { color: var(--warn); }
+.home-w__progress { grid-column: 1 / -1; height: 3px; overflow: hidden; border-radius: 2px; background: var(--line); }
+.home-w__progress > i { display: block; height: 100%; border-radius: inherit; background: #3b76b3; }
+
+/* ---- dark (Resultaat below zero) */
+.home-w--dark { border-color: #302a27; background: #272220; color: #fff; }
+.home-w--dark :is(.home-w__sub, .home-w__line, .home-w__chev) { color: #cfc7c2; }
+.home-w--dark .home-w__line.is-warn { color: #f4cf9a; }
+.home-w--dark .home-w__icon { background: #3b3431; color: #e8b7c0; }
+
+/* ---- Markt */
+.home-w__rates { display: grid; gap: 6px; margin: 0; }
+.home-w__rates > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.home-w__rates dt { color: var(--ink-2); font-size: 12.5px; font-weight: 600; }
+.home-w__rates dd { display: flex; align-items: baseline; gap: 6px; margin: 0 0 0 auto; white-space: nowrap; }
+.home-w__rates b { font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.home-w__rates small { color: var(--muted); font-size: 11.5px; }
+.home-w__rates small.is-up { color: var(--ok); }
+.home-markt__lines { display: grid; color: var(--muted); font-size: 13px; line-height: 1.35; }
+.home-markt__lines b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- Kas, desk */
+.home-kas__go { color: var(--rose-dark); font-size: 12.5px; font-weight: 650; white-space: nowrap; }
+.home-kas__top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 18px; }
+.home-kas__bank { display: grid; gap: 2px; }
+.home-kas__value { font-size: 30px; font-weight: 760; font-variant-numeric: tabular-nums; letter-spacing: -.03em; line-height: 1.1; white-space: nowrap; }
+.home-kas__sub { color: var(--muted); font-size: 12px; }
+.home-kas__sub.is-warn { color: var(--warn); font-weight: 600; }
+.home-kas__accounts { display: grid; justify-items: end; gap: 1px; margin: 0; padding: 0; color: var(--muted); font-size: 12px; list-style: none; }
+.home-kas__accounts li { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 6px; }
+.home-kas__accounts b { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-kas__accounts .is-warn, .home-kas__accounts .is-warn b { color: var(--warn); }
+.home-kas__chart { margin: -2px -4px 0; pointer-events: none; }
+.home-kas__note { grid-column: span 2; align-self: center; margin: 0; color: var(--muted); font-size: 12.5px; }
+.home-kas__note.is-warn { color: var(--warn); font-weight: 600; }
+
+/* ---- Kas, phone hero (kit .ios-hero) */
+.home-kas-hero > span { display: block; }
+.home-kas-hero:disabled { cursor: default; }
+.home-kas-hero__spark { display: block; width: 100%; height: 54px; margin: 10px 0; overflow: visible; }
+.home-kas-hero__line { fill: none; stroke: #f0c4cd; stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.home-kas-hero__buffer { stroke: rgb(255 255 255 / 42%); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.home-kas-hero__band { fill: rgb(244 207 154 / 15%); }
+.home-kas-hero > .home-kas-hero__figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.home-kas-hero__fig { display: grid; align-content: start; gap: 1px; min-width: 0; }
+.home-kas-hero__fig small { color: rgb(255 255 255 / 66%); font-size: 12px; font-weight: 600; }
+.home-kas-hero__fig b { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
+.home-kas-hero__fig b.is-text { font-size: 14px; white-space: normal; }
+.home-kas-hero__fig b.is-warn { color: #f4cf9a; }
+.home-kas-hero__fig span { color: rgb(255 255 255 / 72%); font-size: 12.5px; line-height: 1.3; }
