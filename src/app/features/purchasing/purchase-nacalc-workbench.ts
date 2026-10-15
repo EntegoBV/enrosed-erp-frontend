@@ -304,9 +304,10 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                         <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0" [class.wk-amount--muted]="row.verschilEur === 0">{{ row.verschilEur === 0 ? '—' : signed(row.verschilEur) }}</span>
                         @let unit = productUnit(row, head.setBasis);
                         @let pricing = productPricing(row, head.setBasis);
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (unit) { {{ unit.main }}@if (unit.sub) { <span class="wk-td__sub">{{ unit.sub }}</span> } } @else { — }
+                        <!-- The figure on its own line and its unit on a small line under it, as in the total row: '€ 30,9600 /display' is wider than the column. -->
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (unit) { {{ unit.amount }}@if (unit.per) { <span class="wk-td__sub">{{ unit.per }}</span> }@if (unit.sub) { <span class="wk-td__sub">{{ unit.sub }}</span> } } @else { — }
                           @if (pricing) { <span class="wk-td__sub nc-when-mid">{{ pricing.main }} incl. Enrosed kost</span> }</span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (pricing) { {{ pricing.main }}@if (pricing.sub) { <span class="wk-td__sub">{{ pricing.sub }}</span> } } @else { — }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (pricing) { {{ pricing.amount }}@if (pricing.per) { <span class="wk-td__sub">{{ pricing.per }}</span> }@if (pricing.sub) { <span class="wk-td__sub">{{ pricing.sub }}</span> } } @else { — }</span>
                       </div>
                     }
                     <div class="wk-tr wk-tr--total" role="row">

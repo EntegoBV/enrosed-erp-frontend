@@ -865,14 +865,19 @@ export function nacalcPartnerShortage(partner: NacalcPartner, head: Pick<NacalcH
     + (partner.shortageAfterAdvance ? ` Het voorschot is berekend op ${count(partner.ordered)} bestelde ${head.unitPlural}; verreken het verschil bij de slotfactuur of met een creditnota op het voorschot.` : '');
 }
 
-/** A product's unit cost: '€ 31,2000 /display' with '€ 2,6000 /stuk' under it, '€ 5,0000 /stuk' beside displays, a plain figure in a container of pieces. */
+/**
+ * A product's unit cost: '€ 31,2000 /display' with '€ 2,6000 /stuk' under it, '€ 5,0000 /stuk' beside displays, a plain figure in a
+ * container of pieces. `main` is the one-line form; a table cell shows `amount` with `per` on its own small line under it, as the
+ * total row does, so a 92 px column never cuts '€ 30,9600 /dis…'.
+ */
 export function nacalcProductUnit(row: Pick<NacalcProductRow, 'set' | 'unitEur' | 'unitPieceEur' | 'unitQuantity'>, basis: NacalcSetBasis,
-  value: 'cost' | 'pricing' = 'cost', pricing?: { unit: number | null; piece: number | null }): { main: string; sub: string | null } | null {
+  value: 'cost' | 'pricing' = 'cost', pricing?: { unit: number | null; piece: number | null }): { main: string; amount: string; per: string | null; sub: string | null } | null {
   const unit = value === 'pricing' ? pricing?.unit ?? null : row.unitEur;
   const piece = value === 'pricing' ? pricing?.piece ?? null : row.unitPieceEur;
   if (unit === null || row.unitQuantity === 0) return null;
-  if (row.set) return { main: `${eur4(unit)} /display`, sub: piece !== null ? `${eur4(piece)} /stuk` : null };
-  return { main: basis === 'PIECE' ? eur4(unit) : `${eur4(unit)} /stuk`, sub: null };
+  const per = row.set ? '/display' : basis === 'PIECE' ? null : '/stuk';
+  const amount = eur4(unit);
+  return { main: per ? `${amount} ${per}` : amount, amount, per, sub: row.set && piece !== null ? `${eur4(piece)} /stuk` : null };
 }
 
 /** A product's quantity: '100 displays' with '× 12 rozen' under it; a piece product's plain count. */

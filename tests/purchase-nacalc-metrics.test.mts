@@ -733,7 +733,7 @@ test('a display product: the container figure is per display with the piece pric
   assert.equal(nacalcAgreedSub(head), 'calculatie op 100 bestelde displays');
   const product = story(roses(), null).products[0];
   assert.deepEqual(product.set, { pieces: 12, one: 'roos', other: 'rozen' });
-  assert.deepEqual(plain(nacalcProductUnit(product, 'DISPLAY')), { main: '€ 31,2000 /display', sub: '€ 2,6000 /stuk' });
+  assert.deepEqual(plain(nacalcProductUnit(product, 'DISPLAY')), { main: '€ 31,2000 /display', amount: '€ 31,2000', per: '/display', sub: '€ 2,6000 /stuk' });
   assert.deepEqual(nacalcProductCount(product, 100), { main: '100 displays', sub: '× 12 rozen' });
   assert.equal(plain(nacalcProductSub(product, false, 'DISPLAY')), '100 bestelde displays × 12 rozen · € 31,2000/display · € 2,6000/stuk · € 33,6000/display incl. Enrosed kost');
   const summary = purchaseNacalcSummary(roses())!;
@@ -765,7 +765,7 @@ test('displays next to pieces: the container average is per piece, displays coun
     ['Gem. per stuk', 'Per eenheid', 2.9429, 13.7333, 300, 'verkoopeenheden'], 'the sales-unit figures stay as the server sent them');
   assert.equal(nacalcUnitBasis(head), '1.400 stuks · displays als 12 rozen geteld · incl. inspectie');
   assert.equal(nacalcAgreedSub(head), 'calculatie op 300 bestelde verkoopeenheden');
-  assert.deepEqual(plain(nacalcProductUnit(result.products[1], 'MIXED')), { main: '€ 5,0000 /stuk', sub: null });
+  assert.deepEqual(plain(nacalcProductUnit(result.products[1], 'MIXED')), { main: '€ 5,0000 /stuk', amount: '€ 5,0000', per: '/stuk', sub: null });
   // The phone line: beside displays a piece product says '/stuk', and every price incl. Enrosed kost carries its unit.
   assert.equal(plain(nacalcProductSub(result.products[0], false, 'MIXED')), '100 bestelde displays × 12 rozen · € 31,2000/display · € 2,6000/stuk · € 33,6000/display incl. Enrosed kost');
   assert.equal(plain(nacalcProductSub(result.products[1], false, 'MIXED')), '200 bestelde stuks · € 5,0000/stuk · € 5,4000/stuk incl. Enrosed kost');
@@ -780,5 +780,5 @@ test('an older response without the per-display fields reads per stuk, as before
   const head = story(transit().view, null).headline;
   assert.deepEqual([head.setBasis, head.unitLabel, head.stripUnitEur, head.pieceEur], ['PIECE', 'Per stuk', 12.6267, 12.6267]);
   assert.equal(nacalcUnitBasis(head), '5.560 bestelde stuks · incl. inspectie');
-  assert.deepEqual(plain(nacalcProductUnit(story(transit().view, null).products[0], 'PIECE')), { main: '€ 22,0247', sub: null });
+  assert.deepEqual(plain(nacalcProductUnit(story(transit().view, null).products[0], 'PIECE')), { main: '€ 22,0247', amount: '€ 22,0247', per: null, sub: null });
 });

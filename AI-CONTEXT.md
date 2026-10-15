@@ -514,7 +514,10 @@ cijfers'.
   geteld'); the shared words live in purchase-nacalc-metrics.ts
   (`nacalcUnitBasis`, `nacalcProductUnit`, `nacalcReceiptUnitLine`, …). The
   bridge row is 'Correctie naar bestelde aantallen'. Desk and phone product
-  tables label a display product's landed cost '/display' with '€ … /stuk'.
+  tables label a display product's landed cost '/display' with '€ … /stuk'
+  (desk Per product: the figure, then '/display' on its own small line under
+  it like the total row, `nacalcProductUnit().amount`/`.per`; one line cut to
+  '€ 30,9600 /dis…' in the 92 px column at 1440).
 - Round 2 of the payments round (Emre's follow-ups of 2026-10-15; contract
   scratchpad spec-purchase-payments-r2.md, backend AI-CONTEXT 'Round 2').
   A linked transaction carries the payment: one payment (or one open
