@@ -180,7 +180,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
       }
       <section class="ios-section">
         <div class="ios-section__head"><h2>Vraagt aandacht</h2></div>
-        <div class="ios-group ios-group--icons">
+        <div class="ios-group ios-group--icons fin-attention-phone">
           @for (item of phoneAttention(); track item.id) {
             <button class="ios-cell ios-cell--tall" type="button" [disabled]="item.action === 'book' && state.booking()" (click)="act(item)">
               <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft ' + toneClass(item)"><app-icon [name]="item.tone === 'info' ? 'info' : 'alert'" [size]="18" /></span></span>

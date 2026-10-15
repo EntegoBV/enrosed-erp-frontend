@@ -47,7 +47,8 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
               <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="table.stop() === key(view) ? 0 : -1" [attr.data-key]="key(view)" [attr.aria-selected]="table.isSelected(key(view))"
                    [attr.aria-expanded]="expanded().has(view.order.id)" (focus)="table.focused(key(view))" (click)="table.click(key(view), $event)" (dblclick)="toggle(view.order.id)"
                    appMenuTrigger (menuTrigger)="menu(view, $event)">
-                <span class="wk-td" role="gridcell"><b>{{ view.order.number }}</b>{{ view.order.alias ? ' · ' + view.order.alias : '' }}
+                <!-- The alias takes a second line beside the inspector rather than an ellipsis. -->
+                <span class="wk-td wk-td--wrap" role="gridcell"><b>{{ view.order.number }}</b>{{ view.order.alias ? ' · ' + view.order.alias : '' }}
                   @if (view.order.archivedAt) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }</span>
                 <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(view) }}</span></span>
                 <span class="wk-td wk-td--num" role="gridcell" data-hide="sm">{{ row.reconciliation.totals.plannedExternalEur | eur }}</span>
@@ -89,9 +90,10 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
               <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'container', id: row.view.order.id })">
                 <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
                 <span class="ios-cell__body"><span class="ios-cell__title">{{ row.view.order.number }}{{ row.view.order.alias ? ' · ' + row.view.order.alias : '' }}</span>
-                  <span class="ios-cell__sub">Betaald {{ row.reconciliation.totals.paidEur | eur }} · Open {{ row.reconciliation.totals.remainingEur | eur }}</span>
+                  <!-- At 390 each figure keeps its words together and the line breaks at the dot rather than cutting. -->
+                  <span class="ios-cell__sub fin-wrap"><span class="fin-nobreak">Betaald {{ row.reconciliation.totals.paidEur | eur }}</span> · <span class="fin-nobreak">Open {{ row.reconciliation.totals.remainingEur | eur }}</span></span>
                   @let bank = onBank(row.view.order.id);
-                  @if (bank.total) { <span class="ios-cell__sub" [class.fin-warn-text]="bank.missing > 0">Op de bank: {{ bank.linked }} van {{ bank.total }}{{ bank.missing ? ' · ' + bank.missing + ' zonder transactie' : '' }}</span> }</span>
+                  @if (bank.total) { <span class="ios-cell__sub fin-wrap" [class.fin-warn-text]="bank.missing > 0"><span class="fin-nobreak">Op de bank: {{ bank.linked }} van {{ bank.total }}</span>@if (bank.missing) { · <span class="fin-nobreak">{{ bank.missing }} zonder transactie</span> }</span> }</span>
                 <span class="ios-cell__trail"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(row.view) }}</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>

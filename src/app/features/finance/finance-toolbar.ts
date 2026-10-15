@@ -28,7 +28,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
   host: { style: 'display: contents' },
   imports: [Icon, EurPipe, Segmented],
   template: `
-    <header #bar class="wk-toolbar fin-toolbar" [class.wk-toolbar--selection]="selecting()" [class.fin-toolbar--tx]="transactions()">
+    <header #bar class="wk-toolbar fin-toolbar" [class.wk-toolbar--selection]="selecting()" [class.fin-toolbar--tx]="transactions()" [class.fin-toolbar--tabs]="state.location().view === 'costs' || state.location().view === 'open'" [class.fin-toolbar--costs]="state.location().view === 'costs'">
       @if (selecting()) {
         <div class="wk-toolbar__lead">
           <span class="wk-toolbar__count">{{ selected().length }} geselecteerd · {{ selectedIncl() | eur }} incl. btw</span>
@@ -48,8 +48,9 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
       } @else {
         <div class="wk-toolbar__lead">
           <h1 class="wk-toolbar__title fin-toolbar__title" [class.fin-sr]="tight()">{{ title() }}</h1>
-          @if (cockpit() && !compact()) {
-            <span class="fin-toolbar__sub">@if (syncSub()) { <i class="wk-dot tone-ok" aria-hidden="true"></i>{{ syncSub() }} }
+          @if (cockpit()) {
+            <!-- At every desk width (1100 too): the import words may give way, "Odoo: controle nodig ›" never does. -->
+            <span class="fin-toolbar__sub">@if (syncSub()) { <span class="fin-toolbar__sync-text" [attr.title]="syncSub()"><i class="wk-dot tone-ok" aria-hidden="true"></i>{{ syncSub() }}</span> }
               @if (sync.attention()) { <button class="wk-link fin-toolbar__warn" type="button" (click)="sync.sheetOpen.set(true)">Odoo: controle nodig ›</button> }</span>
           }
           @if (transactions()) {

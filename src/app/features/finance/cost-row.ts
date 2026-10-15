@@ -42,7 +42,7 @@ import { daysBetween } from './payables';
           </span>
           <span class="wk-td" role="gridcell">{{ row.description }}@if (regimeNote()) { <span class="wk-pill wk-pill--outline" [title]="regimeNote()">te bevestigen</span> }@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
           <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill tone-teal">Kost</span></span>
-          <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
+          <span class="wk-td wk-td--wrap" role="gridcell"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
           <span class="wk-td fin-clip" role="gridcell" data-hide="md">@if (documents()) { <app-icon name="clip" [size]="14" />{{ documents() }} }</span>
           <span class="wk-td wk-td--num" role="gridcell"><b>{{ open() | eur }}</b>@if (status() === 'partial') { <span class="wk-td__sub">van {{ incl() | eur }}</span> }</span>
           <span class="wk-td wk-td--actions" role="gridcell">
@@ -51,7 +51,7 @@ import { daysBetween } from './payables';
         } @else {
           <span class="wk-td" role="gridcell">{{ date() }}</span>
           <span class="wk-td" role="gridcell">{{ row.description }}@if (row.recurringCostId) { <app-icon class="fin-inline-icon" name="repeat" [size]="13" title="Geboekt als vaste kost" /> }@if (regimeNote()) { <span class="wk-pill wk-pill--outline" [title]="regimeNote()">te bevestigen</span> }@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
-          <span class="wk-td" role="gridcell" data-hide="xs"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
+          <span class="wk-td wk-td--wrap" role="gridcell" data-hide="xs"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
           <span class="wk-td fin-hide-lg" role="gridcell" data-hide="md inspecting">{{ row.reference || '—' }}</span>
           <span class="wk-td fin-hide-lg" role="gridcell" data-hide="md inspecting">{{ row.salesChannel ? channel(row.salesChannel) : '—' }}</span>
           <span class="wk-td fin-clip" role="gridcell" data-hide="md">@if (documents()) { <app-icon name="clip" [size]="14" />{{ documents() }} }@if (banked() !== 'none') { <app-icon name="bank" [size]="14" [attr.title]="bankTitle()" [style.opacity]="banked() === 'some' ? .55 : null" /> }</span>

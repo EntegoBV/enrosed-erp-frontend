@@ -33,7 +33,7 @@ const isoDaysBack = (today: string, back: number): string => new Date(Date.parse
         @if (spark(); as path) {
           <svg class="fin-acct__spark" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true"><path [attr.d]="path" /></svg>
         }
-        <span class="fin-acct__source">{{ source() }}</span>
+        <span class="fin-acct__source">{{ source() }}@if (checked(); as text) { <span class="fin-acct__checked" [class.is-warn]="stale()">{{ text }}</span> }</span>
         <span class="fin-acct__foot">
           <span [class]="'wk-pill ' + (unlinked() > 0 ? 'tone-warn' : count() ? 'tone-ok' : '')">{{ pending() }}</span>
           @if (!a.countsInCash) { <span class="wk-pill wk-pill--outline">telt niet mee in de kasprognose</span> }
@@ -74,6 +74,18 @@ export class BankAccountCard {
     if (!a.reading || a.ageDays === null) return 'Handmatig · nog geen saldo gecontroleerd';
     return `Handmatig · saldo ${a.ageDays === 0 ? 'vandaag' : a.ageDays + ' d geleden'} gecontroleerd`;
   });
+  /**
+   * An Odoo account's last balance check, as the old account row said it ("Saldo 5 d geleden gecontroleerd"):
+   * its transactions come from Odoo, its balance still rests on that check. A manual account says it in source().
+   */
+  readonly checked = computed(() => {
+    const a = this.account();
+    if (a.source !== 'ODOO' || !a.reading) return null;
+    if (a.ageDays === null) return 'Historische saldocontrole';
+    return a.ageDays === 0 ? 'Saldo vandaag gecontroleerd' : a.ageDays === 1 ? 'Saldo gisteren gecontroleerd' : `Saldo ${a.ageDays} d geleden gecontroleerd`;
+  });
+  /** Older than 14 days: warn, as the total tile does. */
+  readonly stale = computed(() => (this.account().ageDays ?? 0) > 14);
   /** The account's end of day over the last 30 days, as a line; null without a known day. */
   readonly spark = computed(() => {
     const input = this.state.cashInput();

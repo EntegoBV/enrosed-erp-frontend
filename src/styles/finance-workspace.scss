@@ -44,6 +44,32 @@
 
   /* ---- desk frame: toolbar title, strip tools, loading */
   .fin-toolbar__title { flex: none; }
+  /*
+   * Inkoop & kosten and Te betalen have four long tabs ("Facturen & kosten" … "Aan wie & beurzen", or with their
+   * counts) beside a search and a wide split. Below 1400 the segmented sizes each tab to its words (the selected one
+   * raised, no sliding indicator) and the search takes 196 px; that keeps every tab clear of the tools at 1440 px
+   * wide (a 1152 px bar) with the title. Narrower, Inkoop & kosten's title steps aside (the sidebar marks the
+   * place), then the search folds to its icon (as the kit does below 900) until the toolbar's short labels take
+   * over below a 940 px bar. Measured from 680 to 1440: nothing slides under the search.
+   */
+  @container wk-bar (max-width: 1399.98px) {
+    .fin-toolbar--tabs .wk-toolbar__lead > .wk-seg { grid-auto-columns: auto;
+      &::before { display: none; }
+      .wk-seg__opt { padding: 0 10px; }
+      .wk-seg__opt[aria-selected='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
+  }
+  @container wk-bar (min-width: 1020px) and (max-width: 1399.98px) { .fin-toolbar--tabs .wk-search { width: 196px; } }
+  @container wk-bar (max-width: 1149.98px) {
+    .fin-toolbar--costs .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+  /* 940–1019: the full labels (and Te betalen's counts) need the room; the search keeps its icon and opens on focus. */
+  @container wk-bar (min-width: 940px) and (max-width: 1019.98px) {
+    .fin-toolbar--tabs .wk-search--collapsible { width: auto;
+      input { width: 32px; padding-right: 0; cursor: pointer; }
+      input::placeholder { color: transparent; }
+      &:focus-within input, input:not(:placeholder-shown) { width: 220px; padding-right: 28px; cursor: text; }
+      &:focus-within input::placeholder { color: var(--muted); } }
+  }
   .fin-strip__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
   .fin-loading { display: grid; gap: 16px; }
   .fin-range { min-width: 280px; }
@@ -194,6 +220,8 @@
     .fin-sum--excl { grid-column: 8; } .fin-sum--vat { grid-column: 9; } .fin-sum--incl { grid-column: 10; } }
   .wk-body--split .fin-table--costs { @include costs-without-reference; }
   .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px; }
+  /* "KBC-zichtrekening · 09/10 ›" takes a second line in its column rather than an ellipsis. */
+  .fin-wrap-link { white-space: normal; text-align: left; }
   /* Ontvangen's "Transactie" and Containers' "Op de bank" (2026-10-16) step aside first: md and xs. */
   .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
   .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
