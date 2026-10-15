@@ -533,3 +533,22 @@ test('the invoice choice travels only when it changed; a server without this rou
   assert.equal('invoiceId' in older.writes[0].body, false);
   assert.deepEqual(older.splits, [{ type: 'links', id: 520, body: { purchasePaymentIds: [80] } }]);
 });
+
+test('an inline new invoice is saved once before the payment; the payment points to it and the inspection part stays automatic', async () => {
+  const { editor, api, writes, uploads } = roundSetup();
+  const invoices: any[] = [];
+  editor.sourcing.addInvoice = async (_order: number, body: any) => { invoices.push(clone(body)); return { id: 7, ...body }; };
+  let fail = true;
+  const post = api.addPayment;
+  api.addPayment = async (id: number, body: any) => { if (fail) { fail = false; throw new Error('Even geen verbinding'); } return post(id, body); };
+  const file = new File(['ci'], 'CI-2026-118.pdf');
+  editor.paying.set({ ...splitDraft(), currency: 'EUR', amount: 10000, amountInput: '10000', amountEur: null, amountEurInput: '', freightAmount: null,
+    freightAmountInput: '', toBank: false, newInvoice: { open: true, number: 'CI-2026-118', invoiceDate: '2026-08-20', amountInput: '31048,04', amount: 31048.04, currency: 'EUR', file } });
+  await editor.confirmPayment();
+  assert.equal(editor.paying().createdInvoiceId, 7, 'the invoice is kept for the retry');
+  await editor.confirmPayment();
+  assert.deepEqual([invoices.length, uploads], [1, ['CI-2026-118.pdf']], 'one invoice, one upload');
+  assert.deepEqual(invoices[0], { payee: 'SUPPLIER', number: 'CI-2026-118', invoiceDate: '2026-08-20', amount: 31048.04, currency: 'EUR', amountEur: null, documentId: 901, notes: null });
+  assert.deepEqual(writes.filter(row => row.type === 'POST payment').map(row => [row.body.payee, row.body.invoiceId, row.body.inspectionViaSupplier ?? false]),
+    [['SUPPLIER', 7, false], ['SUPPLIER', 7, false], ['SEPARATE', null, true]], 'the failed goods POST, its retry on the same invoice, then the inspection');
+});

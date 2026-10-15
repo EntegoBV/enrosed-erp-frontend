@@ -55,7 +55,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             @if (item.invoices.length || item.invoiceFiles.length || (mode() === 'edit' && roundOnServer())) {
               <div class="ios-group">
                 @for (invoice of item.invoices; track invoice.id; let first = $first) {
-                  <button class="ios-cell" type="button" [disabled]="mode() !== 'edit' && invoice.documentId == null" (click)="tapInvoice(invoice)">
+                  <button class="ios-cell payee-sheet__invoice" type="button" [disabled]="mode() !== 'edit' && invoice.documentId == null" (click)="tapInvoice(invoice)">
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ invoice.number }}@if (!first) { · extra factuur }</span>
                       <span class="ios-cell__sub">{{ invoiceText(invoice, first) }}</span></span>
                     @if (mode() === 'edit' || invoice.documentId != null) { <app-icon class="ios-cell__chev" [name]="mode() === 'edit' ? 'chevron-right' : 'download'" [size]="16" /> }

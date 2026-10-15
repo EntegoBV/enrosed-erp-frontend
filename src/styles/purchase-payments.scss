@@ -184,6 +184,8 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-detail .ios-cell__value{white-space:normal}
 .payee-sheet__lead{margin:0 16px 14px;color:var(--muted);font-size:14px;text-align:center}
 .payee-sheet__split{margin:10px 0 0;color:var(--muted);font-size:13px}
+/* an invoice keeps its whole comparison: the sub line wraps */
+.payee-sheet__invoice .ios-cell__sub{overflow-wrap:anywhere;white-space:normal}
 /* an invoice file without data: the name opens it, 'Gegevens invullen' sits at the end */
 .payee-sheet__file{display:grid;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .payee-sheet__file .ios-cell__title{overflow-wrap:anywhere;white-space:normal}

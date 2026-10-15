@@ -141,6 +141,7 @@ export class PurchaseSettleSheet {
     const date = option.paidOn.split('-').reverse().join('-');
     const detail = option.payee === 'SUPPLIER'
       ? (option.instalmentDue ? this.termLabel(option.instalmentDue) : 'automatisch verdeeld') : option.label;
-    return [date, formatEur(option.amountEur), detail].filter(Boolean).join(' · ');
+    // A payment paid in parts settles as one: its total, and how many transfers it took.
+    return [date, formatEur(option.amountEur), detail, (option.transfers ?? 1) > 1 ? `${option.transfers} transacties` : null].filter(Boolean).join(' · ');
   }
 }

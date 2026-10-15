@@ -985,7 +985,7 @@ type DeskRow =
               <div class="field">
                 <label for="dk-doc-kind">Soort</label>
                 <select class="select" id="dk-doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
-                  @for (kind of documentKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
+                  @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
                 </select>
               </div>
               <div class="field">

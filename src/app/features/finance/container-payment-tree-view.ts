@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input } from '@an
 import type { PurchaseOrderView } from '../../core/api/models';
 import { EurPipe } from '../../shared/pipes';
 import type { PayeeBranch, PaymentNode } from './container-payment-tree';
-import { PAYEE_TONES, dayMonth } from './finance-format';
+import { PAYEE_TONES } from './finance-format';
 import { FinanceState } from './finance-state';
 
 /**
@@ -59,7 +59,8 @@ export class ContainerPaymentTreeView {
   readonly noInvoice = computed(() => { const view = this.view(); return view.invoices !== undefined && !view.invoices.length && !(view.invoiceFiles ?? []).length; });
 
   tone(payee: string): string { return PAYEE_TONES[payee] ?? 'grey'; }
-  day(date: string): string { return dayMonth(date); }
+  /** '02/08', as the order screens write a payment's day. */
+  day(date: string): string { return date.slice(8, 10) + '/' + date.slice(5, 7); }
   /** '10/09 · Saldo 70% · 2 transacties · € 21.733,63', with where it stands on the bank for a payment in one transfer. */
   line(node: PaymentNode): string {
     const amount = node.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });

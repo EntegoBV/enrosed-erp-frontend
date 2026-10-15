@@ -190,6 +190,36 @@ the workspaces. All CSS lives in one global partial,
 - Harness caveat: tests/bank-movement-panel.test.mts compiles
   bank-movement-panel.ts with imports stripped; a new import, global or state
   member used at construction or in tested code needs a harness entry.
+- Container invoices and payments in parts (2026-10-15, see Inkoop ·
+  Betalingen): Uitgaven › Containers (unfolded row) and the container
+  inspector render `app-container-payment-tree` (container-payment-tree.ts,
+  node-tested with its invoice words handed in): per payee its invoices
+  against the Afspraak with 'Bestand ↗', invoice files '· zonder gegevens',
+  'Nog geen factuur bij deze container', the supplier's terms
+  '{label} · € paid van € planned' with their payments, payments
+  '{dd/MM} · {label} · € · {bank}' ('op de bank · KBC', 'niet op de bank',
+  'verrekend tegoed', 'via leverancier · zelfde transactie' for an inspection
+  on the goods' transfer), a payment in parts as '· N transacties' with its
+  transfers indented. Bank status = the hard link, else the old
+  'containerbetaling #id' marker (`FinanceState.containerPaymentLine`), never an
+  amount guess. Payables and allocation targets carry `invoiceNumber`
+  (search; +30 when the bank reference names it, spaces/dashes ignored);
+  the payables sub-line adds 'Factuur …' and ' · via leverancier'.
+  Bewegingen: a line paying several payees of one container reads
+  'Goederen + inspectie (PO-…)' (`containerLinkLabel`); credit offsets are
+  never 'zonder bankkoppeling', never in attention, never offered in
+  'Bestaande betaling' (`PurchasePaymentRow.creditOffset`). In 'Bestaande
+  betaling' one purchase payment larger than the line is 'Deel koppelen'
+  (POST /purchase-payment-splits/{id}/bank-part: the line's part is carved
+  out, the rest stays open as a second transfer); one group member that
+  matches goes through bank-part too (it takes the line's day); everything
+  else keeps /links. 'Factuur of uitgave' lists the container's invoices and
+  the term's payments from the tree (an older server: the commercial
+  invoice files as before), hints 'Er staat al een betaling van € x; koppel
+  een deel via Bestaande betaling.', and for a supplier target offers
+  'Waarvan inspectie via leverancier': goods + inspection become two
+  payments on the line (splitTransfer, the inspection sets the flag). All
+  new actions hide while `paymentRoundOnServer(purchaseViews()[0])` is false.
 
 ### Documenten & media
 - /files, `features/files`: FilesPage is a thin shell (desk or phone view,
@@ -423,6 +453,60 @@ cijfers'.
   the Nacalculatie live in `styles/purchase-nacalc.scss` (.nc-* desk, .np-*
   phone, .nc-summary), purchase-payments.scss keeps the Betalingen rules and
   .desk-body--payments (applied for both wide views).
+- Invoices, betaalbewijs and payments in parts (2026-10-15, Emre's requests
+  1-4; contract scratchpad spec-purchase-payments.md). One commercial invoice
+  per container (number, date, amount; `view.invoices`, POST/PUT/DELETE
+  `/purchase-orders/:id/invoices`) that every supplier term points to; a
+  second invoice of a payee is extra on top (a correction is edited on the
+  first, a credit note stays a tegoed). Which payments belong to an invoice is
+  the server's (`invoice.paymentIds`); `purchase-invoices.ts` (pure,
+  node-tested) only words it: `invoiceComparison` ('gelijk aan de afspraak',
+  '€ x meer/minder dan de afspraak', '+ inspectie' against
+  `order.inspectionCostEur` when the supplier's primary covers the
+  inspection), `resolveInvoice` (explicit → the payee's only invoice → the
+  supplier's primary for an inspection `viaSupplier` → none; primary = lowest
+  id), `isInvoiceFile` (COMMERCIAL_INVOICE, INVOICE, an invoice's file, OTHER
+  'Factuur …'): invoice files are never payment proof. Legacy invoice files
+  without data come as `view.invoiceFiles` with 'Gegevens invullen'.
+  `app-purchase-invoice-sheet` (page level in editor and desk, `invoicing`)
+  uploads the file once (COMMERCIAL_INVOICE for the supplier, else INVOICE,
+  no paymentId), then POSTs/PUTs. The betaalbewijs is the bank link: a ledger
+  row is `proven` when it is a credit offset or every transfer is on the bank
+  (hard link or old marker; every host passes `bankedPaymentIds`) or has a
+  proof file; every 'zonder betaalbewijs' reads `proven === false`, counted per
+  row. 'Bewijs toevoegen' is gone: files, the invoice and bank transactions
+  are managed in the payment sheet ('Banktransacties' with Losmaken /
+  'Banktransactie koppelen' / per open transfer Bedrag, Koppelen, 'Deel
+  verwijderen'; 'Betaalbewijs (bestanden)' with ✕; 'Factuur' select with
+  inline 'Factuur toevoegen…'). Several transfers on one payment: one
+  `purchase_payment` row per transfer, `groupId` = the root's id; the ledger
+  shows one row per group with `parts`, `bank {linked,total,sharedWith}`,
+  'N transacties' and a sub-row per transfer; group actions address
+  `row.payment` (the root) and send `applyToGroup: true` (edit, settle, undo,
+  move; one write per group); removing goes per transfer. Linking from the
+  sheet (`purchase-payment-links.ts` decides): one line matching or smaller →
+  `/purchase-payment-splits/{id}/bank-part`, 2-10 lines making the amount →
+  `/bank-lines` (the server splits and redates each part to its bank day);
+  an older server: one matching line through /links with paidOn = the
+  line's day. Inspection via the supplier: `order.inspectionViaSupplier`
+  (server-owned, `PUT …/inspection-via-supplier`; the host refreshes, never
+  sets the view from the answer), ticked on a new supplier transfer's
+  inspection part or split off a saved goods payment ('Inspectie afsplitsen',
+  `/inspection` with `expectedAmountEur` frozen for retries, after the links);
+  an inspection on the goods' line reads '· zelfde transactie als de
+  goederen'. Every new action hides while `paymentRoundOnServer(view)` is
+  false (no `invoices` in the view): the backend ships first.
+- Per set / per stuk (2026-10-15): reconciliation lines and totals carry
+  `salesUnit`, `piecesPerUnit`, unit nouns and per-piece figures
+  (`setBasis` PIECE | DISPLAY | MIXED); `unitCostQuantity` and
+  `forecastExternalUnitEur` stay per sales unit (partner settlement multiplies
+  them). The Nacalculatie (desk, phone, summary card) says 'Per set' with the
+  piece price beside it ('100 bestelde sets × 12 rozen · € 2,6000 per stuk'),
+  in a mixed container 'Gem. per stuk' ('1.400 stuks · sets als 12 rozen
+  geteld'); the shared words live in purchase-nacalc-metrics.ts
+  (`nacalcUnitBasis`, `nacalcProductUnit`, `nacalcReceiptUnitLine`, …). The
+  bridge row is 'Correctie naar bestelde aantallen'. Desk and phone product
+  tables label a set product's landed cost '/set' with '€ … /stuk'.
 - Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
   everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
   budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in

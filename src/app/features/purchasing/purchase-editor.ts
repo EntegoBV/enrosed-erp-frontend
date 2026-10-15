@@ -1539,7 +1539,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <div class="field">
                 <label for="doc-kind">Soort</label>
                 <select class="select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
-                  @for (kind of documentKinds; track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
+                  @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
                 </select>
               </div>
               <div class="field">
@@ -2817,13 +2817,13 @@ export class PurchaseEditor {
           const document = await this.sourcing.addDocument(data.order.id, fresh.file, invoiceDocumentKind(pay.payee), null, null);
           documentId = document.id;
           if (this.view()?.order.id === data.order.id) this.documents.update(current => [...(current ?? []), document]);
-          this.paying.update(current => current && current.id === pay.id ? { ...current, createdDocumentId: document.id } : current);
+          this.paying.update(current => current && (current.id ?? null) === (pay.id ?? null) ? { ...current, createdDocumentId: document.id } : current);
         }
         const created = await this.sourcing.addInvoice(data.order.id, { payee: pay.payee, number: fresh.number.trim(), invoiceDate: fresh.invoiceDate,
           amount: fresh.amount!, currency: fresh.currency, amountEur: null, documentId, notes: null });
         invoiceId = created.id;
         invoiceChanged = true;
-        this.paying.update(current => current && current.id === pay.id ? { ...current, createdInvoiceId: created.id, invoiceId: created.id, invoiceIdChanged: true } : current);
+        this.paying.update(current => current && (current.id ?? null) === (pay.id ?? null) ? { ...current, createdInvoiceId: created.id, invoiceId: created.id, invoiceIdChanged: true } : current);
       }
       // 2. The payment. The bank's euro amount travels only when it was filled in for a USD/CNY payment; the server keeps the order rate otherwise.
       // Once the goods payment is posted the split stands: the goods go without a euro (the stored share survives unchanged money), only the pending parts follow.
@@ -2852,7 +2852,8 @@ export class PurchaseEditor {
       paymentSaved = true;
       if (this.view()?.order.id !== data.order.id) return;
       const planned = frozen ? { ...frozen, goodsEur: saved.amountEur } : fresh.length ? { goodsEur: saved.amountEur, parts: fresh } : undefined;
-      this.paying.update(current => current === pay ? { ...current, id: saved.id, ...(planned ? { planned } : {}),
+      // The same sheet (an inline invoice may have patched it in step 1): record what was saved, so a retry never posts it again.
+      this.paying.update(current => current && (current === pay || (current.id ?? null) === (pay.id ?? null)) ? { ...current, id: saved.id, ...(planned ? { planned } : {}),
         ...(atomicIds ? { partIds: atomicIds.slice(1), bankLinkPending: true, bankLinkComplete: true, bankSavedPayment: saved, freightAmount: null, freightAmountInput: '', separateAmount: null, separateAmountInput: '' } : {}) } : current);
       if (atomicLine) this.bankLines.update(lines => [atomicLine!, ...(lines ?? []).filter(line => line.id !== atomicLine!.id)]);
       // The extra streams of a manual transfer, one by one; a saved part leaves the draft so retry never posts it twice.
@@ -3433,6 +3434,8 @@ export class PurchaseEditor {
     { value: 'INVOICE', label: 'Factuur' }, { value: 'PACKING_LIST', label: 'Packing list' }, { value: 'BILL_OF_LADING', label: 'Bill of lading' },
     { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
   ];
+  /** The kinds the sheet offers: a server without invoices does not know the kind INVOICE yet. */
+  readonly documentKindOptions = computed(() => this.roundOnServer() ? this.documentKinds : this.documentKinds.filter(kind => kind.value !== 'INVOICE'));
 
   private documentLoadVersion = 0;
 
