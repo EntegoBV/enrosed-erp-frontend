@@ -65,6 +65,75 @@ function timeTicks(t0: number, t1: number, plotWidth: number): { at: number; lab
   return ticks.filter((_, index) => index % every === 0);
 }
 
+interface Box { x1: number; x2: number; y1: number; y2: number; }
+/** A place for a label: its anchor and baseline, and how much less natural it is than the first choice. */
+interface Spot { anchor: 'start' | 'middle' | 'end'; x: number; y: number; cost: number; }
+
+/** The box a 10 px label covers around its baseline (cap height and descenders; the width includes the halo). */
+function textBox(anchor: Spot['anchor'], x: number, y: number, width: number): Box {
+  const x1 = anchor === 'start' ? x : anchor === 'end' ? x - width : x - width / 2;
+  return { x1, x2: x1 + width, y1: y - 8, y2: y + 2.5 };
+}
+const grow = (box: Box, by: number): Box => ({ x1: box.x1 - by, x2: box.x2 + by, y1: box.y1 - by, y2: box.y2 + by });
+const overlaps = (a: Box, b: Box): boolean => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+/** The distance between two boxes (0 when they touch). */
+const gap = (a: Box, b: Box): number => Math.hypot(Math.max(0, a.x1 - b.x2, b.x1 - a.x2), Math.max(0, a.y1 - b.y2, b.y1 - a.y2));
+
+/** Whether a drawn line (points left to right, in px) passes through the box. */
+function crosses(points: { x: number; y: number }[], box: Box): boolean {
+  if (points.length === 1) return overlaps({ x1: points[0].x - 1, x2: points[0].x + 1, y1: points[0].y - 1, y2: points[0].y + 1 }, box);
+  for (let index = 0; index + 1 < points.length; index++) {
+    const a = points[index];
+    const b = points[index + 1];
+    const lo = Math.min(a.x, b.x);
+    const hi = Math.max(a.x, b.x);
+    if (hi < box.x1 || lo > box.x2) continue;
+    let ya = a.y;
+    let yb = b.y;
+    if (b.x !== a.x) {
+      const at = (px: number) => a.y + ((b.y - a.y) * (px - a.x)) / (b.x - a.x);
+      ya = at(Math.max(lo, box.x1));
+      yb = at(Math.min(hi, box.x2));
+    }
+    if (Math.max(ya, yb) >= box.y1 && Math.min(ya, yb) <= box.y2) return true;
+  }
+  return false;
+}
+
+/**
+ * Where a marker's label may go, most natural first: under a low point (lowest, zero), above or below and to the
+ * left of an end point, to the right of a break-even flag; then beside the point and further away, a line at a time.
+ */
+function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spot[] {
+  const spots: Spot[] = [];
+  if (kind === 'breakeven') {
+    spots.push({ anchor: 'start', x: mx + 11, y: my - 11, cost: 0 }, { anchor: 'end', x: mx - 4, y: my - 24, cost: 2 },
+      { anchor: 'start', x: mx + 6, y: my + 15, cost: 8 }, { anchor: 'end', x: mx - 6, y: my + 15, cost: 9 });
+    for (let step = 1; step <= 3; step++) {
+      spots.push({ anchor: 'start', x: mx + 11, y: my - 11 - 12 * step, cost: 12 * step }, { anchor: 'end', x: mx - 4, y: my - 24 - 12 * step, cost: 2 + 12 * step });
+    }
+    return spots;
+  }
+  const lowFirst = kind !== 'end';
+  for (let step = 0; step <= 6; step++) {
+    const below = my + 15 + 12 * step;
+    const above = my - 9 - 12 * step;
+    const far = 12 * step;
+    const belowCost = far + (lowFirst ? 0 : 4);
+    const aboveCost = far + (lowFirst ? 8 : 0);
+    if (kind !== 'end') {
+      for (const shift of [0, -40, 40, -80, 80]) {
+        spots.push({ anchor: 'middle', x: mx + shift, y: below, cost: belowCost + Math.abs(shift) / 8 }, { anchor: 'middle', x: mx + shift, y: above, cost: aboveCost + Math.abs(shift) / 8 });
+      }
+    }
+    spots.push({ anchor: 'end', x: mx - 6, y: below, cost: belowCost + 3 }, { anchor: 'end', x: mx - 6, y: above, cost: aboveCost + 3 });
+    if (kind !== 'end') spots.push({ anchor: 'start', x: mx + 6, y: below, cost: belowCost + 3 }, { anchor: 'start', x: mx + 6, y: above, cost: aboveCost + 3 });
+  }
+  spots.push({ anchor: 'end', x: mx - 9, y: my + 3.5, cost: 5 });
+  if (kind !== 'end') spots.push({ anchor: 'start', x: mx + 9, y: my + 3.5, cost: 5 });
+  return spots;
+}
+
 /**
  * The cash line of the Kaslijn (Kosten & bank), the Kasprognose and a
  * container's lane (Analyses): the bank so far, the expected balance per
@@ -113,7 +182,7 @@ function timeTicks(t0: number, t1: number, plotWidth: number): { at: number; lab
           }
           @if (l.buffer; as buffer) {
             <line class="cc-buffer" [attr.x1]="l.left" [attr.x2]="l.right" [attr.y1]="buffer.y" [attr.y2]="buffer.y" />
-            <text class="cc-mark cc-mark--warn" [attr.x]="buffer.x" [attr.y]="buffer.labelY" text-anchor="start">{{ buffer.label }}</text>
+            <text class="cc-mark cc-mark--warn" [attr.x]="buffer.labelX" [attr.y]="buffer.labelY" [attr.text-anchor]="buffer.anchor">{{ buffer.label }}</text>
           }
           @if (variant() === 'lane') {
             <line class="cc-zero" [attr.x1]="l.left" [attr.x2]="l.right" [attr.y1]="l.zeroY" [attr.y2]="l.zeroY" />
@@ -262,6 +331,9 @@ export class CashChart {
   readonly pinPick = output<number>();
 
   readonly width = signal(640);
+  /** The host's font family (labels are measured in it); empty until rendered. */
+  private readonly font = signal('');
+  private static measurer: CanvasRenderingContext2D | null | undefined;
   readonly hover = signal<{ x: number; day: string; label: string; flip: boolean; rows: TipRow[]; detail: string[] } | null>(null);
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private holding = false;
@@ -272,6 +344,7 @@ export class CashChart {
   constructor() {
     afterNextRender(() => {
       const element = this.host.nativeElement;
+      this.font.set(getComputedStyle(element).fontFamily);
       const measure = () => {
         const width = Math.round(element.getBoundingClientRect().width);
         if (width > 0) this.width.set(width);
@@ -285,6 +358,21 @@ export class CashChart {
   }
 
   protected dash(style: CashChartSeries['style']): string | null { return DASH[style]; }
+
+  /** The width of a 10 px label (.cc-mark) plus its halo, measured in the chart's own font once it is known. */
+  private textWidth(text: string): number {
+    const family = this.font();
+    if (family && typeof document !== 'undefined') {
+      CashChart.measurer ??= document.createElement('canvas').getContext('2d');
+      const context = CashChart.measurer;
+      if (context) {
+        context.font = `650 10px ${family}`;
+        const measured = context.measureText(text).width;
+        if (measured > 0) return Math.ceil(measured) + 4;
+      }
+    }
+    return text.length * 5.8 + 4;
+  }
 
   readonly legend = computed(() => {
     const seen = new Set<string>();
@@ -382,37 +470,73 @@ export class CashChart {
       const to = Math.min(right, x(isoOf(Math.min(dayTime(period.to), t1))) + dayWidth / 2);
       return { x: from, width: Math.max(1, to - from) };
     });
-    /* Labels: the buffer's at the left of the plot, each marker's next to its point, moved away from labels already placed. */
-    const charWidth = 5.8;
-    const boxes: { x1: number; x2: number; y1: number; y2: number }[] = [];
-    const bufferLine = buffer !== null && variant !== 'lane' ? { x: left + 6, y: y(buffer), labelY: y(buffer) - 5, label: `Buffer ${eurWhole(buffer)}` } : null;
-    if (bufferLine) boxes.push({ x1: bufferLine.x, x2: bufferLine.x + bufferLine.label.length * charWidth, y1: bufferLine.labelY - 10, y2: bufferLine.labelY + 2 });
+    /*
+     * Labels: each marker's on the free spot nearest its point, then the buffer's somewhere along its line. A spot
+     * never lies over another label, a marker or a flag, and avoids every drawn line (the series, the buffer, today,
+     * the lane's zero); when no spot is free, the one that covers the least wins.
+     */
+    const inPlot = markers.filter((marker) => dayTime(marker.day) >= t0 && dayTime(marker.day) <= t1);
+    const polylines = series.flatMap((row) => segmentsOf(row.points).map((segment) => segment.map((point) => ({ x: x(point.day), y: y(point.eur) }))));
+    const rules: Box[] = [];
+    if (buffer !== null && variant !== 'lane') rules.push({ x1: left, x2: right, y1: y(buffer), y2: y(buffer) });
+    if (todayX !== null) rules.push({ x1: todayX, x2: todayX, y1: top - 6, y2: bottom });
+    if (variant === 'lane') rules.push({ x1: left, x2: right, y1: zeroY, y2: zeroY });
+    /* Each marker's dot (r 4 plus its 1 px ring) or flag; a flag's own label sits against its cloth. */
+    const marks = inPlot.map((marker) => {
+      const mx = x(marker.day);
+      const my = y(marker.eur);
+      return marker.kind === 'breakeven' ? { x1: mx - 2, x2: mx + 10, y1: my - 20, y2: my + 2 } : { x1: mx - 5, x2: mx + 5, y1: my - 5, y2: my + 5 };
+    });
+    const taken: Box[] = [...marks];
+    if (todayX !== null) taken.push(textBox('start', todayX + 5, top + 2, this.textWidth(variant === 'lane' ? 'vandaag' : 'Vandaag')));
+    /* self: the label's own line (the buffer's) or its own marker (a flag's label may touch its cloth). */
+    const place = (label: string, spots: Spot[], self: { rule?: Box; mark?: Box; flag?: boolean }): Spot => {
+      const w = this.textWidth(label);
+      let best: (Spot & { score: number }) | null = null;
+      for (const spot of spots) {
+        let { anchor, x: lx } = spot;
+        if (anchor === 'middle') {
+          const x1 = Math.min(Math.max(lx - w / 2, left + 2), right - 2 - w);
+          lx = x1 + w / 2;
+        }
+        const box = textBox(anchor, lx, spot.y, w);
+        if (box.x1 < left - 0.5 || box.x2 > right + 0.5 || box.y1 < 2 || box.y2 > bottom - 1) continue;
+        const near = grow(box, 1);
+        const wide = grow(box, 2);
+        let score = spot.cost + Math.abs(lx - spot.x) * 0.3;
+        score += taken.filter((other) => !(self.flag && other === self.mark) && overlaps(near, other)).length * 1000;
+        score += polylines.filter((line) => crosses(line, wide)).length * 300;
+        score += rules.filter((rule) => rule !== self.rule && crosses([{ x: rule.x1, y: rule.y1 }, { x: rule.x2, y: rule.y2 }], wide)).length * 120;
+        /* A label closer to another marker than to its own would name the wrong point. */
+        const mine = self.mark;
+        if (mine && marks.some((mark) => mark !== mine && gap(box, mark) < gap(box, mine))) score += 150;
+        if (!best || score < best.score) best = { anchor, x: lx, y: spot.y, cost: spot.cost, score };
+      }
+      const chosen = best ?? spots[0];
+      taken.push(textBox(chosen.anchor, chosen.x, chosen.y, w));
+      return chosen;
+    };
     const order: Record<CashChartMarker['kind'], number> = { lowest: 0, zero: 1, end: 2, breakeven: 3 };
-    const placed = markers.filter((marker) => dayTime(marker.day) >= t0 && dayTime(marker.day) <= t1)
-      .map((marker, index) => ({ marker, index })).sort((a, b) => order[a.marker.kind] - order[b.marker.kind] || a.index - b.index)
+    const placed = inPlot.map((marker, index) => ({ marker, index })).sort((a, b) => order[a.marker.kind] - order[b.marker.kind] || a.index - b.index)
       .map(({ marker, index }) => {
         const mx = x(marker.day);
         const my = y(marker.eur);
-        const textWidth = marker.label.length * charWidth;
-        let anchor: 'start' | 'middle' | 'end' = mx < left + textWidth / 2 ? 'start' : mx > right - textWidth / 2 ? 'end' : 'middle';
-        let labelX = mx;
-        let labelY = marker.kind === 'lowest' || marker.kind === 'zero' ? my + 16 : my - 9;
-        if (marker.kind === 'end') { anchor = 'end'; labelX = mx - 7; }
-        if (marker.kind === 'breakeven') {
-          const fits = mx + 11 + textWidth <= width;
-          anchor = fits ? 'start' : 'end';
-          labelX = fits ? mx + 11 : mx - 4;
-          labelY = fits ? my - 11 : my - 24;
-        }
-        const step = labelY > my ? 12 : -12;
-        const boxOf = (yy: number) => {
-          const x1 = anchor === 'start' ? labelX : anchor === 'end' ? labelX - textWidth : labelX - textWidth / 2;
-          return { x1, x2: x1 + textWidth, y1: yy - 10, y2: yy + 2 };
-        };
-        for (let tries = 0; tries < 4 && boxes.some((box) => { const own = boxOf(labelY); return own.x1 < box.x2 && own.x2 > box.x1 && own.y1 < box.y2 && own.y2 > box.y1; }); tries++) labelY += step;
-        boxes.push(boxOf(labelY));
-        return { key: `${marker.kind}-${index}`, kind: marker.kind, label: marker.label, x: mx, y: my, anchor, labelX, labelY };
+        const spot = place(marker.label, markerSpots(marker.kind, mx, my), { mark: marks[index], flag: marker.kind === 'breakeven' });
+        return { key: `${marker.kind}-${index}`, kind: marker.kind, label: marker.label, x: mx, y: my, anchor: spot.anchor, labelX: spot.x, labelY: spot.y };
       });
+    let bufferLine: { y: number; labelX: number; labelY: number; anchor: Spot['anchor']; label: string } | null = null;
+    if (buffer !== null && variant !== 'lane') {
+      const by = y(buffer);
+      const label = `Buffer ${eurWhole(buffer)}`;
+      const along = [left + 6, ...(todayX !== null ? [todayX + 6] : []), left + plotW * 0.25, left + plotW * 0.5, left + plotW * 0.75];
+      const spots: Spot[] = [
+        ...along.map((at, index) => ({ anchor: 'start' as const, x: at, y: by - 5, cost: index * 4 })),
+        ...along.map((at, index) => ({ anchor: 'start' as const, x: at, y: by + 13, cost: 3 + index * 4 })),
+        { anchor: 'end', x: right - 6, y: by - 5, cost: 22 }, { anchor: 'end', x: right - 6, y: by + 13, cost: 25 },
+      ];
+      const spot = place(label, spots, { rule: rules[0] });
+      bufferLine = { y: by, labelX: spot.x, labelY: spot.y, anchor: spot.anchor, label };
+    }
     const pins = variant === 'full' ? this.pins().filter((pin) => dayTime(pin.from) >= t0 && dayTime(pin.from) <= t1).map((pin) => ({
       n: pin.n, x: x(pin.from), title: `${pin.n}. ${pin.label} · ${dayMon(pin.from)}${pin.to !== pin.from ? `–${dayMon(pin.to)}` : ''} · ${eur(pin.amountEur)}`,
     })) : [];

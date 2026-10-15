@@ -509,6 +509,9 @@ test('Example C: the PO sheet of PO-2026-043', () => {
   assert.deepEqual(sheet.products.map((product) => [product.productId, product.units, product.costUnitEur, product.priceUnitEur, product.backEur]),
     [[501, 2000, 11.1, 16.65, 33300], [502, 2000, 7.4, 11.1, 22200]]);
   assert.deepEqual(sheet.salesWindow, { from: '2027-01-15', to: '2027-05-14', weeks: 18, text: '15 jan – 14 mei · 18 w · gelijkmatig · 21 d' });
+  /* A window that runs into the next year names both years, so it never reads backwards ("15 jan – 7 jan"). */
+  const year = poSheet(exampleC(), options({ scenario: true, defaults: { ...NO_DEFAULTS, sellWeeks: 52 } }), 43)!;
+  assert.deepEqual(year.salesWindow, { from: '2027-01-15', to: '2028-01-07', weeks: 52, text: '15 jan 2027 – 7 jan 2028 · 52 w · gelijkmatig · 21 d' });
   assert.deepEqual(sheet.departure, { date: '2026-12-01', certainty: 'ESTIMATED', ruleText: 'aankomst 08/01 − 38 d transit', stored: false });
   assert.deepEqual(sheet.likelyPaid.map((match) => match.lineId), [103]);
   assert.equal(sheet.lane[0].day, '2026-10-13');

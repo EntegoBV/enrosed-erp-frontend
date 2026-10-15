@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, inject, input, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router, RouterLink, Scroll } from '@angular/router';
+import { filter } from 'rxjs';
 import { CashChart } from '../../shared/cash-chart';
 import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
@@ -407,6 +409,17 @@ export class CashDesk {
   readonly bufferDraft = signal('');
   readonly bufferError = signal<string | null>(null);
   readonly monthsOpen = signal(false);
+  /** Set when a register row opens a container; used once the router has scrolled after that navigation. */
+  private revealAfterScroll = false;
+
+  constructor() {
+    /* The router scrolls to the top after every navigation, so the sheet is revealed after that scroll. */
+    this.router.events.pipe(filter((event) => event instanceof Scroll), takeUntilDestroyed()).subscribe(() => {
+      if (!this.revealAfterScroll) return;
+      this.revealAfterScroll = false;
+      requestAnimationFrame(() => this.revealSide());
+    });
+  }
 
   isOpen(key: string): boolean {
     if (this.filter() !== 'all' || this.period()) return true;
@@ -448,8 +461,23 @@ export class CashDesk {
   openRow(row: RegisterRow): void {
     const link: CashLink | null = row.kind === 'past' ? (row.lineId !== null ? lineLink(row.lineId) : null) : row.item ? itemLink(row.item) : null;
     if (!link) return;
-    if (link.po !== null) { this.state.openPo(link.po); return; }
+    if (link.po !== null) {
+      if (this.location().po === link.po) this.revealSide();
+      else { this.revealAfterScroll = true; this.state.openPo(link.po); }
+      return;
+    }
     void this.router.navigate(link.path, link.query ? { queryParams: link.query } : {});
+  }
+
+  /**
+   * A container opened from the register on a narrow page: its sheet sits beside the chart there, above the
+   * register and not sticky, so it is brought into view when it is not fully in sight.
+   */
+  private revealSide(): void {
+    const side = this.host.nativeElement.querySelector<HTMLElement>('.cf-side');
+    if (!side || getComputedStyle(side).position === 'sticky') return;
+    const rect = side.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > innerHeight) side.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   showPeriod(from: Iso, to: Iso): void {

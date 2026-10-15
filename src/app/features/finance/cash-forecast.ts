@@ -265,6 +265,9 @@ function brusselsDay(ms: number): Iso {
 /* texts */
 const dm = (day: Iso): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 const dMon = (day: Iso): string => `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
+/** "15 jan – 14 mei"; a range that runs into another year carries both years: "15 jan 2027 – 7 jan 2028". */
+const dMonRange = (from: Iso, to: Iso): string => from.slice(0, 4) === to.slice(0, 4)
+  ? `${dMon(from)} – ${dMon(to)}` : `${dMon(from)} ${from.slice(0, 4)} – ${dMon(to)} ${to.slice(0, 4)}`;
 const wdDMon = (day: Iso): string => `${WEEKDAYS[weekdayOf(day)]} ${dMon(day)}`;
 const monthLabel = (day: Iso): string => MONTHS[Number(day.slice(5, 7)) - 1];
 const grouped = (value: number): string => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -1520,7 +1523,7 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
   dated.sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''));
   const flows: PoFlowRow[] = [...dated,
     { date: null, approx: false, title: 'Enrosed-kost', status: 'intern, geen transactie', amountEur: toEur(toCents(order.internalMarkupEur)), kind: 'internal', lineId: null }];
-  const salesWindow = plan?.window && choice ? { ...plan.window, text: `${dMon(plan.window.from)} – ${dMon(plan.window.to)} · ${plan.window.weeks} w · ${plan.seasonal ? 'seizoen' : 'gelijkmatig'} · ${choice.paymentDays} d` } : null;
+  const salesWindow = plan?.window && choice ? { ...plan.window, text: `${dMonRange(plan.window.from, plan.window.to)} · ${plan.window.weeks} w · ${plan.seasonal ? 'seizoen' : 'gelijkmatig'} · ${choice.paymentDays} d` } : null;
   if (plan && salesWindow) {
     flows.push({ date: salesWindow.from, approx: true, title: `Verkoop · ${grouped(plan.units)} stuks`, status: salesWindow.text, amountEur: toEur(backCents), kind: 'sales', lineId: null });
   }
