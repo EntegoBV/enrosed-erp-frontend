@@ -182,6 +182,10 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
             </button>
             <div class="sidebar__sub" id="sidebar-analyses"
                  [class.sidebar__sub--closed]="!groupOpen('analyses')">
+              <a class="sidebar__link" routerLink="/analyses/cash" routerLinkActive="active">
+                <app-icon class="sidebar__icon" name="bank" [size]="18" /> Kasprognose
+                @if (cashForecastNew) { <span class="sidebar__new">nieuw</span> }
+              </a>
               <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
                 <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
               </a>
@@ -426,6 +430,8 @@ export class App {
    * renders .wk-page, the phone shell only hides the ERP tab bar once the
    * page renders .ios-page.
    */
+  /** The Kasprognose link wears a 'nieuw' pill until the end of 2026 (a date check, nothing stored). */
+  readonly cashForecastNew = new Date() < new Date(2027, 0, 1);
   readonly workspaceRoute = computed(() => {
     const url = this.url();
     return url.startsWith('/costs') ? 'finance' : url.startsWith('/files') ? 'files' : null;

@@ -29,7 +29,7 @@ export const routes: Routes = [
   {
     path: 'analyses',
     pathMatch: 'full',
-    redirectTo: 'analyses/overview',
+    redirectTo: 'analyses/cash',
   },
   {
     path: 'analyses/:section',

@@ -39,6 +39,12 @@ import { WorkQueue } from '../../core/api/work-queue';
           <span class="more-group__chev" aria-hidden="true">›</span>
         </summary>
         <div class="list more-group__list">
+          <a class="list-item" routerLink="/analyses/cash">
+            <span class="thumb thumb--placeholder"><app-icon name="bank" /></span>
+            <div class="list-item__body"><div class="list-item__title">Kasprognose</div>
+              <div class="list-item__meta">Banksaldo vandaag en wat er komt</div></div>
+            <span class="list-item__chev">›</span>
+          </a>
           <a class="list-item" routerLink="/analyses/overview">
             <span class="thumb thumb--placeholder"><app-icon name="analytics" /></span>
             <div class="list-item__body"><div class="list-item__title">Overzicht</div>
