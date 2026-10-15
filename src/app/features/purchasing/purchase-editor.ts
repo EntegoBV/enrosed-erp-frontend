@@ -3566,7 +3566,23 @@ export class PurchaseEditor {
   /** The Nacalculatie in four lines, for the Betalingen cards; the ledger sharpens its state. */
   readonly nacalcSummary = computed(() => {
     const data = this.view();
-    return data ? purchaseNacalcSummary(data, this.paymentLedger()) : null;
+    return data ? purchaseNacalcSummary(data, this.paymentLedger(), this.familyOf()) : null;
+  });
+  /**
+   * How many products the header's landed average spans, as the
+   * Nacalculatie judges it: 1 when the container's per-unit figure means
+   * something (one product, or one family in one unit and set size), else
+   * the number of products; the header then says 'n producten · gem. …'.
+   */
+  readonly landedProducts = computed(() => {
+    const mix = this.nacalcSummary()?.mix;
+    if (mix && mix.count > 0) return mix.uniform ? 1 : mix.count;
+    return new Set((this.view()?.costing.lines ?? []).map(line => line.productId)).size;
+  });
+  /** A product's family, so a container of one family in one unit keeps its per-unit figure (nacalcUnitMix). */
+  private readonly familyOf = computed(() => {
+    const families = new Map(this.products().map(product => [product.id, product.familyId ?? null] as const));
+    return (productId: number): number | null => families.get(productId) ?? null;
   });
 
   /** The whole story: server report, ledger and partner financing joined by purchaseNacalc. */

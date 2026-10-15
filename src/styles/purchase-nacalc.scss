@@ -22,6 +22,14 @@ app-purchase-nacalc-summary{display:block;min-width:0}
 .nc-summary__basis{display:block;color:var(--muted);font-size:11px;font-weight:500;text-align:right}
 .nc-summary__note{margin:8px 0 0;color:var(--muted);font-size:11.5px;line-height:1.45}
 .nc-summary .wk-equation dt{overflow-wrap:anywhere}
+/* several products: the range over the card's width, then each product with its own figure under its name */
+.nc-summary .wk-equation>.nc-summary__mix{grid-template-columns:minmax(0,1fr);gap:2px}
+.nc-summary__mix dd{text-align:left;white-space:normal}
+.nc-summary__mix dd .nc-summary__basis{text-align:left}
+.nc-summary .wk-equation>.nc-summary__product{grid-template-columns:minmax(0,1fr);gap:1px;padding-block:3px}
+.nc-summary__product dt{font-size:12px;color:var(--ink-2)}
+.nc-summary__product dd{font-size:12px;text-align:left;white-space:normal;font-variant-numeric:tabular-nums;color:var(--muted)}
+.nc-summary__product .wk-link{font-size:12px;text-align:left}
 
 /* ---- desk workbench */
 app-purchase-nacalc-workbench{display:block;min-width:0}
@@ -34,6 +42,8 @@ app-purchase-nacalc-workbench{display:block;min-width:0}
 .nc-strip{gap:8px 24px}
 .nc-sentence{display:none;margin:12px 20px 0}
 .nc-strip__sub{color:var(--muted);font-size:11.5px;line-height:1.4;white-space:nowrap}
+.nc-cell--mix{max-width:360px}.nc-cell--mix .nc-strip__sub{white-space:normal}
+.nc-average{color:var(--muted)}
 .nc-cell{min-width:0}
 .nc-cell--grand .wk-strip__value{font-size:22px;letter-spacing:-.02em}
 .nc-cell .wk-strip__label{display:flex;align-items:center;gap:6px}
@@ -76,7 +86,8 @@ app-purchase-nacalc-workbench{display:block;min-width:0}
 .nc-payee__copy{display:grid;min-width:0}.nc-payee__copy b{font-weight:650;white-space:normal;overflow-wrap:anywhere}
 .nc-state{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin-top:3px}.nc-state .nc-reason{flex:1 1 100%}
 .nc-state .wk-pill,.nc-sub .wk-pill,.nc-payees .wk-td--wrap>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;line-height:1.2;text-align:left}
-.nc-payee__copy>.nc-basis{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;overflow-wrap:anywhere}
+/* the basis whole ('… · via leverancier · apart' is never cut); it wraps under the name */
+.nc-payee__copy>.nc-basis{white-space:normal;overflow-wrap:break-word}
 .nc-tile{display:grid;flex:none;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
 .nc-payee__name{display:flex;align-items:center;gap:2px;min-width:0}
 .nc-chev{display:grid;flex:none;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}

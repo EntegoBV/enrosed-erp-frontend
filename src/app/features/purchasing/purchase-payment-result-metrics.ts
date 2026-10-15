@@ -1,5 +1,6 @@
 import type {
-  Payee, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliationStream, PurchaseReconciliationTotals, UnitCostBasis,
+  Payee, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchaseReconciliationLine, PurchaseReconciliationStream, PurchaseReconciliationTotals,
+  UnitCostBasis,
 } from '../../core/api/models';
 import type { PaymentLedger, PayeeStatusKind } from './purchase-payment-ledger';
 
@@ -193,10 +194,131 @@ export interface PurchaseNacalcSummary {
   settledSavingsEur: number;
   settledOverrunsEur: number;
   additionalCostsEur: number;
+  /** One product or several: whether the container's per-unit figure means anything, else the products' range (nacalcUnitMix). */
+  mix: NacalcUnitMix;
+}
+
+/** One product of a container with its landed cost per unit, as the cards list them. */
+export interface NacalcMixRow {
+  productId: number | null;
+  name: string;
+  /** Per set for a set product, per stuk otherwise. */
+  unit: 'set' | 'stuk';
+  unitEur: number | null;
+  /** A set product's figure per piece, and its size ('12 rozen'). */
+  pieceEur: number | null;
+  set: { pieces: number; other: string } | null;
+  valueEur: number;
+}
+
+/**
+ * Per product instead of a mixed average (Emre, 2026-10-15: 'Per stuk
+ * € 2,4473 · 6.920 bestelde stuks — want als meerdere producten dan klopt dat
+ * niet'). The container's per-unit figure stands only when it holds one
+ * product, or every line shares the product family, the sales unit and the
+ * set size; otherwise the screens show 'n producten · € min – € max' (per set
+ * when every line is a set of one size, else per stuk with sets at their
+ * piece price), the products by value, and the average as a sub-line only.
+ */
+export interface NacalcUnitMix {
+  uniform: boolean;
+  /** Distinct products. */
+  count: number;
+  /** The unit of the range and the average: per set when every line is a set of one size, else per stuk. */
+  unit: 'set' | 'stuk';
+  minEur: number | null;
+  maxEur: number | null;
+  /** Every product, the most valuable first; the cards show the first three. */
+  rows: NacalcMixRow[];
+  /** The container average in `unit` and how many units it spreads over: 'gem. € 4,2168 over 7.976 st'. */
+  averageEur: number | null;
+  averageQuantity: number;
+}
+
+/**
+ * The products of a container against its per-unit figure. The server's
+ * totals.containerAverage decides when it is there; else `familyOf` maps a
+ * product to its family (null without one) and without it only one product
+ * is uniform.
+ */
+export function nacalcUnitMix(
+  report: { lines: readonly PurchaseReconciliationLine[]; totals: PurchaseReconciliationTotals } | null | undefined,
+  familyOf: (productId: number) => number | null = () => null,
+): NacalcUnitMix {
+  const lines = report?.lines ?? [];
+  const totals = report?.totals;
+  const keyOf = (line: PurchaseReconciliationLine) => line.productId != null ? 'p' + line.productId : 'n' + line.productName;
+  const products = new Map<string, PurchaseReconciliationLine[]>();
+  for (const line of lines) products.set(keyOf(line), [...(products.get(keyOf(line)) ?? []), line]);
+  const unitOf = (line: PurchaseReconciliationLine) => `${line.salesUnit ?? 'PIECE'}|${line.salesUnit === 'DISPLAY' ? line.piecesPerUnit ?? 1 : 1}`;
+  const families = new Set(lines.map(line => line.productId != null ? familyOf(line.productId) : null));
+  const sameUnit = new Set(lines.map(unitOf)).size <= 1;
+  const oneFamily = families.size === 1 && !families.has(null);
+  // The server says it since round 2 (it knows every product's family); an older one leaves it to the same rule here.
+  const uniform = typeof totals?.containerAverage === 'boolean' ? totals.containerAverage : products.size <= 1 || (oneFamily && sameUnit);
+  const allSets = lines.length > 0 && sameUnit && lines.every(line => line.salesUnit === 'DISPLAY');
+  const unit: 'set' | 'stuk' = allSets ? 'set' : 'stuk';
+  const rows: NacalcMixRow[] = [...products.values()].map((group): NacalcMixRow => {
+    const first = group[0];
+    const set = first.salesUnit === 'DISPLAY';
+    const value = group.reduce((sum, line) => sum + Math.round((line.forecastExternalEur ?? 0) * 100), 0) / 100;
+    const quantity = group.reduce((sum, line) => sum + (line.unitCostQuantity ?? 0), 0);
+    const pieces = group.reduce((sum, line) => sum + (line.pieceQuantity ?? line.unitCostQuantity ?? 0), 0);
+    const unitEur = group.length === 1 ? first.forecastExternalUnitEur ?? null : quantity > 0 ? round4(value / quantity) : null;
+    const pieceEur = group.length === 1 ? first.forecastExternalPieceEur ?? (set ? null : first.forecastExternalUnitEur ?? null)
+      : pieces > 0 ? round4(value / pieces) : null;
+    return { productId: first.productId ?? null, name: first.productName, unit: set ? 'set' : 'stuk', unitEur, pieceEur,
+      set: set ? { pieces: first.piecesPerUnit ?? 1, other: first.unitOther || 'stuks' } : null, valueEur: value };
+  }).sort((left, right) => right.valueEur - left.valueEur || left.name.localeCompare(right.name, 'nl'));
+  const figures = rows.map(row => unit === 'set' ? row.unitEur : row.pieceEur).filter((value): value is number => value !== null && Number.isFinite(value));
+  const setBasis = totals?.setBasis ?? 'PIECE';
+  const averageEur = !totals ? null : unit === 'set' ? totals.forecastExternalUnitEur ?? null
+    : totals.forecastExternalPieceEur ?? (setBasis === 'PIECE' ? totals.forecastExternalUnitEur ?? null : null);
+  const averageQuantity = !totals ? 0 : unit === 'set' ? totals.unitCostQuantity ?? 0 : totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0;
+  return {
+    uniform,
+    count: totals?.productCount && totals.productCount > 0 ? totals.productCount : products.size,
+    unit,
+    minEur: figures.length ? Math.min(...figures) : null,
+    maxEur: figures.length ? Math.max(...figures) : null,
+    rows,
+    averageEur,
+    averageQuantity,
+  };
+}
+
+const round4 = (value: number): number => Math.round(value * 10000) / 10000;
+const EURO4 = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const eur4 = (value: number): string => EURO4.format(value);
+
+/** '€ 2,6339 – € 8,9465': the cheapest and the dearest product per unit. */
+export function mixRange(mix: Pick<NacalcUnitMix, 'minEur' | 'maxEur'>): string {
+  if (mix.minEur === null || mix.maxEur === null) return '—';
+  return Math.round(mix.minEur * 10000) === Math.round(mix.maxEur * 10000) ? eur4(mix.minEur) : `${eur4(mix.minEur)} – ${eur4(mix.maxEur)}`;
+}
+
+/** '2 producten · € 2,6339 – € 8,9465' (per stuk, or per set when every line is a set of one size). */
+export function mixHeadline(mix: Pick<NacalcUnitMix, 'count' | 'minEur' | 'maxEur'>): string {
+  return `${mix.count} producten · ${mixRange(mix)}`;
+}
+
+/** 'gem. € 4,2168 over 7.976 st' or 'gem. € 31,6072 over 498 sets': the container average, kept as a sub-line. */
+export function mixAverage(mix: Pick<NacalcUnitMix, 'averageEur' | 'averageQuantity' | 'unit'>): string | null {
+  if (mix.averageEur === null || !Number.isFinite(mix.averageEur)) return null;
+  return `gem. ${eur4(mix.averageEur)} over ${mix.averageQuantity.toLocaleString('nl-BE')} ${mix.unit === 'set' ? 'sets' : 'st'}`;
+}
+
+/** One product as the cards list it: '€ 31,6072 /set · € 2,6339 /stuk' or '€ 8,9465 /stuk'. */
+export function mixRowFigure(row: Pick<NacalcMixRow, 'unit' | 'unitEur' | 'pieceEur'>): string {
+  if (row.unit === 'set') {
+    return [row.unitEur !== null ? eur4(row.unitEur) + ' /set' : null, row.pieceEur !== null ? eur4(row.pieceEur) + ' /stuk' : null].filter(Boolean).join(' · ') || '—';
+  }
+  return row.unitEur !== null ? eur4(row.unitEur) + ' /stuk' : '—';
 }
 
 export function purchaseNacalcSummary(
   view: Pick<PurchaseOrderView, 'order' | 'reconciliation'>, ledger?: Pick<PaymentLedger, 'payees' | 'summary'> | null,
+  familyOf?: (productId: number) => number | null,
 ): PurchaseNacalcSummary | null {
   const result = purchasePaymentResult(view);
   const totals = view.reconciliation?.totals;
@@ -225,5 +347,6 @@ export function purchaseNacalcSummary(
     settledSavingsEur: result.settledSavingsEur,
     settledOverrunsEur: result.settledOverrunsEur,
     additionalCostsEur: result.additionalCostsEur,
+    mix: nacalcUnitMix(view.reconciliation, familyOf),
   };
 }

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderView, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
-import { NACALC_LABEL, NACALC_PILL, nacalcKind, purchaseNacalcSummary, purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
+import {
+  NACALC_LABEL, NACALC_PILL, mixAverage, mixHeadline, mixRowFigure, nacalcKind, nacalcUnitMix, purchaseNacalcSummary, purchasePaymentResult,
+} from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
+import type { PurchaseReconciliationLine, PurchaseReconciliationTotals } from '../src/app/core/api/models.ts';
 
 function stream(values: Partial<PurchaseReconciliationStream> = {}): PurchaseReconciliationStream {
   return { payee: 'SUPPLIER', label: 'Leverancier', status: 'PARTIAL', plannedEur: 1_000,
@@ -282,6 +285,7 @@ test('the nacalculatie summary carries the server forecast and variance next to 
     kind: 'final', label: 'Eindkost', pill: { label: 'Definitief', tone: 'ok' }, openEur: 0, reviewEur: 0,
     unitEur: null, unitQuantity: 0, unitBasis: 'ORDERED', unitWord: 'stuk', pieceEur: null, pieceQuantity: 0, setPieces: null,
     settledSavingsEur: 60, settledOverrunsEur: 0, additionalCostsEur: 0,
+    mix: { uniform: true, count: 0, unit: 'stuk', minEur: null, maxEur: null, rows: [], averageEur: null, averageQuantity: 0 },
   });
   const provisional = purchaseNacalcSummary(purchase([stream({ paidEur: 300, remainingEur: 700 })]))!;
   assert.deepEqual([provisional.finalized, provisional.forecastEur, provisional.varianceEur, provisional.netResultEur], [false, 1_000, 0, 0]);
@@ -346,4 +350,57 @@ test('PO 35: netted terms leave € 0,50 to review, never the 30 % term’s gros
   Object.assign(view.reconciliation!.streams[0], { explicitlySettled: true, finalized: true });
   const settled = purchasePaymentResult(view)!;
   assert.deepEqual([settled.unsettledOverrunsEur, settled.settledOverrunsEur, settled.netResultEur], [0, 0.5, -0.5]);
+});
+
+/* ---- per product instead of a mixed average (Emre, 2026-10-15: 'Per stuk € 2,4473 · 6.920 bestelde stuks — want als meerdere producten dan klopt dat niet') */
+
+const plain = (text: string | null) => text == null ? text : text.replace(/[\u00a0\u202f]/g, ' ');
+function line(productId: number, name: string, values: Partial<PurchaseReconciliationLine> = {}): PurchaseReconciliationLine {
+  return { productId, productName: name, orderedQuantity: 1000, receivedQuantity: 0, damagedQuantity: 0, usableQuantity: 0, unitCostQuantity: 1000,
+    unitCostBasis: 'ORDERED', plannedExternalEur: 0, paidEur: 0, remainingEur: 0, forecastExternalEur: 2000, varianceEur: 0, internalMarkupEur: 0,
+    forecastPricingEur: 0, forecastExternalUnitEur: 2, forecastPricingUnitEur: null, allocationBasis: 'VALUE', ...values };
+}
+const totals = (values: Partial<PurchaseReconciliationTotals> = {}) => ({ forecastExternalUnitEur: 2.4473, unitCostQuantity: 6920, ...values }) as PurchaseReconciliationTotals;
+
+test('one product keeps its per-unit figure; several get their range, the products by value and the average only as a sub-line', () => {
+  const one = nacalcUnitMix({ lines: [line(10, 'Rozenschaal Roze')], totals: totals() });
+  assert.deepEqual([one.uniform, one.count], [true, 1]);
+  const mixed = nacalcUnitMix({ lines: [line(10, 'Rozenschaal Roze', { forecastExternalEur: 2000, forecastExternalUnitEur: 2 }),
+    line(11, 'Vaas glas', { forecastExternalEur: 9000, forecastExternalUnitEur: 3.1 }), line(12, 'Lint', { forecastExternalEur: 500, forecastExternalUnitEur: 0.5 }),
+    line(13, 'Doos', { forecastExternalEur: 1000, forecastExternalUnitEur: 1 })], totals: totals() });
+  assert.deepEqual([mixed.uniform, mixed.count, mixed.unit, mixed.minEur, mixed.maxEur], [false, 4, 'stuk', 0.5, 3.1]);
+  assert.deepEqual(mixed.rows.slice(0, 3).map(row => row.name), ['Vaas glas', 'Rozenschaal Roze', 'Doos'], 'the most valuable first');
+  assert.equal(plain(mixHeadline(mixed)), '4 producten · € 0,5000 – € 3,1000');
+  assert.equal(plain(mixAverage(mixed)), 'gem. € 2,4473 over 6.920 st');
+  assert.equal(plain(mixRowFigure(mixed.rows[0])), '€ 3,1000 /stuk');
+});
+
+test('one family in one unit and set size keeps the container figure; sets and pieces together range per stuk', () => {
+  const family = (id: number) => id === 10 || id === 11 ? 5 : null;
+  const colours = nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(11, 'Box Roze')], totals: totals() }, family);
+  assert.equal(colours.uniform, true, 'colour variants of one family');
+  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(12, 'Lint')], totals: totals() }, family).uniform, false);
+  const set = { salesUnit: 'DISPLAY' as const, piecesPerUnit: 12, unitOther: 'rozen' };
+  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood', set), line(11, 'Box Roze', { ...set, piecesPerUnit: 24 })], totals: totals() }, family).uniform, false,
+    'one family, but two set sizes');
+  const mixed = nacalcUnitMix({ lines: [line(10, 'Long stem rose box', { ...set, forecastExternalEur: 15740.4, forecastExternalUnitEur: 31.6072, forecastExternalPieceEur: 2.6339 }),
+    line(12, 'Rozenschaal Roze', { forecastExternalEur: 17892.93, forecastExternalUnitEur: 8.9465 })],
+    totals: totals({ setBasis: 'MIXED', forecastExternalUnitEur: 13.334, forecastExternalPieceEur: 4.2168, unitCostPieceQuantity: 7976 }) });
+  assert.deepEqual([mixed.unit, mixed.minEur, mixed.maxEur], ['stuk', 2.6339, 8.9465], 'a set at its piece price');
+  assert.equal(plain(mixAverage(mixed)), 'gem. € 4,2168 over 7.976 st');
+  assert.equal(plain(mixRowFigure(mixed.rows.find(row => row.unit === 'set')!)), '€ 31,6072 /set · € 2,6339 /stuk');
+  const sets = nacalcUnitMix({ lines: [line(10, 'Box A', { ...set, forecastExternalUnitEur: 30 }), line(14, 'Box B', { ...set, forecastExternalUnitEur: 33 })],
+    totals: totals({ setBasis: 'DISPLAY', forecastExternalUnitEur: 31.5, unitCostQuantity: 498 }) });
+  assert.deepEqual([sets.uniform, sets.unit, sets.minEur, sets.maxEur, plain(mixAverage(sets))], [false, 'set', 30, 33, 'gem. € 31,5000 over 498 sets']);
+});
+
+test('the summary card carries the mix, with the family of each product; the server\'s word wins when it sends one', () => {
+  const view = purchase();
+  view.reconciliation!.lines = [line(10, 'A'), line(11, 'B')];
+  assert.equal(purchaseNacalcSummary(view)!.mix.uniform, false);
+  assert.equal(purchaseNacalcSummary(view, null, () => 3)!.mix.uniform, true);
+  Object.assign(view.reconciliation!.totals, { containerAverage: false, productCount: 2 });
+  assert.deepEqual([purchaseNacalcSummary(view, null, () => 3)!.mix.uniform, purchaseNacalcSummary(view)!.mix.count], [false, 2]);
+  Object.assign(view.reconciliation!.totals, { containerAverage: true });
+  assert.equal(purchaseNacalcSummary(view)!.mix.uniform, true);
 });

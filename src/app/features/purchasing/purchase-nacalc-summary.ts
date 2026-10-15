@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { formatEur } from './purchase-payment-menus';
-import type { NacalcTone, PurchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { mixAverage, mixHeadline, mixRowFigure, type NacalcMixRow, type NacalcTone, type PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 /**
  * The nacalculatie in four lines: the headline figure with its state, the
- * difference with the afspraak, the cost per piece and what is still open
- * or to be reviewed. One card for the desk rail's Kosten pane and the
+ * difference with the afspraak, the cost per piece (several products: their
+ * range and the three most valuable, never a mixed average) and what is still
+ * open or to be reviewed. One card for the desk rail's Kosten pane and the
  * Betalingen workbench's side column; 'Volledig ›' opens the whole story.
  * Styles live in styles/purchase-nacalc.scss.
  */
@@ -24,7 +25,16 @@ import type { NacalcTone, PurchaseNacalcSummary } from './purchase-payment-resul
             @if (s.kind !== 'concept') {
               <div><dt>Verschil met afspraak</dt><dd [class.wk-amount--muted]="s.varianceEur === 0" [class.wk-amount--warn]="s.varianceEur > 0" [class.wk-amount--in]="s.varianceEur < 0">{{ variance(s) }}</dd></div>
             }
-            @if (s.unitWord === 'verkoopeenheid') {
+            @if (!s.mix.uniform) {
+              <!-- Several products: their range and the products by value; the container average only as a sub-line (no mixed 'per stuk'). -->
+              <div class="nc-summary__mix"><dt>Per product · per {{ s.mix.unit }}</dt><dd>{{ headline(s) }}@if (average(s); as line) { <small class="nc-summary__basis">{{ line }}</small> }</dd></div>
+              @for (row of s.mix.rows.slice(0, 3); track row.name) {
+                <div class="is-sub nc-summary__product"><dt>{{ row.name }}</dt><dd>{{ figure(row) }}</dd></div>
+              }
+              @if (s.mix.rows.length > 3) {
+                <div class="is-sub nc-summary__product"><dt><button class="wk-link" type="button" (click)="open.emit()">+ {{ s.mix.rows.length - 3 }} andere in de Nacalculatie ›</button></dt><dd></dd></div>
+              }
+            } @else if (s.unitWord === 'verkoopeenheid') {
               <!-- Sets and pieces together: the average per piece, sets counted with their pieces. -->
               <div><dt>Gem. per stuk</dt><dd>@if (s.pieceEur !== null) { {{ s.pieceEur | eur: 4 }} } @else { — }<small class="nc-summary__basis">{{ s.pieceQuantity | num }} stuks</small></dd></div>
             } @else {
@@ -48,6 +58,10 @@ export class PurchaseNacalcSummaryCard {
   readonly summary = input<PurchaseNacalcSummary | null>(null);
   readonly dirty = input(false);
   readonly open = output<void>();
+
+  headline(s: PurchaseNacalcSummary): string { return mixHeadline(s.mix); }
+  average(s: PurchaseNacalcSummary): string | null { return mixAverage(s.mix); }
+  figure(row: NacalcMixRow): string { return mixRowFigure(row); }
 
   pill(tone: NacalcTone): string {
     return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : '';

@@ -9,13 +9,14 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  nacalcPartnerLine, nacalcPartnerShortage, nacalcProductSub, nacalcReceiptUnitLine, nacalcUnitBasis,
+  nacalcPartnerLine, nacalcPartnerShortage, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
   type NacalcPayeeRow, type NacalcSetBasis, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
   PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { formatEur, todoCopy } from './purchase-payment-menus';
+import { mixAverage, mixRange } from './purchase-payment-result-metrics';
 
 /**
  * The nacalculatie on the phone: the Kosten stop of the read view and step 3
@@ -57,8 +58,20 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
             @if (!concept) {
               <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald + open@if (head.creditEur > 0) { − tegoed }</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.paidEur | eur }} + {{ head.openEur | eur }}@if (head.creditEur > 0) { − {{ head.creditEur | eur }} }</span></span></div>
             }
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.unitLabel }}</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span></span></div>
+            @if (n.mix.uniform) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.unitLabel }}</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span></span></div>
+            } @else {
+              <!-- Several products: their range and the three most valuable; the average only as a sub-line. -->
+              <div class="ios-cell np-mix"><span class="ios-cell__body"><span class="ios-cell__title">{{ n.mix.count }} producten · per {{ n.mix.unit }}</span>
+                <span class="ios-cell__sub">@if (average(n); as line) { {{ line }} · }{{ mixBasis(n) }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ range(n) }}</span></span></div>
+              @for (row of n.mix.rows.slice(0, 3); track row.name) {
+                <div class="ios-cell np-mix__row"><span class="ios-cell__body"><span class="ios-cell__title">{{ row.name }}</span></span>
+                  <span class="ios-cell__trail">@if (row.unitEur !== null) { <span class="ios-cell__value">{{ row.unitEur | eur: 4 }} /{{ row.unit }}</span> } @else { <span class="ios-cell__value">—</span> }
+                    @if (row.set && row.pieceEur !== null) { <span class="ios-cell__meta">{{ row.pieceEur | eur: 4 }} /stuk</span> }</span></div>
+              }
+            }
           </div>
           <p class="ios-section__foot">{{ concept ? 'De nacalculatie begint bij de bestelling: zodra betalingen genoteerd zijn, zie je hier wat de container echt kost.' : head.sentence }}</p>
         </section>
@@ -152,12 +165,12 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
           </section>
         }
 
-        <section class="ios-section" [attr.aria-label]="head.unitLabel">
-          <div class="ios-section__head"><h2>{{ head.unitLabel }}</h2></div>
+        <section class="ios-section" [attr.aria-label]="n.mix.uniform ? head.unitLabel : 'Kostbasis'">
+          <div class="ios-section__head"><h2>{{ n.mix.uniform ? head.unitLabel : 'Kostbasis' }}</h2></div>
           <div class="ios-group">
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">intern, geen betaling</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.markupEur | eur }}</span></span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Kostbasis voor prijzen</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.pricingEur | eur }}</span></span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.pricingUnitLabel }}</span>@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="ios-cell__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ n.mix.uniform ? head.pricingUnitLabel : 'Incl. Enrosed kost · gem. per ' + n.mix.unit }}</span>@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="ios-cell__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }@if (!n.mix.uniform) { <span class="ios-cell__sub">per product: zie Per product</span> }</span><span class="ios-cell__trail"><span class="ios-cell__value" [class.ios-cell__value--strong]="n.mix.uniform">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</span></span></div>
             <details class="ios-disclosure np-disclosure">
               <summary>Hoe verhoudt dit zich tot Kosten?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
               <div class="np-disclosure__body">
@@ -324,9 +337,15 @@ export class PurchaseNacalcOverview {
 
   /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
+  range(n: PurchaseNacalc): string { return mixRange(n.mix); }
+  mixBasis(n: PurchaseNacalc): string { return nacalcMixBasis(n.headline); }
+  average(n: PurchaseNacalc): string | null { return mixAverage(n.mix); }
+  /** The receipt's effect per unit; over several products it is an average and says so. */
   receiptLine(receipt: NonNullable<PurchaseNacalc['receipt']>): string | null {
-    const head = this.nacalc()?.headline;
-    return head ? nacalcReceiptUnitLine(receipt, head) : null;
+    const n = this.nacalc();
+    const line = n ? nacalcReceiptUnitLine(receipt, n.headline) : null;
+    if (!line || !n || n.mix.uniform) return line;
+    return `Gemiddeld over de ${n.mix.count} producten: ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
   }
   readonly partnerLine = (partner: NonNullable<PurchaseNacalc['partner']>, head: PurchaseNacalc['headline']) => nacalcPartnerLine(partner, head, true);
   readonly partnerShortage = nacalcPartnerShortage;

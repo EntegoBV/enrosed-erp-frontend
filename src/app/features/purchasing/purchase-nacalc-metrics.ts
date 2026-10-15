@@ -4,7 +4,7 @@ import type {
 import type {
   Due, LedgerTerm, LedgerTone, PayeeLedger, PayeeStatus, PaymentLedger, PurchasePaymentAction, PurchaseSettleRequest,
 } from './purchase-payment-ledger';
-import type { NacalcKind, NacalcTone, PurchaseNacalcSummary } from './purchase-payment-result-metrics';
+import type { NacalcKind, NacalcTone, NacalcUnitMix, PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 export type { NacalcKind, NacalcTone } from './purchase-payment-result-metrics';
 
@@ -234,6 +234,8 @@ export interface NacalcPartner {
 
 export interface PurchaseNacalc {
   headline: NacalcHeadline;
+  /** One product, or several: the hero shows the products' range then, never a mixed average (purchaseNacalcSummary's mix). */
+  mix: NacalcUnitMix;
   /** Null while the ledger is missing (payments not loaded or failed). */
   payees: NacalcPayeeRow[] | null;
   receipt: NacalcReceipt | null;
@@ -396,6 +398,7 @@ export function purchaseNacalc(input: PurchaseNacalcInput): PurchaseNacalc | nul
   }));
   return {
     headline,
+    mix: summary.mix,
     payees,
     receipt,
     products,
@@ -807,6 +810,17 @@ export function nacalcUnitBasis(head: NacalcHeadline): string {
       : `${count(head.unitQuantity)} bestelde sets × ${head.setPieces ?? 1} ${head.setUnitOther ?? 'stuks'}`) + piece + suffix;
   }
   return (usable ? `${count(head.unitQuantity)} bruikbare stuks · ${count(head.orderedQuantity)} besteld` : `${count(head.unitQuantity)} bestelde stuks`) + suffix;
+}
+
+/**
+ * What the average of a container with several products rests on, after
+ * 'gem. € 4,2168 over 7.976 st': 'bruikbaar · sets als 12 rozen geteld ·
+ * incl. inspectie · DDP' (the count already stands in the average).
+ */
+export function nacalcMixBasis(head: NacalcHeadline): string {
+  const suffix = (head.includesInspection ? ' · incl. inspectie' : '') + (head.ddp ? ' · DDP' : '');
+  const basis = head.unitBasis === 'USABLE_RECEIVED' ? 'bruikbaar' : 'besteld';
+  return (head.setBasis === 'MIXED' ? `${basis} · ${setsCounted(head)}` : basis) + suffix;
 }
 
 /** 'calculatie op 100 bestelde sets' (verkoopeenheden in a mixed container). */

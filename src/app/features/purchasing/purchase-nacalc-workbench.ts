@@ -12,11 +12,12 @@ import { CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  nacalcAgreedSub, nacalcPartnerLine, nacalcPartnerShortage, nacalcProductCount, nacalcProductUnit, nacalcReceiptUnitLine, nacalcUnitBasis,
+  nacalcAgreedSub, nacalcPartnerLine, nacalcPartnerShortage, nacalcProductCount, nacalcProductUnit, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
   type NacalcHeadline, type NacalcPartner, type NacalcPayeeRow, type NacalcProductRow, type NacalcReason, type NacalcSetBasis, type NacalcTone,
   type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import type { Due, LedgerTone, PaymentLedger, PurchaseSettleRequest, SupplierCreditAction } from './purchase-payment-ledger';
+import { mixAverage, mixRange } from './purchase-payment-result-metrics';
 import { formatEur } from './purchase-payment-menus';
 
 type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: MenuPoint; row: NacalcPayeeRow };
@@ -74,10 +75,17 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
             <small class="nc-strip__sub">@if (head.verschilEur !== 0 && head.verschilPct !== null) { {{ pct(head.verschilPct) }} {{ head.verschilEur < 0 ? 'goedkoper' : 'duurder' }} }@if (head.reviewEur > 0) { @if (head.verschilEur !== 0) { · } waarvan {{ head.reviewEur | eur }} na te kijken }</small>
           </div>
           <span class="wk-strip__sep nc-sep" aria-hidden="true"></span>
-          <div class="wk-strip__item nc-cell">
-            <span class="wk-strip__label">{{ head.unitLabel }}</span>
-            <span class="wk-strip__value">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span>
-            <small class="nc-strip__sub">{{ unitBasis(n) }}@if (head.stripPricingEur !== null) { <br />incl. Enrosed kost {{ head.stripPricingEur | eur: 4 }} }</small>
+          <div class="wk-strip__item nc-cell" [class.nc-cell--mix]="!n.mix.uniform">
+            @if (n.mix.uniform) {
+              <span class="wk-strip__label">{{ head.unitLabel }}</span>
+              <span class="wk-strip__value">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span>
+              <small class="nc-strip__sub">{{ unitBasis(n) }}@if (head.stripPricingEur !== null) { <br />incl. Enrosed kost {{ head.stripPricingEur | eur: 4 }} }</small>
+            } @else {
+              <!-- Several products: their range per {{ n.mix.unit }}; the container average only as a sub-line. -->
+              <span class="wk-strip__label">{{ n.mix.count }} producten · per {{ n.mix.unit }}</span>
+              <span class="wk-strip__value">{{ range(n) }}</span>
+              <small class="nc-strip__sub">@if (average(n); as line) { {{ line }} · }{{ mixBasis(n) }}@if (head.stripPricingEur !== null) { <br />incl. Enrosed kost gem. {{ head.stripPricingEur | eur: 4 }} }</small>
+            }
           </div>
         </div>
         @if (!concept && ledger(); as book) {
@@ -222,7 +230,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                             <a class="wk-link" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }">Waarde vastleggen ›</a></p>
                         }
                       }
-                      @if (receiptUnitLine(receipt, head); as line) { <p class="nc-muted">{{ line }}.</p> }
+                      @if (receiptLine(n, receipt); as line) { <p class="nc-muted">{{ line }}.</p> }
                       @if (receipt.supplierFact; as fact) {
                         <p class="nc-muted">
                           @switch (fact.kind) {
@@ -308,8 +316,14 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow">{{ n.productTotals.begrootEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ n.productTotals.eindkostEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow" [class.wk-amount--in]="n.productTotals.verschilEur < 0" [class.wk-amount--warn]="n.productTotals.verschilEur > 0">{{ n.productTotals.verschilEur === 0 ? '—' : signed(n.productTotals.verschilEur) }}</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
+                      @if (n.mix.uniform) {
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
+                      } @else {
+                        <!-- Several products have no one price: the average stays as a quiet sub-line. -->
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { <span class="wk-td__sub nc-average">gem. {{ head.stripUnitEur | eur: 4 }} /{{ averageUnit(head) }}</span> }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { <span class="wk-td__sub nc-average">gem. {{ head.stripPricingEur | eur: 4 }} /{{ averageUnit(head) }}</span> }</span>
+                      }
                     </div>
                   </div>
                 }
@@ -355,7 +369,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                   <div><dt>{{ head.label }}</dt><dd>{{ head.eindkostEur | eur }}</dd></div>
                   <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Enrosed kost<span class="wk-td__sub">intern, geen betaling</span></dt><dd>{{ head.markupEur | eur }}</dd></div>
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Kostbasis</dt><dd>{{ head.pricingEur | eur }}</dd></div>
-                  <div class="is-sub"><dt>{{ head.pricingUnitLabel }}@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="wk-td__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</dt><dd>@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</dd></div>
+                  <div class="is-sub"><dt>{{ n.mix.uniform ? head.pricingUnitLabel : 'Gem. per ' + n.mix.unit + ' incl. Enrosed kost · per product in de tabel' }}@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="wk-td__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</dt><dd>@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</dd></div>
                 </dl>
                 <p class="nc-muted">Gelijk aan “{{ head.separateApart ? 'Totaal incl. aparte kosten' : 'Totaal geland' }}” in Kosten zolang er niets anders betaald is. De Enrosed kost is geen betaling en past prijzen of offertes niet aan.</p>
               </div>
@@ -488,10 +502,20 @@ export class PurchaseNacalcWorkbench {
   }
   pct(value: number): string { return Math.abs(value).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %'; }
 
+  range(n: PurchaseNacalc): string { return mixRange(n.mix); }
+  mixBasis(n: PurchaseNacalc): string { return nacalcMixBasis(n.headline); }
+  average(n: PurchaseNacalc): string | null { return mixAverage(n.mix); }
+  /** The unit of the container average: per set when every line is a set, else per stuk. */
+  averageUnit(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? 'set' : 'stuk'; }
   /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
   readonly agreedSub = nacalcAgreedSub;
-  readonly receiptUnitLine = nacalcReceiptUnitLine;
+  /** The receipt's effect per unit; over several products it is an average and says so. */
+  receiptLine(n: PurchaseNacalc, receipt: NonNullable<PurchaseNacalc['receipt']>): string | null {
+    const line = nacalcReceiptUnitLine(receipt, n.headline);
+    if (!line || n.mix.uniform) return line;
+    return `Gemiddeld over de ${n.mix.count} producten: ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
+  }
   readonly partnerLine = (partner: NacalcPartner, head: NacalcHeadline) => nacalcPartnerLine(partner, head);
   readonly partnerShortage = nacalcPartnerShortage;
   readonly productCount = nacalcProductCount;
