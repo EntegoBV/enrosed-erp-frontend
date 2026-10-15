@@ -8,6 +8,7 @@ import { DateField } from '../../shared/date-field';
 import { plannedBusinessDay } from '../../shared/business-days';
 import { Sheet, Ui } from '../../shared/ui';
 import { addDaysIso, firstOfMonth, monthCells, shiftMonthIso } from './agenda-days';
+import { homeMarkersOf, stripHomeMarkers } from './home-priority';
 
 /** A read-only line the containers write into the agenda by themselves. */
 export interface PlannerMilestone {
@@ -170,7 +171,7 @@ interface CompactAgendaEntry {
                   <button class="cal-agenda__open" type="button"
                           (click)="item.kind === 'EVENT' ? openView(item) : openEdit(item)">
                     <b>{{ item.title }}</b>
-                    @if (item.note) { <small>{{ item.note }}</small> }
+                    @if (visibleNote(item.note); as note) { <small>{{ note }}</small> }
                   </button>
                 </div>
               }
@@ -236,7 +237,7 @@ interface CompactAgendaEntry {
                   <span class="task__title">{{ item.title }}</span>
                   <span class="task__tags">
                     @if (item.parentId) { <small class="task__note-mark" title="Hoort bij een afspraak">↳</small> }
-                    @if (item.note) { <small class="task__note-mark" title="Heeft een notitie">✎</small> }
+                    @if (visibleNote(item.note)) { <small class="task__note-mark" title="Heeft een notitie">✎</small> }
                     @if (item.onDate) {
                       <small class="task__date" [class.task__date--late]="isOverdue(item)">{{ shortDay(item.onDate) }}</small>
                     } @else {
@@ -671,9 +672,12 @@ export class PlannerCards {
     return id === null ? null : this.itemById().get(id) ?? null;
   });
 
+  /** A note as people read it: the home's "[home:…]" marker lines left out (the edit sheet keeps the raw note). */
+  readonly visibleNote = stripHomeMarkers;
+
   openView(item: PlannerItem): void {
     this.viewing.set(item.id);
-    this.noteDraft.set(item.note ?? '');
+    this.noteDraft.set(this.visibleNote(item.note) ?? '');
     this.childDraft.set('');
   }
 
@@ -688,9 +692,11 @@ export class PlannerCards {
 
   async saveNote(item: PlannerItem): Promise<void> {
     const note = this.noteDraft().trim();
-    if (note === (item.note ?? '')) return;
+    if (note === (this.visibleNote(item.note) ?? '')) return;
+    /* The home's marker lines stay on the note: they tie the task to the item it stands in for. */
+    const markers = homeMarkersOf(item.note).map((marker) => `[home:${marker}]`);
     try {
-      await this.api.update({ ...item, note: note || null });
+      await this.api.update({ ...item, note: [note, ...markers].filter(Boolean).join('\n') || null });
       await this.reload();
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Notitie bewaren mislukt'), 'err');
@@ -840,7 +846,7 @@ export class PlannerCards {
         date: item.onDate!,
         atTime: item.kind === 'TASK' ? null : item.atTime,
         title: item.title,
-        sub: item.kind === 'TASK' ? (item.note ? `Taak · ${item.note}` : 'Taak') : item.note,
+        sub: item.kind === 'TASK' ? (this.visibleNote(item.note) ? `Taak · ${this.visibleNote(item.note)}` : 'Taak') : this.visibleNote(item.note),
         item,
         milestone: null,
       }));
