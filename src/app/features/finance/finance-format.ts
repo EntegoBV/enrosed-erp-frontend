@@ -39,6 +39,14 @@ export function clockOf(instant: string, timeZone = 'Europe/Brussels'): string {
   } catch { return ''; }
 }
 
+/** When an import ran: '08:12' when its Brussels day is `today`, else '14 okt' (the Odoo "opgehaald …" lines). */
+export function syncMoment(instant: string, today: string): string {
+  const date = new Date(instant);
+  if (!Number.isFinite(date.getTime())) return '';
+  const day = date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
+  return day === today ? clockOf(instant) : clean(date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', timeZone: 'Europe/Brussels' }));
+}
+
 /** '+ € 1.250,50' / '− € 80,00' for signed bank amounts. */
 export function signedEur(amount: number): string {
   const text = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(Math.abs(amount));

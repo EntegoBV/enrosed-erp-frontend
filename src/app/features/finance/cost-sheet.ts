@@ -95,6 +95,11 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
             <input class="input" placeholder="bijv. Standhuur TICA oktober" [ngModel]="draft().description" (ngModelChange)="patch({ description: $event })" /></label>
           <div class="fin-field"><span class="req">{{ dateLabel() }}</span>
             @if (sourceLocked()) { <span>{{ draft().date | dateNl }}</span> } @else { <app-date-field fieldId="k-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /> }</div>
+          @if (state.cashRound()) {
+            <div class="fin-field"><span>Vervalt op</span><app-date-field fieldId="k-due" [value]="draft().dueDate ?? ''" (valueChange)="patch({ dueDate: $event || null }); state.costDueError.set('')" />
+              <small class="fin-hint">Leeg = de kostdatum telt in de kaslijn</small>
+              @if (dueProblem() || state.costDueError(); as problem) { <small class="fin-error" role="alert">{{ problem }}</small> }</div>
+          }
           <label class="fin-field"><span class="req">Categorie</span>
             <select class="select" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
               @for (category of categories(); track category.code) { <option [value]="category.code">{{ category.label }}</option> }
@@ -230,7 +235,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
         @if (draft().id && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button> }
         @if (regimeProblem(); as problem) { <span class="fin-foot-note">{{ problem }}</span> }
         <span class="spacer"></span>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem() || (bankCreatePending() && !!state.costBankCreateConflict())" (click)="save()">{{ state.saving() ? 'Bezig…' : bankCreatePending() ? 'Registratie bevestigen' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem() || !!dueProblem() || (bankCreatePending() && !!state.costBankCreateConflict())" (click)="save()">{{ state.saving() ? 'Bezig…' : bankCreatePending() ? 'Registratie bevestigen' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -351,7 +356,13 @@ export class CostSheet {
     const draft = this.draft();
     return !!draft.date && !!(draft.category ?? '').trim() && !!(draft.description ?? '').trim();
   });
-  readonly canSave = computed(() => this.basics() && (this.amount() > 0 || (!!this.source() && this.amount() < 0)) && !this.sourceLoading() && !this.sourceError() && !this.bankBlocked() && !this.regimeProblem());
+  /** The server's own refusal, before the save (a due date before the cost date). */
+  readonly dueProblem = computed(() => {
+    const draft = this.draft();
+    return this.state.cashRound() && draft.dueDate && draft.date && draft.dueDate < draft.date ? 'De vervaldag ligt vóór de kostdatum' : null;
+  });
+  readonly canSave = computed(() => this.basics() && (this.amount() > 0 || (!!this.source() && this.amount() < 0)) && !this.sourceLoading() && !this.sourceError() && !this.bankBlocked() && !this.regimeProblem()
+    && !this.dueProblem());
   readonly showError = computed(() => this.tried() && !(this.amount() > 0 || (!!this.source() && this.amount() < 0)));
 
   /* "Aan wie" */

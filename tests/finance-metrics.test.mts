@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BankBalance, CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
+import type { CompanyCost, RecurringCost } from '../src/app/core/api/models.ts';
 import {
-  addDays, bankOverview, cashOutlook, cashTotalOf, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
-  largestCosts, movementsSince, previewBacklog, recurringGroups, recurringSummary, returnVatOf, stepDate, topParties, upcomingRecurring, vatOf, yearComparison, yearlyEur,
+  addDays, cashOutlook, cashTotalOf, costsCsv, monthlyCostSeries, monthlyEquivalentEur, occurrencesBetween,
+  largestCosts, previewBacklog, recurringGroups, recurringSummary, returnVatOf, stepDate, topParties, upcomingRecurring, vatOf, yearComparison, yearlyEur,
 } from '../src/app/features/finance/finance-metrics.ts';
 
 function definition(input: Partial<RecurringCost> = {}): RecurringCost {
@@ -116,36 +116,6 @@ test('a year is set against the year before, month by month', () => {
   assert.deepEqual(rows[11], { month: 12, thisYearEur: 0, lastYearEur: 5 });
 });
 
-test('the bank overview keeps the newest reading per account and totals them over time', () => {
-  const readings: BankBalance[] = [
-    { id: 1, account: 'KBC zicht', date: '2026-09-01', balanceEur: 10000, notes: null },
-    { id: 2, account: 'KBC spaar', date: '2026-09-01', balanceEur: 25000, notes: null },
-    { id: 3, account: 'KBC zicht', date: '2026-09-08', balanceEur: 8500.5, notes: null },
-  ];
-  const overview = bankOverview(readings);
-  assert.equal(overview.totalEur, 33500.5);
-  assert.equal(overview.asOf, '2026-09-08');
-  assert.deepEqual(overview.accounts.map((row) => [row.account, row.balanceEur, row.deltaEur, row.readings]),
-      [['KBC spaar', 25000, null, 1], ['KBC zicht', 8500.5, -1499.5, 2]]);
-  assert.deepEqual(overview.series, { dates: ['2026-09-01', '2026-09-08'], values: [35000, 33500.5] });
-  assert.deepEqual(bankOverview([]), { accounts: [], totalEur: 0, asOf: null, series: { dates: [], values: [] } });
-});
-
-test('bank history merges account case, whitespace and formatted IBAN aliases without doubling money', () => {
-  const overview = bankOverview([
-    { id: 1, account: '  Kbc   zicht ', date: '2026-09-01', balanceEur: 1000, notes: null },
-    { id: 2, account: 'BE68539007547034', date: '2026-09-01', balanceEur: 400, notes: null },
-    { id: 3, account: 'KBC zicht', date: '2026-09-02', balanceEur: 900, notes: null },
-    { id: 4, account: ' BE68 5390 0754 7034 ', date: '2026-09-02', balanceEur: 500, notes: null },
-    { id: 5, account: 'ING', date: '2026-09-02', balanceEur: 200, notes: null },
-    { id: 6, account: '   ', date: '2026-09-02', balanceEur: 999, notes: null },
-  ]);
-  assert.equal(overview.totalEur, 1600);
-  assert.deepEqual(overview.accounts.map(row => [row.account, row.balanceEur, row.previousEur, row.deltaEur, row.readings]),
-    [['KBC zicht', 900, 1000, -100, 2], ['BE68 5390 0754 7034', 500, 400, 100, 2], ['ING', 200, null, null, 1]]);
-  assert.deepEqual(overview.series, { dates: ['2026-09-01', '2026-09-02'], values: [1400, 1600] });
-});
-
 test('the cash outlook takes the open and coming costs off the bank and adds the open invoices', () => {
   assert.equal(cashOutlook(33500.5, 1512.51, 2057, 4200).expectedEur, 34130.99);
   assert.equal(cashOutlook(0, Number.NaN, 10, 0).expectedEur, -10);
@@ -196,32 +166,6 @@ test('the CSV uses semicolons and a decimal comma and quotes what would break a 
   assert.equal(lines[0].split(';')[5], 'Bedrag excl. btw');
   assert.equal(lines[1], '2026-09-01;Huur & magazijn;Huur;;;10,00;0,00;0,00;10,00;;;nee;België;BE;Diensten;100,00;100,00;;');
   assert.equal(lines[2], '2026-09-05;Huur & magazijn;Huur;"TICA; Trends & Trade";"F ""77""";1250,00;21,00;262,50;1512,50;;;ja;België;BE;Diensten;100,00;100,00;;');
-});
-
-test('the bank rolls forward with what moved after the last reading, and not before it', () => {
-  const costs = [
-    cost({ id: 1, date: '2026-09-02', amountExclEur: 100, paidOn: '2026-09-02', description: 'Boekhouder', party: 'Accountant BV' }),
-    cost({ id: 2, date: '2026-09-05', amountExclEur: 200, paidOn: '2026-09-09', description: 'Huur', vatPct: 0 }),
-    cost({ id: 3, date: '2026-09-06', amountExclEur: 50, paidOn: null, description: 'Open' }),
-  ];
-  const payments = [
-    { paidOn: '2026-09-10', amountEur: 5000, orderNumber: 'PO-2026-005', orderAlias: 'Rozen', label: 'Saldo' },
-    { paidOn: '2026-09-01', amountEur: 9999, orderNumber: 'PO-2026-004', label: null },
-  ];
-  const invoices = [{ date: '2026-09-12', number: 'F-2026-0003', customer: 'Bloemen BV', amountEur: 1210 }];
-
-  const moves = movementsSince('2026-09-08', 12500, costs, payments, invoices);
-
-  assert.deepEqual(moves.rows.map((row) => `${row.date} ${row.label} ${row.amountEur}`),
-      ['2026-09-12 Factuur F-2026-0003 1210', '2026-09-10 Inkoop PO-2026-005 -5000', '2026-09-09 Huur -200']);
-  assert.equal(moves.rows[1].detail, 'Rozen · Saldo');
-  assert.equal(moves.outEur, 5200);
-  assert.equal(moves.inEur, 1210);
-  assert.equal(moves.netEur, -3990);
-  assert.equal(moves.currentEur, 8510);
-  const none = movementsSince(null, 0, costs, payments, invoices);
-  assert.equal(none.rows.length, 0, 'without a reading nothing rolls');
-  assert.equal(none.currentEur, 0);
 });
 
 test('parties and largest costs read from the same list', () => {

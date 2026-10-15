@@ -66,7 +66,9 @@
 }
 @media (max-width: 679px) {
   #finance-workspace {
-    app-bank-panel { padding: 0 16px 24px; }
+    /* Bank and Transacties are ios-* pages: their groups keep the --ios-inset gutter themselves. */
+    app-bank-panel { padding: 0 0 24px; }
+    app-bank-panel > .fin-note-line { margin-inline: var(--ios-inset); }
     .fin-bank-home { gap: 12px; margin: 4px 0 16px; flex-direction: column; }
     .fin-bank-home h2 { font-size: 15px; margin-bottom: 3px; }
     .fin-bank-home p { font-size: 12px; }

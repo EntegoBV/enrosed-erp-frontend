@@ -1,14 +1,15 @@
 import type { BankBalance, CompanyCost, CostParty, Fair, RecurringCost } from '../../core/api/models';
 
 /*
- * The six sections of the Kosten & bank workspace, one daily question each,
+ * The sections of the Kosten & bank workspace, one daily question each, the
+ * places of the sidebar, the phone tab bar and the shortcuts (FINANCE_NAV),
  * and the calendar helpers every section shares. Only type imports: the node
  * tests run this file on its own.
  */
 
 /** The sections; the address bar carries the one on screen as `view` (see finance-url.ts). */
-export type FinanceView = 'overview' | 'open' | 'incoming' | 'bank' | 'costs' | 'analysis';
-export type FinanceGroup = 'Vandaag' | 'Geld' | 'Boekhouding';
+export type FinanceView = 'bank' | 'open' | 'incoming' | 'costs' | 'analysis';
+export type FinanceGroup = 'Bank' | 'Geld' | 'Boekhouding';
 
 export interface FinanceSection {
   id: FinanceView;
@@ -23,17 +24,40 @@ export interface FinanceSection {
   phoneTab: boolean;
 }
 
-/** One order for the sidebar, the phone tab bar and the shortcuts 1-6. */
+/** The sections by their `view`; the sidebar, the tab bar and the keys go by FINANCE_NAV. */
 export const FINANCE_SECTIONS: readonly FinanceSection[] = [
-  { id: 'overview', label: 'Overzicht', short: 'Overzicht', group: 'Vandaag', icon: 'home', hint: 'Hoe staan we ervoor en wat vraagt mij nu?', phoneTab: true },
+  { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true },
   { id: 'open', label: 'Te betalen', short: 'Betalen', group: 'Geld', icon: 'arrow-out', hint: 'Wat moet er nog betaald worden?', phoneTab: true },
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true },
-  { id: 'bank', label: 'Bankrekeningen', short: 'Bank', group: 'Geld', icon: 'bank', hint: 'Rekeningen, transacties en facturen afpunten', phoneTab: true },
   { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true },
   { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
 ];
 
-export const FINANCE_GROUPS: readonly FinanceGroup[] = ['Vandaag', 'Geld', 'Boekhouding'];
+export type FinanceNavId = 'bank' | 'transactions' | 'open' | 'incoming' | 'costs' | 'analysis';
+/** One place of the sidebar, the phone tab bar and the keys 1-6: a section, or Bank's Transacties. */
+export interface FinanceNavItem {
+  id: FinanceNavId; label: string; short: string; group: FinanceGroup; icon: string; hint: string;
+  phoneTab: boolean; target: { view: FinanceView; tab: string }; key: '1' | '2' | '3' | '4' | '5' | '6';
+}
+export const FINANCE_NAV: readonly FinanceNavItem[] = [
+  { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true, target: { view: 'bank', tab: 'accounts' }, key: '1' },
+  { id: 'transactions', label: 'Transacties', short: 'Transacties', group: 'Bank', icon: 'exchange', hint: 'Alle banktransacties: koppelen, splitsen en boeken', phoneTab: true, target: { view: 'bank', tab: 'movements' }, key: '2' },
+  { id: 'open', label: 'Te betalen', short: 'Betalen', group: 'Geld', icon: 'arrow-out', hint: 'Wat moet er nog betaald worden?', phoneTab: true, target: { view: 'open', tab: 'all' }, key: '3' },
+  { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true, target: { view: 'incoming', tab: 'open' }, key: '4' },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true, target: { view: 'costs', tab: 'company' }, key: '5' },
+  { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false, target: { view: 'analysis', tab: 'costs' }, key: '6' },
+];
+
+/**
+ * The place an address stands on: Bank on bank/accounts, Transacties on
+ * bank/movements (with or without an account), else the section's own.
+ */
+export function financeNavOf(location: { view: FinanceView; tab: string }): FinanceNavItem {
+  const id: FinanceNavId = location.view === 'bank' ? (location.tab === 'movements' ? 'transactions' : 'bank') : location.view;
+  return FINANCE_NAV.find((item) => item.id === id) ?? FINANCE_NAV[0];
+}
+
+export const FINANCE_GROUPS: readonly FinanceGroup[] = ['Bank', 'Geld', 'Boekhouding'];
 
 export interface FinanceTab {
   id: string;
@@ -44,7 +68,6 @@ export interface FinanceTab {
 
 /** The segments per section; the first is the default and never appears in the address. */
 export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> = {
-  overview: [],
   open: [
     { id: 'all', label: 'Alles', short: 'Alles' },
     { id: 'costs', label: 'Kosten', short: 'Kosten' },
@@ -56,9 +79,10 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
     { id: 'open', label: 'Openstaand', short: 'Openstaand' },
     { id: 'received', label: 'Ontvangen', short: 'Ontvangen' },
   ],
+  /* Ids unchanged since the account register, so old links keep working. */
   bank: [
-    { id: 'accounts', label: 'Rekeningen', short: 'Rekeningen' },
-    { id: 'movements', label: 'Bewegingen', short: 'Bewegingen' },
+    { id: 'accounts', label: 'Bank', short: 'Bank' },
+    { id: 'movements', label: 'Transacties', short: 'Transacties' },
   ],
   costs: [
     { id: 'company', label: 'Facturen & kosten', short: 'Kosten' },

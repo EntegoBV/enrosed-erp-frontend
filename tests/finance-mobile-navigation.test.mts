@@ -4,9 +4,10 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { signal, computed } from '@angular/core';
-import { FINANCE_TABS, financeSection } from '../src/app/features/finance/finance-sections.ts';
+import { FINANCE_TABS, financeNavOf, financeSection } from '../src/app/features/finance/finance-sections.ts';
 import { parseFinanceLocation, patchLocation } from '../src/app/features/finance/finance-url.ts';
 import { cashTotalOf, openOf, paidOf } from '../src/app/features/finance/finance-metrics.ts';
+import { syncMoment } from '../src/app/features/finance/finance-format.ts';
 
 async function selectedClass(file: string, name: string, members: string[]) {
   const source = await readFile(new URL(`../src/app/features/finance/${file}`, import.meta.url), 'utf8');
@@ -17,11 +18,12 @@ async function selectedClass(file: string, name: string, members: string[]) {
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, kept);
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
-  vm.runInNewContext(js, { exports, signal, computed, FINANCE_TABS, financeSection, cashTotalOf, openOf, paidOf });
+  vm.runInNewContext(js, { exports, signal, computed, FINANCE_TABS, financeSection, financeNavOf, cashTotalOf, openOf, paidOf, syncMoment });
   return exports[name];
 }
 const State = await selectedClass('finance-state.ts', 'FinanceState', ['inspect', 'inspectParents', 'inspectOrigin', 'inspectorBackLabel', 'inspectorOriginLabel', 'inspectItem', 'inspectRelated', 'backInspector', 'selectInspector', 'closeInspector', 'clearInspector']);
-const Page = await selectedClass('costs-page.ts', 'CostsPage', ['bankDetail', 'pageTitle', 'phoneSubtitle', 'phoneInspector', 'subScreen', 'backFromSection', 'phoneSegments']);
+// Bank and Transacties are places of their own since 2026-10-16: no account register, no 'bankDetail'.
+const Page = await selectedClass('costs-page.ts', 'CostsPage', ['pageTitle', 'phoneSubtitle', 'bankSub', 'phoneInspector', 'phoneLine', 'subScreen', 'backFromSection', 'phoneSegments']);
 const Row = await selectedClass('cost-row.ts', 'CostRow', ['incl', 'open', 'credit', 'overpaid', 'status']);
 
 function setup(params: Record<string, string> = { view: 'bank', tab: 'movements', account: 'BE94731074082814', dir: 'out', link: 'unlinked', q: 'Container', from: '2026-09-01', to: '2026-09-30' }) {
@@ -30,8 +32,10 @@ function setup(params: Record<string, string> = { view: 'bank', tab: 'movements'
   state.go = (patch: any) => { state.location.set(patchLocation(state.location(), patch)); };
   state.inspectTitle = (target: any) => `${target.kind} ${target.id}`;
   Object.assign(state, { desk: signal(false), costDraft: signal(null), paySheet: signal(null), recurringDraft: signal(null), menu: signal(null),
-    accountLabel: () => 'KBC-zichtrekening', segmentWarn: () => false, leaveAnalysis: () => { state.leftAnalysis = true; } });
+    accountLabel: () => 'KBC-zichtrekening', segmentWarn: () => false, leaveAnalysis: () => { state.leftAnalysis = true; }, today: signal('2026-10-15'),
+    accountsView: () => [{ account: 'BE94731074082814', label: 'KBC-zichtrekening', source: 'ODOO' }] });
   const page = new Page(); page.state = state; page.current = computed(() => financeSection(state.location().view));
+  page.sync = { status: () => ({ lastSyncAt: '2026-10-15T06:12:00Z' }) };
   return { state, page };
 }
 
@@ -39,7 +43,8 @@ test('opening a linked cost from bank and returning keeps the exact account, que
   const { state, page } = setup(); const before = { ...state.location() };
   state.inspectItem({ kind: 'cost', id: 26 });
   assert.equal(state.inspectorBackLabel(), 'Terug naar transacties');
-  assert.equal(page.pageTitle(), 'KBC-zichtrekening');
+  assert.equal(page.pageTitle(), 'Transacties');
+  assert.equal(page.phoneSubtitle(), 'KBC-zichtrekening', 'the chosen account is the sub line');
   assert.equal(page.phoneInspector().id, 26);
   state.backInspector();
   assert.equal(state.inspect(), null);
@@ -78,12 +83,55 @@ test('editing or paying hides the mobile detail dialog without discarding its or
   }
 });
 
-test('mobile section chooser uses full names; account back remains explicit and preserves bank overview', () => {
+test('mobile section chooser uses full names; Transacties is a phone tab: no back label "Rekeningen", subScreen() false', () => {
+  // Reversed on purpose (spec-bank-forecast §1.1, §6.1): the account register's explicit "Rekeningen" back is gone.
   const { state, page } = setup({ view: 'costs', tab: 'company' });
   assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
   state.go({ view: 'bank', tab: 'movements', account: 'BE94731074082814' });
-  assert.equal(page.phoneSegments().length, 0); assert.equal(page.subScreen(), true);
-  page.backFromSection(); assert.equal(state.location().view, 'bank'); assert.equal(state.location().tab, 'accounts'); assert.equal(state.location().account, '');
+  assert.equal(page.phoneSegments().length, 0); assert.equal(page.subScreen(), false);
+  assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'KBC-zichtrekening']);
+  state.go({ account: '' });
+  assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'Alle rekeningen']);
+  state.go({ view: 'bank', tab: 'accounts' });
+  assert.equal(page.pageTitle(), 'Bank');
+  assert.match(page.phoneSubtitle(), /^KBC-zichtrekening opgehaald \d\d:\d\d$/, 'Bank\'s sub: what was fetched, short enough for 360 px');
+  assert.equal(page.phoneSubtitle(), 'KBC-zichtrekening opgehaald 08:12');
+  state.today.set('2026-10-20');
+  assert.equal(page.phoneSubtitle(), 'KBC-zichtrekening opgehaald 15 okt', 'an import of an earlier day shows its day, never a bare time');
+  state.go({ view: 'analysis' });
+  assert.equal(page.subScreen(), true, 'Rapportage stays a sub-screen');
+  page.backFromSection(); assert.equal(state.leftAnalysis, true);
+});
+
+test('a transaction (line=) opens its own sheet on the phone, not the generic detail sheet', () => {
+  const { state, page } = setup({ view: 'bank', tab: 'movements', line: '8841' });
+  state.inspect.set({ kind: 'line', id: 8841 });
+  assert.equal(page.phoneLine().id, 8841);
+  state.inspect.set({ kind: 'cost', id: 26 });
+  assert.equal(page.phoneLine(), null);
+  assert.equal(page.phoneInspector().id, 26);
+});
+
+test('opening anything else while a transaction is open takes line= off the address, so it cannot win the inspector back', () => {
+  // Facturen & kosten: cost 14 → its transaction → another cost row. Before 2026-10-16's review the address kept line=105.
+  const { state } = setup({ view: 'costs', tab: 'company', cost: '14', line: '105' });
+  state.inspect.set({ kind: 'line', id: 105 });
+  state.inspectItem({ kind: 'cost', id: 17 });
+  assert.deepEqual([state.location().cost, state.location().line], [17, null]);
+  // Elsewhere a container or a recent row opened from a transaction drops line=, and Back pushes it again.
+  const bank = setup({ view: 'bank', tab: 'movements', line: '105' }).state;
+  bank.inspect.set({ kind: 'line', id: 105 });
+  bank.inspectRelated({ kind: 'container', id: 43 });
+  assert.equal(bank.location().line, null); assert.deepEqual(bank.inspect(), { kind: 'container', id: 43 });
+  bank.backInspector();
+  assert.equal(bank.location().line, 105);
+  // On Facturen & kosten a container from the transaction drops cost= too; the same cost keeps cost=.
+  const stale = setup({ view: 'costs', tab: 'company', cost: '26', line: '105' }).state;
+  stale.inspectItem({ kind: 'container', id: 43 });
+  assert.deepEqual([stale.location().cost, stale.location().line], [null, null]);
+  const same = setup({ view: 'costs', tab: 'company', cost: '26', line: '105' }).state;
+  same.inspectItem({ kind: 'cost', id: 26 });
+  assert.deepEqual([same.location().cost, same.location().line], [26, null]);
 });
 
 test('supplier credit stays open until refunded, and partial/over-refund status follows signed money', () => {

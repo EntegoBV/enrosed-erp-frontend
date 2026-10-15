@@ -7,6 +7,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import type { FinanceCommand } from './finance-shortcuts';
+import { dayMonth } from './finance-format';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { ContainerPaymentTreeView } from './container-payment-tree-view';
@@ -38,6 +39,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
               <span class="wk-th wk-th--num" role="columnheader" data-hide="sm">Afspraak</span>
               <span class="wk-th wk-th--num" role="columnheader">Betaald</span>
               <span class="wk-th wk-th--num" role="columnheader">Open</span>
+              <span class="wk-th" role="columnheader" data-hide="xs">Op de bank</span>
               <span class="wk-th" role="columnheader"><span class="fin-sr">Uitklappen</span></span>
             </div>
             @for (row of rows(); track row.view.order.id) {
@@ -51,6 +53,9 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
                 <span class="wk-td wk-td--num" role="gridcell" data-hide="sm">{{ row.reconciliation.totals.plannedExternalEur | eur }}</span>
                 <span class="wk-td wk-td--num" role="gridcell">{{ row.reconciliation.totals.paidEur | eur }}</span>
                 <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--warn]="row.reconciliation.totals.remainingEur > 0.005">{{ row.reconciliation.totals.remainingEur | eur }}</b></span>
+                @let bank = onBank(view.order.id);
+                <span class="wk-td fin-onbank" role="gridcell" data-hide="xs">@if (bank.total) { {{ bank.linked }} van {{ bank.total }} {{ bank.total === 1 ? 'betaling' : 'betalingen' }}@if (bank.missing) { <span class="wk-amount--warn"> · {{ bank.missing }} zonder transactie</span> } }
+                  @else if (bank.deposit) { <span class="wk-amount--muted">{{ bank.deposit }}</span> } @else { — }</span>
                 <span class="wk-td" role="gridcell"><button class="wk-group__toggle" type="button" tabindex="-1" [attr.aria-expanded]="expanded().has(view.order.id)" aria-label="Details tonen" (click)="$event.stopPropagation(); toggle(view.order.id)"><app-icon name="chevron-down" [size]="14" /></button></span>
               </div>
               @if (expanded().has(view.order.id)) {
@@ -84,7 +89,9 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
               <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'container', id: row.view.order.id })">
                 <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
                 <span class="ios-cell__body"><span class="ios-cell__title">{{ row.view.order.number }}{{ row.view.order.alias ? ' · ' + row.view.order.alias : '' }}</span>
-                  <span class="ios-cell__sub">Betaald {{ row.reconciliation.totals.paidEur | eur }} · Open {{ row.reconciliation.totals.remainingEur | eur }}</span></span>
+                  <span class="ios-cell__sub">Betaald {{ row.reconciliation.totals.paidEur | eur }} · Open {{ row.reconciliation.totals.remainingEur | eur }}</span>
+                  @let bank = onBank(row.view.order.id);
+                  @if (bank.total) { <span class="ios-cell__sub" [class.fin-warn-text]="bank.missing > 0">Op de bank: {{ bank.linked }} van {{ bank.total }}{{ bank.missing ? ' · ' + bank.missing + ' zonder transactie' : '' }}</span> }</span>
                 <span class="ios-cell__trail"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(row.view) }}</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
@@ -123,7 +130,33 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
       { label: 'Afspraak', value: formatEuro(totals.plannedEur) },
       { label: 'Betaald', value: formatEuro(totals.paidEur) },
       { label: 'Open', value: formatEuro(totals.remainingEur), tone: totals.remainingEur > 0 ? 'warn' : 'muted' },
+      { label: 'Betaald, op de bank', value: formatEuro(this.bankTotals().linkedEur) },
+      { label: 'Betaald, nog niet op de bank', value: `${formatEuro(this.bankTotals().missingEur)} · ${this.bankTotals().missing}`, tone: this.bankTotals().missing ? 'warn' : 'muted' },
     ];
+  });
+  /** The payments of a container on the bank (a hard link or an older line's marker); credit offsets left no bank and do not count. */
+  private paymentsOnBank(orderId: number): { row: { amountEur: number }; banked: boolean }[] {
+    return this.state.paymentsFor(orderId).filter((row) => !row.creditOffset).map((row) => ({ row, banked: this.state.containerPaymentLine(row) !== null }));
+  }
+  /** "{linked} van {total} betalingen · {n} zonder transactie", or "aanbetaling verwacht {d mmm}" for an open deposit term without payments. */
+  onBank(orderId: number): { linked: number; total: number; missing: number; deposit: string | null } {
+    const rows = this.paymentsOnBank(orderId);
+    const linked = rows.filter((row) => row.banked).length;
+    let deposit: string | null = null;
+    if (!rows.length && this.state.containerPayables().some((term) => term.orderId === orderId && term.due === 'ORDERED')) {
+      const key = `container:${orderId}:SUPPLIER:ORDERED`;
+      const item = [...this.state.kaslijn().items, ...this.state.kaslijn().excludedItems].find((row) => row.key === key);
+      deposit = item ? `aanbetaling verwacht ${dayMonth(item.date)}` : 'aanbetaling verwacht';
+    }
+    return { linked, total: rows.length, missing: rows.length - linked, deposit };
+  }
+  readonly bankTotals = computed(() => {
+    let linked = 0, missing = 0, count = 0;
+    for (const row of this.rows()) for (const payment of this.paymentsOnBank(row.view.order.id)) {
+      const value = Math.round(payment.row.amountEur * 100);
+      if (payment.banked) linked += value; else { missing += value; count += 1; }
+    }
+    return { linkedEur: linked / 100, missingEur: missing / 100, missing: count };
   });
   readonly status = computed(() => `${this.rows().length} ${this.rows().length === 1 ? 'container' : 'containers'}`);
 

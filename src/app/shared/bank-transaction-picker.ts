@@ -6,6 +6,12 @@ import { bankAmountDifference } from './bank-transaction-options';
 import { EurPipe } from './pipes';
 import { Skeleton } from './skeleton';
 
+/** An account key as the ledger merges it: an IBAN without spaces, else the upper-cased name. */
+const accountKey = (value: string): string => {
+  const key = (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+  return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
+};
+
 /** Inline in payment sheets: no nested modal or fixed-position container. */
 @Component({
   selector: 'app-bank-transaction-picker',
@@ -13,11 +19,11 @@ import { Skeleton } from './skeleton';
   imports: [EurPipe, Skeleton],
   template: `
     <section class="bank-picker" aria-label="Bestaande banktransactie">
-      <header><div><b>{{ heading() }}</b><small>{{ heading() === 'Banktransactie koppelen' ? 'Kies een bestaande beweging; datum en rekening komen van de bank; bestaande betaalbedragen blijven behouden.' : 'Kies een uitgaande beweging van de bank; de betaling volgt haar datum en bedrag.' }}</small></div>
+      <header><div><b>{{ heading() }}</b><small>{{ heading() === 'Banktransactie koppelen' ? 'Kies een bestaande transactie; bedrag en datum volgen de transactie.' : 'Kies een uitgaande beweging van de bank; de betaling volgt haar datum en bedrag.' }}</small></div>
         <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : heading() === 'Banktransactie koppelen' ? 'Transactie kiezen' : 'Kiezen' }}</button>
       </header>
       @if (selected(); as row) {
-        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ row.account }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
+        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
           <button type="button" class="btn btn--sm" [disabled]="disabled()" (click)="selectedChange.emit(null)">Selectie wissen</button></div>
       }
       @if (expanded()) {
@@ -33,7 +39,7 @@ import { Skeleton } from './skeleton';
           <div class="bank-picker__results" role="group" aria-label="Banktransacties">
             @for (row of matches(); track row.id) {
               <button class="bank-picker__row" type="button" [disabled]="disabled() || allocated(row)" [attr.aria-pressed]="selected()?.id === row.id" (click)="choose(row)">
-                <span class="bank-picker__main"><b>{{ row.counterparty || row.reference || 'Banktransactie' }}</b><small>{{ day(row) }} · {{ row.reference || 'Geen mededeling' }}</small><small>{{ row.account }}</small></span>
+                <span class="bank-picker__main"><b>{{ row.counterparty || row.reference || 'Banktransactie' }}</b><small>{{ day(row) }} · {{ row.reference || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }}</small></span>
                 <span class="bank-picker__money"><b>{{ row.amountEur | eur }}</b><small>{{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small><small>{{ allocated(row) ? (row.allocationLabel || 'Al gekoppeld') : 'Vrij om te koppelen' }}</small></span>
               </button>
             } @empty { <p class="bank-picker__empty">{{ rows().length ? 'Geen transacties bij deze filters. Pas de zoekterm of het bedragfilter aan.' : 'Er zijn nog geen banktransacties beschikbaar. Synchroniseer bij Kosten & bank of registreer de betaling handmatig.' }}</p> }
@@ -71,6 +77,8 @@ export class BankTransactionPicker implements OnInit {
   readonly query = signal('');
   readonly exact = signal(false);
   readonly filterDirection = signal<BankDirection>('ANY');
+  /** Account labels by key and by alias: the picker names the account as Kosten & bank does, never its raw key. */
+  private readonly labels = signal<ReadonlyMap<string, string>>(new Map());
   readonly matches = computed(() => {
     const excluded = new Set(this.exclude());
     return bankTransactionOptions(this.rows().filter(row => !excluded.has(row.id)), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact());
@@ -81,9 +89,15 @@ export class BankTransactionPicker implements OnInit {
   day(row: BankStatementLine): string { return bankTransactionDay(row).split('-').reverse().join('/'); }
   toggle(): void { this.expanded.update(open => !open); if (this.expanded()) void this.load(); }
   choose(row: BankStatementLine): void { if (this.disabled() || this.allocated(row)) return; this.selectedChange.emit(row); this.expanded.set(false); }
+  accountLabel(key: string): string { return this.labels().get(accountKey(key)) ?? key; }
   async load(): Promise<void> {
     if (this.loading()) return;
     this.loading.set(true); this.error.set('');
+    void this.api.accounts().then((accounts) => {
+      const labels = new Map<string, string>();
+      for (const account of accounts) for (const key of [account.key, ...(account.aliases ?? [])]) labels.set(accountKey(key), account.label);
+      this.labels.set(labels);
+    }).catch(() => { /* the raw key stays readable */ });
     try { this.rows.set(await this.api.list()); }
     catch (failure) { this.error.set(messageOf(failure, 'Banktransacties laden mislukt.')); }
     finally { this.loading.set(false); }

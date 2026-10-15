@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import type { PurchaseOrderView, PurchasePaymentRow } from '../src/app/core/api/models.ts';
-import { invoiceComparison, invoiceLine, primaryInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
 import type { PayeeBranch } from '../src/app/features/finance/container-payment-tree.ts';
 
 // Kosten & bank per container: invoices → terms → payments (round of 2026-10-15). The module words its invoices
@@ -14,7 +14,7 @@ const parsed = ts.createSourceFile('container-payment-tree.ts', source, ts.Scrip
 const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed,
   parsed.statements.filter(node => !ts.isImportDeclaration(node)))), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const exports: Record<string, any> = {};
-vm.runInNewContext(javascript, { exports, invoiceComparison, invoiceLine, primaryInvoice, Intl });
+vm.runInNewContext(javascript, { exports, invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice, Intl });
 const tree = (view: PurchaseOrderView, rows: PurchasePaymentRow[], lines: Record<number, string>): PayeeBranch[] =>
   JSON.parse(JSON.stringify(exports['containerPaymentTree'](view, rows,
     (row: PurchasePaymentRow) => row.bankStatementLineId != null ? { accountLabel: lines[row.bankStatementLineId] ?? '', day: '' } : null,
@@ -51,7 +51,8 @@ test('example (a) and (c): the invoice, its file without data, the terms and a p
     row(900, { orderId: 15, amountEur: 5 }),
   ];
   const [supplier] = tree(view(), rows, { 501: 'KBC', 520: 'KBC', 534: 'KBC' });
-  assert.deepEqual(supplier.invoices, [{ id: 7, text: 'Factuur CI-2026-118 · 20/08/2026 · € 31.048,04', documentId: 88, name: 'CI-2026-118.pdf', primary: true, comparison: 'gelijk aan de afspraak' }]);
+  assert.deepEqual(supplier.invoices, [{ id: 7, text: 'Factuur CI-2026-118 · 20/08/2026 · € 31.048,04', documentId: 88, name: 'CI-2026-118.pdf', primary: true, comparison: 'gelijk aan de afspraak',
+    coverage: 'Geldt voor alle betalingen van Leverancier (2)' }]);
   assert.deepEqual(supplier.invoiceFiles, [{ documentId: 77, text: 'invoice.pdf · zonder gegevens', name: 'invoice.pdf' }]);
   assert.deepEqual(supplier.terms.map(term => [term.label, term.paidEur, term.plannedEur, term.payments.map(node => [node.paidOn, node.label, node.amountEur, node.bank])]), [
     ['30% bij bestelling', 9314.41, 9314.41, [['2026-08-02', 'Aanbetaling 30%', 9314.41, 'op de bank · KBC']]],
@@ -96,4 +97,38 @@ test('a server with this round but no invoices yet, and an older server without 
   assert.equal(flag[1].viaSupplier, 'Factuur van de leverancier nog niet ingevoerd');
   const older = tree(view({ invoices: undefined, invoiceFiles: undefined }), [row(101, { bankStatementLineId: 501 })], {});
   assert.deepEqual([older[0].invoices, older[0].payments.map(node => node.bank)], [[], ['op de bank']], 'a hard link to a line not loaded still counts');
+});
+
+// Kosten & bank round (2026-10-16): where a payment stands on the bank links to the transaction (line=), with its day.
+const linesWithDay = (view: PurchaseOrderView, rows: PurchasePaymentRow[], lines: Record<number, { label: string; day: string }>): PayeeBranch[] =>
+  JSON.parse(JSON.stringify(exports['containerPaymentTree'](view, rows,
+    (row: PurchasePaymentRow) => row.bankStatementLineId != null ? { accountLabel: lines[row.bankStatementLineId]?.label ?? '', day: lines[row.bankStatementLineId]?.day ?? '', lineId: row.bankStatementLineId } : null,
+    (stream: { status: string }) => stream.status)).replace(/[\u00a0\u202f]/g, ' '));
+
+test('"op de bank · {account} · {d mmm}" with its line id, and "aangepast aan de bank (was … op dd/mm)"', () => {
+  const rows = [
+    row(101, { amountEur: 12512.4, label: '30%', instalmentDue: 'ORDERED', bankStatementLineId: 8841, paidOn: '2026-10-14', bankAdjustedFromEur: 12480, bankAdjustedFromOn: '2026-10-13' }),
+    row(102, { amountEur: 10000, label: 'Saldo 70%', instalmentDue: 'SHIPPED', paidOn: '2026-09-10', groupId: 102, bankStatementLineId: 520 }),
+    row(103, { amountEur: 11733.63, label: 'Saldo 70%', instalmentDue: 'SHIPPED', paidOn: '2026-09-24', groupId: 102, bankStatementLineId: 534, bankAdjustedFromEur: 11700 }),
+  ];
+  const [supplier] = linesWithDay(view(), rows, { 8841: { label: 'KBC-zichtrekening', day: '2026-10-14' }, 520: { label: 'KBC-zichtrekening', day: '2026-09-10' }, 534: { label: 'KBC-zichtrekening', day: '2026-09-24' } });
+  const deposit = supplier.terms[0].payments[0];
+  assert.deepEqual([deposit.bank, deposit.lineId, deposit.adjusted], ['op de bank · KBC-zichtrekening · 14 okt', 8841, 'aangepast aan de bank (was € 12.480,00 op 13/10)']);
+  const group = supplier.terms[1].payments[0];
+  assert.deepEqual([group.bank, group.lineId, group.adjusted], ['', null, null], 'a payment in parts speaks through its parts');
+  assert.deepEqual(group.parts.map(part => [part.bank, part.lineId, part.adjusted]),
+    [['op de bank · KBC-zichtrekening · 10 sep', 520, null], ['op de bank · KBC-zichtrekening · 24 sep', 534, 'aangepast aan de bank (was € 11.700,00)']]);
+  assert.equal(supplier.invoices[0].coverage, 'Geldt voor alle betalingen van Leverancier (2)', 'round 2\'s R2-3 words, a payment in parts once');
+});
+
+test('one transfer for three containers: each container says which others it shares the transaction with', () => {
+  const rows = [
+    row(301, { amountEur: 9000, instalmentDue: 'ORDERED', bankStatementLineId: 900 }),
+    row(302, { orderId: 15, orderNumber: 'PO-2026-015', amountEur: 9000, instalmentDue: 'ORDERED', bankStatementLineId: 900 }),
+    row(303, { orderId: 16, orderNumber: 'PO-2026-016', amountEur: 9000, instalmentDue: 'ORDERED', bankStatementLineId: 900 }),
+    row(304, { amountEur: 100, payee: 'SEPARATE', bankStatementLineId: 901 }),
+  ];
+  const [supplier, inspection] = linesWithDay(view(), rows, { 900: { label: 'KBC', day: '2026-10-02' }, 901: { label: 'KBC', day: '2026-10-03' } });
+  assert.equal(supplier.terms[0].payments[0].sharedWith, 'zelfde transactie als PO-2026-015 en PO-2026-016');
+  assert.equal(inspection.payments[0].sharedWith, null);
 });

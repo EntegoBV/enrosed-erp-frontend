@@ -54,6 +54,8 @@ export interface BankLineLike {
   bookedAt: string;
   timeZone: string;
   reference: string | null;
+  /** "Boeken als…" (2026-10-16): a booked line pays no cost or container, so it is never guessed. */
+  classification?: string | null;
 }
 
 export const MATCH_WINDOW_DAYS = 7;
@@ -85,8 +87,8 @@ export function matchOutgoings<T extends OutgoingRow>(rows: readonly T[], lines:
   const matched = new Map<T, BankLineLike>();
   const paid = rows.filter((row) => !!row.paidOn && row.amountEur !== 0);
   const byId = new Map(lines.map((line) => [line.id, line]));
-  // An imported movement is reconciled only by a saved link, never by a guess.
-  const outgoing = lines.filter((line) => line.amountEur !== 0 && line.source !== 'ODOO');
+  // An imported movement is reconciled only by a saved link, never by a guess; a booked one ("Boeken als…") neither.
+  const outgoing = lines.filter((line) => line.amountEur !== 0 && line.source !== 'ODOO' && !line.classification);
   const markers = lineMarkers(outgoing);
   const byMarker = new Map<string, BankLineLike>();
   for (const line of outgoing) {

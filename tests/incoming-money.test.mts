@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BankBalance, SalesOrderView, SalesPaymentSummary } from '../src/app/core/api/models.ts';
+import type { SalesOrderView, SalesPaymentSummary } from '../src/app/core/api/models.ts';
 import { incomingMoneyTotals, invoiceReceivable, openInvoiceRows, paymentLocalDay, paymentMomentLabel, receivableTotals, uniqueIncomingPayments } from '../src/app/features/finance/incoming-money.ts';
 import type { IncomingMoneyRow } from '../src/app/features/finance/incoming-money.ts';
-import { bankOverview, movementsSince } from '../src/app/features/finance/finance-metrics.ts';
 
 const payment = (input: Partial<IncomingMoneyRow> = {}): IncomingMoneyRow => ({ id: 1, salesOrderId: 12, customerId: 7, purchaseOrderId: 4, orderNumber: 'PARTNER-12',
   receivedAt: '2026-09-08T08:30:00Z', timeZone: 'Europe/Brussels', amountEur: 1000, purpose: 'PARTNER_ADVANCE', reference: 'Eerste derde', ...input });
@@ -75,33 +74,6 @@ test('explicit sale purpose determines the receivable category even with a histo
   assert.equal(totals.standardEur, 400);
   assert.equal(totals.partnerEur, 600);
 });
-
-test('bank counts actual receipt even without its archived invoice, once, and after the exact same-day checkpoint', () => {
-  const base = { id: 1, salesOrderId: 12, date: '2026-09-08', number: 'ARCHIVED-12', customer: 'Partner', amountEur: 1000, receivedAt: '2026-09-08T08:30:00Z', timeZone: 'Europe/Brussels' };
-  const later = { ...base, id: 2, amountEur: 2000, receivedAt: '2026-09-08T09:00:00Z' };
-  const result = movementsSince('2026-09-08', 400, [], [], [base, later, later], '2026-09-08T08:30:00Z');
-  assert.equal(result.inEur, 2000);
-  assert.equal(result.currentEur, 2400);
-  assert.equal(result.rows.length, 1);
-  assert.equal(result.rows[0].salesOrderId, 12);
-  assert.equal(result.rows[0].receivedAt, later.receivedAt);
-});
-
-test('legacy date-only bank reading means end of bank local day, not the receipt entry timezone day', () => {
-  const receipt = { id: 1, date: '2026-09-08', number: 'NY-1', customer: null, amountEur: 500, receivedAt: '2026-09-08T22:05:00Z', timeZone: 'America/New_York' };
-  assert.equal(movementsSince('2026-09-08', 100, [], [], [receipt], null, 'Europe/Brussels').currentEur, 600);
-  assert.equal(movementsSince('2026-09-08', 100, [], [], [{ ...receipt, receivedAt: '2026-09-08T20:00:00Z' }]).currentEur, 100);
-});
-
-test('same-day bank snapshots follow their actual checkpoint, not record ID order', () => {
-  const balances: BankBalance[] = [
-    { id: 30, account: 'KBC', date: '2026-09-08', balanceEur: 900, asOfAt: '2026-09-08T08:00:00Z', notes: null },
-    { id: 10, account: 'KBC', date: '2026-09-08', balanceEur: 1100, asOfAt: '2026-09-08T10:00:00Z', notes: null },
-  ];
-  assert.equal(bankOverview(balances).totalEur, 1100);
-  assert.equal(bankOverview(balances).asOfAt, '2026-09-08T10:00:00Z');
-});
-
 
 test('refunds reduce net cash while gross receipts and refunded cash stay visible', () => {
   const totals = incomingMoneyTotals([payment({ amountEur: 150 }), payment({ id: 2, amountEur: -29 })]);

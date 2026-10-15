@@ -5,12 +5,14 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { elementWidth } from '../../shared/workspace-layout';
 import { categoryChoices } from './cost-categories';
+import { syncMoment } from './finance-format';
 import { cashTotalOf } from './finance-metrics';
 import { FinanceSectionApi } from './finance-section';
-import { FINANCE_TABS, financeSection } from './finance-sections';
+import { FINANCE_TABS, financeNavOf } from './finance-sections';
 import { FinanceState } from './finance-state';
+import { OdooSyncState } from './odoo-sync-state';
 
-type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 'party' | 'fair';
+type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 'party' | 'fair' | 'sync';
 
 /**
  * The desk toolbar: section title and segments on the left; search, ⋯,
@@ -26,7 +28,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
   host: { style: 'display: contents' },
   imports: [Icon, EurPipe, Segmented],
   template: `
-    <header #bar class="wk-toolbar fin-toolbar" [class.wk-toolbar--selection]="selecting()">
+    <header #bar class="wk-toolbar fin-toolbar" [class.wk-toolbar--selection]="selecting()" [class.fin-toolbar--tx]="transactions()">
       @if (selecting()) {
         <div class="wk-toolbar__lead">
           <span class="wk-toolbar__count">{{ selected().length }} geselecteerd · {{ selectedIncl() | eur }} incl. btw</span>
@@ -45,9 +47,14 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
         </div>
       } @else {
         <div class="wk-toolbar__lead">
-          @if (bankDetail()) { <button class="wk-btn wk-btn--ghost wk-btn--sm fin-bank-back" type="button" aria-label="Terug naar alle rekeningen" (click)="state.go({ tab: 'accounts' }, 'push')"><app-icon name="chevron-left" [size]="16" /><span>Rekeningen</span></button> }
-          <h1 class="wk-toolbar__title fin-toolbar__title" [class.fin-sr]="tight() && !bankDetail()">{{ title() }}</h1>
-          @if (segments().length) {
+          <h1 class="wk-toolbar__title fin-toolbar__title" [class.fin-sr]="tight()">{{ title() }}</h1>
+          @if (cockpit() && !compact()) {
+            <span class="fin-toolbar__sub">@if (syncSub()) { <i class="wk-dot tone-ok" aria-hidden="true"></i>{{ syncSub() }} }
+              @if (sync.attention()) { <button class="wk-link fin-toolbar__warn" type="button" (click)="sync.sheetOpen.set(true)">Odoo: controle nodig ›</button> }</span>
+          }
+          @if (transactions()) {
+            <app-segmented label="Richting" [options]="movementOptions()" [value]="movementValue()" (changed)="pickMovement($event)" />
+          } @else if (segments().length) {
             <app-segmented label="Onderdeel" semantics="tabs" controls="finance-pane" [options]="segments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
           }
         </div>
@@ -55,10 +62,14 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
           @if (searchable()) {
             <label class="wk-search wk-search--collapsible">
               <app-icon name="search" [size]="16" />
-              <input id="fin-search" type="search" placeholder="Zoeken" aria-label="Zoeken" autocomplete="off" [value]="query()"
+              <input id="fin-search" type="search" [placeholder]="transactions() ? 'Bedrag, naam of mededeling' : 'Zoeken'" aria-label="Zoeken" autocomplete="off" [value]="query()"
                      (input)="typed($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
               <button class="wk-search__clear" type="button" aria-label="Zoekterm wissen" (click)="typed('')"><app-icon name="close" [size]="14" /></button>
             </label>
+          }
+          @if (syncShown()) {
+            <button class="wk-btn fin-toolbar__sync" type="button" [class.is-busy]="sync.syncing()" [disabled]="sync.busy() || !sync.ready()" aria-label="Transacties ophalen"
+                    [attr.title]="sync.ready() ? 'Transacties ophalen' : 'De Odoo-verbinding is nog niet klaar'" (click)="sync.syncBank()"><app-icon name="refresh" [size]="16" />@if (!compact()) { <span class="fin-toolbar__label">{{ sync.syncing() ? 'Ophalen…' : 'Transacties ophalen' }}</span> }</button>
           }
           @if (state.location().view === 'bank') {
             <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" aria-label="Hoe werkt je banksaldo?" title="Hoe werkt je banksaldo?" (click)="state.helpOpen.set(true)"><app-icon name="info" [size]="18" /></button>
@@ -67,8 +78,9 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
           <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" [class.is-busy]="state.loading()" [disabled]="state.loading()"
                   aria-label="Vernieuwen" [title]="refreshTitle()" (click)="state.load()"><app-icon name="refresh" [size]="18" /></button>
           <span class="wk-split">
-            <button class="wk-btn wk-btn--primary" type="button" [attr.aria-label]="compact() ? primary().label : null" [attr.title]="compact() ? primary().label : null"
-                    (click)="create(primary().kind)"><app-icon name="plus" [size]="16" />@if (!compact()) { {{ primary().label }} }</button>
+            <button class="wk-btn wk-btn--primary" type="button" [attr.aria-label]="compact() ? primary().label : null" [attr.title]="noteBlocked() || (compact() ? primary().label : null)"
+                    [disabled]="!!noteBlocked() || (primary().kind === 'sync' && (sync.busy() || !sync.ready()))"
+                    (click)="create(primary().kind)"><app-icon [name]="primary().kind === 'sync' ? 'refresh' : 'plus'" [size]="16" />@if (!compact()) { {{ primary().kind === 'sync' && sync.syncing() ? 'Ophalen…' : primary().label }} }</button>
             <button class="wk-btn wk-btn--primary" type="button" aria-label="Iets anders toevoegen" title="Nieuw" (click)="newMenu($event)"><app-icon name="chevron-down" [size]="16" /></button>
           </span>
           <input #picker class="fin-hidden" type="file" multiple accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" tabindex="-1" aria-hidden="true"
@@ -80,6 +92,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
 })
 export class FinanceToolbar {
   readonly state = inject(FinanceState);
+  readonly sync = inject(OdooSyncState);
   readonly section = input<FinanceSectionApi | null>(null);
   private readonly picker = viewChild<ElementRef<HTMLInputElement>>('picker');
   private readonly bar = viewChild<ElementRef<HTMLElement>>('bar');
@@ -87,9 +100,46 @@ export class FinanceToolbar {
   readonly compact = computed(() => this.width() > 0 && this.width() < 980);
   readonly tight = computed(() => this.width() > 0 && this.width() < 900);
 
-  readonly bankDetail = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements' && !!this.state.location().account);
-  readonly title = computed(() => this.bankDetail() ? this.state.accountLabel(this.state.location().account) : financeSection(this.state.location().view).label);
-  readonly canNoteMovement = computed(() => !this.bankDetail() || this.state.manualAccountAllowed(this.state.location().account));
+  /** Bank's cockpit and Transacties (with or without an account): a place of FINANCE_NAV each. */
+  readonly cockpit = computed(() => this.state.location().view === 'bank' && this.state.location().tab !== 'movements');
+  readonly transactions = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements');
+  /** The title of the place on screen (FINANCE_NAV), never the account: the account card says which one. */
+  readonly title = computed(() => financeNavOf(this.state.location()).label);
+  /** An active account that takes manual transactions: without one (production today), "Transactie noteren" is hidden. */
+  readonly hasManualAccount = computed(() => this.state.manualAccountOptions().length > 0);
+  readonly canNoteMovement = computed(() => this.hasManualAccount() && (!this.state.location().account || this.state.manualAccountAllowed(this.state.location().account)));
+  /** "Transactie noteren" on Transacties of an Odoo account: disabled with its reason. */
+  readonly noteBlocked = computed(() => {
+    const location = this.state.location();
+    return this.transactions() && this.primary().kind === 'movement' && location.account && !this.state.manualAccountAllowed(location.account)
+      ? `Transacties van ${this.state.accountLabel(location.account)} komen uit Odoo` : null;
+  });
+  /** "Transacties ophalen" beside the primary button on Bank and Transacties, when an Odoo account exists. */
+  readonly syncShown = computed(() => this.state.location().view === 'bank' && this.state.hasOdooAccounts() && this.primary().kind !== 'sync');
+  /** "KBC-zichtrekening opgehaald 08:12 · Wise EUR handmatig". */
+  readonly syncSub = computed(() => {
+    const at = this.sync.status()?.lastSyncAt ?? null;
+    return this.state.accountsView().map((account) => account.source === 'ODOO'
+      ? `${account.label} ${at ? 'opgehaald ' + this.when(at) : 'nog niet opgehaald'}` : `${account.label} handmatig`).join(' · ');
+  });
+  /** Transacties' segments: Alles · Inkomend · Uitgaand · Te koppelen {n} (all active accounts, or the chosen one). */
+  readonly movementOptions = computed<SegmentOption[]>(() => {
+    const location = this.state.location();
+    const account = location.account ? this.state.canonicalAccount(location.account) : '';
+    const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line)
+      && (!account || this.state.canonicalAccount(line.account) === account) && !line.allocated && line.salesPaymentId === null).length;
+    // A narrow bar reads "In · Uit" (the phone chips' words); the full words stay the accessible names.
+    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Inkomend', shortLabel: 'In', ariaLabel: 'Inkomend' }, { id: 'out', label: 'Uitgaand', shortLabel: 'Uit', ariaLabel: 'Uitgaand' },
+      { id: 'unlinked', label: 'Te koppelen', count: unlinked || null, dot: unlinked ? 'warn' : null }];
+  });
+  readonly movementValue = computed(() => {
+    const location = this.state.location();
+    return location.link === 'unlinked' ? 'unlinked' : location.dir;
+  });
+  pickMovement(value: string): void {
+    if (value === 'unlinked') this.state.go({ link: 'unlinked', dir: '' });
+    else this.state.go({ link: '', dir: value as '' | 'in' | 'out' });
+  }
   readonly selected = computed(() => this.section()?.selectedCosts?.() ?? []);
   readonly selecting = computed(() => !!this.section()?.selecting?.() && this.selected().length > 0);
   /** What leaves the bank for the selection, whatever the regime. */
@@ -119,14 +169,14 @@ export class FinanceToolbar {
 
   readonly searchable = computed(() => {
     const { view, tab } = this.state.location();
-    return view === 'open' || view === 'incoming' || this.bankDetail() || (view === 'costs' && tab !== 'recurring');
+    return view === 'open' || view === 'incoming' || this.transactions() || (view === 'costs' && tab !== 'recurring');
   });
 
   /** What 'Nieuw' does without opening its menu, per section. */
   readonly primary = computed<{ kind: CreateKind; label: string }>(() => {
     const { view, tab } = this.state.location();
-    if (this.bankDetail()) return { kind: 'cost', label: 'Factuur toevoegen' };
-    if (view === 'bank') return { kind: 'balance', label: 'Rekening toevoegen' };
+    if (this.transactions()) return this.hasManualAccount() ? { kind: 'movement', label: 'Transactie noteren' } : { kind: 'sync', label: 'Transacties ophalen' };
+    if (view === 'bank') return { kind: 'cost', label: 'Factuur of kost toevoegen' };
     if (view === 'costs' && tab === 'recurring') return { kind: 'recurring', label: 'Vaste kost instellen' };
     if (view === 'costs' && tab === 'lists') return { kind: 'party', label: 'Aan wie toevoegen' };
     return { kind: 'cost', label: 'Factuur of kost toevoegen' };
@@ -177,6 +227,7 @@ export class FinanceToolbar {
     if (kind === 'cost') this.state.openCost(null);
     else if (kind === 'cost-file') this.picker()?.nativeElement.click();
     else if (kind === 'movement') this.state.openMovement({ accountKey: location.view === 'bank' ? location.account || undefined : undefined });
+    else if (kind === 'sync') void this.sync.syncBank();
     else if (kind === 'balance') this.state.openBank(null);
     else if (kind === 'party') this.state.openCostParty(null);
     else if (kind === 'fair') this.state.openFair(null);
@@ -196,7 +247,7 @@ export class FinanceToolbar {
       ...(view === 'costs' && tab === 'lists' ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
       { id: 'cost', label: 'Factuur of kost toevoegen', hint: 'N', iconName: 'receipt' },
       { id: 'cost-file', label: 'Kost met document…', iconName: 'clip' },
-      ...(this.canNoteMovement() ? [{ id: 'movement', label: 'Handmatige banktransactie', hint: 'B', iconName: 'bank' }] : []),
+      ...(this.canNoteMovement() ? [{ id: 'movement', label: 'Transactie noteren', hint: 'B', iconName: 'bank' }] : []),
       { id: 'balance', label: 'Rekening of saldocontrole toevoegen', iconName: 'bank' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },
     ];
@@ -204,19 +255,29 @@ export class FinanceToolbar {
   }
 
   more(event: MouseEvent): void {
+    const bank = this.state.location().view === 'bank';
     this.state.openMenu({
       title: 'Kosten & bank', anchor: this.anchorOf(event),
       items: [
-        { id: 'csv', label: 'Exporteer CSV', iconName: 'download' },
+        ...(bank ? [{ id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
+          ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : [])] : []),
+        { id: 'csv', label: 'Exporteer CSV', iconName: 'download', divider: bank },
         { id: 'package', label: 'Boekhouderspakket…', iconName: 'archive' },
         { id: 'keys', label: 'Sneltoetsen', hint: '?', iconName: 'list' },
       ],
       pick: (id) => {
-        if (id === 'csv') this.section()?.exportCsv ? this.section()!.exportCsv!() : this.state.exportThisYear();
+        if (id === 'odoo') this.sync.sheetOpen.set(true);
+        else if (id === 'archived') this.state.archivedOpen.set(true);
+        else if (id === 'csv') this.section()?.exportCsv ? this.section()!.exportCsv!() : this.state.exportThisYear();
         else if (id === 'package') this.state.openPackage();
         else this.state.shortcutsOpen.set(true);
       },
     });
+  }
+
+  /** '08:12' today, '14 okt' before. */
+  private when(instant: string): string {
+    return syncMoment(instant, this.state.today());
   }
 
   pickCategory(event: MouseEvent): void {

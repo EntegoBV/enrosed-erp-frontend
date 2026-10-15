@@ -30,7 +30,7 @@ export class FinanceCreateMenu {
       ...(lists ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),
       { id: 'cost', label: 'Factuur of kost toevoegen', iconName: 'receipt' },
       { id: 'photo', label: 'Bon of factuur fotograferen', iconName: 'camera' },
-      ...(canNoteMovement ? [{ id: 'movement', label: 'Handmatige banktransactie', iconName: 'bank' }] : []),
+      ...(canNoteMovement ? [{ id: 'movement', label: 'Transactie noteren', iconName: 'bank' }] : []),
       { id: 'balance', label: 'Rekening of saldocontrole toevoegen', iconName: 'bank' },
       { id: 'recurring', label: 'Vaste kost instellen', iconName: 'repeat' },
     ];

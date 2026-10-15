@@ -36,7 +36,7 @@ import { FinancePeriod } from './finance-url';
         <ng-container *ngTemplateOutlet="filter; context: { kind: 'receipts' }" />
       }
       @case ('bank/movements') {
-        <app-segmented label="Richting" [options]="movementOptions()" [value]="movementValue()" (changed)="pickMovement($event)" />
+        <!-- Alles · Inkomend · Uitgaand · Te koppelen sits in the toolbar (FinanceToolbar.movementOptions). -->
         <ng-container *ngTemplateOutlet="range" />
       }
       @case ('costs/company') {
@@ -99,17 +99,6 @@ export class FinanceFilters {
     { id: 'month', label: 'Deze maand', shortLabel: 'Maand' }, { id: 'quarter', label: 'Dit kwartaal', shortLabel: 'Kwartaal' },
     { id: 'year', label: 'Dit jaar', shortLabel: 'Jaar' }, { id: 'all', label: 'Alles' },
   ];
-
-  readonly movementOptions = computed<SegmentOption[]>(() => {
-    const account = this.state.canonicalAccount(this.state.location().account);
-    const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && this.state.canonicalAccount(line.account) === account && !line.allocated && line.salesPaymentId === null).length;
-    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Inkomend' }, { id: 'out', label: 'Uitgaand' },
-      { id: 'unlinked', label: 'Te koppelen', count: unlinked || null, dot: unlinked ? 'warn' : null }];
-  });
-  readonly movementValue = computed(() => {
-    const location = this.state.location();
-    return location.link === 'unlinked' ? 'unlinked' : location.dir;
-  });
 
   readonly thisYear = computed(() => Number(this.state.today().slice(0, 4)));
   readonly otherYears = computed(() => {
@@ -212,10 +201,7 @@ export class FinanceFilters {
       pick: (id) => this.state.go({ year: id }) });
   }
 
-  pickMovement(id: string): void {
-    if (id === 'unlinked') this.state.go({ dir: '', link: 'unlinked' });
-    else this.state.go({ dir: id as 'in' | 'out' | '', link: '' });
-  }
+
 
   resetCosts(): void {
     this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', cost: null });
