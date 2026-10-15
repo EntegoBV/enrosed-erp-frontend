@@ -8,6 +8,8 @@ export interface TodayAgendaEntry {
   sub: string | null;
   atTime: string | null;
   kind: 'EVENT' | 'TASK' | 'ORDERED' | 'SHIPPED' | 'EXPECTED_ARRIVAL' | 'RECEIVED';
+  /** Whole days an open task is past its planned day; 0 for everything else. */
+  daysLate: number;
   actionLabel: string;
   item: PlannerItem | null;
   milestone: PlannerMilestone | null;
@@ -20,19 +22,33 @@ export function localPlannerDate(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+/** Whole calendar days from one 'YYYY-MM-DD' to the next (UTC parts, so no DST hour sneaks in). */
+function daysBetween(fromIso: string, toIso: string): number {
+  const utc = (iso: string): number => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+  return Math.round((utc(toIso) - utc(fromIso)) / 86_400_000);
+}
+
+/**
+ * What today asks for: its appointments, its open tasks and the tasks still
+ * open from earlier days (those first, oldest on top - they are already
+ * late), plus the container moments dated today.
+ */
 export function todayAgendaEntries(
   items: readonly PlannerItem[],
   milestones: readonly PlannerMilestone[],
   date: string,
 ): TodayAgendaEntry[] {
   const appointments: TodayAgendaEntry[] = items
-    .filter((item) => item.onDate === date && !(item.kind === 'TASK' && item.done))
+    .filter((item) => item.kind === 'TASK'
+      ? !item.done && !!item.onDate && item.onDate <= date
+      : item.onDate === date)
     .map((item, index) => ({
       id: `planner-${item.kind}-${item.id ?? `unsaved-${index}`}`,
       title: item.title,
       sub: item.note,
       atTime: item.atTime,
       kind: item.kind,
+      daysLate: item.kind === 'TASK' && item.onDate ? Math.max(0, daysBetween(item.onDate, date)) : 0,
       actionLabel: item.kind === 'EVENT' ? 'Afspraak bekijken' : 'Taak bekijken',
       item,
       milestone: null,
@@ -45,15 +61,32 @@ export function todayAgendaEntries(
       sub: milestone.sub,
       atTime: null,
       kind: milestone.kind,
+      daysLate: 0,
       actionLabel: milestone.kind === 'EXPECTED_ARRIVAL' ? 'Ontvangst controleren' : 'Container bekijken',
       item: null,
       milestone,
     }));
-  const rank = (entry: TodayAgendaEntry): number => entry.kind === 'EXPECTED_ARRIVAL' ? 0 : entry.atTime ? 1 : 2;
+  const rank = (entry: TodayAgendaEntry): number => entry.daysLate > 0 ? 0
+    : entry.kind === 'EXPECTED_ARRIVAL' ? 1 : entry.atTime ? 2 : 3;
   return [...appointments, ...containers].sort((left, right) => rank(left) - rank(right)
+    || right.daysLate - left.daysLate
     || (left.atTime ?? '').localeCompare(right.atTime ?? '')
     || left.title.localeCompare(right.title, 'nl')
     || left.id.localeCompare(right.id));
+}
+
+/**
+ * The pins still worth a line on the home: appointments from today on (or
+ * without a day) and tasks until they are ticked, whatever their day. A past
+ * appointment drops off here but stays pinned in the planner. Nearest first,
+ * undated last.
+ */
+export function activePins(items: readonly PlannerItem[], today: string): PlannerItem[] {
+  return items
+    .filter((item) => item.pinned && (item.kind === 'TASK' ? !item.done : !item.onDate || item.onDate >= today))
+    .sort((left, right) => (left.onDate ?? '9999-12-31').localeCompare(right.onDate ?? '9999-12-31')
+      || (left.atTime ?? '').localeCompare(right.atTime ?? '')
+      || left.title.localeCompare(right.title, 'nl'));
 }
 
 /** Actual milestones remain history; only active, unreceived orders can be expected. */

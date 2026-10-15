@@ -27,7 +27,8 @@ import { incomingMoneyTotals, receivableTotals } from '../finance/incoming-money
 import { FinanceIntake } from '../finance/finance-intake';
 import { DashboardSearchConsole } from './dashboard-search-console';
 import { DashboardToday } from './dashboard-today';
-import { localPlannerDate, purchasePlannerMilestones, todayAgendaEntries, type TodayAgendaEntry } from './dashboard-today-state';
+import { activePins, localPlannerDate, purchasePlannerMilestones, todayAgendaEntries, type TodayAgendaEntry } from './dashboard-today-state';
+import type { PlannerItem } from '../../core/api/planner-api';
 
 /**
  * The operational front door: what needs an answer, the key figures - sales
@@ -35,9 +36,10 @@ import { localPlannerDate, purchasePlannerMilestones, todayAgendaEntries, type T
  * and what is planned next. On a wide screen the figures sit beside the work
  * so everything is on one screen; detailed analysis lives under /analyses.
  */
-const TODAY_ISO = localPlannerDate(new Date());
-const YEAR_START = TODAY_ISO.slice(0, 4) + '-01-01';
-const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
+
+/** The load labels of the sources the work rows are built from; any of them failing withholds the all-clear. */
+const WORK_SOURCES = ['verkoop', 'inkoop', 'offertewijzigingen', 'websiteproducten', 'partnerfinanciering',
+  'inkomende betalingen', 'kosten', 'Home'];
 
 @Component({
   selector: 'app-dashboard-home',
@@ -56,7 +58,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
         @if (pinnedItems().length) {
           <section class="home-pins" aria-label="Vastgepind">
             @for (pin of pinnedItems(); track pin.id) {
-              <div class="home-pin">
+              <button class="home-pin" type="button" (click)="openPin(pin)">
                 <span class="home-pin__mark" aria-hidden="true">•</span>
                 <span class="home-pin__copy">
                   <b>{{ pin.title }}</b>
@@ -67,7 +69,7 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
                     </small>
                   }
                 </span>
-              </div>
+              </button>
             }
             @if (hiddenPinnedCount()) {
               <span class="home-pins__more">+{{ hiddenPinnedCount() }} meer in de planning</span>
@@ -349,7 +351,9 @@ const MONTH_START_ISO = TODAY_ISO.slice(0, 8) + '01';
 
     .home-pins { display: flex; align-items: stretch; gap: 7px; margin-bottom: 11px; overflow: hidden; }
     .home-pin { display: flex; flex: 1 1 0; min-width: 0; align-items: center; gap: 8px; padding: 8px 11px;
-      border: 1px solid var(--rose-line); border-radius: 11px; background: var(--rose-soft); }
+      border: 1px solid var(--rose-line); border-radius: 11px; background: var(--rose-soft);
+      color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .home-pin:hover { border-color: var(--rose); }
     .home-pin__mark { color: var(--rose-dark); font-size: 18px; line-height: 1; }
     .home-pin__copy { display: grid; min-width: 0; }
     .home-pin__copy b,.home-pin__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -539,9 +543,13 @@ export class DashboardHome {
   readonly warningDetail = signal<string | null>(null);
   private loadedOnce = false;
 
-  readonly pinnedItems = computed(() => this.planner.items().filter((item) => item.pinned).slice(0, 2));
-  readonly hiddenPinnedCount = computed(() => Math.max(0,
-    this.planner.items().filter((item) => item.pinned).length - this.pinnedItems().length));
+  /* Month and year follow the day signal, so a home left open past midnight or month end moves its windows too. */
+  readonly monthStart = computed(() => this.todayDate().slice(0, 8) + '01');
+  readonly yearStart = computed(() => this.todayDate().slice(0, 4) + '-01-01');
+
+  private readonly livePins = computed(() => activePins(this.planner.items(), this.todayDate()));
+  readonly pinnedItems = computed(() => this.livePins().slice(0, 2));
+  readonly hiddenPinnedCount = computed(() => Math.max(0, this.livePins().length - this.pinnedItems().length));
 
   readonly newWebsiteRequests = computed(() => this.salesOrders()
     .filter((row) => !row.order.archivedAt && !row.invoicedAsId
@@ -566,12 +574,14 @@ export class DashboardHome {
   readonly purchaseAttentionOrders = computed(() => this.purchases()
     .filter((row) => (row.attention?.length ?? 0) > 0));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), [], this.partnerSummaries()));
-  readonly incomingMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), MONTH_START_ISO, TODAY_ISO));
+  readonly incomingMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), this.monthStart(), this.todayDate()));
   readonly receivables = computed(() => receivableTotals(this.salesOrders()));
   readonly costs = signal<CompanyCost[]>([]);
   readonly costsReady = signal(false);
-  readonly yearResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), { from: YEAR_START, to: TODAY_ISO }));
-  readonly monthCosts = computed(() => resultAnalysis([], [], this.costs(), { from: MONTH_START_ISO, to: TODAY_ISO }).costsEur);
+  readonly yearResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(),
+    { from: this.yearStart(), to: this.todayDate() }));
+  readonly monthCosts = computed(() => resultAnalysis([], [], this.costs(),
+    { from: this.monthStart(), to: this.todayDate() }).costsEur);
   readonly workGroupCount = computed(() =>
     Number(this.salesActionCount() > 0)
     + Number(this.purchaseAttentionOrders().length > 0)
@@ -579,8 +589,11 @@ export class DashboardHome {
     + Number(this.financing().awaitingSettlement > 0) + Number(this.receivables().count > 0 || this.receivables().creditNoteCount > 0)
     + Number(this.catalogAttention() > 0)
     + Number(this.work.loginRequestCount() > 0));
+  /* An all-clear only when every source behind a work row answered on the last load - partner
+     financing (the advances), incoming payments and costs included. */
   readonly workCoverageComplete = computed(() => this.salesReady() && this.revisionsReady()
-    && this.purchasesReady() && this.catalogReady());
+    && this.purchasesReady() && this.catalogReady() && this.partnersReady() && this.incomingReady() && this.costsReady()
+    && !this.dataWarnings().some((label) => WORK_SOURCES.includes(label)));
 
   readonly openSales = computed(() => this.salesOrders().filter((row) =>
     (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
@@ -679,6 +692,10 @@ export class DashboardHome {
     void this.router.navigate(['/costs'], { queryParams: { view: 'costs' } });
   }
 
+  openPin(pin: PlannerItem): void {
+    this.plannerCards()?.openPinned(pin);
+  }
+
   openTodayEntry(entry: TodayAgendaEntry): void {
     const planner = this.plannerCards();
     if (!planner) return;
@@ -759,6 +776,7 @@ export class DashboardHome {
       noteFailure(families, 'websiteproducten');
       noteFailure(suppliers, 'leveranciers');
       noteFailure(website, 'websitebezoek');
+      noteFailure(costs, 'kosten');
       noteFailure(incoming, 'inkomende betalingen');
       noteFailure(partners, 'partnerfinanciering');
 

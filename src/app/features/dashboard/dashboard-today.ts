@@ -35,9 +35,12 @@ import type { TodayAgendaEntry } from './dashboard-today-state';
               <li>
                 <button class="today-agenda__row" type="button"
                         [class.today-agenda__row--arrival]="entry.kind === 'EXPECTED_ARRIVAL'"
+                        [class.today-agenda__row--late]="entry.daysLate > 0"
                         [attr.data-today-entry]="entry.id" (click)="openEntry.emit(entry)">
                   <span class="today-agenda__when">
-                    @if (entry.atTime) {
+                    @if (entry.daysLate) {
+                      <b>{{ entry.daysLate }} d</b><small>te laat</small>
+                    } @else if (entry.atTime) {
                       <b>{{ entry.atTime.slice(0, 5) }}</b>
                     } @else {
                       @if (entry.milestone) { <app-icon name="purchase" [size]="15" /> }
@@ -48,7 +51,7 @@ import type { TodayAgendaEntry } from './dashboard-today-state';
                     <b>{{ entry.title }}</b>
                     @if (entry.kind === 'TASK' || entry.sub) {
                       <small>
-                        @if (entry.kind === 'TASK') { <span class="today-agenda__task">{{ entry.item?.done ? 'Afgerond' : 'Open taak' }}</span> }
+                        @if (entry.kind === 'TASK') { <span class="today-agenda__task">{{ entry.daysLate && entry.item?.onDate ? 'Te laat · gepland ' + plannedDay(entry.item!.onDate!) : entry.item?.done ? 'Afgerond' : 'Open taak' }}</span> }
                         @if (entry.kind === 'TASK' && entry.sub) { <span aria-hidden="true"> · </span> }
                         {{ entry.sub }}
                       </small>
@@ -98,6 +101,7 @@ import type { TodayAgendaEntry } from './dashboard-today-state';
     .today-agenda__row--arrival .today-agenda__when { border-radius: 8px; color: #b46c30; background: color-mix(in srgb, #b46c30 10%, var(--surface)); }
     .today-agenda__row--arrival .today-agenda__when :is(b, small) { color: #a05b23; }
     .today-agenda__row--arrival .today-agenda__action { color: #a05b23; }
+    .today-agenda__row--late :is(.today-agenda__when b, .today-agenda__when small, .today-agenda__task) { color: var(--danger); }
     .today-agenda__more { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; padding: 8px 5px 5px 62px; border: 0; background: transparent; color: var(--muted); font-size: 10.5px; }
     .today-agenda__more > span { padding-right: 2px; font-size: 15px; }
     .today-agenda__state { margin: 0; padding: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -130,4 +134,8 @@ export class DashboardToday {
   readonly retry = output<void>();
   readonly expanded = signal(false);
   readonly visibleEntries = computed(() => this.expanded() ? this.entries() : this.entries().slice(0, 3));
+
+  plannedDay(iso: string): string {
+    return new Date(iso).toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  }
 }

@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -6,8 +7,7 @@ import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { plannedBusinessDay } from '../../shared/business-days';
 import { Sheet, Ui } from '../../shared/ui';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { addDaysIso, firstOfMonth, monthCells, shiftMonthIso } from './agenda-days';
 
 /** A read-only line the containers write into the agenda by themselves. */
 export interface PlannerMilestone {
@@ -33,12 +33,20 @@ interface CompactAgendaEntry {
  * Agenda and task list, side by side on the dashboard: the little month
  * calendar with appointment dots the way a paper desk planner works, and
  * a notebook of things to tick off.
+ *
+ * `section` picks what renders: 'all' the planner itself, 'tasks' only the
+ * Taken card, 'none' nothing but the view and edit sheets - so a page can host
+ * the sheets once and open them from its own agenda.
  */
 @Component({
   selector: 'app-planner-cards',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DateField, Sheet],
+  imports: [FormsModule, NgTemplateOutlet, DateField, Sheet],
   template: `
+    @if (section() === 'tasks') {
+      <ng-container [ngTemplateOutlet]="tasksCard" />
+    }
+    @if (section() === 'all') {
     @if (compact()) {
       <section class="card planner-compact" [class.planner-compact--hidden]="expanded()"
                aria-labelledby="planner-compact-title">
@@ -66,7 +74,7 @@ interface CompactAgendaEntry {
                   <span class="planner-compact__chev" aria-hidden="true">›</span>
                 </button>
               } @empty {
-                <p class="planner-compact__empty">Geen afspraken of levermomenten gepland.</p>
+                <p class="planner-compact__empty">Geen afspraken, taken of levermomenten vanaf morgen.</p>
               }
             </div>
           </section>
@@ -200,8 +208,14 @@ interface CompactAgendaEntry {
         </div>
       </div>
 
-      <!-- The notebook next to the planner: work with a deadline. Overdue
-           first in red, then by day, loose ones last. -->
+      <ng-container [ngTemplateOutlet]="tasksCard" />
+    </div>
+    </div>
+    }
+
+    <!-- The notebook next to the planner: work with a deadline. Overdue
+         first in red, then by day, loose ones last. -->
+    <ng-template #tasksCard>
       <div class="card tasks-card">
         <div class="card__head"><h2>Taken</h2>
           <span class="spacer"></span>
@@ -246,8 +260,7 @@ interface CompactAgendaEntry {
           }
         </div>
       </div>
-    </div>
-    </div>
+    </ng-template>
 
     <!-- Looking first, editing on demand: the view is where the work
          happens - notes, attachments and the little to-dos of the day. -->
@@ -365,7 +378,7 @@ interface CompactAgendaEntry {
             <label class="pin-toggle span-2">
               <input type="checkbox" [checked]="draft.pinned ?? false"
                      (change)="patch({ pinned: !(draft.pinned ?? false) })" />
-              <span><b>Vastpinnen</b> · als lijn bovenaan het dashboard tot je hem lospint</span>
+              <span><b>Vastpinnen</b> · als lijn bovenaan het dashboard, tot de afspraak voorbij is of de taak afgevinkt</span>
             </label>
           </div>
 
@@ -628,10 +641,12 @@ export class PlannerCards {
   private readonly ui = inject(Ui);
 
   readonly compact = input(false);
+  readonly section = input<'all' | 'tasks' | 'none'>('all');
   readonly expanded = signal(false);
 
   readonly items = this.store.items;
-  readonly month = signal(startOfMonth(new Date()));
+  /** The first day of the month on screen, 'YYYY-MM-01'. */
+  readonly month = signal(firstOfMonth(isoDate(new Date())));
   readonly selectedDate = signal(isoDate(new Date()));
   readonly editing = signal<PlannerItem | null>(null);
   readonly viewing = signal<number | null>(null);
@@ -747,12 +762,12 @@ export class PlannerCards {
   jumpTo(item: PlannerItem): void {
     if (!item.onDate) return;
     this.selectedDate.set(item.onDate);
-    this.month.set(new Date(item.onDate.slice(0, 8) + '01'));
+    this.month.set(firstOfMonth(item.onDate));
   }
 
   jumpToUpcoming(next: { onDate: string }): void {
     this.selectedDate.set(next.onDate);
-    this.month.set(new Date(next.onDate.slice(0, 8) + '01'));
+    this.month.set(firstOfMonth(next.onDate));
   }
 
   readonly newTask = signal('');
@@ -796,7 +811,7 @@ export class PlannerCards {
   }
 
   longDay(iso: string): string {
-    return new Date(iso).toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' });
+    return new Date(iso).toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
   }
   readonly saving = signal(false);
 
@@ -815,21 +830,22 @@ export class PlannerCards {
   readonly selectedMilestones = computed(() =>
     this.milestonesByDate().get(this.selectedDate()) ?? []);
 
+  /** What comes after today - appointments, dated open tasks and container moments; today itself sits above it on the home. */
   readonly compactAgenda = computed<CompactAgendaEntry[]>(() => {
-    const today = isoDate(new Date());
-    const events: CompactAgendaEntry[] = this.events()
-      .filter((item) => !!item.onDate && item.onDate >= today)
+    const tomorrow = addDaysIso(isoDate(new Date()), 1);
+    const planned: CompactAgendaEntry[] = this.items()
+      .filter((item) => !!item.onDate && item.onDate >= tomorrow && !(item.kind === 'TASK' && item.done))
       .map((item) => ({
-        id: `event-${item.id ?? item.onDate + item.title}`,
+        id: `${item.kind === 'TASK' ? 'task' : 'event'}-${item.id ?? item.onDate + item.title}`,
         date: item.onDate!,
-        atTime: item.atTime,
+        atTime: item.kind === 'TASK' ? null : item.atTime,
         title: item.title,
-        sub: item.note,
+        sub: item.kind === 'TASK' ? (item.note ? `Taak · ${item.note}` : 'Taak') : item.note,
         item,
         milestone: null,
       }));
     const milestones: CompactAgendaEntry[] = this.milestones()
-      .filter((stone) => stone.date >= today)
+      .filter((stone) => stone.date >= tomorrow)
       .map((stone) => ({
         id: `milestone-${stone.orderId}-${stone.date}-${stone.title}`,
         date: stone.date,
@@ -839,7 +855,7 @@ export class PlannerCards {
         item: null,
         milestone: stone,
       }));
-    return [...events, ...milestones]
+    return [...planned, ...milestones]
       .sort((left, right) => left.date.localeCompare(right.date)
         || (left.atTime ?? '').localeCompare(right.atTime ?? '')
         || left.title.localeCompare(right.title, 'nl'))
@@ -849,7 +865,8 @@ export class PlannerCards {
 
   openCompactAgenda(entry: CompactAgendaEntry): void {
     if (entry.item) {
-      this.openView(entry.item);
+      if (entry.item.kind === 'TASK') this.openEdit(entry.item);
+      else this.openView(entry.item);
       return;
     }
     if (entry.milestone) this.openMilestone(entry.milestone);
@@ -858,8 +875,7 @@ export class PlannerCards {
   compactDay(iso: string): string {
     const today = isoDate(new Date());
     if (iso === today) return 'Vandaag';
-    const tomorrow = isoDate(new Date(new Date(`${today}T12:00:00`).getTime() + DAY_MS));
-    return iso === tomorrow ? 'Morgen' : this.shortDay(iso);
+    return iso === addDaysIso(today, 1) ? 'Morgen' : this.shortDay(iso);
   }
 
   openMilestone(stone: PlannerMilestone): void {
@@ -877,17 +893,20 @@ export class PlannerCards {
   readonly events = computed(() => this.items().filter((item) => item.kind === 'EVENT'));
   readonly pinnedItems = computed(() => this.items().filter((item) => item.pinned));
 
+  /** A pin opens where it lives: the month on its day, then the appointment's view or the task's edit sheet. */
   openPinned(item: PlannerItem): void {
-    if (item.onDate) { this.selectedDate.set(item.onDate); this.month.set(new Date(item.onDate.slice(0, 8) + '01')); }
-    this.openEdit(item);
+    if (item.onDate) { this.selectedDate.set(item.onDate); this.month.set(firstOfMonth(item.onDate)); }
+    if (item.kind === 'EVENT') this.openView(item);
+    else this.openEdit(item);
   }
   readonly tasks = computed(() => this.items().filter((item) => item.kind === 'TASK'));
   readonly openTasks = computed(() => this.tasks().filter((task) => !task.done));
 
   readonly monthLabel = computed(() =>
-    this.month().toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' }));
+    new Date(this.month()).toLocaleDateString('nl-BE', { month: 'long', year: 'numeric', timeZone: 'UTC' }));
 
   readonly calendar = computed(() => {
+    const today = isoDate(new Date());
     const counts = new Map<string, number>();
     const arrivals = new Map<string, number>();
     for (const item of this.items()) {
@@ -896,24 +915,18 @@ export class PlannerCards {
       }
     }
     for (const stone of this.milestones()) {
+      /* Ordered, shipped and received are history once their day has passed: the day list still shows them, the bubble does not. */
+      if (stone.kind !== 'EXPECTED_ARRIVAL' && stone.date < today) continue;
       const target = stone.kind === 'EXPECTED_ARRIVAL' ? arrivals : counts;
       target.set(stone.date, (target.get(stone.date) ?? 0) + 1);
     }
-    const today = isoDate(new Date());
-    const first = this.month();
-    const startOffset = (first.getDay() + 6) % 7;
-    const start = new Date(first.getTime() - startOffset * DAY_MS);
-    return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(start.getTime() + index * DAY_MS);
-      const iso = isoDate(date);
-      return {
-        key: iso, date: iso, label: date.getDate(),
-        inMonth: date.getMonth() === first.getMonth(),
-        today: iso === today,
-        events: counts.get(iso) ?? 0,
-        arrivals: arrivals.get(iso) ?? 0,
-      };
-    });
+    const month = this.month();
+    return monthCells(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 6).map((cell) => ({
+      ...cell,
+      today: cell.date === today,
+      events: counts.get(cell.date) ?? 0,
+      arrivals: arrivals.get(cell.date) ?? 0,
+    }));
   });
 
   /** Everything planned that day: appointments and tasks booked onto it. */
@@ -921,13 +934,12 @@ export class PlannerCards {
     this.items().filter((item) => item.onDate === this.selectedDate()));
 
   readonly selectedLabel = computed(() =>
-    new Date(this.selectedDate()).toLocaleDateString('nl-BE', { day: 'numeric', month: 'long' }));
+    new Date(this.selectedDate()).toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', timeZone: 'UTC' }));
 
   shiftMonth(step: number): void {
-    const current = this.month();
-    const next = new Date(current.getFullYear(), current.getMonth() + step, 1);
+    const next = firstOfMonth(shiftMonthIso(this.month(), step));
     this.month.set(next);
-    this.selectedDate.set(isoDate(next));
+    this.selectedDate.set(next);
   }
 
   sheetTitle(draft: PlannerItem): string {
@@ -946,11 +958,12 @@ export class PlannerCards {
   }
 
   shortDay(iso: string): string {
-    return new Date(iso).toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' });
+    return new Date(iso).toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   }
 
-  openNew(kind: 'EVENT'): void {
-    this.editing.set({ id: null, kind, title: '', onDate: this.selectedDate(), atTime: null, note: null, done: false });
+  /** A blank appointment or task, on the selected day unless the caller names one (null: a loose task). */
+  openNew(kind: 'EVENT' | 'TASK', date: string | null = this.selectedDate()): void {
+    this.editing.set({ id: null, kind, title: '', onDate: date, atTime: null, note: null, done: false });
   }
 
   openEdit(item: PlannerItem): void {
@@ -1052,10 +1065,6 @@ export class PlannerCards {
       this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
     }
   }
-}
-
-function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function isoDate(date: Date): string {
