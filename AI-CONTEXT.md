@@ -70,8 +70,11 @@ the workspaces. All CSS lives in one global partial,
   (`.shell--workspace-phone`) hides the ERP `.tabbar` only when the page
   renders `.ios-page`. A page that renders neither looks as before.
 - Pieces (src/app/shared unless noted): `app-segmented` (desk/ios,
-  tabs/radio, arrow keys), `app-ios-nav` (large title that condenses into
-  a glass bar; [lead] [trail] [caption] [below] slots), `app-ios-tabbar`
+  tabs/radio, arrow keys; `.ios-seg--stacked` puts an icon over an 11px
+  label so five view tabs fit 360px), `app-ios-nav` (large title that
+  condenses into a glass bar; [lead] [trail] [caption] [below] slots;
+  `customLarge` + [hero] put the screen's own block in place of the large
+  title), `app-ios-tabbar`
   (floating tab bar plus accessory button; tabs use replaceUrl),
   `[appSwipeActions]` (multi-action swipe rows, geometry in row-actions.ts),
   `app-wk-side-foot` (sidebar foot with "Terug naar …" and the account),
@@ -99,7 +102,8 @@ the workspaces. All CSS lives in one global partial,
   kit custom properties only (`--wk-cols`, `--wk-group-span`,
   `--wk-sticky-top`, `--wk-max`, `--wk-side-w`, `--ios-inset`,
   `--ios-sep-inset`). Area partials: finance-workspace / finance-phone /
-  finance-legacy, files-workspace / files-phone, purchase-payments.
+  finance-legacy, files-workspace / files-phone, purchase-payments,
+  purchase-phone.
 
 ## Workspaces
 
@@ -289,7 +293,7 @@ cijfers'.
   `app-purchase-payment-workbench` (strip, 'Per ontvanger', 'Alle
   betalingen', Te doen, Opbouw; N adds, A settles). The rail lost Betalingen
   and gained Partner (money in); Kosten has Calculatie | Nacalculatie.
-- Phone: `app-purchase-payment-overview` (read view and editor step 4) with
+- Phone: `app-purchase-payment-overview` (read view and editor, Betalingen tab) with
   `app-purchase-payee-sheet`; the read view records through
   `/purchasing/:id/edit?section=pay&payee=…&due=…` and returns to
   `?section=ledger`. Partner financing and the Nacalculatie are cards of
@@ -438,7 +442,7 @@ cijfers'.
   (`PurchaseNacalcSummaryCard`, 'Volledig ›'); Betalingen is the only place
   that records money (row 'Noteer ›' → `showPayments(payee)`), settle/undo
   use the desk's page-level sheets. Phone: `app-purchase-nacalc-overview`
-  replaces the two Kosten cards in the read view and editor step 3 (hero +
+  sits on the Kosten tab of the read view and the editor (hero +
   meter, WAAR HET VERSCHIL ZIT cells → payee sheet, one action cell from the
   ledger's todos via `todoCopy` (read mode settles in the editor:
   `?section=payment-result`), ONTVANGST, PER STUK with the bridge
@@ -1164,10 +1168,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
 
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete.
-- List → **read-only view first** (stepper without Onderweg, products
-  with expandable per-line cost build-up, Totaal/Per stuk toggle,
-  journey cost card, container fill bar, Gegevens above costs), edit
-  behind a button. New orders open straight in the editor.
+- List → **read-only view first** (on a phone: the summary card over five
+  tabs, see "Phone purchase order" below; the desk reads and edits in
+  PurchaseDesk), edit behind a button. New orders open straight in the
+  editor.
 - Editor: rates on one row (RMB→USD, USD→EUR goods/transport), costs
   section, product picker that can **quick-create** a product (name,
   supplier currency price, pieces/carton, carton size) without leaving,
@@ -1183,12 +1187,12 @@ and on copies. Without the blocks (older backend) every screen is as before.
   'Ontvangen op' (a cleared field never patches null). The list puts the date
   under the 'Ontvangen' pill (`.po-row-date`, not in the ellipsed meta line)
   and in the row menu; the desk hero meta says 'ontvangen dd/mm/jjjj' instead
-  of 'verwacht …' and the last KPI tile carries it; the phone read view adds
-  it to the hero line and an 'Ontvangen op' fact tile.
+  of 'verwacht …' and the last KPI tile carries it; the phone read view shows
+  it as the Ontvangen progress date and under Order › Ontvangen op.
 - Status one step back (2026-10-14): a container set to Vertrokken
   (ONDERWEG) or Besteld by mistake goes back through 'Status terugzetten…',
-  one place each, only on BESTELD/ONDERWEG: desk Afronden rail tab and phone
-  step Afronden, both inside 'Meer acties' above 'Calculatie verwijderen'
+  one place each, only on BESTELD/ONDERWEG: desk Afronden rail tab inside
+  'Meer acties' above 'Calculatie verwijderen', phone editor 'Acties ⌄'
   (not on the list row menu, where 'Terugzetten' means un-archive, nor the
   phone read view). Pure helper `purchase-status-back.ts`
   (`statusBackOptions`: Vertrokken → Besteld (default) or Concept, Besteld →
@@ -1212,6 +1216,71 @@ and on copies. Without the blocks (older backend) every screen is as before.
   server clears `shippedOn`, sends no push and logs 'Status teruggezet van
   … naar …'; Ontvangen never goes back. Tests:
   `tests/purchase-status-back.test.mts`.
+
+### Phone purchase order (2026-10-15)
+- The read view (`purchase-view.ts`) and the editor (`purchase-editor.ts`)
+  render only below 680px (`PurchaseScreen` picks `PurchaseDesk` from 680px
+  up); both are one white summary card (`app-ios-nav` with `customLarge`,
+  the card as [hero]) over five sticky stacked tabs Overzicht · Producten ·
+  Kosten · Betalingen · Dossier on the beige page, grouped inset lists and
+  host-level sheets. Classes `mpo-*`, styles in `styles/purchase-phone.scss`
+  (global, phone-only, every rule scoped to a purchase host). The editor's
+  component styles keep only the receive, issue and document sheets.
+- Tab model in `purchase-phone-model.ts` (pure, node-tested): `?tab=`
+  producten|kosten|betalingen|dossier (Overzicht is absent), written in place
+  by `replaceTabInUrl` (Location.replaceState: no history entry, no scroll to
+  the top; drops a used section/payee/due). `PurchaseScreen.tab` feeds both;
+  Back from a product or a sheet route lands on the same tab. Section ids map
+  to tabs (`tabOfSection`: purchase-overview/order/receipt/actions →
+  Overzicht; products/capacity → Producten; costs/summary/result/
+  payment-result → Kosten; payments/partner/partner-payments/advance-invoices
+  → Betalingen; files/notes/reports → Dossier), so `?section=` deep links,
+  `jumpToSection` and `scrollToCard` switch the tab first. A switch with the
+  bar stuck starts the new pane at its top under it; tapping the open tab
+  goes back to its top (`purchase-phone-scroll.ts`). Warn dots: Producten
+  after damage/shortage/reports on a received order, Betalingen when
+  something is due now.
+- Read view: card with status pill, route, name (`containerName`), PO ·
+  supplier, creator, the four progress steps with their days (verwacht
+  arrival), tiles Totaal geland and the payment headline; Overzicht has the
+  figures, Actie vereist, Ontvangstcontrole, the Nacalculatie headline
+  (`app-purchase-nacalc-glance`), Volgende stap, Order, Route en container,
+  the partner panel; Producten models/variants with a line sheet; Kosten the
+  three cost groups and the complete Nacalculatie (never collapsed);
+  Betalingen and Dossier re-host the unchanged components (`.mpo-host`
+  gives them their 16px gutter). The ⋯ menu: offer/advance invoices,
+  Documenten & media, Ontvangstanalyse. Dock: Bewerken + the next step.
+- Next step, always confirmed (`app-purchase-step-confirm-sheet`,
+  `stepConfirm` texts: Bestellen? / Container vertrokken? (track & trace
+  field) / Container ontvangen? (Ontvangst tellen) / Voorraad bijboeken? /
+  (Opnieuw) Kostprijzen toepassen?; 'Je openstaande wijzigingen worden mee
+  opgeslagen.' when a draft goes along). On the read view the confirm offers
+  a `StepHandoff` to `PurchaseStepHandoff` (memory only, 30 s, never the
+  URL: a link or reload changes no status) and opens the editor on the same
+  tab; `PurchaseScreen.runHandedStep` runs it there once the payments are in
+  (`PurchaseEditor.runStep`; a step that no longer applies toasts 'De
+  container staat al verder; er is niets gewijzigd.') and `returnFromStep`
+  goes back to the view once `stepFlowBusy` clears (history stays [list,
+  view]); 'Track & trace invullen' (`keepAfterStep`) and a refused save
+  keep the editor. KOSTPRIJZEN runs `applyCostsNow` (apply()'s work, its
+  question asked by the sheet); `readNextStep` skips it when a newer
+  container's costs sit on the products. Merge rule with the cost-history
+  apply sheet: whichever lands second makes the KOSTPRIJZEN step open that
+  sheet in the editor and drops `applyCostsNow` and its `stepConfirm` row.
+- Editor: header 'Container bewerken' + pill + tiles Lading and Totaal
+  geland, 'Acties ⌄' (next status, Voorraad bijboeken, Kostprijzen (opnieuw)
+  toepassen, offer/advance invoices, copy, PDF, Status terugzetten… on
+  Besteld/Vertrokken, Calculatie verwijderen); the save bar says 'Niet
+  opgeslagen' with what changed (`unsavedSummary`) and Opslaan, or 'Alles
+  opgeslagen' with the next step. Rows with the field on the right
+  (`mpo-field-row`, `--stack` for long fields, `--pick` for pop-up selects),
+  line rows with an inline count and swipe to Verwijder, sheets Regel
+  bewerken and Verdeelsleutels. Status terugzetten lives under Acties on the
+  phone and in the desk's Afronden tab only, never on the read view.
+- Known limit: the Nacalculatie component still says 'Kostprijzen toepassen
+  bij Afronden ›' (the desk keeps its Afronden tab); on the phone it opens
+  the confirmation. Tests: purchase-phone-model, purchase-phone-step,
+  purchase-phone-templates.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in

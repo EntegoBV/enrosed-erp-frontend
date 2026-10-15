@@ -171,6 +171,58 @@
 .mpo-savebar .dock-fill--over .dock-fill__track i{background:var(--warn)}.mpo-savebar .dock-fill--over .dock-fill__label b{color:var(--warn)}
 .mpo-savebar .dock-fill--danger .dock-fill__track i{background:var(--danger)}.mpo-savebar .dock-fill--danger .dock-fill__label b{color:var(--danger)}
 
+/* ---- editor rows: pop-up selects, dates and units beside the field */
+/* The value sits beside its label while it fits, else on its own line, right-aligned: a port name is never cut. */
+.mpo-field-row--pick{flex-wrap:wrap;row-gap:0}
+.mpo-field-row--pick>.ios-cell__body{flex:1 0 auto}
+.mpo-field-row.mpo-field-row--pick>.mpo-pick{flex:0 1 auto;max-width:100%;margin-left:auto}
+.mpo-pick{position:relative;display:flex;align-items:center;justify-content:flex-end;min-width:0;color:var(--muted)}
+.mpo-pick>app-icon{flex:none;margin-left:4px;pointer-events:none}
+.mpo-pick--wide{justify-content:space-between;height:34px;padding:0 10px;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.mpo-select{min-width:0;max-width:100%;height:34px;padding:0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:16px;text-align:right;text-align-last:right;text-overflow:ellipsis;appearance:none;-webkit-appearance:none;cursor:pointer}
+.mpo-pick--wide .mpo-select{flex:1;color:var(--ink);text-align:left;text-align-last:left}
+.mpo-select:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+.mpo-date{flex:none;width:156px}
+.mpo-date .datefield__text{height:34px;padding:0 40px 0 10px;border:0;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent);font-size:16px}
+.mpo-date .datefield__text:focus{outline:2px solid var(--rose);outline-offset:0;box-shadow:none}
+.mpo-affix{display:inline-flex;flex:none;align-items:center;gap:6px}
+.mpo-affix__unit{color:var(--muted);font-size:13px;font-weight:600}
+.mpo-affix>.mpo-select{width:58px;height:34px;font-size:14px;font-weight:600}
+.mpo-seg-row{padding-block:10px}
+.mpo-seg-row>app-segmented{flex:1}
+.mpo-block{display:block;padding-block:10px}
+.mpo-block .po-split{margin:0}
+.mpo-other{gap:8px}
+.mpo-other .mpo-other__name{flex:1 1 auto;width:auto}
+.mpo-other .mpo-affix .mpo-input{width:96px}
+.mpo-other__remove{margin-right:-10px;color:var(--muted)}
+.mpo-nowrap{white-space:nowrap}
+
+/* ---- editor: Producten as families with swipeable line rows and an inline count */
+.mpo-family{margin-bottom:12px}
+.mpo-family__head{align-items:flex-start;background:color-mix(in srgb,var(--surface-2) 60%,var(--surface))}
+.mpo-family__head .ios-cell__trail{max-width:42%}
+.mpo-line{align-items:center;gap:10px}
+.mpo-line__body{cursor:pointer}
+.mpo-line__index{width:44px;height:44px;border-radius:10px;font-size:13px;font-weight:700}
+.mpo-line__qty{display:inline-flex;flex:none;align-items:center;gap:4px}
+.mpo-line__unit{color:var(--muted);font-size:13px;font-weight:600}
+.mpo-line .line-colour-dot,.mpo-sheet .line-colour-dot{margin-right:5px;vertical-align:-1px}
+.mpo-line__notes{display:grid;gap:2px;padding:0 16px 10px 72px;color:var(--muted);font-size:12.5px;line-height:1.35;background:var(--surface)}
+.mpo-sheet__block>.ios-section__foot{margin-top:7px}
+
+/* ---- editor: Kosten, the fill card's alerts */
+.mpo-fill__alert{margin:10px 0 0;padding:9px 11px;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12.5px;line-height:1.4}
+.mpo-fill__alert--danger{background:var(--danger-soft)}
+
+/* ---- editor: Dossier */
+.mpo-notes{display:block;width:100%;min-height:160px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;line-height:1.5;resize:vertical;outline:none}
+.mpo-diary__empty{margin:0}
+.mpo-doc{flex-wrap:wrap;row-gap:4px}
+.mpo-doc>.ios-cell__body{flex:1 1 180px}
+.mpo-doc__actions{display:inline-flex;flex:none;align-items:center;gap:0;margin-left:auto}
+.mpo-doc .mpo-doc__rename{width:100%}
+
 /* ---- toasts clear the dock and the save bar */
 body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 96px)}
 }
