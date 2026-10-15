@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BankBalance, SalesOrderView, SalesPaymentSummary } from '../src/app/core/api/models.ts';
-import { incomingMoneyTotals, invoiceReceivable, paymentLocalDay, paymentMomentLabel, receivableTotals, uniqueIncomingPayments } from '../src/app/features/finance/incoming-money.ts';
+import { incomingMoneyTotals, invoiceReceivable, openInvoiceRows, paymentLocalDay, paymentMomentLabel, receivableTotals, uniqueIncomingPayments } from '../src/app/features/finance/incoming-money.ts';
 import type { IncomingMoneyRow } from '../src/app/features/finance/incoming-money.ts';
 import { bankOverview, movementsSince } from '../src/app/features/finance/finance-metrics.ts';
 
@@ -110,4 +110,17 @@ test('refunds reduce net cash while gross receipts and refunded cash stay visibl
   assert.equal(totals.refundedEur, 29);
   assert.equal(totals.partnerAdvanceEur, 121);
   assert.equal(uniqueIncomingPayments([payment({ amountEur: -29 })]).length, 1);
+});
+
+test('openInvoiceRows are exactly the open invoices receivableTotals counts', () => {
+  const creditNote = { order: { id: 55, docType: 'CREDITNOTA', status: 'UITGEREIKT', orderDate: '2026-09-25', number: 'CN-55' }, priced: { totals: { totalInclVat: 220.2 } },
+    paymentSummary: { invoiceTotalEur: -220.2, receivedEur: 0, remainingEur: 0, overpaidEur: 0, creditEur: 220.2, status: 'CREDIT', payments: [], instalments: [], legacyPaidMarker: false } } as unknown as SalesOrderView;
+  const views = [invoice(1, 3000, 1000, { partnerPurchaseOrderId: 4 }), invoice(2, 300, 500), invoice(3, 900, 0, { status: 'GEANNULEERD' }), invoice(4, 700, 0, { status: 'CONCEPT' }),
+    invoice(5, -100, 0), invoice(6, 400, 0, { archivedAt: '2026-09-08T10:00:00Z' }), creditNote];
+  const rows = openInvoiceRows(views);
+  const totals = receivableTotals(views);
+  assert.deepEqual(rows.map((row) => row.view.order.id), [1, 6]);
+  assert.deepEqual(rows.map((row) => [row.receivedEur, row.remainingEur]), [[1000, 2000], [0, 400]]);
+  assert.equal(rows.length, totals.count);
+  assert.equal(Math.round(rows.reduce((sum, row) => sum + row.remainingEur, 0) * 100) / 100, totals.totalEur);
 });

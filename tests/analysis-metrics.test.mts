@@ -13,6 +13,7 @@ import type {
 import {
   inventoryAnalysis,
   partnerFinancingAnalysis,
+  piecesSoldByProduct,
   resultAnalysis,
   salesAnalysis,
 } from '../src/app/features/analyses/analysis-metrics.ts';
@@ -536,4 +537,18 @@ test('issued credit notes come off Gefactureerd, the trend and the top lists, an
   assert.ok(!result.attentionOrders.some((row) => row.orderId === 32), 'a concept credit note asks nothing');
   const fullyCredited = { ...invoice, creditedEur: 1210 } as SalesOrderView;
   assert.ok(!salesAnalysis([fullyCredited], [], { today: '2026-06-01' }).attentionOrders.some((row) => row.orderId === 30), 'a fully credited invoice is no open payment');
+});
+
+test('piecesSoldByProduct counts the pieces of issued regular invoices in the window up to today', () => {
+  const sales: SalesOrderView[] = [
+    salesRow({ id: 60, date: '2026-05-20', docType: 'FACTUUR', status: 'BETAALD', lines: [{ productId: 1, quantity: 30 }, { productId: 2, quantity: 13 }] }),
+    salesRow({ id: 61, date: '2026-06-01', docType: 'FACTUUR', status: 'VERZONDEN', lines: [{ productId: 1, quantity: 5 }] }),
+    salesRow({ id: 62, date: '2026-03-02', docType: 'FACTUUR', status: 'BETAALD', lines: [{ productId: 1, quantity: 99 }] }),
+    salesRow({ id: 63, date: '2026-05-25', docType: 'FACTUUR', status: 'CONCEPT', lines: [{ productId: 1, quantity: 99 }] }),
+    salesRow({ id: 64, date: '2026-05-25', docType: 'OFFERTE', status: 'GEACCEPTEERD', lines: [{ productId: 2, quantity: 99 }] }),
+  ];
+  const sold = piecesSoldByProduct(sales, '2026-06-01', 90);
+  assert.deepEqual([...sold].sort(([left], [right]) => left - right), [[1, 35], [2, 13]]);
+  assert.equal(piecesSoldByProduct(sales, '2026-06-01', 1).get(1), 5);
+  assert.equal(piecesSoldByProduct([], '2026-06-01', 90).size, 0);
 });

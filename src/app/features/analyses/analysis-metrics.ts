@@ -875,7 +875,8 @@ function isSettlementDocument(view: SalesOrderView): boolean {
   return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
 }
 
-function piecesSoldByProduct(
+/** Pieces per product on issued regular invoices whose order date lies in the last `days` days up to today (advances left out). */
+export function piecesSoldByProduct(
   sales: readonly SalesOrderView[],
   today: string,
   days: number,
