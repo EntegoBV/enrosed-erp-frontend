@@ -1548,6 +1548,7 @@ export class SalesList {
       case 'LEVERTERMIJN': return '◷';
       case 'VRACHT': return '▤';
       case 'VOORSTEL': return '⇄';
+      case 'OPNIEUW_VERSTUREN': return '↻';
       default: return '◉';
     }
   }

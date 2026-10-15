@@ -2646,7 +2646,7 @@ export interface ProductPhotoExportResult {
 
 /** Notification for the bell in the top right. */
 export interface AppNotification {
-  kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL'
+  kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'OPNIEUW_VERSTUREN'
     | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN';
   orderId: number | null;
   orderNumber: string;
