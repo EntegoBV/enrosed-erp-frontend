@@ -3,9 +3,11 @@ import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/f
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
-import { invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
-import { linkChange, linkNotice, surplusQuestion } from '../src/app/features/purchasing/purchase-payment-links.ts';
+import {
+  carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
+} from '../src/app/features/purchasing/purchase-payment-links.ts';
 import { bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
@@ -133,6 +135,7 @@ function harness() {
   vm.runInNewContext(componentCode, {
     exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
+    inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
@@ -1163,3 +1166,61 @@ test('Bestaande betaling: the goods and the inspection noted with them go on the
   assert.equal(toasts.at(-1), 'Datum gevolgd van de transactie: 08/09/2026 (was 01/09/2026).', "the server's own sentence");
 }
 );
+
+/* ---- round-2 review: a USD payment is linked as the server links it; 'Rest als inspectie' only where the server takes it */
+
+test('Bestaande betaling: a USD payment is linked whole with its rate, or carved by a part named in dollars; never the larger-transaction question', async () => {
+  const { panel, state, sourcing, toasts } = harness();
+  state.purchaseViews.set([roundView({ order: { ...purchaseView().order, inspectionCostEur: 300 } })]);
+  const bank = { ...movement(650, -5090), source: 'ODOO' as const };
+  state.payments.set([{ id: 401, orderId: 20, orderNumber: 'PO-20', label: 'Saldo 70%', amount: 12000, currency: 'USD', amountEur: 10250, paidOn: '2026-09-01',
+    payee: 'SUPPLIER', instalmentDue: 'SHIPPED' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, amount, options.higher]); return { payments: [], lines: [{ ...bank, allocated: true }] };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.deepEqual([panel.outgoingPart()?.carve, panel.outgoingPart()?.higher, panel.canLinkOutgoing(), panel.allocationActionLabel()], [false, false, true, 'Koppelen']);
+  assert.deepEqual(panel.outgoingChange().map(row => row.label), ['Bedrag', 'Betaald op', 'Koers', 'Bewijs']);
+  assert.match(panel.outgoingForeignWarning()!.replace(/ /g, ' '), /^€ 5\.090,00 wijkt sterk af van de geboekte € 10\.250,00/);
+  panel.outgoingForeignInput.set('6000');
+  assert.deepEqual([panel.outgoingPart()?.carve, panel.outgoingPart()?.amount, panel.canLinkOutgoing(), panel.allocationActionLabel()], [true, 6000, true, 'Deel koppelen']);
+  assert.equal(panel.outgoingCarveText().replace(/ /g, ' '),
+    'Deel van deze betaling: US$ 6.000,00 (€ 5.090,00) van US$ 12.000,00; de rest (US$ 6.000,00) blijft open als tweede transactie.');
+  panel.outgoingForeignInput.set('13000');
+  assert.equal(panel.canLinkOutgoing(), false);
+  assert.match(panel.allocationBlockedReason().replace(/ /g, ' '), /^Het deel moet kleiner zijn dan de betaling \(US\$ 12\.000,00\)/);
+  panel.outgoingForeignInput.set('6000');
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[401, 650, 6000, null]]);
+  assert.equal(toasts.at(-1), 'Deel van de betaling gekoppeld');
+  // A larger euro line on the same USD payment: whole, no question, no inspection rest.
+  const larger = harness();
+  larger.state.purchaseViews.set([roundView({ order: { ...purchaseView().order, inspectionCostEur: 300 } })]);
+  larger.state.payments.set(state.payments());
+  await larger.panel.openAllocation({ ...movement(651, -10600), source: 'ODOO' });
+  larger.panel.toggleOutgoing(larger.panel.outgoingCandidates()[0]);
+  assert.deepEqual([larger.panel.outgoingPart()?.higher, larger.panel.canLinkOutgoing(), larger.panel.outgoingInspectionOffered()], [false, true, false]);
+});
+
+test("Bestaande betaling: no 'Rest als inspectie' once the inspection via the supplier is booked or noted with the transfer", async () => {
+  const view = roundView({ order: { ...purchaseView().order, inspectionCostEur: 300, inspectionViaSupplier: true } });
+  const goods = { id: 301, orderId: 20, orderNumber: 'PO-20', label: 'Saldo 70%', amountEur: 21733.63, paidOn: '2026-09-10', payee: 'SUPPLIER', instalmentDue: 'SHIPPED' };
+  // PO-2026-014: the € 300 inspection rides on the 30% transfer.
+  const booked = harness();
+  booked.state.purchaseViews.set([view]);
+  booked.state.payments.set([goods, { id: 201, orderId: 20, label: 'Aanbetaling 30%', amountEur: 9314.41, paidOn: '2026-08-03', payee: 'SUPPLIER', bankStatementLineId: 610 },
+    { id: 202, orderId: 20, label: 'Aanbetaling 30% · inspectie', amountEur: 300, paidOn: '2026-08-03', payee: 'SEPARATE', bankStatementLineId: 610 }]);
+  await booked.panel.openAllocation({ ...movement(700, -21783.63), source: 'ODOO' });
+  booked.panel.toggleOutgoing(booked.panel.outgoingCandidates().find(row => row.id === 301)!);
+  assert.deepEqual([booked.panel.outgoingPart()?.higher, booked.panel.outgoingInspectionOffered()], [true, false]);
+  // An inspection noted with the goods on their day is this transfer's: no second one either.
+  const noted = harness();
+  noted.state.purchaseViews.set([view]);
+  noted.state.payments.set([goods, { id: 302, orderId: 20, label: 'Inspectie', amountEur: 100, paidOn: '2026-09-10', payee: 'SEPARATE' }]);
+  await noted.panel.openAllocation({ ...movement(701, -21783.63), source: 'ODOO' });
+  noted.panel.toggleOutgoing(noted.panel.outgoingCandidates().find(row => row.id === 301)!);
+  assert.deepEqual([noted.panel.outgoingPart()?.higher, noted.panel.outgoingInspectionOffered()], [true, false]);
+});

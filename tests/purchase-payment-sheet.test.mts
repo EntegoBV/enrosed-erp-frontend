@@ -8,9 +8,10 @@ import { bankAmountsMatch, bankTransactionDay } from '../src/app/shared/bank-tra
 import { appendPaymentProofs, PROOF_ACCEPT, proofFileKey } from '../src/app/shared/payment-proof-selection.ts';
 import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
-import { dayText, invoiceCandidates, invoiceOption, invoicesOf, resolveInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { dayText, invoiceCandidates, invoiceNumberKey, invoiceOption, invoicesOf, resolveInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
 import {
-  carveText, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
+  carveForeignText, carveText, foreignLinkWarning, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
+  transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
 
 /*
@@ -33,6 +34,8 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
 }).outputText;
 const template = source.slice(source.indexOf('template: `'), source.indexOf('`,\n})\nexport class PurchasePaymentSheet'));
 const plain = (text: string | null | undefined) => text == null ? text : text.replace(/[  ]/g, ' ');
+/** Values made inside the vm context compare by their JSON. */
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 function mount() {
   const exports: Record<string, new () => any> = {};
@@ -47,6 +50,7 @@ function mount() {
     DesktopViewport: tokens.viewport, BankAccountsStore: tokens.accounts,
     PAYEE_ORDER, PAYEE_SHORT, PAYEE_LABEL, DUE_MOMENT, FREIGHT_TERM_LABEL, parsePurchasePaymentAmount, dayText, invoiceCandidates, invoiceOption,
     invoicesOf, resolveInvoice, carveText, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
+    invoiceNumberKey, carveForeignText, foreignLinkWarning,
     appendPaymentProofs, PROOF_ACCEPT, proofFileKey, bankAmountsMatch, bankTransactionDay,
     formatEur: (value: number) => value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' }),
   });
@@ -156,4 +160,97 @@ test("the payee's only invoice holds for all its payments; a new invoice is for 
   assert.equal(sheet.draft().newInvoice.forAll, true);
   assert.match(template, /Voor alle deelbetalingen/);
   assert.match(template, /Hoort bij de factuur, niet bij deze ene betaling\./);
+});
+
+/* ---- round-2 review: USD/CNY links, a refused choice that stays open, the invoice the file and the number belong to */
+
+test('a USD payment and one transaction: the sheet shows a whole link with the rate, a named part carves in dollars, never the larger-transaction question', () => {
+  const { sheet } = mount();
+  const usd = { ...goods, id: 401, amount: 12000, currency: 'USD', amountEur: 10250, paidOn: '2026-01-03', bankStatementLineId: null };
+  sheet.draft.set(draft(usd));
+  sheet.parts.set([part(usd)]);
+  sheet.orderPayments.set([usd]);
+  sheet.inspectionOffered.set(true);
+  sheet.pickLine(401, { ...line610, id: 650, amountEur: -5090, bookedAt: '2026-01-05T09:00:00Z' });
+  assert.deepEqual(clone(sheet.pendingPlan()), { kind: 'part', lineId: 650, whole: true }, 'the server links it whole: no carve in euro');
+  assert.deepEqual([sheet.pickingClosed(), sheet.saveBlocked(), sheet.foreignPick()?.currency], [false, false, 'USD']);
+  assert.match(plain(sheet.foreignWarning())!, /^€ 5\.090,00 wijkt sterk af van de geboekte € 10\.250,00/);
+  assert.deepEqual(sheet.changeRows().map((row: any) => row.label), ['Bedrag', 'Betaald op', 'Koers', 'Bewijs']);
+  sheet.foreignPartInput('6.000');
+  assert.deepEqual(clone(sheet.pendingPlan()), { kind: 'part', lineId: 650, whole: false, amount: 6000 });
+  assert.equal(sheet.foreignWarning(), null);
+  assert.equal(plain(sheet.carve(sheet.pendingLine())),
+    'Deel van deze betaling: US$ 6.000,00 (€ 5.090,00) van US$ 12.000,00; de rest (US$ 6.000,00) blijft open als tweede transactie.');
+  sheet.foreignPartInput('abc');
+  assert.deepEqual([sheet.foreignPartInvalid(), sheet.saveBlocked()], [true, true]);
+  sheet.foreignPartInput('13000');
+  assert.equal(sheet.pendingMessage()?.startsWith('Het deel moet kleiner zijn dan de betaling'), true);
+  // A larger euro line: whole, no question, no 'Rest als inspectie'.
+  sheet.cancelPending();
+  assert.deepEqual([sheet.draft().pendingPartAmountInput, sheet.draft().pendingPartAmount], ['', null], 'a new pick starts without a named part');
+  sheet.pickLine(401, { ...line610, id: 651, amountEur: -10600 });
+  assert.equal(sheet.pendingPlan().kind, 'part');
+  assert.equal(template.includes("@if (foreignPick(); as foreign)"), true);
+});
+
+test('a refused link never locks the choice: the options, Annuleren and × stay usable, and the button retries only while something is left', () => {
+  const { sheet } = mount();
+  const open = { ...goods, id: 301, amount: 10250, amountEur: 10250, paidOn: '2026-01-03', bankStatementLineId: null };
+  sheet.draft.set(draft(open, { bankLinkPending: true, bankLinkError: 'Inspectie via leverancier staat al geboekt' }));
+  sheet.parts.set([part(open)]);
+  sheet.orderPayments.set([open]);
+  sheet.pickLine(301, { ...line610, id: 611, amountEur: -10300 });
+  assert.equal(sheet.draft().bankLinkError, '', 'a new pick clears the refusal');
+  sheet.chooseSurplus('INSPECTION');
+  sheet.draft.set({ ...sheet.draft(), bankLinkError: 'geweigerd' });
+  sheet.chooseSurplus('ADJUST');
+  assert.deepEqual([sheet.draft().surplus, sheet.draft().bankLinkError, sheet.retrying()], ['ADJUST', '', true]);
+  sheet.cancelPending();
+  assert.equal(sheet.retrying(), false, "nothing left to link: 'Wijziging bewaren', not 'Koppeling opnieuw proberen'");
+  const block = template.slice(template.indexOf('pay-sheet__line--pending'), template.indexOf('pay-sheet__line--change'));
+  assert.equal(block.includes('pay.bankLinkPending'), false, 'the pending ×, the choices and Annuleren are never disabled by a pending link');
+});
+
+test('a new invoice: the switch only beside another invoice, a number the payee has already is picked instead, the file follows', () => {
+  const { sheet } = mount();
+  const invoice = { id: 7, orderId: 21, payee: 'SUPPLIER', payeeLabel: 'Leverancier', number: 'CI-2026-118', invoiceDate: '2026-08-20', amount: 33633.33,
+    currency: 'EUR', amountEur: 33633.33, documentId: null, documentName: null, notes: null, actor: null, recordedAt: '', primary: true,
+    coversInspection: true, paymentIds: [201], paidEur: 0 };
+  sheet.draft.set(draft(goods, { invoiceId: null }));
+  sheet.payeePaymentCount.set(3);
+  sheet.openNewInvoice();
+  assert.equal(sheet.newInvoiceBeside(), false, 'the first invoice of the payee holds for every payment by itself');
+  assert.equal(sheet.newInvoiceNote(), 'Geldt voor alle betalingen van Leverancier (3)');
+  sheet.invoices.set([invoice]);
+  const file = new File(['x'], 'ci-118.pdf');
+  sheet.patchInvoice({ number: ' ci-2026-118', amountInput: '100', amount: 100, file });
+  assert.equal(sheet.duplicateInvoice()?.id, 7);
+  assert.deepEqual([sheet.newInvoiceInvalid(), sheet.saveBlocked(), sheet.newInvoiceBeside()], [true, true, false]);
+  sheet.patchInvoice({ number: 'CI-2026-140' });
+  assert.deepEqual([sheet.duplicateInvoice(), sheet.newInvoiceBeside()], [null, true]);
+  // After a lost answer the invoice on the container is this sheet's own: no warning, the retry goes on.
+  sheet.patchInvoice({ number: 'CI-2026-118' });
+  sheet.draft.set({ ...sheet.draft(), invoiceAttempt: 'ci-2026-118' });
+  assert.equal(sheet.duplicateInvoice(), null);
+  sheet.draft.set({ ...sheet.draft(), invoiceAttempt: undefined });
+  sheet.useExistingInvoice(sheet.duplicateInvoice());
+  assert.deepEqual([sheet.draft().invoiceId, sheet.draft().invoiceIdChanged, sheet.draft().newInvoice, sheet.draft().invoiceFile, sheet.draft().invoiceFileFor],
+    [7, true, undefined, file, 7], 'the typed file goes to the invoice that has none');
+  assert.match(template, /@if \(newInvoiceBeside\(\)\)/);
+});
+
+test("'Bestand bij de factuur' on an inspection paid via the supplier remembers the supplier's invoice it was chosen for", () => {
+  const { sheet } = mount();
+  const invoice = { id: 7, orderId: 21, payee: 'SUPPLIER', payeeLabel: 'Leverancier', number: 'CI-2026-118', invoiceDate: '2026-08-20', amount: 31048.04,
+    currency: 'EUR', amountEur: 31048.04, documentId: null, documentName: null, notes: null, actor: null, recordedAt: '', primary: true,
+    coversInspection: true, paymentIds: [], paidEur: 0 };
+  sheet.draft.set(draft(inspection, { invoiceId: null }));
+  sheet.parts.set([part(inspection)]);
+  sheet.orderPayments.set([goods, inspection]);
+  sheet.invoices.set([invoice]);
+  sheet.viaSupplier.set(true);
+  assert.equal(sheet.chosenInvoice()?.id, 7);
+  const file = new File(['x'], 'ci-118.pdf');
+  sheet.chooseInvoiceFile({ target: { files: [file], value: 'x' } });
+  assert.deepEqual([sheet.draft().invoiceFile, sheet.draft().invoiceFileFor], [file, 7]);
 });

@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseInvoice, PurchasePayment } from '../src/app/core/api/models.ts';
 import {
-  invoiceCandidates, invoiceComparison, invoiceCoverage, invoiceDocumentKind, invoiceLine, invoiceOption, invoiceSub, invoiceTermsLine, isInvoiceFile,
-  payeeInvoiceComparison, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
+  inspectionRestOffered, invoiceCandidates, invoiceComparison, invoiceCoverage, invoiceDocumentKind, invoiceLine, invoiceNumberKey, invoiceOption, invoiceSub,
+  invoiceTermsLine, isInvoiceFile, payeeInvoiceComparison, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
 } from '../src/app/features/purchasing/purchase-invoices.ts';
 import {
-  carveText, inspectionSplitBlocked, inspectionSplitEur, linkChange, linkNotice, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
+  carveForeignText, carveText, foreignLinkWarning, inspectionSplitBlocked, inspectionSplitEur, linkChange, linkNotice, pendingAlreadyLinked, pendingLinkPlan,
+  pendingPartEur, surplusQuestion,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
 
 /** Intl writes a non-breaking space after the euro sign. */
@@ -186,4 +187,66 @@ test('an invoice covers all payments of its payee, or says how many and offers t
   assert.deepEqual(invoiceCoverage(invoice(7, { paymentIds: [103] }), rows, 'Leverancier'),
     { covered: 1, total: 3, all: false, text: 'Geldt voor 1 van 3 betalingen van Leverancier' });
   assert.deepEqual(invoiceCoverage(invoice(7), [], 'Leverancier'), { covered: 0, total: 0, all: true, text: 'Geldt voor alle betalingen van Leverancier' });
+});
+
+/* ---- round-2 review: USD/CNY links as the server makes them, and where 'Rest als inspectie' fits */
+
+test('a USD payment and one transaction: whole by default (the euro and the rate follow), a part only when named in dollars', () => {
+  // The backend's case: USD 12.000 booked at € 10.250.
+  const usd = { amount: 12000, currency: 'USD' as const };
+  const now = { ...usd, amountEur: 10250, paidOn: '2026-01-03', proof: 'geen' };
+  // A pure rate difference: linked whole, with a Koers row, never a carve.
+  const rate = pendingLinkPlan(10250, [{ id: 1, amountEur: -10180 }], true, null, [], usd);
+  assert.deepEqual(rate, { kind: 'part', lineId: 1, whole: true });
+  assert.deepEqual(linkChange(now, { amountEur: -10180, day: '2026-01-05', text: 'KBC' }, rate).map(row => [row.label, plain(row.now), plain(row.after)]), [
+    ['Bedrag', 'US$ 12.000,00 · € 10.250,00', 'US$ 12.000,00 · € 10.180,00'], ['Betaald op', '03/01/2026', '05/01/2026'],
+    ['Koers', '1 USD = 0,8542 EUR', '1 USD = 0,8483 EUR'], ['Bewijs', 'geen', 'KBC']]);
+  // € 5.090 and no typed part: still whole (the server links it whole), with a warning that it may be a part.
+  assert.deepEqual(pendingLinkPlan(10250, [{ id: 1, amountEur: -5090 }], true, null, [], usd), { kind: 'part', lineId: 1, whole: true });
+  assert.equal(plain(foreignLinkWarning({ amountEur: 10250, currency: 'USD' }, -5090)),
+    '€ 5.090,00 wijkt sterk af van de geboekte € 10.250,00. Betaalt deze transactie maar een deel, vul dan het deel in USD in.');
+  assert.equal(foreignLinkWarning({ amountEur: 10250, currency: 'USD' }, -10180), null, 'a rate difference is no warning');
+  assert.equal(foreignLinkWarning({ amountEur: 10250, currency: 'EUR' }, -5090), null);
+  // A larger line: whole too, never 'hoger' (no 'Rest als inspectie' for USD).
+  assert.deepEqual(pendingLinkPlan(10250, [{ id: 1, amountEur: -10600 }], true, null, [], usd), { kind: 'part', lineId: 1, whole: true });
+  assert.deepEqual(pendingLinkPlan(10250, [{ id: 1, amountEur: -10600 }], true, 'INSPECTION', [], usd), { kind: 'part', lineId: 1, whole: true },
+    'a stale surplus choice is never sent for USD');
+  // The part named in dollars is carved out (bank-part's amount); its euro is the bank's, the rest stays open at the booked rate.
+  const half = pendingLinkPlan(10250, [{ id: 1, amountEur: -5090 }], true, null, [], { ...usd, part: 6000 });
+  assert.deepEqual(half, { kind: 'part', lineId: 1, whole: false, amount: 6000 });
+  assert.equal(inspectionSplitBlocked(half), true, 'a carve changes the goods payment first');
+  assert.deepEqual(linkChange(now, { amountEur: -5090, day: '2026-01-05', text: 'KBC' }, half).map(row => [row.label, plain(row.after)]), [
+    ['Bedrag', 'US$ 6.000,00 · € 5.090,00 op de bank + US$ 6.000,00 · € 5.125,00 open'], ['Betaald op', '05/01/2026 (deel) · rest 03/01/2026'],
+    ['Koers', '1 USD = 0,8483 EUR (deel)'], ['Bewijs', 'KBC']]);
+  assert.equal(plain(carveForeignText(6000, -5090, 12000, 'USD')),
+    'Deel van deze betaling: US$ 6.000,00 (€ 5.090,00) van US$ 12.000,00; de rest (US$ 6.000,00) blijft open als tweede transactie.');
+  // The whole amount named is the whole payment; more than the payment is refused before the server is asked.
+  assert.deepEqual(pendingLinkPlan(10250, [{ id: 1, amountEur: -10180 }], true, null, [], { ...usd, part: 12000 }), { kind: 'part', lineId: 1, whole: true });
+  const more = pendingLinkPlan(10250, [{ id: 1, amountEur: -10180 }], true, null, [], { ...usd, part: 12500 });
+  assert.equal(more.kind, 'invalid');
+  assert.equal(more.kind === 'invalid' && plain(more.message), 'Het deel moet kleiner zijn dan de betaling (US$ 12.000,00); laat het leeg voor de hele betaling.');
+  // A euro payment keeps comparing in euro; two USD transactions that make the booked euro still split over both.
+  assert.equal(pendingLinkPlan(10250, [{ id: 1, amountEur: -10600 }], true, null, [], null).kind, 'higher');
+  assert.deepEqual(pendingLinkPlan(10250, [{ id: 1, amountEur: -5000 }, { id: 2, amountEur: -5250 }], true, null, [], usd), { kind: 'lines', lineIds: [1, 2] });
+  assert.equal(plain(carveText(12000, -5000)), 'Deel van deze betaling: € 5.000,00 van € 12.000,00; de rest (€ 7.000,00) blijft open als tweede transactie.');
+});
+
+test("'Rest als inspectie via leverancier' only where the server takes it", () => {
+  const order = { inspectionCostEur: 300, inspectionViaSupplier: true };
+  const goods = { id: 201, payee: 'SUPPLIER' as const, bankStatementLineId: 610, amountEur: 10000 };
+  const supplier = { payee: 'SUPPLIER' as const, instalmentDue: 'SHIPPED', currency: 'EUR' };
+  assert.equal(inspectionRestOffered(supplier, order, [goods]), true);
+  assert.equal(inspectionRestOffered({ ...supplier, currency: 'USD' }, order, [goods]), false, 'a USD payment takes the bank\'s euro');
+  assert.equal(inspectionRestOffered({ ...supplier, instalmentDue: 'FREIGHT' }, order, [goods]), false);
+  assert.equal(inspectionRestOffered({ ...supplier, payee: 'LOGISTICS' }, order, [goods]), false);
+  assert.equal(inspectionRestOffered(supplier, { inspectionCostEur: 0, inspectionViaSupplier: true }, [goods]), false);
+  assert.equal(inspectionRestOffered(supplier, order, [goods], 1), false, 'an inspection noted with this transfer already');
+  // PO-2026-014: the € 300 inspection rides on the 30% transfer, so a larger 70% line only offers 'Bedrag aanpassen'.
+  const booked = [goods, { id: 202, payee: 'SEPARATE' as const, bankStatementLineId: 610, amountEur: 300 }];
+  assert.equal(inspectionRestOffered(supplier, order, booked), false);
+  assert.equal(inspectionRestOffered(supplier, { ...order, inspectionCostEur: 450 }, booked), true, 'part of the inspection is still open');
+  assert.equal(inspectionRestOffered(supplier, { ...order, inspectionViaSupplier: false }, booked), true, 'without the flag nothing counts as via the supplier');
+  assert.equal(inspectionRestOffered(supplier, order, [goods, { id: 203, payee: 'SEPARATE' as const, bankStatementLineId: 700, amountEur: 300 }]), true,
+    'a lab fee in its own transfer is not the inspection via the supplier');
+  assert.equal(invoiceNumberKey('  CI-2026-118 '), invoiceNumberKey('ci-2026-118'));
 });

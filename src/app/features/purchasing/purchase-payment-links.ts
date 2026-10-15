@@ -17,6 +17,14 @@ import type { Currency } from '../../core/api/models';
  * ('ADJUST') or the rest is the inspection paid via the supplier
  * ('INSPECTION'). The server does it in one call (bank-part with `surplus`);
  * linkChange words what will change and linkNotice what did.
+ *
+ * A USD/CNY payment is compared in its own currency, as the server does
+ * (PurchasePaymentSplitService.linkForeign): its euro is a forecast at the
+ * order rate, so a gap in euro is the exchange rate, never a part or a
+ * surplus. One transaction is the whole payment (the euro and the day
+ * follow, the dollars stay) unless the owner names the part it paid in the
+ * payment's currency; that part is carved out and sent as bank-part's
+ * `amount`. 'Hoger' and 'Rest als inspectie' never apply to it.
  */
 
 const TOLERANCE_CENTS = 2;
@@ -43,7 +51,9 @@ export type PendingLinkPlan =
    * /bank-part). A larger one is whole once the owner chose what the surplus
    * is (`surplus`).
    */
-  | { kind: 'part'; lineId: number; whole: boolean; surplus?: SurplusChoice; withPaymentIds?: number[] }
+  | { kind: 'part'; lineId: number; whole: boolean; surplus?: SurplusChoice; withPaymentIds?: number[];
+      /** A USD/CNY carve: the part in the payment's own currency, sent as bank-part's `amount`. */
+      amount?: number }
   /** One transaction larger than the part, no choice yet: the sheet asks (extraEur = how much larger). */
   | { kind: 'higher'; lineId: number; extraEur: number }
   /** Two to ten transactions that together make the part (C1, /bank-lines). */
@@ -55,6 +65,22 @@ export type PendingLinkPlan =
 export const PENDING_LINES_MESSAGE = 'Kies transacties die samen het bedrag maken, of één transactie voor een deel van het bedrag.';
 
 /**
+ * A USD/CNY payment (or transfer) a transaction is linked to: its amount in
+ * its own currency and, when the owner typed one, the part of it this
+ * transaction paid ('Alleen een deel?'). Null or EUR: compared in euro.
+ */
+export interface ForeignLink {
+  amount: number;
+  currency: Currency;
+  part?: number | null;
+}
+
+/** The typed part is not less than the payment: the server refuses it, so the sheet does. */
+export function foreignPartMessage(foreign: ForeignLink): string {
+  return `Het deel moet kleiner zijn dan de betaling (${money(foreign.amount, foreign.currency)}); laat het leeg voor de hele betaling.`;
+}
+
+/**
  * The call for the transactions picked for a part of `partEur`. One
  * transaction that matches (± € 0,02) or is smaller; one that is larger once
  * the owner chose what the surplus is (`surplus`; without a choice the plan
@@ -64,12 +90,25 @@ export const PENDING_LINES_MESSAGE = 'Kies transacties die samen het bedrag make
  */
 export function pendingLinkPlan(
   partEur: number, lines: readonly { id: number; amountEur: number }[], roundOnServer: boolean, surplus: SurplusChoice | null = null,
-  companions: readonly { id: number; amountEur: number }[] = [],
+  companions: readonly { id: number; amountEur: number }[] = [], foreign: ForeignLink | null = null,
 ): PendingLinkPlan {
   if (!lines.length) return { kind: 'none' };
   const part = cents(partEur);
   const outgoing = lines.map(line => -cents(line.amountEur));
   if (outgoing.some(value => value <= 0) || !(part > 0)) return { kind: 'invalid', message: PENDING_LINES_MESSAGE };
+  if (lines.length === 1 && roundOnServer && foreign && foreign.currency !== 'EUR') {
+    // USD/CNY: the server compares in the payment's own currency. A named part is carved out; else the transaction is the whole payment.
+    const named = foreign.part ?? null;
+    if (named !== null) {
+      if (!(cents(named) > 0) || cents(named) > cents(foreign.amount)) return { kind: 'invalid', message: foreignPartMessage(foreign) };
+      if (cents(named) < cents(foreign.amount)) return { kind: 'part', lineId: lines[0].id, whole: false, amount: cents(named) / 100 };
+    }
+    const together = part + companions.reduce((sum, companion) => sum + cents(companion.amountEur), 0);
+    if (companions.length && Math.abs(outgoing[0] - together) <= TOLERANCE_CENTS) {
+      return { kind: 'part', lineId: lines[0].id, whole: true, withPaymentIds: companions.map(companion => companion.id) };
+    }
+    return { kind: 'part', lineId: lines[0].id, whole: true };
+  }
   if (lines.length === 1) {
     // The goods and the inspection noted with them make the transaction: both go on it, the inspection keeping its amount.
     const together = part + companions.reduce((sum, companion) => sum + cents(companion.amountEur), 0);
@@ -174,8 +213,10 @@ function amountText(amount: number, currency: Currency, amountEur: number): stri
  * be. A whole link (or a larger transaction taken whole) follows the
  * transaction's euro and day; a smaller one carves the line's part and leaves
  * the rest open; the surplus as inspection keeps the payment and adds the
- * inspection on the same transaction. Empty for any other plan (a larger
- * transaction asks its question first).
+ * inspection on the same transaction. A USD/CNY payment keeps its own amount
+ * (its euro and its rate follow), or the part named in its currency is carved
+ * out at the bank's euro. Empty for any other plan (a larger transaction asks
+ * its question first).
  */
 export function linkChange(
   subject: LinkSubject, line: { amountEur: number; day: string; text: string }, plan: PendingLinkPlan, companionsEur = 0,
@@ -185,6 +226,19 @@ export function linkChange(
   const foreign = subject.currency !== 'EUR';
   const row = (label: LinkChangeRow['label'], now: string, after: string): LinkChangeRow => ({ label, now, after, changed: now !== after });
   const proof = row('Bewijs', subject.proof, line.text);
+  if (!plan.whole && foreign && plan.amount != null) {
+    // The part named in dollars takes the bank's euro; the rest stays open at the payment's booked rate (as the server splits it).
+    const partBooked = Math.round(subject.amountEur * plan.amount / subject.amount * 100) / 100;
+    const restAmount = (cents(subject.amount) - cents(plan.amount)) / 100;
+    const restEur = (cents(subject.amountEur) - cents(partBooked)) / 100;
+    return [
+      row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur),
+        `${amountText(plan.amount, subject.currency, lineEur)} op de bank + ${amountText(restAmount, subject.currency, restEur)} open`),
+      row('Betaald op', day(subject.paidOn), `${day(line.day)} (deel) · rest ${day(subject.paidOn)}`),
+      row('Koers', rateText(subject.amount, subject.currency, subject.amountEur), `${rateText(plan.amount, subject.currency, lineEur)} (deel)`),
+      proof,
+    ];
+  }
   if (!plan.whole) {
     const restEur = (cents(subject.amountEur) - cents(lineEur)) / 100;
     return [
@@ -219,6 +273,27 @@ export function linkChange(
 export function carveText(paymentEur: number, lineEur: number): string {
   const part = Math.abs(cents(lineEur));
   return `Deel van deze betaling: ${eur(part / 100)} van ${eur(cents(paymentEur) / 100)}; de rest (${eur((cents(paymentEur) - part) / 100)}) blijft open als tweede transactie.`;
+}
+
+/**
+ * The part of a USD/CNY payment named in its own currency, in the server's
+ * words (carvedForeign): 'Deel van deze betaling: US$ 6.000,00 (€ 5.090,00)
+ * van US$ 12.000,00; de rest (US$ 6.000,00) blijft open als tweede transactie.'
+ */
+export function carveForeignText(part: number, lineEur: number, whole: number, currency: Currency): string {
+  return `Deel van deze betaling: ${money(part, currency)} (${eur(Math.abs(cents(lineEur)) / 100)}) van ${money(whole, currency)}; de rest (${
+    money((cents(whole) - cents(part)) / 100, currency)}) blijft open als tweede transactie.`;
+}
+
+/**
+ * One transaction linked whole to a USD/CNY payment whose booked euro is far
+ * from it (more than 15 %, the sheet's own yardstick for a typed debit): it
+ * may pay only a part. Null when the euro is close.
+ */
+export function foreignLinkWarning(subject: { amountEur: number; currency: Currency }, lineEur: number): string | null {
+  const booked = cents(subject.amountEur), bank = Math.abs(cents(lineEur));
+  if (subject.currency === 'EUR' || !(booked > 0) || Math.abs(bank - booked) / booked <= 0.15) return null;
+  return `${eur(bank / 100)} wijkt sterk af van de geboekte ${eur(booked / 100)}. Betaalt deze transactie maar een deel, vul dan het deel in ${subject.currency} in.`;
 }
 
 /** 'Transactie is € 300,00 hoger dan deze betaling'. */

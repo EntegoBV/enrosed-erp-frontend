@@ -521,15 +521,27 @@ cijfers'.
   transfer of a group) and one line go through `bank-part`, which takes the
   line's day and, for a whole match, its euro (a euro payment's amount with
   it; USD/CNY keeps its amount, the sheet's 'Koers' row shows the new rate).
+  A USD/CNY payment is compared in its own currency, as the backend's
+  `linkForeign`: one line is the whole payment (never a euro carve, never
+  'hoger', never the inspection rest; a warning when the euro is more than
+  15 % off the booked one) unless the part it paid is named in that currency
+  ('Alleen een deel? Deel in USD', sheet and Kosten & bank; `ForeignLink`,
+  sent as bank-part's `amount`, worded like the server's `carvedForeign`).
   The sheet no longer PUTs before such a link when only the transaction was
   picked (typed money goes back to the stored payment on a pick); changed
   words, term or invoice still go first with the stored money. A line more
   than € 0,02 above the payment is 'higher' (`pendingLinkPlan`): the sheet
   asks 'Transactie is € x hoger dan deze betaling' with 'Bedrag aanpassen
   naar € y' (`higher: 'ADJUST'`), 'Rest als inspectie via leverancier'
-  (`'INSPECTION'`, only a supplier goods payment, not the CIF term, of a
-  container with `inspectionCostEur` > 0: the server's rule) and 'Annuleren';
-  save stays blocked until a choice. The inspection noted with the goods of
+  (`'INSPECTION'`, only where the server's `inspectionRestRefusal` takes it:
+  `inspectionRestOffered` = a euro supplier goods payment, not the CIF term,
+  of a container with `inspectionCostEur` > 0, no inspection noted with the
+  transfer, and the via-supplier inspection not yet reaching that cost) and
+  'Annuleren'; save stays blocked until a choice. A refused link never locks
+  the choice: when the sheet wrote nothing (`paymentWritten` unset) the
+  pending state clears and the error does not say 'Betaling bewaard'; after
+  a write the retry keeps the saved payment, and the options, Annuleren and
+  ✕ stay usable. The inspection noted with the goods of
   the same day (`transferCompanions`, unlinked SEPARATE payments) joins a
   line that makes both (`withPaymentIds`, the inspection keeps its amount):
   never a second inspection. 'Wat verandert' (`linkChange`: Bedrag, Betaald
@@ -554,10 +566,15 @@ cijfers'.
   …/invoices/{id}/assign-all`, one call); editing a payment of a payee with
   two invoices and none of its own starts on the main one; an invoice made
   in the payment sheet is one multipart call with its file and
-  `assignAll` ('Voor alle deelbetalingen', on by default, sent when the
-  payee has another invoice) and a retry recognises it by number; 'Bestand
-  bij de factuur' sends a file to an invoice without one
-  (`…/invoices/{id}/document`), never to the payment. One date rule for a
+  `assignAll` ('Voor alle deelbetalingen', on by default, a switch only
+  when the payee has another invoice, else the 'Geldt voor alle betalingen'
+  note); a number the payee already has is refused before any call with
+  'Kies CI-…' (the typed file follows to that invoice), and a retry reuses
+  an invoice by number only when this sheet sent it (`invoiceAttempt`).
+  'Bestand bij de factuur' sends a file to an invoice without one
+  (`…/invoices/{id}/document`), never to the payment: to the invoice the
+  sheet showed (`invoiceFileFor`; an inspection via the supplier resolves to
+  the supplier's invoice), kept in the sheet when there is none. One date rule for a
   payment in parts: its newest transfer's day with 'eerste dd/mm' (ledger,
   sheet, phone rows, Kosten & bank tree). No average over different
   products (`nacalcUnitMix`; the server's `totals.containerAverage` wins,

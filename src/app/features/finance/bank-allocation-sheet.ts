@@ -187,8 +187,16 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             @if (p.allocationMode() === 'expense' && p.outgoingPart(); as part) {
               <!-- One container payment: it follows the transaction. A larger transaction first asks what the surplus is. -->
               <section class="bank-alloc-preview"><h3>{{ part.carve ? 'Deel van een bestaande betaling' : part.withIds.length ? 'Goederen + inspectie op deze transactie' : 'Bestaande betaling' }}</h3>
+                @if (part.foreign; as foreign) {
+                  <!-- USD/CNY: the transaction is the whole payment (its euro and day follow) unless the part it paid is named in the payment's currency. -->
+                  <label class="bank-alloc-search bank-alloc-foreign"><span>Alleen een deel? Deel in {{ foreign.currency }} (optioneel)</span>
+                    <input class="input num" type="text" inputmode="decimal" autocomplete="off" [disabled]="p.busy()" [value]="p.outgoingForeignInput()"
+                           (input)="p.outgoingForeignInput.set($any($event.target).value)" /></label>
+                  @if (p.outgoingForeignWarning(); as warning) { <p class="fin-hint fin-hint--warn">{{ warning }}</p> }
+                  @else if (!part.carve && !p.outgoingForeignInput().trim()) { <p class="fin-hint">Leeg: de hele betaling neemt het eurobedrag van de transactie over; de koers volgt.</p> }
+                }
                 @if (part.carve) {
-                  <p class="fin-hint">Deel van deze betaling: {{ p.abs(row.amountEur) | eur }} van {{ part.row.amountEur | eur }}; de rest ({{ carveRest(part.row.amountEur, row.amountEur) | eur }}) blijft open als tweede transactie.</p>
+                  <p class="fin-hint">{{ p.outgoingCarveText() }}</p>
                 }
                 @if (part.higher) {
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
@@ -241,8 +249,6 @@ export class BankAllocationSheet {
   partLine(part: PaymentNode['parts'][number]): string {
     return `${part.paidOn.slice(8, 10)}/${part.paidOn.slice(5, 7)} · ${part.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })} · ${part.bank}`;
   }
-  /** What stays open on the payment once the bank line's part is carved out. */
-  carveRest(paymentEur: number, bankEur: number): number { return (Math.round(paymentEur * 100) - Math.round(Math.abs(bankEur) * 100)) / 100; }
   selectDocument(document: BankAllocationTarget): void {
     this.panel().chooseLocalDocument(document);
     afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), { injector: this.injector });

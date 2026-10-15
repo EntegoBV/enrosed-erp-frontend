@@ -39,6 +39,11 @@ export function dayText(iso: string): string {
   return iso.slice(0, 10).split('-').reverse().join('/');
 }
 
+/** An invoice number as the server compares it (trimmed, any case): 'CI-2026-118' and ' ci-2026-118' are the same invoice. */
+export function invoiceNumberKey(number: string | null | undefined): string {
+  return (number ?? '').trim().toLowerCase();
+}
+
 /** The payee's first registered invoice (lowest id): it never changes when a later one is added or redated. */
 export function primaryInvoice(invoices: readonly PurchaseInvoice[], payee: Payee): PurchaseInvoice | null {
   return invoices.filter(invoice => invoice.payee === payee).sort((left, right) => left.id - right.id)[0] ?? null;
@@ -94,6 +99,28 @@ export function viaSupplier(
   if (!flag || payeeOf(payment) !== 'SEPARATE') return false;
   const line = payment.bankStatementLineId ?? null;
   return line === null || paymentsOfOrder.some(other => payeeOf(other) === 'SUPPLIER' && other.bankStatementLineId === line);
+}
+
+/**
+ * 'Rest als inspectie via leverancier' for a transaction larger than a
+ * payment, where the server takes it (inspectionRestRefusal, linkForeign): a
+ * euro goods payment to the supplier (not the CIF freight term, not a credit
+ * offset) of a container with an inspection cost, no inspection noted on the
+ * same transfer (`companions`), and the inspection paid via the supplier not
+ * yet reaching that cost. A USD/CNY payment takes the bank's euro instead.
+ */
+export function inspectionRestOffered(
+  payment: { payee?: Payee | null; instalmentDue?: string | null; currency?: string | null },
+  order: { inspectionCostEur?: number | null; inspectionViaSupplier?: boolean | null },
+  paymentsOfOrder: readonly (Pick<PurchasePayment, 'payee' | 'bankStatementLineId'> & { amountEur?: number | null })[],
+  companions = 0,
+): boolean {
+  if (payeeOf(payment) !== 'SUPPLIER' || payment.instalmentDue === 'FREIGHT' || (payment.currency ?? 'EUR') !== 'EUR' || companions > 0) return false;
+  const cost = cents(order.inspectionCostEur);
+  if (!(cost > 0)) return false;
+  const booked = paymentsOfOrder.filter(other => viaSupplier(other, paymentsOfOrder, order.inspectionViaSupplier))
+    .reduce((sum, other) => sum + cents(other.amountEur), 0);
+  return !(booked > 0 && booked >= cost);
 }
 
 /**
