@@ -351,7 +351,7 @@ type DeskRow =
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
                             @let set = perPiece() ? setPiecesOf(line.productId) : null;
-                            <b>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}@if (set) { /set }</b>
+                            <b>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}@if (set) { /display }</b>
                             <small>@if (set) { {{ line.landedUnitEur / set | eurUp: 3 }} /stuk · }detail <i aria-hidden="true">›</i></small>
                           </button>
                         </td>

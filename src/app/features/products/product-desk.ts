@@ -129,7 +129,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               @if (displayPrice(); as price) {
                 <strong>{{ price | eur: 2 }}</strong>
                 <span>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : '+ ' + (product.markupPct | num) + ' % op de kostprijs' }}</span>
-                @if (secondaryPrice(product, price); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }}</span> }
+                @if (otherPrice(product, price); as other) { <span>{{ other.text }}</span> }
               } @else {
                 <strong>—</strong>
                 <span>nog geen prijs</span>
@@ -235,7 +235,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                   } @else { — }
                 </dd></div>
                 @if (product.packaging.kind !== 'NONE') {
-                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }}</dt><dd>
+                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkdoosje' }}</dt><dd>
                     {{ size(product.packaging.dimensions) }}
                     <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} {{ salesUnit(product).piece.other }} per display }</small>
                   </dd></div>
@@ -247,6 +247,8 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 } @else {
                   <div><dt>Verpakking</dt><dd class="pd-muted">Los, zonder verpakking</dd></div>
                 }
+                @let setup = salesSetup(product);
+                <div><dt>Verkoop</dt><dd class="pd-prose">{{ setup.sentence }}<small>Klant leest: {{ setup.reading.main }} · {{ setup.reading.detail }}</small></dd></div>
                 <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
                 @if (product.description) {
                   <div><dt>Omschrijving</dt><dd class="pd-prose">{{ product.description }}</dd></div>
@@ -305,7 +307,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
               <span class="pd-flow__note">{{ orderStepSentence(product) }}</span>
-              @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span> }
+              @if (otherPrice(product, displayPrice()); as other) { <span>{{ other.text }}</span> }
             </div>
             <i aria-hidden="true">=</i>
             <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
@@ -803,7 +805,7 @@ export class ProductDesk extends ProductView {
       const pieces = packaging.piecesPerUnit ?? 0;
       return pieces > 1 ? `Display van ${pieces.toLocaleString('nl-BE')} ${this.salesUnit(product).piece.other}` : 'Display';
     }
-    return 'Geschenkverpakking';
+    return 'Geschenkdoosje';
   }
 
   /** "Reference 2" in the note is a link to that photo. */

@@ -3839,7 +3839,7 @@ export class PurchaseEditor {
   /**
    * The header's landed cost per unit, judged as the Nacalculatie does: the
    * container's figure when it means something (one product, or one family
-   * in one unit and set size; a set per set with its piece price), else the
+   * in one unit and display size; a display per display with its piece price), else the
    * products' range ('2 producten · € 2,600 – € 8,867 per stuk'). Never an
    * average over different products (Emre, 2026-10-15).
    */
@@ -4699,7 +4699,7 @@ export class PurchaseEditor {
     return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
   }
 
-  /** A product sold per set: its pieces, so a per-unit cost reads '/set' with the price per piece beside it; null per piece. */
+  /** A product sold per display: its pieces, so a per-unit cost reads '/display' with the price per piece beside it; null per piece. */
   setPiecesOf(productId: number): number | null {
     const unit = productSalesUnit(this.products().find((candidate) => candidate.id === productId));
     return unit.isDisplay ? unit.piecesPerDisplay : null;

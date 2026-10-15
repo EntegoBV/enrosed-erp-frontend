@@ -1,4 +1,4 @@
-import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
+import { otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
 import { canReopenSalesDocument } from './sales-reopen';
 import { canCreateCreditNote, creditNoteJourney, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, isCreditNote, isDeadCreditNote } from './sales-credit-note';
 import { SalesCreditNoteSheet } from './sales-credit-note-sheet';
@@ -630,12 +630,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                       </button>
                     </div>
 
+                    <!-- The stored price leads in its own unit; the display side follows. -->
                     @if (lineQuantityDetail(line); as detail) {
-                      <p class="line-unit-context">{{ detail }}.
-                        @if (linePrimaryPrice(line); as primary) { {{ primary.price | eur: 2 }} per {{ primary.singular }} }
-                        @if (lineSecondaryPrice(line); as equivalent) { · {{ equivalent.price | eur: 2 }} {{ equivalent.label }} }
-                        · vóór korting.
-                      </p>
+                      <p class="line-unit-context">{{ detail }} · {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}@if (lineOtherPrice(line); as other) { · {{ other.sign }} {{ other.price | eur: 2 }} per {{ other.unit }}@if (lineDiscounted(line)) {, vóór korting} }.</p>
                     }
 
                     @if (showsMargin() || line.discountPct) {
@@ -1962,12 +1959,14 @@ export class SalesView {
     return salesQuantityDetail(this.productFor(line.productId), line.quantity);
   }
 
-  lineSecondaryPrice(line: PricedLine) {
-    return secondarySalesPrice(this.productFor(line.productId), line.unitPrice);
+  /** The display side of the line's price, before discount: "= € 35,40 per display van 12". */
+  lineOtherPrice(line: PricedLine) {
+    return otherBasisPrice(this.productFor(line.productId), line.unitPrice);
   }
 
-  linePrimaryPrice(line: PricedLine) {
-    return primarySalesPrice(this.productFor(line.productId), line.unitPrice);
+  /** A staffel or extra korting on the line: the display figure is then "vóór korting". */
+  lineDiscounted(line: PricedLine): boolean {
+    return (line.discountPct || line.tierPercent || line.manualPercent || 0) > 0;
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {

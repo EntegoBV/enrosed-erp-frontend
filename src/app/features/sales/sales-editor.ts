@@ -1,4 +1,4 @@
-import { primarySalesPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel, secondarySalesPrice } from '../products/product-sales-unit';
+import { otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
 import { canReopenSalesDocument } from './sales-reopen';
 import { QUANTITY_FIELD_SELECTOR, showServerQuantities } from './sales-quantity-fields';
@@ -792,15 +792,10 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                   </div>
                   }
                 </div>
+                <!-- The price field says what it is for ("Prijs per diamant");
+                     the display side of it follows here. -->
                 @if (lineQuantityDetail(line); as detail) {
-                  <p class="line-unit-context">{{ detail }}.
-                    @if (linePrimaryPrice(line); as primary) {
-                      {{ primary.price | eur: 2 }} per {{ primary.singular }}
-                    }
-                    @if (lineSecondaryPrice(line); as equivalent) {
-                      · {{ equivalent.price | eur: 2 }} {{ equivalent.label }} · vóór korting.
-                    }
-                  </p>
+                  <p class="line-unit-context">{{ detail }}@if (lineOtherPrice(line); as other) { · {{ other.sign }} {{ other.price | eur: 2 }} per {{ other.unit }}@if (lineDiscounted(line)) {, vóór korting} }.</p>
                 }
                 @if (line.nextTierAtQuantity) {
                   <div class="tier-nudge">
@@ -1103,7 +1098,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                   }
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
-                    <small>{{ line.quantity | num }} {{ lineUnit(line.productId).short }} × @if (linePrimaryPrice(line); as primary) { {{ primary.price | eur: 2 }} per {{ primary.singular }} } @else { {{ line.unitPrice | eur: 2 }} }@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
+                    <small>{{ line.quantity | num }} {{ line.quantity === 1 ? lineUnit(line.productId).singular : lineUnit(line.productId).plural }} × {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}@if (lineOtherPrice(line); as other) { · {{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
                       @if (!isCreditNoteDoc()) { · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}} }</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
@@ -1827,7 +1822,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
     .line-internal__summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
     .line-internal[open] .line-internal__summary:after { transform:rotate(180deg) }
     .line-internal__title { min-width:0;display:flex;flex-direction:column;gap:1px }
-    .line-internal__title strong { overflow:hidden;color:var(--ink);font-size:11.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
+    .line-internal__title strong { color:var(--ink);font-size:11.5px;line-height:1.25;overflow-wrap:break-word }
     .line-internal__profit { flex:none;padding:5px 7px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:9.5px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
     .line-internal__profit--negative { background:var(--danger-soft);color:var(--danger) }
     .line-internal__body { border-top:1px solid #ecdcbf }
@@ -3271,12 +3266,14 @@ export class SalesEditor {
     return salesQuantityDetail(this.products().find((product) => product.id === line.productId), line.quantity);
   }
 
-  lineSecondaryPrice(line: PricedLine) {
-    return secondarySalesPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
+  /** The display side of the line's price, before discount: "= € 35,40 per display van 12". */
+  lineOtherPrice(line: PricedLine) {
+    return otherBasisPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
   }
 
-  linePrimaryPrice(line: PricedLine) {
-    return primarySalesPrice(this.products().find((product) => product.id === line.productId), line.unitPrice);
+  /** A staffel or extra korting on the line: the display figure under the price is then "vóór korting". */
+  lineDiscounted(line: PricedLine): boolean {
+    return (line.discountPct || line.tierPercent || line.manualPercent || 0) > 0;
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Packaging, Product } from '../src/app/core/api/models.ts';
 import {
-  effectiveOrderStep, localUnitsPerOrderStep, orderStepChoices, orderStepLabel, orderStepMultiple, orderStepNotice, orderStepSentence,
-  orderStepOf, packageStepPieces, roundToOrderStep, unitsPerOrderStep,
+  effectiveOrderStep, localUnitsPerOrderStep, orderStepChoices, orderStepExample, orderStepFellBack, orderStepLabel, orderStepMultiple,
+  orderStepNotice, orderStepSentence, orderStepOf, packageStepPieces, roundToOrderStep, unitsPerOrderStep,
 } from '../src/app/features/products/product-order-step.ts';
 
 function product(packaging: Partial<Packaging> = {}, piecesPerCarton: number | null = 12, server?: number): Product {
@@ -67,21 +67,31 @@ test('rounds up to the next whole step and leaves zero and negatives alone', () 
   assert.equal(roundToOrderStep(5, 0), 5, 'a step below one counts as one');
 });
 
-test('the editor offers a full carton and one unit always, a display only when it can be the step', () => {
-  assert.deepEqual(orderStepChoices(product(), STOLP, 12), [
-    { step: 'CARTON', label: 'Volle omdoos · 12 stolpen' },
-    { step: 'UNIT', label: 'Per stolp' },
-  ]);
-  assert.deepEqual(orderStepChoices(bowlDisplay(), BOWL, 40), [
-    { step: 'CARTON', label: 'Volle omdoos · 40 bowls' },
-    { step: 'PACKAGE', label: 'Per display · 8 bowls' },
-    { step: 'UNIT', label: 'Per bowl' },
-  ]);
-  assert.deepEqual(orderStepChoices(product({ kind: 'GIFT_BOX' }), STOLP, 1).map((choice) => choice.label),
-    ['Volle omdoos · 1 stolp', 'Per stolp · geschenkverpakking']);
-  assert.deepEqual(orderStepChoices(bowlDisplay({ salesUnit: 'DISPLAY' }), DISPLAY, 5).map((choice) => choice.label),
-    ['Volle omdoos · 5 displays', 'Per display'], 'a display basis sells one display per unit');
-  assert.equal(orderStepChoices(product(), STOLP, null)[0].label, 'Volle omdoos · doosinhoud ontbreekt');
+test('the sales card offers one unit and a full carton always, a display only when it can be the step, small to large', () => {
+  const options = (...args: Parameters<typeof orderStepChoices>) => orderStepChoices(...args).map((choice) => `${choice.step} ${choice.label} · ${choice.detail}`);
+  assert.deepEqual(options(product(), STOLP, 12), ['UNIT Stolp · Elk aantal', 'CARTON Omdoos · Per 12 stolpen']);
+  assert.deepEqual(options(bowlDisplay(), BOWL, 40), ['UNIT Bowl · Elk aantal', 'PACKAGE Display · Per 8 bowls', 'CARTON Omdoos · Per 40 bowls']);
+  assert.deepEqual(options(product({ kind: 'GIFT_BOX' }), STOLP, 1), ['UNIT Stolp · Elk aantal', 'CARTON Omdoos · Per 1 stolp']);
+  assert.deepEqual(options(bowlDisplay({ salesUnit: 'DISPLAY' }), DISPLAY, 5), ['UNIT Display · Elk aantal displays', 'CARTON Omdoos · Per 5 displays'],
+    'a display basis sells one display per unit');
+  assert.equal(orderStepChoices(product(), STOLP, null).at(-1)!.detail, 'Doosinhoud ontbreekt');
+});
+
+test('the live example rounds 13 the way the server will', () => {
+  assert.equal(orderStepExample('PACKAGE', 12, { singular: 'diamant', plural: 'diamanten' }), 'Voorbeeld: 13 diamanten op een offerte worden 24 (2 displays).');
+  assert.equal(orderStepExample('CARTON', 40, BOWL), 'Voorbeeld: 41 bowls op een offerte worden 80 (2 dozen).');
+  assert.equal(orderStepExample('UNIT', 1, STOLP), 'Geen afronding: 13 stolpen blijven 13.');
+  assert.equal(orderStepExample('CARTON', 1, STOLP), 'Geen afronding: 13 stolpen blijven 13.', 'a carton of one rounds nothing');
+});
+
+test('a saved "per display" that the draft can no longer give is announced, never silently changed', () => {
+  const saved = bowlDisplay({ orderStep: 'PACKAGE' });
+  assert.equal(orderStepFellBack(saved, saved), false);
+  assert.equal(orderStepFellBack(saved, bowlDisplay({ orderStep: 'UNIT', kind: 'NONE' })), true, 'the display went');
+  assert.equal(orderStepFellBack(saved, bowlDisplay({ orderStep: 'PACKAGE', piecesPerUnit: 1 })), true, 'the count went below two');
+  assert.equal(orderStepFellBack(saved, bowlDisplay({ orderStep: 'PACKAGE', salesUnit: 'DISPLAY' })), false, 'per display basis still orders per display');
+  assert.equal(orderStepFellBack(bowlDisplay({ orderStep: 'UNIT' }), bowlDisplay({ kind: 'NONE', orderStep: 'UNIT' })), false);
+  assert.equal(orderStepFellBack(null, product()), false, 'a new product');
 });
 
 test('read-only views say the setting in a few words', () => {
@@ -89,16 +99,16 @@ test('read-only views say the setting in a few words', () => {
   assert.equal(orderStepLabel(product({}, null), STOLP), 'Volle omdoos (doosinhoud ontbreekt)');
   assert.equal(orderStepLabel(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Per display (8 bowls)');
   assert.equal(orderStepLabel(product({ orderStep: 'UNIT' }), STOLP), 'Per stolp');
-  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Per stolp (geschenkverpakking)');
-  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' }), STOLP), 'Per stolp (geschenkverpakking)');
+  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Per stolp (geschenkdoosje)');
+  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' }), STOLP), 'Per stolp (geschenkdoosje)');
 });
 
-test('as one phrase the setting reads without a doubled "per"', () => {
-  assert.equal(orderStepSentence(product(), STOLP), 'Verkocht per volle omdoos (12 stolpen)');
-  assert.equal(orderStepSentence(product({}, null), STOLP), 'Verkocht per volle omdoos (doosinhoud ontbreekt)');
-  assert.equal(orderStepSentence(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Verkocht per display (8 bowls)');
-  assert.equal(orderStepSentence(product({ orderStep: 'UNIT' }), STOLP), 'Verkocht per stolp');
-  assert.equal(orderStepSentence(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Verkocht per stolp (geschenkverpakking)');
+test('as one phrase the setting reads "Klant bestelt per", without a doubled "per"', () => {
+  assert.equal(orderStepSentence(product(), STOLP), 'Klant bestelt per volle omdoos (12 stolpen)');
+  assert.equal(orderStepSentence(product({}, null), STOLP), 'Klant bestelt per volle omdoos (doosinhoud ontbreekt)');
+  assert.equal(orderStepSentence(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Klant bestelt per display (8 bowls)');
+  assert.equal(orderStepSentence(product({ orderStep: 'UNIT' }), STOLP), 'Klant bestelt per stolp');
+  assert.equal(orderStepSentence(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Klant bestelt per stolp (geschenkdoosje)');
 });
 
 test('notices name the step; a step of one needs no multiple', () => {

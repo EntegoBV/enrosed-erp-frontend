@@ -25,19 +25,19 @@ export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' 
   | 'unbudgeted' | 'incomplete' | 'legacy' | 'credit' | 'offset';
 
 /**
- * Per set / per stuk (2026-10-15). A set product (sales unit DISPLAY, e.g. a
- * box of 12 stem roses) is counted and priced per set; the server adds the
+ * Per display / per stuk (2026-10-15). A display product (sales unit DISPLAY, e.g. a
+ * box of 12 stem roses) is counted and priced per display; the server adds the
  * per-piece figures. PIECE: every line per piece (as before); DISPLAY: every
- * line a set of the same size and noun, the container figure per set; MIXED:
- * sets and pieces (or sets of different sizes) together, the container
+ * line a display of the same size and noun, the container figure per display; MIXED:
+ * displays and pieces (or displays of different sizes) together, the container
  * average per piece. Quantities and unit figures of the server stay per sales
  * unit; only the words and the added per-piece figures differ.
  */
 export type NacalcSetBasis = 'PIECE' | 'DISPLAY' | 'MIXED';
-export type NacalcUnitWord = 'stuk' | 'set' | 'verkoopeenheid';
+export type NacalcUnitWord = 'stuk' | 'display' | 'verkoopeenheid';
 const UNIT_TEXT: Readonly<Record<NacalcSetBasis, { word: NacalcUnitWord; plural: string; label: string; column: string; pricing: string }>> = {
   PIECE: { word: 'stuk', plural: 'stuks', label: 'Per stuk', column: 'Per stuk', pricing: 'Per stuk incl. Enrosed kost' },
-  DISPLAY: { word: 'set', plural: 'sets', label: 'Per set', column: 'Per set', pricing: 'Per set incl. Enrosed kost' },
+  DISPLAY: { word: 'display', plural: 'displays', label: 'Per display', column: 'Per display', pricing: 'Per display incl. Enrosed kost' },
   MIXED: { word: 'verkoopeenheid', plural: 'verkoopeenheden', label: 'Gem. per stuk', column: 'Per eenheid', pricing: 'Gem. per stuk incl. Enrosed kost' },
 };
 
@@ -76,27 +76,27 @@ export interface NacalcHeadline {
   separateApart: boolean;
   includesInspection: boolean;
   ddp: boolean;
-  /** Per set / per stuk: PIECE without the server's fields. */
+  /** Per display / per stuk: PIECE without the server's fields. */
   setBasis: NacalcSetBasis;
-  /** The pieces per set shared by every set line, and their plural noun ('rozen'); null otherwise. */
+  /** The pieces per display shared by every display line, and their plural noun ('rozen'); null otherwise. */
   setPieces: number | null;
   setUnitOther: string | null;
-  /** The container's cost per piece (sets counted with their pieces); null without the server's fields. */
+  /** The container's cost per piece (displays counted with their pieces); null without the server's fields. */
   pieceEur: number | null;
   pricingPieceEur: number | null;
   /** The pieces the cost is spread over (ordered, or usable after receipt), and both counts. */
   pieceQuantity: number;
   orderedPieceQuantity: number;
   usablePieceQuantity: number;
-  /** The counting word of the container: stuk(s), set(s) or verkoopeenhe(i)d(en). */
+  /** The counting word of the container: stuk(s), display(s) or verkoopeenhe(i)d(en). */
   unitWord: NacalcUnitWord;
   unitPlural: string;
-  /** 'Per stuk' | 'Per set' | 'Gem. per stuk': the strip, the phone hero and the summary card. */
+  /** 'Per stuk' | 'Per display' | 'Gem. per stuk': the strip, the phone hero and the summary card. */
   unitLabel: string;
-  /** The product table's column: 'Per stuk' | 'Per set' | 'Per eenheid'. */
+  /** The product table's column: 'Per stuk' | 'Per display' | 'Per eenheid'. */
   unitColumn: string;
   pricingUnitLabel: string;
-  /** The figure under unitLabel: per set or per stuk, the average per piece in a mixed container. */
+  /** The figure under unitLabel: per display or per stuk, the average per piece in a mixed container. */
   stripUnitEur: number | null;
   stripPricingEur: number | null;
 }
@@ -166,7 +166,7 @@ export interface NacalcReceipt {
   unitOrderedEur: number | null;
   unitUsableEur: number | null;
   unitDeltaEur: number | null;
-  /** The same per piece (sets counted with their pieces): usable, as if every ordered piece had come. */
+  /** The same per piece (displays counted with their pieces): usable, as if every ordered piece had come. */
   pieceUsableEur: number | null;
   pieceOrderedEur: number | null;
   supplierFact: { kind: 'settled-lower' | 'open' | 'paid-full'; amountEur: number } | null;
@@ -192,7 +192,7 @@ export interface NacalcProductRow {
   verschilEur: number;
   unitEur: number | null;
   pricingUnitEur: number | null;
-  /** A set product: its size and nouns ('× 12 rozen'); null for a product sold per piece. */
+  /** A display product: its size and nouns ('× 12 rozen'); null for a product sold per piece. */
   set: { pieces: number; one: string; other: string } | null;
   unitPieceEur: number | null;
   pricingPieceEur: number | null;
@@ -776,18 +776,18 @@ function clientNotes(
     notes.push('Betalingen in USD of CNY tellen tegen hun geboekte eurobedrag (orderkoers, of het afgeschreven bankbedrag als dat is ingevuld).');
   }
   const basis = view.reconciliation?.totals.setBasis ?? 'PIECE';
-  const lost = basis === 'DISPLAY' ? 'verloren sets is de goederenprijs per set' : basis === 'MIXED' ? 'verloren sets en stuks is de goederenprijs per set of per stuk'
+  const lost = basis === 'DISPLAY' ? 'verloren displays is de goederenprijs per display' : basis === 'MIXED' ? 'verloren displays en stuks is de goederenprijs per display of per stuk'
     : 'verloren stuks is de goederenprijs per stuk';
-  const usable = basis === 'DISPLAY' ? 'de bruikbare sets' : basis === 'MIXED' ? 'de bruikbare sets en stuks' : 'de bruikbare stuks';
+  const usable = basis === 'DISPLAY' ? 'de bruikbare displays' : basis === 'MIXED' ? 'de bruikbare displays en stuks' : 'de bruikbare stuks';
   if (receipt) notes.push(`De inkoopwaarde van ${lost} tegen de orderkoers; transport en rechten zijn verdeeld over ${usable}.`);
-  notes.push(`De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen (Afronden) gebruikt de calculatie ${basis === 'DISPLAY' ? 'per set' : basis === 'MIXED' ? 'per set of per stuk' : 'per stuk'}.`);
+  notes.push(`De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen (Afronden) gebruikt de calculatie ${basis === 'DISPLAY' ? 'per display' : basis === 'MIXED' ? 'per display of per stuk' : 'per stuk'}.`);
   if (view.order.partnerCustomerId != null && financing?.settlementInvoiceNumber) {
     notes.push('Uitgereikte afrekeningen zijn bevroren; latere kostwijzigingen wijzigen ze niet.');
   }
   return notes;
 }
 
-/* ---- per set / per stuk: the words every nacalculatie screen shares ---------------------------- */
+/* ---- per display / per stuk: the words every nacalculatie screen shares ---------------------------- */
 
 const EURO4 = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const eur4 = (value: number): string => EURO4.format(value);
@@ -796,27 +796,27 @@ const count = (value: number): string => value.toLocaleString('nl-BE');
 function signedUnit(value: number): string {
   return (value < 0 ? '− ' : '+ ') + eur4(Math.abs(value));
 }
-/** 'sets als 12 rozen geteld', or without one shared size or noun 'sets als hun aantal stuks geteld'. */
+/** 'displays als 12 rozen geteld', or without one shared size or noun 'displays als hun aantal stuks geteld'. */
 function setsCounted(head: Pick<NacalcHeadline, 'setPieces' | 'setUnitOther'>): string {
-  return head.setPieces && head.setUnitOther ? `sets als ${head.setPieces} ${head.setUnitOther} geteld` : 'sets als hun aantal stuks geteld';
+  return head.setPieces && head.setUnitOther ? `displays als ${head.setPieces} ${head.setUnitOther} geteld` : 'displays als hun aantal stuks geteld';
 }
 
-/** What the unit figure rests on: '100 bestelde sets × 12 rozen · € 2,6000 per stuk', '1.400 stuks · sets als 12 rozen geteld'. */
+/** What the unit figure rests on: '100 bestelde displays × 12 rozen · € 2,6000 per stuk', '1.400 stuks · displays als 12 rozen geteld'. */
 export function nacalcUnitBasis(head: NacalcHeadline): string {
   const suffix = (head.includesInspection ? ' · incl. inspectie' : '') + (head.ddp ? ' · DDP' : '');
   const usable = head.unitBasis === 'USABLE_RECEIVED';
   if (head.setBasis === 'MIXED') return `${count(head.pieceQuantity)} stuks · ${setsCounted(head)}${suffix}`;
   if (head.setBasis === 'DISPLAY') {
     const piece = head.pieceEur !== null ? ` · ${eur4(head.pieceEur)} per stuk` : '';
-    return (usable ? `${count(head.unitQuantity)} bruikbare sets · ${count(head.orderedQuantity)} besteld`
-      : `${count(head.unitQuantity)} bestelde sets × ${head.setPieces ?? 1} ${head.setUnitOther ?? 'stuks'}`) + piece + suffix;
+    return (usable ? `${count(head.unitQuantity)} bruikbare displays · ${count(head.orderedQuantity)} besteld`
+      : `${count(head.unitQuantity)} bestelde displays × ${head.setPieces ?? 1} ${head.setUnitOther ?? 'stuks'}`) + piece + suffix;
   }
   return (usable ? `${count(head.unitQuantity)} bruikbare stuks · ${count(head.orderedQuantity)} besteld` : `${count(head.unitQuantity)} bestelde stuks`) + suffix;
 }
 
 /**
  * What the figures of a container with several products rest on, after its
- * count ('7.976 st'): 'bruikbaar · sets als 12 rozen geteld · incl. inspectie
+ * count ('7.976 st'): 'bruikbaar · displays als 12 rozen geteld · incl. inspectie
  * · DDP'. No average over the products is shown.
  */
 export function nacalcMixBasis(head: NacalcHeadline): string {
@@ -825,7 +825,7 @@ export function nacalcMixBasis(head: NacalcHeadline): string {
   return (head.setBasis === 'MIXED' ? `${basis} · ${setsCounted(head)}` : basis) + suffix;
 }
 
-/** 'calculatie op 100 bestelde sets' (verkoopeenheden in a mixed container). */
+/** 'calculatie op 100 bestelde displays' (verkoopeenheden in a mixed container). */
 export function nacalcAgreedSub(head: Pick<NacalcHeadline, 'orderedQuantity' | 'unitPlural'>): string {
   return `calculatie op ${count(head.orderedQuantity)} bestelde ${head.unitPlural}`;
 }
@@ -840,7 +840,7 @@ export function nacalcReceiptUnitLine(receipt: NacalcReceipt, head: NacalcHeadli
   if (receipt.unitUsableEur === null || receipt.unitOrderedEur === null || receipt.unitDeltaEur === null) return null;
   if (head.setBasis === 'DISPLAY') {
     const piece = receipt.pieceUsableEur !== null ? ` (${eur4(receipt.pieceUsableEur)} per stuk)` : '';
-    return `Kost per bruikbare set ${eur4(receipt.unitUsableEur)}${piece} · per bestelde set zou dit ${eur4(receipt.unitOrderedEur)} zijn (${signedUnit(receipt.unitDeltaEur)})`;
+    return `Kost per bruikbare display ${eur4(receipt.unitUsableEur)}${piece} · per bestelde display zou dit ${eur4(receipt.unitOrderedEur)} zijn (${signedUnit(receipt.unitDeltaEur)})`;
   }
   return `Kost per bruikbaar stuk ${eur4(receipt.unitUsableEur)} · per besteld stuk zou dit ${eur4(receipt.unitOrderedEur)} zijn (${signedUnit(receipt.unitDeltaEur)})`;
 }
@@ -848,13 +848,13 @@ export function nacalcReceiptUnitLine(receipt: NacalcReceipt, head: NacalcHeadli
 /** What the partner pays at the auction settlement; a mixed container has no one average (the settlement is per product line). */
 export function nacalcPartnerLine(partner: NacalcPartner, head: Pick<NacalcHeadline, 'setBasis'>, phone = false): string {
   if (head.setBasis === 'MIXED') {
-    return phone ? `eindkost van de verkochte sets en stuks, per product + ${partner.sharePct} % resultaat; voorschot verrekend`
-      : `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte sets en stuks, per product, plus ${partner.sharePct} % van het resultaat; het voorschot wordt dan verrekend.`;
+    return phone ? `eindkost van de verkochte displays en stuks, per product + ${partner.sharePct} % resultaat; voorschot verrekend`
+      : `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte displays en stuks, per product, plus ${partner.sharePct} % van het resultaat; het voorschot wordt dan verrekend.`;
   }
   const set = head.setBasis === 'DISPLAY';
   const unit = partner.unitEur !== null ? eur4(partner.unitEur) : null;
-  if (phone) return `eindkost per ${set ? 'bruikbare set' : 'bruikbaar stuk'}${unit ? ` (${unit})` : ''} × verkochte ${set ? 'sets' : 'stuks'} + ${partner.sharePct} % resultaat; voorschot verrekend`;
-  return `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte ${set ? 'sets' : 'stuks'}${unit ? ` (${unit} per ${set ? 'bruikbare set' : 'bruikbaar stuk'})` : ''}`
+  if (phone) return `eindkost per ${set ? 'bruikbare display' : 'bruikbaar stuk'}${unit ? ` (${unit})` : ''} × verkochte ${set ? 'displays' : 'stuks'} + ${partner.sharePct} % resultaat; voorschot verrekend`;
+  return `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte ${set ? 'displays' : 'stuks'}${unit ? ` (${unit} per ${set ? 'bruikbare display' : 'bruikbaar stuk'})` : ''}`
     + ` plus ${partner.sharePct} % van het resultaat; het voorschot wordt dan verrekend.`;
 }
 
@@ -865,37 +865,42 @@ export function nacalcPartnerShortage(partner: NacalcPartner, head: Pick<NacalcH
     + (partner.shortageAfterAdvance ? ` Het voorschot is berekend op ${count(partner.ordered)} bestelde ${head.unitPlural}; verreken het verschil bij de slotfactuur of met een creditnota op het voorschot.` : '');
 }
 
-/** A product's unit cost: '€ 31,2000 /set' with '€ 2,6000 /stuk' under it, '€ 5,0000 /stuk' beside sets, a plain figure in a container of pieces. */
+/**
+ * A product's unit cost: '€ 31,2000 /display' with '€ 2,6000 /stuk' under it, '€ 5,0000 /stuk' beside displays, a plain figure in a
+ * container of pieces. `main` is the one-line form; a table cell shows `amount` with `per` on its own small line under it, as the
+ * total row does, so a 92 px column never cuts '€ 30,9600 /dis…'.
+ */
 export function nacalcProductUnit(row: Pick<NacalcProductRow, 'set' | 'unitEur' | 'unitPieceEur' | 'unitQuantity'>, basis: NacalcSetBasis,
-  value: 'cost' | 'pricing' = 'cost', pricing?: { unit: number | null; piece: number | null }): { main: string; sub: string | null } | null {
+  value: 'cost' | 'pricing' = 'cost', pricing?: { unit: number | null; piece: number | null }): { main: string; amount: string; per: string | null; sub: string | null } | null {
   const unit = value === 'pricing' ? pricing?.unit ?? null : row.unitEur;
   const piece = value === 'pricing' ? pricing?.piece ?? null : row.unitPieceEur;
   if (unit === null || row.unitQuantity === 0) return null;
-  if (row.set) return { main: `${eur4(unit)} /set`, sub: piece !== null ? `${eur4(piece)} /stuk` : null };
-  return { main: basis === 'PIECE' ? eur4(unit) : `${eur4(unit)} /stuk`, sub: null };
+  const per = row.set ? '/display' : basis === 'PIECE' ? null : '/stuk';
+  const amount = eur4(unit);
+  return { main: per ? `${amount} ${per}` : amount, amount, per, sub: row.set && piece !== null ? `${eur4(piece)} /stuk` : null };
 }
 
-/** A product's quantity: '100 sets' with '× 12 rozen' under it; a piece product's plain count. */
+/** A product's quantity: '100 displays' with '× 12 rozen' under it; a piece product's plain count. */
 export function nacalcProductCount(row: Pick<NacalcProductRow, 'set'>, quantity: number): { main: string; sub: string | null } {
-  return row.set ? { main: `${count(quantity)} ${quantity === 1 ? 'set' : 'sets'}`, sub: `× ${row.set.pieces} ${row.set.other}` } : { main: count(quantity), sub: null };
+  return row.set ? { main: `${count(quantity)} ${quantity === 1 ? 'display' : 'displays'}`, sub: `× ${row.set.pieces} ${row.set.other}` } : { main: count(quantity), sub: null };
 }
 
 /**
- * The phone's line under a product: '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk'. Beside sets (a set or
+ * The phone's line under a product: '100 bestelde displays × 12 rozen · € 31,2000/display · € 2,6000/stuk'. Beside displays (a display or
  * a mixed container) a piece product says '/stuk' and the price incl. Enrosed kost carries its unit; a container of
  * pieces keeps its short '/st'.
  */
 export function nacalcProductSub(row: NacalcProductRow, received: boolean, basis: NacalcSetBasis = 'PIECE'): string {
-  const words = row.set ? { one: 'set', other: 'sets', usable: 'bruikbare' } : { one: 'stuk', other: 'stuks', usable: 'bruikbare' };
+  const words = row.set ? { one: 'display', other: 'displays', usable: 'bruikbare' } : { one: 'stuk', other: 'stuks', usable: 'bruikbare' };
   const shortfall = [row.missing ? row.missing + ' te weinig' : '', row.damaged ? row.damaged + ' beschadigd' : '', row.over ? row.over + ' te veel' : ''].filter(Boolean);
   const pieces = received
     ? `${count(row.usable)} ${words.usable} ${words.other}${shortfall.length ? ` (${shortfall.join(', ')})` : ''}`
     : `${count(row.ordered)} bestelde ${words.other}` + (row.set ? ` × ${row.set.pieces} ${row.set.other}` : '');
   const usable = row.unitEur !== null && row.unitQuantity > 0;
   const unit = !usable ? '' : row.set
-    ? ` · ${eur4(row.unitEur!)}/set` + (row.unitPieceEur !== null ? ` · ${eur4(row.unitPieceEur)}/stuk` : '')
+    ? ` · ${eur4(row.unitEur!)}/display` + (row.unitPieceEur !== null ? ` · ${eur4(row.unitPieceEur)}/stuk` : '')
     : ` · ${eur4(row.unitEur!)}${basis === 'PIECE' ? '/st' : '/stuk'}`;
-  const pricingUnit = row.set ? '/set' : basis === 'PIECE' ? '' : '/stuk';
+  const pricingUnit = row.set ? '/display' : basis === 'PIECE' ? '' : '/stuk';
   const pricing = row.pricingUnitEur !== null && row.unitQuantity > 0 ? ` · ${eur4(row.pricingUnitEur)}${pricingUnit} incl. Enrosed kost` : '';
   return pieces + unit + pricing;
 }

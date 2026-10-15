@@ -504,17 +504,20 @@ cijfers'.
   an inspection on the goods' line reads '· zelfde transactie als de
   goederen'. Every new action hides while `paymentRoundOnServer(view)` is
   false (no `invoices` in the view): the backend ships first.
-- Per set / per stuk (2026-10-15): reconciliation lines and totals carry
+- Per display / per stuk (2026-10-15; said 'set' until the sales-unit round of the same day): reconciliation lines and totals carry
   `salesUnit`, `piecesPerUnit`, unit nouns and per-piece figures
   (`setBasis` PIECE | DISPLAY | MIXED); `unitCostQuantity` and
   `forecastExternalUnitEur` stay per sales unit (partner settlement multiplies
-  them). The Nacalculatie (desk, phone, summary card) says 'Per set' with the
-  piece price beside it ('100 bestelde sets × 12 rozen · € 2,6000 per stuk'),
-  in a mixed container 'Gem. per stuk' ('1.400 stuks · sets als 12 rozen
+  them). The Nacalculatie (desk, phone, summary card) says 'Per display' with the
+  piece price beside it ('100 bestelde displays × 12 rozen · € 2,6000 per stuk'),
+  in a mixed container 'Gem. per stuk' ('1.400 stuks · displays als 12 rozen
   geteld'); the shared words live in purchase-nacalc-metrics.ts
   (`nacalcUnitBasis`, `nacalcProductUnit`, `nacalcReceiptUnitLine`, …). The
   bridge row is 'Correctie naar bestelde aantallen'. Desk and phone product
-  tables label a set product's landed cost '/set' with '€ … /stuk'.
+  tables label a display product's landed cost '/display' with '€ … /stuk'
+  (desk Per product: the figure, then '/display' on its own small line under
+  it like the total row, `nacalcProductUnit().amount`/`.per`; one line cut to
+  '€ 30,9600 /dis…' in the 92 px column at 1440).
 - Round 2 of the payments round (Emre's follow-ups of 2026-10-15; contract
   scratchpad spec-purchase-payments-r2.md, backend AI-CONTEXT 'Round 2').
   A linked transaction carries the payment: one payment (or one open
@@ -580,16 +583,16 @@ cijfers'.
   products (`nacalcUnitMix`; the server's `totals.containerAverage` wins,
   else one product only, like ReconciliationUnits.containerAverage): the summary
   card, the desk strip and the phone hero show 'n producten · € min – € max'
-  per stuk (per set when every line is a set of one size) with the products
+  per stuk (per display when every line is a display of one size) with the products
   by value (round 3 removed every remaining average, see below).
 - Round 3 of the payments round (Emre's screen check of round 2,
   2026-10-15). No mixed average anywhere ('klopt niet' with several
   products): where a container holds different products every per-unit
   figure is their range and the products themselves, never 'gem.'. The
   order header, the desk Kosten chain and the confirm sheet read
-  `landedUnit`/`landedUnitText` (costing lines, a set at its piece price:
-  '2 producten · € 2,600 – € 8,867 per stuk'; one set product '€ 30,960 per
-  set · € 2,580 per stuk'); the Nacalculatie strip and phone hero say
+  `landedUnit`/`landedUnitText` (costing lines, a display at its piece price:
+  '2 producten · € 2,600 – € 8,867 per stuk'; one display product '€ 30,960 per
+  display · € 2,580 per stuk'); the Nacalculatie strip and phone hero say
   '7.976 st bruikbaar · …' (`mixQuantity`) and 'incl. Enrosed kost € a – € b'
   (`mixPricingRange`), the Kostbasis the same range, the product table's
   total row the range, the receipt line per product (`mixReceiptLine`); in
@@ -619,10 +622,10 @@ cijfers'.
   betaling'. The proof todo says 'Koppel de banktransactie'.
 - Round 4 (2026-10-15). Analyses › Inkoop speaks in each product's unit
   (`reconciliationUnit`, `reconciliationLineUnit`): column 'Per eenheid',
-  a set product '€ 30,9600 per set' with '€ 2,5800 per stuk' and '400
-  bestelde sets' under it, the Kostprijs block 'Verwachte externe kost per
-  set' and 'Per set incl. opslag' with their piece prices, Per product
-  per set or per stuk; several products keep their range. Betalingen with
+  a display product '€ 30,9600 per display' with '€ 2,5800 per stuk' and '400
+  bestelde displays' under it, the Kostprijs block 'Verwachte externe kost per
+  display' and 'Per display incl. opslag' with their piece prices, Per product
+  per display or per stuk; several products keep their range. Betalingen with
   a Verschil column: gaps 4 px, the name 138 px and Status 104 px (a whole
   'Koersverschil' pill) from a 782 px main column, 112 px just below it.
   Koersverschil: a USD/CNY payment on its bank transaction takes the bank's
@@ -1293,16 +1296,56 @@ and on copies. Without the blocks (older backend) every screen is as before.
     photos[0]; the product page carousel opens on that photo.
 - Unit (2026-09-22): `packaging.unitKey` names what one piece is called on
   documents ("stuk", "bowl", "stolp", …; list from the cached
-  `CatalogApi.unitNames()` = `GET /api/products/unit-names`, Dutch). Chips
-  "Eenheid" at the top of section Verkoop with a "Klant leest: …" preview.
+  `CatalogApi.unitNames()` = `GET /api/products/unit-names`, Dutch). Set in
+  the sales card ("Eén stuk heet", below).
   `product-sales-unit.ts` resolves it (a module signal filled by
   `unitNames()`, fallback "stuk"), so product, sales and purchase screens,
   the picker and carton notices say "bowls" for a piece basis; a display
-  basis keeps display/set wording and names the pieces inside with the unit.
+  basis says "display" and names the pieces inside with the unit.
+- Price labels (2026-10-15, after DIAM-D-RD read "2.95 per set · € 2,95 per
+  diamant vóór korting"): the word under a price names what that price is
+  for (`productSalesUnit().singular`: "per diamant", "per display"); the
+  other side of a display of 2+ goes on the line below via
+  `otherBasisPrice(product, price)`: "= € 35,40 per display van 12" under a
+  price per diamant, "≈ € 4,16 per roos" under a price per display ("≈" only
+  when it does not split to the cent). ", vóór korting" only on a line with
+  a staffel or extra korting. ERP screens lead with the stored price
+  (Aantal × Eenheidsprijs = Netto); customer channels (portal, website, PDF)
+  lead with the display price on purpose. The word "set" is gone from the
+  sales and product screens (`primarySalesPrice`/`secondarySalesPrice`
+  removed; a test scans the helpers for it). The price field says "Prijs per
+  display" / "Prijs per diamant" / "Stukprijs" (`priceLabel`), and the phone
+  Controleren list adds the display side as the desk does: "12 diamanten ×
+  € 2,95 per diamant · = € 35,40 per display van 12 · op voorraad".
+- Sales card "Hoe verkoop je dit product?" (2026-10-15,
+  `features/products/product-sales-setup.ts`, styles global in
+  `styles/product-sales-setup.scss` because the editor's component styles
+  sit at their budget): first block of Verkoopprijs (desk 05, phone Prijs).
+  A live sentence ("Je verkoopt diamanten, per 12 in een display. Je prijs
+  geldt per diamant; de klant bestelt per display.") and four rows in its
+  order: Eén stuk heet (unitKey), Verpakking Los/Geschenkdoosje/Display +
+  "{Diamanten} in één display" (kind, piecesPerUnit; required, missing-field
+  tab `sales`), Prijs geldt per (salesUnit; only with a display; the option
+  you are not on shows today's price there in orange), Klant bestelt per
+  (orderStep, small to large). Previews "Zo leest de klant het" and "Zo rekent
+  het ERP". Same stored fields as before, no backend change. Switching the
+  basis of a saved product (or leaving Display while priced per display)
+  shows a warning naming what is not converted, a "Prijs × 12 = € 35,40
+  invullen" button (fixed price only; fills the draft price, never stock,
+  carton count or cost) and Terugzetten; Opslaan then asks "Prijsbasis
+  wijzigen?" (`save(basisConfirmed)`). A "per display" step the draft can
+  no longer give is announced (`orderStepFellBack`). Phone: a complete saved
+  product folds the card to the sentence. Pill "Alleen Red · Ook voor 3
+  andere kleuren" opens Naar de reeks kopiëren with only PACKAGING ticked
+  (settings stay per colour). Basisgegevens keeps one line
+  (`packagingSummary`) plus the display's size, weight and barcode. Product
+  view and desk show the sentence as a "Verkoop" fact. The texts live
+  import-free in `product-sales-unit.ts` / `product-order-step.ts`;
+  `tests/product-editor-order-step.test.mts` runs the card's members.
   Screens that print units call `catalog.unitNames()` once. The portal uses
   the localized `line.unit` / `item.unit` (UnitDto) when present, else the
   old `stuks` keys.
-- Verkocht per (order step, 2026-10-14): `packaging.orderStep` CARTON |
+- Klant bestelt per ("Verkocht per" until 2026-10-15; order step, 2026-10-14): `packaging.orderStep` CARTON |
   PACKAGE | UNIT says what a sales quantity is rounded up to - a full outer
   carton (absent/null/unknown, so every older product), a display of N
   pieces, or one sales unit (per stolp, per box, per display for a display
@@ -1323,20 +1366,20 @@ and on copies. Without the blocks (older backend) every screen is as before.
   `salesSplitStep`, `product-picker-family-groups.ts` gets a
   `defaultQuantity` callback, the portal has `portalUnitsPerStep` in
   `portal-sales-unit.ts`, `product-family-shared-fields.ts` words it inline).
-  - Product editor: chips "Verkocht per" right under "Eenheid" in Verkoop:
-    "Volle omdoos · 12 stolpen" (or "doosinhoud ontbreekt"), "Per display ·
-    8 bowls" only while the draft's display qualifies, "Per stolp" ("·
-    geschenkverpakking" on a gift box); counted from the draft, never the
-    saved product. Another packaging kind (no display any more) rewrites
+  - Product editor: row "Klant bestelt per" of the sales card, small to
+    large: "Stolp · Elk aantal", "Display · Per 8 bowls" only while the
+    draft's display qualifies, "Omdoos · Per 12 stolpen" (or "Doosinhoud
+    ontbreekt"), with a live example ("13 diamanten op een offerte worden
+    24 (2 displays)"); counted from the draft, never the saved product. Another packaging kind (no display any more) rewrites
     PACKAGE to UNIT in the draft at once (the server refuses PACKAGE without
     packaging). Retyping the display contents (8 → "1" → 12) or switching
     the basis keeps the stored PACKAGE: meanwhile `effectiveOrderStep` shows
     it as per unit, and `save()` calls `settleOrderStep()` so a PACKAGE that
-    still does not qualify is stored as UNIT - what the chips show is what
-    is saved. `blankProduct()` starts on CARTON. Product view tiles
-    "Eenheid" and "Verkocht per", desk price step "Verkocht per stolp"
-    (`orderStepSentence`, wraps); the family PACKAGING bundle carries the
-    setting and says so.
+    still does not qualify is stored as UNIT - what the card shows is what
+    is saved. `blankProduct()` starts on CARTON. Product view and desk
+    show it in the "Verkoop" sentence, the desk price step reads "Klant
+    bestelt per stolp" (`orderStepSentence`, wraps); the family PACKAGING
+    bundle carries the setting and says so.
   - Server-owned figures are never sent back: `CatalogApi` strips
     `Product.unitsPerOrderStep`, `SalesApi.previewOrder/updateOrder` strip
     the line stamp `SalesOrderLine.unitsPerOrderStep` (the step the server

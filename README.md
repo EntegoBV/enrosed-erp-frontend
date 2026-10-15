@@ -51,7 +51,7 @@ heeft in Safari en Firefox helemaal geen kiezer. Gebruik die twee componenten, g
 inputs.
 
 **Aantallen** worden per product afgerond op wat het per keer verkoopt: een volle omdoos, een
-display of één stuk ("Verkocht per" bij het product). In offertes en facturen verschijnt de
+display of één stuk ("Klant bestelt per" in de kaart "Hoe verkoop je dit product?" bij het product). In offertes en facturen verschijnt de
 melding meteen en rekent de server vijf seconden na de laatste toets opnieuw (of zodra je het
 veld verlaat of Enter drukt); dan toont het veld het afgeronde aantal. In het klantportaal
 springt het veld na twee seconden. Die vertraging is er omdat je anders niet kan typen — wie

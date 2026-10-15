@@ -532,6 +532,18 @@ interface JourneyStep {
                                       (click)="toggleDisc(line.productId)">{{ line.manualPercent ? '−' + (line.manualPercent | pct: 1) : 'Korting' }}</button>
                               }
                             </div>
+                          } @else {
+                            <b>{{ line.unitPrice | eur: 2 }}</b>
+                          }
+                          <!-- The word under a price names what that price is for, right
+                               under the figure; the display side of it goes on the line
+                               below, and only then the discounts, so "per display" never
+                               reads as part of "−5 % korting". -->
+                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          @if (lineOtherPrice(line); as other) {
+                            <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
+                          }
+                          @if (commercialEditable()) {
                             @if (discOpen() === line.productId) {
                               <div class="desk-price-disc">
                                 <input class="input num right desk-cell" type="number" min="0" max="100" step="0.5" inputmode="decimal" autofocus
@@ -542,15 +554,10 @@ interface JourneyStep {
                               </div>
                             }
                             @if (creditPriceHint(line.productId); as hint) { <div class="desk-line-cap danger-text" role="alert">{{ hint }}</div> }
-                          } @else {
-                            @if (linePrimaryPrice(line); as primary) { <b>{{ primary.price | eur: 2 }}</b> } @else { <b>{{ line.unitPrice | eur: 2 }}</b> }
-                            @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
+                          } @else if (line.discountPct) {
+                            <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small>
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
-                          @if (linePrimaryPrice(line); as primary) { <small>per {{ primary.singular }}</small> } @else { <small>per {{ lineUnit(line.productId).singular }}</small> }
-                          @if (lineSecondaryPrice(line); as equivalent) {
-                            <small class="desk-unit-equivalent">{{ equivalent.price | eur: 2 }} {{ equivalent.label }}<br />vóór korting</small>
-                          }
                         </td>
                         <td class="c-disc num">
                           @if (commercialEditable() && !isCreditNoteDoc()) {
@@ -1341,6 +1348,9 @@ interface JourneyStep {
     .desk-table{width:100%;min-width:740px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:800px}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product,.desk-table thead th.c-delivery{text-align:left}.desk-table thead th.c-product{padding-left:16px}
+    /* Right-aligned heads keep their right edge on the figures but need little room on the left: "Eenheidsprijs" fits a 104 px
+       column whole, and "Marge / eenheid" folds onto two lines instead of ending in "…". */
+    .desk-table thead th:not(.c-product):not(.c-delivery){padding-left:4px;white-space:normal;line-height:1.25;vertical-align:bottom}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
     .c-product{width:30%;min-width:210px}.c-qty{width:76px;text-align:right}.c-price{width:104px;text-align:right}.c-disc{width:78px;text-align:right}.c-money{width:104px;text-align:right;font-variant-numeric:tabular-nums}.c-delivery{width:136px;text-align:left}.c-act{width:40px}
@@ -1349,7 +1359,7 @@ interface JourneyStep {
     .desk-table td.c-act{padding-left:0;padding-right:8px;text-align:right}
     .c-money--total b{color:var(--rose-dark);font-weight:750}
     .c-money small,.c-price small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
-    .c-qty small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}.c-price .desk-unit-equivalent{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+    .c-qty small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}.c-price .desk-unit-equivalent{white-space:normal;overflow-wrap:anywhere;line-height:1.4;color:var(--rose-dark);font-weight:650}
     .c-qty b,.c-price>b,.c-disc>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}

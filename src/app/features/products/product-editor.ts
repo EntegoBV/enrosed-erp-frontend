@@ -1,4 +1,5 @@
-import { capitalize, customerUnitPreview, DEFAULT_UNIT_KEY, productSalesUnit, secondarySalesPrice, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
+import { capitalize, DEFAULT_UNIT_KEY, otherBasisPrice, packagingSummary, priceBasisChange, priceBasisConfirmation, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
+import { ProductSalesSetup } from './product-sales-setup';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -16,7 +17,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, OrderStep, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -39,6 +40,7 @@ import {
   ProductFamilySharedFieldsApply,
   ProductFamilySharedFieldsSheet,
 } from './product-family-shared-fields-sheet';
+import type { ProductFamilySharedField } from './product-family-shared-fields';
 import { planProductFamilyIdentityFinalization } from './product-family-identity';
 import {
   productCatalogNavigation,
@@ -46,7 +48,7 @@ import {
   productVariantOptionLabel,
 } from './product-variant-navigation';
 import { productEditorReady, visibleProductEditorTab } from './product-editor-state';
-import { effectiveOrderStep, orderStepChoices, orderStepOf } from './product-order-step';
+import { effectiveOrderStep, orderStepOf } from './product-order-step';
 
 function blankProduct(supplierId: number | null, currency: Currency): Product {
   return {
@@ -82,7 +84,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup,
   ],
   template: `
     @if (!desktop.active()) {
@@ -199,7 +201,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           }
         }
         <div class="product-mobile-metrics">
-          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
           <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></span><span aria-hidden="true">›</span></button>
         </div>
       </section>
@@ -268,7 +270,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <small class="erp-workspace__fact-note">{{ isNew() ? 'na aanmaken' : 'over alle locaties' }}</small>
             </button>
             <button class="erp-workspace__fact" type="button" (click)="showTab('sales')">
-              <span class="erp-workspace__fact-label">Verkoopprijs</span>
+              <span class="erp-workspace__fact-label">Verkoopprijs per {{ salesUnit(draft()).singular }}</span>
               <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
               <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
             </button>
@@ -374,7 +376,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <details class="hint">
                 <summary>Kleur- en formaatcodes</summary>
                 <p>RD rood · PK roze · CP kersenroze · WH wit · BL blauw · NV marineblauw · LB lichtblauw · MX gemengd · PD panda.</p>
-                <p>DOM stolp · BOWL bowl · M/XL maat · 12X25 afmeting in cm · NB zonder geschenkdoos.</p>
+                <p>DOM stolp · BOWL bowl · M/XL maat · 12X25 afmeting in cm · NB zonder geschenkdoosje.</p>
               </details>
             </div>
                 <div class="field identity-colour">
@@ -493,7 +495,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </div>
 
           <details class="identity-extra identity-extra--measurements" [open]="desktop.active()">
-            <summary><span>Afmetingen &amp; verpakking<small>Product, geschenkdoos en barcode</small></span><span aria-hidden="true">⌄</span></summary>
+            <summary><span>Afmetingen &amp; verpakking<small>Product, geschenkdoosje of display en barcode</small></span><span aria-hidden="true">⌄</span></summary>
           <div class="identity-layout__measurements">
           <fieldset class="measure-group">
             <legend>Productafmeting</legend>
@@ -541,14 +543,11 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <!-- Presentation packaging: a gift box or display is a third size,
                between the bare article and the shipping carton. -->
           <fieldset class="measure-group">
-            <legend>Geschenkverpakking of display</legend>
-            <select class="select" aria-label="Verpakking rondom het product"
-                    [ngModel]="draft().packaging?.kind ?? 'NONE'"
-                    (ngModelChange)="patchPackaging({ kind: $event })">
-              <option value="NONE">Geen — los artikel</option>
-              <option value="GIFT_BOX">Geschenkverpakking</option>
-              <option value="DISPLAY">Display</option>
-            </select>
+            <legend>Geschenkdoosje of display</legend>
+            <!-- Kind, count and price basis are set in the sales card (Verkoopprijs);
+                 the physical facts of the packaging stay here. -->
+            <p class="pss-basis-line"><b>{{ packagingLine() }}</b>
+              <button class="linklike" type="button" (click)="editSalesSetup()">Wijzigen bij {{ desktop.active() ? 'Verkoopprijs' : 'Prijs' }} ›</button></p>
             @if ((draft().packaging?.kind ?? 'NONE') !== 'NONE') {
               <div class="measure-grid measure-grid--4 mt-8">
                 <label class="measure-field">
@@ -588,30 +587,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </span>
                 </label>
               </div>
-              <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat. Het gewicht is dat van de {{ draft().packaging.kind === 'DISPLAY' ? 'gevulde display' : 'geschenkverpakking mét het product erin' }}; daarmee rekent de omdoos.</p>
-              @if (draft().packaging.kind === 'DISPLAY') {
-                <div class="field mt-8">
-                  <label class="req" for="p-packaging-pieces">{{ capitalize(salesUnit(draft()).piece.other) }} in de display</label>
-                  <input class="input num right" id="p-packaging-pieces" type="number" min="1" step="1" inputmode="numeric"
-                         [ngModel]="draft().packaging.piecesPerUnit" placeholder="bijv. 12"
-                         (ngModelChange)="patchPackaging({ piecesPerUnit: num($event) })" />
-                  <span class="hint">Hoeveel losse {{ salesUnit(draft()).piece.other }} één volle display bevat.</span>
-                </div>
-                <div class="field mt-8">
-                  <label for="p-packaging-sales-unit">Prijs en orderaantal gelden per</label>
-                  <select class="select" id="p-packaging-sales-unit"
-                          [ngModel]="draft().packaging.salesUnit ?? 'PIECE'"
-                          (ngModelChange)="patchPackaging({ salesUnit: $event })">
-                    <option value="PIECE">Eén {{ salesUnit(draft()).piece.one }}</option>
-                    <option value="DISPLAY">Volledig display (set)</option>
-                  </select>
-                  <span class="hint">{{ draft().packaging.salesUnit === 'DISPLAY'
-                    ? 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één volledig display.'
-                    : 'De opgeslagen prijs en één eenheid in orders, voorraad en omdozen gelden voor één ' + salesUnit(draft()).piece.one + ', los verkocht.' }} Bestaande bedragen en aantallen worden niet omgerekend.</span>
-                </div>
-              }
+              <p>Buitenmaat van {{ draft().packaging.kind === 'DISPLAY' ? 'de display, zoals die' : 'het geschenkdoosje, zoals dat' }} in de winkel staat. Het gewicht is dat van {{ draft().packaging.kind === 'DISPLAY' ? 'de gevulde display' : 'het geschenkdoosje mét het product erin' }}; daarmee rekent de omdoos.</p>
               <div class="field mt-8">
-                <label for="p-packaging-barcode">Barcode op de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }} <span class="opt"></span></label>
+                <label for="p-packaging-barcode">Barcode op {{ draft().packaging.kind === 'DISPLAY' ? 'de display' : 'het geschenkdoosje' }} <span class="opt"></span></label>
 <span class="magic-field">
               <input class="input mono" id="p-packaging-barcode" inputmode="numeric"
                        [ngModel]="draft().packaging.barcode" placeholder="EAN-13"
@@ -824,7 +802,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </select>
           </div>
           <div class="field">
-            <label for="p-extra">Extra kost per {{ salesUnit(draft()).singular }} (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
+            <label for="p-extra">Extra kost per {{ salesUnit(draft()).singular }} (bijvoorbeeld display, geschenkdoosje) <span class="opt"></span></label>
             <div class="input-affix">
               <input class="input num right" id="p-extra" appDecimal
                      inputmode="decimal" [ngModel]="draft().extraUnitCost"
@@ -870,42 +848,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <section class="card editor-section erp-workspace__section" id="sales" aria-labelledby="sales-title">
         <div class="card__head section-head erp-workspace__section-head">
           <span class="section-head__number erp-workspace__section-index" aria-hidden="true">05</span>
-          <div><h2 id="sales-title">Verkoop</h2><p>Catalogusprijs, marge en prijsstrategie</p></div>
+          <div><h2 id="sales-title">Verkoop</h2><p>Hoe je verkoopt, catalogusprijs en marge</p></div>
         </div>
         <div class="card__body">
-          <!-- What one piece is called on quotes, invoices, the portal, the
-               catalogue and the website: "€ 3,95 per bowl". Stored in
-               packaging.unitKey; the price basis (piece or display) stays apart. -->
-          <div class="field">
-            <label id="p-unit-label">Eenheid</label>
-            <div class="chips filter-rail" role="group" aria-labelledby="p-unit-label">
-              @for (unit of unitChoiceList(); track unit.key) {
-                <button type="button" class="chip"
-                        [class.active]="selectedUnitKey() === unit.key"
-                        [attr.aria-pressed]="selectedUnitKey() === unit.key"
-                        [disabled]="formWriteBusy()"
-                        (click)="chooseUnit(unit.key)">{{ capitalize(unit.one) }}</button>
-              }
-            </div>
-            <span class="hint" aria-live="polite">{{ unitPreview() }}</span>
-          </div>
-
-          <!-- "Verkocht per": what a sales quantity is rounded up to. Stored in
-               packaging.orderStep; one setting for quotes, invoices, the
-               portal and the website. Prices stay per unit whatever the step. -->
-          <div class="field">
-            <label id="p-order-step-label">Verkocht per</label>
-            <div class="chips filter-rail" role="group" aria-labelledby="p-order-step-label">
-              @for (choice of orderStepChoiceList(); track choice.step) {
-                <button type="button" class="chip"
-                        [class.active]="selectedOrderStep() === choice.step"
-                        [attr.aria-pressed]="selectedOrderStep() === choice.step"
-                        [disabled]="formWriteBusy()"
-                        (click)="chooseOrderStep(choice.step)">{{ choice.label }}</button>
-              }
-            </div>
-            <span class="hint">Geldt voor offertes, het klantportaal en de website. Bestaande documenten veranderen niet.</span>
-          </div>
+          <!-- How the product is sold: unit name, packaging and count, price
+               basis and order step in one card (2026-10-15). -->
+          <app-product-sales-setup
+            [product]="draft()" [saved]="savedDraft()" [units]="unitChoiceList()" [price]="salesPrice()"
+            [fixedPrice]="priceStrategy() === 'FIXED'" [cartonCount]="draft().carton.piecesPerCarton || autoCartonPieces()"
+            [family]="family()" [disabled]="formWriteBusy()" [desktop]="desktop.active()" [(expanded)]="salesSetupOpen"
+            (packagingChange)="patchPackaging($event)" (priceChange)="setFixedSalesPrice($event)"
+            (copyToFamily)="openSharedFields(['PACKAGING'])" (editCarton)="focusField('packaging', 'p-ppc')" />
 
           <fieldset class="price-method">
             <legend>Catalogusprijs</legend>
@@ -947,8 +900,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                        [placeholder]="draft().landedCostEur
                          ? 'kostprijs ' + (draft().landedCostEur | eur: 2) : ''"
                        (ngModelChange)="setFixedSalesPrice($event)" />
-                <span class="input-affix__suffix">EUR</span>
+                <span class="input-affix__suffix">EUR / {{ salesUnit(draft()).singular }}</span>
               </div>
+              @if (otherPrice(draft(), draft().fixedSalesPriceEur); as other) { <span class="hint"><b>{{ other.text }}</b></span> }
               @if ((draft().fixedSalesPriceEur ?? 0) <= 0) {
                 <span class="hint danger-text">Vul een bedrag hoger dan € 0 in.</span>
               } @else if (draft().landedCostEur; as landed) {
@@ -975,9 +929,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <span class="price-preview__label">Catalogusprijs per {{ salesUnit(draft()).singular }}</span>
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
-              @if (secondaryPrice(draft(), salesPrice()); as equivalent) {
-                <small>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</small>
-              }
+              @if (otherPrice(draft(), salesPrice()); as other) { <small>{{ other.text }}</small> }
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
@@ -1217,6 +1169,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             [products]="catalogueProducts()"
             [busy]="sharedFieldsBusy()"
             [saveFirst]="dirty() || familyDirty() || agreementDirty()"
+            [initialFields]="sharedFieldsInitial()"
             (close)="closeSharedFields()"
             (apply)="applySharedFields($event)" />
         }
@@ -1371,7 +1324,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per {{ salesUnit(draft()).singular }} }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
             <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
             <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
-            <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
+            <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs per {{ salesUnit(draft()).singular }} <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
           </div>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('sales')">Prijs aanpassen ›</button>
         </section>
@@ -1898,7 +1851,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 })
 export class ProductEditor implements OnDestroy {
   readonly salesUnit = productSalesUnit;
-  readonly secondaryPrice = secondarySalesPrice;
+  readonly otherPrice = otherBasisPrice;
   readonly quantityDetail = salesQuantityDetail;
   readonly capitalize = capitalize;
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
@@ -2098,7 +2051,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   tabDescription(id: string): string {
-    return ({ identity: 'Artikel, kleur en afmetingen', media: 'Productfoto’s en galerij', packaging: 'Inhoud en transportmaten', purchasing: 'Leverancier en kosten', sales: 'Prijs en marge', stock: 'Aantallen per locatie', agreements: 'Notities en bijlagen', publication: 'Publicatie en teksten' } as Record<string, string>)[id] ?? '';
+    return ({ identity: 'Artikel, kleur en afmetingen', media: 'Productfoto’s en galerij', packaging: 'Inhoud en transportmaten', purchasing: 'Leverancier en kosten', sales: 'Hoe je verkoopt, prijs en marge', stock: 'Aantallen per locatie', agreements: 'Notities en bijlagen', publication: 'Publicatie en teksten' } as Record<string, string>)[id] ?? '';
   }
 
   sectionSaveHint(id: string): string {
@@ -2222,7 +2175,7 @@ export class ProductEditor implements OnDestroy {
   pickToolbarAction(item: ContextMenuItem): void {
     if (!this.toolbarMenuItems().some(current => current.id === item.id && !current.disabled)) return;
     this.closeToolbarMenu();
-    if (item.id === 'shared') this.openSharedFields();
+    if (item.id === 'shared') this.openSharedFields(null);
     else if (item.id === 'variant') this.startCopy();
     else if (item.id === 'translations') void this.router.navigate(['/products', this.draft().id, 'translations']);
     else if (item.id === 'delete') this.remove();
@@ -2310,6 +2263,8 @@ export class ProductEditor implements OnDestroy {
   readonly familyLoading = signal(false);
   readonly familyLoadError = signal(false);
   readonly sharedFieldsOpen = signal(false);
+  /** Ticked when the sheet opens; null ticks every field. */
+  readonly sharedFieldsInitial = signal<readonly ProductFamilySharedField[] | null>(null);
   readonly sharedFieldsBusy = signal(false);
   private familyLoadVersion = 0;
   private readonly savedFamily = signal<ProductFamily | null>(null);
@@ -2960,22 +2915,26 @@ export class ProductEditor implements OnDestroy {
     const names = this.unitNames();
     return names.length ? names : [unitName(this.selectedUnitKey())];
   });
-  /** "Klant leest: € 8,95 per stolp · 10 stolpen per doos". */
-  readonly unitPreview = computed(() => customerUnitPreview(this.draft(), this.salesPrice(),
-    this.draft().carton.piecesPerCarton || this.autoCartonPieces()));
+  /** The product as last loaded or saved, for the sales card's warnings; null while it is new. */
+  readonly savedDraft = computed<Product | null>(() => {
+    try {
+      const saved = JSON.parse(this.baseline() || 'null') as Product | null;
+      return saved?.id != null ? saved : null;
+    } catch {
+      return null;
+    }
+  });
+  /** Phone: the sales card opened past its one-sentence summary. */
+  readonly salesSetupOpen = signal(false);
+  /** "Display met 12 diamanten · prijs per diamant", in Basisgegevens. */
+  readonly packagingLine = computed(() => packagingSummary(this.draft()));
+  /** A saved product's price basis about to change: Opslaan asks first. */
+  readonly priceBasisChange = computed(() => priceBasisChange(this.savedDraft(), this.draft()));
 
-  chooseUnit(key: string): void {
-    if (key !== this.selectedUnitKey()) this.patchPackaging({ unitKey: key });
-  }
-
-  /** "Verkocht per" as the draft stands; a display that no longer qualifies reads as one unit. */
-  readonly selectedOrderStep = computed(() => effectiveOrderStep(this.draft()));
-  /** Full carton, the display when it can be a step, one unit; counted from the draft, never the saved product. */
-  readonly orderStepChoiceList = computed(() => orderStepChoices(this.draft(), this.salesUnit(this.draft()),
-    this.draft().carton.piecesPerCarton || this.autoCartonPieces()));
-
-  chooseOrderStep(step: OrderStep): void {
-    if (step !== orderStepOf(this.draft())) this.patchPackaging({ orderStep: step });
+  /** From Basisgegevens to the packaging row of the sales card. */
+  editSalesSetup(): void {
+    this.salesSetupOpen.set(true);
+    this.focusField('sales', 'p-packaging-kind');
   }
 
   /** The margin as a share of the sales price, for the rail. */
@@ -3047,14 +3006,14 @@ export class ProductEditor implements OnDestroy {
       /* Sold per display, then the display itself goes (another kind): per
          unit at once; the server refuses "per verpakking" without packaging.
          Retyping the count (8, then 1, then 12) or switching the basis keeps
-         the choice: the chips read it as per unit meanwhile, and save()
-         stores what they show. */
+         the choice: the sales card reads it as per unit meanwhile, and save()
+         stores what it shows. */
       const lostDisplay = changes.kind != null && changes.kind !== 'DISPLAY' && packaging.orderStep === 'PACKAGE';
       return { ...p, packaging: lostDisplay ? { ...packaging, orderStep: 'UNIT' } : packaging };
     });
   }
 
-  /** Saved as the chips read it: "per display" without a display to count is stored per unit. */
+  /** Saved as the sales card reads it: "per display" without a display to count is stored per unit. */
   settleOrderStep(): void {
     const step = effectiveOrderStep(this.draft());
     if (step !== orderStepOf(this.draft())) this.patchPackaging({ orderStep: step });
@@ -3167,7 +3126,8 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
-  openSharedFields(): void {
+  /** The family-copy sheet; `fields` ticks only those (the sales card ticks the packaging), else all. */
+  openSharedFields(fields: readonly ProductFamilySharedField[] | null = null): void {
     const product = this.draft();
     const family = this.family();
     if (product.id === null || family?.id === null || family?.id !== product.familyId
@@ -3180,6 +3140,7 @@ export class ProductEditor implements OnDestroy {
       this.showTab('publication');
       return;
     }
+    this.sharedFieldsInitial.set(fields);
     this.sharedFieldsOpen.set(true);
   }
 
@@ -3654,7 +3615,7 @@ export class ProductEditor implements OnDestroy {
       missing.push({ tab: 'packaging', field: 'p-ppc', label: `${productSalesUnit(draft).plural} per karton (of vul de afmetingen in)` });
     }
     if (draft.packaging.kind === 'DISPLAY' && !((draft.packaging.piecesPerUnit ?? 0) >= 1)) {
-      missing.push({ tab: 'identity', field: 'p-packaging-pieces', label: `${productSalesUnit(draft).piece.other} in de display` });
+      missing.push({ tab: 'sales', field: 'p-packaging-pieces', label: `${productSalesUnit(draft).piece.other} in één display` });
     }
     if (this.priceStrategy() === 'FIXED' && (draft.fixedSalesPriceEur ?? 0) <= 0) {
       missing.push({ tab: 'sales', field: 'p-price', label: 'vaste verkoopprijs (hoger dan € 0)' });
@@ -3678,9 +3639,34 @@ export class ProductEditor implements OnDestroy {
 
   async save(): Promise<void> {
     if (!this.editorReady()) return;
-    if (this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving()) return;
+    const busy = () => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving();
+    if (busy()) return;
     /* Every reason not to save is said out loud and the screen jumps to
-       the field - a greyed-out button explained nothing. */
+       the field - a greyed-out button explained nothing. The check reads
+       the automatic carton count as filled in, so it changes nothing yet. */
+    const missing = this.missingFields();
+    if (missing.length) {
+      const first = missing[0];
+      this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
+      this.focusField(first.tab, first.field);
+      return;
+    }
+    /* A new price basis converts nothing on its own: say what stays as it is,
+       and ask before anything in the draft changes, so Annuleren leaves it
+       exactly as it was. The answer is awaited: a caller that saves first
+       (copy to the colours, Opslaan when leaving) goes on after Bewaren and
+       stops on Annuleren. */
+    const basisChange = this.priceBasisChange();
+    if (basisChange) {
+      const draft = this.draft();
+      const confirmed = await new Promise<boolean>((resolve) => this.ui.confirm({
+        title: 'Prijsbasis wijzigen?',
+        message: escapeHtml(priceBasisConfirmation(this.savedDraft(), draft, basisChange, this.salesPrice(),
+          draft.carton.piecesPerCarton || this.autoCartonPieces(), draft.stockQuantity)),
+        confirmLabel: 'Bewaren',
+      }, () => resolve(true), undefined, () => resolve(false)));
+      if (!confirmed || busy()) return;
+    }
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() !== null) {
       /* Left empty on purpose: the sizes already say what fits. */
       this.patchCarton({ piecesPerCarton: this.autoCartonPieces() });
@@ -3689,13 +3675,6 @@ export class ProductEditor implements OnDestroy {
       this.patchCarton({ weightKg: this.autoCartonWeight() });
     }
     this.settleOrderStep();
-    const missing = this.missingFields();
-    if (missing.length) {
-      const first = missing[0];
-      this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
-      this.focusField(first.tab, first.field);
-      return;
-    }
     const wasNew = this.isNew();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);

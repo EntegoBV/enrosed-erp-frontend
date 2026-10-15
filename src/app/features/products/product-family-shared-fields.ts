@@ -1,4 +1,4 @@
-import { productSalesUnit } from './product-sales-unit';
+import { euroText, priceBasisChange, productSalesUnit } from './product-sales-unit';
 import type {
   Product,
   ProductFamily,
@@ -59,8 +59,8 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
       },
       {
         key: 'PACKAGING',
-        label: 'Geschenkverpakking of display',
-        summary: 'Type, afmetingen, gewicht, inhoud, de eenheid op documenten (stuk, bowl, …) en verkocht per (omdoos, display of stuk); de barcode wordt niet overgenomen.',
+        label: 'Geschenkdoosje of display',
+        summary: 'Type, afmetingen, gewicht, inhoud, de eenheid op documenten (stuk, bowl, …), waarvoor de prijs geldt en per hoeveel de klant bestelt (stuk, display of omdoos); de barcode wordt niet overgenomen.',
       },
     ],
   },
@@ -131,7 +131,7 @@ export function productFamilySharedFieldValue(
     }
     case 'DIMENSIONS': return dimensions(product.dimensions);
     case 'PACKAGING': {
-      // The unit and "verkocht per" travel with the packaging bundle, also for a loose article.
+      // The unit, the price basis and "klant bestelt per" travel with the packaging bundle, also for a loose article.
       const unit = productSalesUnit(product);
       const named = `eenheid ${unit.piece.one}`;
       // Inline on purpose (node-tested module): absent or unknown is a full carton,
@@ -139,13 +139,13 @@ export function productFamilySharedFieldValue(
       const packaging = product.packaging;
       const step = packaging.orderStep === 'UNIT' || packaging.orderStep === 'PACKAGE' ? packaging.orderStep : 'CARTON';
       const display = packaging.kind === 'DISPLAY' && (packaging.salesUnit ?? 'PIECE') === 'PIECE' && (packaging.piecesPerUnit ?? 0) >= 2;
-      const sold = step === 'CARTON' ? 'verkocht per volle omdoos'
-        : step === 'PACKAGE' && display ? 'verkocht per display' : `verkocht per ${unit.singular}`;
-      if (packaging.kind === 'NONE') return `Geen verkoopverpakking · ${named} · ${sold}`;
-      const kind = packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking';
+      const ordered = step === 'CARTON' ? 'klant bestelt per volle omdoos'
+        : step === 'PACKAGE' && display ? 'klant bestelt per display' : `klant bestelt per ${unit.singular}`;
+      if (packaging.kind === 'NONE') return `Geen verkoopverpakking · ${named} · ${ordered}`;
+      const kind = packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkdoosje';
       const pieces = packaging.piecesPerUnit && packaging.piecesPerUnit > 1
         ? ` · ${packaging.piecesPerUnit} ${unit.piece.other}` : '';
-      return `${kind} · ${dimensions(packaging.dimensions)}${pieces} · ${named} · prijs en aantal per ${unit.singular} · ${sold}`;
+      return `${kind} · ${dimensions(packaging.dimensions)}${pieces} · ${named} · prijs per ${unit.singular} · ${ordered}`;
     }
     case 'CARTON': {
       const box = product.carton;
@@ -202,6 +202,68 @@ export function productFamilySharedFieldTargets(
         active: product?.active ?? member.active,
       };
     });
+}
+
+/** A colour whose price would mean something else after the copy. */
+export interface ProductFamilyBasisWarning {
+  productId: number;
+  text: string;
+}
+
+/**
+ * The packaging bundle carries the price basis (per piece or per display of
+ * n) but converts nothing: each colour keeps its own price, stock and carton
+ * count. For every ticked colour whose basis the copy would change: "Navy:
+ * € 2,95 geldt dan per display van 12 in plaats van per diamant. Prijs,
+ * voorraad (96) en doosinhoud (12) worden niet omgerekend." A price or carton
+ * count copied along is consistent with the source and left out of that list.
+ * Colours not in `products` (not loaded) cannot be judged and are skipped.
+ */
+export function productFamilyPriceBasisWarnings(
+  source: Product,
+  targets: readonly ProductFamilySharedFieldTarget[],
+  products: readonly Product[],
+  selectedTargetIds: ReadonlySet<number>,
+  selectedFields: ReadonlySet<ProductFamilySharedField>,
+): ProductFamilyBasisWarning[] {
+  if (!selectedFields.has('PACKAGING') || !source.packaging) return [];
+  const byId = new Map(products.map((product) => [product.id, product] as const));
+  const basisName = (product: Product) => {
+    const unit = productSalesUnit(product);
+    return unit.isDisplay
+      ? (unit.piecesPerDisplay ? `display van ${unit.piecesPerDisplay.toLocaleString('nl-BE')}` : 'display')
+      : unit.piece.one;
+  };
+  const warnings: ProductFamilyBasisWarning[] = [];
+  for (const target of targets) {
+    const product = byId.get(target.productId);
+    if (!selectedTargetIds.has(target.productId) || !product?.packaging) continue;
+    const { kind, piecesPerUnit, salesUnit, unitKey } = source.packaging;
+    const copied: Product = { ...product, packaging: { ...product.packaging, kind, piecesPerUnit, salesUnit, unitKey } };
+    const change = priceBasisChange(product, copied);
+    const before = productSalesUnit(product);
+    const after = productSalesUnit(copied);
+    /* Per display of 6 to per display of 12 is the same basis but another price. */
+    const otherDisplay = before.isDisplay && after.isDisplay && before.piecesPerDisplay !== after.piecesPerDisplay;
+    if (!change && !otherDisplay) continue;
+    const label = [target.colour?.trim(), target.size?.trim()].filter(Boolean).join(' · ') || target.name || `Product ${target.productId}`;
+    const price = product.computedSalesPriceEur ?? product.fixedSalesPriceEur;
+    const priced = !selectedFields.has('SALES_PRICE') && price != null && Number.isFinite(price) && price > 0;
+    const stock = product.stockQuantity;
+    const carton = product.carton?.piecesPerCarton;
+    const kept = [
+      ...(selectedFields.has('SALES_PRICE') ? [] : ['prijs']),
+      stock != null && Number.isFinite(stock) ? `voorraad (${stock.toLocaleString('nl-BE')})` : 'voorraad',
+      ...(selectedFields.has('CARTON') ? [] : [carton != null && carton > 0 ? `doosinhoud (${carton.toLocaleString('nl-BE')})` : 'doosinhoud']),
+    ];
+    const list = kept.length === 1 ? kept[0] : `${kept.slice(0, -1).join(', ')} en ${kept.at(-1)}`;
+    warnings.push({
+      productId: target.productId,
+      text: `${label}: ${priced ? euroText(price!) : 'de prijs'} geldt dan per ${basisName(copied)} in plaats van per ${basisName(product)}.`
+        + ` ${list.charAt(0).toLocaleUpperCase('nl-BE')}${list.slice(1)} ${kept.length === 1 ? 'wordt' : 'worden'} niet omgerekend.`,
+    });
+  }
+  return warnings;
 }
 
 /** Stable payload order keeps review copy and backend audit trails deterministic. */

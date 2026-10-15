@@ -193,8 +193,8 @@ export interface PurchaseNacalcSummary {
   unitEur: number | null;
   unitQuantity: number;
   unitBasis: UnitCostBasis;
-  /** Per set / per stuk: stuk (PIECE), set (DISPLAY) or verkoopeenheid (MIXED, then the card shows the average per piece). */
-  unitWord: 'stuk' | 'set' | 'verkoopeenheid';
+  /** Per display / per stuk: stuk (PIECE), display (DISPLAY) or verkoopeenheid (MIXED, then the card shows the average per piece). */
+  unitWord: 'stuk' | 'display' | 'verkoopeenheid';
   pieceEur: number | null;
   pieceQuantity: number;
   setPieces: number | null;
@@ -210,10 +210,10 @@ export interface PurchaseNacalcSummary {
 export interface NacalcMixRow {
   productId: number | null;
   name: string;
-  /** Per set for a set product, per stuk otherwise. */
-  unit: 'set' | 'stuk';
+  /** Per display for a display product, per stuk otherwise. */
+  unit: 'display' | 'stuk';
   unitEur: number | null;
-  /** A set product's figure per piece, and its size ('12 rozen'). */
+  /** A display product's figure per piece, and its size ('12 rozen'). */
   pieceEur: number | null;
   set: { pieces: number; other: string } | null;
   valueEur: number;
@@ -229,8 +229,8 @@ export interface NacalcMixRow {
  * 6.920 bestelde stuks — want als meerdere producten dan klopt dat niet').
  * The container's per-unit figure stands only when it holds one product
  * (variants of one family are different products too); otherwise the screens
- * show '2 producten · € min – € max per stuk' (per set when every line is a
- * set of one size, else per stuk with sets at their piece price) and the
+ * show '2 producten · € min – € max per stuk' (per display when every line is a
+ * display of one size, else per stuk with displays at their piece price) and the
  * products by value. No average over the products is shown anywhere, not
  * even as a sub-line.
  */
@@ -238,8 +238,8 @@ export interface NacalcUnitMix {
   uniform: boolean;
   /** Distinct products. */
   count: number;
-  /** The unit of the range: per set when every line is a set of one size, else per stuk. */
-  unit: 'set' | 'stuk';
+  /** The unit of the range: per display when every line is a display of one size, else per stuk. */
+  unit: 'display' | 'stuk';
   minEur: number | null;
   maxEur: number | null;
   /** The range with the Enrosed kost. */
@@ -247,7 +247,7 @@ export interface NacalcUnitMix {
   pricingMaxEur: number | null;
   /** Every product, the most valuable first; the cards show the first three. */
   rows: NacalcMixRow[];
-  /** How many units (in `unit`, sets counted with their pieces per stuk) the figures rest on: '7.976 st'. */
+  /** How many units (in `unit`, displays counted with their pieces per stuk) the figures rest on: '7.976 st'. */
   quantity: number;
 }
 
@@ -270,7 +270,7 @@ export function nacalcUnitMix(
   // The server says it since round 2; an older one leaves it to the same rule here: one product, never a family of them.
   const uniform = typeof totals?.containerAverage === 'boolean' ? totals.containerAverage : products.size <= 1;
   const allSets = lines.length > 0 && sameUnit && lines.every(line => line.salesUnit === 'DISPLAY');
-  const unit: 'set' | 'stuk' = allSets ? 'set' : 'stuk';
+  const unit: 'display' | 'stuk' = allSets ? 'display' : 'stuk';
   const rows: NacalcMixRow[] = [...products.values()].map((group): NacalcMixRow => {
     const first = group[0];
     const set = first.salesUnit === 'DISPLAY';
@@ -287,14 +287,14 @@ export function nacalcUnitMix(
     const pricingUnitEur = group.length === 1 ? first.forecastPricingUnitEur ?? null : quantity > 0 && pricing > 0 ? round4(pricing / quantity) : null;
     const pricingPieceEur = group.length === 1 ? first.forecastPricingPieceEur ?? (set ? null : first.forecastPricingUnitEur ?? null)
       : pieces > 0 && pricing > 0 ? round4(pricing / pieces) : null;
-    return { productId: first.productId ?? null, name: first.productName, unit: set ? 'set' : 'stuk', unitEur, pieceEur,
+    return { productId: first.productId ?? null, name: first.productName, unit: set ? 'display' : 'stuk', unitEur, pieceEur,
       set: set ? { pieces: first.piecesPerUnit ?? 1, other: first.unitOther || 'stuks' } : null, valueEur: value,
       pricingUnitEur, pricingPieceEur, orderedUnitEur: ordered > 0 ? round4(value / ordered) : null };
   }).sort((left, right) => right.valueEur - left.valueEur || left.name.localeCompare(right.name, 'nl'));
   const finite = (values: (number | null)[]) => values.filter((value): value is number => value !== null && Number.isFinite(value));
-  const figures = finite(rows.map(row => unit === 'set' ? row.unitEur : row.pieceEur));
-  const pricing = finite(rows.map(row => unit === 'set' ? row.pricingUnitEur : row.pricingPieceEur));
-  const quantity = !totals ? 0 : unit === 'set' ? totals.unitCostQuantity ?? 0 : totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0;
+  const figures = finite(rows.map(row => unit === 'display' ? row.unitEur : row.pieceEur));
+  const pricing = finite(rows.map(row => unit === 'display' ? row.pricingUnitEur : row.pricingPieceEur));
+  const quantity = !totals ? 0 : unit === 'display' ? totals.unitCostQuantity ?? 0 : totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0;
   return {
     uniform,
     count: totals?.productCount && totals.productCount > 0 ? totals.productCount : products.size,
@@ -312,30 +312,30 @@ const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 
 /**
  * One product's cost in its own unit, as Analyses › Inkoop writes it (the
- * container table, the Afrekening and its Per product list): a set product
- * per set with the piece price beside it ('€ 30,9600 per set · € 2,5800 per
- * stuk · 400 bestelde sets'), a product sold per piece per stuk. Only for a
+ * container table, the Afrekening and its Per product list): a display product
+ * per display with the piece price beside it ('€ 30,9600 per display · € 2,5800 per
+ * stuk · 400 bestelde displays'), a product sold per piece per stuk. Only for a
  * container's own figure when it holds one product (nacalcUnitMix.uniform),
  * or for one product line; several products get their range instead.
  */
 export interface ReconciliationUnit {
-  unit: 'set' | 'stuk';
-  plural: 'sets' | 'stuks';
+  unit: 'display' | 'stuk';
+  plural: 'displays' | 'stuks';
   unitEur: number | null;
-  /** A set's figure per stuk; null for a product sold per stuk (its unitEur is already per stuk). */
+  /** A display's figure per stuk; null for a product sold per stuk (its unitEur is already per stuk). */
   pieceEur: number | null;
   pricingUnitEur: number | null;
   pricingPieceEur: number | null;
-  /** What the figure rests on, in `unit`: sets for a set product. */
+  /** What the figure rests on, in `unit`: displays for a display product. */
   quantity: number;
   /** Bruikbaar ontvangen (after receipt) or besteld. */
   usable: boolean;
 }
 
 /**
- * The container's own figure in its unit: per set when every line is a set of
- * one size (setBasis DISPLAY), per stuk otherwise; sets beside pieces (MIXED)
- * count per stuk with their pieces. Without the server's set fields: per stuk.
+ * The container's own figure in its unit: per display when every line is a display of
+ * one size (setBasis DISPLAY), per stuk otherwise; displays beside pieces (MIXED)
+ * count per stuk with their pieces. Without the server's set fields (setBasis, setPieces): per stuk.
  */
 export function reconciliationUnit(totals: PurchaseReconciliationTotals): ReconciliationUnit {
   const usable = totals.unitCostBasis === 'USABLE_RECEIVED';
@@ -353,7 +353,7 @@ export function reconciliationUnit(totals: PurchaseReconciliationTotals): Reconc
     pricingUnitEur: totals.forecastPricingUnitEur ?? null, pricingPieceEur: null, quantity: totals.unitCostQuantity ?? 0, usable };
 }
 
-/** One product line in its unit: a set (sales unit DISPLAY) per set with its piece price, else per stuk. */
+/** One product line in its unit: a display (sales unit DISPLAY) per display with its piece price, else per stuk. */
 export function reconciliationLineUnit(line: PurchaseReconciliationLine): ReconciliationUnit {
   const usable = line.unitCostBasis === 'USABLE_RECEIVED';
   if (line.salesUnit === 'DISPLAY') {
@@ -364,12 +364,12 @@ export function reconciliationLineUnit(line: PurchaseReconciliationLine): Reconc
     pricingUnitEur: line.forecastPricingUnitEur ?? null, pricingPieceEur: null, quantity: line.unitCostQuantity ?? 0, usable };
 }
 
-/** A set's figures: the server's piece price, else the set price over its pieces. */
+/** A display's figures: the server's piece price, else the display price over its pieces. */
 function setUnit(unitEur: number | null, pieceEur: number | null | undefined, pricingUnitEur: number | null, pricingPieceEur: number | null | undefined,
   pieces: number | null, quantity: number, usable: boolean): ReconciliationUnit {
   const per = (value: number | null, server: number | null | undefined) =>
     server ?? (value !== null && pieces && pieces > 0 ? round4(value / pieces) : null);
-  return { unit: 'set', plural: 'sets', unitEur, pieceEur: per(unitEur, pieceEur), pricingUnitEur,
+  return { unit: 'display', plural: 'displays', unitEur, pieceEur: per(unitEur, pieceEur), pricingUnitEur,
     pricingPieceEur: per(pricingUnitEur, pricingPieceEur), quantity, usable };
 }
 const EURO4 = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -386,21 +386,21 @@ export function mixPricingRange(mix: Pick<NacalcUnitMix, 'pricingMinEur' | 'pric
   return mix.pricingMinEur === null || mix.pricingMaxEur === null ? null : mixRange({ minEur: mix.pricingMinEur, maxEur: mix.pricingMaxEur });
 }
 
-/** '2 producten · € 2,6339 – € 8,9465 per stuk' (per set when every line is a set of one size). */
+/** '2 producten · € 2,6339 – € 8,9465 per stuk' (per display when every line is a display of one size). */
 export function mixHeadline(mix: Pick<NacalcUnitMix, 'count' | 'minEur' | 'maxEur' | 'unit'>): string {
   return `${mix.count} producten · ${mixRange(mix)} per ${mix.unit}`;
 }
 
-/** What the products' figures rest on, without any average: '7.976 st' or '498 sets'. Null without a count. */
+/** What the products' figures rest on, without any average: '7.976 st' or '498 displays'. Null without a count. */
 export function mixQuantity(mix: Pick<NacalcUnitMix, 'quantity' | 'unit'>): string | null {
   if (!(mix.quantity > 0)) return null;
-  return `${mix.quantity.toLocaleString('nl-BE')} ${mix.unit === 'set' ? 'sets' : 'st'}`;
+  return `${mix.quantity.toLocaleString('nl-BE')} ${mix.unit === 'display' ? 'displays' : 'st'}`;
 }
 
-/** One product as the cards list it: '€ 31,6072 /set · € 2,6339 /stuk' or '€ 8,9465 /stuk'. */
+/** One product as the cards list it: '€ 31,6072 /display · € 2,6339 /stuk' or '€ 8,9465 /stuk'. */
 export function mixRowFigure(row: Pick<NacalcMixRow, 'unit' | 'unitEur' | 'pieceEur'>): string {
-  if (row.unit === 'set') {
-    return [row.unitEur !== null ? eur4(row.unitEur) + ' /set' : null, row.pieceEur !== null ? eur4(row.pieceEur) + ' /stuk' : null].filter(Boolean).join(' · ') || '—';
+  if (row.unit === 'display') {
+    return [row.unitEur !== null ? eur4(row.unitEur) + ' /display' : null, row.pieceEur !== null ? eur4(row.pieceEur) + ' /stuk' : null].filter(Boolean).join(' · ') || '—';
   }
   return row.unitEur !== null ? eur4(row.unitEur) + ' /stuk' : '—';
 }
@@ -408,7 +408,7 @@ export function mixRowFigure(row: Pick<NacalcMixRow, 'unit' | 'unitEur' | 'piece
 /**
  * The receipt's effect per product, never over the container: the products
  * whose cost per usable unit moved, then how many did not. 'Long stem rose
- * box: kost per bruikbare set € 31,6072, per bestelde set zou dit € 31,4808
+ * box: kost per bruikbare display € 31,6072, per bestelde display zou dit € 31,4808
  * zijn (+ € 0,1264) · 1 ander product zonder verschil'. Null when no product
  * has both figures.
  */
@@ -430,21 +430,21 @@ export function mixReceiptLine(mix: Pick<NacalcUnitMix, 'rows'>): string | null 
  * The calculation's landed cost per unit as the order header and the Kosten
  * chain say it (eurUp: 3 in the template). One product (`uniform`, the
  * Nacalculatie's rule): the container's own
- * figure, per set with the piece price beside it for a set product
- * ('€ 30,960 per set · € 2,580 per stuk'). Several products: their count and
- * range, per set when every line is a set of one size, else per stuk with a
- * set at its piece price ('2 producten · € 2,600 – € 8,867 per stuk'); never
+ * figure, per display with the piece price beside it for a display product
+ * ('€ 30,960 per display · € 2,580 per stuk'). Several products: their count and
+ * range, per display when every line is a display of one size, else per stuk with a
+ * display at its piece price ('2 producten · € 2,600 – € 8,867 per stuk'); never
  * an average over different products. Null without lines.
  */
 export interface LandedUnit {
   mix: boolean;
   /** Distinct products. */
   count: number;
-  unit: 'set' | 'stuk';
+  unit: 'display' | 'stuk';
   /** One figure: the container's per-unit cost; several products: the cheapest and the dearest. */
   unitEur: number;
   maxEur: number;
-  /** The pieces of a set when the one figure is per set: its piece price is unitEur / setPieces. */
+  /** The pieces of a display when the one figure is per display: its piece price is unitEur / setPieces. */
   setPieces: number | null;
 }
 
@@ -462,12 +462,12 @@ export function landedUnit(
   const allSets = [...products.keys()].every(id => setPiecesOf(id) !== null) && sizes.size === 1;
   const setPieces = allSets ? [...sizes][0] : null;
   if (uniform || products.size === 1) {
-    return { mix: false, count: products.size, unit: setPieces ? 'set' : 'stuk', unitEur: averageUnitEur, maxEur: averageUnitEur, setPieces };
+    return { mix: false, count: products.size, unit: setPieces ? 'display' : 'stuk', unitEur: averageUnitEur, maxEur: averageUnitEur, setPieces };
   }
   const figures = [...products.entries()].filter(([, product]) => product.quantity > 0)
     .map(([id, product]) => product.totalEur / product.quantity / (allSets ? 1 : setPiecesOf(id) ?? 1));
   if (!figures.length) return null;
-  return { mix: true, count: products.size, unit: allSets ? 'set' : 'stuk', unitEur: Math.min(...figures), maxEur: Math.max(...figures), setPieces: null };
+  return { mix: true, count: products.size, unit: allSets ? 'display' : 'stuk', unitEur: Math.min(...figures), maxEur: Math.max(...figures), setPieces: null };
 }
 
 /** The words of landedUnit with `money` as the template's eurUp: 3 writes it. */
@@ -478,7 +478,7 @@ export function landedUnitText(unit: LandedUnit | null, money: (value: number) =
     const range = money(unit.unitEur) === money(unit.maxEur) ? money(unit.unitEur) : `${money(unit.unitEur)}\u00a0–\u2060\u00a0${money(unit.maxEur)}`;
     return `${unit.count} producten · ${range} per ${unit.unit}`;
   }
-  return unit.setPieces ? `${money(unit.unitEur)} per set · ${money(unit.unitEur / unit.setPieces)} per stuk` : `${money(unit.unitEur)} per stuk`;
+  return unit.setPieces ? `${money(unit.unitEur)} per display · ${money(unit.unitEur / unit.setPieces)} per stuk` : `${money(unit.unitEur)} per stuk`;
 }
 
 export function purchaseNacalcSummary(
@@ -504,7 +504,7 @@ export function purchaseNacalcSummary(
     unitEur: totals.forecastExternalUnitEur ?? null,
     unitQuantity: totals.unitCostQuantity ?? 0,
     unitBasis: totals.unitCostBasis ?? 'ORDERED',
-    unitWord: totals.setBasis === 'DISPLAY' ? 'set' : totals.setBasis === 'MIXED' ? 'verkoopeenheid' : 'stuk',
+    unitWord: totals.setBasis === 'DISPLAY' ? 'display' : totals.setBasis === 'MIXED' ? 'verkoopeenheid' : 'stuk',
     pieceEur: totals.forecastExternalPieceEur ?? null,
     pieceQuantity: totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0,
     setPieces: totals.setPieces ?? null,

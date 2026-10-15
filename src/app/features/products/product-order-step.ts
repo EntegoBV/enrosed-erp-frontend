@@ -1,7 +1,7 @@
 import type { OrderStep, Product } from '../../core/api/models';
 
 /*
- * "Verkocht per" (order step): the multiple a sales quantity of a product is
+ * "Klant bestelt per" (order step; "Verkocht per" until 2026-10-15): the multiple a sales quantity of a product is
  * rounded up to on quotations, invoices, the customer portal and the website.
  * The server owns the rule (OrderSteps in the backend) and rounds on save;
  * this mirror words the setting and lets a screen announce a rounding before
@@ -21,10 +21,13 @@ export interface OrderStepUnit {
   plural: string;
 }
 
-/** One chip of the product editor's "Verkocht per" choice. */
+/** One option of the product editor's "Klant bestelt per" choice. */
 export interface OrderStepChoice {
   step: OrderStep;
+  /** "Diamant", "Display", "Omdoos". */
   label: string;
+  /** "Elk aantal", "Per 12 diamanten", "Doosinhoud ontbreekt". */
+  detail: string;
 }
 
 /** The stored setting; absent, null or unknown reads as CARTON, like on the server. */
@@ -85,9 +88,10 @@ function cartonCount(piecesPerCarton: number | null | undefined): number | null 
 }
 
 /**
- * The product editor's chips, for the product as drafted: a full carton always,
- * a display only when it can be a step, and one unit always. The carton count
- * comes from the caller, so an editor can pass the automatic count it saves.
+ * The product editor's options, from small to large and for the product as
+ * drafted: one unit always, a display only when it can be the step, a full
+ * carton always. The carton count comes from the caller, so an editor can pass
+ * the automatic count it saves.
  */
 export function orderStepChoices(
   product: Pick<Product, 'packaging'>,
@@ -96,12 +100,36 @@ export function orderStepChoices(
 ): OrderStepChoice[] {
   const carton = cartonCount(piecesPerCarton);
   const display = packageStepPieces(product);
-  const giftBox = product.packaging?.kind === 'GIFT_BOX';
+  const one = `${unit.singular.charAt(0).toLocaleUpperCase('nl-BE')}${unit.singular.slice(1)}`;
   return [
-    { step: 'CARTON', label: `Volle omdoos · ${carton === null ? 'doosinhoud ontbreekt' : count(carton, unit)}` },
-    ...(display === null ? [] : [{ step: 'PACKAGE' as const, label: `Per display · ${count(display, unit)}` }]),
-    { step: 'UNIT', label: `Per ${unit.singular}${giftBox ? ' · geschenkverpakking' : ''}` },
+    { step: 'UNIT', label: one, detail: unit.singular === 'display' ? 'Elk aantal displays' : 'Elk aantal' },
+    ...(display === null ? [] : [{ step: 'PACKAGE' as const, label: 'Display', detail: `Per ${count(display, unit)}` }]),
+    { step: 'CARTON', label: 'Omdoos', detail: carton === null ? 'Doosinhoud ontbreekt' : `Per ${count(carton, unit)}` },
   ];
+}
+
+/**
+ * The live example under the options: "Voorbeeld: 13 diamanten op een offerte
+ * worden 24 (2 displays)." or "Geen afronding: 13 stolpen blijven 13."
+ */
+export function orderStepExample(step: OrderStep, unitsPerStep: number, unit: OrderStepUnit): string {
+  if (!(unitsPerStep > 1)) return `Geen afronding: 13 ${unit.plural} blijven 13.`;
+  const asked = unitsPerStep + 1;
+  return `Voorbeeld: ${count(asked, unit)} op een offerte worden ${(unitsPerStep * 2).toLocaleString('nl-BE')} (2 ${step === 'PACKAGE' ? 'displays' : 'dozen'}).`;
+}
+
+/**
+ * "Per display" that the saved product had and the draft no longer can give
+ * (the display went, or its count): the screens say the step became one unit.
+ * A display basis keeps ordering per display, so it needs no notice.
+ */
+export function orderStepFellBack(
+  saved: Pick<Product, 'packaging'> | null | undefined,
+  draft: Pick<Product, 'packaging'> | null | undefined,
+): boolean {
+  if (!saved || effectiveOrderStep(saved) !== 'PACKAGE' || packageStepPieces(draft) !== null) return false;
+  const packaging = draft?.packaging;
+  return !(packaging?.kind === 'DISPLAY' && packaging.salesUnit === 'DISPLAY');
 }
 
 /** The setting in a read-only view: "Volle omdoos (12 stolpen)", "Per display (8 bowls)", "Per stolp". */
@@ -111,7 +139,7 @@ export function orderStepLabel(
 ): string {
   switch (effectiveOrderStep(product)) {
     case 'PACKAGE': return `Per display (${count(packageStepPieces(product)!, unit)})`;
-    case 'UNIT': return `Per ${unit.singular}${product.packaging?.kind === 'GIFT_BOX' ? ' (geschenkverpakking)' : ''}`;
+    case 'UNIT': return `Per ${unit.singular}${product.packaging?.kind === 'GIFT_BOX' ? ' (geschenkdoosje)' : ''}`;
     default: {
       const carton = cartonCount(product.carton?.piecesPerCarton);
       return `Volle omdoos (${carton === null ? 'doosinhoud ontbreekt' : count(carton, unit)})`;
@@ -119,14 +147,14 @@ export function orderStepLabel(
   }
 }
 
-/** The setting as one phrase: "Verkocht per volle omdoos (12 stolpen)", "Verkocht per display (8 bowls)", "Verkocht per stolp". */
+/** The setting as one phrase: "Klant bestelt per volle omdoos (12 stolpen)", "Klant bestelt per display (8 bowls)", "Klant bestelt per stolp". */
 export function orderStepSentence(
   product: Pick<Product, 'packaging' | 'carton'>,
   unit: OrderStepUnit,
 ): string {
   const label = orderStepLabel(product, unit);
   const phrase = `${label.charAt(0).toLocaleLowerCase('nl-BE')}${label.slice(1)}`;
-  return `Verkocht ${effectiveOrderStep(product) === 'CARTON' ? 'per ' : ''}${phrase}`;
+  return `Klant bestelt ${effectiveOrderStep(product) === 'CARTON' ? 'per ' : ''}${phrase}`;
 }
 
 /**

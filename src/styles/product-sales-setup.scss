@@ -1,0 +1,107 @@
+/* ==========================================================================
+   Product editor · "Hoe verkoop je dit product?" (app-product-sales-setup)
+   and the packaging line it leaves behind in Basisgegevens. Global on
+   purpose: the product editor's own component styles sit at their budget.
+   Every rule hangs on a pss- class.
+
+   The card is a size container: its rows put the label beside the control
+   from 620 px of card width (desk) and above it below that (phone, a narrow
+   desk column). It holds no sheet, so containment traps nothing.
+   ========================================================================== */
+
+.pss{container-type:inline-size;margin:0 0 18px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.pss__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 14px;padding:16px 16px 0}
+.pss__title{min-width:0;flex:1 1 260px}
+.pss__title h3{margin:0;font-size:16px;line-height:1.25;letter-spacing:-.01em}
+.pss__title p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+.pss__pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:32px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.pss__pill i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--muted-2);box-shadow:0 0 0 1px rgb(26 22 20 / 12%)}
+.pss__pill b{color:var(--rose-dark);font-weight:700}
+.pss__pill:disabled{cursor:default;opacity:.6}
+
+.pss__sentence{margin:12px 16px 0;padding:11px 13px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink-2);font-size:14px;line-height:1.75}
+.pss__sentence mark{padding:1px 4px;border-radius:6px;background:var(--rose-soft);color:var(--rose-dark);font-weight:700}
+
+.pss__summary{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:10px 16px 14px}
+.pss__summary p{display:grid;gap:2px;min-width:0;margin:0;font-size:13px}
+.pss__summary small{color:var(--muted);font-size:11.5px;line-height:1.4}
+.pss__toggle{flex:none;min-height:40px;padding:0 4px;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pss__toggle--close{display:block;margin:0 auto 6px}
+
+.pss__rows{margin-top:12px}
+.pss__row{display:grid;gap:8px;padding:13px 16px;border-top:1px solid var(--line)}
+.pss__label{display:grid;gap:1px;align-content:start}
+.pss__label>span{color:var(--ink);font-size:13px;font-weight:700}
+.pss__label small{display:none;color:var(--muted);font-size:11.5px;line-height:1.35}
+.pss__control{display:grid;gap:7px;min-width:0}
+.pss__chips{margin:0;padding:0}
+.pss__chips .chip{min-height:38px;padding-inline:14px}
+
+/* Segmented options: one stored value each, the active one framed. */
+.pss__seg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:4px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}
+.pss__seg--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pss__seg>button{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;min-height:48px;padding:7px 10px;border:1.5px solid transparent;border-radius:10px;background:transparent;color:var(--muted);font:inherit;text-align:left;cursor:pointer}
+.pss__seg>button b{color:inherit;font-size:13.5px;font-weight:700;line-height:1.25;overflow-wrap:anywhere}
+.pss__seg>button small{font-size:11px;line-height:1.3;overflow-wrap:anywhere}
+.pss__seg>button.is-on{border-color:var(--rose);background:var(--surface);color:var(--ink);box-shadow:0 1px 5px rgb(26 22 20 / 8%)}
+.pss__seg>button.is-on b::before{content:'';display:inline-block;width:7px;height:7px;margin:0 6px 1px 0;border-radius:50%;background:var(--rose);vertical-align:middle}
+.pss__seg>button:disabled{cursor:default}
+.pss__seg>button:disabled:not(.is-on){opacity:.55}
+.pss__seg:focus-visible{outline:2px solid var(--rose-mid);outline-offset:2px}
+/* The figure today's price would have on the option you are not on. */
+.pss__figure{margin-top:2px;color:var(--warn);font-size:11px;font-style:normal;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+
+.pss__count{display:grid;grid-template-columns:minmax(0,1fr) 92px;align-items:center;gap:10px}
+.pss__count label{color:var(--ink-2);font-size:13px;font-weight:650}
+.pss__count .input{margin:0;min-height:42px;padding-block:8px}
+.pss__fixed{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.pss__fixed-option{display:grid;gap:1px;min-width:150px;padding:8px 12px;border:1.5px solid var(--rose);border-radius:10px;background:var(--surface)}
+.pss__fixed-option b{font-size:13.5px}
+.pss__fixed-option small,.pss__fixed>small{color:var(--muted);font-size:11.5px;line-height:1.35}
+.pss__hint{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
+.pss__hint b{color:var(--ink-2)}
+.pss__hint--warn{color:var(--warn);font-weight:650}
+.pss__hint .linklike{font-size:12px;font-weight:650;text-decoration:none}
+.pss__warn p{margin:0 0 6px}
+.pss__warn-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.pss__warn-actions .btn{background:var(--surface)}
+
+.pss__previews{display:grid;gap:10px;padding:13px 16px 16px;border-top:1px solid var(--line)}
+.pss__kicker{display:block;margin-bottom:5px;font-size:9.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.pss__customer{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--rose-line);border-radius:var(--r-sm);background:var(--rose-soft)}
+.pss__customer .pss__kicker{color:var(--rose-dark)}
+.pss__customer b{font-size:15.5px;line-height:1.3}
+.pss__customer small{color:var(--ink-2);font-size:12px;line-height:1.45}
+.pss__erp{padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.pss__erp .pss__kicker{color:var(--muted)}
+.pss__erp dl{display:grid;gap:3px;margin:0}
+.pss__erp dl>div{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+.pss__erp dt{color:var(--muted)}
+.pss__erp dd{margin:0;font-weight:700;text-align:right}
+
+/* A phone-wide card: three options side by side get a little more room. */
+@container (max-width: 420px){
+  .pss__seg--3>button{padding-inline:6px}
+  .pss__seg--3>button b{font-size:12.5px;overflow-wrap:normal}
+  .pss__seg--3>button.is-on b::before{margin-right:4px}
+}
+@container (min-width: 620px){
+  .pss__head{padding:18px 18px 0}
+  .pss__sentence{margin-inline:18px}
+  .pss__row{grid-template-columns:170px minmax(0,1fr);gap:16px;padding:14px 18px}
+  .pss__label{padding-top:9px}
+  .pss__label small{display:block}
+  .pss__count{grid-template-columns:auto 96px;justify-content:start}
+  .pss__previews{grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);padding:14px 18px 18px}
+}
+
+/* Basisgegevens › Afmetingen & verpakking: what is left of the packaging there. */
+.pss-basis-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:0;color:var(--ink-2);font-size:13px;line-height:1.45}
+.pss-basis-line b{color:var(--ink)}
+.pss-basis-line .linklike{font-size:12.5px;font-weight:650;text-decoration:none}
+
+/* Phone: the dark price preview under the card drops its two figures below
+   the price instead of past the card's edge (they were cut off at 390 px). */
+@media (max-width: 679px){
+  #product-editor-workspace .price-preview{flex-wrap:wrap;align-items:flex-start}
+}

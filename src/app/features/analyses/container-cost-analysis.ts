@@ -111,7 +111,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                     </td>
                     @let mix = unitMix(row.reconciliation);
                     @if (mix.uniform) {
-                      <!-- One product in its own unit: a set product per set with its piece price beside it, never 'per stuk' for a set. -->
+                      <!-- One product in its own unit: a display product per display with its piece price beside it, never 'per stuk' for a display. -->
                       @let unit = unitOf(row.reconciliation.totals);
                       <td data-label="Per eenheid">@if (unit.unitEur === null) { — } @else { {{ unit.unitEur | eur: 4 }} per {{ unit.unit }} }@if (unit.pieceEur !== null) { <small>{{ unit.pieceEur | eur: 4 }} per stuk</small> }<small>{{ unit.quantity | num }} {{ unit.usable ? 'bruikbare' : 'bestelde' }} {{ unit.plural }}</small></td>
                     } @else {

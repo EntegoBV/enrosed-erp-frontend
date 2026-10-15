@@ -463,7 +463,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                               }
                             </span>
                             @if (showPrice()) {
-                              <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</span>
+                              <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}<small>per {{ salesUnit(product).singular }}</small></span>
                             }
                           </button>
                         }
@@ -519,7 +519,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                   }
                 </div>
                 @if (showPrice()) {
-                  <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}</div>
+                  <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}<small>per {{ salesUnit(product).singular }}</small></div>
                 }
               </button>
             } @empty {
@@ -692,7 +692,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-item__category { margin: 1px 0; color: var(--rose-dark); font-size: 9.5px; font-weight: 760;
       letter-spacing: .04em; text-transform: uppercase; }
     .picker-item__meta { font-size: 12px; color: var(--muted); }
-    .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
+    .picker-item__end small { display: block; color: var(--muted); font-size: 10.5px; font-weight: 500; }
     /* Stock dot: red empty, orange tight, green ample. Colour alone is not
        enough, so a text always sits next to it. */
     .stock-dot {

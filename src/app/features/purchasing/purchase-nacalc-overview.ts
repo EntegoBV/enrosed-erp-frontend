@@ -160,7 +160,7 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
               }
             </div>
             @if (!receipt.clean && receiptLine(receipt); as line) {
-              <p class="ios-section__foot">{{ line }}. Inkoopwaarde = goederenprijs per {{ head.setBasis === 'DISPLAY' ? 'set' : head.setBasis === 'MIXED' ? 'set of stuk' : 'stuk' }} tegen de orderkoers.</p>
+              <p class="ios-section__foot">{{ line }}. Inkoopwaarde = goederenprijs per {{ head.setBasis === 'DISPLAY' ? 'display' : head.setBasis === 'MIXED' ? 'display of stuk' : 'stuk' }} tegen de orderkoers.</p>
             }
           </section>
         }
@@ -220,7 +220,7 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
                     <span class="ios-cell__sub">{{ productSub(row, !!n.receipt, n.headline.setBasis) }}</span>
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.eindkostEur | eur }}</span>
-                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? (row.set ? 'geen bruikbare sets' : 'geen bruikbare stuks') : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
+                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? (row.set ? 'geen bruikbare displays' : 'geen bruikbare stuks') : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
                   @if (row.productId) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </a>
               } @empty {
@@ -340,7 +340,7 @@ export class PurchaseNacalcOverview {
     return `${formatEur(Math.abs(head.verschilEur))}${pct} ${head.verschilEur < 0 ? 'goedkoper' : 'duurder'} dan afgesproken${review}`;
   }
 
-  /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
+  /** What the unit figure rests on, per display or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
   range(n: PurchaseNacalc): string { return mixRange(n.mix); }
   mixBasis(n: PurchaseNacalc): string { return nacalcMixBasis(n.headline); }

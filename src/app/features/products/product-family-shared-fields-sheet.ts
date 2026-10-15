@@ -6,6 +6,7 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import type { Product, ProductFamily } from '../../core/api/models';
 import { Sheet } from '../../shared/ui';
@@ -15,6 +16,7 @@ import {
   ProductFamilySharedField,
   ProductFamilySharedFieldsApply,
   ProductFamilySharedFieldTarget,
+  productFamilyPriceBasisWarnings,
   productFamilySharedFieldTargets,
   productFamilySharedFieldValue,
   productFamilySharedFieldsApplyPayload,
@@ -110,6 +112,25 @@ export {
             }
           </fieldset>
 
+          @if (basisWarnings().length) {
+            <!-- The packaging carries the price basis; the colours keep their own
+                 price, stock and carton count, which nothing converts. -->
+            <div class="alert alert--warn basis-warn" role="status">
+              <span class="alert__icon" aria-hidden="true">!</span>
+              <div>
+                <p><b>Bij {{ basisWarnings().length }} {{ basisWarnings().length === 1 ? 'kleur' : 'kleuren' }} verandert waarvoor de prijs geldt.</b></p>
+                <ul>
+                  @for (warning of basisWarnings(); track warning.productId) { <li>{{ warning.text }}</li> }
+                </ul>
+                <label class="basis-warn__ok">
+                  <input type="checkbox" [checked]="basisAccepted()" [disabled]="busy()"
+                         (change)="acceptBasis($any($event.target).checked)" />
+                  <span>Ja, de prijsbasis van {{ basisWarnings().length === 1 ? 'deze kleur' : 'deze kleuren' }} wijzigen</span>
+                </label>
+              </div>
+            </div>
+          }
+
           <p class="protected-note">
             <span aria-hidden="true">i</span>
             <strong>SKU, kleur, EAN’s, voorraad, foto’s en leveranciersafspraken blijven per kleur.</strong>
@@ -202,10 +223,20 @@ export {
       display: grid; flex: 0 0 auto; width: 20px; height: 20px; place-items: center;
       border-radius: 50%; background: var(--blue); color: white; font-weight: 800;
     }
+    .basis-warn { margin: 0; }
+    .basis-warn p, .basis-warn ul { margin: 0; }
+    .basis-warn ul { display: grid; gap: 4px; margin-top: 6px; padding-left: 18px; font-size: 12px; }
+    .basis-warn__ok { display: flex; align-items: center; gap: 9px; min-height: 44px; margin-top: 6px; font-weight: 700; cursor: pointer; }
+    .basis-warn__ok input { flex: 0 0 auto; width: 22px; height: 22px; margin: 0; accent-color: var(--warn); }
     .shared-sheet__actions { display: contents; }
+    /* "Opslaan en toepassen op 3 kleuren" beside Annuleren is wider than a 390 px phone: the two buttons (flex: 1, never
+       narrower than their label) share a row while they fit and otherwise wrap, each then filling its own row. */
+    @media (max-width: 679.98px) {
+      .shared-sheet__actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    }
     @media (min-width: 680px) {
       .shared-sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
-      .source-card, .review, .protected-note { grid-column: 1 / -1; }
+      .source-card, .review, .basis-warn, .protected-note { grid-column: 1 / -1; }
       .field-groups { grid-column: 1; }
       .target-group { grid-column: 2; }
     }
@@ -222,6 +253,8 @@ export class ProductFamilySharedFieldsSheet {
   readonly busy = input(false);
   /** The parent persists the current draft before issuing the atomic family command. */
   readonly saveFirst = input(false);
+  /** The fields ticked on opening (the sales card ticks only the packaging); null ticks all. */
+  readonly initialFields = input<readonly ProductFamilySharedField[] | null>(null);
 
   readonly close = output<void>();
   readonly apply = output<ProductFamilySharedFieldsApply>();
@@ -241,12 +274,21 @@ export class ProductFamilySharedFieldsSheet {
     this.targets().length > 0 && this.targets().every((target) =>
       this.selectedTargetIds().has(target.productId)),
   );
+  /** Ticked colours whose price would mean something else after the copy; applying asks for a tick first. */
+  readonly basisWarnings = computed(() => productFamilyPriceBasisWarnings(
+    this.source(), this.targets(), this.products(), this.selectedTargetIds(), this.selectedFields(),
+  ));
+  /** The warnings the tick was given for: another colour or field asks again. */
+  private readonly acceptedBasis = signal<string | null>(null);
+  private readonly basisKey = computed(() => this.basisWarnings().map((warning) => warning.text).join('\n'));
+  readonly basisAccepted = computed(() => this.acceptedBasis() === this.basisKey());
   readonly canApply = computed(() =>
     this.family().id !== null
     && this.source().id !== null
     && this.source().familyId === this.family().id
     && this.selectedFieldCount() > 0
-    && this.selectedTargetCount() > 0,
+    && this.selectedTargetCount() > 0
+    && (this.basisWarnings().length === 0 || this.basisAccepted()),
   );
 
   private contextKey: string | null = null;
@@ -261,9 +303,15 @@ export class ProductFamilySharedFieldsSheet {
       if (nextKey === this.contextKey) return;
       this.contextKey = nextKey;
       if (nextKey === null) return;
-      this.selectedFields.set(new Set(PRODUCT_FAMILY_SHARED_FIELDS));
+      const initial = untracked(() => this.initialFields());
+      this.selectedFields.set(new Set(initial?.length ? initial : PRODUCT_FAMILY_SHARED_FIELDS));
       this.selectedTargetIds.set(new Set(this.targets().map((target) => target.productId)));
+      this.acceptedBasis.set(null);
     });
+  }
+
+  acceptBasis(checked: boolean): void {
+    this.acceptedBasis.set(checked ? this.basisKey() : null);
   }
 
   setField(field: ProductFamilySharedField, checked: boolean): void {
