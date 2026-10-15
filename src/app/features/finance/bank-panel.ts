@@ -6,6 +6,7 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { bankAccountKey } from './bank-reconciliation';
 import { BankAccountCard, type AccountView } from './bank-account-card';
+import { BankCockpit } from './bank-cockpit';
 import { BankMovementPanel } from './bank-movement-panel';
 import { dayMonth } from './finance-format';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
@@ -26,7 +27,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
   selector: 'app-bank-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => BankPanel) }],
-  imports: [Icon, EurPipe, BankMovementPanel, BankAccountCard, FinanceFilters],
+  imports: [Icon, EurPipe, BankMovementPanel, BankAccountCard, BankCockpit, FinanceFilters],
   template: `
     @if (state.location().tab === 'movements') {
       @if (selectedAccount(); as account) {
@@ -58,7 +59,7 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
       }
       <app-bank-movement-panel />
     } @else {
-      <app-bank-movement-panel />
+      <app-bank-cockpit />
     }
   `,
 })
@@ -108,17 +109,18 @@ export class BankPanel implements FinanceSectionApi {
     return count ? count + ' te koppelen' : this.transactionCount(key) ? 'Alles gekoppeld' : 'Nog geen transacties';
   }
   readonly movementPanel = viewChild(BankMovementPanel);
+  private readonly cockpit = viewChild(BankCockpit);
 
   readonly strip = computed<StripItem[] | null>(() => null);
   readonly status = computed(() => {
     const location = this.state.location();
     const panel = this.movementPanel();
-    if (panel) {
+    if (location.tab === 'movements' && panel) {
       const account = location.account ? this.state.canonicalAccount(location.account) : '';
       const total = account ? this.transactionCount(account) : this.activeLines().length;
       return `${panel.filteredLines().length} van ${total} ${total === 1 ? 'transactie' : 'transacties'}${account ? ' op ' + this.state.accountLabel(account) : ''}`;
     }
-    return '';
+    return this.cockpit()?.status() ?? '';
   });
 
   constructor() {
@@ -179,7 +181,7 @@ export class BankPanel implements FinanceSectionApi {
   }
 
   handle(command: FinanceCommand): boolean {
-    return this.movementPanel()?.handle(command) ?? false;
+    return (this.movementPanel() ?? this.cockpit()?.movementPanel())?.handle(command) ?? false;
   }
 
   /** "Transactie zoeken" for a payment marked paid without a transaction: Transacties, prefilled (§3.11). */

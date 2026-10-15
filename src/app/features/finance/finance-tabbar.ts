@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
-import { FINANCE_SECTIONS } from './finance-sections';
+import { FINANCE_NAV, financeNavOf } from './finance-sections';
 import { FinanceShell } from './finance-shell';
 import { FinanceState } from './finance-state';
+import { DEFAULT_LOCATION, financeQueryParams, patchLocation } from './finance-url';
 
-/** Five full-width phone sections; creation stays in the sticky page header. */
+/** Five full-width phone places, Bank · Transacties · Betalen · Ontvangen · Kosten; creation stays in the sticky page header. */
 @Component({
   selector: 'app-finance-tabbar',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -18,13 +19,14 @@ export class FinanceTabbar {
   private readonly shell = inject(FinanceShell);
 
   readonly tabs = computed<IosTab[]>(() => {
-    const view = this.state.location().view;
+    const active = financeNavOf(this.state.location()).id;
     const counts = this.shell.counts();
-    const badges: Record<string, number | null> = { open: counts?.open ?? null, incoming: counts?.incoming ?? null, bank: counts?.bank ?? null, costs: counts?.costs ?? null };
-    return FINANCE_SECTIONS.filter((section) => section.phoneTab).map((section) => ({
-      id: section.id, label: section.short, icon: section.icon, link: '/costs',
-      query: { view: section.id }, active: view === section.id,
-      badge: badges[section.id] ?? null, badgeTone: 'warn' as const,
+    const badges: Record<string, number | null> = { bank: counts?.bank ?? null, transactions: counts?.transactions ?? null, open: counts?.open ?? null,
+      incoming: counts?.incoming ?? null, costs: counts?.costs ?? null };
+    return FINANCE_NAV.filter((item) => item.phoneTab).map((item) => ({
+      id: item.id, label: item.short, icon: item.icon, link: '/costs',
+      query: financeQueryParams(patchLocation(DEFAULT_LOCATION, item.target)), active: active === item.id,
+      badge: badges[item.id] || null, badgeTone: 'warn' as const,
     }));
   });
 }
