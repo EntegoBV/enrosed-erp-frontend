@@ -559,7 +559,7 @@ cijfers'.
   toevoegen', the count of what it lists (`fileRoom` = listed proofs + the
   payment's free places); an older invoice file on the payment is listed
   under Factuur with open and ✕. One word for adding a transaction:
-  'Transactie toevoegen' (a payment fully on the bank says why it cannot).
+  'Transactie toevoegen' (on a payment fully on the bank too, see round 3).
   Invoices: `invoiceCoverage` words 'Geldt voor alle betalingen van
   Leverancier (n)' or 'Geldt voor n van m betalingen' with 'Toewijzen aan
   alle betalingen' (desk row and ⋯, phone payee sheet; `POST
@@ -581,8 +581,42 @@ cijfers'.
   else one product or one family in one unit and set size): the summary
   card, the desk strip and the phone hero show 'n producten · € min – € max'
   per stuk (per set when every line is a set of one size) with the products
-  by value and 'gem. € x over n st' only as a sub-line; product table totals
-  and the receipt line say 'gem.' / 'Gemiddeld over de n producten'.
+  by value (round 3 removed every remaining average, see below).
+- Round 3 of the payments round (Emre's screen check of round 2,
+  2026-10-15). No mixed average anywhere ('klopt niet' with several
+  products): where a container holds different products every per-unit
+  figure is their range and the products themselves, never 'gem.'. The
+  order header, the desk Kosten chain and the confirm sheet read
+  `landedUnit`/`landedUnitText` (costing lines, a set at its piece price:
+  '2 producten · € 2,600 – € 8,867 per stuk'; one set product '€ 30,960 per
+  set · € 2,580 per stuk'); the Nacalculatie strip and phone hero say
+  '7.976 st bruikbaar · …' (`mixQuantity`) and 'incl. Enrosed kost € a – € b'
+  (`mixPricingRange`), the Kostbasis the same range, the product table's
+  total row the range, the receipt line per product (`mixReceiptLine`); in
+  Analyses › Inkoop the container table and the Kostprijs block show the
+  range too. One product or one family in one unit keeps its figure. The
+  Betalingen table keeps every column on a floor (amounts 84 px for a bold
+  total, Status the longest pill word) and lets Status take what is left,
+  so a pill never breaks inside a word at 1440 or 1100. 'Transactie
+  toevoegen' on a payment whose every transfer is hard-linked
+  (`transferAddable`; sheet beside 'Bestand toevoegen' and the ⋯ menu,
+  desk and phone): one picked line (`growLinkPlan`), previewed as 'De
+  betaling wordt € 12.500,00 (was € 12.000,00); de termijn komt € 500,00
+  boven de afspraak' (`growPreview` with `payingTermStanding`), sent as
+  bank-part with 'ADJUST' (the server's addTransfer). 'Bedrag aanpassen'
+  says its consequence on the choice (`adjustConsequence`, sheet and Kosten
+  & bank); the sheet's question has no Annuleren of its own (Kosten & bank:
+  'Niet koppelen'). A lost answer is told in its number and with what
+  changed (`alreadyLinkedText`: 'Transactie al gekoppeld · bedrag nu … (was
+  …)'). A saved payment whose words and money did not change is not written
+  (`storedUnchanged`): a proof file alone only uploads, 'Bewijs toegevoegd'.
+  On the bank the proof head says 'Bewijs: transactie ✓' with 'bestanden
+  (optioneel) n/m'; a linked USD/CNY payment shows 'Koers 0,8704 (bank)'
+  instead of the order-rate hint; payment amounts show as '4.320,00'
+  (`amountInputText`). Factuur of uitgave lists the container's payments of
+  the payee not on the bank yet first ('Bestaande betaling · € 12.000,00
+  (30%)', 'Deel koppelen' when larger; `localOpenPayments`) above 'Nieuwe
+  betaling'. The proof todo says 'Koppel de banktransactie'.
 - Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
   everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
   budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in
@@ -590,8 +624,11 @@ cijfers'.
   headline is 'Verwachte eindkost' with the 'Nog niet besteld' pill). A payee
   paid without an agreement is 'Betaald zonder afspraak' (warn), so it never
   reads like Bijkomende kosten, which are 'zonder afspraak' by design; such a
-  payee never shows 'afspraak € 0,00'. 'Raming uit Kosten' stays: it names
-  the source of the afspraak, not the figure. Code identifiers (`begrootEur`,
+  payee never shows 'afspraak € 0,00'. The basis of a payee says Afspraak
+  too ('Afspraak inspectie € 300,00 · via leverancier', on Betalingen
+  'Afspraak € 300,00 · via leverancier' in two lines at most; 'Afspraak:
+  vracht, lokale kosten en invoerrechten'); the composition rows are 'Opbouw
+  uit Kosten'. Never 'Raming'. Code identifiers (`begrootEur`,
   `UNBUDGETED`, `BUDGET`) keep their names.
 
 ## Screens and their scenarios
