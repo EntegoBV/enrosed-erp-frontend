@@ -115,7 +115,7 @@ export function kpiCards(forecast: CashForecast): KpiCard[] {
     { id: 'lowest', label: 'Laagste stand', value: eurWhole(forecast.lowestWith.eur), sub: `${weekdayDayMonth(forecast.lowestWith.day)} · met scenario`,
       foot: relative ? 'verschil t.o.v. vandaag' : forecast.tightWith.length ? `Onder buffer · ${periodsText(forecast.tightWith)}` : 'Boven de buffer',
       footWarn: !relative && forecast.tightWith.length > 0,
-      valueTone: forecast.lowestWith.eur < 0 ? 'danger' : !relative && forecast.lowestWith.eur < forecast.bufferEur ? 'warn' : 'normal' },
+      valueTone: forecast.lowestWith.eur < 0 ? 'danger' : underBuffer(forecast, forecast.lowestWith.eur) ? 'warn' : 'normal' },
     { id: 'end', label: `Op ${end}`, value: eurWhole(forecast.endWithEur), sub: 'met scenario',
       foot: `T.o.v. vandaag ${signedWhole(forecast.endWithEur - forecast.startEur)}`, footWarn: false, valueTone: forecast.endWithEur < 0 ? 'danger' : 'normal' },
     { id: 'zero', label: 'Zonder nieuwe verkoop', value: forecast.zeroBase ? dayMon(forecast.zeroBase) : relative ? 'Niet lager dan vandaag' : 'Blijft boven nul',
@@ -146,6 +146,15 @@ export function forecastSeries(forecast: CashForecast, pastDays: number): CashCh
 /** The buffer and its krap periods mean nothing while the forecast only knows differences (relative mode). */
 export function chartBuffer(forecast: CashForecast): { bufferEur: number | null; tight: { from: Iso; to: Iso }[] } {
   return forecast.mode === 'relative' ? { bufferEur: null, tight: [] } : { bufferEur: forecast.bufferEur, tight: forecast.tightWith };
+}
+
+/**
+ * Whether a balance is under the buffer (amber). Never in relative mode: the
+ * figures are differences from today there, so the buffer means nothing (the
+ * chart drops it for the same reason). Below zero stays the danger tone.
+ */
+export function underBuffer(forecast: Pick<CashForecast, 'mode' | 'bufferEur'>, eur: number | null | undefined): boolean {
+  return forecast.mode !== 'relative' && typeof eur === 'number' && eur < forecast.bufferEur;
 }
 
 /** The labelled points: the lowest with the scenario, where the fixed line crosses zero, both ends (one when they are the same). */
@@ -200,7 +209,7 @@ export function monthStrip(forecast: CashForecast): StripColumn[] {
       if (past.lowestEur !== null && (lowestEur === null || past.lowestEur < lowestEur)) { lowestEur = past.lowestEur; lowestDay = past.lowestDay; }
     }
     columns.push({ key: month.key, label: monthShort(month.key), endEur: month.endEur, inEur, outEur, lowestEur, lowestDay,
-      lowWarn: lowestEur !== null && lowestEur < forecast.bufferEur, current });
+      lowWarn: underBuffer(forecast, lowestEur), current });
   }
   return columns;
 }
@@ -239,7 +248,7 @@ export function registerGroups(forecast: CashForecast, filter: RegisterFilter, p
     if (period && (row.date < period.from || row.date > period.to)) continue;
     const month: ForecastMonth | undefined = months.get(row.monthKey);
     const group = groups.get(row.monthKey) ?? { key: row.monthKey, label: monthName(row.monthKey, forecast.today), rows: [], inEur: 0, outEur: 0,
-      lowestEur: month?.lowestEur ?? null, endEur: month?.endEur ?? null, lowWarn: month?.lowestEur != null && month.lowestEur < forecast.bufferEur };
+      lowestEur: month?.lowestEur ?? null, endEur: month?.endEur ?? null, lowWarn: underBuffer(forecast, month?.lowestEur) };
     group.rows.push(row);
     if (row.amountEur > 0) group.inEur = euros(cents(group.inEur) + cents(row.amountEur)); else group.outEur = euros(cents(group.outEur) + cents(row.amountEur));
     groups.set(row.monthKey, group);
@@ -247,10 +256,17 @@ export function registerGroups(forecast: CashForecast, filter: RegisterFilter, p
   return [...groups.values()];
 }
 
+/** The month line in three parts, so the page can mark 'laagste' amber under the buffer (`lowWarn`). */
+export function groupSummaryParts(group: RegisterGroup): { lead: string; lowest: string; end: string } {
+  const n = group.rows.length;
+  return { lead: `${n} ${n === 1 ? 'beweging' : 'bewegingen'} · in ${eurWhole(group.inEur)} · uit ${eurWhole(group.outEur)} · `,
+    lowest: `laagste ${eurWhole(group.lowestEur)}`, end: ` · einde ${eurWhole(group.endEur)}` };
+}
+
 /** '4 bewegingen · in € 8.319 · uit − € 20.435 · laagste € 46.296 · einde € 46.296' (the name goes in front). */
 export function groupSummary(group: RegisterGroup): string {
-  const n = group.rows.length;
-  return `${n} ${n === 1 ? 'beweging' : 'bewegingen'} · in ${eurWhole(group.inEur)} · uit ${eurWhole(group.outEur)} · laagste ${eurWhole(group.lowestEur)} · einde ${eurWhole(group.endEur)}`;
+  const parts = groupSummaryParts(group);
+  return `${parts.lead}${parts.lowest}${parts.end}`;
 }
 
 /** The phone row's second line: 'di 20 okt · Vaste kost · vast'. */
@@ -365,18 +381,29 @@ export function ruleSummary(switches: readonly RuleSwitch[]): string {
 
 /* ----------------------------------------------------------------- scenario */
 
-export interface ScenarioOutcome { salesExclEur: number; salesVatEur: number; inHorizonEur: number; vatRows: { label: string; eur: number }[];
-  vatNote: string | null; marginEur: number; marginPct: number | null; afterHorizonEur: number; }
+/** One scenario VAT row of the outcome: `eur` is never negative, `op` says which way it goes. */
+export interface ScenarioVatRow { label: string; op: '−' | '+'; eur: number; }
+export interface ScenarioOutcome { salesExclEur: number; salesVatEur: number; inHorizonEur: number; vatRows: ScenarioVatRow[];
+  /** The rows together as cash: negative = paid to the returns, positive = less to pay (a concept's import VAT outweighs the sales VAT). */
+  vatEur: number; vatNote: string | null; marginEur: number; marginPct: number | null; afterHorizonEur: number; }
 
-/** "Uitkomst tot {d mmm}": the scenario's sales, the VAT they send to the returns in the horizon, the margin and what comes later. */
+/**
+ * "Uitkomst tot {d mmm}": the scenario's sales, the VAT they send to the
+ * returns in the horizon, the margin and what comes later. A scenario VAT
+ * row is the difference a return makes with the scenario; it lowers the
+ * return when an included concept's import VAT outweighs the sales VAT.
+ */
 export function scenarioOutcome(forecast: CashForecast): ScenarioOutcome {
   const scenario = forecast.scenario;
   const vatItems = forecast.items.filter((item) => item.layer === 'SCENARIO' && item.kind === 'VAT' && item.date <= forecast.horizonEnd);
-  const vatRows = vatItems.map((item) => ({
-    label: item.source.type === 'vat' ? `Btw afgedragen (aangifte Q${item.source.quarter}, ${dayMon(item.date)})` : 'Btw afgedragen', eur: -item.amountEur,
-  }));
+  const vatRows = vatItems.map((item): ScenarioVatRow => {
+    const quarter = item.source.type === 'vat' ? ` (aangifte Q${item.source.quarter}, ${dayMon(item.date)})` : '';
+    return cents(item.amountEur) > 0 ? { label: `Btw minder af te dragen${quarter}`, op: '+', eur: item.amountEur }
+      : { label: `Btw afgedragen${quarter}`, op: '−', eur: euros(-cents(item.amountEur)) };
+  });
   return {
     salesExclEur: scenario.salesExclEur, salesVatEur: scenario.salesVatEur, inHorizonEur: scenario.inHorizonEur, vatRows,
+    vatEur: euros(vatItems.reduce((sum, item) => sum + cents(item.amountEur), 0)),
     vatNote: vatRows.length ? null : `na ${dayMon(forecast.horizonEnd)}`,
     marginEur: scenario.marginEur, marginPct: scenario.salesExclEur > 0 ? Math.round(scenario.marginEur / scenario.salesExclEur * 1000) / 10 : null,
     afterHorizonEur: scenario.afterHorizonEur,
@@ -388,6 +415,33 @@ export function suggestionText(suggestion: OrderDateSuggestion, number: string):
   const keeps = suggestion.rule === 'buffer' ? 'blijft je laagste stand boven de buffer' : 'wordt je laagste stand niet lager dan nu';
   return keepAmounts(`Bestel je ${number} op ${dayMon(suggestion.currentDate)}, dan sta je op ${weekdayDayMonth(suggestion.currentLowestDay)} op ${eurWhole(suggestion.currentLowestEur)}. `
     + `Vanaf ${weekdayDayMonth(suggestion.suggestedDate)} ${keeps}.`);
+}
+
+/**
+ * A typed euro amount, Dutch or plain: '12.500', '12.500,50', '12500,5',
+ * '12500.50', '€ 7.999'. Dots are thousands when a comma is the decimal mark
+ * or when they group by three ('12.500'); a lone other dot is the decimal
+ * mark ('12.5'). Null when empty, signed or not an amount.
+ */
+export function parseAmount(text: string): number | null {
+  const compact = text.replace(/[€\s]/g, '');
+  if (!/^\d[\d.,]*$/.test(compact)) return null;
+  let normal = compact;
+  if (compact.includes(',')) {
+    if (compact.indexOf(',') !== compact.lastIndexOf(',')) return null;
+    normal = compact.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(compact)) {
+    normal = compact.replace(/\./g, '');
+  } else if (compact.indexOf('.') !== compact.lastIndexOf('.')) {
+    return null;
+  }
+  const value = Number(normal);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** An amount as a field shows it: '10.000', '12.500,50'. */
+export function amountText(value: number): string {
+  return eur(Math.abs(value)).replace(/^€ /, '').replace(/,00$/, '');
 }
 
 /** "= marge 33,3 %" of a markup on cost. */

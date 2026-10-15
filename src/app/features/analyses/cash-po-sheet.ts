@@ -57,101 +57,107 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
           <div><small>Terug</small><b class="is-back">{{ whole(s.backEur) }}</b></div>
         </div>
 
-        @if (!s.partner && s.choice; as c) {
-          <section class="cf-po__sec" aria-label="Verkoop · jouw keuze">
-            <h4 class="cf-po__sec-title">Verkoop · jouw keuze @if (c.origin.priceMode === 'stored' || c.origin.markupPct === 'stored' || c.origin.markupEurPerUnit === 'stored') { <span class="cf-adjusted">aangepast</span> }</h4>
-            <app-segmented [variant]="ios() ? 'ios' : 'desk'" label="Verkoopprijs" [options]="priceOptions" [value]="c.priceMode" (changed)="change({ priceMode: asPrice($event) })" />
-            <div class="cf-po__price">
-              @switch (c.priceMode) {
-                @case ('EUR_PER_UNIT') {
-                  <label class="cf-po__field"><span>Opslag per stuk</span>
-                    <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag per stuk in euro" [value]="decimal(c.markupEurPerUnit)"
-                      (change)="setPerUnit($any($event.target).value)" /></span></label>
-                  <p class="cf-po__note">kost per stuk + dit bedrag = marge {{ pctText(s.marginPct) }} %</p>
+        <!-- While the stored choices are unknown every control here waits: a write would replace them. -->
+        <fieldset class="cf-po__choices" aria-label="Keuzes voor deze container" [disabled]="state.choicesFailed()">
+          @if (!s.partner && s.choice; as c) {
+            <section class="cf-po__sec" aria-label="Verkoop · jouw keuze">
+              <h4 class="cf-po__sec-title">Verkoop · jouw keuze @if (c.origin.priceMode === 'stored' || c.origin.markupPct === 'stored' || c.origin.markupEurPerUnit === 'stored') { <span class="cf-adjusted">aangepast</span> }</h4>
+              <app-segmented [variant]="ios() ? 'ios' : 'desk'" label="Verkoopprijs" [options]="priceOptions" [value]="c.priceMode" (changed)="change({ priceMode: asPrice($event) })" />
+              <div class="cf-po__price">
+                @switch (c.priceMode) {
+                  @case ('EUR_PER_UNIT') {
+                    <label class="cf-po__field"><span>Opslag per stuk</span>
+                      <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag per stuk in euro" [value]="decimal(c.markupEurPerUnit)"
+                        (change)="setPerUnit($any($event.target).value)" /></span></label>
+                    <p class="cf-po__note">kost per stuk + dit bedrag = marge {{ pctText(s.marginPct) }} %</p>
+                  }
+                  @case ('LIST') { <p class="cf-po__note">Prijs per product uit de lijstprijs · marge {{ pctText(s.marginPct) }} %</p> }
+                  @case ('HISTORIC') { <p class="cf-po__note">Prijs per product uit je facturen van de laatste 12 maanden · marge {{ pctText(s.marginPct) }} %</p> }
+                  @default {
+                    <label class="cf-po__big"><input type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag op de kost in procent" [value]="pctText(c.markupPct)"
+                      (change)="setMarkup($any($event.target).value)" /><span>%</span></label>
+                    <p class="cf-po__note">opslag op de kost = marge <b>{{ margin(c.markupPct) }}</b></p>
+                    <div class="cf-po__chips">
+                      @for (value of quickMarkups; track value) {
+                        <button type="button" class="cf-chip" [class.is-on]="c.markupPct === value" [attr.aria-pressed]="c.markupPct === value" (click)="change({ markupPct: value })">{{ value }} %</button>
+                      }
+                      @if (realised() !== null) {
+                        <button type="button" class="cf-chip cf-chip--soft" [class.is-on]="c.markupPct === realised()" (click)="change({ markupPct: realised() })">vorig jaar {{ pctText(realised()!) }} %</button>
+                      }
+                    </div>
+                  }
                 }
-                @case ('LIST') { <p class="cf-po__note">Prijs per product uit de lijstprijs · marge {{ pctText(s.marginPct) }} %</p> }
-                @case ('HISTORIC') { <p class="cf-po__note">Prijs per product uit je facturen van de laatste 12 maanden · marge {{ pctText(s.marginPct) }} %</p> }
-                @default {
-                  <label class="cf-po__big"><input type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag op de kost in procent" [value]="pctText(c.markupPct)"
-                    (change)="setMarkup($any($event.target).value)" /><span>%</span></label>
-                  <p class="cf-po__note">opslag op de kost = marge <b>{{ margin(c.markupPct) }}</b></p>
-                  <div class="cf-po__chips">
-                    @for (value of quickMarkups; track value) {
-                      <button type="button" class="cf-chip" [class.is-on]="c.markupPct === value" [attr.aria-pressed]="c.markupPct === value" (click)="change({ markupPct: value })">{{ value }} %</button>
-                    }
-                    @if (realised() !== null) {
-                      <button type="button" class="cf-chip cf-chip--soft" [class.is-on]="c.markupPct === realised()" (click)="change({ markupPct: realised() })">vorig jaar {{ pctText(realised()!) }} %</button>
-                    }
-                  </div>
-                }
-              }
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <div class="cf-po__cells">
-            <div class="cf-po__cell">
-              <span class="cf-po__cell-head"><span>Kost</span>@if (stored(c, 'costBasis')) { <span class="cf-adjusted">aangepast</span> }</span>
-              <app-segmented [variant]="ios() ? 'ios' : 'desk'" label="Kostbasis" [options]="basisOptions()" [value]="c.costBasis" (changed)="change({ costBasis: asBasis($event) })" />
+            <div class="cf-po__cells">
+              <div class="cf-po__cell">
+                <span class="cf-po__cell-head"><span>Kost</span>@if (stored(c, 'costBasis')) { <span class="cf-adjusted">aangepast</span> }</span>
+                <app-segmented [variant]="ios() ? 'ios' : 'desk'" label="Kostbasis" [options]="basisOptions()" [value]="c.costBasis" (changed)="change({ costBasis: asBasis($event) })" />
+              </div>
+              <div class="cf-po__cell cf-po__cell--row">
+                <span class="cf-po__cell-head"><span>Verkocht in</span>@if (stored(c, 'sellWeeks')) { <span class="cf-adjusted">aangepast</span> }
+                  <small>tempo laatste 90 d: {{ c.defaultSellWeeks }} weken</small></span>
+                <span class="cf-step" role="group" aria-label="Verkocht in, weken">
+                  <button type="button" aria-label="Een week minder" [disabled]="c.sellWeeks <= 1" (click)="change({ sellWeeks: c.sellWeeks - 1 })">−</button>
+                  <output>{{ c.sellWeeks }} w</output>
+                  <button type="button" aria-label="Een week meer" [disabled]="c.sellWeeks >= 104" (click)="change({ sellWeeks: c.sellWeeks + 1 })">+</button>
+                </span>
+              </div>
+              <div class="cf-po__cell cf-po__cell--row">
+                <span class="cf-po__cell-head"><span>Klant betaalt na</span>@if (stored(c, 'paymentDays')) { <span class="cf-adjusted">aangepast</span> }
+                  <small>gemiddelde uit je facturen</small></span>
+                <span class="cf-step" role="group" aria-label="Klant betaalt na, dagen">
+                  <button type="button" aria-label="Een week vroeger" [disabled]="c.paymentDays <= 0" (click)="change({ paymentDays: Math.max(0, c.paymentDays - 7) })">−</button>
+                  <output>{{ c.paymentDays }} d</output>
+                  <button type="button" aria-label="Een week later" [disabled]="c.paymentDays >= 365" (click)="change({ paymentDays: Math.min(365, c.paymentDays + 7) })">+</button>
+                </span>
+              </div>
+              <label class="cf-po__cell cf-po__cell--row">
+                <span class="cf-po__cell-head"><span>Seizoen volgen</span>@if (stored(c, 'seasonal')) { <span class="cf-adjusted">aangepast</span> }
+                  <small>{{ peak() ? 'Piek in ' + peak() : 'te weinig historiek' }}</small></span>
+                <input class="cf-switch" type="checkbox" [checked]="c.seasonal && c.seasonalAvailable" [disabled]="!c.seasonalAvailable" (change)="change({ seasonal: $any($event.target).checked })" />
+              </label>
+              <label class="cf-po__cell cf-po__cell--row">
+                <span class="cf-po__cell-head"><span>In het scenario</span>@if (stored(c, 'included')) { <span class="cf-adjusted">aangepast</span> }
+                  <small>meetellen in het saldo hierboven</small></span>
+                <input class="cf-switch" type="checkbox" [checked]="c.included" (change)="change({ included: $any($event.target).checked })" />
+              </label>
             </div>
-            <div class="cf-po__cell cf-po__cell--row">
-              <span class="cf-po__cell-head"><span>Verkocht in</span>@if (stored(c, 'sellWeeks')) { <span class="cf-adjusted">aangepast</span> }
-                <small>tempo laatste 90 d: {{ c.defaultSellWeeks }} weken</small></span>
-              <span class="cf-step" role="group" aria-label="Verkocht in, weken">
-                <button type="button" aria-label="Een week minder" [disabled]="c.sellWeeks <= 1" (click)="change({ sellWeeks: c.sellWeeks - 1 })">−</button>
-                <output>{{ c.sellWeeks }} w</output>
-                <button type="button" aria-label="Een week meer" [disabled]="c.sellWeeks >= 104" (click)="change({ sellWeeks: c.sellWeeks + 1 })">+</button>
-              </span>
-            </div>
-            <div class="cf-po__cell cf-po__cell--row">
-              <span class="cf-po__cell-head"><span>Klant betaalt na</span>@if (stored(c, 'paymentDays')) { <span class="cf-adjusted">aangepast</span> }
-                <small>gemiddelde uit je facturen</small></span>
-              <span class="cf-step" role="group" aria-label="Klant betaalt na, dagen">
-                <button type="button" aria-label="Een week vroeger" [disabled]="c.paymentDays <= 0" (click)="change({ paymentDays: Math.max(0, c.paymentDays - 7) })">−</button>
-                <output>{{ c.paymentDays }} d</output>
-                <button type="button" aria-label="Een week later" [disabled]="c.paymentDays >= 365" (click)="change({ paymentDays: Math.min(365, c.paymentDays + 7) })">+</button>
-              </span>
-            </div>
-            <label class="cf-po__cell cf-po__cell--row">
-              <span class="cf-po__cell-head"><span>Seizoen volgen</span>@if (stored(c, 'seasonal')) { <span class="cf-adjusted">aangepast</span> }
-                <small>{{ peak() ? 'Piek in ' + peak() : 'te weinig historiek' }}</small></span>
-              <input class="cf-switch" type="checkbox" [checked]="c.seasonal && c.seasonalAvailable" [disabled]="!c.seasonalAvailable" (change)="change({ seasonal: $any($event.target).checked })" />
-            </label>
-            <label class="cf-po__cell cf-po__cell--row">
-              <span class="cf-po__cell-head"><span>In het scenario</span>@if (stored(c, 'included')) { <span class="cf-adjusted">aangepast</span> }
-                <small>meetellen in het saldo hierboven</small></span>
-              <input class="cf-switch" type="checkbox" [checked]="c.included" (change)="change({ included: $any($event.target).checked })" />
-            </label>
-          </div>
-        }
+          }
 
-        @if (s.departure; as departure) {
-          <div class="cf-po__cells" id="cf-po-departure">
-            <div class="cf-po__cell">
-              <span class="cf-po__cell-head"><span>Vertrek</span>@if (departure.stored) { <span class="cf-adjusted">aangepast</span> }</span>
-              <p class="cf-po__value">{{ departure.certainty === 'FIXED' ? '' : '± ' }}{{ dayMon(departure.date) }} · {{ departure.certainty === 'FIXED' ? 'Vast' : 'Geschat' }} ({{ departure.ruleText }})</p>
-              <div class="cf-po__date">
-                <span>Datum vastleggen</span>
-                <app-date-field [fieldId]="'cf-ship-' + s.orderId" [value]="storedRow()?.expectedShipOn ?? ''" (valueChange)="change({ expectedShipOn: $event || null })" />
-                @if (departure.stored) { <button class="wk-link" type="button" (click)="change({ expectedShipOn: null })">Wissen</button> }
+          @if (s.departure; as departure) {
+            <div class="cf-po__cells" id="cf-po-departure">
+              <div class="cf-po__cell">
+                <span class="cf-po__cell-head"><span>Vertrek</span>@if (departure.stored) { <span class="cf-adjusted">aangepast</span> }</span>
+                <p class="cf-po__value">{{ departure.certainty === 'FIXED' ? '' : '± ' }}{{ dayMon(departure.date) }} · {{ departure.certainty === 'FIXED' ? 'Vast' : 'Geschat' }} ({{ departure.ruleText }})</p>
+                <div class="cf-po__date">
+                  <span>Datum vastleggen</span>
+                  <app-date-field [fieldId]="'cf-ship-' + s.orderId" [value]="storedRow()?.expectedShipOn ?? ''" (valueChange)="change({ expectedShipOn: $event || null })" />
+                  @if (departure.stored) { <button class="wk-link" type="button" (click)="change({ expectedShipOn: null })">Wissen</button> }
+                </div>
               </div>
             </div>
-          </div>
-        }
-        @if (s.status === 'CONCEPT' && !s.partner) {
-          <div class="cf-po__cells">
-            <div class="cf-po__cell">
-              <span class="cf-po__cell-head"><span>Bestellen op</span>@if (storedRow()?.orderDateOverride) { <span class="cf-adjusted">aangepast</span> }</span>
-              <div class="cf-po__date">
-                <app-date-field [fieldId]="'cf-order-' + s.orderId" [value]="s.choice?.orderDate ?? ''" (valueChange)="change({ orderDateOverride: $event || null })" />
-                @if (storedRow()?.orderDateOverride) { <button class="wk-link" type="button" (click)="change({ orderDateOverride: null })">Wissen</button> }
+          }
+          @if (s.status === 'CONCEPT' && !s.partner) {
+            <div class="cf-po__cells">
+              <div class="cf-po__cell">
+                <span class="cf-po__cell-head"><span>Bestellen op</span>@if (storedRow()?.orderDateOverride) { <span class="cf-adjusted">aangepast</span> }</span>
+                <div class="cf-po__date">
+                  <app-date-field [fieldId]="'cf-order-' + s.orderId" [value]="s.choice?.orderDate ?? ''" (valueChange)="change({ orderDateOverride: $event || null })" />
+                  @if (storedRow()?.orderDateOverride) { <button class="wk-link" type="button" (click)="change({ orderDateOverride: null })">Wissen</button> }
+                </div>
               </div>
             </div>
-          </div>
-        }
+          }
+        </fieldset>
 
         @if (error(); as message) { <p class="cf-po__error" role="alert">{{ message }}</p> }
         <div class="cf-po__store">
-          @if (state.cashRound()) {
+          @if (state.choicesFailed()) {
+            <span class="cf-po__failed">Keuzes konden niet laden</span>
+            <button class="wk-link" type="button" [disabled]="state.sources.refreshing()" (click)="state.retryChoices()">Opnieuw</button>
+          } @else if (state.cashRound()) {
             <span>Bewaard bij de container · ook op de desk.</span>
             @if (storedRow()) { <button class="wk-link" type="button" (click)="state.resetChoice(s.orderId)">Terug naar standaard</button> }
           } @else {

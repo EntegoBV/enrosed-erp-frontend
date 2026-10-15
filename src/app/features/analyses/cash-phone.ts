@@ -13,8 +13,8 @@ import { CashMonths } from './cash-months';
 import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
 import {
-  adjusted, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, phoneKrapBanner, phoneRowSub, pct,
-  ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, suggestionText,
+  adjusted, amountText, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, parseAmount, phoneKrapBanner,
+  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, RuleSwitch } from './cash-view';
 
@@ -98,7 +98,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
           <div class="ios-group cf-phone__sources">
             @for (source of f.scenario.sources; track source.id) {
               <div class="ios-cell cf-src-cell" [class.is-off]="!source.included" [class.is-locked]="source.locked">
-                <button class="cf-src-cell__check" type="button" role="checkbox" [attr.aria-checked]="source.included" [disabled]="source.locked"
+                <button class="cf-src-cell__check" type="button" role="checkbox" [attr.aria-checked]="source.included" [disabled]="source.locked || (source.id !== 'stock' && state.choicesFailed())"
                         [attr.aria-label]="'Meetellen: ' + source.label" (click)="toggleSource(source)"><span class="ios-check" [class.is-on]="source.included"><app-icon name="tick" [size]="14" /></span></button>
                 <button class="cf-src-cell__body" type="button" [disabled]="source.id === 'stock'" (click)="openSource(source)">
                   <span class="ios-cell__title">{{ source.label }}@if (isAdjusted(source)) { <i class="cf-dot" aria-label="aangepast"></i> }</span>
@@ -125,7 +125,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
         @if (outcome(); as o) {
           <div class="ios-card cf-phone__result">
             <div><span>Binnen tot {{ day(f.horizonEnd) }}</span><b>{{ whole(o.inHorizonEur) }}</b></div>
-            <div class="is-sub"><span>− Btw naar de aangifte</span><b>{{ whole(vatTotal()) }}</b></div>
+            <div class="is-sub"><span>{{ o.vatEur > 0 ? '+ Btw minder naar de aangifte' : '− Btw naar de aangifte' }}</span><b>{{ whole(abs(o.vatEur)) }}</b></div>
             <div class="is-sub"><span>Marge op goederen</span><b>{{ whole(o.marginEur) }}</b></div>
           </div>
         }
@@ -134,7 +134,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
           <div class="ios-card cf-phone__suggest">
             <app-icon name="calendar" [size]="18" />
             <div><p>{{ suggestion(hint.suggestion, hint.number) }}</p>
-              <button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" (click)="state.tryOrderDate(hint.suggestion.orderId, hint.suggestion.suggestedDate)">Probeer {{ day(hint.suggestion.suggestedDate) }}</button></div>
+              <button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="state.choicesFailed()" (click)="state.tryOrderDate(hint.suggestion.orderId, hint.suggestion.suggestedDate)">Probeer {{ day(hint.suggestion.suggestedDate) }}</button></div>
           </div>
         }
 
@@ -176,7 +176,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
         </span>
         <span class="ios-cell__trail">
           <span class="ios-cell__value ios-cell__value--strong" [class.cf-in]="row.amountEur > 0">{{ signed(row.amountEur) }}</span>
-          <span class="ios-cell__meta" [class.cf-warn]="row.balanceEur !== null && row.balanceEur < (forecast()?.bufferEur ?? 0)">saldo {{ row.balanceEur === null ? '—' : whole(row.balanceEur) }}</span>
+          <span class="ios-cell__meta" [class.cf-warn]="lowBalance(row.balanceEur)">saldo {{ row.balanceEur === null ? '—' : whole(row.balanceEur) }}</span>
         </span>
       </button>
     </ng-template>
@@ -207,8 +207,13 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
           <div body class="cf-sheet-pad">
             @if (state.cashRound()) {
               <label class="cf-buffer__field"><span>Bedrag</span>
-                <span class="cf-money"><span>€</span><input class="cf-input" type="number" min="0" step="500" inputmode="decimal" [value]="bufferDraft()" (input)="bufferDraft.set($any($event.target).value)" /></span></label>
+                <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" [value]="bufferDraft()"
+                  [attr.aria-invalid]="bufferError() ? true : null" (input)="typeBuffer($any($event.target).value)" (keydown.enter)="saveBuffer()" /></span></label>
+              @if (bufferError(); as error) { <p class="cf-buffer__error" role="alert">{{ error }}</p> }
               <p class="ios-caption">Eén bedrag voor het bedrijf; ook op de kaslijn in Kosten &amp; bank.</p>
+            } @else if (state.choicesFailed()) {
+              <p class="ios-caption">Keuzes konden niet laden.</p>
+              <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="state.sources.refreshing()" (click)="state.retryChoices()">Opnieuw</button>
             } @else {
               <p class="ios-caption">De buffer staat op {{ whole(buffer()) }}. Bewaren kan zodra de server bijgewerkt is.</p>
             }
@@ -325,6 +330,7 @@ export class CashPhone {
   readonly abs = Math.abs;
   readonly sheet = signal<PhoneSheet>(null);
   readonly bufferDraft = signal('');
+  readonly bufferError = signal<string | null>(null);
 
   readonly location = this.state.location;
   readonly forecast = this.state.forecast;
@@ -350,7 +356,6 @@ export class CashPhone {
   });
   readonly staleAccounts = computed(() => (this.forecast()?.startAccounts ?? []).filter((account) => account.stale));
   readonly outcome = computed(() => { const f = this.forecast(); return f ? scenarioOutcome(f) : null; });
-  readonly vatTotal = computed(() => (this.outcome()?.vatRows ?? []).reduce((sum, row) => sum + row.eur, 0));
   readonly rules = computed(() => {
     const f = this.forecast();
     return f ? ruleSwitches(f, this.location(), this.state.input()?.history.openQuoteConversionPct ?? 0) : [];
@@ -443,14 +448,27 @@ export class CashPhone {
   }
 
   openBuffer(): void {
-    this.bufferDraft.set(String(this.buffer()));
+    this.bufferDraft.set(amountText(this.buffer()));
+    this.bufferError.set(null);
     this.sheet.set('buffer');
   }
 
+  typeBuffer(value: string): void {
+    this.bufferDraft.set(value);
+    this.bufferError.set(null);
+  }
+
+  /** Any amount in Dutch or plain form ('12.500'); an empty or unreadable field is refused here, never saved as € 0. */
   async saveBuffer(): Promise<void> {
-    const value = Number(this.bufferDraft().replace(',', '.'));
-    if (!Number.isFinite(value) || value < 0) return;
+    const value = parseAmount(this.bufferDraft());
+    if (value === null) { this.bufferError.set('Geef een bedrag'); return; }
     if (await this.state.saveBuffer(Math.round(value * 100) / 100)) this.sheet.set(null);
+  }
+
+  /** A saldo under the buffer (amber); never in relative mode. */
+  lowBalance(eur: number | null): boolean {
+    const forecast = this.forecast();
+    return !!forecast && underBuffer(forecast, eur);
   }
 
   async resetBuffer(): Promise<void> {

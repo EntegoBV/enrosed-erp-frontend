@@ -4,7 +4,7 @@ import { Sheet } from '../../shared/ui';
 import type { ForecastMonth } from '../finance/cash-forecast';
 import { weekdayDayMonth } from '../finance/cash-format';
 import { CashState } from './cash-state';
-import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole, tableCell } from './cash-view';
+import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole, tableCell, underBuffer } from './cash-view';
 
 /**
  * "Per maand" (spec §4.5): begin, what went and goes out and in per kind,
@@ -36,7 +36,7 @@ import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole
                 <tr [attr.data-row]="row.id">
                   <th scope="row">{{ row.label }}</th>
                   @for (value of row.values; track $index) {
-                    <td [class.is-past]="t.months[$index].past" [class.is-low]="row.id === 'lowest' && value !== null && value < buffer()"
+                    <td [class.is-past]="t.months[$index].past" [class.is-low]="row.id === 'lowest' && low(value)"
                         [class.is-neg]="value !== null && value < 0 && row.id !== 'lowest'">{{ cell(value) }}</td>
                   }
                 </tr>
@@ -51,7 +51,7 @@ import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole
           @for (month of t.months; track month.key) {
             <button class="cf-mlist__row" type="button" role="row" [class.is-past]="month.past" (click)="open(month)">
               <span role="cell">{{ month.label }}</span>
-              <span role="cell" [class.is-low]="month.lowestEur !== null && month.lowestEur < buffer()">{{ cell(month.lowestEur) }}</span>
+              <span role="cell" [class.is-low]="low(month.lowestEur)">{{ cell(month.lowestEur) }}</span>
               <span role="cell">{{ cell(month.endEur) }}</span>
               <span role="cell">{{ delta(month) }}</span>
             </button>
@@ -89,7 +89,6 @@ export class CashMonths {
     const forecast = this.state.forecast();
     return forecast ? monthTable(forecast) : null;
   });
-  readonly buffer = computed(() => this.state.forecast()?.bufferEur ?? 0);
   readonly note = computed(() => {
     const input = this.state.input();
     const forecast = this.state.forecast();
@@ -105,6 +104,12 @@ export class CashMonths {
   readonly cell = tableCell;
   readonly signed = signedWhole;
   readonly day = weekdayDayMonth;
+
+  /** Laagste under the buffer (amber); never in relative mode. */
+  low(eur: number | null): boolean {
+    const forecast = this.state.forecast();
+    return !!forecast && underBuffer(forecast, eur);
+  }
 
   delta(month: ForecastMonth): string {
     if (month.beginEur === null || month.endEur === null) return '—';

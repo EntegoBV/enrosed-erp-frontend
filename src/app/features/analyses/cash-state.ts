@@ -67,6 +67,11 @@ export class CashState {
 
   get today(): string { return this.todayValue; }
   readonly cashRound = computed(() => this.sources.cashRound());
+  /** The stored choices or the settings could not load: the container controls and the buffer wait for "Opnieuw". */
+  readonly choicesFailed = computed(() => this.sources.choicesFailed());
+
+  /** "Opnieuw" after the choices failed to load. */
+  retryChoices(): void { void this.sources.reload(this.todayValue); }
 
   /** The stored choice per order: the server's rows with what is still waiting to be saved on top. */
   readonly stored = computed<PurchaseOrderForecast[]>(() => {
@@ -171,9 +176,11 @@ export class CashState {
    * One control of a container changed. With the server's round: the full
    * write of that order (stored values + this change), saved 600 ms after
    * the last change. Without it the link defaults take the price and pace
-   * choices, and the rest lives for this visit only.
+   * choices, and the rest lives for this visit only. Nothing happens while
+   * the stored choices are unknown: the write would be built without them.
    */
   changeChoice(orderId: number, change: Partial<PurchaseOrderForecastWrite>): void {
+    if (!this.sources.choicesKnown()) return;
     if (!this.cashRound()) {
       const linkChange: Partial<CashLocation> = {};
       const local: Partial<PurchaseOrderForecastWrite> = {};
@@ -186,7 +193,7 @@ export class CashState {
       return;
     }
     this.setPending(orderId, forecastWrite(this.storedFor(orderId), change));
-    this.choiceErrors.update((errors) => { const next = { ...errors }; delete next[orderId]; return next; });
+    this.clearChoiceError(orderId);
     const timer = this.timers.get(orderId);
     if (timer) clearTimeout(timer);
     this.timers.set(orderId, setTimeout(() => { this.timers.delete(orderId); void this.flush(orderId); }, SAVE_DELAY_MS));
@@ -194,10 +201,12 @@ export class CashState {
 
   /** "Terug naar standaard": every stored choice of the order goes. */
   async resetChoice(orderId: number): Promise<void> {
+    if (!this.sources.choicesKnown()) return;
     const timer = this.timers.get(orderId);
     if (timer) { clearTimeout(timer); this.timers.delete(orderId); }
     const before = this.storedFor(orderId);
     this.dropPending(orderId);
+    this.clearChoiceError(orderId);
     if (!this.cashRound()) return;
     try {
       await this.api.deleteForecast(orderId);
@@ -210,9 +219,19 @@ export class CashState {
 
   /** Saves the order date a Concept is tried with, with an undo. */
   tryOrderDate(orderId: number, date: string): void {
+    if (!this.sources.choicesKnown()) return;
     const before = this.storedFor(orderId)?.orderDateOverride ?? null;
     this.changeChoice(orderId, { orderDateOverride: date, included: true });
     this.ui.toast(`Besteldatum ${dayMon(date)} in het scenario`, 'ok', { label: 'Ongedaan maken', run: () => this.changeChoice(orderId, { orderDateOverride: before }) });
+  }
+
+  private clearChoiceError(orderId: number): void {
+    this.choiceErrors.update((errors) => {
+      if (!(orderId in errors)) return errors;
+      const next = { ...errors };
+      delete next[orderId];
+      return next;
+    });
   }
 
   private setPending(orderId: number, write: PurchaseOrderForecastWrite): void {

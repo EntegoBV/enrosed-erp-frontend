@@ -11,8 +11,8 @@ import { CashMonths } from './cash-months';
 import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
 import {
-  RegisterFilter, adjusted, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummary, itemLink, kpiCards, krapBanner,
-  lineLink, monthStrip, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, suggestionText,
+  RegisterFilter, adjusted, amountText, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummaryParts, itemLink, kpiCards,
+  krapBanner, lineLink, monthStrip, parseAmount, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, RuleSwitch } from './cash-view';
 
@@ -48,13 +48,14 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
         <app-segmented label="Horizon" [options]="horizons" [value]="'' + location().horizon" (changed)="setHorizon($event)" />
         <div class="wk-popover-anchor">
           <button class="wk-btn" type="button" [attr.aria-expanded]="bufferOpen()" [disabled]="!state.cashRound()"
-                  [title]="state.cashRound() ? 'Bedrag waaronder het saldo krap is' : 'De buffer bewaren kan zodra de server bijgewerkt is'"
+                  [title]="state.cashRound() ? 'Bedrag waaronder het saldo krap is' : state.choicesFailed() ? 'Keuzes konden niet laden' : 'De buffer bewaren kan zodra de server bijgewerkt is'"
                   (click)="toggleBuffer()">Buffer {{ whole(buffer()) }}</button>
           @if (bufferOpen()) {
-            <form class="wk-popover cf-buffer" (submit)="$event.preventDefault(); saveBuffer()">
+            <form class="wk-popover cf-buffer" novalidate (submit)="$event.preventDefault(); saveBuffer()">
               <label class="cf-buffer__field"><span>Buffer voor 'krap'</span>
-                <span class="cf-money"><span>€</span><input class="cf-input" type="number" min="0" step="500" inputmode="decimal" [value]="bufferDraft()"
-                  (input)="bufferDraft.set($any($event.target).value)" /></span></label>
+                <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" [value]="bufferDraft()"
+                  [attr.aria-invalid]="bufferError() ? true : null" (input)="typeBuffer($any($event.target).value)" /></span></label>
+              @if (bufferError(); as error) { <p class="cf-buffer__error" role="alert">{{ error }}</p> }
               <p class="cf-buffer__hint">Eén bedrag voor het bedrijf; ook op de kaslijn in Kosten &amp; bank.</p>
               <div class="wk-popover__foot">
                 <button class="wk-btn wk-btn--sm" type="button" (click)="resetBuffer()">Standaard (€ 10.000)</button>
@@ -69,7 +70,11 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 
     @if (warnings().length) {
       <div class="wk-banner wk-banner--warn wk-banner--inset" role="status"><app-icon name="alert" [size]="16" />
-        <span class="wk-banner__text">Niet alle actuele cijfers konden laden: {{ warnings().join(', ') }}.</span></div>
+        <span class="wk-banner__text">Niet alle actuele cijfers konden laden: {{ warnings().join(', ') }}.</span>
+        @if (state.choicesFailed()) {
+          <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="state.sources.refreshing()" (click)="state.retryChoices()">Opnieuw</button></span>
+        }
+      </div>
     }
 
     @if (state.sources.bankMissing() && state.sources.state() === 'ready') {
@@ -185,7 +190,8 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                   <span class="wk-group__label">
                     <button class="wk-group__toggle" type="button" [attr.aria-expanded]="isOpen(group.key)" [attr.aria-label]="(isOpen(group.key) ? 'Dichtklappen: ' : 'Openklappen: ') + group.label"
                             (click)="toggleGroup(group.key)"><app-icon name="chevron-down" [size]="14" /></button>
-                    <b>{{ group.label }}</b><span class="cf-group__sum">{{ summary(group) }}</span>
+                    @let sum = summary(group);
+                    <b>{{ group.label }}</b><span class="cf-group__sum">{{ sum.lead }}<span [class.is-low]="group.lowWarn">{{ sum.lowest }}</span>{{ sum.end }}</span>
                   </span>
                 </div>
                 @if (isOpen(group.key)) {
@@ -197,7 +203,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                       <span class="wk-td" role="cell"><span [class]="'wk-pill ' + tone(row)">{{ row.kindLabel }}</span>
                         <span class="wk-td__sub" [title]="row.certaintyLabel + ' · ' + (row.item?.ruleText ?? '')">{{ row.certaintyLabel }} · {{ row.item?.ruleText }}</span></span>
                       <span class="wk-td wk-td--num" role="cell" [class.cf-in]="row.amountEur > 0">{{ signedEur(row.amountEur) }}</span>
-                      <span class="wk-td wk-td--num" role="cell" [class.cf-low]="row.balanceEur !== null && row.balanceEur < f.bufferEur" [class.cf-neg]="row.balanceEur !== null && row.balanceEur < 0">{{ eur(row.balanceEur) }}</span>
+                      <span class="wk-td wk-td--num" role="cell" [class.cf-low]="low(f, row.balanceEur)" [class.cf-neg]="row.balanceEur !== null && row.balanceEur < 0">{{ eur(row.balanceEur) }}</span>
                     </div>
                   }
                 }
@@ -222,7 +228,8 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                 <h4 class="cf-sec-title">Wat verkopen we?</h4>
                 @for (source of f.scenario.sources; track source.id) {
                   <div class="cf-src" [class.is-off]="!source.included" [class.is-locked]="source.locked">
-                    <input class="cf-check" type="checkbox" [checked]="source.included" [disabled]="source.locked" [attr.aria-label]="'Meetellen: ' + source.label"
+                    <input class="cf-check" type="checkbox" [checked]="source.included" [disabled]="source.locked || (source.id !== 'stock' && state.choicesFailed())"
+                           [attr.title]="source.id !== 'stock' && state.choicesFailed() ? 'Keuzes konden niet laden' : null" [attr.aria-label]="'Meetellen: ' + source.label"
                            (change)="toggleSource(source, $any($event.target).checked)" />
                     <button class="cf-src__body" type="button" [disabled]="source.id === 'stock'" (click)="openSource(source)">
                       <b><span class="cf-src__name">{{ source.label }}</span>@if (isAdjusted(source)) { <i class="cf-dot" title="aangepast" aria-label="aangepast"></i> }</b>
@@ -245,7 +252,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                     <div class="is-sub"><dt><span class="wk-equation__op">+</span>Btw op die verkoop</dt><dd>{{ whole(o.salesVatEur) }}</dd></div>
                     <div class="is-total"><dt><span class="wk-equation__op">=</span>Binnen op de bank</dt><dd>{{ whole(o.inHorizonEur) }}</dd></div>
                     @for (vat of o.vatRows; track vat.label) {
-                      <div class="is-sub"><dt><span class="wk-equation__op">−</span>{{ vat.label }}</dt><dd>{{ whole(vat.eur) }}</dd></div>
+                      <div class="is-sub"><dt><span class="wk-equation__op">{{ vat.op }}</span>{{ vat.label }}</dt><dd>{{ whole(vat.eur) }}</dd></div>
                     } @empty {
                       <div class="is-sub"><dt><span class="wk-equation__op">−</span>Btw afgedragen <small>· {{ o.vatNote }}</small></dt><dd>€ 0,00</dd></div>
                     }
@@ -259,7 +266,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                   <app-icon name="calendar" [size]="16" />
                   <div>
                     <p>{{ suggestion(hint.suggestion, hint.number) }}</p>
-                    <button class="wk-btn wk-btn--sm" type="button" (click)="state.tryOrderDate(hint.suggestion.orderId, hint.suggestion.suggestedDate)">Met besteldatum {{ day(hint.suggestion.suggestedDate) }} proberen</button>
+                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="state.choicesFailed()" (click)="state.tryOrderDate(hint.suggestion.orderId, hint.suggestion.suggestedDate)">Met besteldatum {{ day(hint.suggestion.suggestedDate) }} proberen</button>
                   </div>
                 </section>
               }
@@ -336,7 +343,8 @@ export class CashDesk {
   readonly k = eurK;
   readonly day = dayMon;
   readonly wd = weekdayDayMonth;
-  readonly summary = groupSummary;
+  readonly summary = groupSummaryParts;
+  readonly low = underBuffer;
   readonly suggestion = suggestionText;
   readonly periodLabel = periodText;
   readonly abs = Math.abs;
@@ -397,6 +405,7 @@ export class CashDesk {
   /* buffer popover */
   readonly bufferOpen = signal(false);
   readonly bufferDraft = signal('');
+  readonly bufferError = signal<string | null>(null);
   readonly monthsOpen = signal(false);
 
   isOpen(key: string): boolean {
@@ -483,13 +492,20 @@ export class CashDesk {
   }
 
   toggleBuffer(): void {
-    this.bufferDraft.set(String(this.buffer()));
+    this.bufferDraft.set(amountText(this.buffer()));
+    this.bufferError.set(null);
     this.bufferOpen.set(!this.bufferOpen());
   }
 
+  typeBuffer(value: string): void {
+    this.bufferDraft.set(value);
+    this.bufferError.set(null);
+  }
+
+  /** Any amount in Dutch or plain form; an empty or unreadable field is refused here, never saved as € 0. */
   async saveBuffer(): Promise<void> {
-    const value = Number(this.bufferDraft().replace(',', '.'));
-    if (!Number.isFinite(value) || value < 0) return;
+    const value = parseAmount(this.bufferDraft());
+    if (value === null) { this.bufferError.set('Geef een bedrag'); return; }
     if (await this.state.saveBuffer(Math.round(value * 100) / 100)) this.bufferOpen.set(false);
   }
 

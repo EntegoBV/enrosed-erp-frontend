@@ -168,6 +168,20 @@ test('the month strip folds the current month together; lowest under the buffer 
   assert.deepEqual([strip[3].endEur, strip[3].lowWarn], [-2833.62, true]);
 });
 
+test('relative mode never marks a figure amber against the buffer (the figures are differences from today)', () => {
+  const relative = buildCashForecast(exampleB({ accounts: accounts({ currentEur: null, latestReading: null, checkedAt: null }) }), options());
+  assert.equal(relative.mode, 'relative');
+  assert.ok(relative.months.some((month) => !month.past && month.lowestEur !== null && month.lowestEur < relative.bufferEur), 'the differences do fall under € 10.000');
+  assert.ok(view.monthStrip(relative).every((column) => !column.lowWarn));
+  assert.ok(view.registerGroups(relative, 'all', null).every((group) => !group.lowWarn));
+  assert.equal(view.underBuffer(relative, 500), false);
+  assert.equal(view.underBuffer(base, 9999.99), true);
+  assert.equal(view.underBuffer(base, 10000), false);
+  assert.equal(view.underBuffer(base, null), false);
+  const cards = Object.fromEntries(view.kpiCards({ ...relative, lowestWith: { ...relative.lowestWith, eur: 500 } }).map((card) => [card.id, card]));
+  assert.equal(cards.lowest.valueTone, 'normal');
+});
+
 test('the register: groups per month, filters, the summary line, CSV', () => {
   const counts = view.filterCounts(scenario);
   assert.equal(counts.all, scenario.register.filter((row) => row.kind === 'future').length);
@@ -176,6 +190,8 @@ test('the register: groups per month, filters, the summary line, CSV', () => {
   assert.deepEqual(groups.map((group) => group.label), ['Oktober', 'November', 'December', 'Januari ’27', 'Februari ’27', 'Maart ’27', 'April ’27']);
   assert.equal(groups.reduce((sum, group) => sum + group.rows.length, 0), counts.all - 10);
   assert.equal(view.groupSummary(groups[0]), '6 bewegingen · in € 8.141 · uit − € 8.718 · laagste € 31.789 · einde € 31.789');
+  assert.deepEqual(view.groupSummaryParts(groups[0]), { lead: '6 bewegingen · in € 8.141 · uit − € 8.718 · ', lowest: 'laagste € 31.789', end: ' · einde € 31.789' });
+  assert.deepEqual(groups.map((group) => group.lowWarn), [false, false, false, true, true, true, true], 'laagste goes amber from January, under the buffer');
   const out = view.registerGroups(base, 'out', null);
   assert.ok(out.every((group) => group.rows.every((row) => row.amountEur < 0)));
   const containers = view.registerGroups(scenario, 'containers', null).flatMap((group) => group.rows);
@@ -248,8 +264,15 @@ test('Per maand: rows, cells and the lines behind a month', () => {
 
 test('the scenario outcome, the order-date sentence and the container texts', () => {
   const outcome = view.scenarioOutcome(scenario);
-  assert.deepEqual(outcome, { salesExclEur: 30833.36, salesVatEur: 3700, inHorizonEur: 34533.36, vatRows: [], vatNote: 'na 15 apr', marginEur: 10277.76, marginPct: 33.3,
+  assert.deepEqual(outcome, { salesExclEur: 30833.36, salesVatEur: 3700, inHorizonEur: 34533.36, vatRows: [], vatEur: 0, vatNote: 'na 15 apr', marginEur: 10277.76, marginPct: 33.3,
     afterHorizonEur: 27626.64 });
+  /* A scenario VAT row that lowers a return (a concept's import VAT outweighs the sales VAT) adds, it is never paid. */
+  const vatItem = (amountEur: number, year: number, quarter: number, date: string): ForecastItem => ({ ...scenario.items[0], key: `vat:${year}-Q${quarter}:scenario`,
+    layer: 'SCENARIO', rule: null, kind: 'VAT', certainty: 'SCENARIO', date, amountEur, source: { type: 'vat', year, quarter } });
+  const signed = view.scenarioOutcome({ ...scenario, items: [...scenario.items, vatItem(3200, 2026, 4, '2027-01-25'), vatItem(-1500.4, 2027, 1, '2027-04-15')] });
+  assert.deepEqual(signed.vatRows, [{ label: 'Btw minder af te dragen (aangifte Q4, 25 jan)', op: '+', eur: 3200 }, { label: 'Btw afgedragen (aangifte Q1, 15 apr)', op: '−', eur: 1500.4 }]);
+  assert.equal(signed.vatEur, 1699.6);
+  assert.equal(signed.vatNote, null);
   assert.equal(plain(view.suggestionText({ orderId: 45, currentDate: '2026-11-02', currentLowestEur: 0, currentLowestDay: '2026-12-07', suggestedDate: '2026-11-16', rule: 'buffer' }, 'PO-2026-045')),
     'Bestel je PO-2026-045 op 2 nov, dan sta je op ma 7 dec op € 0. Vanaf ma 16 nov blijft je laagste stand boven de buffer.');
   assert.match(view.suggestionText({ orderId: 45, currentDate: '2026-11-02', currentLowestEur: -5, currentLowestDay: '2026-12-07', suggestedDate: '2026-11-16', rule: 'lowest' }, 'PO-2026-045'),
@@ -258,6 +281,23 @@ test('the scenario outcome, the order-date sentence and the container texts', ()
     'Lijkt al betaald: KBC-zichtrekening 13/10 · − € 9.000,00 · “PO-2026-043 DEPOSIT 30PCT”. Nog niet gekoppeld; de prognose rekent hem als betaald.');
   assert.equal(view.peakMonth([0.8, 2.4, 0.8, 0.8, 1.6, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]), 'februari');
   assert.equal(view.peakMonth(null), null);
+});
+
+test('a typed buffer: Dutch thousands and decimals, nothing for an empty field', () => {
+  assert.equal(view.parseAmount('12.500'), 12500);
+  assert.equal(view.parseAmount('12.250'), 12250);
+  assert.equal(view.parseAmount('7999'), 7999);
+  assert.equal(view.parseAmount('12.500,50'), 12500.5);
+  assert.equal(view.parseAmount('12500,5'), 12500.5);
+  assert.equal(view.parseAmount('12500.50'), 12500.5);
+  assert.equal(view.parseAmount('1.234.567'), 1234567);
+  assert.equal(view.parseAmount(' € 10.000 '), 10000);
+  assert.equal(view.parseAmount('0'), 0);
+  assert.equal(view.parseAmount('12.5'), 12.5);
+  for (const text of ['', '   ', 'abc', '-500', '1,2,3', '1.234.56', '€']) assert.equal(view.parseAmount(text), null, text);
+  assert.equal(view.amountText(10000), '10.000');
+  assert.equal(view.amountText(12500.5), '12.500,50');
+  assert.equal(view.parseAmount(view.amountText(12500.5)), 12500.5);
 });
 
 test('the full write of one order keeps what is stored and takes the change', () => {

@@ -76,8 +76,20 @@ export class CashSources {
   readonly company = signal<CompanyProfile | null>(null);
   readonly forecasts = signal<PurchaseOrderForecast[]>([]);
   readonly settings = signal<CashForecastSettings | null>(null);
-  /** The server knows this round (settings answered): stored choices and the buffer can be saved. */
-  readonly cashRound = computed(() => this.settings() !== null);
+  /*
+   * Whether the stored choices and the settings each answered at least once
+   * (a 404 counts: a server without this round answers [] and null). A
+   * write is the full row of an order (§4.4), so one built while the stored
+   * choices never loaded would wipe them on the server.
+   */
+  private readonly forecastsAnswered = signal(false);
+  private readonly settingsAnswered = signal(false);
+  /** Both answered at least once: what is stored is known. */
+  readonly choicesKnown = computed(() => this.forecastsAnswered() && this.settingsAnswered());
+  /** A round finished and the stored choices or the settings still never answered: nothing may write them. */
+  readonly choicesFailed = computed(() => this.state() === 'ready' && !this.choicesKnown());
+  /** The server knows this round and what it stores is loaded: stored choices and the buffer can be saved. */
+  readonly cashRound = computed(() => this.choicesKnown() && this.settings() !== null);
 
   private bankLoaded = false;
   private schedulesRound = -1;
@@ -105,8 +117,8 @@ export class CashSources {
       if (recurring.status === 'fulfilled') this.recurring.set(recurring.value); else failed['vaste kosten'] = true;
       if (payments.status === 'fulfilled') this.purchasePayments.set(payments.value); else failed['betalingen'] = true;
       if (company.status === 'fulfilled') this.company.set(company.value); else failed['bedrijfsgegevens'] = true;
-      if (forecasts.status === 'fulfilled') this.forecasts.set(forecasts.value); else failed['prognosekeuzes'] = true;
-      if (settings.status === 'fulfilled') this.settings.set(settings.value); else failed['prognosekeuzes'] = true;
+      if (forecasts.status === 'fulfilled') { this.forecasts.set(forecasts.value); this.forecastsAnswered.set(true); } else failed['prognosekeuzes'] = true;
+      if (settings.status === 'fulfilled') { this.settings.set(settings.value); this.settingsAnswered.set(true); } else failed['prognosekeuzes'] = true;
       if (!failed['bank']) {
         const from = statementsFromOf(today, this.bankAccounts(), this.balances());
         try {

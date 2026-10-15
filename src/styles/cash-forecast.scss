@@ -42,6 +42,7 @@
 .cf-buffer__field{display:grid;gap:5px;font-size:12px;font-weight:650;color:var(--ink-2)}
 .cf-buffer__field .cf-input{width:100%}
 .cf-buffer__hint{margin:0;color:var(--muted);font-size:12px;line-height:1.4}
+.cf-buffer__error{margin:0;color:var(--danger);font-size:12px;font-weight:650}
 
 /* five figures */
 .cf-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
@@ -114,6 +115,7 @@
 .cf-group{position:static;min-height:36px}
 .cf-group .wk-group__label{gap:8px}
 .cf-group__sum{min-width:0;overflow:hidden;color:var(--muted);font-weight:600;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.cf-group__sum .is-low{color:var(--warn);font-weight:700}
 .cf-register__empty{padding:20px 16px}
 
 /* scenario panel */
@@ -255,6 +257,9 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-po__date app-date-field{min-width:0}
 .cf-po__date .input{min-height:34px;font-size:13px}
 .cf-po__error{margin:8px 16px 0;padding:8px 10px;border-radius:10px;background:var(--danger-soft);color:#83261e;font-size:12.5px}
+.cf-po__choices{min-width:0;margin:0;padding:0;border:0}
+.cf-po__choices:disabled{opacity:.55}
+.cf-po__failed{color:var(--warn);font-weight:650}
 .cf-po__store{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;padding:10px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
 .cf-flows{display:grid}
 .cf-flow{display:grid;grid-template-columns:56px minmax(0,1fr) auto;align-items:start;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
