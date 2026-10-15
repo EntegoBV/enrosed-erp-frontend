@@ -96,6 +96,7 @@
 .cf-chip-count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .cf-table{--wk-cols:78px minmax(0,1.1fr) minmax(0,1fr) 108px 104px;--wk-pad-x:16px;--wk-gap:10px}
 .cf-table .wk-thead{position:static}
+.cf-table .wk-th{padding-block:5px;line-height:1.25;white-space:normal}
 .cf-table .wk-tr{min-height:44px;align-items:start}
 /* every text of a row wraps; the amounts stay on one line */
 .cf-table .wk-td{padding:9px 0 8px;white-space:normal;overflow-wrap:anywhere}
@@ -414,10 +415,10 @@ a.cf-overview:hover{border-color:var(--rose-line)}
  .cf-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
  .cf-kpi--dark{grid-column:span 1}
 }
-/* Below 1060 px of page the register would be squeezed next to the scenario (Datum, two text columns, Bedrag and
-   Saldo need about 700 px): the scenario stays beside the chart, scrolling inside the chart's height, and the
-   register takes the full width under both. */
-@container cf (max-width:1059.98px){
+/* Below 1120 px of page the register would be squeezed next to the scenario (Datum, two text columns, Bedrag and
+   Saldo need about 750 px, so a 1366 window gets this too): the scenario stays beside the chart, scrolling inside
+   the chart's height, and the register takes the full width under both. */
+@container cf (max-width:1119.98px){
  .cf-grid{grid-template-columns:minmax(0,1fr) var(--cf-side);grid-template-areas:'chart side' 'register register'}
  .cf-main{display:contents}
  .cf-chart-card{grid-area:chart}

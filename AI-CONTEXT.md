@@ -1708,7 +1708,7 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   maand ›"; "Komende bewegingen" (past bank rows, the black today bar, month
   groups, filters, CSV); the scenario column (360 px, sticky; the container
   sheet replaces it while `po` is set); "Wat telt mee" and "Aansluiting met
-  de Vooruitblik" with data-quality lines. Below 1060 px of page (a container
+  de Vooruitblik" with data-quality lines. Below 1120 px of page (a container
   query on `.cf`) the scenario stays beside the chart and scrolls in the
   chart's height, and the register takes the full width; a container sheet
   opened from the register is scrolled into view after the router's scroll to
