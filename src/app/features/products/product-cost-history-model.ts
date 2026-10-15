@@ -86,6 +86,19 @@ export interface CostHistoryView {
   basisNote: string | null;
 }
 
+/** The order the product page found behind the product's cost source, by its number. */
+export interface CostSourceLink {
+  id: number;
+  text: string;
+}
+
+/** What an empty history says: a product with a cost is not "without a container". */
+export interface EmptyCostHistory {
+  heading: string;
+  /** The cost's source, a link when its order is known and is not the one the sheet was opened from. */
+  source: { text: string; id: number | null } | null;
+}
+
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 const SYSTEM_ACTORS = new Set(['system', 'systeem']);
 
@@ -135,10 +148,14 @@ export function costParts(entry: ProductCostHistoryEntry, basis: CostBasis): Cos
 /**
  * The history as the screen reads it. `current` is the product's basis today
  * (also for rows that kept none); `currentOrderId` is the container the sheet
- * was opened from, which gets no link to itself.
+ * was opened from, which gets no link to itself. `sourceLink` is the order of
+ * the product's cost source: a row that kept no order but names that source
+ * (a copy of a copy keeps only the number) links to it.
  */
-export function costHistoryView(entries: readonly ProductCostHistoryEntry[], current: CostBasis, currentOrderId: number | null = null): CostHistoryView {
+export function costHistoryView(entries: readonly ProductCostHistoryEntry[], current: CostBasis, currentOrderId: number | null = null,
+  sourceLink: CostSourceLink | null = null): CostHistoryView {
   const rows: CostHistoryRow[] = [];
+  const sourceText = sourceLink?.text.trim() || null;
   /* Oldest first, so every row can compare with the one before it. */
   for (const entry of [...entries].reverse()) {
     const basis = entryCostBasis(entry, current);
@@ -146,6 +163,7 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
     const name = entry.containerName?.trim() || entry.source?.trim()
       || (entry.purchaseOrderId != null ? `Inkoop #${entry.purchaseOrderId}` : 'Handmatig');
     const gone = entry.purchaseOrderId != null && entry.containerGone === true;
+    const orderId = entry.purchaseOrderId ?? (sourceText !== null && entry.source?.trim() === sourceText ? sourceLink!.id : null);
     rows.unshift({
       entry, kind, kindLabel: COST_KIND_LABEL[kind], basis,
       per: costWords(basis).per,
@@ -153,7 +171,7 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
       quantity: entry.quantity ? costQuantity(basis, entry.quantity) : null,
       name,
       numberHint: entry.containerName ? containerNumberHint(entry.containerName, entry.source) : null,
-      linkId: entry.purchaseOrderId != null && !gone && entry.purchaseOrderId !== currentOrderId ? entry.purchaseOrderId : null,
+      linkId: orderId != null && !gone && orderId !== currentOrderId ? orderId : null,
       gone,
       by: entry.appliedBy && !SYSTEM_ACTORS.has(entry.appliedBy.trim().toLowerCase()) ? entry.appliedBy : null,
       delta: delta(entry, basis, rows[0] ?? null),
@@ -194,6 +212,22 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
     basisNote = `De prijs geldt nu ${now}; deze kostprijs werd toegepast ${latest.per} en is niet omgerekend.`;
   }
   return { rows, stats, containers, excluded: counted.length - comparable.length, replaced: rows.length - counted.length, chart, basisNote };
+}
+
+/**
+ * The empty history of a product. One that already carries a cost (set before
+ * the history was kept, or a copy of such a product) has no history yet, not
+ * "no cost from a container"; its source stays in view, as a link when known.
+ */
+export function emptyCostHistory(product: { landedCostEur?: number | null; landedCostSource?: string | null } | null,
+  sourceLink: CostSourceLink | null = null, currentOrderId: number | null = null): EmptyCostHistory {
+  const text = sourceLink?.text.trim() || product?.landedCostSource?.trim() || null;
+  const id = sourceLink && sourceLink.text.trim() && sourceLink.id !== currentOrderId ? sourceLink.id : null;
+  const hasCost = product?.landedCostEur != null || text !== null;
+  return {
+    heading: hasCost ? 'Nog geen historiek voor deze kostprijs' : 'Nog geen kostprijs uit een container',
+    source: text === null ? null : { text, id },
+  };
 }
 
 /** "1 rij op een andere basis telt niet mee", "3 rijen … tellen niet mee". */

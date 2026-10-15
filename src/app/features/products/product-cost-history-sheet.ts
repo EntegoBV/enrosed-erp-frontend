@@ -4,6 +4,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Sheet } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import { ProductCostHistory } from './product-cost-history';
+import type { CostSourceLink } from './product-cost-history-model';
 
 /**
  * Kostprijshistoriek as a sheet of its own, the one way into the history
@@ -38,11 +39,12 @@ import { ProductCostHistory } from './product-cost-history';
 export class ProductCostHistorySheet {
   protected readonly desktop = inject(DesktopViewport);
 
-  readonly product = input.required<Pick<Product, 'id' | 'name' | 'packaging' | 'colour' | 'variantSize'>>();
+  readonly product = input.required<Pick<Product, 'id' | 'name' | 'packaging' | 'colour' | 'variantSize'>
+    & Partial<Pick<Product, 'landedCostEur' | 'landedCostSource'>>>();
   /** The container the sheet was opened from, if any: its own rows need no link back. */
   readonly currentOrderId = input<number | null>(null);
-  /** The cost's source container, shown while the history is still empty. */
-  readonly sourceLink = input<{ id: number; text: string } | null>(null);
+  /** The order of the cost's source, linked from the history even when its rows kept no order id. */
+  readonly sourceLink = input<CostSourceLink | null>(null);
   readonly closed = output<void>();
 
   /** The series name and the variant, so the colours of one series never read alike. */

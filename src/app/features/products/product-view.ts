@@ -1141,7 +1141,7 @@ export class ProductView {
 
   /** Kostprijshistoriek as its own sheet: the cost tiles, the desk's cost figure and the flow step open it. */
   readonly historyOpen = signal(false);
-  /** The cost's container while the history is still empty, so the link of the Bron tile is never lost. */
+  /** The order of the cost's source, so the history keeps the Bron tile's link: on the rows that name it, or in an empty history. */
   readonly historySourceLink = computed(() => {
     const id = this.sourceOrderId();
     const text = this.product()?.landedCostSource;

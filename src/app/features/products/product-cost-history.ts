@@ -6,7 +6,7 @@ import { Product, ProductCostHistoryEntry } from '../../core/api/models';
 import { CurPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { productCostBasis } from './product-cost-basis';
-import { costHistoryView, excludedNote, replacedNote, type CostDelta } from './product-cost-history-model';
+import { costHistoryView, emptyCostHistory, excludedNote, replacedNote, type CostDelta, type CostSourceLink } from './product-cost-history-model';
 
 /**
  * The line of landed costs a product carried: every container that set
@@ -25,10 +25,17 @@ import { costHistoryView, excludedNote, replacedNote, type CostDelta } from './p
     } @else if (error()) {
       <p class="pch__state pch__state--err">{{ error() }}</p>
     } @else if (!view().rows.length) {
+      @let empty = emptyState();
       <div class="pch__empty">
-        <b>Nog geen kostprijs uit een container</b>
+        <b>{{ empty.heading }}</b>
         <p>Zodra je bij een inkooporder de kostprijzen toepast, staat die hier met datum, container en het verschil met de vorige.</p>
-        @if (sourceLink(); as link) { <a [routerLink]="['/purchasing', link.id]">Bron kostprijs: {{ link.text }} ›</a> }
+        @if (empty.source; as source) {
+          @if (source.id !== null) {
+            <a [routerLink]="['/purchasing', source.id]">Bron kostprijs: {{ source.text }} ›</a>
+          } @else {
+            <span>Bron kostprijs: {{ source.text }}</span>
+          }
+        }
       </div>
     } @else {
       @let v = view();
@@ -132,6 +139,7 @@ import { costHistoryView, excludedNote, replacedNote, type CostDelta } from './p
     .pch__empty b { display: block; font-size: 13px; }
     .pch__empty p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .pch__empty a { justify-self: start; color: var(--accent); font-size: 12.5px; font-weight: 650; }
+    .pch__empty span { color: var(--ink-2); font-size: 12.5px; font-weight: 650; overflow-wrap: anywhere; }
     .pch__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 12px; }
     .pch__now, .pch__delta { display: grid; align-content: start; gap: 2px; padding: 12px 14px; border-radius: 14px; }
     .pch__now { background: #272220; color: #fff; }
@@ -196,18 +204,22 @@ export class ProductCostHistory {
   private readonly catalog = inject(CatalogApi);
 
   readonly productId = input.required<number>();
-  /** The product as it is today: its basis labels rows that kept none and is compared with the newest row. */
-  readonly product = input<Pick<Product, 'packaging'> | null>(null);
+  /**
+   * The product as it is today: its basis labels rows that kept none and is
+   * compared with the newest row; its cost and source word an empty history.
+   */
+  readonly product = input<(Pick<Product, 'packaging'> & Partial<Pick<Product, 'landedCostEur' | 'landedCostSource'>>) | null>(null);
   /** The container the history was opened from; its rows need no link back to it. */
   readonly currentOrderId = input<number | null>(null);
-  /** The cost's source container, for a product whose history is still empty. */
-  readonly sourceLink = input<{ id: number; text: string } | null>(null);
+  /** The order of the cost's source: the link of an empty history, and of rows that name it without keeping its id. */
+  readonly sourceLink = input<CostSourceLink | null>(null);
 
   readonly entries = signal<ProductCostHistoryEntry[]>([]);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 
-  readonly view = computed(() => costHistoryView(this.entries(), productCostBasis(this.product()), this.currentOrderId()));
+  readonly view = computed(() => costHistoryView(this.entries(), productCostBasis(this.product()), this.currentOrderId(), this.sourceLink()));
+  readonly emptyState = computed(() => emptyCostHistory(this.product(), this.sourceLink(), this.currentOrderId()));
   readonly excluded = computed(() => excludedNote(this.view().excluded));
   readonly replaced = computed(() => replacedNote(this.view().replaced));
   /** Oldest container first, one point a day, on the newest row's basis, so the line reads left to right like time. */

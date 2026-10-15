@@ -296,6 +296,54 @@ test('a container applied again counts with its newest cost only; every row stay
   assert.deepEqual([manual.replaced, manual.stats.min, manual.stats.max], [0, 3, 4]);
 });
 
+test('a copy row that kept only the source number links to the order the product page found for it', () => {
+  const current = basis.productCostBasis(ROSES_DISPLAY);
+  /* Product 309 of the screen check: a copy of a copy, so its COPY row has the number but no order id. */
+  const entries = [
+    row({ appliedAt: '2026-10-15T09:00:00Z', landedUnitEur: 31.2, previousLandedUnitEur: null, kind: 'COPY', purchaseOrderId: null,
+      source: 'PO-2026-014', quantity: null }),
+    row({ appliedAt: '2026-05-01T09:00:00Z', landedUnitEur: 30, previousLandedUnitEur: null, kind: 'SEED', purchaseOrderId: null,
+      source: 'PO-2026-003', appliedBy: 'system', quantity: null }),
+  ];
+  const link = { id: 14, text: 'PO-2026-014' };
+  const view = history.costHistoryView(entries, current, null, link);
+  /* The header reads rows[0]: the Bron tile's link is back, in the sheet it now opens. */
+  assert.equal(view.rows[0].linkId, 14);
+  assert.equal(view.rows[0].name, 'PO-2026-014');
+  assert.equal(view.rows[0].gone, false);
+  assert.equal(view.rows[1].linkId, null, 'another source text is another order');
+  assert.equal(history.costHistoryView(entries, current).rows[0].linkId, null, 'without the order found, no link');
+  assert.equal(history.costHistoryView(entries, current, 14, link).rows[0].linkId, null, 'never a link to the order the sheet came from');
+  /* Spaces around the stored number do not matter. */
+  const spaced = history.costHistoryView([{ ...entries[0], source: ' PO-2026-014 ' }], current, null, { id: 14, text: 'PO-2026-014 ' });
+  assert.equal(spaced.rows[0].linkId, 14);
+  /* A row with an order id keeps its own, even when it names the product's source. */
+  const own = history.costHistoryView([row({ purchaseOrderId: 9, source: 'PO-2026-014', containerGone: true })], current, null, link);
+  assert.deepEqual([own.rows[0].linkId, own.rows[0].gone], [null, true]);
+  const live = history.costHistoryView([row({ purchaseOrderId: 9, source: 'PO-2026-014' })], current, null, link);
+  assert.equal(live.rows[0].linkId, 9);
+});
+
+test('an empty history of a product with a cost never says it has no cost from a container', () => {
+  const link = { id: 14, text: 'PO-2026-014' };
+  /* Product 310: a cost from PO-2026-014, no rows yet. */
+  assert.deepEqual(plain(history.emptyCostHistory({ landedCostEur: 8.8667, landedCostSource: 'PO-2026-014' }, link)),
+    { heading: 'Nog geen historiek voor deze kostprijs', source: { text: 'PO-2026-014', id: 14 } });
+  /* The order not found (or the editor, which looks none up): the source as text. */
+  assert.deepEqual(plain(history.emptyCostHistory({ landedCostEur: 8.8667, landedCostSource: 'PO-2026-014' })),
+    { heading: 'Nog geen historiek voor deze kostprijs', source: { text: 'PO-2026-014', id: null } });
+  /* Opened from that very order: no link back to it. */
+  assert.deepEqual(plain(history.emptyCostHistory({ landedCostEur: 8.8667, landedCostSource: 'PO-2026-014' }, link, 14)),
+    { heading: 'Nog geen historiek voor deze kostprijs', source: { text: 'PO-2026-014', id: null } });
+  /* A cost without a source still has a cost. */
+  assert.deepEqual(plain(history.emptyCostHistory({ landedCostEur: 3.1, landedCostSource: null })),
+    { heading: 'Nog geen historiek voor deze kostprijs', source: null });
+  /* No cost at all: the old sentence. */
+  for (const product of [{ landedCostEur: null, landedCostSource: null }, { landedCostSource: '  ' }, {}, null]) {
+    assert.deepEqual(plain(history.emptyCostHistory(product)), { heading: 'Nog geen kostprijs uit een container', source: null });
+  }
+});
+
 /* ---- the screens: one way in from everywhere, the templates parse ----- */
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -315,6 +363,12 @@ test('the history component and its sheet parse, and the history never says "st"
   assert.match(sheet, /\{\{ title\(\)\.name \}\}@if \(title\(\)\.variant; as variant\) \{<span> · \{\{ variant \}\}<\/span>\}/);
   assert.match(component, /duurder dan \{\{ now\.against \}\}/);
   assert.match(component, /@if \(replaced\(\); as note\)/);
+  /* The source order reaches the rows (the header links rows[0]) and the empty state words itself from the product. */
+  assert.match(component, /costHistoryView\(this\.entries\(\), productCostBasis\(this\.product\(\)\), this\.currentOrderId\(\), this\.sourceLink\(\)\)/);
+  assert.match(component, /emptyCostHistory\(this\.product\(\), this\.sourceLink\(\), this\.currentOrderId\(\)\)/);
+  assert.match(templateOf(component), /<b>\{\{ empty\.heading \}\}<\/b>/);
+  assert.doesNotMatch(templateOf(component), /Nog geen kostprijs uit een container/, 'the heading comes from the model');
+  assert.match(templateOf(component), /@if \(now\.linkId\) \{<a \[routerLink\]="\['\/purchasing', now\.linkId\]">/);
 });
 
 test('desk, phone and editor each open the history sheet from the cost', async () => {
