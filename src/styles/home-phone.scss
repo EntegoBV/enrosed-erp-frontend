@@ -11,7 +11,7 @@
    class - every rule is scoped under a home class.
    ========================================================================== */
 
-app-home-task-cells { display: block; }
+app-home-task-cells, app-open-page { display: block; }
 app-home-add-sheet { display: contents; }
 
 /* ---- shell: the tab bar beside the '+' */
@@ -79,3 +79,10 @@ app-home-task-cells + .home-tier { margin-top: 16px; }
 .home-add__tile.is-main { background: var(--rose); color: #fff; }
 .home-add__tile.is-main small { color: rgb(255 255 255 / 82%); }
 .home-add__tile.is-main .ios-tile { background: rgb(255 255 255 / 20%); color: #fff; }
+
+/* ---- Open punten (open-page.ts) */
+.home-open .ios-section__head h2 { display: flex; align-items: center; gap: 7px; }
+.home-open__why-list { margin: 0 var(--ios-inset) 16px; padding: 14px 18px 14px 34px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.home-open__why-list li + li { margin-top: 6px; }
+.home-open__clear { padding-top: 24px; }
+.home-open .ios-banner b { font-weight: 700; }
