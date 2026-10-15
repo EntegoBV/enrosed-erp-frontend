@@ -1822,7 +1822,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
     .line-internal__summary:after { content:'⌄';color:var(--muted);font-size:14px;transition:transform .18s }
     .line-internal[open] .line-internal__summary:after { transform:rotate(180deg) }
     .line-internal__title { min-width:0;display:flex;flex-direction:column;gap:1px }
-    .line-internal__title strong { overflow:hidden;color:var(--ink);font-size:11.5px;line-height:1.25;text-overflow:ellipsis;white-space:nowrap }
+    .line-internal__title strong { color:var(--ink);font-size:11.5px;line-height:1.25;overflow-wrap:break-word }
     .line-internal__profit { flex:none;padding:5px 7px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:9.5px;font-weight:760;font-variant-numeric:tabular-nums;white-space:nowrap }
     .line-internal__profit--negative { background:var(--danger-soft);color:var(--danger) }
     .line-internal__body { border-top:1px solid #ecdcbf }

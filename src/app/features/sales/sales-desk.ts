@@ -1348,6 +1348,9 @@ interface JourneyStep {
     .desk-table{width:100%;min-width:740px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:800px}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .desk-table thead th.c-product,.desk-table thead th.c-delivery{text-align:left}.desk-table thead th.c-product{padding-left:16px}
+    /* Right-aligned heads keep their right edge on the figures but need little room on the left: "Eenheidsprijs" fits a 104 px
+       column whole, and "Marge / eenheid" folds onto two lines instead of ending in "…". */
+    .desk-table thead th:not(.c-product):not(.c-delivery){padding-left:4px;white-space:normal;line-height:1.25;vertical-align:bottom}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
     .c-product{width:30%;min-width:210px}.c-qty{width:76px;text-align:right}.c-price{width:104px;text-align:right}.c-disc{width:78px;text-align:right}.c-money{width:104px;text-align:right;font-variant-numeric:tabular-nums}.c-delivery{width:136px;text-align:left}.c-act{width:40px}

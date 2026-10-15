@@ -229,6 +229,11 @@ export {
     .basis-warn__ok { display: flex; align-items: center; gap: 9px; min-height: 44px; margin-top: 6px; font-weight: 700; cursor: pointer; }
     .basis-warn__ok input { flex: 0 0 auto; width: 22px; height: 22px; margin: 0; accent-color: var(--warn); }
     .shared-sheet__actions { display: contents; }
+    /* "Opslaan en toepassen op 3 kleuren" beside Annuleren is wider than a 390 px phone: the two buttons (flex: 1, never
+       narrower than their label) share a row while they fit and otherwise wrap, each then filling its own row. */
+    @media (max-width: 679.98px) {
+      .shared-sheet__actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    }
     @media (min-width: 680px) {
       .shared-sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
       .source-card, .review, .basis-warn, .protected-note { grid-column: 1 / -1; }
