@@ -234,3 +234,26 @@ test('the history component and its sheet parse, and the history never says "st"
   assert.match(component, /catalog\.unitNames\(\)/);
   assert.match(sheet, /title="Kostprijshistoriek"/);
 });
+
+test('desk, phone and editor each open the history sheet from the cost', async () => {
+  const desk = await read('../src/app/features/products/product-desk.ts');
+  const view = await read('../src/app/features/products/product-view.ts');
+  const editor = await read('../src/app/features/products/product-editor.ts');
+  /* Desk: the Kostprijs KPI and the flow step, as a button (a span there ellipsizes). */
+  assert.match(desk, /<button class="desk-kpi desk-kpi--button" type="button" \(click\)="openHistory\(\)"[^>]*>\s*<small>Kostprijs<\/small>/);
+  assert.match(desk, /<button class="linklike pd-flow__link" type="button" \(click\)="openHistory\(\)">Kostprijshistoriek ›<\/button>/);
+  assert.equal(desk.match(/<app-product-cost-history-sheet /g)?.length, 1);
+  /* Catalogusprijs and Marge keep opening the build-up. */
+  assert.equal(desk.match(/\(click\)="openPriceDetail\(\)"/g)?.length, 2);
+  /* Phone: the Kostprijs and Bron tiles. */
+  assert.match(view, /\(click\)="openHistory\(\)">\s*<i class="tile-chev" aria-hidden="true"><\/i>\s*<span>Kostprijs incl\. rechten<\/span>/);
+  assert.match(view, /\(click\)="openHistory\(\)">\s*<span>Bron kostprijs<\/span>/);
+  assert.equal(view.match(/<app-product-cost-history-sheet /g)?.length, 1);
+  assert.match(view, /openPriceInfo\(product: Product\): void \{\s*this\.priceTab\.set\('build'\);/);
+  /* Editor: beside "Berekend uit", only for a saved product; no new styles there. */
+  assert.match(editor, /@if \(draft\(\)\.id !== null\) \{<button class="linklike" type="button" \(click\)="costHistoryOpen\.set\(true\)">Kostprijshistoriek ›<\/button>\}/);
+  assert.equal(editor.match(/<app-product-cost-history-sheet /g)?.length, 1);
+  for (const [name, text] of [['desk', desk], ['view', view], ['editor', editor]] as const) {
+    assert.equal(parseTemplate(templateOf(text), `${name}.html`).errors, null, name);
+  }
+});

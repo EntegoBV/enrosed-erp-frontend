@@ -1,5 +1,6 @@
 import { capitalize, DEFAULT_UNIT_KEY, otherBasisPrice, packagingSummary, priceBasisChange, priceBasisConfirmation, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import { ProductSalesSetup } from './product-sales-setup';
+import { ProductCostHistorySheet } from './product-cost-history-sheet';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -84,7 +85,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   imports: [KgPipe, 
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
-    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup,
+    DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
   ],
   template: `
     @if (!desktop.active()) {
@@ -832,7 +833,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <span class="num strong rose-text">{{ draft().landedCostEur | eur: 4 }}</span>
           </div>
           <div class="stat-row stat-row--muted">
-            <span>Berekend uit {{ draft().landedCostSource }}</span><span></span>
+            <span>Berekend uit {{ draft().landedCostSource }}</span>
+            <span>@if (draft().id !== null) {<button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Kostprijshistoriek ›</button>}</span>
           </div>
         } @else {
           <div class="alert alert--warn mt-8">
@@ -1187,6 +1189,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <button class="btn btn--primary" type="button" (click)="answer(true)">Opslaan</button>
           </div>
         </app-sheet>
+      }
+
+      @if (costHistoryOpen() && draft().id !== null) {
+        <app-product-cost-history-sheet [product]="savedDraft() ?? draft()" (closed)="costHistoryOpen.set(false)" />
       }
 
       @if (copying()) {
@@ -1859,6 +1865,8 @@ export class ProductEditor implements OnDestroy {
   readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
   readonly toolbarBusy = computed(() => this.formWriteBusy() || this.stockSaving() || this.takingCode());
   readonly mobileSectionsOpen = signal(false);
+  /** Kostprijshistoriek, opened from the landed cost in the Inkoop section. */
+  readonly costHistoryOpen = signal(false);
   readonly mobilePrimaryTabs = [{ id: 'identity', label: 'Basis' }, { id: 'media', label: 'Foto’s' }, { id: 'sales', label: 'Prijs' }];
   readonly mobileMoreActive = computed(() => !this.mobilePrimaryTabs.some(tab => tab.id === this.activeTab()));
   readonly mobileSectionLabel = computed(() => ({ packaging: 'Omdoos', purchasing: 'Inkoop', stock: 'Voorraad', agreements: 'Afspraken' } as Record<string, string>)[this.activeTab()] ?? 'Meer');
