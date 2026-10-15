@@ -28,7 +28,7 @@ import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { purchaseNacalc } from './purchase-nacalc-metrics';
-import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { landedUnit, landedUnitText, purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet, type PurchasePaymentDraft } from './purchase-payment-sheet';
 import { splitTransfer } from './purchase-transfer-split';
 import {
@@ -3773,16 +3773,20 @@ export class PurchaseEditor {
     return data ? purchaseNacalcSummary(data, this.paymentLedger(), this.familyOf()) : null;
   });
   /**
-   * How many products the header's landed average spans, as the
-   * Nacalculatie judges it: 1 when the container's per-unit figure means
-   * something (one product, or one family in one unit and set size), else
-   * the number of products; the header then says 'n producten · gem. …'.
+   * The header's landed cost per unit, judged as the Nacalculatie does: the
+   * container's figure when it means something (one product, or one family
+   * in one unit and set size; a set per set with its piece price), else the
+   * products' range ('2 producten · € 2,600 – € 8,867 per stuk'). Never an
+   * average over different products (Emre, 2026-10-15).
    */
-  readonly landedProducts = computed(() => {
+  readonly landedUnit = computed(() => {
+    const data = this.view();
+    if (!data) return null;
     const mix = this.nacalcSummary()?.mix;
-    if (mix && mix.count > 0) return mix.uniform ? 1 : mix.count;
-    return new Set((this.view()?.costing.lines ?? []).map(line => line.productId)).size;
+    const uniform = mix && mix.count > 0 ? mix.uniform : new Set(data.costing.lines.map(line => line.productId)).size <= 1;
+    return landedUnit(data.costing.lines, data.costing.totals.averageUnitEur, uniform, productId => this.setPiecesOf(productId));
   });
+  readonly landedUnitText = computed(() => { const up = new EurUpPipe(); return landedUnitText(this.landedUnit(), value => up.transform(value, 3)); });
   /** A product's family, so a container of one family in one unit keeps its per-unit figure (nacalcUnitMix). */
   private readonly familyOf = computed(() => {
     const families = new Map(this.products().map(product => [product.id, product.familyId ?? null] as const));

@@ -141,8 +141,8 @@ type DeskRow =
             <div class="desk-kpi desk-kpi--total">
               <small>Totaal geland</small>
               <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <!-- Several products have no one price per stuk: their count, the average only as 'gem.' (Emre 2026-10-15). -->
-              <span>@if (landedProducts() > 1) { {{ landedProducts() }} producten · gem. {{ data.costing.totals.averageUnitEur | eurUp: 3 }} } @else { {{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk }@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
+              <!-- Several products have no one price per stuk: their count and range, never an average over them (Emre 2026-10-15). -->
+              <span>{{ landedUnitText() }}@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
             </div>
             @let money = paymentLedger()?.summary;
             <button class="desk-kpi desk-kpi--button" type="button" (click)="showPayments()" [class.is-warn]="(money?.dueNowEur ?? 0) > 0">
@@ -739,7 +739,7 @@ type DeskRow =
                           <div class="desk-chain__row"><i>+</i><span>{{ cost.label }} <small>{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</small></span><b>{{ cost.amountEur | eur }}</b></div>
                         }
                       }
-                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>@if (landedProducts() > 1) { gem. {{ data.costing.totals.averageUnitEur | eurUp: 3 }} over {{ landedProducts() }} producten } @else { {{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk }</small></span><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></div>
+                      <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>{{ data.costing.totals.separateCostsEur ? separateCostsTotalLabel(data.costing.totals) : 'Totaal geland' }} <small>{{ landedUnitText() }}</small></span><b>{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</b></div>
                     </div>
                     @if (!isDdp() && data.costing.totals.goodsEur > 0) {
                       <div class="desk-overhead">
@@ -955,7 +955,7 @@ type DeskRow =
               <dl class="desk-facts mt-12">
                 <div><dt>Producten</dt><dd>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</dd></div>
                 <div><dt>Goederen</dt><dd>{{ data.costing.totals.goodsEur | eur }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></dd></div>
-                <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>@if (landedProducts() > 1) { gem. {{ data.costing.totals.averageUnitEur | eurUp: 3 }} over {{ landedProducts() }} producten } @else { {{ data.costing.totals.averageUnitEur | eurUp: 3 }} per stuk }</small></dd></div>
+                <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ landedUnitText() }}</small></dd></div>
                 <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
               </dl>
               @if (dirty()) { <p class="hint mt-8">Je openstaande wijzigingen worden hierbij mee opgeslagen.</p> }

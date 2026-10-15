@@ -209,30 +209,38 @@ export interface NacalcMixRow {
   pieceEur: number | null;
   set: { pieces: number; other: string } | null;
   valueEur: number;
+  /** The same with the Enrosed kost, per unit and per piece. */
+  pricingUnitEur: number | null;
+  pricingPieceEur: number | null;
+  /** The cost per ordered unit, against unitEur per usable unit once the container is received. */
+  orderedUnitEur: number | null;
 }
 
 /**
- * Per product instead of a mixed average (Emre, 2026-10-15: 'Per stuk
- * € 2,4473 · 6.920 bestelde stuks — want als meerdere producten dan klopt dat
- * niet'). The container's per-unit figure stands only when it holds one
- * product, or every line shares the product family, the sales unit and the
- * set size; otherwise the screens show 'n producten · € min – € max' (per set
+ * Per product, never a mixed average (Emre, 2026-10-15: 'Per stuk € 2,4473 ·
+ * 6.920 bestelde stuks — want als meerdere producten dan klopt dat niet').
+ * The container's per-unit figure stands only when it holds one product, or
+ * every line shares the product family, the sales unit and the set size;
+ * otherwise the screens show '2 producten · € min – € max per stuk' (per set
  * when every line is a set of one size, else per stuk with sets at their
- * piece price), the products by value, and the average as a sub-line only.
+ * piece price) and the products by value. No average over the products is
+ * shown anywhere, not even as a sub-line.
  */
 export interface NacalcUnitMix {
   uniform: boolean;
   /** Distinct products. */
   count: number;
-  /** The unit of the range and the average: per set when every line is a set of one size, else per stuk. */
+  /** The unit of the range: per set when every line is a set of one size, else per stuk. */
   unit: 'set' | 'stuk';
   minEur: number | null;
   maxEur: number | null;
+  /** The range with the Enrosed kost. */
+  pricingMinEur: number | null;
+  pricingMaxEur: number | null;
   /** Every product, the most valuable first; the cards show the first three. */
   rows: NacalcMixRow[];
-  /** The container average in `unit` and how many units it spreads over: 'gem. € 4,2168 over 7.976 st'. */
-  averageEur: number | null;
-  averageQuantity: number;
+  /** How many units (in `unit`, sets counted with their pieces per stuk) the figures rest on: '7.976 st'. */
+  quantity: number;
 }
 
 /**
@@ -261,29 +269,37 @@ export function nacalcUnitMix(
   const rows: NacalcMixRow[] = [...products.values()].map((group): NacalcMixRow => {
     const first = group[0];
     const set = first.salesUnit === 'DISPLAY';
-    const value = group.reduce((sum, line) => sum + Math.round((line.forecastExternalEur ?? 0) * 100), 0) / 100;
+    const sumCents = (pick: (line: PurchaseReconciliationLine) => number | null | undefined) =>
+      group.reduce((sum, line) => sum + Math.round((pick(line) ?? 0) * 100), 0) / 100;
+    const value = sumCents(line => line.forecastExternalEur);
+    const pricing = sumCents(line => line.forecastPricingEur);
     const quantity = group.reduce((sum, line) => sum + (line.unitCostQuantity ?? 0), 0);
+    const ordered = group.reduce((sum, line) => sum + (line.orderedQuantity ?? 0), 0);
     const pieces = group.reduce((sum, line) => sum + (line.pieceQuantity ?? line.unitCostQuantity ?? 0), 0);
     const unitEur = group.length === 1 ? first.forecastExternalUnitEur ?? null : quantity > 0 ? round4(value / quantity) : null;
     const pieceEur = group.length === 1 ? first.forecastExternalPieceEur ?? (set ? null : first.forecastExternalUnitEur ?? null)
       : pieces > 0 ? round4(value / pieces) : null;
+    const pricingUnitEur = group.length === 1 ? first.forecastPricingUnitEur ?? null : quantity > 0 && pricing > 0 ? round4(pricing / quantity) : null;
+    const pricingPieceEur = group.length === 1 ? first.forecastPricingPieceEur ?? (set ? null : first.forecastPricingUnitEur ?? null)
+      : pieces > 0 && pricing > 0 ? round4(pricing / pieces) : null;
     return { productId: first.productId ?? null, name: first.productName, unit: set ? 'set' : 'stuk', unitEur, pieceEur,
-      set: set ? { pieces: first.piecesPerUnit ?? 1, other: first.unitOther || 'stuks' } : null, valueEur: value };
+      set: set ? { pieces: first.piecesPerUnit ?? 1, other: first.unitOther || 'stuks' } : null, valueEur: value,
+      pricingUnitEur, pricingPieceEur, orderedUnitEur: ordered > 0 ? round4(value / ordered) : null };
   }).sort((left, right) => right.valueEur - left.valueEur || left.name.localeCompare(right.name, 'nl'));
-  const figures = rows.map(row => unit === 'set' ? row.unitEur : row.pieceEur).filter((value): value is number => value !== null && Number.isFinite(value));
-  const setBasis = totals?.setBasis ?? 'PIECE';
-  const averageEur = !totals ? null : unit === 'set' ? totals.forecastExternalUnitEur ?? null
-    : totals.forecastExternalPieceEur ?? (setBasis === 'PIECE' ? totals.forecastExternalUnitEur ?? null : null);
-  const averageQuantity = !totals ? 0 : unit === 'set' ? totals.unitCostQuantity ?? 0 : totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0;
+  const finite = (values: (number | null)[]) => values.filter((value): value is number => value !== null && Number.isFinite(value));
+  const figures = finite(rows.map(row => unit === 'set' ? row.unitEur : row.pieceEur));
+  const pricing = finite(rows.map(row => unit === 'set' ? row.pricingUnitEur : row.pricingPieceEur));
+  const quantity = !totals ? 0 : unit === 'set' ? totals.unitCostQuantity ?? 0 : totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0;
   return {
     uniform,
     count: totals?.productCount && totals.productCount > 0 ? totals.productCount : products.size,
     unit,
     minEur: figures.length ? Math.min(...figures) : null,
     maxEur: figures.length ? Math.max(...figures) : null,
+    pricingMinEur: pricing.length === figures.length && pricing.length ? Math.min(...pricing) : null,
+    pricingMaxEur: pricing.length === figures.length && pricing.length ? Math.max(...pricing) : null,
     rows,
-    averageEur,
-    averageQuantity,
+    quantity,
   };
 }
 
@@ -297,15 +313,20 @@ export function mixRange(mix: Pick<NacalcUnitMix, 'minEur' | 'maxEur'>): string 
   return Math.round(mix.minEur * 10000) === Math.round(mix.maxEur * 10000) ? eur4(mix.minEur) : `${eur4(mix.minEur)} – ${eur4(mix.maxEur)}`;
 }
 
-/** '2 producten · € 2,6339 – € 8,9465' (per stuk, or per set when every line is a set of one size). */
-export function mixHeadline(mix: Pick<NacalcUnitMix, 'count' | 'minEur' | 'maxEur'>): string {
-  return `${mix.count} producten · ${mixRange(mix)}`;
+/** The same range with the Enrosed kost: '€ 2,8314 – € 9,6175', or null when a product has no such figure. */
+export function mixPricingRange(mix: Pick<NacalcUnitMix, 'pricingMinEur' | 'pricingMaxEur'>): string | null {
+  return mix.pricingMinEur === null || mix.pricingMaxEur === null ? null : mixRange({ minEur: mix.pricingMinEur, maxEur: mix.pricingMaxEur });
 }
 
-/** 'gem. € 4,2168 over 7.976 st' or 'gem. € 31,6072 over 498 sets': the container average, kept as a sub-line. */
-export function mixAverage(mix: Pick<NacalcUnitMix, 'averageEur' | 'averageQuantity' | 'unit'>): string | null {
-  if (mix.averageEur === null || !Number.isFinite(mix.averageEur)) return null;
-  return `gem. ${eur4(mix.averageEur)} over ${mix.averageQuantity.toLocaleString('nl-BE')} ${mix.unit === 'set' ? 'sets' : 'st'}`;
+/** '2 producten · € 2,6339 – € 8,9465 per stuk' (per set when every line is a set of one size). */
+export function mixHeadline(mix: Pick<NacalcUnitMix, 'count' | 'minEur' | 'maxEur' | 'unit'>): string {
+  return `${mix.count} producten · ${mixRange(mix)} per ${mix.unit}`;
+}
+
+/** What the products' figures rest on, without any average: '7.976 st' or '498 sets'. Null without a count. */
+export function mixQuantity(mix: Pick<NacalcUnitMix, 'quantity' | 'unit'>): string | null {
+  if (!(mix.quantity > 0)) return null;
+  return `${mix.quantity.toLocaleString('nl-BE')} ${mix.unit === 'set' ? 'sets' : 'st'}`;
 }
 
 /** One product as the cards list it: '€ 31,6072 /set · € 2,6339 /stuk' or '€ 8,9465 /stuk'. */
@@ -314,6 +335,82 @@ export function mixRowFigure(row: Pick<NacalcMixRow, 'unit' | 'unitEur' | 'piece
     return [row.unitEur !== null ? eur4(row.unitEur) + ' /set' : null, row.pieceEur !== null ? eur4(row.pieceEur) + ' /stuk' : null].filter(Boolean).join(' · ') || '—';
   }
   return row.unitEur !== null ? eur4(row.unitEur) + ' /stuk' : '—';
+}
+
+/**
+ * The receipt's effect per product, never over the container: the products
+ * whose cost per usable unit moved, then how many did not. 'Long stem rose
+ * box: kost per bruikbare set € 31,6072, per bestelde set zou dit € 31,4808
+ * zijn (+ € 0,1264) · 1 ander product zonder verschil'. Null when no product
+ * has both figures.
+ */
+export function mixReceiptLine(mix: Pick<NacalcUnitMix, 'rows'>): string | null {
+  const known = mix.rows.filter(row => row.unitEur !== null && row.orderedUnitEur !== null);
+  if (!known.length) return null;
+  const moved = known.filter(row => Math.round(row.unitEur! * 10000) !== Math.round(row.orderedUnitEur! * 10000));
+  const words = moved.map(row => {
+    const delta = round4(row.unitEur! - row.orderedUnitEur!);
+    const sign = delta > 0 ? '+ ' : '− ';
+    return `${row.name}: kost per bruikbare ${row.unit} ${eur4(row.unitEur!)}, per bestelde ${row.unit} zou dit ${eur4(row.orderedUnitEur!)} zijn (${sign}${eur4(Math.abs(delta))})`;
+  });
+  const still = known.length - moved.length;
+  if (still) words.push(moved.length ? `${still} ${still === 1 ? 'ander product' : 'andere producten'} zonder verschil` : 'Geen product verandert van kost per eenheid');
+  return words.join(' · ');
+}
+
+/**
+ * The calculation's landed cost per unit as the order header and the Kosten
+ * chain say it (eurUp: 3 in the template). One product, or one family in one
+ * unit and set size (`uniform`, the Nacalculatie's rule): the container's own
+ * figure, per set with the piece price beside it for a set product
+ * ('€ 30,960 per set · € 2,580 per stuk'). Several products: their count and
+ * range, per set when every line is a set of one size, else per stuk with a
+ * set at its piece price ('2 producten · € 2,600 – € 8,867 per stuk'); never
+ * an average over different products. Null without lines.
+ */
+export interface LandedUnit {
+  mix: boolean;
+  /** Distinct products. */
+  count: number;
+  unit: 'set' | 'stuk';
+  /** One figure: the container's per-unit cost; several products: the cheapest and the dearest. */
+  unitEur: number;
+  maxEur: number;
+  /** The pieces of a set when the one figure is per set: its piece price is unitEur / setPieces. */
+  setPieces: number | null;
+}
+
+export function landedUnit(
+  lines: readonly { productId: number; quantity: number; totalEur: number }[], averageUnitEur: number, uniform: boolean,
+  setPiecesOf: (productId: number) => number | null,
+): LandedUnit | null {
+  if (!lines.length) return null;
+  const products = new Map<number, { quantity: number; totalEur: number }>();
+  for (const line of lines) {
+    const product = products.get(line.productId) ?? { quantity: 0, totalEur: 0 };
+    products.set(line.productId, { quantity: product.quantity + line.quantity, totalEur: product.totalEur + line.totalEur });
+  }
+  const sizes = new Set([...products.keys()].map(id => setPiecesOf(id) ?? 1));
+  const allSets = [...products.keys()].every(id => setPiecesOf(id) !== null) && sizes.size === 1;
+  const setPieces = allSets ? [...sizes][0] : null;
+  if (uniform || products.size === 1) {
+    return { mix: false, count: products.size, unit: setPieces ? 'set' : 'stuk', unitEur: averageUnitEur, maxEur: averageUnitEur, setPieces };
+  }
+  const figures = [...products.entries()].filter(([, product]) => product.quantity > 0)
+    .map(([id, product]) => product.totalEur / product.quantity / (allSets ? 1 : setPiecesOf(id) ?? 1));
+  if (!figures.length) return null;
+  return { mix: true, count: products.size, unit: allSets ? 'set' : 'stuk', unitEur: Math.min(...figures), maxEur: Math.max(...figures), setPieces: null };
+}
+
+/** The words of landedUnit with `money` as the template's eurUp: 3 writes it. */
+export function landedUnitText(unit: LandedUnit | null, money: (value: number) => string): string {
+  if (!unit) return '';
+  if (unit.mix) {
+    // The range never breaks inside itself in a narrow tile: no-break spaces, and a word joiner after the dash (a line may break after a dash).
+    const range = money(unit.unitEur) === money(unit.maxEur) ? money(unit.unitEur) : `${money(unit.unitEur)}\u00a0–\u2060\u00a0${money(unit.maxEur)}`;
+    return `${unit.count} producten · ${range} per ${unit.unit}`;
+  }
+  return unit.setPieces ? `${money(unit.unitEur)} per set · ${money(unit.unitEur / unit.setPieces)} per stuk` : `${money(unit.unitEur)} per stuk`;
 }
 
 export function purchaseNacalcSummary(

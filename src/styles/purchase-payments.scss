@@ -127,8 +127,8 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-todo__go{flex:none;color:var(--rose-dark);font-size:12.5px;font-style:normal;font-weight:650;white-space:nowrap}
 .pw-status{border-radius:0 0 17px 17px}
 .pw-when-mid,.pw-when-narrow,.pw-when-tiny{display:none}
-/* the hero tile wraps instead of clipping its money */
-app-purchase-desk .desk-kpi--button span{white-space:normal;line-height:1.3}
+/* the hero tiles wrap instead of clipping their money ('2 producten · € 2,600 – € 8,867 per stuk' under Totaal geland) */
+app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:normal;line-height:1.3}
 /* the side sticks, and scrolls inside its box once three cards outgrow the viewport (nothing fixed lives in it) */
 @container pw (min-width:1100px){
  .pw-content{grid-template-columns:minmax(0,1fr) 300px;align-items:start}

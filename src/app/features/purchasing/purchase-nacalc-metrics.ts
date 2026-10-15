@@ -813,9 +813,9 @@ export function nacalcUnitBasis(head: NacalcHeadline): string {
 }
 
 /**
- * What the average of a container with several products rests on, after
- * 'gem. € 4,2168 over 7.976 st': 'bruikbaar · sets als 12 rozen geteld ·
- * incl. inspectie · DDP' (the count already stands in the average).
+ * What the figures of a container with several products rest on, after its
+ * count ('7.976 st'): 'bruikbaar · sets als 12 rozen geteld · incl. inspectie
+ * · DDP'. No average over the products is shown.
  */
 export function nacalcMixBasis(head: NacalcHeadline): string {
   const suffix = (head.includesInspection ? ' · incl. inspectie' : '') + (head.ddp ? ' · DDP' : '');

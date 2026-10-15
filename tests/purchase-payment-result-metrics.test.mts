@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderView, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
 import {
-  NACALC_LABEL, NACALC_PILL, mixAverage, mixHeadline, mixRowFigure, nacalcKind, nacalcUnitMix, purchaseNacalcSummary, purchasePaymentResult,
+  NACALC_LABEL, NACALC_PILL, landedUnit, landedUnitText, mixHeadline, mixPricingRange, mixQuantity, mixReceiptLine, mixRowFigure, nacalcKind, nacalcUnitMix,
+  purchaseNacalcSummary, purchasePaymentResult,
 } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 import type { PurchaseReconciliationLine, PurchaseReconciliationTotals } from '../src/app/core/api/models.ts';
 
@@ -285,7 +286,7 @@ test('the nacalculatie summary carries the server forecast and variance next to 
     kind: 'final', label: 'Eindkost', pill: { label: 'Definitief', tone: 'ok' }, openEur: 0, reviewEur: 0,
     unitEur: null, unitQuantity: 0, unitBasis: 'ORDERED', unitWord: 'stuk', pieceEur: null, pieceQuantity: 0, setPieces: null,
     settledSavingsEur: 60, settledOverrunsEur: 0, additionalCostsEur: 0,
-    mix: { uniform: true, count: 0, unit: 'stuk', minEur: null, maxEur: null, rows: [], averageEur: null, averageQuantity: 0 },
+    mix: { uniform: true, count: 0, unit: 'stuk', minEur: null, maxEur: null, pricingMinEur: null, pricingMaxEur: null, rows: [], quantity: 0 },
   });
   const provisional = purchaseNacalcSummary(purchase([stream({ paidEur: 300, remainingEur: 700 })]))!;
   assert.deepEqual([provisional.finalized, provisional.forecastEur, provisional.varianceEur, provisional.netResultEur], [false, 1_000, 0, 0]);
@@ -362,7 +363,7 @@ function line(productId: number, name: string, values: Partial<PurchaseReconcili
 }
 const totals = (values: Partial<PurchaseReconciliationTotals> = {}) => ({ forecastExternalUnitEur: 2.4473, unitCostQuantity: 6920, ...values }) as PurchaseReconciliationTotals;
 
-test('one product keeps its per-unit figure; several get their range, the products by value and the average only as a sub-line', () => {
+test('one product keeps its per-unit figure; several get their range and the products by value, never an average', () => {
   const one = nacalcUnitMix({ lines: [line(10, 'Rozenschaal Roze')], totals: totals() });
   assert.deepEqual([one.uniform, one.count], [true, 1]);
   const mixed = nacalcUnitMix({ lines: [line(10, 'Rozenschaal Roze', { forecastExternalEur: 2000, forecastExternalUnitEur: 2 }),
@@ -370,8 +371,9 @@ test('one product keeps its per-unit figure; several get their range, the produc
     line(13, 'Doos', { forecastExternalEur: 1000, forecastExternalUnitEur: 1 })], totals: totals() });
   assert.deepEqual([mixed.uniform, mixed.count, mixed.unit, mixed.minEur, mixed.maxEur], [false, 4, 'stuk', 0.5, 3.1]);
   assert.deepEqual(mixed.rows.slice(0, 3).map(row => row.name), ['Vaas glas', 'Rozenschaal Roze', 'Doos'], 'the most valuable first');
-  assert.equal(plain(mixHeadline(mixed)), '4 producten · € 0,5000 – € 3,1000');
-  assert.equal(plain(mixAverage(mixed)), 'gem. € 2,4473 over 6.920 st');
+  assert.equal(plain(mixHeadline(mixed)), '4 producten · € 0,5000 – € 3,1000 per stuk');
+  assert.equal(plain(mixQuantity(mixed)), '6.920 st', 'the count the figures rest on, no average beside it');
+  assert.equal('averageEur' in mixed, false, 'the mix carries no container average at all');
   assert.equal(plain(mixRowFigure(mixed.rows[0])), '€ 3,1000 /stuk');
 });
 
@@ -387,11 +389,12 @@ test('one family in one unit and set size keeps the container figure; sets and p
     line(12, 'Rozenschaal Roze', { forecastExternalEur: 17892.93, forecastExternalUnitEur: 8.9465 })],
     totals: totals({ setBasis: 'MIXED', forecastExternalUnitEur: 13.334, forecastExternalPieceEur: 4.2168, unitCostPieceQuantity: 7976 }) });
   assert.deepEqual([mixed.unit, mixed.minEur, mixed.maxEur], ['stuk', 2.6339, 8.9465], 'a set at its piece price');
-  assert.equal(plain(mixAverage(mixed)), 'gem. € 4,2168 over 7.976 st');
+  assert.equal(plain(mixQuantity(mixed)), '7.976 st');
   assert.equal(plain(mixRowFigure(mixed.rows.find(row => row.unit === 'set')!)), '€ 31,6072 /set · € 2,6339 /stuk');
   const sets = nacalcUnitMix({ lines: [line(10, 'Box A', { ...set, forecastExternalUnitEur: 30 }), line(14, 'Box B', { ...set, forecastExternalUnitEur: 33 })],
     totals: totals({ setBasis: 'DISPLAY', forecastExternalUnitEur: 31.5, unitCostQuantity: 498 }) });
-  assert.deepEqual([sets.uniform, sets.unit, sets.minEur, sets.maxEur, plain(mixAverage(sets))], [false, 'set', 30, 33, 'gem. € 31,5000 over 498 sets']);
+  assert.deepEqual([sets.uniform, sets.unit, sets.minEur, sets.maxEur, plain(mixQuantity(sets)), plain(mixHeadline(sets))],
+    [false, 'set', 30, 33, '498 sets', '2 producten · € 30,0000 – € 33,0000 per set']);
 });
 
 test('the summary card carries the mix, with the family of each product; the server\'s word wins when it sends one', () => {
@@ -403,4 +406,38 @@ test('the summary card carries the mix, with the family of each product; the ser
   assert.deepEqual([purchaseNacalcSummary(view, null, () => 3)!.mix.uniform, purchaseNacalcSummary(view)!.mix.count], [false, 2]);
   Object.assign(view.reconciliation!.totals, { containerAverage: true });
   assert.equal(purchaseNacalcSummary(view)!.mix.uniform, true);
+});
+
+/* ---- round 3: no mixed average anywhere (Emre: the container-wide 'Per stuk' 'klopt niet' with several products) */
+
+test('the Kostbasis range comes from each product with its Enrosed kost; the receipt speaks per product', () => {
+  const set = { salesUnit: 'DISPLAY' as const, piecesPerUnit: 12, unitOther: 'rozen' };
+  const mixed = nacalcUnitMix({ lines: [
+    line(10, 'Long stem rose box display Rood', { ...set, orderedQuantity: 500, unitCostQuantity: 498, forecastExternalEur: 15740.4, forecastExternalUnitEur: 31.6072,
+      forecastExternalPieceEur: 2.6339, forecastPricingUnitEur: 33.9778, forecastPricingPieceEur: 2.8315 }),
+    line(12, 'Rozenschaal Roze', { orderedQuantity: 2000, unitCostQuantity: 2000, forecastExternalEur: 17892.93, forecastExternalUnitEur: 8.9465, forecastPricingUnitEur: 9.6175 })],
+    totals: totals({ setBasis: 'MIXED', unitCostPieceQuantity: 7976 }) });
+  assert.equal(plain(mixPricingRange(mixed)), '€ 2,8315 – € 9,6175', 'per stuk with the Enrosed kost, a set at its piece price');
+  assert.equal(plain(mixReceiptLine(mixed)),
+    'Long stem rose box display Rood: kost per bruikbare set € 31,6072, per bestelde set zou dit € 31,4808 zijn (+ € 0,1264) · 1 ander product zonder verschil');
+  const clean = nacalcUnitMix({ lines: [line(12, 'A'), line(13, 'B')], totals: totals() });
+  assert.equal(mixReceiptLine(clean), 'Geen product verandert van kost per eenheid');
+  const noPricing = nacalcUnitMix({ lines: [line(12, 'A', { forecastPricingUnitEur: 2.1 }), line(13, 'B')], totals: totals() });
+  assert.equal(mixPricingRange(noPricing), null, 'a product without the figure: no range that would hide it');
+});
+
+test("the order header: one product keeps its figure (a set per set with its piece price), several their range, never 'gem.'", () => {
+  const up = (value: number) => (Math.ceil(value * 1000 - 1e-9) / 1000).toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 3 });
+  const sets = (id: number) => id === 301 ? 12 : null;
+  const display = { productId: 301, quantity: 500, totalEur: 15600 }, bowls = { productId: 302, quantity: 2000, totalEur: 17733.33 };
+  const mixed = landedUnit([display, bowls], 13.3333, false, sets)!;
+  assert.deepEqual([mixed.mix, mixed.count, mixed.unit], [true, 2, 'stuk']);
+  assert.equal(plain(landedUnitText(mixed, up))!.replace(/\u2060/g, ''), '2 producten · € 2,600 – € 8,867 per stuk', 'the display at its piece price, beside the bowls');
+  assert.match(landedUnitText(mixed, up), /€\u00a02,600\u00a0–\u2060\u00a0€/, 'the range never breaks inside itself');
+  const one = landedUnit([{ productId: 301, quantity: 400, totalEur: 12384 }], 30.96, true, sets);
+  assert.equal(plain(landedUnitText(one, up)), '€ 30,960 per set · € 2,580 per stuk', "PO-30's set price is per set");
+  assert.equal(plain(landedUnitText(landedUnit([bowls], 8.8667, true, sets), up)), '€ 8,867 per stuk');
+  const family = landedUnit([{ productId: 302, quantity: 1000, totalEur: 8000 }, { productId: 303, quantity: 1000, totalEur: 9000 }], 8.5, true, sets);
+  assert.equal(plain(landedUnitText(family, up)), '€ 8,500 per stuk', 'one family in one unit keeps its figure');
+  assert.equal(landedUnit([], 0, true, sets), null);
 });

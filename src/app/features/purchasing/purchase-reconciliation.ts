@@ -9,6 +9,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE } from './purchase-payment-ledger';
 import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
+import { mixPricingRange, mixRange, nacalcUnitMix, type NacalcUnitMix } from './purchase-payment-result-metrics';
 
 /**
  * The server-owned settlement picture in Analyses › Inkoop (Containerafrekening):
@@ -71,16 +72,29 @@ import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
         }
 
         <dl class="wk-equation reconciliation__unit">
-          <div>
-            <dt>{{ t.finalized ? 'Externe kost per stuk' : 'Verwachte externe kost per stuk' }}<span class="wk-td__sub">{{ t.unitCostQuantity | num }} {{ t.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbaar ontvangen' : 'bestelde' }} stuks, incl. inspectie</span></dt>
-            <dd>@if (t.forecastExternalUnitEur !== null) { {{ t.forecastExternalUnitEur | eur: 4 }} }</dd>
-          </div>
+          @let mix = unitMix(r);
+          @if (mix.uniform) {
+            <div>
+              <dt>{{ t.finalized ? 'Externe kost per stuk' : 'Verwachte externe kost per stuk' }}<span class="wk-td__sub">{{ t.unitCostQuantity | num }} {{ t.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbaar ontvangen' : 'bestelde' }} stuks, incl. inspectie</span></dt>
+              <dd>@if (t.forecastExternalUnitEur !== null) { {{ t.forecastExternalUnitEur | eur: 4 }} }</dd>
+            </div>
+          } @else {
+            <!-- Several products have no one price per stuk: their range, each one under Per product; never an average over them. -->
+            <div>
+              <dt>{{ t.finalized ? 'Externe kost' : 'Verwachte externe kost' }} · {{ mix.count }} producten<span class="wk-td__sub">per {{ mix.unit }}, incl. inspectie · per product hieronder</span></dt>
+              <dd>{{ range(mix) }}</dd>
+            </div>
+          }
           @if (t.receiptRecorded && (t.damagedQuantity || t.receivedQuantity !== t.orderedQuantity)) {
             <div class="is-sub"><dt>{{ t.orderedQuantity | num }} besteld · {{ t.receivedQuantity | num }} ontvangen · {{ t.damagedQuantity | num }} beschadigd</dt><dd></dd></div>
           }
           <div class="is-sub"><dt>Interne Enrosed opslag</dt><dd>{{ t.internalMarkupEur | eur }}</dd></div>
           <div class="is-sub"><dt>Kostbasis incl. opslag</dt><dd>{{ t.forecastPricingEur | eur }}</dd></div>
-          <div class="is-sub"><dt>Per stuk incl. opslag</dt><dd>@if (t.forecastPricingUnitEur !== null) { {{ t.forecastPricingUnitEur | eur: 4 }} }</dd></div>
+          @if (mix.uniform) {
+            <div class="is-sub"><dt>Per stuk incl. opslag</dt><dd>@if (t.forecastPricingUnitEur !== null) { {{ t.forecastPricingUnitEur | eur: 4 }} }</dd></div>
+          } @else {
+            <div class="is-sub"><dt>Per {{ mix.unit }} incl. opslag · {{ mix.count }} producten</dt><dd>{{ pricingRange(mix) ?? '—' }}</dd></div>
+          }
         </dl>
         <p class="reconciliation__note">De opslag is geen betaling en past prijzen of offertes niet aan.</p>
 
@@ -138,6 +152,11 @@ export class PurchaseReconciliation {
   readonly abs = Math.abs;
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+
+  /** One product (or the server's like products) keeps the container's per-stuk figure; several get their range. */
+  unitMix(r: Reconciliation): NacalcUnitMix { return nacalcUnitMix(r); }
+  range(mix: NacalcUnitMix): string { return mixRange(mix); }
+  pricingRange(mix: NacalcUnitMix): string | null { return mixPricingRange(mix); }
 
   /** Betaald + open lands on the forecast, so the '=' is honest; a stale response can miss it. */
   closes(r: Reconciliation): boolean {

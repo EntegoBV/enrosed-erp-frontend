@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { formatEur } from './purchase-payment-menus';
-import { mixAverage, mixHeadline, mixRowFigure, type NacalcMixRow, type NacalcTone, type PurchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { mixHeadline, mixQuantity, mixRowFigure, type NacalcMixRow, type NacalcTone, type PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 /**
  * The nacalculatie in four lines: the headline figure with its state, the
@@ -26,8 +26,8 @@ import { mixAverage, mixHeadline, mixRowFigure, type NacalcMixRow, type NacalcTo
               <div><dt>Verschil met afspraak</dt><dd [class.wk-amount--muted]="s.varianceEur === 0" [class.wk-amount--warn]="s.varianceEur > 0" [class.wk-amount--in]="s.varianceEur < 0">{{ variance(s) }}</dd></div>
             }
             @if (!s.mix.uniform) {
-              <!-- Several products: their range and the products by value; the container average only as a sub-line (no mixed 'per stuk'). -->
-              <div class="nc-summary__mix"><dt>Per product · per {{ s.mix.unit }}</dt><dd>{{ headline(s) }}@if (average(s); as line) { <small class="nc-summary__basis">{{ line }}</small> }</dd></div>
+              <!-- Several products: their range and the products by value, never an average over them. -->
+              <div class="nc-summary__mix"><dt>Per product</dt><dd>{{ headline(s) }}@if (quantity(s); as line) { <small class="nc-summary__basis">{{ line }} {{ s.unitBasis === 'USABLE_RECEIVED' ? 'bruikbaar' : 'besteld' }}</small> }</dd></div>
               @for (row of s.mix.rows.slice(0, 3); track row.name) {
                 <div class="is-sub nc-summary__product"><dt>{{ row.name }}</dt><dd>{{ figure(row) }}</dd></div>
               }
@@ -60,7 +60,7 @@ export class PurchaseNacalcSummaryCard {
   readonly open = output<void>();
 
   headline(s: PurchaseNacalcSummary): string { return mixHeadline(s.mix); }
-  average(s: PurchaseNacalcSummary): string | null { return mixAverage(s.mix); }
+  quantity(s: PurchaseNacalcSummary): string | null { return mixQuantity(s.mix); }
   figure(row: NacalcMixRow): string { return mixRowFigure(row); }
 
   pill(tone: NacalcTone): string {

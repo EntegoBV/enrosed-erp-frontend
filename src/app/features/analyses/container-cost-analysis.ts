@@ -5,7 +5,7 @@ import type { PurchaseOrderView } from '../../core/api/models';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { PurchaseReconciliation } from '../purchasing/purchase-reconciliation';
 import { ContainerCostFilter, containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
-import { purchasePaymentResult } from '../purchasing/purchase-payment-result-metrics';
+import { mixRange, nacalcUnitMix, purchasePaymentResult, type NacalcUnitMix } from '../purchasing/purchase-payment-result-metrics';
 import { containerPaymentResultTotals } from './container-payment-result-metrics';
 
 /** Payment reconciliation remains independent of the receipt-quality date filter below it. */
@@ -109,7 +109,13 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                         } @else { <span>—</span><small>Niet meegeteld</small> }
                       } @else { <span>—</span><small>Niet beschikbaar</small> }
                     </td>
-                    <td data-label="Per stuk">{{ row.reconciliation.totals.forecastExternalUnitEur === null ? '—' : (row.reconciliation.totals.forecastExternalUnitEur | eur: 4) }}<small>{{ row.reconciliation.totals.unitCostQuantity | num }} {{ row.reconciliation.totals.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></td>
+                    @let mix = unitMix(row.reconciliation);
+                    @if (mix.uniform) {
+                      <td data-label="Per stuk">{{ row.reconciliation.totals.forecastExternalUnitEur === null ? '—' : (row.reconciliation.totals.forecastExternalUnitEur | eur: 4) }}<small>{{ row.reconciliation.totals.unitCostQuantity | num }} {{ row.reconciliation.totals.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></td>
+                    } @else {
+                      <!-- Several products: their range per {{ mix.unit }}, never an average over them. -->
+                      <td data-label="Per stuk">{{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small></td>
+                    }
                     <td class="container-cost-table__actions"><button class="btn btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + row.view.order.number" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
                   </tr>
                 }
@@ -335,6 +341,9 @@ export class ContainerCostAnalysis {
   readonly expanded = computed(() => this.rows().find((row) => row.view.order.id === this.expandedId()) ?? null);
   readonly unavailable = computed(() => this.purchases().filter((row) => !row.reconciliation).length);
   toggle(id: number): void { this.expandedId.update((current) => current === id ? null : id); }
+  /** One product (or the server's like products) keeps the container's per-stuk figure; several get their range, never an average. */
+  unitMix(reconciliation: NonNullable<PurchaseOrderView['reconciliation']>): NacalcUnitMix { return nacalcUnitMix(reconciliation); }
+  range(mix: NacalcUnitMix): string { return mixRange(mix); }
   orderStatus(status: PurchaseOrderView['order']['status']): string {
     return { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' }[status];
   }
