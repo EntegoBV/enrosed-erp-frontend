@@ -7,11 +7,11 @@ import { computed, linkedSignal, signal, untracked } from '@angular/core';
 import { bankAmountsMatch, bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { appendPaymentProofs, PROOF_ACCEPT, proofFileKey } from '../src/app/shared/payment-proof-selection.ts';
 import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
-import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
+import { amountInputText, parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { dayText, invoiceCandidates, invoiceNumberKey, invoiceOption, invoicesOf, resolveInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
 import {
-  carveForeignText, carveText, foreignLinkWarning, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
-  transferCompanions,
+  adjustConsequence, carveForeignText, carveText, foreignLinkWarning, growLinkPlan, growPreview, inspectionSplitBlocked, linkChange, pendingAlreadyLinked,
+  pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
 
 /*
@@ -50,7 +50,7 @@ function mount() {
     DesktopViewport: tokens.viewport, BankAccountsStore: tokens.accounts,
     PAYEE_ORDER, PAYEE_SHORT, PAYEE_LABEL, DUE_MOMENT, FREIGHT_TERM_LABEL, parsePurchasePaymentAmount, dayText, invoiceCandidates, invoiceOption,
     invoicesOf, resolveInvoice, carveText, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
-    invoiceNumberKey, carveForeignText, foreignLinkWarning,
+    invoiceNumberKey, carveForeignText, foreignLinkWarning, adjustConsequence, growLinkPlan, growPreview, amountInputText,
     appendPaymentProofs, PROOF_ACCEPT, proofFileKey, bankAmountsMatch, bankTransactionDay,
     formatEur: (value: number) => value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' }),
   });
@@ -253,4 +253,61 @@ test("'Bestand bij de factuur' on an inspection paid via the supplier remembers 
   const file = new File(['x'], 'ci-118.pdf');
   sheet.chooseInvoiceFile({ target: { files: [file], value: 'x' } });
   assert.deepEqual([sheet.draft().invoiceFile, sheet.draft().invoiceFileFor], [file, 7]);
+});
+
+/* ---- round 3 (screen check of round 2): one more transaction on a payment fully on the bank, the consequence before the choice, the proof head */
+
+test("a payment fully on the bank offers 'Transactie toevoegen': one transaction, said before it is saved, the payment grows by it", () => {
+  const { sheet } = mount();
+  const linked = { ...goods, id: 201, amount: 12000, amountEur: 12000, paidOn: '2026-10-02', bankStatementLineId: 680 };
+  sheet.draft.set(draft(linked));
+  sheet.parts.set([part(linked)]);
+  sheet.bankLines.set([{ ...line610, id: 680, amountEur: -12000 }]);
+  sheet.termStanding.set({ label: '30% bij bestelling', term: true, plannedEur: 12000, paidEur: 12000 });
+  assert.deepEqual([sheet.allLinked(), sheet.addOffered(), sheet.provenByBank()], [true, true, true]);
+  assert.equal(template.includes('alle transacties gekoppeld'), false, 'no sentence on every finished payment');
+  sheet.startAdd();
+  assert.deepEqual([sheet.draft().addTransfer, sheet.draft().pendingPartId, sheet.addOffered()], [true, 201, false]);
+  sheet.pickAdded({ ...line610, id: 695, amountEur: -500, bookedAt: '2026-10-08T08:30:00Z' });
+  assert.deepEqual(clone(sheet.pendingPlan()), { kind: 'grow', lineId: 695, addEur: 500 });
+  assert.equal(plain(sheet.growText()), 'De betaling wordt € 12.500,00 (was € 12.000,00); de termijn komt € 500,00 boven de afspraak.');
+  assert.equal(sheet.changeRows().length, 0, 'no carve, no Wat verandert of a part');
+  assert.equal(sheet.saveBlocked(), false);
+  assert.match(template, /pay\.addTransfer && shownPending\(\)\.length \? 'Transactie toevoegen'/);
+  sheet.cancelPending();
+  assert.deepEqual([sheet.draft().addTransfer, sheet.draft().pendingLines.length, sheet.addOffered()], [false, 0, true]);
+  // The old marker without a hard link, or a credit offset: nothing to grow on the server.
+  sheet.parts.set([{ ...part(linked), bankStatementLineId: null, onBank: true }]);
+  assert.equal(sheet.addOffered(), false);
+});
+
+test("'Bedrag aanpassen' says what it does to the term; the question has no Annuleren of its own", () => {
+  const { sheet } = mount();
+  const open = { ...goods, id: 201, amount: 12000, amountEur: 12000, paidOn: '2026-10-02', bankStatementLineId: null };
+  sheet.draft.set(draft(open));
+  sheet.parts.set([part(open)]);
+  sheet.orderPayments.set([open]);
+  sheet.termStanding.set({ label: '30% bij bestelling', term: true, plannedEur: 12000, paidEur: 12000 });
+  sheet.pickLine(201, { ...line610, id: 680, amountEur: -12300 });
+  assert.equal(plain(sheet.adjustText()), 'De termijn komt dan € 300,00 boven de afspraak (te veel betaald).');
+  sheet.termStanding.set({ label: '30% bij bestelling', term: true, plannedEur: 12500, paidEur: 12000 });
+  assert.equal(plain(sheet.adjustText()), 'De betaling volgt de transactie; daarna nog open voor de termijn: € 200,00.');
+  const question = template.slice(template.indexOf('pay-sheet__surplusopts'), template.indexOf('@if (foreignPick(); as foreign)'));
+  assert.equal(question.includes('Annuleren'), false, "one 'Annuleren': the footer's");
+  assert.match(question, /\{\{ adjustText\(\) \}\}/);
+});
+
+test('on the bank the transaction is the proof: the head says so and the files are optional; a linked USD payment shows its bank rate', () => {
+  const { sheet } = mount();
+  const usd = { ...goods, id: 301, amount: 4320, currency: 'USD', amountEur: 3760, paidOn: '2026-09-18', bankStatementLineId: 690 };
+  sheet.draft.set(draft(usd, { amountInput: '4.320,00', amountEur: 3760, amountEurInput: '3.760,00' }));
+  sheet.parts.set([part(usd)]);
+  sheet.rateEur.set(3715.2);
+  assert.deepEqual([sheet.provenByBank(), sheet.linkedSingle()], [true, true]);
+  assert.equal(sheet.bankRate(), 'Koers 0,8704 (bank)', 'instead of the order-rate hint');
+  assert.match(template, /Bewijs: transactie ✓/);
+  assert.match(template, /bestanden \(optioneel\) \{\{ fileCount\(\) \}\}\/\{\{ fileRoom\(\) \}\}/);
+  sheet.parts.set([{ ...part(usd), bankStatementLineId: null, onBank: false }]);
+  assert.deepEqual([sheet.provenByBank(), sheet.bankRate()], [false, null]);
+  assert.equal(sheet.amountText(12000), '12.000,00');
 });

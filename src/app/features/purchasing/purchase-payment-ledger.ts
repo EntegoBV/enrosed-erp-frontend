@@ -784,11 +784,26 @@ function payeeBasis(payee: Payee, view: PurchaseOrderView, hasPlan: boolean, pla
   switch (payee) {
     case 'SUPPLIER': return (cif ? SUPPLIER_GOODS_CIF : SUPPLIER_GOODS) + ' · ' + (hasPlan ? planLabel : 'geen betaalplan');
     case 'LOGISTICS': return view.payable?.ddp ? 'Inbegrepen in de prijs (DDP)'
-      : cif ? 'Raming uit Kosten: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)'
-      : 'Raming uit Kosten: vracht, lokale kosten en invoerrechten';
-    case 'SEPARATE': return 'Raming uit Kosten: inspectie en andere kosten' + (view.order.inspectionViaSupplier ? ' · via leverancier' : '');
+      : cif ? 'Afspraak: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)'
+      : 'Afspraak: vracht, lokale kosten en invoerrechten';
+    case 'SEPARATE': return separateBasis(view);
     default: return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
   }
+}
+
+/**
+ * What the Afspraak of Inspectie & andere kosten is made of, in the owner's
+ * word (never 'raming'): 'Afspraak inspectie € 300,00 · via leverancier',
+ * 'Afspraak inspectie € 300,00 + andere € 120,00'. The amounts come from
+ * Kosten, as the composition rows list them.
+ */
+function separateBasis(view: PurchaseOrderView): string {
+  const totals = view.costing.totals;
+  const inspection = cents(totals.inspectionEur);
+  const other = cents(totals.otherCostsEur ?? (totals.otherCosts ?? []).reduce((sum, cost) => sum + (cost.amountEur ?? 0), 0));
+  const parts = inspection && other ? `inspectie ${eur(inspection)} + andere ${eur(other)}`
+    : inspection ? `inspectie ${eur(inspection)}` : other ? `andere kosten ${eur(other)}` : 'inspectie en andere kosten';
+  return `Afspraak ${parts}` + (view.order.inspectionViaSupplier ? ' · via leverancier' : '');
 }
 
 function legacyAgreed(payee: Payee, view: PurchaseOrderView): number {

@@ -51,11 +51,12 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-section__title{margin:0 0 8px;font-size:13.5px;font-weight:700;scroll-margin-top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px)}.pw-section__head>.pw-section__title{margin:0}
 .pw-payees,.pw-ledger{border:1px solid var(--line)}
 /* chev · Ontvanger · Afspraak · Betaald · [Verschil] · Open · Nu · Status · Acties. The actions column holds
-   'Afrekenen…' and the ⋯ side by side (122 px), so a button never lies over the status. With Verschil the
-   name and the amounts keep a floor (a whole 'Leverancier', € 31.048,54) and Verschil takes less; Status
-   gets what is left and its pill wraps there. */
-.pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 122px}
-.pw-payees--diff{--wk-cols:28px minmax(112px,1.5fr) repeat(2,minmax(78px,1fr)) minmax(64px,.8fr) minmax(78px,1fr) minmax(78px,1fr) minmax(0,1.4fr) 122px}
+   'Afrekenen…' and the ⋯ side by side (122 px), so a button never lies over the status. Every column keeps a
+   floor: the amounts a whole bold total (€ 40.300,00 is 82 px), the name a whole 'Leverancier', and Status
+   its longest word with the pill's padding ('verrekend', '€ 28.000,00' under it), so a pill wraps between
+   words only, never inside one. With Verschil the gaps narrow and Status takes what is left over the floors. */
+.pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(84px,1fr)) minmax(84px,1fr) minmax(84px,1.4fr) 122px}
+.pw-payees--diff{--wk-gap:8px;--wk-cols:28px minmax(112px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(84px,1fr) minmax(84px,3fr) 122px}
 .pw-payees .wk-th{line-height:1.2;white-space:normal}
 /* Datum · Ontvanger · Omschrijving · Bedrag · In euro · Afrekening · Bewijs · Acties */
 .pw-ledger{--wk-cols:92px 100px minmax(0,1.6fr) minmax(104px,1fr) minmax(100px,1fr) minmax(0,1.1fr) 140px 110px}
@@ -75,8 +76,8 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw .wk-tr:hover .pw-more,.pw .wk-tr:focus-within .pw-more,.pw .wk-tr[aria-selected=true] .pw-more{opacity:1}
 .pw-payee{display:flex;align-items:center;gap:10px;min-width:0}
 .pw-payee__copy{display:grid;min-width:0}.pw-payee__copy b{font-weight:650;white-space:normal}
-/* what the agreement rests on, whole: '… · via leverancier' is never cut */
-.pw-payee__copy>.pw-basis{white-space:normal;overflow-wrap:break-word}
+/* what the agreement rests on, in two lines at most (the title has it whole): short words, so '… · via leverancier' fits */
+.pw-payee__copy>.pw-basis{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;overflow-wrap:normal}
 .pw-tile{display:grid;flex:none;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
 .pw-chev{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .pw-chev:hover{background:var(--surface-2);color:var(--ink)}
@@ -114,7 +115,8 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-payees .wk-td--wrap .pw-status-sub{white-space:normal;overflow:visible}
 /* a long status ('Betaald · € 0,50 te veel') wraps inside its pill instead of running out of the column; a netted
    term's pill keeps 'Betaald · verrekend' and 'met 30% bij bestelling' goes under it (LedgerTerm.statusSplit) */
-.pw-payees :is(.wk-td--wrap,.pw-when-tiny)>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;line-height:1.2;text-align:left}
+.pw-payees :is(.wk-td--wrap,.pw-when-tiny)>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;overflow-wrap:normal;line-height:1.2;text-align:left}
+.pw-payees .wk-td--wrap .pw-status-sub{overflow-wrap:normal}
 .pw-open-sub{display:block}
 .pw-proof{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 6px;overflow:visible}
 .pw-bank{display:inline-flex;align-items:center;gap:4px;color:var(--ok);white-space:nowrap}
@@ -144,8 +146,8 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
    (880 rather than 900 so a 1536 px laptop, at 898 px of main column, keeps the real column) */
 @container pw-main (max-width:879.98px){
  .pw [data-pw-hide~=mid]{display:none}.pw .pw-when-mid{display:inline-flex}.pw .wk-td__sub.pw-when-mid{display:block}
- .pw-payees{--wk-cols:28px minmax(0,2fr) repeat(3,minmax(96px,1fr)) minmax(0,1.1fr) 122px}
- .pw-payees--diff{--wk-cols:28px minmax(112px,1.7fr) repeat(2,minmax(96px,1fr)) minmax(80px,.8fr) minmax(96px,1fr) minmax(0,1.2fr) 122px}
+ .pw-payees{--wk-cols:28px minmax(0,2fr) repeat(3,minmax(96px,1fr)) minmax(84px,1.1fr) 122px}
+ .pw-payees--diff{--wk-cols:28px minmax(112px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(84px,3fr) 122px}
  .pw-ledger{--wk-cols:92px minmax(0,1fr) 120px 150px 104px}}
 /* narrow: Verschil and the text buttons go; the ⋯ carries every action */
 @container pw-main (max-width:759.98px){
@@ -280,6 +282,10 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 /* Betaalbewijs: the transaction first, then every file; one count of what the sheet lists */
 .pay-sheet__proofhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .pay-sheet__count{flex:none;padding:3px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+/* on the bank: the transaction is the proof, the file count after it is optional */
+.pay-sheet__proofhead:has(.pay-sheet__proofok){flex-wrap:wrap;justify-content:flex-start}
+.pay-sheet__proofok{margin-left:auto;padding:3px 9px;border-radius:99px;background:var(--ok-soft,var(--surface-2));color:var(--ok);font-size:12px;font-weight:650;white-space:nowrap}
+.pay-sheet__noadd{justify-self:start;margin-top:4px;font-size:12.5px}
 .pay-sheet__line>.pay-sheet__lineicon{display:grid;flex:none;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--surface-2);color:var(--muted)}
 .pay-sheet__line{flex-wrap:nowrap}
 .pay-sheet__line--open,.pay-sheet__line--choice,.pay-sheet__line--change,.pay-sheet__line--note{flex-wrap:wrap}

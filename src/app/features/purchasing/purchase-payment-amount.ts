@@ -17,6 +17,16 @@ export function parsePurchasePaymentAmount(raw: string | number | null | undefin
   return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
+/**
+ * An amount as a payment field shows it, the way the owner reads money:
+ * '4.320,00', '12.000,00', '0,50'. parsePurchasePaymentAmount reads it back.
+ * Empty for nothing or a non-positive value.
+ */
+export function amountInputText(value: number | null | undefined): string {
+  return value != null && Number.isFinite(value) && value > 0
+    ? value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }) : '';
+}
+
 /** Editing replaces one ledger entry; it does not add the entire amount for a second time. */
 export function purchasePaymentOverage(planned: number, paid: number, enteredEur: number, previousEur = 0): number {
   if (!(planned > 0) || ![planned, paid, enteredEur, previousEur].every(Number.isFinite)) return 0;

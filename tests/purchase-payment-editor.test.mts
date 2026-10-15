@@ -5,15 +5,15 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { signal, computed } from '@angular/core';
-import { parsePurchasePaymentAmount, purchasePaymentOverage } from '../src/app/features/purchasing/purchase-payment-amount.ts';
+import { amountInputText, parsePurchasePaymentAmount, purchasePaymentOverage } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { paymentPlanError } from '../src/app/features/purchasing/payment-plan.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
 import {
   invoiceDocumentKind, invoiceNumberKey, invoicesOf, paymentRoundOnServer, primaryInvoice, resolveInvoice,
 } from '../src/app/features/purchasing/purchase-invoices.ts';
 import {
-  carveForeignText, carveText, inspectionSplitBlocked, inspectionSplitEur, linkNotice, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
-  transferCompanions,
+  alreadyLinkedText, carveForeignText, carveText, growLinkPlan, inspectionSplitBlocked, inspectionSplitEur, linkNotice, paymentFigure, pendingAlreadyLinked,
+  pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
 import { bankMarker, lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
@@ -58,6 +58,8 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   'storedPaymentDraft', 'rebindPaying', 'removeSheetPart',
   // round 2: the payment follows the linked transaction, the main invoice by default, the notice after a link
   'unresolvedMainInvoice', 'sameStoredWords', 'resolvedInvoiceOf', 'paymentNotice',
+  // round 3: a save that changes nothing of the payment writes nothing; where its term stands
+  'storedUnchanged', 'payingTermStanding',
   // round-2 review: the file goes to the invoice the sheet showed
   'invoiceFileTarget']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
@@ -85,6 +87,7 @@ function setup() {
   vm.runInNewContext(javascript, { exports, signal, computed, bankAmountsMatch, parsePurchasePaymentAmount, purchasePaymentOverage,
     paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocumentKind, invoicesOf, paymentRoundOnServer, primaryInvoice, inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur,
     carveText, carveForeignText, linkNotice, pendingAlreadyLinked, surplusQuestion, transferCompanions, invoiceNumberKey, resolveInvoice,
+    amountInputText, growLinkPlan, alreadyLinkedText, paymentFigure,
     bankTransactionDay, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
     PAYEE_LABEL, formatEur, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
@@ -251,7 +254,7 @@ test('editing a foreign payment brings its booked euro value into the bank field
   const { editor } = setup();
   const foreign = { ...payment(), amount: 1000, currency: 'USD', amountEur: 830 };
   editor.payments.set([foreign]); editor.editPayment(foreign);
-  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput], [830, '830']);
+  assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput, editor.paying().amountInput], [830, '830,00', '1.000,00'], 'as the owner reads money');
   editor.editPayment(payment());
   assert.deepEqual([editor.paying().amountEur, editor.paying().amountEurInput], [null, '']);
   assert.equal(editor.paymentRateEur(), 0, 'no order-rate estimate for euro money');
@@ -533,14 +536,14 @@ test('a lost answer of bank-lines: the refreshed payment carries both transactio
   await editor.confirmPayment();
   assert.equal(splits.length, 1);
   assert.equal(editor.paying(), null, 'the link did happen: the sheet closes');
-  assert.deepEqual(toasts.at(-1), ['De transacties stonden al op de betaling', 'ok']);
+  assert.deepEqual(toasts.at(-1), ['2 transacties al gekoppeld · betaald op 24/09/2026 (was 05/09/2026)', 'ok'], 'in its number, with what changed');
   // A retry from a sheet that still holds the pick (an older failure) recognises it before any check or write.
   editor.editPayment(split[0]);
   editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 102, pendingLines: [bankLine(520, -10000), bankLine(534, -11733.63)], bankLinkPending: true, bankSavedPayment: split[0] }));
   await editor.confirmPayment();
   assert.equal(splits.length, 1, 'no second call');
   assert.equal(editor.paying(), null);
-  assert.deepEqual(toasts.at(-1), ['De transacties stonden al op de betaling', 'ok']);
+  assert.deepEqual(toasts.at(-1), ['2 transacties al gekoppeld', 'ok']);
 });
 
 test('a smaller transaction carves its part out of the payment; two that make the amount split it over both', async () => {
@@ -704,7 +707,7 @@ test('removing the root of a USD payment in two parts rebinds the sheet to the o
   await confirmed;
   const draft = editor.paying();
   assert.deepEqual([draft.id, draft.amount, draft.amountEur, draft.amountEurInput, draft.paidOn, draft.label, clone(draft.groupIds)],
-    [103, 5000, 4600, '4600', '2026-09-24', 'Saldo', [103]], 'the survivor\'s money, the typed words');
+    [103, 5000, 4600, '4.600,00', '2026-09-24', 'Saldo', [103]], 'the survivor\'s money, the typed words');
   assert.deepEqual([draft.bankLinkPending, draft.bankSavedPayment, draft.inspectionExpectedEur], [false, undefined, undefined]);
   await editor.confirmPayment();
   assert.deepEqual(writes.map(row => [row.type, row.paymentId, row.body.amount, row.body.amountEur]), [['PUT payment', 103, 5000, 4600]]);
@@ -935,4 +938,72 @@ test("'Bestand bij de factuur' of an inspection paid via the supplier goes to th
   none.editor.paying.update((draft: any) => ({ ...draft, label: 'Inspectie', invoiceFile: file }));
   await none.editor.confirmPayment();
   assert.deepEqual([none.writes.length, none.editor.paying().invoiceFile, none.toasts.at(-1)], [0, file, ['Kies eerst de factuur waar het bestand bij hoort.', 'err']]);
+});
+
+/* ---- round 3 (screen check of round 2): a payment fully on the bank grows, a lost answer says what changed, a file alone writes nothing else */
+
+test("'Transactie toevoegen' on a payment fully on the bank: one bank-part with 'ADJUST', no PUT, the server's notice", async () => {
+  const linked = { ...payment(), id: 201, payee: 'SUPPLIER', label: 'Aanbetaling 30%', amount: 12000, amountEur: 12000, paidOn: '2026-10-02',
+    instalmentDue: 'ORDERED', bankStatementLineId: 680 };
+  const { editor, writes, splits, toasts } = roundSetup(linked);
+  const part = (item: any) => ({ id: item.id, payment: item, paidOn: item.paidOn, amount: item.amount, currency: item.currency, amountEur: item.amountEur,
+    bankStatementLineId: item.bankStatementLineId ?? null, onBank: item.bankStatementLineId != null, proofs: [] });
+  editor.paymentLedger.set({ rows: [{ id: 201, payment: linked, parts: [part(linked)], proofs: [] }] });
+  editor.editPayment(linked);
+  editor.paying.update((draft: any) => ({ ...draft, addTransfer: true, pendingPartId: 201, pendingLines: [bankLine(695, -500)] }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes, [], 'the linked transfer stays as it is: nothing is written first');
+  assert.deepEqual(splits, [{ type: 'bank-part', paymentId: 201, bankStatementLineId: 695, surplus: 'ADJUST' }]);
+  assert.deepEqual(toasts.at(-1), ['Transactie toegevoegd', 'ok']);
+  assert.equal(plain(editor.paymentNotice()?.text), 'Transactie van € 500,00 toegevoegd; de betaling is nu € 12.500,00 (was € 12.000,00).',
+    'the same words as the server when its answer carries none');
+  assert.equal(editor.paying(), null);
+});
+
+test('a lost bank-part answer: the refreshed payment carries the transaction and the toast says what changed', async () => {
+  const stored = { ...payment(), id: 201, payee: 'SUPPLIER', label: 'Aanbetaling 30%', amount: 12000, amountEur: 12000, paidOn: '2026-10-02', instalmentDue: 'ORDERED' };
+  const { editor, splits, toasts } = roundSetup(stored);
+  const part = (item: any) => ({ id: item.id, payment: item, paidOn: item.paidOn, amount: item.amount, currency: item.currency, amountEur: item.amountEur,
+    bankStatementLineId: item.bankStatementLineId ?? null, onBank: item.bankStatementLineId != null, proofs: [] });
+  editor.paymentLedger.set({ rows: [{ id: 201, payment: stored, parts: [part(stored)], proofs: [] }] });
+  const followed = { ...stored, amount: 12300, amountEur: 12300, paidOn: '2026-10-05', bankStatementLineId: 680 };
+  editor.sourcing.linkPaymentPart = async (paymentId: number, bankStatementLineId: number) => { splits.push({ paymentId, bankStatementLineId }); throw new Error('Gateway Timeout'); };
+  editor.refreshPaymentState = async () => {
+    editor.payments.set([followed]);
+    editor.paymentLedger.set({ rows: [{ id: 201, payment: followed, parts: [part(followed)], proofs: [] }] });
+    return true;
+  };
+  editor.editPayment(stored);
+  editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 201, pendingLines: [bankLine(680, -12300)], surplus: 'ADJUST' }));
+  await editor.confirmPayment();
+  assert.equal(splits.length, 1);
+  assert.deepEqual(toasts.at(-1).map(plain), ['Transactie al gekoppeld · bedrag nu € 12.300,00 (was € 12.000,00) · betaald op 05/10/2026 (was 02/10/2026)', 'ok']);
+});
+
+test("a proof file added to an unchanged payment only uploads: no PUT, 'Bewijs toegevoegd'", async () => {
+  const { editor, writes, uploads, toasts } = roundSetup();
+  editor.editPayment(payment());
+  editor.paying.update((draft: any) => ({ ...draft, files: [new File(['x'], 'kbc-bevestiging.pdf')] }));
+  await editor.confirmPayment();
+  assert.deepEqual([writes, uploads], [[], ['kbc-bevestiging.pdf']]);
+  assert.deepEqual(toasts.at(-1), ['Bewijs toegevoegd', 'ok']);
+  // A changed word still writes, and says both.
+  editor.editPayment(payment());
+  editor.paying.update((draft: any) => ({ ...draft, label: 'Douane september', files: [new File(['x'], 'tweede.pdf')] }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes.map(row => row.type), ['PUT payment']);
+  assert.deepEqual(toasts.at(-1), ['Betaling aangepast · Bewijs toegevoegd', 'ok']);
+});
+
+test('where the edited payment stands: its supplier term, else its payee, as the server counts it', () => {
+  const { editor } = roundSetup();
+  const goods = { ...payment(), id: 201, payee: 'SUPPLIER', amount: 12000, amountEur: 12000, instalmentDue: 'ORDERED' };
+  editor.payments.set([goods, payment()]);
+  editor.view.set({ order: order(), creditOffsets: [], invoices: [], reconciliation: {
+    supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 12000, paidEur: 12000, remainingEur: 0 }],
+    streams: [{ payee: 'LOGISTICS', label: 'Douane & transport', plannedEur: 1300, paidEur: 1046.95, remainingEur: 253.05 }] } });
+  editor.editPayment(goods);
+  assert.deepEqual(clone(editor.payingTermStanding()), { label: '30% bij bestelling', term: true, plannedEur: 12000, paidEur: 12000 });
+  editor.editPayment(payment());
+  assert.deepEqual(clone(editor.payingTermStanding()), { label: 'Douane & transport', term: false, plannedEur: 1300, paidEur: 1046.95 });
 });

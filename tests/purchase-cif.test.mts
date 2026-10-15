@@ -91,7 +91,7 @@ test('the supplier is paid for goods + zeevracht under CIF, and Douane & transpo
   const supplier = book.payees.find(item => item.payee === 'SUPPLIER')!;
   const logistics = book.payees.find(item => item.payee === 'LOGISTICS')!;
   assert.equal(supplier.basis, 'Goederen + zeevracht (CIF) · 30% bij bestelling, 70% bij vertrek');
-  assert.equal(logistics.basis, 'Raming uit Kosten: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)');
+  assert.equal(logistics.basis, 'Afspraak: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)');
   assert.deepEqual(payeeComposition('SUPPLIER', view, 12000).lines.map(line => [line.label, line.amountEur]),
     [['Goederen', 10000], ['Lokale kosten China', 200], ['Zeevracht', 1800]]);
   assert.deepEqual(payeeComposition('LOGISTICS', view, 1000).lines.map(line => [line.label, line.amountEur]),

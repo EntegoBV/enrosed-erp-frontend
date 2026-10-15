@@ -262,7 +262,7 @@ test('mock 12: provisional, two payees still open, the headline from the server 
     [{ amount: 71511.63, currency: 'USD' }, 61500, 0, true, false]);
   assert.equal(plain(row(result, 'LOGISTICS').reasonLabel), 'nog € 4.893,81 open · nu te betalen');
   assert.deepEqual(row(result, 'LOGISTICS').payAction, { payee: 'LOGISTICS', amount: 4893.81, label: 'Douane & transport', due: null });
-  assert.equal(row(result, 'SEPARATE').basis, 'Raming uit Kosten: inspectie en andere kosten · apart');
+  assert.equal(plain(row(result, 'SEPARATE').basis), 'Afspraak inspectie € 530,00 · apart', "the owner's word, never 'raming'");
 });
 
 test('the headline explains the difference with server facts: signed, as a share of the budget, null without a budget', () => {
@@ -627,7 +627,7 @@ test('todoCopy keeps the Te doen words of the Betalingen overview for every todo
     { title: 'Betaald zonder afspraak: Douane & transport', detail: '€ 120,00 betaald zonder bedrag in Kosten', action: 'Afrekenen' });
   assert.deepEqual(plain(todoCopy({ kind: 'incomplete', key: 'i', payee: 'SUPPLIER' })),
     { title: 'Betaling zonder eurowaarde bij Leverancier', detail: 'Controleer het bedrag van deze betaling', action: 'Bekijken' });
-  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder betaalbewijs', detail: 'Koppel de banktransactie via Aanpassen', action: 'Toon' });
+  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder betaalbewijs', detail: 'Koppel de banktransactie', action: 'Toon' }, 'short enough for the phone row');
   assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 1 }, 'read')), { title: '1 betaling zonder betaalbewijs', detail: 'Banktransactie ontbreekt', action: 'Toon' });
 });
 

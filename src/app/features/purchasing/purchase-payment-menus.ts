@@ -29,7 +29,7 @@ export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { ti
     case 'credit': return { title: `Tegoed open bij ${PAYEE_LABEL[todo.payee]}`, action,
       detail: `${formatEur(todo.amountEur)} te ontvangen · terugbetaling of verrekening` };
     case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder betaalbewijs`, action,
-      detail: mode === 'edit' ? 'Koppel de banktransactie via Aanpassen' : 'Banktransactie ontbreekt' };
+      detail: mode === 'edit' ? 'Koppel de banktransactie' : 'Banktransactie ontbreekt' };
   }
 }
 
@@ -129,16 +129,28 @@ export function creditMenuItems(credit: LedgerCredit, busy: boolean): ContextMen
 }
 
 /**
+ * A payment whose every transfer is linked to its bank line (the hard link,
+ * not the old marker), never a credit offset: one more transaction makes it
+ * grow ('Transactie toevoegen…', the server's addTransfer).
+ */
+export function transferAddable(row: Pick<LedgerRow, 'creditOffset' | 'parts'>): boolean {
+  return !row.creditOffset && row.parts.length > 0 && row.parts.every(part => part.bankStatementLineId != null);
+}
+
+/**
  * The menu of one payment. Only the desk moves a payment to another payee from
  * here; the phone does it in the sheet. Files and bank transactions are added
- * in 'Aanpassen'; a payment paid in parts is removed per transaction there.
+ * in 'Aanpassen'; a payment fully on the bank also offers 'Transactie
+ * toevoegen…' (with `addTransfer`, the server knows it); a payment paid in
+ * parts is removed per transaction in 'Aanpassen'.
  */
-export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy: boolean }): ContextMenuItem[] {
+export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy: boolean; addTransfer?: boolean }): ContextMenuItem[] {
   const busy = options.busy;
   const proofs = row.proofs ?? [];
   const files = row.invoiceFiles ?? [];
   const items: ContextMenuItem[] = [
     { id: 'edit', label: 'Aanpassen', iconName: 'pencil', disabled: busy },
+    ...(options.addTransfer && transferAddable(row) ? [{ id: 'add-transfer', label: 'Transactie toevoegen…', iconName: 'bank', disabled: busy }] : []),
     ...proofs.map(proof => ({ id: 'open:' + proof.id, iconName: 'document',
       label: proofs.length === 1 ? 'Bewijs openen' : 'Bewijs openen · ' + proof.originalFilename })),
     ...(row.invoice?.documentId != null ? [{ id: 'invoice-file', label: 'Factuur openen', iconName: 'document' }] : []),

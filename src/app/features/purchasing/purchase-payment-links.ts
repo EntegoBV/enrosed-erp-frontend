@@ -60,6 +60,12 @@ export type PendingLinkPlan =
   | { kind: 'lines'; lineIds: number[] }
   /** A server without this round: one matching transaction through the old /links call. */
   | { kind: 'links'; lineId: number }
+  /**
+   * 'Transactie toevoegen' on a payment whose every transfer is on the bank:
+   * the payment grows by this transaction (bank-part with `higher: 'ADJUST'`,
+   * the server's addTransfer), addEur = what it adds.
+   */
+  | { kind: 'grow'; lineId: number; addEur: number }
   | { kind: 'invalid'; message: string };
 
 export const PENDING_LINES_MESSAGE = 'Kies transacties die samen het bedrag maken, of één transactie voor een deel van het bedrag.';
@@ -126,6 +132,57 @@ export function pendingLinkPlan(
   return { kind: 'lines', lineIds: lines.map(line => line.id) };
 }
 
+/** One transaction to add to a payment fully on the bank; never several at once, never an incoming one. */
+export function growLinkPlan(lines: readonly { id: number; amountEur: number }[]): PendingLinkPlan {
+  if (!lines.length) return { kind: 'none' };
+  if (lines.length > 1) return { kind: 'invalid', message: 'Voeg één transactie tegelijk toe.' };
+  const outgoing = -cents(lines[0].amountEur);
+  if (!(outgoing > 0)) return { kind: 'invalid', message: 'Kies een uitgaande transactie.' };
+  return { kind: 'grow', lineId: lines[0].id, addEur: outgoing / 100 };
+}
+
+/** Where the term of a payment (or its payee, without a term) stands against the Afspraak, the payment itself counted. */
+export interface TermStanding {
+  /** '30% bij bestelling' or the payee's name. */
+  label: string;
+  /** A supplier term ('de termijn'), else the payee as a whole. */
+  term: boolean;
+  plannedEur: number;
+  paidEur: number;
+}
+
+/**
+ * What `addEur` more paid does to the term, said before the owner chooses:
+ * over the Afspraak ('de termijn komt € 500,00 boven de afspraak'), exactly
+ * paid, or what stays open. Null without an Afspraak.
+ */
+export function termAfterAdding(term: TermStanding | null, addEur: number): { overEur: number; subject: string; text: string } | null {
+  if (!term || !(cents(term.plannedEur) > 0)) return null;
+  const rest = cents(term.paidEur) + cents(addEur) - cents(term.plannedEur);
+  const subject = term.term ? 'de termijn' : term.label;
+  if (rest > TOLERANCE_CENTS) return { overEur: rest / 100, subject, text: `${subject} komt ${eur(rest / 100)} boven de afspraak` };
+  if (rest < -TOLERANCE_CENTS) return { overEur: 0, subject, text: `daarna nog open ${term.term ? 'voor de termijn' : 'bij ' + term.label}: ${eur(-rest / 100)}` };
+  return { overEur: 0, subject, text: `${subject} is dan precies betaald` };
+}
+
+/** 'De betaling wordt € 12.500,00 (was € 12.000,00); de termijn komt € 500,00 boven de afspraak.' before a transaction is added. */
+export function growPreview(paymentEur: number, addEur: number, term: TermStanding | null): string {
+  const after = termAfterAdding(term, addEur);
+  return `De betaling wordt ${eur((cents(paymentEur) + cents(addEur)) / 100)} (was ${eur(cents(paymentEur) / 100)})${after ? '; ' + after.text : ''}.`;
+}
+
+/**
+ * The consequence of 'Bedrag aanpassen' for a transaction `extraEur` larger
+ * than the payment, said on the choice itself: 'De termijn komt dan € 300,00
+ * boven de afspraak (te veel betaald).', else what stays open.
+ */
+export function adjustConsequence(term: TermStanding | null, extraEur: number): string {
+  const after = termAfterAdding(term, extraEur);
+  if (!after) return 'De betaling volgt de transactie.';
+  if (after.overEur > 0) return `${after.subject.charAt(0).toUpperCase()}${after.subject.slice(1)} komt dan ${eur(after.overEur)} boven de afspraak (te veel betaald).`;
+  return `De betaling volgt de transactie; ${after.text}.`;
+}
+
 /**
  * The euro the transactions picked for a part are checked against; the
  * sheet and the save use this one rule. A payment never split: the draft's
@@ -150,7 +207,7 @@ export function pendingPartEur(
  * each changes the goods payment first.
  */
 export function inspectionSplitBlocked(plan: PendingLinkPlan): boolean {
-  return plan.kind === 'lines' || plan.kind === 'higher' || (plan.kind === 'part' && (!plan.whole || !!plan.surplus));
+  return plan.kind === 'lines' || plan.kind === 'higher' || plan.kind === 'grow' || (plan.kind === 'part' && (!plan.whole || !!plan.surplus));
 }
 
 /**
@@ -329,4 +386,28 @@ export function pendingAlreadyLinked(pending: readonly { id: number }[], parts: 
   if (!pending.length) return false;
   const linked = new Set(parts.map(part => part.bankStatementLineId).filter((id): id is number => id != null));
   return pending.every(line => linked.has(line.id));
+}
+
+/**
+ * After a lost answer the refreshed payment already carries the picked
+ * transactions: say so in the right number and what changed with it,
+ * 'Transactie al gekoppeld · bedrag nu € 12.300,00 (was € 12.000,00) · betaald
+ * op 05/10/2026 (was 02/10/2026)'. Without `before` only the first part.
+ */
+export function alreadyLinkedText(
+  count: number, before: { amountEur: number; paidOn: string } | null, after: { amountEur: number; paidOn: string } | null,
+): string {
+  const words = [count > 1 ? `${count} transacties al gekoppeld` : 'Transactie al gekoppeld'];
+  if (before && after) {
+    if (cents(before.amountEur) !== cents(after.amountEur)) words.push(`bedrag nu ${eur(after.amountEur)} (was ${eur(before.amountEur)})`);
+    if (before.paidOn !== after.paidOn) words.push(`betaald op ${day(after.paidOn)} (was ${day(before.paidOn)})`);
+  }
+  return words.join(' · ');
+}
+
+/** A payment (in parts) as one figure: the sum of its transfers in euro and its newest day, the one date rule. Null without transfers. */
+export function paymentFigure(parts: readonly { amountEur: number; paidOn: string }[]): { amountEur: number; paidOn: string } | null {
+  if (!parts.length) return null;
+  return { amountEur: parts.reduce((sum, part) => sum + cents(part.amountEur), 0) / 100,
+    paidOn: parts.reduce((newest, part) => part.paidOn > newest ? part.paidOn : newest, parts[0].paidOn) };
 }

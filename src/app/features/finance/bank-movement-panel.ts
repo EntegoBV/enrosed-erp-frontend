@@ -16,11 +16,11 @@ import { cashTotalOf, openOf } from './finance-metrics';
 import { containerPayables } from './payables';
 import { bankAllocationTargets, filterBankAllocationTargets, type BankAllocationTarget } from './bank-allocation-targets';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
-import { parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
+import { amountInputText, parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
 import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
 import {
-  carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
+  adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
   type ForeignLink, type LinkChangeRow, type SurplusChoice,
 } from '../purchasing/purchase-payment-links';
 
@@ -244,17 +244,27 @@ export class BankMovementPanel {
     return (container.due ? branch?.terms.find(term => term.due === container.due)?.payments : branch?.payments) ?? [];
   });
   /**
-   * An unlinked payment of this payee (and of this term, when the target is
-   * one) larger than the bank line: carve a part of it rather than recording
-   * another payment. A payment of another term is never pointed at.
+   * The container's payments of this payee not on the bank yet, of any term,
+   * offered before a new payment is booked on the term: a € 5.000 line may be
+   * a part of the unlinked € 12.000 deposit ('Bestaande betaling · €
+   * 12.000,00 (30%)', 'Deel koppelen' when it is larger than the line). A
+   * choice opens it under Bestaande betaling with its preview.
    */
-  readonly localLargerPayment = computed(() => {
+  readonly localOpenPayments = computed(() => {
     const target = this.localDocument(), bank = this.selected();
-    if (!bank || target?.kind !== 'purchase' || !this.roundOnServer()) return null;
-    const due = target.container?.due ?? null;
-    return this.state.payments().find(payment => payment.orderId === target.id && (payment.payee ?? 'SUPPLIER') === target.container?.payee
-      && (due === null || (payment.instalmentDue ?? null) === due)
-      && payment.bankStatementLineId == null && !payment.creditOffset && cents(payment.amountEur) > cents(Math.abs(bank.amountEur)) + 2) ?? null;
+    if (!bank || target?.kind !== 'purchase' || !this.roundOnServer()) return [];
+    const payee = target.container?.payee ?? 'SUPPLIER';
+    const terms = this.localPurchaseView()?.reconciliation?.supplierInstalments ?? [];
+    const line = Math.abs(cents(bank.amountEur));
+    return this.outgoingCandidates().filter(row => row.kind === 'purchase' && row.ownerId === target.id).flatMap(row => {
+      const payment = this.state.payments().find(item => item.id === row.id);
+      if (!payment || (payment.payee ?? 'SUPPLIER') !== payee) return [];
+      // '30% bij bestelling' → '30%': the term in one word, else the payment's own words.
+      const term = payment.instalmentDue ? terms.find(step => step.due === payment.instalmentDue)?.label ?? null : null;
+      const short = term ? term.split(' bij ')[0] : payment.label || null;
+      return [{ match: row, term: short, action: cents(row.amountEur) > line + 2 ? 'Deel koppelen' : 'Koppelen',
+        day: row.paidOn.split('-').reverse().join('/') }];
+    });
   });
   /** The inspection field shows for a supplier target when the container's inspection has an Afspraak or is paid via the supplier. */
   readonly localInspectionOffered = computed(() => {
@@ -447,14 +457,14 @@ export class BankMovementPanel {
   chooseLocalDocument(target: BankAllocationTarget): void {
     if (this.busy()) return;
     this.localSelectedKey.set(target.key); this.localNewConfirmed.set(false); this.error.set('');
-    this.purchaseCurrency.set('EUR'); this.purchaseAmountInput.set(Math.abs(this.selected()?.amountEur ?? 0).toFixed(2)); this.purchaseInspectionInput.set('');
+    this.purchaseCurrency.set('EUR'); this.purchaseAmountInput.set(amountInputText(Math.abs(this.selected()?.amountEur ?? 0))); this.purchaseInspectionInput.set('');
     this.localPurchaseFiles.set([]); this.localPurchaseFilesError.set('');
     // A server with invoices lists them from the container view; an older one keeps the commercial invoice files.
     if (target.kind === 'purchase' && this.state.purchaseViews().find(view => view.order.id === target.id)?.invoices === undefined) void this.loadLocalPurchaseFiles(target.id);
   }
   changePurchaseCurrency(currency: Currency): void {
     if (this.busy()) return;
-    this.purchaseCurrency.set(currency); this.purchaseAmountInput.set(currency === 'EUR' ? Math.abs(this.selected()?.amountEur ?? 0).toFixed(2) : '');
+    this.purchaseCurrency.set(currency); this.purchaseAmountInput.set(currency === 'EUR' ? amountInputText(Math.abs(this.selected()?.amountEur ?? 0)) : '');
   }
   async loadLocalDocuments(): Promise<void> {
     const bank = this.selected(); if (!bank || this.localLoading() || this.busy()) return;
@@ -610,6 +620,24 @@ export class BankMovementPanel {
   readonly outgoingSurplusText = computed(() => {
     const part = this.outgoingPart(), line = this.selected();
     return part?.higher && line ? surplusQuestion((cents(Math.abs(line.amountEur)) - cents(part.row.amountEur)) / 100) : '';
+  });
+  /**
+   * What 'Bedrag aanpassen' does to the payment's term, said on the choice:
+   * 'De termijn komt dan € 300,00 boven de afspraak (te veel betaald).' The
+   * term (or the payee, without one) as the container's reconciliation has
+   * it, this payment counted.
+   */
+  readonly outgoingAdjustText = computed(() => {
+    const part = this.outgoingPart(), line = this.selected();
+    if (!part?.higher || !line) return '';
+    const payment = this.state.payments().find(item => item.id === part.row.id);
+    const report = payment ? this.state.purchaseViews().find(item => item.order.id === payment.orderId)?.reconciliation : undefined;
+    const payee = payment?.payee ?? 'SUPPLIER';
+    const term = payee === 'SUPPLIER' && payment?.instalmentDue ? report?.supplierInstalments?.find(step => step.due === payment.instalmentDue) : undefined;
+    const stream = report?.streams.find(item => item.payee === payee);
+    const standing = term ? { label: term.label, term: true, plannedEur: term.plannedEur, paidEur: term.paidEur }
+      : stream && payee !== 'OTHER' ? { label: stream.label, term: false, plannedEur: stream.plannedEur, paidEur: stream.paidEur } : null;
+    return adjustConsequence(standing, (cents(Math.abs(line.amountEur)) - cents(part.row.amountEur)) / 100);
   });
   /**
    * The rest of a larger transaction may be the inspection paid via the

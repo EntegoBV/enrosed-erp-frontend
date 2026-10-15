@@ -2,11 +2,11 @@ import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/features/finance/bank-allocation-targets.ts';
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
-import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
+import { amountInputText, parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
 import {
-  carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
+  adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
 import { bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
@@ -135,7 +135,7 @@ function harness() {
   vm.runInNewContext(componentCode, {
     exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
-    inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions,
+    inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions, adjustConsequence, amountInputText,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
@@ -1132,17 +1132,42 @@ test('Bestaande betaling: a larger transaction asks first; the inspection rest o
   assert.deepEqual([other.panel.outgoingPart()?.higher, other.panel.outgoingInspectionOffered()], [true, false]);
 });
 
-test('Factuur of uitgave points at a larger payment of the same term only', async () => {
+test('Factuur of uitgave offers the unlinked payment of the container first, on any term, before a new payment is booked', async () => {
   const { panel, state } = harness();
   const view = roundView();
-  view.reconciliation.supplierInstalments.push({ due: 'SHIPPED', label: 'Saldo', plannedEur: 2800, remainingEur: 2800, paidEur: 0, finalized: false });
+  view.reconciliation.supplierInstalments[0].label = '30% bij bestelling';
+  view.reconciliation.supplierInstalments.push({ due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 2800, remainingEur: 2800, paidEur: 0, finalized: false });
   state.purchaseViews.set([view]);
-  state.payments.set([{ id: 301, orderId: 20, label: 'Voorschot', amountEur: 12000, paidOn: '2026-09-01', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  state.payments.set([{ id: 301, orderId: 20, label: 'Aanbetaling 30%', amountEur: 12000, paidOn: '2026-10-02', payee: 'SUPPLIER', instalmentDue: 'ORDERED' },
+    { id: 302, orderId: 20, label: 'Inspectie', amountEur: 300, paidOn: '2026-10-02', payee: 'SEPARATE' },
+    { id: 303, orderId: 20, label: 'Saldo', amountEur: 100, paidOn: '2026-09-01', payee: 'SUPPLIER', bankStatementLineId: 77 }]);
   await panel.openAllocation(movement(640, -5000));
+  // Booking the € 5.000 on the 70% term: the unlinked € 12.000 of the 30% comes first, as a part of it.
   panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.due === 'SHIPPED')!);
-  assert.equal(panel.localLargerPayment(), null, 'that payment belongs to another term');
-  panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.due === 'ORDERED')!);
-  assert.equal(panel.localLargerPayment()?.id, 301);
+  const offered = panel.localOpenPayments().map(open => [open.match.id, open.term, open.action, open.day]);
+  assert.deepEqual(JSON.parse(JSON.stringify(offered)), [[301, '30%', 'Deel koppelen', '02/10/2026']], 'only the supplier\'s payment not on the bank');
+  panel.reuseLocalPayment(panel.localOpenPayments()[0].match);
+  assert.deepEqual([panel.allocationStep(), panel.outgoingPart()?.carve], ['payments', true], 'under Bestaande betaling, as a part');
+  assert.match(panel.outgoingCarveText().replace(/\u00a0/g, ' '), /^Deel van deze betaling: € 5\.000,00 van € 12\.000,00/);
+  // A matching line links it whole.
+  const whole = harness();
+  whole.state.purchaseViews.set([view]);
+  whole.state.payments.set([{ id: 301, orderId: 20, label: 'Aanbetaling 30%', amountEur: 12000, paidOn: '2026-10-02', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  await whole.panel.openAllocation(movement(641, -12000));
+  whole.panel.chooseLocalDocument(whole.panel.localDocuments().find(row => row.container?.due === 'ORDERED')!);
+  assert.equal(whole.panel.localOpenPayments()[0]?.action, 'Koppelen');
+});
+
+test("'Bedrag aanpassen' says what it does to the term before the choice", async () => {
+  const { panel, state } = harness();
+  const view = roundView();
+  Object.assign(view.reconciliation.supplierInstalments[0], { label: '30% bij bestelling', plannedEur: 12000, paidEur: 12000, remainingEur: 0 });
+  state.purchaseViews.set([view]);
+  state.payments.set([{ id: 201, orderId: 20, label: 'Aanbetaling 30%', amountEur: 12000, paidOn: '2026-10-02', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  await panel.openAllocation({ ...movement(680, -12300), source: 'ODOO' });
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.equal(panel.outgoingAdjustText().replace(/\u00a0/g, ' '), 'De termijn komt dan € 300,00 boven de afspraak (te veel betaald).');
 });
 
 test('Bestaande betaling: the goods and the inspection noted with them go on the transaction together, the inspection keeping its amount', async () => {

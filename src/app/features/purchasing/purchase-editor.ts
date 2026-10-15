@@ -35,8 +35,8 @@ import {
   inspectionRestOffered, invoiceDocumentKind, invoiceNumberKey, invoicesOf, paymentRoundOnServer, primaryInvoice, resolveInvoice,
 } from './purchase-invoices';
 import {
-  carveForeignText, carveText, inspectionSplitBlocked, inspectionSplitEur, linkNotice, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
-  transferCompanions,
+  alreadyLinkedText, carveForeignText, carveText, growLinkPlan, inspectionSplitBlocked, inspectionSplitEur, linkNotice, paymentFigure, pendingAlreadyLinked,
+  pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions, type TermStanding,
 } from './purchase-payment-links';
 import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit } from './purchase-invoice-sheet';
 import type { InvoiceRequest } from './purchase-payment-workbench';
@@ -52,7 +52,7 @@ import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet'
 import { ContextMenu } from '../../shared/context-menu';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
-import { parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
+import { amountInputText, parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
 import {
   PAYEE_LABEL, SUPPLIER_CREDIT_REASON_LABEL, creditOffsetTargets, paymentOptionParts, purchaseCif, purchasePaymentLedger, settleCarriers, type Due,
   type LedgerPart, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
@@ -1199,7 +1199,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [nacalc]="nacalcSummary()"
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
                 [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
-                (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
+                (add)="requestPayment($event)" (edit)="requestEdit($event)" (addTransfer)="requestAddTransfer($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
                 (credit)="requestCredit($event)" (invoice)="requestInvoice($event)" (invoiceFile)="openDocumentFile($event)" (assignInvoice)="assignInvoiceToAll($event)"
@@ -1508,7 +1508,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
           [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
-          [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()"
+          [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()" [termStanding]="payingTermStanding()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
@@ -2198,7 +2198,7 @@ export class PurchaseEditor {
       if (!pay || pay.bankLinkPending || (pay.bankTransaction && pay.currency === 'EUR')) return pay;
       const amount = parsePurchasePaymentAmount(raw);
       const changed = amount !== pay.amount;
-      return { ...pay, amountInput: raw == null ? '' : String(raw), amount, ...(pay.bankTransaction ? { amountEurInput: String(Math.abs(pay.bankTransaction.amountEur)).replace('.', ','), amountEur: Math.abs(pay.bankTransaction.amountEur) } : changed ? { amountEurInput: '', amountEur: null } : {}) };
+      return { ...pay, amountInput: raw == null ? '' : String(raw), amount, ...(pay.bankTransaction ? { amountEurInput: amountInputText(Math.abs(pay.bankTransaction.amountEur)), amountEur: Math.abs(pay.bankTransaction.amountEur) } : changed ? { amountEurInput: '', amountEur: null } : {}) };
     });
   }
 
@@ -2219,7 +2219,7 @@ export class PurchaseEditor {
         : { ...pay, separateAmountInput: input, separateAmount: amount };
       if (pay.bankTransaction && pay.currency === 'EUR') {
         const goods = Math.round((Math.abs(pay.bankTransaction.amountEur) - (changed.freightAmount ?? 0) - (changed.separateAmount ?? 0)) * 100) / 100;
-        return { ...changed, amount: goods > 0 ? goods : null, amountInput: goods > 0 ? String(goods).replace('.', ',') : '' };
+        return { ...changed, amount: goods > 0 ? goods : null, amountInput: amountInputText(goods) };
       }
       return changed;
     });
@@ -2342,8 +2342,8 @@ export class PurchaseEditor {
   private storedPaymentDraft(root: PurchasePayment, members: readonly PurchasePayment[]): Pick<PurchasePaymentDraft,
     'id' | 'amount' | 'amountInput' | 'currency' | 'paidOn' | 'amountEurInput' | 'amountEur' | 'groupIds'> {
     const foreign = root.currency !== 'EUR' && Number.isFinite(root.amountEur) && root.amountEur > 0;
-    return { id: root.id, amount: root.amount, amountInput: String(root.amount).replace('.', ','), currency: root.currency, paidOn: root.paidOn,
-      amountEurInput: foreign ? String(root.amountEur).replace('.', ',') : '', amountEur: foreign ? root.amountEur : null,
+    return { id: root.id, amount: root.amount, amountInput: amountInputText(root.amount), currency: root.currency, paidOn: root.paidOn,
+      amountEurInput: foreign ? amountInputText(root.amountEur) : '', amountEur: foreign ? root.amountEur : null,
       groupIds: [root.id, ...members.filter(member => member.id !== root.id).map(member => member.id)] };
   }
 
@@ -2406,6 +2406,26 @@ export class PurchaseEditor {
     const payments = this.payments() ?? [];
     const companions = part ? transferCompanions(part.payment, payments, pay.groupIds ?? []).length : 0;
     return inspectionRestOffered({ payee: pay.payee, instalmentDue: pay.instalmentDue ?? null, currency: part?.currency ?? pay.currency }, data.order, payments, companions);
+  });
+  /**
+   * Where the edited payment's term stands against the Afspraak, the payment
+   * itself counted as the server has it: the supplier term it counts for,
+   * else its payee as a whole. The sheet says what more paid does to it
+   * ('De termijn komt dan € 300,00 boven de afspraak') before the owner
+   * chooses 'Bedrag aanpassen' or adds a transaction. Null for Andere kosten
+   * or without the server's figures.
+   */
+  readonly payingTermStanding = computed<TermStanding | null>(() => {
+    const pay = this.paying(), report = this.view()?.reconciliation;
+    if (!pay?.id || !report) return null;
+    const stored = (this.payments() ?? []).find(payment => payment.id === pay.id);
+    const payee = stored?.payee ?? pay.payee;
+    if (payee === 'OTHER') return null;
+    const due = payee === 'SUPPLIER' ? stored?.instalmentDue ?? null : null;
+    const term = due ? report.supplierInstalments?.find(step => step.due === due) : undefined;
+    if (term) return { label: term.label, term: true, plannedEur: term.plannedEur, paidEur: term.paidEur };
+    const stream = report.streams.find(item => item.payee === payee);
+    return stream ? { label: PAYEE_LABEL[payee], term: false, plannedEur: stream.plannedEur, paidEur: stream.paidEur } : null;
   });
   /** How many payments the sheet's payee has (a payment in parts once): 'Geldt voor alle betalingen van Leverancier (n)'. */
   readonly payingPayeeCount = computed(() => {
@@ -2832,7 +2852,7 @@ export class PurchaseEditor {
     const capped = rest > 0.005 ? Math.min(amount ?? rest, rest) : (amount ?? rest);
     this.paying.set({
       amount: capped > 0 ? Math.round(capped * 100) / 100 : null,
-      amountInput: capped > 0 ? String(Math.round(capped * 100) / 100).replace('.', ',') : '',
+      amountInput: amountInputText(Math.round(capped * 100) / 100),
       currency: 'EUR',
       paidOn: new Date().toISOString().slice(0, 10),
       label: label ?? (payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '')
@@ -2918,7 +2938,9 @@ export class PurchaseEditor {
     // A USD/CNY transfer is compared in its own currency, as the server does: whole, or the part named in that currency.
     const foreign = pendingPart && pendingPart.currency !== 'EUR'
       ? { amount: pay.partEdits?.[pendingPart.id]?.amount ?? pendingPart.amount, currency: pendingPart.currency, part: pay.pendingPartAmount ?? null } : null;
-    const plan = pendingPart && pendingLines.length ? pendingLinkPlan(pendingEur, pendingLines, round, pay.surplus ?? null, companions, foreign) : { kind: 'none' as const };
+    // 'Transactie toevoegen' on a payment fully on the bank: the one picked transaction grows it (bank-part with 'ADJUST').
+    const plan = !pendingPart || !pendingLines.length ? { kind: 'none' as const } : pay.addTransfer ? growLinkPlan(pendingLines)
+      : pendingLinkPlan(pendingEur, pendingLines, round, pay.surplus ?? null, companions, foreign);
     if (plan.kind === 'invalid') { this.ui.toast(plan.message, 'err'); return; }
     if (plan.kind === 'higher') { this.ui.toast(`${surplusQuestion(plan.extraEur)}: kies eerst wat er met het verschil gebeurt.`, 'err'); return; }
     /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; never for an offset, a payment in parts or picked transactions. */
@@ -2936,6 +2958,7 @@ export class PurchaseEditor {
     if (split !== null && inspectionSplitBlocked(plan)) { this.ui.toast('Eerst de banktransacties koppelen, daarna de inspectie afsplitsen.', 'err'); return; }
     this.payingBusy.set(true);
     let paymentSaved = false;
+    let invoiceFiled = false;
     const done: string[] = [];
     try {
       // 1. 'Factuur toevoegen…' inline: the invoice with its file in one call, once; the payment then points to it.
@@ -2981,6 +3004,7 @@ export class PurchaseEditor {
         // invoice that has one is left alone). The file leaves the draft only then; a failed upload keeps it for the retry.
         if (fileInvoice && pay.invoiceFile && fileInvoice.documentId == null) {
           await this.sourcing.attachInvoiceFile(data.order.id, fileInvoice.id, pay.invoiceFile);
+          invoiceFiled = true;
         }
         if (fileInvoice && pay.invoiceFile) this.paying.update(current => sameSheet(current) ? { ...current!, invoiceFile: null, invoiceFileFor: null } : current);
       } catch (failure: unknown) {
@@ -3010,9 +3034,10 @@ export class PurchaseEditor {
         atomicIds = result.payments.map(payment => payment.id);
       } else {
         const retained = (pay.bankLinkPending || pay.bankLinkComplete) ? pay.bankSavedPayment ?? (this.payments() ?? []).find(payment => payment.id === pay.id) : null;
-        // With this round a link carries the money and the day: a payment never split whose words, payee, term and invoice stayed as stored
-        // is not written first, the link alone changes it (no PUT then link).
-        const untouched = round && pay.id && !grouped && plan.kind !== 'none' && stored && !invoiceChanged && this.sameStoredWords(pay, stored) ? stored : null;
+        // A saved payment whose words, payee, term, money and invoice stayed as stored is not written again: a link carries the money
+        // and the day itself (no PUT then link), a proof file or an invoice file only uploads. An older server's /links still writes the
+        // bank's day first.
+        const untouched = pay.id && stored && !invoiceChanged && plan.kind !== 'links' && !frozen && this.storedUnchanged(pay, stored, parts) ? stored : null;
         if (retained) { saved = retained; wrote = false; }
         else if (untouched) { saved = untouched; wrote = false; }
         else if (pay.id && grouped) saved = await this.saveGroup(data.order.id, pay, parts, invoiceChanged ? invoiceId : undefined);
@@ -3075,8 +3100,8 @@ export class PurchaseEditor {
         this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkPending: true, bankSavedPayment: saved, bankLinkError: '' } : current);
         let after: PurchasePayment | null = null;
         if (alreadyLinked) {
-          this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null } : current);
-          done.push('De transacties stonden al op de betaling');
+          this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false } : current);
+          done.push(alreadyLinkedText((pay.pendingLines ?? []).length, null, null));
         }
         if (plan.kind !== 'none' && pendingPart) {
           try {
@@ -3101,19 +3126,27 @@ export class PurchaseEditor {
               const result = await this.sourcing.linkPaymentLines(pendingPart.id, plan.lineIds.map(bankStatementLineId => ({ bankStatementLineId })));
               await this.reloadBankLines(result.lines);
               done.push(`Betaling verdeeld over ${plan.lineIds.length} transacties`);
+            } else if (plan.kind === 'grow') {
+              // The payment grows by a new transfer of this line (the server's addTransfer); the linked transfers stay as they are.
+              const result = await this.sourcing.linkPaymentPart(pendingPart.id, plan.lineId, null, { higher: 'ADJUST' });
+              await this.reloadBankLines(result.lines);
+              const was = parts.reduce((sum, part) => sum + Math.round(part.amountEur * 100), 0) / 100;
+              notice = result.notice ?? `Transactie van ${formatEur(plan.addEur)} toegevoegd; de betaling is nu ${formatEur(Math.round((was + plan.addEur) * 100) / 100)} (was ${formatEur(was)}).`;
+              done.push('Transactie toegevoegd');
             } else {
               const line = await this.banking.linkPayments(plan.lineId, { purchasePaymentIds: [pendingPart.id] });
               await this.reloadBankLines([line]);
               done.push('Banktransactie gekoppeld');
             }
-            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null } : current);
+            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false } : current);
           } catch (failure: unknown) {
             await this.refreshPaymentState(data.order.id);
             if (this.view()?.order.id !== data.order.id) return;
             // A lost answer: the server did link, the refreshed payment carries every picked transaction. Clear the pick and go on.
             if (round && pendingAlreadyLinked(pendingLines, this.payingParts())) {
-              this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, bankLinkError: '' } : current);
-              done.push('De transacties stonden al op de betaling');
+              this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false, bankLinkError: '' } : current);
+              // The answer and its notice were lost: the payment before this save against the refreshed one says what changed.
+              done.push(alreadyLinkedText(pendingLines.length, paymentFigure(parts), paymentFigure(this.payingParts())));
             } else {
               const reason = messageOf(failure, 'De koppeling is nog niet gelukt.');
               // A refusal when this sheet wrote nothing (the link alone carries the payment): nothing to protect, so the choice is
@@ -3154,8 +3187,13 @@ export class PurchaseEditor {
       // A failed line keeps the sheet open with every id of the transfer, so one more 'bewaren' sends the line again.
       if (bank !== 'failed') this.paying.set(null);
       const filed = pay.files.length ? ['bewijs'] : [];
+      // A saved payment: what this save did; a proof file by itself is only 'Bewijs toegevoegd' (nothing else was written).
+      const linked = done.length > 0;
+      if (pay.id && pay.files.length) done.push(pay.files.length === 1 ? 'Bewijs toegevoegd' : `${pay.files.length} bewijzen toegevoegd`);
+      if (pay.id && invoiceFiled) done.push('Factuurbestand toegevoegd');
+      if (pay.id && wrote && !linked) done.unshift('Betaling aangepast');
       this.ui.toast(bank === 'noted' ? (pay.bankTransaction ? 'Betaling bewaard en banktransactie gekoppeld' : `Betaling genoteerd · ook op ${account!.label}`) : bank === 'failed' ? (pay.bankTransaction ? 'Betaling bewaard, banktransactie nog niet gekoppeld.' : 'Betaling genoteerd, maar de bankbeweging is niet bewaard.')
-        : done.length ? done.join(' · ') : pay.id ? 'Betaling aangepast' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',
+        : done.length ? done.join(' · ') : pay.id ? 'Geen wijzigingen' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',
         bank === 'failed' ? 'err' : 'ok');
     } catch (failure: unknown) {
       if (paymentSaved && this.view()?.order.id === data.order.id) await this.refreshPaymentState(data.order.id);
@@ -3164,6 +3202,20 @@ export class PurchaseEditor {
     } finally {
       this.payingBusy.set(false);
     }
+  }
+
+  /**
+   * Nothing of the saved payment itself changed: its words, payee, term,
+   * settlement, money and day (a USD/CNY payment's bank euro too), no
+   * corrected transfer of a payment in parts and no part noted beside it.
+   */
+  private storedUnchanged(pay: PurchasePaymentDraft, stored: PurchasePayment, parts: readonly LedgerPart[]): boolean {
+    if ((pay.freightAmount ?? 0) > 0 || (pay.separateAmount ?? 0) > 0 || !this.sameStoredWords(pay, stored)) return false;
+    if (stored.currency !== 'EUR' && parts.length <= 1 && Math.round((pay.amountEur ?? -1) * 100) !== Math.round(stored.amountEur * 100)) return false;
+    return !Object.entries(pay.partEdits ?? {}).some(([id, edit]) => {
+      const part = parts.find(item => item.id === Number(id));
+      return !part || edit.amount === null || Math.round(edit.amount * 100) !== Math.round(part.amount * 100) || edit.amountEur != null;
+    });
   }
 
   /** The words, payee, term and settlement of the sheet are the stored payment's, and so are its money and day (a link alone changes those). */
@@ -3338,6 +3390,18 @@ export class PurchaseEditor {
   }
 
   requestEdit(payment: PurchasePayment): void { this.whenSaved(() => this.editPayment(payment)); }
+
+  /** 'Transactie toevoegen…' from a ⋯ menu: the payment's sheet opens with the bank picker for one more transfer. */
+  requestAddTransfer(payment: PurchasePayment): void {
+    this.whenSaved(() => {
+      this.editPayment(payment);
+      const parts = this.payingParts();
+      const newest = parts[parts.length - 1];
+      if (newest && parts.every(part => part.bankStatementLineId != null)) {
+        this.paying.update(pay => pay ? { ...pay, addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, toBank: false } : pay);
+      }
+    });
+  }
 
   requestSettle(request: PurchaseSettleRequest): void { this.whenSaved(() => this.openSettle(request)); }
 
@@ -3591,7 +3655,7 @@ export class PurchaseEditor {
     if (!pay.id && (pay.amount === null || Math.round(pay.amount * 100) === prefill)) {
       const rest = Math.round(Math.max(0, this.openFor(payee)) * 100) / 100;
       next.amount = rest > 0 ? rest : null;
-      next.amountInput = rest > 0 ? String(rest).replace('.', ',') : '';
+      next.amountInput = amountInputText(rest);
       if (['', 'Saldo', 'Douane & transport', 'Inspectie'].includes(pay.label)) {
         next.label = payee === 'SUPPLIER' ? (rest > 0.005 && this.paidTotalEur() > 0 ? 'Saldo' : '')
           : payee === 'LOGISTICS' ? 'Douane & transport' : payee === 'SEPARATE' ? 'Inspectie' : '';
@@ -3954,7 +4018,7 @@ export class PurchaseEditor {
   private promptFirstInstalment(): void {
     const first = this.plannedInstalments().find((step) => step.state === 'due');
     if (!first) return;
-    this.firstInstalmentPrompt.set({ label: first.label, amount: first.amount, amountInput: String(first.amount).replace('.', ','), due: first.due, currency: 'EUR',
+    this.firstInstalmentPrompt.set({ label: first.label, amount: first.amount, amountInput: amountInputText(first.amount), due: first.due, currency: 'EUR',
       paidOn: new Date().toISOString().slice(0, 10), files: [] });
   }
 

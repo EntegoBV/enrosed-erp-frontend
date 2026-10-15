@@ -118,7 +118,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                   <span class="ios-cell__trail"><span class="ios-cell__value">{{ line.amountEur | eur }}</span></span></div>
               }
             </div>
-            <p class="ios-section__foot">{{ item.compositionConsistent ? 'Betalingen worden per ontvanger bijgehouden, niet per kostenregel.' : 'Raming uit Kosten; wijkt af van de afspraak.' }}</p>
+            <p class="ios-section__foot">{{ item.compositionConsistent ? 'Betalingen worden per ontvanger bijgehouden, niet per kostenregel.' : 'Opbouw uit Kosten; wijkt af van de afspraak.' }}</p>
           </section>
         }
 
@@ -225,6 +225,8 @@ export class PurchasePayeeSheet {
   readonly supplier = input<PayeeLedger | null>(null);
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
+  /** 'Transactie toevoegen…' on a payment fully on the bank. */
+  readonly addTransfer = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
   /** Editor only: add or correct an invoice, or fill in an invoice file. */
   readonly invoice = output<InvoiceRequest>();
@@ -277,9 +279,10 @@ export class PurchasePayeeSheet {
       case 'SUPPLIER': return [this.supplierName(), payee.basis.startsWith(SUPPLIER_GOODS_CIF) ? 'goederen + zeevracht (CIF)' : '',
         payee.terms.length ? this.planLabel() : 'geen betaalplan'].filter(Boolean).join(' · ');
       case 'OTHER': return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
-      case 'LOGISTICS': return payee.basis.endsWith('(CIF)') ? 'Raming uit Kosten · zeevracht via de leverancier (CIF)' : 'Raming uit Kosten';
-      case 'SEPARATE': return payee.viaSupplier ? 'Raming uit Kosten · via leverancier' : 'Raming uit Kosten';
-      default: return 'Raming uit Kosten';
+      case 'LOGISTICS': return payee.basis.endsWith('(CIF)') ? 'Afspraak uit Kosten · zeevracht via de leverancier (CIF)' : 'Afspraak uit Kosten';
+      // 'Afspraak inspectie € 300,00 · via leverancier': the owner's word, with what it is made of.
+      case 'SEPARATE': return payee.basis;
+      default: return 'Afspraak uit Kosten';
     }
   });
 
@@ -343,7 +346,7 @@ export class PurchasePayeeSheet {
     this.close(() => this.credit.emit({ kind, credit: credit.credit }));
   }
 
-  rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy() }); }
+  rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy(), addTransfer: this.mode() === 'edit' && this.roundOnServer() }); }
 
   pickRow(row: LedgerRow, item: ContextMenuItem): void {
     this.rowMenu.set(null);
@@ -359,6 +362,7 @@ export class PurchasePayeeSheet {
     }
     switch (item.id) {
       case 'edit': this.act('edit', row.payment); break;
+      case 'add-transfer': this.close(() => this.addTransfer.emit(row.payment)); break;
       case 'invoice-file': if (row.invoice?.documentId != null) this.invoiceFile.emit({ documentId: row.invoice.documentId, name: row.invoice.number }); break;
       case 'settle': this.close(() => this.settle.emit(settleWith(row, this.payee().terms))); break;
       case 'remove': if (row.parts.length < 2) this.close(() => this.remove.emit(row.payment)); break;

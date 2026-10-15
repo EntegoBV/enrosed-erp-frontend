@@ -248,7 +248,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           }
                         } @else {
                           <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
-                            <span class="wk-td" role="gridcell" [class.wk-amount--warn]="!item.compositionConsistent">{{ item.compositionConsistent ? 'Raming uit Kosten' : 'Raming uit Kosten · wijkt af van de afspraak' }}</span>
+                            <span class="wk-td" role="gridcell" [class.wk-amount--warn]="!item.compositionConsistent">{{ item.compositionConsistent ? 'Opbouw uit Kosten' : 'Opbouw uit Kosten · wijkt af van de afspraak' }}</span>
                           </div>
                           @for (line of item.composition; track line.label) {
                             <div class="wk-tr wk-tr--sub pw-comp-row" role="row" aria-level="2">
@@ -538,6 +538,8 @@ export class PurchasePaymentWorkbench {
   readonly assignInvoice = output<PurchaseInvoice>();
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
+  /** 'Transactie toevoegen…' on a payment fully on the bank: its sheet opens with the bank picker. */
+  readonly addTransfer = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
   /** Add an invoice, correct one, or fill in the data of an invoice file ('Gegevens invullen'). */
   readonly invoice = output<InvoiceRequest>();
@@ -651,7 +653,10 @@ export class PurchasePaymentWorkbench {
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
   /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only what is paid for (goods, + zeevracht under CIF). */
   basis(item: PayeeLedger): string {
-    return item.payee === 'SUPPLIER' && item.terms.length && this.isExpanded('SUPPLIER') ? item.basis.split(' · ')[0] || SUPPLIER_GOODS : item.basis;
+    if (item.payee === 'SUPPLIER') return item.terms.length && this.isExpanded('SUPPLIER') ? item.basis.split(' · ')[0] || SUPPLIER_GOODS : item.basis;
+    // The Afspraak stands in its own column beside the name: the cell keeps to two lines ('Afspraak € 300,00 · via leverancier'), the title has it whole.
+    if (item.payee === 'SEPARATE' && (item.agreedEur ?? 0) > 0) return `Afspraak ${formatEur(item.agreedEur!)}${item.viaSupplier ? ' · via leverancier' : ''}`;
+    return item.basis;
   }
   proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
 
@@ -874,7 +879,7 @@ export class PurchasePaymentWorkbench {
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', divider: true },
       ];
       case 'payee': return payeeRowMenuItems(open.payee, busy, this.roundOnServer());
-      case 'payment': return paymentMenuItems(open.row, { move: true, busy });
+      case 'payment': return paymentMenuItems(open.row, { move: true, busy, addTransfer: this.roundOnServer() });
       case 'proofs': return (open.row.proofs ?? []).map(proof => ({ id: 'open:' + proof.id, label: proof.originalFilename, iconName: 'document' }));
       case 'term': return termMenuItems(open.term, busy);
       case 'credit': return creditMenuItems(open.credit, busy);
@@ -949,6 +954,7 @@ export class PurchasePaymentWorkbench {
     if (item.id.startsWith('move:')) { this.move.emit({ payment: row.payment, payee: item.id.slice(5) as Payee }); return; }
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
+      case 'add-transfer': this.addTransfer.emit(row.payment); break;
       case 'invoice-file': if (row.invoice?.documentId != null) this.invoiceFile.emit({ documentId: row.invoice.documentId, name: row.invoice.number }); break;
       case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
       case 'remove': if (row.parts.length < 2) this.remove.emit(row.payment); break;

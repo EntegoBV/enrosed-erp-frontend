@@ -241,7 +241,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
     @if (payeeOpen(); as item) {
       <app-purchase-payee-sheet [payee]="item" [mode]="mode()" [busy]="busy()" [dirty]="dirty()" [supplierName]="supplierName()" [planLabel]="planLabel()"
         [roundOnServer]="roundOnServer()" [supplier]="supplierPayee()"
-        (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)"
+        (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)" (addTransfer)="afterPayeeSheet(addTransfer, $event)"
         (download)="download.emit($event)" (settle)="afterPayeeSheet(settle, $event)" (undoSettle)="afterPayeeSheet(undoSettle, $event)"
         (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" (credit)="afterPayeeSheet(credit, $event)"
         (invoice)="afterPayeeSheet(invoice, $event)" (invoiceFile)="invoiceFile.emit($event)" (inspectionVia)="afterPayeeSheet(inspectionVia, $event)"
@@ -347,6 +347,8 @@ export class PurchasePaymentOverview {
   readonly assignInvoice = output<PurchaseInvoice>();
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
+  /** 'Transactie toevoegen…' on a payment fully on the bank: its sheet opens with the bank picker. */
+  readonly addTransfer = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
   /** Editor only: add or correct an invoice, or 'Gegevens invullen' on an invoice file. */
   readonly invoice = output<InvoiceRequest>();
@@ -492,7 +494,7 @@ export class PurchasePaymentOverview {
     setTimeout(() => this.tapPayment(payment));
   }
 
-  rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy() }); }
+  rowItems(row: LedgerRow): ContextMenuItem[] { return paymentMenuItems(row, { move: false, busy: this.busy(), addTransfer: this.mode() === 'edit' && this.roundOnServer() }); }
 
   pickRow(row: LedgerRow, item: ContextMenuItem): void {
     this.rowMenu.set(null);
@@ -508,6 +510,7 @@ export class PurchasePaymentOverview {
     }
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
+      case 'add-transfer': this.addTransfer.emit(row.payment); break;
       case 'invoice-file': if (row.invoice?.documentId != null) this.invoiceFile.emit({ documentId: row.invoice.documentId, name: row.invoice.number }); break;
       case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
       case 'remove': if (row.parts.length < 2) this.remove.emit(row.payment); break;

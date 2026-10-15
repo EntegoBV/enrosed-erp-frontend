@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { signal, computed } from '@angular/core';
 import { PAYEE_LABEL, settleCarriers } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
+import { amountInputText } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 
 // The editor's new payment actions, isolated from Angular: save first, settle,
 // undo a settlement, move a payment to another payee, and receive with a final
@@ -43,7 +44,7 @@ function view(id = 50, canonical = true) {
 
 function setup() {
   const exports: Record<string, new () => any> = {};
-  vm.runInNewContext(javascript, { exports, signal, computed, settleCarriers, escapeHtml, PAYEE_LABEL,
+  vm.runInNewContext(javascript, { exports, signal, computed, settleCarriers, escapeHtml, PAYEE_LABEL, amountInputText,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   const calls: any[] = [];
@@ -223,7 +224,7 @@ test('a new payee drops the term and the settlement and re-prefills only an unto
   editor.paying.set({ id: null, amount: 700, amountInput: '700', currency: 'EUR', paidOn: '2026-09-01', label: 'Saldo', payee: 'SUPPLIER',
     files: [], settles: true, instalmentDue: 'SHIPPED' });
   editor.setPaymentPayee('LOGISTICS');
-  assert.deepEqual(clone(editor.paying()), { id: null, amount: 150, amountInput: '150', currency: 'EUR', paidOn: '2026-09-01',
+  assert.deepEqual(clone(editor.paying()), { id: null, amount: 150, amountInput: '150,00', currency: 'EUR', paidOn: '2026-09-01',
     label: 'Douane & transport', payee: 'LOGISTICS', files: [], settles: false, instalmentDue: null });
   editor.paying.set({ ...editor.paying(), amount: 123.45, amountInput: '123,45', label: 'Forwarder' });
   editor.setPaymentPayee('OTHER');

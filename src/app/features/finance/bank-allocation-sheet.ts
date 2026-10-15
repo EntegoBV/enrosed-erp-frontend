@@ -73,7 +73,16 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                       @if (p.localPurchaseFilesError()) { <p class="fin-hint fin-hint--warn">{{ p.localPurchaseFilesError() }} <button class="fin-inline-btn" type="button" (click)="p.loadLocalPurchaseFiles(document.id)">Opnieuw laden</button></p> }
                       @if (p.localPurchaseFiles().length) { <div class="bank-alloc-purchase-docs"><span>Facturen bij deze container</span>@for (file of p.localPurchaseFiles(); track file.id) { <button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.openPurchaseInvoice(file)">{{ file.label || file.originalFilename }} ↗</button> }</div> }
                     }
-                    @if (p.localLargerPayment(); as larger) { <p class="fin-hint fin-hint--warn">Er staat al een betaling van {{ larger.amountEur | eur }}; koppel een deel via Bestaande betaling.</p> }
+                    @if (p.localOpenPayments().length) {
+                      <!-- A payment of this container not on the bank yet comes first: the line may be (a part of) it, before a new payment is booked. -->
+                      <h4 class="bank-alloc-subhead">Bestaande betaling</h4>
+                      <div class="fin-alloc__cards">
+                        @for (open of p.localOpenPayments(); track open.match.key) {
+                          <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.reuseLocalPayment(open.match)"><b>Bestaande betaling · {{ open.match.amountEur | eur }}@if (open.term) { ({{ open.term }}) }</b><small>{{ open.day }} · {{ open.match.detail }} · nog niet op de bank</small><span>{{ open.action }} ›</span></button>
+                        }
+                      </div>
+                      <h4 class="bank-alloc-subhead">Nieuwe betaling</h4>
+                    }
                     <p class="fin-hint">Dit bedrag komt uit de bestelafspraak. Controleer de factuur en vul de werkelijke betaling in. De wisselkoers wordt niet uit het bestelbudget afgeleid.</p>
                     <div class="bank-alloc-purchase-fields">
                       <label><span>Betaalde valuta</span><select class="select" [disabled]="p.busy()" [value]="p.purchaseCurrency()" (change)="p.changePurchaseCurrency($any($event.target).value)"><option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option></select></label>
@@ -202,12 +211,12 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
                   <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
                     <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
-                      <b>Bedrag aanpassen naar {{ p.abs(row.amountEur) | eur }}</b><span>De betaling volgt de transactie</span></button>
+                      <b>Bedrag aanpassen naar {{ p.abs(row.amountEur) | eur }}</b><span>{{ p.outgoingAdjustText() }}</span></button>
                     @if (p.outgoingInspectionOffered()) {
                       <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'INSPECTION'" (click)="p.chooseOutgoingSurplus('INSPECTION')">
                         <b>Rest als inspectie via leverancier</b><span>{{ p.abs(row.amountEur) - part.row.amountEur | eur }} als eigen betaling op dezelfde transactie</span></button>
                     }
-                    <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Annuleren</b><span>Deze betaling niet koppelen</span></button>
+                    <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Niet koppelen</b><span>Een andere betaling kiezen</span></button>
                   </div>
                 }
                 @if (p.outgoingChange().length) {

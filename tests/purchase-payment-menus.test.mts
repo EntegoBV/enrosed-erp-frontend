@@ -84,3 +84,16 @@ test('every payee row offers \'Factuur toevoegen…\' and the inspection its swi
   assert.deepEqual(ids(menus['invoiceMenuItems']({ documentId: 88 }, false, true)), ['edit', 'assign', 'file', 'remove'],
     'an invoice not yet on every payment of its payee: Toewijzen aan alle betalingen');
 });
+
+test("a payment fully on the bank offers 'Transactie toevoegen…' (the server's addTransfer); never a part off the bank, the old marker or a credit offset", () => {
+  const linkedPart = { ...row().parts[0], bankStatementLineId: 680, onBank: true };
+  const linked = row({ parts: [linkedPart], onBank: true, bank: { linked: 1, total: 1, sharedWith: [] } });
+  assert.deepEqual(ids(menus['paymentMenuItems'](linked, { move: false, busy: false, addTransfer: true })).slice(0, 2), ['edit', 'add-transfer']);
+  assert.equal(menus['paymentMenuItems'](linked, { move: false, busy: false, addTransfer: true })[1].label, 'Transactie toevoegen…');
+  assert.equal(ids(menus['paymentMenuItems'](linked, { move: false, busy: false })).includes('add-transfer'), false, 'an older server');
+  const half = row({ parts: [linkedPart, { ...row().parts[0], id: 2 }] });
+  assert.equal(menus['transferAddable'](half), false, 'an open transfer takes the next transaction instead');
+  assert.equal(menus['transferAddable'](row({ parts: [{ ...linkedPart, bankStatementLineId: null }], onBank: true })), false, 'the old marker is no hard link');
+  assert.equal(menus['transferAddable'](row({ parts: [linkedPart], creditOffset: { creditId: 1, sourceOrderId: 4, sourceOrderNumber: 'INK-9', paymentId: 1, amountEur: 100 } })), false);
+  assert.equal(menus['todoCopy']({ kind: 'proof', key: 'p', count: 1 }).detail, 'Koppel de banktransactie', 'short enough for the phone row');
+});
