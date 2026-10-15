@@ -127,7 +127,8 @@ export class FinanceToolbar {
     const account = location.account ? this.state.canonicalAccount(location.account) : '';
     const unlinked = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line)
       && (!account || this.state.canonicalAccount(line.account) === account) && !line.allocated && line.salesPaymentId === null).length;
-    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Inkomend' }, { id: 'out', label: 'Uitgaand' },
+    // A narrow bar reads "In · Uit" (the phone chips' words); the full words stay the accessible names.
+    return [{ id: '', label: 'Alles' }, { id: 'in', label: 'Inkomend', shortLabel: 'In', ariaLabel: 'Inkomend' }, { id: 'out', label: 'Uitgaand', shortLabel: 'Uit', ariaLabel: 'Uitgaand' },
       { id: 'unlinked', label: 'Te koppelen', count: unlinked || null, dot: unlinked ? 'warn' : null }];
   });
   readonly movementValue = computed(() => {

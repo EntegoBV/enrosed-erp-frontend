@@ -43,6 +43,17 @@
    */
   @container wk-bar (max-width: 1399.98px) { .fin-toolbar--tx .fin-toolbar__label { display: none; } }
   @container wk-bar (max-width: 1259.98px) { .fin-toolbar--tx .wk-seg__count { display: none; } }
+  /*
+   * Below 1100 the segmented sizes each option to its words (equal columns would all take "Te koppelen"'s width), so
+   * the selected option carries the raised look itself instead of the sliding indicator; below 900 "Inkomend" and
+   * "Uitgaand" read "In" and "Uit" (the kit's short labels). Measured: nothing slides under the tools from 680 to 1440.
+   */
+  @container wk-bar (max-width: 1099.98px) {
+    .fin-toolbar--tx .wk-seg { grid-auto-columns: auto;
+      &::before { display: none; }
+      .wk-seg__opt { padding: 0 10px; }
+      .wk-seg__opt[aria-checked='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
+  }
   @container wk-bar (min-width: 900px) and (max-width: 1259.98px) { .fin-toolbar--tx .wk-search { width: 196px; } }
   @container wk-bar (max-width: 1129.98px) {
     .fin-toolbar--tx .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -138,8 +149,14 @@
   .fin-tx-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px;
     app-finance-filters { display: flex; align-items: center; gap: 8px; } }
   .fin-tx-bar__totals { margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; small { color: var(--muted); font-size: 11px; } }
-  .fin-table--tx { --wk-cols: 10px minmax(220px, 1fr) 112px minmax(150px, 200px) 96px 120px 116px 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .wk-body--split .fin-table--tx { --wk-cols: 10px minmax(200px, 1fr) 112px 120px 116px 36px; }
+  /*
+   * Transacties' tracks must fit the pane: the tracks, the 12 px gaps, the rows' 2 × 16 px and the table's border within
+   * the pane minus its 2 × 24 px. Koppeling steps aside below 1024 (data-hide md), Saldo below 720 (xs: the day heads keep
+   * "Saldo einde dag", the detail its own saldo). Beside the detail (wk-body--split) Koppeling and the action go; the
+   * cockpit's compact list has neither Koppeling nor Saldo. :not(compact) keeps the pane sets off the compact list.
+   */
+  .fin-table--tx { --wk-cols: 10px minmax(216px, 1fr) 112px minmax(150px, 200px) 96px 120px 116px 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(200px, 1fr) 112px 120px 116px 36px; }
   .fin-table--tx-compact, .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 92px 112px 30px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
   .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
   /* The cockpit's list reads without its column heads (kept for screen readers; the day heads stick to the top): one row more above the fold. */
@@ -163,13 +180,20 @@
   .bank-searched { margin: 0 0 10px; }
 
   @container wk-pane (max-width: 1023.98px) {
-    .fin-table--tx { --wk-cols: 10px minmax(180px, 1fr) 104px 96px 116px 112px 36px; }
-    .fin-tx__link { display: none; }
-    .fin-table--tx > .wk-thead > .wk-th:nth-child(4) { display: none; }
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(180px, 1fr) 104px 96px 116px 112px 36px; }
     .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }
     .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr); }
     .fin-kaslijn__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 16px 12px; padding: 8px 0 0; border-top: 1px solid var(--line); border-left: 0; }
     .fin-cockpit__cols { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container wk-pane (max-width: 859.98px) {
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(130px, 1fr) 96px 88px 104px 102px 36px; }
+    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(170px, 1fr) 104px 116px 112px 36px; }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 36px; }
+    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(140px, 1fr) 104px 112px 36px; }
+    .fin-table--tx-compact { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 30px; }
   }
 
   /* ==================================================== the transaction detail */
@@ -252,22 +276,15 @@
   .fin-amount-field { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   .fin-keys__group { margin: 14px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 
-  /* Uitgaven › Containers and Ontvangen: where a payment stands on the bank */
-  .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
+  /*
+   * Uitgaven › Containers and Ontvangen: where a payment stands on the bank. Their tracks (with "Op de bank" and
+   * "Transactie") live in finance-workspace.scss beside their narrower sets: a set here would come later in the
+   * stylesheet and win over every narrower one there.
+   */
   /* "0 van 1 betaling · 1 zonder transactie" takes two lines rather than an ellipsis */
   .fin-onbank { font-size: 12.5px; line-height: 1.3; white-space: normal; }
-  .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
   .fin-tree__bank { padding: 0; font-size: 12px; font-weight: 600; }
   .fin-tree__adjusted { padding-left: 22px; color: var(--muted); font-size: 11.5px; &.fin-tree__payment--nested { padding-left: 34px; } }
-  @container wk-pane (max-width: 1023.98px) {
-    .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
-  }
-  @container wk-pane (max-width: 859.98px) {
-    .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px minmax(0, 150px) 36px; }
-  }
-  @container wk-pane (max-width: 719.98px) {
-    .fin-table--containers { --wk-cols: minmax(130px, 1fr) 100px 100px 36px; }
-  }
 }
 
 /* ==================================================== phone */

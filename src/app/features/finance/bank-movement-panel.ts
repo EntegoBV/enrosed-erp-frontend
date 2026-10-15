@@ -84,10 +84,10 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
             <span class="wk-th" role="columnheader"><span class="fin-sr">Rekening</span></span>
             <span class="wk-th" role="columnheader">Tegenpartij · mededeling</span>
             <span class="wk-th" role="columnheader">Status</span>
-            @if (!compact()) { <span class="wk-th" role="columnheader" data-hide="inspecting">Koppeling</span> }
+            @if (!compact()) { <span class="wk-th" role="columnheader" data-hide="inspecting md">Koppeling</span> }
             <span class="wk-th" role="columnheader" data-hide="inspecting"><span class="fin-sr">Actie</span></span>
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
-            @if (!compact()) { <span class="wk-th wk-th--num" role="columnheader">Saldo</span> }
+            @if (!compact()) { <span class="wk-th wk-th--num" role="columnheader" data-hide="xs">Saldo</span> }
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
           @for (group of dayGroups(); track group.day) {
@@ -102,7 +102,7 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
                   <span class="wk-td__sub">{{ subOf(row) }}</span></span>
                 <span class="wk-td fin-tx__status" role="gridcell"><span [class]="'wk-pill ' + statusTone(row)">{{ statusLabel(row) }}</span></span>
                 @if (!compact()) {
-                  <span class="wk-td fin-tx__link" role="gridcell" data-hide="inspecting">
+                  <span class="wk-td fin-tx__link" role="gridcell" data-hide="inspecting md">
                     @if (koppeling(row); as k) {
                       @if (k.open) {
                         <button class="wk-link bank-document-link" type="button" [disabled]="openingId() === row.id" (click)="$event.stopPropagation(); openLinked(row)" [attr.title]="k.text">{{ openingId() === row.id ? 'Laden…' : k.text }} ›</button>
@@ -119,7 +119,7 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
                 </span>
                 <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b>
                   @if (row.allocationDifferenceEur) { <span class="wk-td__sub">Verschil {{ row.allocationDifferenceEur | eur }}</span> }</span>
-                @if (!compact()) { <span class="wk-td wk-td--num fin-tx__saldo" role="gridcell" [attr.title]="saldoText(row)">{{ saldoText(row) }}</span> }
+                @if (!compact()) { <span class="wk-td wk-td--num fin-tx__saldo" role="gridcell" data-hide="xs" [attr.title]="saldoText(row)">{{ saldoText(row) }}</span> }
                 <span class="wk-td fin-td-end" role="gridcell">
                   <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="$event.stopPropagation(); lineMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
                 </span>

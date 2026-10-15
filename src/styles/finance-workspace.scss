@@ -194,8 +194,9 @@
     .fin-sum--excl { grid-column: 8; } .fin-sum--vat { grid-column: 9; } .fin-sum--incl { grid-column: 10; } }
   .wk-body--split .fin-table--costs { @include costs-without-reference; }
   .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px; }
-  .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) 124px 36px; }
-  .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px 36px; }
+  /* Ontvangen's "Transactie" and Containers' "Op de bank" (2026-10-16) step aside first: md and xs. */
+  .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
+  .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
   .fin-table--unbanked { --wk-cols: 92px minmax(140px, 1fr) 96px 112px 96px; }
   .fin-table--recent { --wk-cols: 84px minmax(180px, 1fr) 104px 120px; }
   .fin-table--vat { --wk-cols: minmax(160px, 1fr) 112px 104px 112px 132px 84px; }
@@ -312,6 +313,7 @@
       .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
+    .fin-table--containers { --wk-cols: minmax(170px, 1fr) 104px 108px 108px 108px minmax(0, 150px) 36px; }
     .fin-table--vat { --wk-cols: minmax(120px, 1fr) 104px 96px 112px 72px; }
     .fin-analysis-grid, .fin-vat__kaders { grid-template-columns: minmax(0, 1fr); }
     .fin-expand { grid-template-columns: minmax(0, 1fr); }
@@ -319,7 +321,7 @@
   @container wk-pane (max-width: 859.98px) {
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 124px minmax(140px, 1fr) 120px 112px 36px; }
-    .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px 36px; }
+    .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px minmax(0, 150px) 36px; }
   }
   @container wk-pane (max-width: 719.98px) {
     .fin-table--parties { --wk-cols: minmax(130px, 1fr) minmax(0, 150px) 90px 104px; }
