@@ -504,17 +504,17 @@ cijfers'.
   an inspection on the goods' line reads '· zelfde transactie als de
   goederen'. Every new action hides while `paymentRoundOnServer(view)` is
   false (no `invoices` in the view): the backend ships first.
-- Per set / per stuk (2026-10-15): reconciliation lines and totals carry
+- Per display / per stuk (2026-10-15; said 'set' until the sales-unit round of the same day): reconciliation lines and totals carry
   `salesUnit`, `piecesPerUnit`, unit nouns and per-piece figures
   (`setBasis` PIECE | DISPLAY | MIXED); `unitCostQuantity` and
   `forecastExternalUnitEur` stay per sales unit (partner settlement multiplies
-  them). The Nacalculatie (desk, phone, summary card) says 'Per set' with the
-  piece price beside it ('100 bestelde sets × 12 rozen · € 2,6000 per stuk'),
-  in a mixed container 'Gem. per stuk' ('1.400 stuks · sets als 12 rozen
+  them). The Nacalculatie (desk, phone, summary card) says 'Per display' with the
+  piece price beside it ('100 bestelde displays × 12 rozen · € 2,6000 per stuk'),
+  in a mixed container 'Gem. per stuk' ('1.400 stuks · displays als 12 rozen
   geteld'); the shared words live in purchase-nacalc-metrics.ts
   (`nacalcUnitBasis`, `nacalcProductUnit`, `nacalcReceiptUnitLine`, …). The
   bridge row is 'Correctie naar bestelde aantallen'. Desk and phone product
-  tables label a set product's landed cost '/set' with '€ … /stuk'.
+  tables label a display product's landed cost '/display' with '€ … /stuk'.
 - Round 2 of the payments round (Emre's follow-ups of 2026-10-15; contract
   scratchpad spec-purchase-payments-r2.md, backend AI-CONTEXT 'Round 2').
   A linked transaction carries the payment: one payment (or one open
@@ -580,16 +580,16 @@ cijfers'.
   products (`nacalcUnitMix`; the server's `totals.containerAverage` wins,
   else one product only, like ReconciliationUnits.containerAverage): the summary
   card, the desk strip and the phone hero show 'n producten · € min – € max'
-  per stuk (per set when every line is a set of one size) with the products
+  per stuk (per display when every line is a display of one size) with the products
   by value (round 3 removed every remaining average, see below).
 - Round 3 of the payments round (Emre's screen check of round 2,
   2026-10-15). No mixed average anywhere ('klopt niet' with several
   products): where a container holds different products every per-unit
   figure is their range and the products themselves, never 'gem.'. The
   order header, the desk Kosten chain and the confirm sheet read
-  `landedUnit`/`landedUnitText` (costing lines, a set at its piece price:
-  '2 producten · € 2,600 – € 8,867 per stuk'; one set product '€ 30,960 per
-  set · € 2,580 per stuk'); the Nacalculatie strip and phone hero say
+  `landedUnit`/`landedUnitText` (costing lines, a display at its piece price:
+  '2 producten · € 2,600 – € 8,867 per stuk'; one display product '€ 30,960 per
+  display · € 2,580 per stuk'); the Nacalculatie strip and phone hero say
   '7.976 st bruikbaar · …' (`mixQuantity`) and 'incl. Enrosed kost € a – € b'
   (`mixPricingRange`), the Kostbasis the same range, the product table's
   total row the range, the receipt line per product (`mixReceiptLine`); in
@@ -619,10 +619,10 @@ cijfers'.
   betaling'. The proof todo says 'Koppel de banktransactie'.
 - Round 4 (2026-10-15). Analyses › Inkoop speaks in each product's unit
   (`reconciliationUnit`, `reconciliationLineUnit`): column 'Per eenheid',
-  a set product '€ 30,9600 per set' with '€ 2,5800 per stuk' and '400
-  bestelde sets' under it, the Kostprijs block 'Verwachte externe kost per
-  set' and 'Per set incl. opslag' with their piece prices, Per product
-  per set or per stuk; several products keep their range. Betalingen with
+  a display product '€ 30,9600 per display' with '€ 2,5800 per stuk' and '400
+  bestelde displays' under it, the Kostprijs block 'Verwachte externe kost per
+  display' and 'Per display incl. opslag' with their piece prices, Per product
+  per display or per stuk; several products keep their range. Betalingen with
   a Verschil column: gaps 4 px, the name 138 px and Status 104 px (a whole
   'Koersverschil' pill) from a 782 px main column, 112 px just below it.
   Koersverschil: a USD/CNY payment on its bank transaction takes the bank's

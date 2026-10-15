@@ -290,7 +290,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                           @if (received && (row.missing || row.damaged || row.over)) {
                             <span class="wk-td__sub">{{ row.ordered | num }} besteld@if (row.missing) { · {{ row.missing | num }} te weinig }@if (row.damaged) { · {{ row.damaged | num }} beschadigd }@if (row.over) { · {{ row.over | num }} te veel }</span>
                           }
-                          @if (row.unitQuantity === 0) { <span class="wk-td__sub wk-amount--warn">Geen bruikbare {{ row.set ? 'sets' : 'stuks' }}: de kost blijft bij deze regel.</span> }
+                          @if (row.unitQuantity === 0) { <span class="wk-td__sub wk-amount--warn">Geen bruikbare {{ row.set ? 'displays' : 'stuks' }}: de kost blijft bij deze regel.</span> }
                         </span>
                         @let ordered = productCount(row, row.ordered);
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ ordered.main }}@if (ordered.sub) { <span class="wk-td__sub">{{ ordered.sub }}</span> }</span>
@@ -512,7 +512,7 @@ export class PurchaseNacalcWorkbench {
   /** '7.976 st ' before the basis words: what the products' figures rest on. */
   quantity(n: PurchaseNacalc): string | null { return mixQuantity(n.mix); }
   pricingRange(n: PurchaseNacalc): string | null { return mixPricingRange(n.mix); }
-  /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
+  /** What the unit figure rests on, per display or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
   readonly agreedSub = nacalcAgreedSub;
   /** The receipt's effect per unit; over several products per product, never as an average. */
@@ -526,14 +526,14 @@ export class PurchaseNacalcWorkbench {
   productPricing(row: NacalcProductRow, basis: NacalcSetBasis) {
     return nacalcProductUnit(row, basis, 'pricing', { unit: row.pricingUnitEur, piece: row.pricingPieceEur });
   }
-  /** The total row in the container's counting: sets, or in a mixed container its pieces. */
+  /** The total row in the container's counting: displays, or in a mixed container its pieces. */
   totalCount(head: NacalcHeadline, which: 'ordered' | 'usable'): string {
     const quantity = which === 'ordered' ? head.orderedQuantity : head.unitQuantity;
     if (head.setBasis === 'MIXED') return `${(which === 'ordered' ? head.orderedPieceQuantity : head.pieceQuantity).toLocaleString('nl-BE')} stuks`;
-    return head.setBasis === 'DISPLAY' ? `${quantity.toLocaleString('nl-BE')} sets` : quantity.toLocaleString('nl-BE');
+    return head.setBasis === 'DISPLAY' ? `${quantity.toLocaleString('nl-BE')} displays` : quantity.toLocaleString('nl-BE');
   }
-  /** The total row's unit, on its own (wrapping) line under the figure so it is never cut: '/set', or '/stuk (gem.)' in a mixed container. */
-  totalSuffix(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? '/set' : head.setBasis === 'MIXED' ? '/stuk (gem.)' : ''; }
+  /** The total row's unit, on its own (wrapping) line under the figure so it is never cut: '/display', or '/stuk (gem.)' in a mixed container. */
+  totalSuffix(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? '/display' : head.setBasis === 'MIXED' ? '/stuk (gem.)' : ''; }
 
   /** A row click shows the payee's payments; the click that trails a long-press menu is left alone. */
   rowClick(event: MouseEvent, payee: Payee): void {

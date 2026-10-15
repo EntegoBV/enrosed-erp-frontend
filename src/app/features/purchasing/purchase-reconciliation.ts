@@ -77,7 +77,7 @@ import {
           @let mix = unitMix(r);
           @let unit = unitOf(t);
           @if (mix.uniform) {
-            <!-- One product in its own unit: a set product per set, its piece price beside it ('€ 2,5800 per stuk'). -->
+            <!-- One product in its own unit: a display product per display, its piece price beside it ('€ 2,5800 per stuk'). -->
             <div>
               <dt>{{ t.finalized ? 'Externe kost per ' : 'Verwachte externe kost per ' }}{{ unit.unit }}<span class="wk-td__sub">@if (unit.pieceEur !== null) { {{ unit.pieceEur | eur: 4 }} per stuk · }{{ unit.quantity | num }} {{ unit.usable ? 'bruikbaar ontvangen' : 'bestelde' }} {{ unit.plural }}, incl. inspectie</span></dt>
               <dd>@if (unit.unitEur !== null) { {{ unit.unitEur | eur: 4 }} }</dd>
@@ -111,8 +111,8 @@ import {
                 <div class="rc-product">
                   <span class="rc-product__copy">
                     @if (line.productId) { <a [routerLink]="['/products', line.productId]">{{ line.productName }}</a> } @else { <b>{{ line.productName }}</b> }
-                    <!-- Four decimals, like the totals above and the product pages: this is where a product gets priced. A set per set, its piece price beside it. -->
-                    <small>{{ lineUnit.quantity | num }} {{ lineUnit.usable ? 'bruikbare' : 'bestelde' }} {{ lineUnit.plural }}@if (lineUnit.unitEur !== null) { · {{ lineUnit.unitEur | eur: 4 }} per {{ lineUnit.unit }} }@if (lineUnit.pieceEur !== null) { · {{ lineUnit.pieceEur | eur: 4 }} per stuk }@if (lineUnit.pricingUnitEur !== null) { · {{ lineUnit.pricingUnitEur | eur: 4 }}@if (lineUnit.unit === 'set') { per set } incl. opslag }</small>
+                    <!-- Four decimals, like the totals above and the product pages: this is where a product gets priced. A display per display, its piece price beside it. -->
+                    <small>{{ lineUnit.quantity | num }} {{ lineUnit.usable ? 'bruikbare' : 'bestelde' }} {{ lineUnit.plural }}@if (lineUnit.unitEur !== null) { · {{ lineUnit.unitEur | eur: 4 }} per {{ lineUnit.unit }} }@if (lineUnit.pieceEur !== null) { · {{ lineUnit.pieceEur | eur: 4 }} per stuk }@if (lineUnit.pricingUnitEur !== null) { · {{ lineUnit.pricingUnitEur | eur: 4 }}@if (lineUnit.unit === 'display') { per display } incl. opslag }</small>
                     @if (line.unitCostQuantity === 0) { <small class="wk-amount--warn">Geen bruikbare {{ lineUnit.plural }}: de kost blijft bij deze productregel.</small> }
                   </span>
                   <span class="rc-product__amount">
