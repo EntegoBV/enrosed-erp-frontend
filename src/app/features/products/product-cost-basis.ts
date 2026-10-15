@@ -53,8 +53,15 @@ export function entryCostBasis(entry: Pick<ProductCostHistoryEntry, 'salesUnit' 
   };
 }
 
+/**
+ * Do two costs mean the same thing? Only what changes the amount counts: per
+ * piece or per display, and for a display how many pieces it holds. A cost
+ * per diamant stays per diamant whether the piece sits in a display or not,
+ * and a display of 12 stays a display of 12 when its piece is renamed; the
+ * unit name only words each row.
+ */
 export function sameCostBasis(left: CostBasis, right: CostBasis): boolean {
-  return left.salesUnit === right.salesUnit && left.piecesPerUnit === right.piecesPerUnit && left.unitKey === right.unitKey;
+  return left.salesUnit === right.salesUnit && (left.salesUnit !== 'DISPLAY' || left.piecesPerUnit === right.piecesPerUnit);
 }
 
 /** productSalesUnit of a basis: a pseudo-product with just the packaging the words need. */

@@ -101,6 +101,50 @@ test('a row keeps its own basis; a row without one reads on the product basis', 
     { salesUnit: 'PIECE', piecesPerUnit: null, unitKey: 'bowl' });
   assert.equal(basis.sameCostBasis(fallback, { salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }), true);
   assert.equal(basis.sameCostBasis(fallback, { salesUnit: 'DISPLAY', piecesPerUnit: 10, unitKey: 'roos' }), false);
+  assert.equal(basis.sameCostBasis(fallback, { salesUnit: 'PIECE', piecesPerUnit: 12, unitKey: 'roos' }), false);
+});
+
+test('only what changes the amount makes another basis: not a display count per piece, not a unit name', () => {
+  /* Per piece, the display around it does not change what one piece costs. */
+  assert.equal(basis.sameCostBasis({ salesUnit: 'PIECE', piecesPerUnit: null, unitKey: 'diamant' },
+    { salesUnit: 'PIECE', piecesPerUnit: 12, unitKey: 'diamant' }), true);
+  /* A display of 12 stays a display of 12 when its piece is renamed; so does a piece. */
+  assert.equal(basis.sameCostBasis({ salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' },
+    { salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'diamant' }), true);
+  assert.equal(basis.sameCostBasis({ salesUnit: 'PIECE', piecesPerUnit: null, unitKey: 'roos' },
+    { salesUnit: 'PIECE', piecesPerUnit: null, unitKey: 'diamant' }), true);
+  assert.equal(basis.sameCostBasis({ salesUnit: 'DISPLAY', piecesPerUnit: null, unitKey: 'roos' },
+    { salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }), false);
+
+  /* A product sold per diamant gets a display of 12 and is still sold per diamant. */
+  const display = history.costHistoryView([
+    row({ appliedAt: '2026-10-10T10:00:00Z', landedUnitEur: 0.6, previousLandedUnitEur: 0.56, purchaseOrderId: 2, source: 'PO-2',
+      salesUnit: 'PIECE', piecesPerUnit: 12, unitKey: 'diamant' }),
+    row({ appliedAt: '2026-09-10T10:00:00Z', landedUnitEur: 0.56, previousLandedUnitEur: null, purchaseOrderId: 1, source: 'PO-1',
+      salesUnit: 'PIECE', piecesPerUnit: null, unitKey: 'diamant' }),
+  ], basis.productCostBasis(DIAMANT_PIECE));
+  assert.deepEqual(plain(display.rows.map((r) => r.delta.tone)), ['up', 'first']);
+  assert.equal(display.excluded, 0);
+  assert.deepEqual(plain(display.stats), { min: 0.56, max: 0.6, avg: 0.58 });
+  assert.equal(display.basisNote, null);
+  /* The other way round: a display of 12 per diamant was one before, the product now sits in no display. */
+  const loose = history.costHistoryView(display.rows.map((r) => r.entry).reverse().map((e, i) => ({ ...e, previousLandedUnitEur: i ? 0.6 : null,
+    deltaEur: i ? -0.04 : null, deltaPct: i ? -6.7 : null, landedUnitEur: i ? 0.56 : 0.6 })).reverse(), basis.productCostBasis(packaging({ unitKey: 'diamant' })));
+  assert.deepEqual(plain(loose.rows.map((r) => r.delta.tone)), ['down', 'first']);
+  assert.equal(loose.basisNote, null);
+
+  /* A display of 12 roses whose piece is now called diamant. */
+  const renamed = history.costHistoryView([
+    row({ appliedAt: '2026-10-10T10:00:00Z', landedUnitEur: 31.5, previousLandedUnitEur: 31.2, purchaseOrderId: 2, source: 'PO-2',
+      salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }),
+    row({ appliedAt: '2026-09-10T10:00:00Z', landedUnitEur: 31.2, previousLandedUnitEur: null, purchaseOrderId: 1, source: 'PO-1',
+      salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }),
+  ], basis.productCostBasis(packaging({ kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'diamant' })));
+  assert.deepEqual(plain(renamed.rows.map((r) => r.delta.tone)), ['up', 'first']);
+  assert.equal(renamed.excluded, 0);
+  assert.equal(renamed.basisNote, null);
+  /* Each row keeps its own words. */
+  assert.deepEqual(plain(renamed.rows[0].other), { sign: '=', price: 2.625, per: 'per roos' });
 });
 
 /* ---- the history ------------------------------------------------------ */
@@ -144,8 +188,13 @@ test('rows read in their stored unit, name the container and compare with the ro
   assert.deepEqual(plain(view.rows.map((r) => r.by)), ['emre', null, 'emre', null]);
   assert.equal(view.containers, 2, 'two purchase orders; the seed without a source is no container');
   assert.equal(view.excluded, 0);
-  assert.deepEqual(plain(view.stats), { min: 30, max: 32, avg: 31.25 });
+  /* The re-applied container counts once, with its newest cost. */
+  assert.deepEqual(plain(view.stats), { min: 30, max: 32, avg: 31.1667 });
+  assert.equal(view.replaced, 1);
   assert.equal(view.basisNote, null);
+  /* The header of a re-apply compares with this same container, not with "the previous container". */
+  assert.deepEqual(plain(view.rows.map((r) => r.against)),
+    ['eerder bij deze container', 'de vorige container', 'de vorige container', 'de vorige container']);
   const elsewhere = history.costHistoryView(entries, current, null);
   assert.equal(elsewhere.rows[0].linkId, 14);
 });
@@ -153,7 +202,8 @@ test('rows read in their stored unit, name the container and compare with the ro
 test('a row on another basis is marked, left out of the sums and the chart, and the product basis note shows', () => {
   const current = basis.productCostBasis(ROSES_DISPLAY);
   const entries = [
-    row({ appliedAt: '2026-10-10T09:00:00Z', landedUnitEur: 2.6, previousLandedUnitEur: 31.2, salesUnit: 'PIECE', piecesPerUnit: 12, unitKey: 'roos' }),
+    row({ appliedAt: '2026-10-10T09:00:00Z', landedUnitEur: 2.6, previousLandedUnitEur: 31.2, purchaseOrderId: 2, source: 'PO-2026-002',
+      salesUnit: 'PIECE', piecesPerUnit: 12, unitKey: 'roos' }),
     row({ appliedAt: '2026-09-10T09:00:00Z', landedUnitEur: 31.2, previousLandedUnitEur: null, salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }),
   ];
   const view = history.costHistoryView(entries, current);
@@ -188,12 +238,13 @@ test('rows written before the basis was kept read on the product basis, and equa
 test('the chart takes one point a day, the last cost of that day, oldest first', () => {
   const current = basis.productCostBasis(packaging({ unitKey: 'bowl' }));
   const entries = [
-    row({ appliedAt: '2026-10-12T15:00:00Z', landedUnitEur: 3.2, previousLandedUnitEur: 3.1, kind: 'REAPPLY' }),
-    row({ appliedAt: '2026-10-12T09:00:00Z', landedUnitEur: 3.1, previousLandedUnitEur: 2.9 }),
+    row({ appliedAt: '2026-10-12T15:00:00Z', landedUnitEur: 3.2, previousLandedUnitEur: 3.1, purchaseOrderId: 3, source: 'PO-2026-003' }),
+    row({ appliedAt: '2026-10-12T09:00:00Z', landedUnitEur: 3.1, previousLandedUnitEur: 2.9, purchaseOrderId: 2, source: 'PO-2026-002' }),
     row({ appliedAt: '2026-09-01T09:00:00Z', landedUnitEur: 2.9, previousLandedUnitEur: null }),
   ];
   const view = history.costHistoryView(entries, current);
   assert.deepEqual(plain(view.chart), { dates: ['2026-09-01', '2026-10-12'], values: [2.9, 3.2] });
+  assert.equal(view.replaced, 0);
   assert.equal(view.rows[0].per, 'per bowl');
   assert.equal(view.rows[0].quantity, '100 bowls');
   assert.equal(history.costHistoryView([], current).chart.dates.length, 0);
@@ -218,6 +269,33 @@ test('the parts of one unit in the build-up words, with rounding when they miss 
   assert.equal(view.rows[0].parts?.length, 8);
 });
 
+test('a container applied again counts with its newest cost only; every row stays in the list', () => {
+  const current = basis.productCostBasis(ROSES_DISPLAY);
+  const entries = [
+    row({ appliedAt: '2026-10-03T09:00:00Z', landedUnitEur: 31, previousLandedUnitEur: 100, kind: 'REAPPLY', purchaseOrderId: 20, source: 'PO-2026-020' }),
+    row({ appliedAt: '2026-10-01T09:00:00Z', landedUnitEur: 100, previousLandedUnitEur: 30, kind: 'APPLY', purchaseOrderId: 20, source: 'PO-2026-020' }),
+    row({ appliedAt: '2026-09-01T09:00:00Z', landedUnitEur: 30, previousLandedUnitEur: null, kind: 'APPLY', purchaseOrderId: 19, source: 'PO-2026-019' }),
+  ];
+  const view = history.costHistoryView(entries, current);
+  assert.equal(view.rows.length, 3, 'the mistaken cost stays in the list');
+  assert.deepEqual(plain(view.stats), { min: 30, max: 31, avg: 30.5 });
+  assert.deepEqual(plain(view.chart), { dates: ['2026-09-01', '2026-10-03'], values: [30, 31] });
+  assert.equal(view.containers, 2);
+  assert.equal(view.excluded, 0);
+  assert.equal(view.replaced, 1);
+  assert.equal(view.rows[0].delta.tone, 'down');
+  assert.equal(view.rows[0].against, 'eerder bij deze container');
+  assert.equal(history.replacedNote(1), '1 eerdere kostprijs van een opnieuw toegepaste container telt niet mee in laagste, hoogste, gemiddeld en de grafiek.');
+  assert.equal(history.replacedNote(2), '2 eerdere kostprijzen van opnieuw toegepaste containers tellen niet mee in laagste, hoogste, gemiddeld en de grafiek.');
+  assert.equal(history.replacedNote(0), null);
+  /* Rows without a container all count. */
+  const manual = history.costHistoryView([
+    row({ appliedAt: '2026-10-02T09:00:00Z', landedUnitEur: 4, previousLandedUnitEur: 3, purchaseOrderId: null, source: null }),
+    row({ appliedAt: '2026-10-01T09:00:00Z', landedUnitEur: 3, previousLandedUnitEur: null, purchaseOrderId: null, source: null }),
+  ], current);
+  assert.deepEqual([manual.replaced, manual.stats.min, manual.stats.max], [0, 3, 4]);
+});
+
 /* ---- the screens: one way in from everywhere, the templates parse ----- */
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -233,6 +311,10 @@ test('the history component and its sheet parse, and the history never says "st"
   assert.doesNotMatch(component, /'system'/, 'the system check lives in the model');
   assert.match(component, /catalog\.unitNames\(\)/);
   assert.match(sheet, /title="Kostprijshistoriek"/);
+  /* The subtitle names the variant, so the colours of one series never read alike. */
+  assert.match(sheet, /\{\{ title\(\)\.name \}\}@if \(title\(\)\.variant; as variant\) \{<span> · \{\{ variant \}\}<\/span>\}/);
+  assert.match(component, /duurder dan \{\{ now\.against \}\}/);
+  assert.match(component, /@if \(replaced\(\); as note\)/);
 });
 
 test('desk, phone and editor each open the history sheet from the cost', async () => {

@@ -6,7 +6,7 @@ import { Product, ProductCostHistoryEntry } from '../../core/api/models';
 import { CurPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { productCostBasis } from './product-cost-basis';
-import { costHistoryView, excludedNote, type CostDelta } from './product-cost-history-model';
+import { costHistoryView, excludedNote, replacedNote, type CostDelta } from './product-cost-history-model';
 
 /**
  * The line of landed costs a product carried: every container that set
@@ -44,15 +44,15 @@ import { costHistoryView, excludedNote, type CostDelta } from './product-cost-hi
           @switch (now.delta.tone) {
             @case ('up') {
               <b>▲ {{ change(now.delta) }}</b>
-              <span>duurder dan de vorige container ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
+              <span>duurder dan {{ now.against }} ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
             }
             @case ('down') {
               <b>▼ {{ change(now.delta) }}</b>
-              <span>goedkoper dan de vorige container ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
+              <span>goedkoper dan {{ now.against }} ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
             }
             @case ('same') {
               <b>=</b>
-              <span>gelijk aan de vorige container ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
+              <span>gelijk aan {{ now.against }} ({{ now.entry.previousLandedUnitEur | eur: 4 }})</span>
             }
             @case ('basis') {
               <b>Andere basis</b>
@@ -83,6 +83,7 @@ import { costHistoryView, excludedNote, type CostDelta } from './product-cost-hi
         <div><dt>Containers</dt><dd>{{ v.containers | num }}</dd></div>
       </dl>
       @if (excluded(); as note) { <p class="pch__muted">{{ note }}</p> }
+      @if (replaced(); as note) { <p class="pch__muted">{{ note }}</p> }
       <ol class="pch__list">
         @for (row of v.rows; track row.entry.id; let first = $first) {
           <li [class.pch__row--now]="first">
@@ -208,6 +209,7 @@ export class ProductCostHistory {
 
   readonly view = computed(() => costHistoryView(this.entries(), productCostBasis(this.product()), this.currentOrderId()));
   readonly excluded = computed(() => excludedNote(this.view().excluded));
+  readonly replaced = computed(() => replacedNote(this.view().replaced));
   /** Oldest container first, one point a day, on the newest row's basis, so the line reads left to right like time. */
   readonly series = computed<TrendSeries[]>(() => {
     const view = this.view();

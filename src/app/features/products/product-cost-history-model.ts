@@ -63,6 +63,8 @@ export interface CostHistoryRow {
   /** Who applied it; empty for the system's own rows. */
   by: string | null;
   delta: CostDelta;
+  /** What the change is against: the container before, or this same container before a re-apply. */
+  against: string;
   /** What one unit was made of; null when the row kept no parts. */
   parts: CostPart[] | null;
 }
@@ -70,13 +72,15 @@ export interface CostHistoryRow {
 export interface CostHistoryView {
   /** Newest first. */
   rows: CostHistoryRow[];
-  /** Over the rows on the newest row's basis. */
+  /** Over the rows on the newest row's basis, one per container: its newest. */
   stats: { min: number; max: number; avg: number };
   /** Distinct containers: purchase orders, else the source text. */
   containers: number;
   /** Rows left out of the sums and the chart because they hold on another basis. */
   excluded: number;
-  /** Oldest first, one point per day (the day's last cost), on the newest row's basis. */
+  /** Earlier rows of a container that was applied again: in the list, not in the sums or the chart. */
+  replaced: number;
+  /** Oldest first, one point per day (the day's last cost), on the newest row's basis, one row per container. */
   chart: { dates: string[]; values: number[] };
   /** Set when the product's basis today differs from the newest row's. */
   basisNote: string | null;
@@ -153,12 +157,24 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
       gone,
       by: entry.appliedBy && !SYSTEM_ACTORS.has(entry.appliedBy.trim().toLowerCase()) ? entry.appliedBy : null,
       delta: delta(entry, basis, rows[0] ?? null),
+      /* A re-apply compares with this very container's earlier cost, never with another container. */
+      against: kind === 'REAPPLY' ? 'eerder bij deze container' : 'de vorige container',
       parts: costParts(entry, basis),
     });
   }
 
   const latest = rows[0] ?? null;
-  const comparable = latest ? rows.filter((row) => sameCostBasis(row.basis, latest.basis)) : [];
+  /* A container applied again replaced its earlier cost: only its newest row counts in the sums and the chart.
+     Rows without a container stay as they are. Every row stays in the list. */
+  const seen = new Set<number>();
+  const counted = rows.filter((row) => {
+    const id = row.entry.purchaseOrderId;
+    if (id == null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  const comparable = latest ? counted.filter((row) => sameCostBasis(row.basis, latest.basis)) : [];
   const values = comparable.map((row) => row.entry.landedUnitEur);
   const stats = values.length
     ? { min: Math.min(...values), max: Math.max(...values), avg: round4(values.reduce((sum, value) => sum + value, 0) / values.length) }
@@ -173,10 +189,11 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
   const chart = { dates: [...byDay.keys()], values: [...byDay.values()] };
 
   let basisNote: string | null = null;
-  if (latest && !sameCostBasis(latest.basis, current)) {
-    basisNote = `De prijs geldt nu ${costWords(current).per}; deze kostprijs werd toegepast ${latest.per} en is niet omgerekend.`;
+  const now = costWords(current).per;
+  if (latest && !sameCostBasis(latest.basis, current) && now !== latest.per) {
+    basisNote = `De prijs geldt nu ${now}; deze kostprijs werd toegepast ${latest.per} en is niet omgerekend.`;
   }
-  return { rows, stats, containers, excluded: rows.length - comparable.length, chart, basisNote };
+  return { rows, stats, containers, excluded: counted.length - comparable.length, replaced: rows.length - counted.length, chart, basisNote };
 }
 
 /** "1 rij op een andere basis telt niet mee", "3 rijen … tellen niet mee". */
@@ -185,4 +202,12 @@ export function excludedNote(excluded: number): string | null {
   return excluded === 1
     ? '1 rij op een andere basis telt niet mee in laagste, hoogste, gemiddeld en de grafiek.'
     : `${excluded.toLocaleString('nl-BE')} rijen op een andere basis tellen niet mee in laagste, hoogste, gemiddeld en de grafiek.`;
+}
+
+/** The earlier cost of a container that was applied again: listed, but only its newest cost counts. */
+export function replacedNote(replaced: number): string | null {
+  if (replaced <= 0) return null;
+  return replaced === 1
+    ? '1 eerdere kostprijs van een opnieuw toegepaste container telt niet mee in laagste, hoogste, gemiddeld en de grafiek.'
+    : `${replaced.toLocaleString('nl-BE')} eerdere kostprijzen van opnieuw toegepaste containers tellen niet mee in laagste, hoogste, gemiddeld en de grafiek.`;
 }
