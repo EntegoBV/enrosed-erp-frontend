@@ -27,6 +27,7 @@ async function selectedClass(path: string, name: string, names: string[], global
 const State = await selectedClass('../src/app/features/finance/finance-state.ts', 'FinanceState', [
   'costDraft', 'costBankTransaction', 'costFiles', 'duplicating', 'openCost', 'openCostFromBank', 'saveCost',
   'costBankCreatePending', 'costBankCreateConflict', 'createCostFromBank', 'reviewCostBankConflict', 'sourceErrors', 'attach', 'bankCostLinkPending', 'bankCostLinkError', 'addPaymentFromBank',
+  'costDueError',
 ], { blankCost, bankAmountsMatch, bankTransactionDay, cashTotalOf, crypto: globalThis.crypto, messageOf: (error: any, fallback: string) => error.message || fallback });
 
 const bank = { id: 70, amountEur: -121, account: 'KBC', bookedAt: '2026-10-01T22:15:00Z', timeZone: 'Europe/Brussels', source: 'ODOO',
@@ -156,6 +157,24 @@ test('editing imported supplier-credit classification preserves its negative ori
   assert.equal(updates[0].body.amountExclEur, -78.99); assert.equal(updates[0].body.reference, 'CN-95');
   assert.equal(updates[0].body.category, 'RECLAME'); assert.equal(updates[0].body.vatRegime, 'BE');
   assert.equal(creates.length + links.length, 0); assert.equal(state.costs()[0].amountInclEur, -95.58);
+});
+
+test('a refused due date after the PUT keeps the saved changes in the list and the sheet open with the reason', async () => {
+  // spec-bank-forecast §3.13 (review 2026-10-16): the PUT is in before "Vervalt op" goes to its own endpoint.
+  const { state } = setup();
+  const original = { ...blankCost('2026-10-01'), id: 96, description: 'Drukwerk', amountExclEur: 100, amountInclEur: 121, vatPct: 21, vatRegime: 'BE', vatRegimeConfirmed: true, dueDate: null };
+  state.costs.set([original]); state.openCost(original); state.cashRound = () => true;
+  state.finance.updateCost = async (id: number, body: any) => ({ ...body, id, dueDate: null });
+  state.finance.setCostDueDate = async () => { throw new Error('De vervaldag ligt vóór de kostdatum'); };
+  const draft = { ...state.costDraft(), description: 'Drukwerk folders', dueDate: '2026-09-15' };
+  assert.equal(await state.saveCost(draft), null);
+  assert.equal(state.costs()[0].description, 'Drukwerk folders', 'the PUT result is in the list');
+  assert.equal(state.costDueError(), 'De andere wijzigingen zijn bewaard, de vervaldag niet: De vervaldag ligt vóór de kostdatum');
+  assert.notEqual(state.costDraft(), null, 'the sheet stays open');
+  state.finance.setCostDueDate = async (id: number, dueDate: string) => ({ ...state.costs()[0], id, dueDate });
+  const saved = await state.saveCost({ ...draft, dueDate: '2026-11-05' });
+  assert.equal(saved.dueDate, '2026-11-05'); assert.equal(state.costs()[0].dueDate, '2026-11-05');
+  assert.equal(state.costDueError(), ''); assert.equal(state.costDraft(), null);
 });
 
 const Sheet = await selectedClass('../src/app/features/finance/cost-sheet.ts', 'CostSheet', [

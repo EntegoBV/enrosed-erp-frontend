@@ -8,7 +8,7 @@ import { signal, computed } from '@angular/core';
 const source = await readFile(new URL('../src/app/features/finance/cost-sheet.ts', import.meta.url), 'utf8');
 const parsed = ts.createSourceFile('cost-sheet.ts', source, ts.ScriptTarget.Latest, true);
 const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'CostSheet')!;
-const names = ['source', 'sourceLoading', 'sourceError', 'sourceLocked', 'loadSource', 'patch', 'setAmount', 'setMode', 'fitAmountTo', 'canSave', 'showError'];
+const names = ['source', 'sourceLoading', 'sourceError', 'sourceLocked', 'loadSource', 'patch', 'setAmount', 'setMode', 'fitAmountTo', 'canSave', 'showError', 'dueProblem'];
 const members = cls.members.filter(member => member.name && names.includes(member.name.getText(parsed))); assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, members);
 const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
@@ -16,9 +16,22 @@ const exports: any = {}; vm.runInNewContext(js, { exports, signal, computed, mes
 function setup() {
   const sheet = new exports.CostSheet();
   const original = { id: 5, date: '2026-10-01', party: 'Leverancier', reference: 'CN-5', amountExclEur: -79, amountInclEur: -95.58, vatPct: null };
-  Object.assign(sheet, { draft: signal(original), mode: signal('incl'), basics: () => true, amount: () => sheet.draft().amountInclEur, bankBlocked: () => false, regimeProblem: () => null, tried: signal(true) });
-  return { sheet, original };
+  const cashRound = signal(true);
+  Object.assign(sheet, { draft: signal(original), mode: signal('incl'), basics: () => true, amount: () => sheet.draft().amountInclEur, bankBlocked: () => false, regimeProblem: () => null, tried: signal(true),
+    state: { cashRound } });
+  return { sheet, original, cashRound };
 }
+
+test('"Vervalt op" before the cost date is refused in the sheet, with the server\'s words, before anything is saved', async () => {
+  // spec-bank-forecast §3.13 (review 2026-10-16): a refused due date after the PUT left the list stale; now the sheet refuses it first.
+  const { sheet, original, cashRound } = setup(); sheet.financeApi = { costOdooSource: async () => ({ snapshot: { totalEur: -95.58 } }) }; await sheet.loadSource();
+  assert.equal(sheet.dueProblem(), null); assert.equal(sheet.canSave(), true);
+  sheet.draft.set({ ...original, dueDate: '2026-09-30' });
+  assert.equal(sheet.dueProblem(), 'De vervaldag ligt vóór de kostdatum'); assert.equal(sheet.canSave(), false);
+  sheet.draft.set({ ...original, dueDate: '2026-10-01' }); assert.equal(sheet.dueProblem(), null, 'the cost date itself is fine');
+  sheet.draft.set({ ...original, dueDate: '2026-09-30' }); cashRound.set(false);
+  assert.equal(sheet.dueProblem(), null, 'an older server has no due date field');
+});
 
 test('source credit metadata/classification can be saved while original signed financial fields stay immutable', async () => {
   const { sheet, original } = setup(); sheet.financeApi = { costOdooSource: async () => ({ snapshot: { totalEur: -95.58 } }) };

@@ -1103,6 +1103,8 @@ export class FinanceState {
   /* ------------------------------------------------------------- costs */
 
   readonly costDraft = signal<CompanyCost | null>(null);
+  /** "Vervalt op" refused after the rest of the cost was saved (§3.13): shown under the field, the sheet stays open. */
+  readonly costDueError = signal('');
   /** The existing bank row that opened a new manual cost; never create a second bank movement for it. */
   readonly costBankTransaction = signal<BankStatementLine | null>(null);
   /** A lost response must resend the exact original operation, including after closing and reopening its form. */
@@ -1118,6 +1120,7 @@ export class FinanceState {
     this.costBankTransaction.set(null);
     this.costFiles.set([...files]);
     this.costSheetFocus.set(options.regime ? 'regime' : null);
+    this.costDueError.set('');
     this.costDraft.set(cost ? { ...cost } : blankCost(this.today()));
   }
 
@@ -1205,10 +1208,22 @@ export class FinanceState {
     try {
       const body: CompanyCost = { ...draft, ...(options.bankTransaction ? { paidOn: null } : {}), party: draft.party || null, reference: draft.reference || null, notes: draft.notes || null,
         amountInclEur: Number.isFinite(draft.amountInclEur as number) && (draft.amountInclEur as number) !== 0 ? draft.amountInclEur : null };
+      this.costDueError.set('');
       let saved = draft.id ? await this.finance.updateCost(draft.id, body) : await this.finance.createCost(body);
-      /* "Vervalt op" is the server's own on a PUT (2026-10-16): a changed due date goes through its endpoint after the save. */
-      if (draft.id && this.cashRound() && (draft.dueDate ?? null) !== (before?.dueDate ?? null)) saved = await this.finance.setCostDueDate(draft.id, draft.dueDate ?? null);
       this.costs.update((rows) => (draft.id ? rows.map((row) => (row.id === saved.id ? saved : row)) : [saved, ...rows]));
+      /*
+       * "Vervalt op" is the server's own on a PUT (2026-10-16): a changed due date goes through its endpoint after the save.
+       * The PUT is in by then (the list shows it); a refused date keeps the sheet open with the reason under the field.
+       */
+      if (draft.id && this.cashRound() && (draft.dueDate ?? null) !== (saved.dueDate ?? null)) {
+        try {
+          saved = await this.finance.setCostDueDate(draft.id, draft.dueDate ?? null);
+          this.costs.update((rows) => rows.map((row) => (row.id === saved.id ? saved : row)));
+        } catch (failure: unknown) {
+          this.costDueError.set(`De andere wijzigingen zijn bewaard, de vervaldag niet: ${messageOf(failure, 'probeer opnieuw')}`);
+          return null;
+        }
+      }
       const text = this.duplicating && !draft.id ? 'Kost gedupliceerd' : draft.id ? 'Kost bewaard' : 'Kost geboekt';
       /* A cost that just became paid can go onto the bank in one more tap, or right away when the form said so. */
       const newlyPaid = !!saved.paidOn && !before?.paidOn && !!saved.id;
