@@ -515,6 +515,57 @@ cijfers'.
   (`nacalcUnitBasis`, `nacalcProductUnit`, `nacalcReceiptUnitLine`, …). The
   bridge row is 'Correctie naar bestelde aantallen'. Desk and phone product
   tables label a set product's landed cost '/set' with '€ … /stuk'.
+- Round 2 of the payments round (Emre's follow-ups of 2026-10-15; contract
+  scratchpad spec-purchase-payments-r2.md, backend AI-CONTEXT 'Round 2').
+  A linked transaction carries the payment: one payment (or one open
+  transfer of a group) and one line go through `bank-part`, which takes the
+  line's day and, for a whole match, its euro (a euro payment's amount with
+  it; USD/CNY keeps its amount, the sheet's 'Koers' row shows the new rate).
+  The sheet no longer PUTs before such a link when only the transaction was
+  picked (typed money goes back to the stored payment on a pick); changed
+  words, term or invoice still go first with the stored money. A line more
+  than € 0,02 above the payment is 'higher' (`pendingLinkPlan`): the sheet
+  asks 'Transactie is € x hoger dan deze betaling' with 'Bedrag aanpassen
+  naar € y' (`higher: 'ADJUST'`), 'Rest als inspectie via leverancier'
+  (`'INSPECTION'`, only a supplier goods payment, not the CIF term, of a
+  container with `inspectionCostEur` > 0: the server's rule) and 'Annuleren';
+  save stays blocked until a choice. The inspection noted with the goods of
+  the same day (`transferCompanions`, unlinked SEPARATE payments) joins a
+  line that makes both (`withPaymentIds`, the inspection keeps its amount):
+  never a second inspection. 'Wat verandert' (`linkChange`: Bedrag, Betaald
+  op, Koers, Inspectie via leverancier, Bewijs; Betaling nu → Na koppelen)
+  shows before every single-line link, also in Kosten & bank › Bestaande
+  betaling (one payment, or goods + its inspection, go through `bank-part`
+  there too; several others keep /links). After a link the server's
+  `notice` (else `linkNotice`) shows as a closable banner on Betalingen
+  (`paymentNotice`, per order) and as the toast in Kosten & bank. A retry
+  after a lost answer recognises transactions already on the payment
+  (`pendingAlreadyLinked`) and clears the pick. The payment sheet has one
+  'Betaalbewijs' list: the transactions first (with 'Deze transactie draagt
+  ook: Inspectie € 300,00 (via leverancier)' when the line carries more of
+  the container; no 'Inspectie afsplitsen' then), the files, 'Bestand
+  toevoegen', the count of what it lists (`fileRoom` = listed proofs + the
+  payment's free places); an older invoice file on the payment is listed
+  under Factuur with open and ✕. One word for adding a transaction:
+  'Transactie toevoegen' (a payment fully on the bank says why it cannot).
+  Invoices: `invoiceCoverage` words 'Geldt voor alle betalingen van
+  Leverancier (n)' or 'Geldt voor n van m betalingen' with 'Toewijzen aan
+  alle betalingen' (desk row and ⋯, phone payee sheet; `POST
+  …/invoices/{id}/assign-all`, one call); editing a payment of a payee with
+  two invoices and none of its own starts on the main one; an invoice made
+  in the payment sheet is one multipart call with its file and
+  `assignAll` ('Voor alle deelbetalingen', on by default, sent when the
+  payee has another invoice) and a retry recognises it by number; 'Bestand
+  bij de factuur' sends a file to an invoice without one
+  (`…/invoices/{id}/document`), never to the payment. One date rule for a
+  payment in parts: its newest transfer's day with 'eerste dd/mm' (ledger,
+  sheet, phone rows, Kosten & bank tree). No average over different
+  products (`nacalcUnitMix`; the server's `totals.containerAverage` wins,
+  else one product or one family in one unit and set size): the summary
+  card, the desk strip and the phone hero show 'n producten · € min – € max'
+  per stuk (per set when every line is a set of one size) with the products
+  by value and 'gem. € x over n st' only as a sub-line; product table totals
+  and the receipt line say 'gem.' / 'Gemiddeld over de n producten'.
 - Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
   everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
   budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in
