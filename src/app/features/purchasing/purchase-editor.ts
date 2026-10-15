@@ -31,8 +31,11 @@ import { purchaseNacalc } from './purchase-nacalc-metrics';
 import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet, type PurchasePaymentDraft } from './purchase-payment-sheet';
 import { splitTransfer } from './purchase-transfer-split';
-import { invoiceDocumentKind, paymentRoundOnServer, primaryInvoice } from './purchase-invoices';
-import { inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur } from './purchase-payment-links';
+import { invoiceDocumentKind, invoicesOf, paymentRoundOnServer, primaryInvoice } from './purchase-invoices';
+import {
+  carveText, inspectionSplitBlocked, inspectionSplitEur, linkNotice, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
+  transferCompanions,
+} from './purchase-payment-links';
 import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit } from './purchase-invoice-sheet';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
@@ -1193,6 +1196,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <app-purchase-payment-overview mode="edit" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [nacalc]="nacalcSummary()"
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
+                [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
@@ -1501,7 +1505,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
-          [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []"
+          [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
+          [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
@@ -1541,6 +1546,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <select class="select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
                   @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
                 </select>
+                @if (roundOnServer()) { <span class="hint">Een betaalbewijs voeg je toe bij de betaling zelf (Aanpassen).</span> }
               </div>
               <div class="field">
                 <label for="doc-label">Omschrijving <span class="opt"></span></label>
@@ -2323,9 +2329,10 @@ export class PurchaseEditor {
     // The payment the screen handed over is the root when it is one (it carries what the screen shows); else the group's root.
     const root = payment.id === (payment.groupId ?? payment.id) ? payment
       : members.find(member => member.id === payment.groupId) ?? members[0] ?? payment;
+    const main = root.invoiceId == null ? this.unresolvedMainInvoice(root, members) : null;
     this.paying.set({ ...this.storedPaymentDraft(root, members), label: root.label ?? '', payee: root.payee ?? 'SUPPLIER', files: [], settles: !!root.settles,
       instalmentDue: root.instalmentDue ?? null, toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '',
-      invoiceId: root.invoiceId ?? null, invoiceIdChanged: false });
+      invoiceId: main ?? root.invoiceId ?? null, invoiceIdChanged: main !== null });
     void this.loadBankLines();
   }
 
@@ -2336,6 +2343,20 @@ export class PurchaseEditor {
     return { id: root.id, amount: root.amount, amountInput: String(root.amount).replace('.', ','), currency: root.currency, paidOn: root.paidOn,
       amountEurInput: foreign ? String(root.amountEur).replace('.', ',') : '', amountEur: foreign ? root.amountEur : null,
       groupIds: [root.id, ...members.filter(member => member.id !== root.id).map(member => member.id)] };
+  }
+
+  /**
+   * The payee has two or more invoices and none is this payment's yet (the
+   * automatic rule only picks the payee's only invoice): the sheet starts on
+   * the main one, so saving the payment assigns it (Emre, 2026-10-15).
+   */
+  private unresolvedMainInvoice(root: PurchasePayment, members: readonly PurchasePayment[]): number | null {
+    const invoices = this.view()?.invoices ?? [];
+    const payee = root.payee ?? 'SUPPLIER';
+    if (invoicesOf(invoices, payee).length < 2) return null;
+    const ids = new Set(members.map(member => member.id));
+    if (invoices.some(invoice => invoice.paymentIds?.some(id => ids.has(id)))) return null;
+    return primaryInvoice(invoices, payee)?.id ?? null;
   }
 
   /** Every transfer of the payment's group, by day; a payment never split is a group of one. */
@@ -2368,6 +2389,26 @@ export class PurchaseEditor {
       bankStatementLineId: stored.bankStatementLineId ?? null, onBank: this.paymentOnBank(stored), proofs: null }] : [];
   });
   readonly payingProofFiles = computed(() => this.payingRow()?.proofs ?? []);
+  /** Older invoice files hung on the payment in the sheet: listed under Factuur, they take one of its five places. */
+  readonly payingInvoiceFiles = computed(() => this.payingRow()?.invoiceFiles ?? []);
+  /** 'Rest als inspectie via leverancier' fits a supplier goods payment (not the CIF freight term) of a container with an inspection cost: the server's rule. */
+  readonly payingInspectionOffered = computed(() => {
+    const pay = this.paying(), data = this.view();
+    if (!pay || !data || pay.payee !== 'SUPPLIER' || pay.instalmentDue === 'FREIGHT' || this.payingCreditOffset()) return false;
+    return (data.order.inspectionCostEur ?? 0) > 0;
+  });
+  /** How many payments the sheet's payee has (a payment in parts once): 'Geldt voor alle betalingen van Leverancier (n)'. */
+  readonly payingPayeeCount = computed(() => {
+    const payee = this.paying()?.payee;
+    return payee ? (this.paymentLedger()?.rows ?? []).filter(row => row.payee === payee).length : 0;
+  });
+  /**
+   * What the last link changed, for the Betalingen screen: 'Bedrag en datum
+   * gevolgd van de transactie: … (was …)'. Kept per order until dismissed.
+   */
+  readonly paymentNotice = signal<{ orderId: number; text: string } | null>(null);
+  readonly paymentNoticeText = computed(() => { const notice = this.paymentNotice(); return notice && notice.orderId === this.view()?.order.id ? notice.text : null; });
+  dismissPaymentNotice(): void { this.paymentNotice.set(null); }
   /** '{account} · {dd/MM}' of a loaded bank line, for the ledgers' bank pills. */
   readonly bankLineLabel = (lineId: number): string | null => {
     const line = this.bankLines()?.find(item => item.id === lineId);
@@ -2556,6 +2597,32 @@ export class PurchaseEditor {
         if (this.view()?.order.id === orderId) this.ui.toast('Vorig bestand verwijderd', 'ok');
       } catch (failure: unknown) {
         if (this.view()?.order.id === orderId) this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+
+  /**
+   * 'Toewijzen aan alle betalingen': every payment of the invoice's payee
+   * (each payment in parts whole) points to this invoice, in one call.
+   */
+  assignInvoiceToAll(invoice: PurchaseInvoice): void {
+    const data = this.view();
+    if (!data || this.payingBusy() || !this.roundOnServer()) return;
+    const id = data.order.id;
+    const count = (this.paymentLedger()?.rows ?? []).filter(row => row.payee === invoice.payee).length;
+    this.ui.confirm({ title: 'Toewijzen aan alle betalingen',
+      message: `Factuur <b>${escapeHtml(invoice.number)}</b> toewijzen aan alle ${count} ${count === 1 ? 'betaling' : 'betalingen'} van ${PAYEE_LABEL[invoice.payee]}? Een betaling die nu bij een andere factuur hoort, gaat naar deze factuur.`,
+      confirmLabel: 'Toewijzen' }, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== id) return;
+      this.payingBusy.set(true);
+      try {
+        await this.sourcing.assignInvoiceToAll(id, invoice.id);
+        await this.refreshPaymentState(id);
+        if (this.view()?.order.id === id) this.ui.toast(`Factuur ${invoice.number} geldt voor alle betalingen van ${PAYEE_LABEL[invoice.payee]}`, 'ok');
+      } catch (failure: unknown) {
+        if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, 'Toewijzen mislukt'), 'err');
       } finally {
         this.payingBusy.set(false);
       }
@@ -2818,47 +2885,80 @@ export class PurchaseEditor {
     const offset = !!this.payingCreditOffset();
     const parts = pay.id ? this.payingParts() : [];
     const grouped = parts.length > 1;
-    const pendingLines = pay.pendingLines ?? [];
+    // A retry after a lost answer: the refreshed payment already carries every picked transaction, so there is nothing left to link.
+    const alreadyLinked = round && pendingAlreadyLinked(pay.pendingLines ?? [], parts);
+    const pendingLines = alreadyLinked ? [] : pay.pendingLines ?? [];
     // The picked transactions are checked against that part's amount before any inspection split.
     const pendingPart = pay.id ? parts.find(part => part.id === (pay.pendingPartId ?? pay.id)) ?? null : null;
-    // The same rule as the sheet: a payment never split as the draft values its money (written before the link), a transfer its correction.
-    const pendingEur = !pendingPart ? 0 : pendingPartEur(pendingPart, pay.partEdits?.[pendingPart.id], grouped ? null : this.paymentDraftEur());
-    const plan = pendingPart && pendingLines.length ? pendingLinkPlan(pendingEur, pendingLines, round) : { kind: 'none' as const };
+    // The same rule as the sheet: with this round the part as booked (the payment follows the transaction); an older server
+    // writes the draft first, so a payment never split counts as the draft values its money.
+    const pendingEur = !pendingPart ? 0 : pendingPartEur(pendingPart, pay.partEdits?.[pendingPart.id], grouped || round ? null : this.paymentDraftEur());
+    // The inspection noted with the goods of this transfer goes on the same transaction when together they make it.
+    const companions = pendingPart && round ? transferCompanions(pendingPart.payment, this.payments() ?? [], pay.groupIds ?? []) : [];
+    const plan = pendingPart && pendingLines.length ? pendingLinkPlan(pendingEur, pendingLines, round, pay.surplus ?? null, companions) : { kind: 'none' as const };
     if (plan.kind === 'invalid') { this.ui.toast(plan.message, 'err'); return; }
+    if (plan.kind === 'higher') { this.ui.toast(`${surplusQuestion(plan.extraEur)}: kies eerst wat er met het verschil gebeurt.`, 'err'); return; }
     /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; never for an offset, a payment in parts or picked transactions. */
-    const bankOffered = !pay.bankTransaction && typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay) && !offset && !grouped && !pendingLines.length;
+    const bankOffered = !pay.bankTransaction && typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay) && !offset && !grouped && !(pay.pendingLines ?? []).length;
     const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
     if (bankOffered && pay.toBank && (!account || pay.paidOn > this.bankToday())) return;
     if (pay.bankTransaction && !bankAmountsMatch(this.paymentTransferEur(), Math.abs(pay.bankTransaction.amountEur))) {
       this.ui.toast('Het totaal van de betaling mag maximaal € 0,02 afwijken van de gekozen banktransactie.', 'err'); return;
     }
     const stored = pay.id ? (this.payments() ?? []).find(payment => payment.id === pay.id) : undefined;
+    // A larger transaction whose rest becomes the inspection carries the split itself: a typed split is never sent on top.
     const split = round && !!pay.id && !grouped && !offset && pay.payee === 'SUPPLIER' && (stored?.payee ?? 'SUPPLIER') === 'SUPPLIER'
-      && pay.instalmentDue !== 'FREIGHT' && (pay.inspectionSplit ?? 0) > 0 ? pay.inspectionSplit! : null;
+      && pay.instalmentDue !== 'FREIGHT' && !(pay.surplus && pendingLines.length) && (pay.inspectionSplit ?? 0) > 0 ? pay.inspectionSplit! : null;
     // A carve or a split over several transactions changes the goods payment: the inspection is split off in a later save, never in the same one.
     if (split !== null && inspectionSplitBlocked(plan)) { this.ui.toast('Eerst de banktransacties koppelen, daarna de inspectie afsplitsen.', 'err'); return; }
     this.payingBusy.set(true);
     let paymentSaved = false;
     const done: string[] = [];
     try {
-      // 1. 'Factuur toevoegen…' inline: the file once, then the invoice once; the payment then points to it.
+      // 1. 'Factuur toevoegen…' inline: the invoice with its file in one call, once; the payment then points to it.
       let invoiceId = pay.invoiceId ?? null;
       let invoiceChanged = !!pay.invoiceIdChanged;
-      if (round && pay.createdInvoiceId != null) { invoiceId = pay.createdInvoiceId; invoiceChanged = true; }
-      else if (round && pay.newInvoice?.open && pay.newInvoice.amount !== null) {
-        const fresh = pay.newInvoice;
-        let documentId = pay.createdDocumentId ?? null;
-        if (fresh.file && documentId === null) {
-          const document = await this.sourcing.addDocument(data.order.id, fresh.file, invoiceDocumentKind(pay.payee), null, null);
-          documentId = document.id;
-          if (this.view()?.order.id === data.order.id) this.documents.update(current => [...(current ?? []), document]);
-          this.paying.update(current => current && (current.id ?? null) === (pay.id ?? null) ? { ...current, createdDocumentId: document.id } : current);
+      const sameSheet = (current: PurchasePaymentDraft | null) => !!current && (current.id ?? null) === (pay.id ?? null);
+      // 'Voor alle deelbetalingen': beside another invoice of the payee every payment points to the new one; the payee's only invoice is everyone's already.
+      const others = (number: string) => invoicesOf(data.invoices ?? [], pay.payee).some(invoice => invoice.number.trim().toLowerCase() !== number.trim().toLowerCase());
+      try {
+        if (round && pay.createdInvoiceId != null) { invoiceId = pay.createdInvoiceId; invoiceChanged = true; }
+        else if (round && pay.newInvoice?.open && pay.newInvoice.amount !== null) {
+          const fresh = pay.newInvoice;
+          const forAll = (fresh.forAll ?? true) && others(fresh.number);
+          // A lost answer: the refreshed container already has this invoice (the server refuses the same number twice).
+          const known = invoicesOf(data.invoices ?? [], pay.payee).find(invoice => invoice.number.trim().toLowerCase() === fresh.number.trim().toLowerCase());
+          const body = { payee: pay.payee, number: fresh.number.trim(), invoiceDate: fresh.invoiceDate, amount: fresh.amount!, currency: fresh.currency,
+            amountEur: null, documentId: null, notes: null };
+          // The file belongs to the invoice (the container), never to this one payment: one call with the data and the file.
+          const created = known ?? (fresh.file ? await this.sourcing.addInvoiceWithFile(data.order.id, body, fresh.file, forAll)
+            : await this.sourcing.addInvoice(data.order.id, body));
+          invoiceId = created.id;
+          invoiceChanged = true;
+          this.paying.update(current => sameSheet(current) ? { ...current!, createdInvoiceId: created.id, invoiceId: created.id, invoiceIdChanged: true,
+            invoiceAssignedToAll: !!fresh.file && forAll && !known } : current);
+          if (forAll && (!fresh.file || known)) {
+            await this.sourcing.assignInvoiceToAll(data.order.id, created.id);
+            this.paying.update(current => sameSheet(current) ? { ...current!, invoiceAssignedToAll: true } : current);
+          }
         }
-        const created = await this.sourcing.addInvoice(data.order.id, { payee: pay.payee, number: fresh.number.trim(), invoiceDate: fresh.invoiceDate,
-          amount: fresh.amount!, currency: fresh.currency, amountEur: null, documentId, notes: null });
-        invoiceId = created.id;
-        invoiceChanged = true;
-        this.paying.update(current => current && (current.id ?? null) === (pay.id ?? null) ? { ...current, createdInvoiceId: created.id, invoiceId: created.id, invoiceIdChanged: true } : current);
+        // A retry after the invoice was made but its assignment failed.
+        const assigning = this.paying();
+        if (round && invoiceId !== null && pay.createdInvoiceId != null && assigning?.newInvoice && (assigning.newInvoice.forAll ?? true)
+          && !assigning.invoiceAssignedToAll && others(assigning.newInvoice.number)) {
+          await this.sourcing.assignInvoiceToAll(data.order.id, invoiceId);
+          this.paying.update(current => sameSheet(current) ? { ...current!, invoiceAssignedToAll: true } : current);
+        }
+        // 'Bestand bij de factuur': the chosen invoice had no file; it goes to the invoice in one call (once: a refreshed invoice that has one is left alone).
+        const fileInvoice = round && pay.invoiceFile ? (data.invoices ?? []).find(item => item.id === (pay.invoiceId ?? this.resolvedInvoiceOf(pay))) ?? null : null;
+        if (fileInvoice && pay.invoiceFile && fileInvoice.documentId == null) {
+          await this.sourcing.attachInvoiceFile(data.order.id, fileInvoice.id, pay.invoiceFile);
+        }
+        if (pay.invoiceFile) this.paying.update(current => sameSheet(current) ? { ...current!, invoiceFile: null } : current);
+      } catch (failure: unknown) {
+        // The invoice may exist after a lost answer: show the container as the server has it, so a retry recognises it.
+        await this.refreshPaymentState(data.order.id);
+        throw failure;
       }
       // 2. The payment. The bank's euro amount travels only when it was filled in for a USD/CNY payment; the server keeps the order rate otherwise.
       // Once the goods payment is posted the split stands: the goods go without a euro (the stored share survives unchanged money), only the pending parts follow.
@@ -2880,7 +2980,11 @@ export class PurchaseEditor {
         atomicIds = result.payments.map(payment => payment.id);
       } else {
         const retained = (pay.bankLinkPending || pay.bankLinkComplete) ? pay.bankSavedPayment ?? (this.payments() ?? []).find(payment => payment.id === pay.id) : null;
+        // With this round a link carries the money and the day: a payment never split whose words, payee, term and invoice stayed as stored
+        // is not written first, the link alone changes it (no PUT then link).
+        const untouched = round && pay.id && !grouped && plan.kind !== 'none' && stored && !invoiceChanged && this.sameStoredWords(pay, stored) ? stored : null;
         if (retained) saved = retained;
+        else if (untouched) saved = untouched;
         else if (pay.id && grouped) saved = await this.saveGroup(data.order.id, pay, parts, invoiceChanged ? invoiceId : undefined);
         else saved = pay.id ? await this.sourcing.updatePayment(data.order.id, pay.id, goods) : await this.sourcing.addPayment(data.order.id, goods);
       }
@@ -2935,14 +3039,31 @@ export class PurchaseEditor {
         } catch { bank = 'failed'; }
       }
       // 4. The transactions picked in a saved payment, then 5. the inspection split: from here a retry continues without writing the payment again.
-      if (plan.kind !== 'none' || split !== null) {
+      let notice: string | null = null;
+      if (plan.kind !== 'none' || split !== null || alreadyLinked) {
         this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkPending: true, bankSavedPayment: saved, bankLinkError: '' } : current);
-        try {
-          if (plan.kind !== 'none' && pendingPart) {
+        let after: PurchasePayment | null = null;
+        if (alreadyLinked) {
+          this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null } : current);
+          done.push('De transacties stonden al op de betaling');
+        }
+        if (plan.kind !== 'none' && pendingPart) {
+          try {
             if (plan.kind === 'part') {
-              const result = await this.sourcing.linkPaymentPart(pendingPart.id, plan.lineId);
+              const result = await this.sourcing.linkPaymentPart(pendingPart.id, plan.lineId, null,
+                { higher: plan.surplus ?? null, withPaymentIds: plan.withPaymentIds });
               await this.reloadBankLines(result.lines);
-              done.push(plan.whole ? 'Banktransactie gekoppeld' : 'Deel van de betaling gekoppeld');
+              after = result.payments.find(payment => payment.id === pendingPart.id) ?? null;
+              const line = pendingLines[0];
+              // The server's sentence when it sends one; else the same words from the answer.
+              if (result.notice) notice = result.notice;
+              else if (!plan.whole) notice = carveText(pendingPart.amountEur, line.amountEur);
+              else if (after) {
+                const inspection = plan.surplus === 'INSPECTION' ? result.payments.find(payment => payment.id !== pendingPart.id
+                  && (payment.payee ?? 'SUPPLIER') === 'SEPARATE' && payment.bankStatementLineId === plan.lineId) ?? null : null;
+                notice = linkNotice(pendingPart, after, inspection?.amountEur ?? null);
+              }
+              done.push(!plan.whole ? 'Deel van de betaling gekoppeld' : plan.surplus === 'INSPECTION' ? 'Banktransactie gekoppeld · rest als inspectie' : 'Banktransactie gekoppeld');
             } else if (plan.kind === 'lines') {
               const result = await this.sourcing.linkPaymentLines(pendingPart.id, plan.lineIds.map(bankStatementLineId => ({ bankStatementLineId })));
               await this.reloadBankLines(result.lines);
@@ -2952,30 +3073,44 @@ export class PurchaseEditor {
               await this.reloadBankLines([line]);
               done.push('Banktransactie gekoppeld');
             }
-            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null } : current);
+            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null } : current);
+          } catch (failure: unknown) {
+            await this.refreshPaymentState(data.order.id);
+            if (this.view()?.order.id !== data.order.id) return;
+            // A lost answer: the server did link, the refreshed payment carries every picked transaction. Clear the pick and go on.
+            if (round && pendingAlreadyLinked(pendingLines, this.payingParts())) {
+              this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, bankLinkError: '' } : current);
+              done.push('De transacties stonden al op de betaling');
+            } else {
+              this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkError: `Betaling bewaard. ${messageOf(failure, 'De koppeling is nog niet gelukt.')} Opnieuw proberen maakt geen extra betaling.` } : current);
+              this.ui.toast(messageOf(failure, 'Koppelen mislukt'), 'err');
+              return;
+            }
           }
-          if (split !== null) {
-            // The goods payment's euro as the server answered the write of this save (a whole-match link never changes it; a carve or a
-            // split over several transactions never runs in the same save), frozen at the first try: a retry after a lost answer sends the
-            // same body, which the server answers unchanged.
-            const expected = this.paying()?.inspectionExpectedEur ?? saved.amountEur;
+        }
+        if (split !== null) {
+          try {
+            // The goods payment's euro as the server has it after this save (the link's answer, else the write's), frozen at the first try:
+            // a retry after a lost answer sends the same body, which the server answers unchanged.
+            const expected = this.paying()?.inspectionExpectedEur ?? after?.amountEur ?? saved.amountEur;
             this.paying.update(current => current?.id === saved.id ? { ...current, inspectionExpectedEur: expected } : current);
             const amountEur = inspectionSplitEur({ amount: saved.amount, currency: saved.currency, amountEur: expected }, split);
             await this.sourcing.splitInspection(saved.id, saved.currency === 'EUR'
               ? { amountEur, expectedAmountEur: expected } : { amountEur, amount: split, expectedAmountEur: expected });
             this.paying.update(current => current?.id === saved.id ? { ...current, inspectionSplit: null, inspectionSplitInput: '' } : current);
             done.push('Inspectie afgesplitst');
+          } catch (failure: unknown) {
+            await this.refreshPaymentState(data.order.id);
+            if (this.view()?.order.id !== data.order.id) return;
+            this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkError: `Betaling bewaard. ${messageOf(failure, 'De inspectie is nog niet afgesplitst.')} Opnieuw proberen maakt geen extra betaling.` } : current);
+            this.ui.toast(messageOf(failure, 'Afsplitsen mislukt'), 'err');
+            return;
           }
-        } catch (failure: unknown) {
-          await this.refreshPaymentState(data.order.id);
-          if (this.view()?.order.id !== data.order.id) return;
-          this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkError: `Betaling bewaard. ${messageOf(failure, 'De koppeling is nog niet gelukt.')} Opnieuw proberen maakt geen extra betaling.` } : current);
-          this.ui.toast(messageOf(failure, 'Koppelen mislukt'), 'err');
-          return;
         }
       }
+      if (notice) this.paymentNotice.set({ orderId: data.order.id, text: notice });
       if (bankOffered) writePayToBank(globalThis.localStorage, { on: !!pay.toBank, accountKey: account?.key ?? readPayToBank(globalThis.localStorage).accountKey });
-      await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length || pay.newInvoice?.file ? this.loadDocuments(data.order.id) : Promise.resolve()]);
+      await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length || pay.newInvoice?.file || pay.invoiceFile ? this.loadDocuments(data.order.id) : Promise.resolve()]);
       if (this.view()?.order.id !== data.order.id) return;
       // A failed line keeps the sheet open with every id of the transfer, so one more 'bewaren' sends the line again.
       if (bank !== 'failed') this.paying.set(null);
@@ -2990,6 +3125,19 @@ export class PurchaseEditor {
     } finally {
       this.payingBusy.set(false);
     }
+  }
+
+  /** The words, payee, term and settlement of the sheet are the stored payment's, and so are its money and day (a link alone changes those). */
+  private sameStoredWords(pay: PurchasePaymentDraft, stored: PurchasePayment): boolean {
+    return (pay.label || '') === (stored.label ?? '') && pay.payee === (stored.payee ?? 'SUPPLIER') && !!pay.settles === !!stored.settles
+      && (pay.instalmentDue ?? null) === (stored.instalmentDue ?? null) && pay.paidOn === stored.paidOn && pay.currency === stored.currency
+      && Math.round((pay.amount ?? 0) * 100) === Math.round(stored.amount * 100);
+  }
+
+  /** The invoice a draft resolves to when its select stays on automatic: the payee's only one. */
+  private resolvedInvoiceOf(pay: PurchasePaymentDraft): number | null {
+    const own = invoicesOf(this.view()?.invoices ?? [], pay.payee);
+    return own.length === 1 ? own[0].id : null;
   }
 
   /**
@@ -3484,8 +3632,13 @@ export class PurchaseEditor {
     { value: 'INVOICE', label: 'Factuur' }, { value: 'PACKING_LIST', label: 'Packing list' }, { value: 'BILL_OF_LADING', label: 'Bill of lading' },
     { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
   ];
-  /** The kinds the sheet offers: a server without invoices does not know the kind INVOICE yet. */
-  readonly documentKindOptions = computed(() => this.roundOnServer() ? this.documentKinds : this.documentKinds.filter(kind => kind.value !== 'INVOICE'));
+  /**
+   * The kinds the sheet offers: a server without invoices does not know the
+   * kind INVOICE yet. With it a betaalbewijs is added in the payment sheet
+   * only (one list there, Emre 2026-10-15), never as a loose dossier file.
+   */
+  readonly documentKindOptions = computed(() => this.roundOnServer() ? this.documentKinds.filter(kind => kind.value !== 'PAYMENT_PROOF')
+    : this.documentKinds.filter(kind => kind.value !== 'INVOICE'));
 
   private documentLoadVersion = 0;
 
@@ -3685,7 +3838,7 @@ export class PurchaseEditor {
   }
 
   openDocument(): void {
-    this.addingDocument.set({ kind: 'PAYMENT_PROOF', label: '', paymentId: null, file: null, files: [] });
+    this.addingDocument.set({ kind: this.roundOnServer() ? 'OTHER' : 'PAYMENT_PROOF', label: '', paymentId: null, file: null, files: [] });
   }
 
   closeDocument(): void { if (!this.uploadingDocument()) this.addingDocument.set(null); }

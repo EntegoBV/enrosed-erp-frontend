@@ -96,6 +96,25 @@ export function viaSupplier(
   return line === null || paymentsOfOrder.some(other => payeeOf(other) === 'SUPPLIER' && other.bankStatementLineId === line);
 }
 
+/**
+ * Which of the payee's payments (a payment in parts once) an invoice covers,
+ * from the server's invoice.paymentIds: 'Geldt voor alle betalingen van
+ * Leverancier (3)', or 'Geldt voor 2 van 3 betalingen van Leverancier' with
+ * 'Toewijzen aan alle betalingen' beside it (Emre, 2026-10-15: one
+ * commercial invoice for every part-payment, not one by one).
+ */
+export function invoiceCoverage(
+  invoice: Pick<PurchaseInvoice, 'paymentIds'>, rows: readonly { parts: readonly { id: number }[] }[], payeeLabel: string,
+): { covered: number; total: number; all: boolean; text: string } {
+  const ids = new Set(invoice.paymentIds ?? []);
+  const total = rows.length;
+  const covered = rows.filter(row => row.parts.some(part => ids.has(part.id))).length;
+  const all = covered === total;
+  const text = !total ? `Geldt voor alle betalingen van ${payeeLabel}`
+    : all ? `Geldt voor alle betalingen van ${payeeLabel} (${total})` : `Geldt voor ${covered} van ${total} betalingen van ${payeeLabel}`;
+  return { covered, total, all, text };
+}
+
 /** 'dekt 30% bij bestelling + 70% bij vertrek': the terms the supplier's invoice covers; '' without terms. */
 export function invoiceTermsLine(terms: readonly Pick<LedgerTerm, 'label'>[]): string {
   return terms.length ? 'dekt ' + terms.map(term => term.label).join(' + ') : '';

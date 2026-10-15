@@ -1,6 +1,7 @@
 import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { NgTemplateOutlet } from '@angular/common';
 import type { BankStatementLine } from '../../core/api/banking-api';
 import { BankTransactionPicker } from '../../shared/bank-transaction-picker';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
@@ -11,7 +12,6 @@ import type {
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { DateField } from '../../shared/date-field';
 import { Icon } from '../../shared/icon';
-import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
@@ -19,8 +19,12 @@ import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, 
 import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
 import { parsePurchasePaymentAmount } from './purchase-payment-amount';
-import { dayText, invoiceCandidates, invoiceOption, resolveInvoice } from './purchase-invoices';
-import { inspectionSplitBlocked, pendingLinkPlan, pendingPartEur } from './purchase-payment-links';
+import { dayText, invoiceCandidates, invoiceOption, invoicesOf, resolveInvoice } from './purchase-invoices';
+import {
+  carveText, inspectionSplitBlocked, linkChange, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
+  type LinkChangeRow, type SurplusChoice,
+} from './purchase-payment-links';
+import { appendPaymentProofs, PROOF_ACCEPT, proofFileKey } from '../../shared/payment-proof-selection';
 
 /** The editor's payment draft, as the sheet edits it. */
 export interface PurchasePaymentDraft {
@@ -61,11 +65,19 @@ export interface PurchasePaymentDraft {
   /** 'Factuur': the chosen invoice; null = automatisch. Sent on a PUT only when the select changed (invoiceIdChanged). */
   invoiceId?: number | null;
   invoiceIdChanged?: boolean;
-  /** 'Factuur toevoegen…' inline: saved (upload, then the invoice) before the payment. */
-  newInvoice?: { open: boolean; number: string; invoiceDate: string; amountInput: string; amount: number | null; currency: Currency; file: File | null };
-  /** What the inline block created on an earlier try, so a retry never uploads or creates it twice. */
+  /**
+   * 'Factuur toevoegen…' inline: saved (upload, then the invoice) before the
+   * payment; the file belongs to the invoice, never to this payment. forAll
+   * ('Voor alle deelbetalingen', on by default) points every payment of the
+   * payee to it.
+   */
+  newInvoice?: { open: boolean; number: string; invoiceDate: string; amountInput: string; amount: number | null; currency: Currency; file: File | null; forAll?: boolean };
+  /** A file for the chosen invoice that has none yet: uploaded to the invoice (order level) on save. */
+  invoiceFile?: File | null;
+  /** Retry state: 'Voor alle deelbetalingen' is done for the invoice made inline. */
+  invoiceAssignedToAll?: boolean;
+  /** What the inline block created on an earlier try (the invoice with its file), so a retry never creates it twice. */
   createdInvoiceId?: number;
-  createdDocumentId?: number;
   /** 'Inspectie via leverancier' on the inspection part of a new supplier transfer; unset counts as ticked. */
   inspectionViaSupplier?: boolean;
   /** 'Inspectie afsplitsen' of a saved goods payment: the part in the payment's currency. */
@@ -78,6 +90,8 @@ export interface PurchasePaymentDraft {
   /** Bank transactions picked to link, for the part pendingPartId (the payment's own id when never split). */
   pendingLines?: BankStatementLine[];
   pendingPartId?: number | null;
+  /** One picked transaction larger than the part: what the surplus is ('Bedrag aanpassen' or 'Rest als inspectie via leverancier'). */
+  surplus?: SurplusChoice | null;
   /** Corrections of unlinked transfers of a payment paid in parts, by their id. */
   partEdits?: Record<number, { amountInput: string; amount: number | null; amountEurInput?: string; amountEur?: number | null }>;
 }
@@ -94,7 +108,7 @@ let nextSheetId = 0;
 @Component({
   selector: 'app-purchase-payment-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Sheet, Segmented, DateField, PaymentProofPicker, PurchasePaymentScope, Icon, EurPipe, BankTransactionPicker],
+  imports: [FormsModule, NgTemplateOutlet, Sheet, Segmented, DateField, PurchasePaymentScope, Icon, EurPipe, BankTransactionPicker],
   template: `
     @let pay = draft();
     <app-sheet [title]="pay.id ? 'Betaling aanpassen' : 'Betaling noteren'" variant="ios" [wide]="true" (closed)="cancel.emit()">
@@ -120,21 +134,26 @@ let nextSheetId = 0;
         }
         @if (!pay.id) {
           @if (!bankLinked() && !creditOffset()) {
-            <app-bank-transaction-picker direction="OUTGOING" [amount]="transferEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />
+            <app-bank-transaction-picker direction="OUTGOING" heading="Transactie toevoegen" [amount]="transferEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />
           }
         } @else if (!creditOffset()) {
-          <!-- Banktransacties: the transaction is the proof; a payment paid in parts lists one line per transfer. -->
-          <section class="pay-sheet__bankblock" aria-label="Banktransacties">
-            <span class="pay-sheet__label">Banktransacties</span>
+          <!-- Betaalbewijs: the bank transaction first (it is the proof), then every file of the payment; files are added here and nowhere else. -->
+          <section class="pay-sheet__bankblock pay-sheet__proof" aria-label="Betaalbewijs">
+            <div class="pay-sheet__proofhead"><span class="pay-sheet__label">Betaalbewijs</span>
+              <span class="pay-sheet__count" [attr.aria-label]="fileCount() + ' van ' + fileRoom() + ' bestanden'">{{ fileCount() }} / {{ fileRoom() }} bestanden</span></div>
             <ul class="pay-sheet__lines">
               @for (part of parts(); track part.id) {
                 @if (lineOf(part); as line) {
                   <li class="pay-sheet__line">
-                    <span class="pay-sheet__linecopy"><b>{{ lineText(line) }}</b>@if (line.reference) { <small>{{ line.reference }}</small> }</span>
+                    <span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="bank" [size]="15" /></span>
+                    <span class="pay-sheet__linecopy"><b>{{ lineText(line) }}</b>
+                      @if (carries(line); as other) { <small class="pay-sheet__carries">Deze transactie draagt ook: {{ other }}</small> }
+                      @if (line.reference) { <small>{{ line.reference }}</small> }</span>
                     <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="unlinkLine.emit(line)">Losmaken</button>
                   </li>
                 } @else if (part.onBank) {
-                  <li class="pay-sheet__line"><span class="pay-sheet__linecopy"><b>{{ dayShort(part.paidOn) }} · {{ part.amountEur | eur }}</b><small>Staat op de bank</small></span></li>
+                  <li class="pay-sheet__line"><span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="bank" [size]="15" /></span>
+                    <span class="pay-sheet__linecopy"><b>{{ dayShort(part.paidOn) }} · {{ part.amountEur | eur }}</b><small>Staat op de bank</small></span></li>
                 } @else if (grouped()) {
                   <li class="pay-sheet__line pay-sheet__line--open">
                     <span class="pay-sheet__linecopy"><b>{{ dayShort(part.paidOn) }} · nog niet op de bank</b></span>
@@ -142,7 +161,7 @@ let nextSheetId = 0;
                       <div class="field">
                         <label [for]="ids + '-part-' + part.id">Bedrag</label>
                         <div class="input-affix">
-                          <input class="input num right" [id]="ids + '-part-' + part.id" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                          <input class="input num right" [id]="ids + '-part-' + part.id" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || pay.pendingPartId === part.id"
                                  [ngModel]="partAmountInput(part)" (ngModelChange)="editPart(part, 'amount', $event)" />
                           <span class="input-affix__suffix">{{ part.currency }}</span>
                         </div>
@@ -152,7 +171,7 @@ let nextSheetId = 0;
                         <div class="field">
                           <label [for]="ids + '-part-eur-' + part.id">Afgeschreven in euro <span class="opt"></span></label>
                           <div class="input-affix">
-                            <input class="input num right" [id]="ids + '-part-eur-' + part.id" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy()"
+                            <input class="input num right" [id]="ids + '-part-eur-' + part.id" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || pay.pendingPartId === part.id"
                                    [ngModel]="partEurInput(part)" (ngModelChange)="editPart(part, 'eur', $event)" />
                             <span class="input-affix__suffix">EUR</span>
                           </div>
@@ -160,34 +179,79 @@ let nextSheetId = 0;
                       }
                     </div>
                     <div class="pay-sheet__lineactions">
-                      @if (roundOnServer()) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="pickFor(part.id)">Koppelen</button> }
+                      @if (roundOnServer() && pay.pendingPartId !== part.id) { <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="pickFor(part.id)">Transactie toevoegen</button> }
                       <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="removePart.emit(part)">Deel verwijderen</button>
                     </div>
                   </li>
-                } @else {
+                } @else if (pay.pendingPartId !== part.id) {
                   <li class="pay-sheet__line pay-sheet__line--open">
                     <span class="pay-sheet__linecopy"><b>{{ part.amountEur | eur }} nog niet op de bank</b></span>
-                    <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="pickFor(part.id)">Banktransactie koppelen</button>
+                    <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="pickFor(part.id)">Transactie toevoegen</button>
                   </li>
                 }
                 @if (pay.pendingPartId === part.id) {
-                  @for (line of pay.pendingLines ?? []; track line.id) {
+                  @for (line of shownPending(); track line.id) {
                     <li class="pay-sheet__line pay-sheet__line--pending">
+                      <span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="bank" [size]="15" /></span>
                       <span class="pay-sheet__linecopy"><b>{{ lineText(line) }}</b><small>wordt gekoppeld</small></span>
                       <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" [attr.aria-label]="'Niet koppelen: ' + lineText(line)" (click)="dropPending(line)">×</button>
                     </li>
                   }
-                  @if (picking() === part.id && pickMore()) {
+                  @if (pendingPlan(); as plan) {
+                    @if (plan.kind === 'higher' || (plan.kind === 'part' && plan.surplus)) {
+                      <li class="pay-sheet__line pay-sheet__line--choice">
+                        <div class="pay-sheet__surplus" role="group" [attr.aria-label]="surplusText()">
+                          <b>{{ surplusText() }}</b>
+                          <div class="pay-sheet__surplusopts">
+                            <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'ADJUST'" [disabled]="busy() || !!pay.bankLinkPending" (click)="chooseSurplus('ADJUST')">
+                              Bedrag aanpassen naar {{ pendingLineEur() | eur }}<small>De betaling volgt de transactie</small></button>
+                            @if (inspectionOffered()) {
+                              <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'INSPECTION'" [disabled]="busy() || !!pay.bankLinkPending" (click)="chooseSurplus('INSPECTION')">
+                                Rest als inspectie via leverancier<small>{{ surplusEur() | eur }} als eigen betaling op dezelfde transactie</small></button>
+                            }
+                            <button class="pay-sheet__option pay-sheet__option--quiet" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="cancelPending()">Annuleren</button>
+                          </div>
+                        </div>
+                      </li>
+                    }
+                    @if (plan.kind === 'part' && !plan.whole && pendingLine(); as line) {
+                      <li class="pay-sheet__line pay-sheet__line--note"><span class="hint">{{ carve(line) }}</span></li>
+                    }
+                  }
+                  @if (changeRows().length) {
+                    <li class="pay-sheet__line pay-sheet__line--change">
+                      <div class="pay-sheet__change" role="table" aria-label="Wat verandert">
+                        <div class="pay-sheet__changerow pay-sheet__changerow--head" role="row"><span role="columnheader">Wat verandert</span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
+                        @for (row of changeRows(); track row.label) {
+                          <div class="pay-sheet__changerow" role="row" [class.is-changed]="row.changed"><span role="rowheader">{{ row.label }}</span><span role="cell">{{ row.now }}</span><span role="cell">{{ row.after }}</span></div>
+                        }
+                      </div>
+                    </li>
+                  }
+                  @if (picking() === part.id && pickMore() && !pickingClosed()) {
                     <li class="pay-sheet__line pay-sheet__line--picker">
-                      <app-bank-transaction-picker direction="OUTGOING" [amount]="partEur(part)" [selected]="null" [startOpen]="true" [exclude]="excluded()"
+                      <app-bank-transaction-picker direction="OUTGOING" heading="Transactie toevoegen" [amount]="partEur(part)" [selected]="null" [startOpen]="true" [exclude]="excluded()"
                                                    [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="pickLine(part.id, $event)" />
                     </li>
                   }
                 }
               }
+              @if (allLinked() && !(pay.pendingLines ?? []).length) {
+                <!-- No open transfer to add a transaction to: said quietly, never a dead button. -->
+                <li class="pay-sheet__line pay-sheet__line--quiet"><small>Transactie toevoegen: alle transacties gekoppeld · verhoog eerst het bedrag (maak een transactie los) of noteer wat er meer betaald is als nieuwe betaling.</small></li>
+              }
+              @for (file of proofFiles(); track file.id) {
+                <li class="pay-sheet__line">
+                  <span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="clip" [size]="15" /></span>
+                  <button class="wk-link pay-sheet__filename" type="button" (click)="openDocument.emit(file.id)">{{ file.originalFilename }}</button>
+                  <button class="btn btn--sm" type="button" [disabled]="busy()" [attr.aria-label]="'Bestand ' + file.originalFilename + ' verwijderen'" (click)="removeProof.emit(file)">×</button>
+                </li>
+              }
+              <ng-container *ngTemplateOutlet="newFiles" />
             </ul>
+            <ng-container *ngTemplateOutlet="addFile" />
             @if (pendingMessage(); as message) { <span class="hint hint--warn" role="alert">{{ message }}</span> }
-            <span class="hint">De banktransactie is het betaalbewijs; een bankafschrift toevoegen kan, maar hoeft niet.</span>
+            <span class="hint">Een gekoppelde banktransactie is al het bewijs; een bestand is optioneel.</span>
           </section>
         }
         @if (pay.bankLinkError) { <p class="pay-sheet__note pay-sheet__note--warn" role="alert">{{ pay.bankLinkError }}</p> }
@@ -200,20 +264,22 @@ let nextSheetId = 0;
             <div class="field">
               <span class="label">Betaald op</span>
               <span class="input">{{ dayLong(newestDay()) }}</span>
+              <span class="hint">laatste transactie · eerste {{ dayShort(firstDay()) }}</span>
             </div>
-            <p class="hint span-2">Verdeeld over {{ parts().length }} transacties; een deel dat niet op de bank staat pas je hier aan.</p>
+            <p class="hint span-2 pay-sheet__grouphint">Verdeeld over {{ parts().length }} transacties; een deel dat niet op de bank staat pas je hierboven aan.</p>
           } @else {
             <div class="field pay-sheet__amount">
               <label [for]="ids + '-amount'">Bedrag</label>
               <div class="input-affix">
-                <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || (!!pay.bankTransaction && pay.currency === 'EUR') || linkedSingle()"
+                <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || (!!pay.bankTransaction && pay.currency === 'EUR') || linkedSingle() || linkingOne()"
                        [ngModel]="pay.amountInput" (ngModelChange)="amountInput.emit($event)" />
-                <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy() || !!creditOffset() || !!pay.bankTransaction || linkedSingle()" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
+                <select class="input-affix__suffix" aria-label="Munt" [disabled]="busy() || !!creditOffset() || !!pay.bankTransaction || linkedSingle() || linkingOne()" [ngModel]="pay.currency" (ngModelChange)="patch.emit({ currency: $event })">
                   <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
                 </select>
               </div>
               @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
               @if (linkedSingle()) { <span class="hint">Staat op de bank: maak de banktransactie eerst los om bedrag of datum te wijzigen.</span> }
+              @else if (linkingOne()) { <span class="hint">Bedrag en datum volgen de transactie bij het koppelen (zie Wat verandert).</span> }
               @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0 && !((pay.amountEur ?? 0) > 0)) {
                 <span class="hint">Zonder bankbedrag geldt de orderkoers: ≈ {{ draftEur() | eur }}.</span>
               }
@@ -225,7 +291,7 @@ let nextSheetId = 0;
             </div>
             <div class="field">
               <label [for]="ids + '-date'">Betaald op</label>
-              @if (pay.bankTransaction || linkedSingle()) { <span class="input">{{ dayLong(pay.paidOn) }}</span> } @else {
+              @if (pay.bankTransaction || linkedSingle() || linkingOne()) { <span class="input">{{ dayLong(pay.paidOn) }}</span> } @else {
                 <app-date-field [fieldId]="ids + '-date'" [value]="pay.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
               }
             </div>
@@ -233,7 +299,7 @@ let nextSheetId = 0;
               <div class="field span-2 pay-sheet__bank">
                 <label [for]="ids + '-eur'">Afgeschreven in euro <span class="opt"></span></label>
                 <div class="input-affix">
-                  <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || frozen() || !!pay.bankTransaction || linkedSingle()"
+                  <input class="input num right" [id]="ids + '-eur'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || !!creditOffset() || frozen() || !!pay.bankTransaction || linkedSingle() || linkingOne()"
                          [placeholder]="rateEur() > 0 ? rateText() : ''" [ngModel]="pay.amountEurInput ?? ''" (ngModelChange)="amountEurInput.emit($event)" />
                   <span class="input-affix__suffix">EUR</span>
                 </div>
@@ -296,7 +362,7 @@ let nextSheetId = 0;
               </div>
             </details>
           }
-          <div class="field span-2">
+          <div class="field span-2 pay-sheet__label-field">
             <label [for]="ids + '-label'">Omschrijving <span class="opt"></span></label>
             <input class="input" [id]="ids + '-label'" placeholder="Bijv. aanbetaling 30%, saldo, slotbetaling"
                    [disabled]="busy() || !!pay.bankLinkPending" [ngModel]="pay.label" (ngModelChange)="patch.emit({ label: $event })" />
@@ -311,17 +377,38 @@ let nextSheetId = 0;
           </details>
         }
         @if (roundOnServer()) {
-          <div class="field pay-sheet__invoice">
+          <section class="field pay-sheet__invoice" aria-label="Factuur">
             <label [for]="ids + '-invoice'">Factuur</label>
-            <select class="select" [id]="ids + '-invoice'" [disabled]="busy() || !!pay.bankLinkPending" [ngModel]="pay.invoiceId ?? null" (ngModelChange)="patch.emit({ invoiceId: $event, invoiceIdChanged: true })">
+            <select class="select" [id]="ids + '-invoice'" [disabled]="busy() || !!pay.bankLinkPending" [ngModel]="pay.invoiceId ?? null" (ngModelChange)="patch.emit({ invoiceId: $event, invoiceIdChanged: true, invoiceFile: null })">
               <option [ngValue]="null">{{ automaticLabel() }}</option>
               @for (invoice of candidates(); track invoice.id) {
                 <option [ngValue]="invoice.id">{{ invoice.payee !== pay.payee ? 'via leverancier · ' : '' }}{{ option(invoice) }}</option>
               }
             </select>
+            @if (forAllNote(); as note) { <span class="hint">{{ note }}</span> }
+            <ul class="pay-sheet__lines pay-sheet__invoicefiles">
+              @if (chosenInvoice(); as invoice) {
+                @if (invoice.documentId != null) {
+                  <li class="pay-sheet__line"><span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="document" [size]="15" /></span>
+                    <button class="wk-link pay-sheet__filename" type="button" (click)="openDocument.emit(invoice.documentId)">{{ invoice.documentName || ('Factuur ' + invoice.number) }}</button>
+                    <small class="pay-sheet__filenote">bij de factuur</small></li>
+                } @else if (pay.invoiceFile) {
+                  <li class="pay-sheet__line"><span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="document" [size]="15" /></span>
+                    <span class="pay-sheet__linecopy"><b>{{ pay.invoiceFile.name }}</b><small>wordt bij het bewaren aan factuur {{ invoice.number }} gekoppeld</small></span>
+                    <button class="btn btn--sm" type="button" [disabled]="busy()" [attr.aria-label]="pay.invoiceFile.name + ' uit de selectie verwijderen'" (click)="patch.emit({ invoiceFile: null })">×</button></li>
+                } @else {
+                  <li class="pay-sheet__line pay-sheet__line--open"><span class="pay-sheet__linecopy"><b>Factuur {{ invoice.number }} heeft nog geen bestand</b></span>
+                    <label class="btn btn--sm pay-sheet__filebtn">Bestand bij de factuur<input type="file" hidden [accept]="invoiceAccept" [disabled]="busy()" (change)="chooseInvoiceFile($event)" /></label></li>
+                }
+              }
+              @for (file of invoiceFiles(); track file.id) {
+                <li class="pay-sheet__line"><span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="document" [size]="15" /></span>
+                  <span class="pay-sheet__linecopy"><button class="wk-link pay-sheet__filename" type="button" (click)="openDocument.emit(file.id)">{{ file.originalFilename }}</button><small>Factuurbestand zonder gegevens · hangt aan deze betaling</small></span>
+                  <button class="btn btn--sm" type="button" [disabled]="busy()" [attr.aria-label]="'Bestand ' + file.originalFilename + ' verwijderen'" (click)="removeProof.emit(file)">×</button></li>
+              }
+            </ul>
             <span class="pay-sheet__invoicelinks">
               @if (!pay.newInvoice?.open) { <button class="wk-link" type="button" [disabled]="busy()" (click)="openNewInvoice()">Factuur toevoegen…</button> }
-              @if (chosenInvoice()?.documentId; as documentId) { <button class="wk-link" type="button" (click)="openDocument.emit(documentId)">Factuur openen</button> }
             </span>
             @if (pay.newInvoice?.open) {
               @let fresh = pay.newInvoice!;
@@ -348,15 +435,19 @@ let nextSheetId = 0;
                 </div>
                 <div class="field">
                   <label [for]="ids + '-inv-file'">Bestand <span class="opt"></span></label>
-                  <input class="input" [id]="ids + '-inv-file'" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" [disabled]="busy() || pay.createdDocumentId != null"
+                  <input class="input" [id]="ids + '-inv-file'" type="file" [accept]="invoiceAccept" [disabled]="busy() || pay.createdInvoiceId != null"
                          (change)="patchInvoice({ file: $any($event.target).files?.[0] ?? null })" />
+                  <span class="hint">Hoort bij de factuur, niet bij deze ene betaling.</span>
                 </div>
+                <label class="pay-sheet__switch span-2"><span>Voor alle deelbetalingen<small>{{ forAllHint() }}</small></span>
+                  <input class="pay-sheet__check" type="checkbox" [checked]="fresh.forAll ?? true" [disabled]="busy() || pay.createdInvoiceId != null"
+                         (change)="patchInvoice({ forAll: $any($event.target).checked })" /></label>
                 @if (pay.createdInvoiceId == null) {
                   <button class="wk-link span-2 pay-sheet__nonew" type="button" [disabled]="busy()" (click)="patch.emit({ newInvoice: undefined })">Geen nieuwe factuur</button>
                 }
               </div>
             }
-          </div>
+          </section>
         }
         @if (pay.bankTransaction) {
           <p class="pay-sheet__note">De bestaande banktransactie wordt gekoppeld. Er komt geen extra bankbeweging bij.</p>
@@ -386,26 +477,37 @@ let nextSheetId = 0;
             }
           </div>
         }
-        @if (!creditOffset()) {
-          @if (proofFiles().length) {
-            <section class="pay-sheet__bankblock" aria-label="Betaalbewijs (bestanden)">
-              <span class="pay-sheet__label">Betaalbewijs (bestanden)</span>
-              <ul class="pay-sheet__lines">
-                @for (file of proofFiles(); track file.id) {
-                  <li class="pay-sheet__line">
-                    <button class="wk-link pay-sheet__filename" type="button" (click)="openDocument.emit(file.id)">{{ file.originalFilename }}</button>
-                    <button class="btn btn--sm" type="button" [disabled]="busy()" [attr.aria-label]="'Bestand ' + file.originalFilename + ' verwijderen'" (click)="removeProof.emit(file)">×</button>
-                  </li>
-                }
-              </ul>
-            </section>
-          }
-          <app-payment-proof-picker title="Bankafschrift toevoegen (optioneel)" [files]="pay.files" [maxFiles]="proofSlots()"
-                                    [disabled]="busy() || !!pay.bankLinkPending" (filesChange)="patch.emit({ files: $event })" />
+        @if (!pay.id && !creditOffset()) {
+          <!-- A new payment: its files, under the same words as a saved one. -->
+          <section class="pay-sheet__bankblock pay-sheet__proof" aria-label="Betaalbewijs">
+            <div class="pay-sheet__proofhead"><span class="pay-sheet__label">Betaalbewijs</span>
+              <span class="pay-sheet__count" [attr.aria-label]="fileCount() + ' van ' + fileRoom() + ' bestanden'">{{ fileCount() }} / {{ fileRoom() }} bestanden</span></div>
+            @if (pay.files.length) { <ul class="pay-sheet__lines"><ng-container *ngTemplateOutlet="newFiles" /></ul> }
+            <ng-container *ngTemplateOutlet="addFile" />
+            <span class="hint">Een gekoppelde banktransactie is al het bewijs; een bestand is optioneel.</span>
+          </section>
         }
         @if (pay.id && !grouped()) {
           <button class="pay-sheet__delete" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="remove.emit(pay.id)">Verwijderen</button>
         }
+        <ng-template #newFiles>
+          @for (file of pay.files; track fileKey(file); let index = $index) {
+            <li class="pay-sheet__line pay-sheet__line--pending">
+              <span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="clip" [size]="15" /></span>
+              <span class="pay-sheet__linecopy"><b>{{ file.name }}</b><small>wordt bij het bewaren toegevoegd</small></span>
+              <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" [attr.aria-label]="file.name + ' uit de selectie verwijderen'" (click)="dropFile(index)">×</button>
+            </li>
+          }
+        </ng-template>
+        <ng-template #addFile>
+          <div class="pay-sheet__addfile">
+            <label class="btn btn--sm pay-sheet__filebtn" [class.is-disabled]="busy() || !!pay.bankLinkPending || pay.files.length >= proofSlots()">
+              <app-icon name="plus" [size]="14" />Bestand toevoegen
+              <input type="file" hidden multiple [accept]="proofAccept" [disabled]="busy() || !!pay.bankLinkPending || pay.files.length >= proofSlots()" (change)="chooseFiles($event)" /></label>
+            <small>PDF, JPG of PNG · bankafschrift of betaalbevestiging · maximaal 25 MB</small>
+          </div>
+          @if (fileErrors().length) { <div class="hint hint--warn" role="alert">@for (error of fileErrors(); track $index) { <span>{{ error }}</span> }</div> }
+        </ng-template>
       </div>
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="cancel.emit()">Annuleren</button>
@@ -458,6 +560,12 @@ export class PurchasePaymentSheet {
   readonly parts = input<readonly LedgerPart[]>([]);
   /** The proof files of every transfer of the saved payment. */
   readonly proofFiles = input<readonly PurchaseDocument[]>([]);
+  /** Older invoice files hung on this payment (they take one of its five places): listed under Factuur with open and remove. */
+  readonly invoiceFiles = input<readonly PurchaseDocument[]>([]);
+  /** A supplier goods payment of a container with an inspection: a larger transaction may carry it ('Rest als inspectie via leverancier'). */
+  readonly inspectionOffered = input(false);
+  /** How many payments the payee has (payments in parts count once): 'Geldt voor alle betalingen van Leverancier (n)'. */
+  readonly payeePaymentCount = input(0);
   /** The bank lines the host has loaded, to show the linked ones. */
   readonly bankLines = input<readonly BankStatementLine[]>([]);
   readonly patch = output<Partial<PurchasePaymentDraft>>();
@@ -475,6 +583,11 @@ export class PurchasePaymentSheet {
   readonly openDocument = output<number>();
 
   readonly ids = `payment-sheet-${++nextSheetId}`;
+  readonly proofAccept = PROOF_ACCEPT;
+  readonly invoiceAccept = '.pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx';
+  readonly fileKey = proofFileKey;
+  /** Why a chosen file was not added (type, size, room). */
+  readonly fileErrors = signal<string[]>([]);
   readonly desk = computed(() => this.viewport.active());
   readonly payees: SegmentOption[] = PAYEE_ORDER.map(payee => ({ id: payee, label: PAYEE_SHORT[payee], ariaLabel: PAYEE_LABEL[payee] }));
   readonly payeeOptions = computed<SegmentOption[]>(() => this.creditOffset()
@@ -549,14 +662,49 @@ export class PurchasePaymentSheet {
   readonly groupTotal = computed(() => this.parts().reduce((sum, part) => sum + Math.round(part.amountEur * 100), 0) / 100);
   /** A never-split payment on the bank: its money stays as the bank booked it until it is unlinked. */
   readonly linkedSingle = computed(() => !!this.draft().id && this.parts().length === 1 && this.parts()[0].bankStatementLineId != null);
+  /** A transaction is picked for a payment never split: its amount and day will follow the transaction, so the fields wait. */
+  readonly linkingOne = computed(() => this.roundOnServer() && !!this.draft().id && !this.grouped() && (this.draft().pendingLines ?? []).length > 0);
+  /** Every transfer on the bank: one more transaction only fits once the amount is raised (a transaction loosened). */
+  readonly allLinked = computed(() => this.roundOnServer() && !!this.draft().id && this.parts().length > 0 && this.parts().every(part => part.onBank));
+  readonly firstDay = computed(() => this.parts()[0]?.paidOn ?? this.draft().paidOn);
   /** The part the bank picker is open for. */
   readonly picking = signal<number | null>(null);
   readonly pendingPart = computed(() => this.parts().find(part => part.id === this.draft().pendingPartId) ?? null);
+  /** The picked transactions not on this payment yet: after a lost answer the refreshed payment may already carry them. */
+  readonly shownPending = computed(() => pendingAlreadyLinked(this.draft().pendingLines ?? [], this.parts()) ? [] : this.draft().pendingLines ?? []);
+  /** The inspection noted with the goods of this transfer and not on the bank yet: it joins a transaction that makes both. */
+  readonly companions = computed(() => {
+    const part = this.pendingPart();
+    return part && this.roundOnServer() ? transferCompanions(part.payment, this.orderPayments(), this.draft().groupIds ?? []) : [];
+  });
   readonly pendingPlan = computed(() => {
     const part = this.pendingPart();
-    return part ? pendingLinkPlan(this.partEur(part), this.draft().pendingLines ?? [], this.roundOnServer()) : pendingLinkPlan(0, [], true);
+    return part ? pendingLinkPlan(this.partEur(part), this.shownPending(), this.roundOnServer(), this.draft().surplus ?? null, this.companions())
+      : pendingLinkPlan(0, [], true);
   });
   readonly pendingMessage = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'invalid' ? plan.message : null; });
+  /** The one picked transaction, when one is picked. */
+  readonly pendingLine = computed(() => { const lines = this.shownPending(); return lines.length === 1 ? lines[0] : null; });
+  readonly pendingLineEur = computed(() => Math.abs(this.pendingLine()?.amountEur ?? 0));
+  /** How much larger the picked transaction is than the part. */
+  readonly surplusEur = computed(() => {
+    const part = this.pendingPart();
+    return part ? Math.max(0, Math.round(this.pendingLineEur() * 100) - Math.round(this.partEur(part) * 100)) / 100 : 0;
+  });
+  readonly surplusText = computed(() => surplusQuestion(this.surplusEur()));
+  /** 'Wat verandert': the part now and after the link of the one picked transaction. */
+  readonly changeRows = computed<LinkChangeRow[]>(() => {
+    const part = this.pendingPart(), line = this.pendingLine();
+    if (!part || !line || !this.roundOnServer()) return [];
+    const linked = this.lineOf(part);
+    const files = part.proofs?.length ?? 0;
+    const proof = linked ? this.lineText(linked) : files ? `${files} ${files === 1 ? 'bestand' : 'bestanden'}` : 'geen';
+    const companionsEur = this.companions().reduce((sum, payment) => sum + Math.round(payment.amountEur * 100), 0) / 100;
+    return linkChange({ amount: part.amount, currency: part.currency, amountEur: part.amountEur, paidOn: part.paidOn, proof },
+      { amountEur: line.amountEur, day: bankTransactionDay(line), text: this.lineText(line) }, this.pendingPlan(), companionsEur);
+  });
+  /** A larger transaction is picked: it stands alone (its question is open), no second one is offered beside it. */
+  readonly pickingClosed = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'higher' || (plan.kind === 'part' && !!plan.surplus); });
   /** One more transaction can be picked: ten at most, one against an older server. */
   readonly pickMore = computed(() => { const count = (this.draft().pendingLines ?? []).length; return this.roundOnServer() ? count < 10 : count < 1; });
   readonly excluded = computed(() => [
@@ -565,8 +713,8 @@ export class PurchasePaymentSheet {
   ]);
   private readonly partEditsInvalid = computed(() => Object.values(this.draft().partEdits ?? {}).some(edit => edit.amount === null
     || (!!edit.amountEurInput && edit.amountEur === null)));
-  /** Something typed or picked cannot be saved yet. */
-  readonly saveBlocked = computed(() => this.pendingPlan().kind === 'invalid' || this.partEditsInvalid()
+  /** Something typed or picked cannot be saved yet (a larger transaction waits for its choice). */
+  readonly saveBlocked = computed(() => this.pendingPlan().kind === 'invalid' || this.pendingPlan().kind === 'higher' || this.partEditsInvalid()
     || (!!this.draft().inspectionSplitInput && !this.splitValid()) || this.newInvoiceInvalid()
     // The inspection is split off only after a carve or a split over several transactions is done (a later save).
     || (this.splitBlocked() && (this.draft().inspectionSplit ?? 0) > 0));
@@ -580,12 +728,39 @@ export class PurchasePaymentSheet {
     return `${bankTransactionDay(line).split('-').reverse().join('/')} · ${account} · ${formatEur(Math.abs(line.amountEur))}`;
   }
   dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
+  /**
+   * What else of this container the transaction carries, e.g. 'Inspectie
+   * € 300,00 (via leverancier)': the € 10.300 line of a € 10.000 goods
+   * payment explains itself.
+   */
+  carries(line: BankStatementLine): string | null {
+    const own = new Set([...(this.draft().groupIds ?? []), ...this.parts().map(part => part.id)]);
+    const others = this.orderPayments().filter(payment => payment.bankStatementLineId === line.id && !own.has(payment.id));
+    if (!others.length) return null;
+    return others.map(payment => {
+      const payee = payment.payee ?? 'SUPPLIER';
+      const via = payee === 'SEPARATE' && this.viaSupplier() ? ' (via leverancier)' : '';
+      return `${PAYEE_SHORT[payee]} ${formatEur(payment.amountEur)}${via}`;
+    }).join(', ');
+  }
+  /** One of the payment's transactions already carries an inspection part of this container: no second split is offered. */
+  private readonly lineHasInspection = computed(() => this.parts().some(part => part.bankStatementLineId != null
+    && this.orderPayments().some(payment => payment.bankStatementLineId === part.bankStatementLineId && (payment.payee ?? 'SUPPLIER') === 'SEPARATE')));
+  carve(line: BankStatementLine): string {
+    const part = this.pendingPart();
+    return part ? carveText(this.partEur(part), line.amountEur) : '';
+  }
   /** 'Betaald op' read-only: the day as the lists show it (a payment in parts: its newest transfer, as its ledger row). */
   dayLong(iso: string): string { return dayText(iso); }
   readonly newestDay = computed(() => { const parts = this.parts(); return parts[parts.length - 1]?.paidOn ?? this.draft().paidOn; });
-  /** The euro of a transfer as it will be saved: a payment never split as the draft values it, a transfer its correction when typed, else as booked. */
+  /**
+   * The euro a picked transaction is checked against. With this round the
+   * payment follows the transaction, so it is the transfer as booked (or its
+   * typed correction); an older server writes the draft first, so a payment
+   * never split counts as the draft values it.
+   */
   partEur(part: LedgerPart): number {
-    return pendingPartEur(part, this.draft().partEdits?.[part.id], this.grouped() ? null : this.draftEur());
+    return pendingPartEur(part, this.draft().partEdits?.[part.id], this.grouped() || this.roundOnServer() ? null : this.draftEur());
   }
   partAmountInput(part: LedgerPart): string { return this.draft().partEdits?.[part.id]?.amountInput ?? String(part.amount).replace('.', ','); }
   partEurInput(part: LedgerPart): string { return this.draft().partEdits?.[part.id]?.amountEurInput ?? ''; }
@@ -598,29 +773,51 @@ export class PurchasePaymentSheet {
       : { ...current, amountEurInput: raw, amountEur: parsePurchasePaymentAmount(raw) };
     this.patch.emit({ partEdits: edits });
   }
-  /** 'Banktransactie koppelen' / 'Koppelen': the picker opens for that part; picking for another part drops the other part's picks. */
+  /** 'Transactie toevoegen': the picker opens for that part; picking for another part drops the other part's picks. */
   pickFor(partId: number): void {
     this.picking.set(partId);
-    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], toBank: false });
+    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, toBank: false });
   }
-  /** A pick that carves the payment or splits it over several transactions drops a typed inspection split: that comes after the link. */
+  /**
+   * A pick that carves the payment, splits it over several transactions or is
+   * larger drops a typed inspection split: that comes after the link. With
+   * this round a payment never split follows the transaction: money typed
+   * before goes back to the stored payment, the comparison shows what follows.
+   */
   pickLine(partId: number, line: BankStatementLine | null): void {
     if (!line) return;
     const pending = this.draft().pendingPartId === partId ? this.draft().pendingLines ?? [] : [];
     const lines = [...pending.filter(item => item.id !== line.id), line];
     const part = this.parts().find(item => item.id === partId);
     const blocked = !!part && inspectionSplitBlocked(pendingLinkPlan(this.partEur(part), lines, this.roundOnServer()));
-    this.patch.emit({ pendingPartId: partId, pendingLines: lines, toBank: false, ...(blocked ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) });
+    const stored = this.roundOnServer() && !this.grouped() && part ? this.storedMoney(part) : {};
+    this.patch.emit({ pendingPartId: partId, pendingLines: lines, surplus: null, toBank: false, ...stored,
+      ...(blocked ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) });
+  }
+  /** The stored money and day of a payment never split, as the fields show them. */
+  private storedMoney(part: LedgerPart): Partial<PurchasePaymentDraft> {
+    const foreign = part.currency !== 'EUR' && part.amountEur > 0;
+    return { amount: part.amount, amountInput: String(part.amount).replace('.', ','), currency: part.currency, paidOn: part.paidOn,
+      amountEurInput: foreign ? String(part.amountEur).replace('.', ',') : '', amountEur: foreign ? part.amountEur : null };
   }
   dropPending(line: BankStatementLine): void {
-    this.patch.emit({ pendingLines: (this.draft().pendingLines ?? []).filter(item => item.id !== line.id) });
+    this.patch.emit({ pendingLines: (this.draft().pendingLines ?? []).filter(item => item.id !== line.id), surplus: null });
+  }
+  /** 'Annuleren' of the larger-transaction question: nothing is linked. */
+  cancelPending(): void {
+    this.picking.set(null);
+    this.patch.emit({ pendingLines: [], pendingPartId: null, surplus: null });
+  }
+  /** What the surplus of a larger transaction is; the inspection rest replaces a typed split. */
+  chooseSurplus(choice: SurplusChoice): void {
+    this.patch.emit({ surplus: choice, inspectionSplit: null, inspectionSplitInput: '' });
   }
 
   /* ---- Inspectie afsplitsen: a saved goods payment to the supplier that also paid the inspection */
   readonly showInspectionSplit = computed(() => {
     const pay = this.draft();
     return this.roundOnServer() && !!pay.id && pay.payee === 'SUPPLIER' && this.originalPayee() === 'SUPPLIER' && !this.creditOffset()
-      && !this.grouped() && pay.instalmentDue !== 'FREIGHT';
+      && !this.grouped() && pay.instalmentDue !== 'FREIGHT' && !this.lineHasInspection() && !pay.surplus;
   });
   readonly splitBlocked = computed(() => inspectionSplitBlocked(this.pendingPlan()));
   readonly splitValid = computed(() => {
@@ -651,6 +848,19 @@ export class PurchasePaymentSheet {
     const id = this.draft().invoiceId ?? null;
     return id === null ? this.automatic() : this.invoices().find(item => item.id === id) ?? null;
   });
+  /** One invoice for the payee: every payment of the payee points to it (automatic), the sheet says so. */
+  readonly forAllNote = computed(() => {
+    const pay = this.draft();
+    const own = invoicesOf(this.invoices(), pay.payee);
+    if (own.length !== 1 || (pay.invoiceId != null && pay.invoiceId !== own[0].id)) return null;
+    const count = Math.max(this.payeePaymentCount(), pay.id ? 1 : 0);
+    return `Geldt voor alle betalingen van ${PAYEE_LABEL[pay.payee]}${count ? ' (' + count + ')' : ''}`;
+  });
+  readonly forAllHint = computed(() => {
+    const pay = this.draft();
+    const count = this.payeePaymentCount() + (pay.id ? 0 : 1);
+    return `Alle betalingen van ${PAYEE_LABEL[pay.payee]}${count ? ' (' + count + ')' : ''} horen bij deze factuur; uit: alleen deze betaling.`;
+  });
   readonly newInvoiceInvalid = computed(() => {
     const pay = this.draft();
     const fresh = pay.newInvoice;
@@ -660,7 +870,31 @@ export class PurchasePaymentSheet {
   parse(raw: string): number | null { return parsePurchasePaymentAmount(raw); }
   openNewInvoice(): void {
     const pay = this.draft();
-    this.patch.emit({ newInvoice: { open: true, number: '', invoiceDate: this.today(), amountInput: '', amount: null, currency: pay.currency, file: null } });
+    this.patch.emit({ newInvoice: { open: true, number: '', invoiceDate: this.today(), amountInput: '', amount: null, currency: pay.currency, file: null, forAll: true } });
+  }
+  /** 'Bestand bij de factuur': one file for the chosen invoice that has none. */
+  chooseInvoiceFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (file) this.patch.emit({ invoiceFile: file });
+  }
+
+  /* ---- Betaalbewijs: files */
+  /** Files listed under Betaalbewijs: the stored ones and the ones that go with the save. */
+  readonly fileCount = computed(() => this.proofFiles().length + this.draft().files.length);
+  /** Room for files as the sheet lists them: the stored proofs plus what still fits on the payment (its five places, minus an older invoice file). */
+  readonly fileRoom = computed(() => this.proofFiles().length + this.proofSlots());
+  chooseFiles(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const selection = appendPaymentProofs(this.draft().files, Array.from(input.files ?? []), this.proofSlots());
+    input.value = '';
+    this.fileErrors.set(selection.errors);
+    this.patch.emit({ files: selection.files });
+  }
+  dropFile(index: number): void {
+    this.fileErrors.set([]);
+    this.patch.emit({ files: this.draft().files.filter((_, i) => i !== index) });
   }
   patchInvoice(changes: Partial<NonNullable<PurchasePaymentDraft['newInvoice']>>): void {
     const fresh = this.draft().newInvoice;

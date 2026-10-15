@@ -13,8 +13,8 @@ import { Skeleton } from './skeleton';
   imports: [EurPipe, Skeleton],
   template: `
     <section class="bank-picker" aria-label="Bestaande banktransactie">
-      <header><div><b>Banktransactie koppelen</b><small>Kies een bestaande beweging; datum en rekening komen van de bank; bestaande betaalbedragen blijven behouden.</small></div>
-        <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : 'Transactie kiezen' }}</button>
+      <header><div><b>{{ heading() }}</b><small>{{ heading() === 'Banktransactie koppelen' ? 'Kies een bestaande beweging; datum en rekening komen van de bank; bestaande betaalbedragen blijven behouden.' : 'Kies een uitgaande beweging van de bank; de betaling volgt haar datum en bedrag.' }}</small></div>
+        <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : heading() === 'Banktransactie koppelen' ? 'Transactie kiezen' : 'Kiezen' }}</button>
       </header>
       @if (selected(); as row) {
         <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ row.account }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
@@ -57,6 +57,8 @@ export class BankTransactionPicker implements OnInit {
   readonly amount = input<number | null>(null);
   readonly selected = input<BankStatementLine | null>(null);
   readonly disabled = input(false);
+  /** The block's title; the purchase payment sheet names it 'Transactie toevoegen' like its other bank actions. */
+  readonly heading = input('Banktransactie koppelen');
   /** Lines not offered: those already linked to a part of this payment and those already picked. */
   readonly exclude = input<readonly number[]>([]);
   /** Open the list at once (the sheet's 'Koppelen' already asked for it). */

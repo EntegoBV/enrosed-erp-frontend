@@ -30,6 +30,8 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-bar__sub{margin:0;overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 .pw-bar__hint{color:var(--muted);font-size:12px;white-space:nowrap}
 .pw-note{margin:12px 20px 0}
+/* what the last link changed: calm, closable, never a warning */
+.pw-notice{border-color:#cde6d6;background:var(--ok-soft);color:var(--ink-2)}.pw-notice>app-icon{color:var(--ok)}
 .pw .is-loading{opacity:.5;transition:opacity .15s}
 /* 'Opnieuw laden' under a skeleton only once loading takes long (a failed first load only toasts) */
 .pw-late,.pp-late{animation:pw-late .2s 4s both}
@@ -238,6 +240,7 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__linked{display:flex;align-items:center;gap:6px;color:var(--ok);font-weight:650}
 /* Banktransacties, proof files and the invoice of a saved payment (2026-10-15) */
 .pay-sheet__bankblock{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.pay-sheet__bankblock>.hint{color:var(--muted);font-size:12px;line-height:1.45}.pay-sheet__bankblock>.hint--warn{color:var(--danger)}
 .pay-sheet__lines{display:grid;gap:0;margin:0;padding:0;list-style:none}
 .pay-sheet__line{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;padding:8px 0}
 .pay-sheet__line+.pay-sheet__line{border-top:1px solid var(--line)}
@@ -254,6 +257,37 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__newinvoice{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);row-gap:10px}
 .pay-sheet__nonew{justify-self:start}
 .pay-sheet__via{margin-top:6px}
+/* Betaalbewijs: the transaction first, then every file; one count of what the sheet lists */
+.pay-sheet__proofhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pay-sheet__count{flex:none;padding:3px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.pay-sheet__line>.pay-sheet__lineicon{display:grid;flex:none;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--surface-2);color:var(--muted)}
+.pay-sheet__line{flex-wrap:nowrap}
+.pay-sheet__line--open,.pay-sheet__line--choice,.pay-sheet__line--change,.pay-sheet__line--note{flex-wrap:wrap}
+.pay-sheet__line>.btn{flex:none}
+.pay-sheet__carries{color:var(--ink-2)!important;font-weight:600}
+.pay-sheet__filenote{flex:none;color:var(--muted);font-size:12px}
+.pay-sheet__addfile{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.pay-sheet__addfile small{color:var(--muted);font-size:12px}
+.pay-sheet__filebtn{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.pay-sheet__filebtn.is-disabled{opacity:.5;pointer-events:none}
+/* a larger transaction: the question and its three answers */
+.pay-sheet__surplus{display:grid;gap:8px;width:100%;padding:10px 12px;border-radius:12px;background:var(--warn-soft)}
+.pay-sheet__surplus>b{font-size:13.5px}
+.pay-sheet__surplusopts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.pay-sheet__option{display:grid;gap:2px;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-weight:650;text-align:left;cursor:pointer}
+.pay-sheet__option small{color:var(--muted);font-size:11.5px;font-weight:500}
+.pay-sheet__option[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.pay-sheet__option--quiet{font-weight:500;color:var(--muted)}
+/* 'Wat verandert': Betaling nu → Na koppelen */
+.pay-sheet__change{display:grid;width:100%;font-size:12.5px}
+.pay-sheet__changerow{display:grid;grid-template-columns:minmax(84px,.8fr) minmax(0,1fr) minmax(0,1.2fr);gap:4px 10px;padding:5px 0;border-top:1px solid var(--line)}
+.pay-sheet__changerow>span{min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.pay-sheet__changerow--head{border-top:0;color:var(--muted);font-size:11.5px;font-weight:650}
+.pay-sheet__changerow.is-changed>span:last-child{color:var(--ok);font-weight:650}
+.pay-sheet__changerow>span:first-child{color:var(--muted)}
+.pay-sheet__invoicefiles:empty{display:none}
+.pay-sheet__line--quiet{padding-block:4px}.pay-sheet__line--quiet small{color:var(--muted);font-size:12px;line-height:1.4}
+.pay-sheet__grid>.pay-sheet__grouphint{margin:0 0 6px;color:var(--muted);font-size:12px;line-height:1.45}
 .pay-sheet__delete,.settle-sheet__undo{justify-self:center;min-height:44px;padding:0 16px;border:0;background:none;color:var(--danger);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 .settle-sheet__receipt{padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .settle-sheet__consequence{margin:0;font-size:13.5px;font-weight:600}
@@ -271,7 +305,11 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
  .pay-sheet__scope>app-purchase-payment-scope{padding:0}
  .pay-sheet__parts{padding:0 4px 8px}
  .pay-sheet__tobank{padding:4px 4px 8px;border:0;background:transparent}
- .pay-sheet__switch>span{font-size:16px}.pay-sheet__switch small{font-size:13px}}
+ .pay-sheet__switch>span{font-size:16px}.pay-sheet__switch small{font-size:13px}
+ /* the phone stacks the fields: a hint keeps its distance from the next label */
+ .pay-sheet__grid>.hint,.pay-sheet__grid>.field{margin-bottom:12px}
+ .pay-sheet__grid>.pay-sheet__grouphint{margin-bottom:16px}
+ .pay-sheet__changerow{grid-template-columns:minmax(72px,.7fr) minmax(0,1fr) minmax(0,1.1fr)}}
 
 /* ---- the scope control: a segmented choice on a desk, a checkmark list on a phone */
 app-purchase-payment-scope{display:block;min-width:0;--ios-inset:0px}

@@ -8,17 +8,44 @@ import type { Currency } from '../../core/api/models';
  * per transfer, each on its bank day; this module only decides which call the
  * payment sheet makes. Pure: type-only imports, node-tested, counts in cents
  * with the two-cent bank rule (bankAmountsMatch).
+ *
+ * Round 2 (Emre, 2026-10-15): one payment linked to one transaction follows
+ * it. Its day becomes the bank's day and its euro the transaction's (a euro
+ * payment's amount with it; a USD/CNY payment keeps its own amount and gets
+ * the effective rate). A transaction larger than the payment is never refused
+ * outright: the sheet asks whether the payment takes the transaction's amount
+ * ('ADJUST') or the rest is the inspection paid via the supplier
+ * ('INSPECTION'). The server does it in one call (bank-part with `surplus`);
+ * linkChange words what will change and linkNotice what did.
  */
 
 const TOLERANCE_CENTS = 2;
 const cents = (value: number): number => Math.round(value * 100);
+const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
+const eur = (value: number): string => EURO.format(value);
+const money = (amount: number, currency: Currency): string => new Intl.NumberFormat('nl-BE', { style: 'currency', currency }).format(amount);
+/** '05/01/2026' of an ISO day. */
+const day = (iso: string): string => iso.slice(0, 10).split('-').reverse().join('/');
+
+/**
+ * What happens with a transaction larger than the payment: the payment takes
+ * its amount, or the rest becomes the inspection paid via the supplier on the
+ * same transaction (round 1 D). Sent as bank-part's `surplus`.
+ */
+export type SurplusChoice = 'ADJUST' | 'INSPECTION';
 
 /** What the sheet does with the transactions picked for one part. */
 export type PendingLinkPlan =
   /** Nothing picked. */
   | { kind: 'none' }
-  /** One transaction: the whole part when it matches, else its part of it (C2, /bank-part). */
-  | { kind: 'part'; lineId: number; whole: boolean }
+  /**
+   * One transaction: the whole part when it matches, else its part of it (C2,
+   * /bank-part). A larger one is whole once the owner chose what the surplus
+   * is (`surplus`).
+   */
+  | { kind: 'part'; lineId: number; whole: boolean; surplus?: SurplusChoice; withPaymentIds?: number[] }
+  /** One transaction larger than the part, no choice yet: the sheet asks (extraEur = how much larger). */
+  | { kind: 'higher'; lineId: number; extraEur: number }
   /** Two to ten transactions that together make the part (C1, /bank-lines). */
   | { kind: 'lines'; lineIds: number[] }
   /** A server without this round: one matching transaction through the old /links call. */
@@ -29,19 +56,31 @@ export const PENDING_LINES_MESSAGE = 'Kies transacties die samen het bedrag make
 
 /**
  * The call for the transactions picked for a part of `partEur`. One
- * transaction that matches (± € 0,02) or is smaller; several whose sum
- * matches; anything else is refused before the server is asked. A server
- * without this round only takes one matching transaction.
+ * transaction that matches (± € 0,02) or is smaller; one that is larger once
+ * the owner chose what the surplus is (`surplus`; without a choice the plan
+ * is 'higher' and the sheet asks); several whose sum matches; anything else
+ * is refused before the server is asked. A server without this round only
+ * takes one matching transaction.
  */
-export function pendingLinkPlan(partEur: number, lines: readonly { id: number; amountEur: number }[], roundOnServer: boolean): PendingLinkPlan {
+export function pendingLinkPlan(
+  partEur: number, lines: readonly { id: number; amountEur: number }[], roundOnServer: boolean, surplus: SurplusChoice | null = null,
+  companions: readonly { id: number; amountEur: number }[] = [],
+): PendingLinkPlan {
   if (!lines.length) return { kind: 'none' };
   const part = cents(partEur);
   const outgoing = lines.map(line => -cents(line.amountEur));
   if (outgoing.some(value => value <= 0) || !(part > 0)) return { kind: 'invalid', message: PENDING_LINES_MESSAGE };
   if (lines.length === 1) {
+    // The goods and the inspection noted with them make the transaction: both go on it, the inspection keeping its amount.
+    const together = part + companions.reduce((sum, companion) => sum + cents(companion.amountEur), 0);
+    if (roundOnServer && companions.length && Math.abs(outgoing[0] - together) <= TOLERANCE_CENTS) {
+      return { kind: 'part', lineId: lines[0].id, whole: true, withPaymentIds: companions.map(companion => companion.id) };
+    }
     const whole = Math.abs(outgoing[0] - part) <= TOLERANCE_CENTS;
     if (!roundOnServer) return whole ? { kind: 'links', lineId: lines[0].id } : { kind: 'invalid', message: PENDING_LINES_MESSAGE };
-    return whole || outgoing[0] < part ? { kind: 'part', lineId: lines[0].id, whole } : { kind: 'invalid', message: PENDING_LINES_MESSAGE };
+    if (whole || outgoing[0] < part) return { kind: 'part', lineId: lines[0].id, whole };
+    return surplus ? { kind: 'part', lineId: lines[0].id, whole: true, surplus }
+      : { kind: 'higher', lineId: lines[0].id, extraEur: (outgoing[0] - part) / 100 };
   }
   const sum = outgoing.reduce((total, value) => total + value, 0);
   if (!roundOnServer || lines.length > 10 || Math.abs(sum - part) > TOLERANCE_CENTS) return { kind: 'invalid', message: PENDING_LINES_MESSAGE };
@@ -66,9 +105,13 @@ export function pendingPartEur(
   return edit.amountEur ?? Math.round(part.amountEur * edit.amount / part.amount * 100) / 100;
 }
 
-/** The inspection split must wait while two or more transactions, or one smaller one, are about to be linked. */
+/**
+ * The inspection split must wait while two or more transactions, one smaller
+ * one or one larger one (whatever its surplus becomes) are about to be linked:
+ * each changes the goods payment first.
+ */
 export function inspectionSplitBlocked(plan: PendingLinkPlan): boolean {
-  return plan.kind === 'lines' || (plan.kind === 'part' && !plan.whole);
+  return plan.kind === 'lines' || plan.kind === 'higher' || (plan.kind === 'part' && (!plan.whole || !!plan.surplus));
 }
 
 /**
@@ -79,4 +122,136 @@ export function inspectionSplitBlocked(plan: PendingLinkPlan): boolean {
 export function inspectionSplitEur(payment: { amount: number; currency: Currency; amountEur: number }, part: number): number {
   if (payment.currency === 'EUR') return cents(part) / 100;
   return Math.round(payment.amountEur * part / payment.amount * 100) / 100;
+}
+
+/**
+ * The inspection noted with the goods of one transfer and not on the bank
+ * yet: payments under Inspectie & andere kosten of the same container on the
+ * goods payment's own day. A transaction that makes goods + inspection links
+ * them together (bank-part's withPaymentIds): the inspection keeps its
+ * amount, the goods take the rest, so no second inspection is booked.
+ */
+export function transferCompanions<T extends { id: number; payee?: string | null; paidOn: string; amountEur: number; bankStatementLineId?: number | null }>(
+  part: { id: number; payee?: string | null; paidOn: string; bankStatementLineId?: number | null }, payments: readonly T[], skip: readonly number[] = [],
+): T[] {
+  if ((part.payee ?? 'SUPPLIER') !== 'SUPPLIER' || part.bankStatementLineId != null) return [];
+  return payments.filter(payment => payment.id !== part.id && !skip.includes(payment.id) && payment.payee === 'SEPARATE'
+    && payment.bankStatementLineId == null && payment.paidOn === part.paidOn && payment.amountEur > 0);
+}
+
+/** The payment as the sheet shows it before the link. */
+export interface LinkSubject {
+  amount: number;
+  currency: Currency;
+  amountEur: number;
+  paidOn: string;
+  /** 'geen', '1 bestand', 'KBC · 03/01/2026 · € 10.000,00': what proves it now. */
+  proof: string;
+}
+
+/** One row of 'Wat verandert': Betaling nu → Na koppelen. */
+export interface LinkChangeRow {
+  label: 'Bedrag' | 'Betaald op' | 'Koers' | 'Inspectie via leverancier' | 'Bewijs';
+  now: string;
+  after: string;
+  changed: boolean;
+}
+
+/** '1 USD = 0,9227 EUR' of a USD/CNY amount and its euro. */
+function rateText(amount: number, currency: Currency, amountEur: number): string {
+  if (!(amount > 0) || !(amountEur > 0)) return '—';
+  return `1 ${currency} = ${(amountEur / amount).toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} EUR`;
+}
+
+/** The amount as the sheet writes it: the euro, or the foreign amount with its euro. */
+function amountText(amount: number, currency: Currency, amountEur: number): string {
+  return currency === 'EUR' ? eur(amountEur) : `${money(amount, currency)} · ${eur(amountEur)}`;
+}
+
+/**
+ * 'Wat verandert' before one transaction is linked to one payment (or one
+ * transfer of a payment in parts): what the payment is now and what it will
+ * be. A whole link (or a larger transaction taken whole) follows the
+ * transaction's euro and day; a smaller one carves the line's part and leaves
+ * the rest open; the surplus as inspection keeps the payment and adds the
+ * inspection on the same transaction. Empty for any other plan (a larger
+ * transaction asks its question first).
+ */
+export function linkChange(
+  subject: LinkSubject, line: { amountEur: number; day: string; text: string }, plan: PendingLinkPlan, companionsEur = 0,
+): LinkChangeRow[] {
+  if (plan.kind !== 'part') return [];
+  const lineEur = Math.abs(cents(line.amountEur)) / 100;
+  const foreign = subject.currency !== 'EUR';
+  const row = (label: LinkChangeRow['label'], now: string, after: string): LinkChangeRow => ({ label, now, after, changed: now !== after });
+  const proof = row('Bewijs', subject.proof, line.text);
+  if (!plan.whole) {
+    const restEur = (cents(subject.amountEur) - cents(lineEur)) / 100;
+    return [
+      row('Bedrag', eur(subject.amountEur), `${eur(lineEur)} op de bank + ${eur(restEur)} open`),
+      row('Betaald op', day(subject.paidOn), `${day(line.day)} (deel) · rest ${day(subject.paidOn)}`),
+      proof,
+    ];
+  }
+  if (plan.surplus === 'INSPECTION') {
+    const extraEur = (cents(lineEur) - cents(subject.amountEur)) / 100;
+    return [
+      row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur), amountText(subject.amount, subject.currency, subject.amountEur)),
+      row('Betaald op', day(subject.paidOn), day(line.day)),
+      row('Inspectie via leverancier', '—', `${eur(extraEur)} op dezelfde transactie`),
+      proof,
+    ];
+  }
+  // With the inspection noted beside the goods, the goods take the transaction minus that inspection.
+  const together = plan.withPaymentIds?.length ? cents(companionsEur) : 0;
+  const goodsEur = (cents(lineEur) - together) / 100;
+  const afterAmount = foreign ? subject.amount : goodsEur;
+  return [
+    row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur), amountText(afterAmount, subject.currency, goodsEur)),
+    row('Betaald op', day(subject.paidOn), day(line.day)),
+    ...(foreign ? [row('Koers', rateText(subject.amount, subject.currency, subject.amountEur), rateText(subject.amount, subject.currency, goodsEur))] : []),
+    ...(together ? [row('Inspectie via leverancier', `${eur(together / 100)} · niet op de bank`, `${eur(together / 100)} · zelfde transactie`)] : []),
+    proof,
+  ];
+}
+
+/** 'Deel van deze betaling: € 5.000,00 van € 12.000,00; de rest (€ 7.000,00) blijft open als tweede transactie.' (the same words as Kosten & bank). */
+export function carveText(paymentEur: number, lineEur: number): string {
+  const part = Math.abs(cents(lineEur));
+  return `Deel van deze betaling: ${eur(part / 100)} van ${eur(cents(paymentEur) / 100)}; de rest (${eur((cents(paymentEur) - part) / 100)}) blijft open als tweede transactie.`;
+}
+
+/** 'Transactie is € 300,00 hoger dan deze betaling'. */
+export function surplusQuestion(extraEur: number): string {
+  return `Transactie is ${eur(extraEur)} hoger dan deze betaling`;
+}
+
+/**
+ * The short notice after a link: what followed the transaction, with what it
+ * was. Null when nothing changed but the link itself.
+ * 'Bedrag en datum gevolgd van de transactie: € 10.300,00 op 05/01/2026 (was € 10.250,00 op 03/01/2026).'
+ */
+export function linkNotice(
+  before: { amountEur: number; paidOn: string }, after: { amountEur: number; paidOn: string }, inspectionEur: number | null = null,
+): string | null {
+  const amount = cents(before.amountEur) !== cents(after.amountEur);
+  const date = before.paidOn !== after.paidOn;
+  const rest = inspectionEur !== null && cents(inspectionEur) > 0 ? ` Rest als inspectie via leverancier: ${eur(inspectionEur)}.` : '';
+  if (amount && date) {
+    return `Bedrag en datum gevolgd van de transactie: ${eur(after.amountEur)} op ${day(after.paidOn)} (was ${eur(before.amountEur)} op ${day(before.paidOn)}).${rest}`;
+  }
+  if (amount) return `Bedrag gevolgd van de transactie: ${eur(after.amountEur)} (was ${eur(before.amountEur)}).${rest}`;
+  if (date) return `Datum gevolgd van de transactie: ${day(after.paidOn)} (was ${day(before.paidOn)}).${rest}`;
+  return rest ? rest.trim() : null;
+}
+
+/**
+ * The picked transactions are already on this payment: a retry after a lost
+ * answer, the refreshed payment carries every one of them. The sheet then
+ * clears the pick instead of checking it against the payment's new amount.
+ */
+export function pendingAlreadyLinked(pending: readonly { id: number }[], parts: readonly { bankStatementLineId: number | null }[]): boolean {
+  if (!pending.length) return false;
+  const linked = new Set(parts.map(part => part.bankStatementLineId).filter((id): id is number => id != null));
+  return pending.every(line => linked.has(line.id));
 }

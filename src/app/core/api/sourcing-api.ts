@@ -230,6 +230,42 @@ export class SourcingApi {
     return firstValueFrom(this.http.put<PurchaseInvoice>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}`), body));
   }
 
+  /**
+   * 'Toewijzen aan alle betalingen': every payment of the invoice's payee
+   * (each payment in parts whole) points to this invoice, in one call.
+   */
+  assignInvoiceToAll(orderId: number, invoiceId: number): Promise<PurchaseInvoice[]> {
+    return firstValueFrom(this.http.post<PurchaseInvoice[]>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}/assign-all`), {}));
+  }
+
+  /**
+   * A new invoice with its file in one call (multipart): the data is checked
+   * before the file is kept, and the file goes to the container, never to a
+   * payment. `assignAll` ('Voor alle deelbetalingen') points every payment of
+   * the payee to it.
+   */
+  addInvoiceWithFile(orderId: number, body: PurchaseInvoiceWrite, file: File, assignAll: boolean): Promise<PurchaseInvoice> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('payee', body.payee);
+    form.append('number', body.number);
+    form.append('invoiceDate', body.invoiceDate);
+    form.append('amount', String(body.amount));
+    form.append('currency', body.currency);
+    if (body.amountEur != null) form.append('amountEur', String(body.amountEur));
+    if (body.notes) form.append('notes', body.notes);
+    form.append('assignAll', String(assignAll));
+    return firstValueFrom(this.http.post<PurchaseInvoice>(api(`/api/purchase-orders/${orderId}/invoices`), form));
+  }
+
+  /** The file of an invoice that has none yet (multipart): it goes to the invoice, never to a payment. */
+  attachInvoiceFile(orderId: number, invoiceId: number, file: File, assignAll = false): Promise<PurchaseInvoice> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('assignAll', String(assignAll));
+    return firstValueFrom(this.http.post<PurchaseInvoice>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}/document`), form));
+  }
+
   /** Removes the invoice data; its file stays with the container and the payments stay. */
   deleteInvoice(orderId: number, invoiceId: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}`)));
@@ -247,10 +283,22 @@ export class SourcingApi {
       api(`/api/purchase-payment-splits/${paymentId}/bank-lines`), { lines }));
   }
 
-  /** Links one bank transaction to the payment: whole when it matches, else carves the line's part out of it. */
-  linkPaymentPart(paymentId: number, bankStatementLineId: number, amount: number | null = null): Promise<PaymentSplitResult> {
+  /**
+   * Links one bank transaction to the payment, which follows it (its day, and
+   * its euro: a euro payment's amount with it): whole when it matches, a
+   * smaller one carves the line's part out of it. A larger one needs the
+   * owner's choice, sent as `higher`: ADJUST (the payment takes the
+   * transaction's amount) or INSPECTION (the rest becomes the inspection paid
+   * via the supplier on the same transaction); without it the server refuses.
+   * `withPaymentIds`: other open payments of the container on the same
+   * transfer (the inspection paid with the goods) keep their amounts and take
+   * the line's day. The answer's `notice` says what followed.
+   */
+  linkPaymentPart(paymentId: number, bankStatementLineId: number, amount: number | null = null,
+    options: { higher?: 'ADJUST' | 'INSPECTION' | null; withPaymentIds?: readonly number[] } = {}): Promise<PaymentSplitResult> {
     return firstValueFrom(this.http.post<PaymentSplitResult>(
-      api(`/api/purchase-payment-splits/${paymentId}/bank-part`), { bankStatementLineId, amount }));
+      api(`/api/purchase-payment-splits/${paymentId}/bank-part`), { bankStatementLineId, amount,
+        ...(options.higher ? { higher: options.higher } : {}), ...(options.withPaymentIds?.length ? { withPaymentIds: options.withPaymentIds } : {}) }));
   }
 
   /** Splits the inspection paid via the supplier off a goods payment, on the same bank transaction. */

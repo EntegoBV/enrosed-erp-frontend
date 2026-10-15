@@ -193,6 +193,7 @@ type DeskRow =
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
                 [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
                 [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
+                [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
                 (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
@@ -988,6 +989,7 @@ type DeskRow =
                 <select class="select" id="dk-doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
                   @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
                 </select>
+                @if (roundOnServer()) { <span class="hint">Een betaalbewijs voeg je toe bij de betaling zelf (Aanpassen).</span> }
               </div>
               <div class="field">
                 <label for="dk-doc-label">Omschrijving <span class="opt"></span></label>
@@ -1082,7 +1084,8 @@ type DeskRow =
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
-          [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []"
+          [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
+          [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />

@@ -1426,10 +1426,16 @@ export interface PurchaseInvoiceFile {
   payee: Payee;
 }
 
-/** What a split of a payment over bank transactions answers: every member of the group (or goods + inspection) and the touched lines. */
+/**
+ * What a split of a payment over bank transactions answers: every member of
+ * the group (or goods + inspection) and the touched lines; since round 2 one
+ * sentence on what the link changed ('Bedrag en datum gevolgd van de
+ * transactie: …'), null when nothing changed or on an identical retry.
+ */
 export interface PaymentSplitResult {
   payments: PurchasePayment[];
   lines: BankStatementLine[];
+  notice?: string | null;
 }
 
 /** POST / PUT …/invoices. */

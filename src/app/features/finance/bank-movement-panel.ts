@@ -19,6 +19,7 @@ import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
 import { invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
+import { linkChange, linkNotice, surplusQuestion, type LinkChangeRow, type SurplusChoice } from '../purchasing/purchase-payment-links';
 
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
 /** UNLINKED_IN is the retained URL-compatible name for all transactions still to link. */
@@ -239,11 +240,17 @@ export class BankMovementPanel {
     const branch = this.state.containerTree(view).find(item => item.payee === container.payee);
     return (container.due ? branch?.terms.find(term => term.due === container.due)?.payments : branch?.payments) ?? [];
   });
-  /** An unlinked payment of this payee larger than the bank line: carve a part of it rather than recording another payment. */
+  /**
+   * An unlinked payment of this payee (and of this term, when the target is
+   * one) larger than the bank line: carve a part of it rather than recording
+   * another payment. A payment of another term is never pointed at.
+   */
   readonly localLargerPayment = computed(() => {
     const target = this.localDocument(), bank = this.selected();
     if (!bank || target?.kind !== 'purchase' || !this.roundOnServer()) return null;
+    const due = target.container?.due ?? null;
     return this.state.payments().find(payment => payment.orderId === target.id && (payment.payee ?? 'SUPPLIER') === target.container?.payee
+      && (due === null || (payment.instalmentDue ?? null) === due)
       && payment.bankStatementLineId == null && !payment.creditOffset && cents(payment.amountEur) > cents(Math.abs(bank.amountEur)) + 2) ?? null;
   });
   /** The inspection field shows for a supplier target when the container's inspection has an Afspraak or is paid via the supplier. */
@@ -403,7 +410,8 @@ export class BankMovementPanel {
         if (!this.outgoingSelected().length) return 'Selecteer eerst één of meer bestaande betalingen.';
         if (chosen.length !== this.outgoingSelected().length) return 'Een geselecteerde betaling is niet meer beschikbaar. Kies de bestaande betalingen opnieuw.';
         if (chosen.filter(payment => payment.kind === 'cost').length > 1) return 'Kies maximaal één kostenbetaling; meerdere containerbetalingen kunnen samen worden gekoppeld.';
-        if (!bankAmountsMatch(-this.outgoingTotal(), bank.amountEur) && !this.outgoingPart()?.carve) return 'Het totaal van de gekozen betalingen past niet bij de banktransactie. Maximaal € 0,02 verschil op het totaal is toegestaan.';
+        if (this.outgoingPart()?.higher && !this.outgoingSurplus()) return `${this.outgoingSurplusText()}: kies hierboven wat er met het verschil gebeurt.`;
+        if (!bankAmountsMatch(-this.outgoingTotal(), bank.amountEur) && !this.outgoingPart()?.carve && !this.outgoingPart()?.higher) return 'Het totaal van de gekozen betalingen past niet bij de banktransactie. Maximaal € 0,02 verschil op het totaal is toegestaan.';
       } else {
         if (this.matchingLoading()) return 'De passende ontvangsten en terugbetalingen worden nog geladen.';
         const choice = this.choice();
@@ -538,41 +546,90 @@ export class BankMovementPanel {
   readonly outgoingTotal = computed(() => this.chosenOutgoing().reduce((sum, row) => sum + cents(row.amountEur), 0) / 100);
   readonly outgoingDifference = computed(() => this.selected() ? bankAmountDifference(this.selected()!.amountEur, -this.outgoingTotal()) : 0);
   /**
-   * One purchase payment alone, through the split endpoint (bank-part): a
-   * payment larger than the line gets the line's part carved out ('Deel
-   * koppelen'; the rest stays open as a second transfer), and a transfer of a
-   * payment paid in parts that matches takes the line's day. Every other
-   * selection keeps /links, dates unchanged.
+   * One purchase payment alone, through the split endpoint (bank-part), so it
+   * follows the transaction (its day, its euro): a payment larger than the
+   * line gets the line's part carved out ('Deel koppelen'; the rest stays
+   * open as a second transfer), a matching one is linked whole, a larger one
+   * asks what the surplus is (`higher`, then outgoingSurplus). The goods and
+   * the inspection noted with them (one supplier payment and its container's
+   * Inspectie payments) that together make the line go the same way, the
+   * inspection keeping its amount (`withIds`). Other selections keep /links,
+   * dates unchanged.
    */
-  readonly outgoingPart = computed<{ row: OutgoingMatch; carve: boolean } | null>(() => {
+  readonly outgoingPart = computed<{ row: OutgoingMatch; carve: boolean; higher: boolean; withIds: number[] } | null>(() => {
     const line = this.selected(), rows = this.chosenOutgoing();
-    if (!line || !this.roundOnServer() || rows.length !== 1 || this.outgoingSelected().length !== 1 || rows[0].kind !== 'purchase') return null;
+    if (!line || !this.roundOnServer() || !rows.length || rows.length !== this.outgoingSelected().length || rows.some(row => row.kind !== 'purchase')) return null;
+    if (rows.length > 1) {
+      const payments = rows.map(row => this.state.payments().find(item => item.id === row.id));
+      const goods = payments.filter(payment => (payment?.payee ?? 'SUPPLIER') === 'SUPPLIER' && payment?.instalmentDue !== 'FREIGHT');
+      const rest = payments.filter(payment => payment?.payee === 'SEPARATE');
+      if (goods.length !== 1 || rest.length !== rows.length - 1 || new Set(payments.map(payment => payment?.orderId)).size !== 1
+        || !bankAmountsMatch(-this.outgoingTotal(), line.amountEur)) return null;
+      const row = rows.find(item => item.id === goods[0]!.id)!;
+      return { row, carve: false, higher: false, withIds: rest.map(payment => payment!.id) };
+    }
     const row = rows[0];
-    if (cents(row.amountEur) > cents(Math.abs(line.amountEur)) + 2) return { row, carve: true };
-    return row.grouped && bankAmountsMatch(-row.amountEur, line.amountEur) ? { row, carve: false } : null;
+    if (cents(row.amountEur) > cents(Math.abs(line.amountEur)) + 2) return { row, carve: true, higher: false, withIds: [] };
+    return { row, carve: false, higher: cents(Math.abs(line.amountEur)) > cents(row.amountEur) + 2, withIds: [] };
+  });
+  /** A transaction larger than the one chosen payment: 'Bedrag aanpassen' or 'Rest als inspectie via leverancier'. */
+  readonly outgoingSurplus = signal<SurplusChoice | null>(null);
+  readonly outgoingSurplusText = computed(() => {
+    const part = this.outgoingPart(), line = this.selected();
+    return part?.higher && line ? surplusQuestion((cents(Math.abs(line.amountEur)) - cents(part.row.amountEur)) / 100) : '';
+  });
+  /** The rest of a larger transaction may be the inspection paid via the supplier: a supplier goods payment of a container with an inspection. */
+  readonly outgoingInspectionOffered = computed(() => {
+    const part = this.outgoingPart();
+    if (!part?.higher) return false;
+    const payment = this.state.payments().find(item => item.id === part.row.id);
+    if (!payment || (payment.payee ?? 'SUPPLIER') !== 'SUPPLIER' || payment.instalmentDue === 'FREIGHT') return false;
+    // The server's rule: a container with an inspection cost.
+    return (this.state.purchaseViews().find(item => item.order.id === payment.orderId)?.order.inspectionCostEur ?? 0) > 0;
+  });
+  /** 'Wat verandert' for one payment and this transaction: its amount, day, rate and proof now and after the link. */
+  readonly outgoingChange = computed<LinkChangeRow[]>(() => {
+    const part = this.outgoingPart(), line = this.selected();
+    if (!part || !line || (part.higher && !this.outgoingSurplus())) return [];
+    const payment = this.state.payments().find(item => item.id === part.row.id);
+    const day = bankTransactionDay(line);
+    const companionsEur = this.chosenOutgoing().filter(row => part.withIds.includes(row.id)).reduce((sum, row) => sum + cents(row.amountEur), 0) / 100;
+    return linkChange({ amount: payment?.amount ?? part.row.amountEur, currency: payment?.currency ?? 'EUR', amountEur: part.row.amountEur, paidOn: part.row.paidOn, proof: 'geen' },
+      { amountEur: line.amountEur, day, text: `${day.split('-').reverse().join('/')} · ${line.account} · ${euro.format(Math.abs(line.amountEur))}` },
+      { kind: 'part', lineId: line.id, whole: !part.carve, ...(part.higher ? { surplus: this.outgoingSurplus()! } : {}), ...(part.withIds.length ? { withPaymentIds: part.withIds } : {}) },
+      companionsEur);
   });
   readonly canLinkOutgoing = computed(() => {
     const line = this.selected(), rows = this.chosenOutgoing();
+    const part = this.outgoingPart();
     return !this.busy() && !!line && line.amountEur !== 0 && !this.allocated(line) && rows.length > 0
       && rows.length === this.outgoingSelected().length && rows.filter(row => row.kind === 'cost').length <= 1
-      && (bankAmountsMatch(-this.outgoingTotal(), line.amountEur) || !!this.outgoingPart()?.carve);
+      && (part?.higher ? !!this.outgoingSurplus() : bankAmountsMatch(-this.outgoingTotal(), line.amountEur) || !!part?.carve);
   });
   toggleOutgoing(row: OutgoingMatch): void {
     if (this.busy()) return;
+    this.outgoingSurplus.set(null);
     this.outgoingSelected.update(keys => keys.includes(row.key) ? keys.filter(key => key !== row.key)
       : [...(row.kind === 'cost' ? keys.filter(key => !key.startsWith('cost:')) : keys), row.key]);
   }
+  chooseOutgoingSurplus(choice: SurplusChoice | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();
     const part = this.outgoingPart();
     if (part) {
+      const surplus = part.higher ? this.outgoingSurplus() : null;
       await this.run(async () => {
-        const result = await this.sourcing.linkPaymentPart(part.row.id, line.id);
+        const result = await this.sourcing.linkPaymentPart(part.row.id, line.id, null, { higher: surplus, withPaymentIds: part.withIds });
         const saved = result.lines.find(item => item.id === line.id);
         if (saved) this.state.bankStatements.update(lines => lines.map(row => row.id === saved.id ? saved : row));
-        ++this.allocationVersion; this.selected.set(null); this.outgoingSelected.set([]);
-        this.ui.toast(part.carve ? 'Deel van de betaling gekoppeld' : 'Banktransactie gekoppeld');
+        ++this.allocationVersion; this.selected.set(null); this.outgoingSelected.set([]); this.outgoingSurplus.set(null);
+        // The short notice of what followed the transaction (the order screens show the same words).
+        const after = result.payments.find(payment => payment.id === part.row.id);
+        const inspection = surplus === 'INSPECTION' ? result.payments.find(payment => payment.id !== part.row.id && (payment.payee ?? 'SUPPLIER') === 'SEPARATE'
+          && payment.bankStatementLineId === line.id) : undefined;
+        const notice = result.notice ?? (!part.carve && after ? linkNotice(part.row, after, inspection?.amountEur ?? null) : null);
+        this.ui.toast(part.carve ? 'Deel van de betaling gekoppeld' : notice ?? 'Banktransactie gekoppeld');
         await this.state.refreshBank(); await this.state.reload(['costs', 'payments', 'containers']);
       });
       return;
@@ -965,7 +1022,7 @@ export class BankMovementPanel {
     this.receivedInvoices.set([]); this.receivedLoaded.set(false); this.receivedLoading.set(false); this.receivedHasMore.set(false); this.receivedSearch.set(''); this.receivedError.set(''); this.receivedPreview.set(null); this.receivedSelectedId.set(null); this.receivedPreviewLoading.set(false); this.receivedExistingCostId.set(null); ++this.receivedPreviewVersion;
     this.allocationMode.set(row.amountEur < 0 ? 'expense' : 'sales');
     this.allocationStep.set('documents'); this.localSearch.set(''); this.localKind.set('all'); this.localShown.set(60); this.localSelectedKey.set(null); this.localNewConfirmed.set(false); this.localLoading.set(false); this.localError.set('');
-    this.outgoingSearch.set(''); this.outgoingSelected.set([]);
+    this.outgoingSearch.set(''); this.outgoingSelected.set([]); this.outgoingSurplus.set(null);
     const version = ++this.allocationVersion;
     this.selected.set(row); this.choice.set(null); this.manualInvoice.set(0); this.matches.set([]); this.newBookingConfirmed.set(false); this.error.set(''); this.matchingLoading.set(true);
     void this.loadLocalDocuments();

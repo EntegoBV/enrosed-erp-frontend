@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseInvoice, PurchasePayment } from '../src/app/core/api/models.ts';
 import {
-  invoiceCandidates, invoiceComparison, invoiceDocumentKind, invoiceLine, invoiceOption, invoiceSub, invoiceTermsLine, isInvoiceFile,
+  invoiceCandidates, invoiceComparison, invoiceCoverage, invoiceDocumentKind, invoiceLine, invoiceOption, invoiceSub, invoiceTermsLine, isInvoiceFile,
   payeeInvoiceComparison, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
 } from '../src/app/features/purchasing/purchase-invoices.ts';
-import { inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur } from '../src/app/features/purchasing/purchase-payment-links.ts';
+import {
+  carveText, inspectionSplitBlocked, inspectionSplitEur, linkChange, linkNotice, pendingAlreadyLinked, pendingLinkPlan, pendingPartEur, surplusQuestion,
+} from '../src/app/features/purchasing/purchase-payment-links.ts';
 
 /** Intl writes a non-breaking space after the euro sign. */
 const plain = (text: string | null | undefined) => text == null ? text : text.replace(/[  ]/g, ' ');
@@ -98,7 +100,13 @@ test('picked bank transactions: one whole or smaller goes through bank-part, sev
   assert.deepEqual(pendingLinkPlan(21733.63, [], true), { kind: 'none' });
   assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -21733.65 }], true), { kind: 'part', lineId: 520, whole: true }, 'two cents off is whole');
   assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -10000 }], true), { kind: 'part', lineId: 520, whole: false });
-  assert.equal(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -30000 }], true).kind, 'invalid', 'a larger transaction belongs to Bestaande betaling');
+  assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -30000 }], true), { kind: 'higher', lineId: 520, extraEur: 8266.37 },
+    'a larger transaction asks what the surplus is');
+  assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -30000 }], true, 'ADJUST'), { kind: 'part', lineId: 520, whole: true, surplus: 'ADJUST' });
+  assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -30000 }], true, 'INSPECTION'), { kind: 'part', lineId: 520, whole: true, surplus: 'INSPECTION' });
+  assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -21733.65 }], true, 'ADJUST'), { kind: 'part', lineId: 520, whole: true },
+    'a choice left over from another transaction is not sent with a matching one');
+  assert.equal(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -30000 }], false).kind, 'invalid', 'an older server takes no larger transaction');
   assert.deepEqual(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -10000 }, { id: 534, amountEur: -11733.65 }], true), { kind: 'lines', lineIds: [520, 534] });
   assert.equal(pendingLinkPlan(21733.63, [{ id: 520, amountEur: -10000 }, { id: 534, amountEur: -11700 }], true).kind, 'invalid');
   assert.equal(pendingLinkPlan(100, [{ id: 1, amountEur: 100 }], true).kind, 'invalid', 'never an incoming line');
@@ -108,6 +116,8 @@ test('picked bank transactions: one whole or smaller goes through bank-part, sev
   assert.equal(inspectionSplitBlocked(pendingLinkPlan(10300, [{ id: 610, amountEur: -10300 }], true)), false);
   assert.equal(inspectionSplitBlocked(pendingLinkPlan(10300, [{ id: 610, amountEur: -5000 }], true)), true);
   assert.equal(inspectionSplitBlocked(pendingLinkPlan(10300, [{ id: 610, amountEur: -5000 }, { id: 611, amountEur: -5300 }], true)), true);
+  assert.equal(inspectionSplitBlocked(pendingLinkPlan(10000, [{ id: 610, amountEur: -10300 }], true)), true, 'a larger one changes the goods payment first');
+  assert.equal(inspectionSplitBlocked(pendingLinkPlan(10000, [{ id: 610, amountEur: -10300 }], true, 'ADJUST')), true);
   assert.equal(inspectionSplitEur({ amount: 10300, currency: 'EUR', amountEur: 10300 }, 300), 300);
   assert.equal(inspectionSplitEur({ amount: 12000, currency: 'USD', amountEur: 10300 }, 350), 300.42, 'the payment\'s own booked rate');
 });
@@ -117,11 +127,63 @@ test('the sheet and the save check picked transactions against the same amount',
   // A payment never split: the draft's euro (a corrected amount is written before the link), not the stored one.
   assert.equal(pendingPartEur(stored, undefined, 10300), 10300);
   assert.deepEqual(pendingLinkPlan(pendingPartEur(stored, undefined, 10300), [{ id: 610, amountEur: -10300 }], true), { kind: 'part', lineId: 610, whole: true });
-  assert.equal(pendingLinkPlan(pendingPartEur(stored, undefined, 9000), [{ id: 610, amountEur: -10000 }], true).kind, 'invalid',
-    'a lowered amount no longer matches the transaction picked for the old one');
+  assert.equal(pendingLinkPlan(pendingPartEur(stored, undefined, 9000), [{ id: 610, amountEur: -10000 }], true).kind, 'higher',
+    'against a lowered amount the transaction is larger: the sheet asks what the surplus is');
   // A transfer of a payment in parts: its correction, else its booked euro.
   assert.equal(pendingPartEur(stored, undefined, null), 10000);
   assert.equal(pendingPartEur(stored, { amount: 9500 }, null), 9500);
   assert.equal(pendingPartEur({ amount: 5000, currency: 'USD', amountEur: 4600 }, { amount: 2500 }, null), 2300, 'pro rata at its own rate');
   assert.equal(pendingPartEur({ amount: 5000, currency: 'USD', amountEur: 4600 }, { amount: 2500, amountEur: 2310 }, null), 2310);
+});
+
+/* ---- round 2 (Emre, 2026-10-15): a linked transaction carries the payment's amount and day; one invoice for every part-payment */
+
+test('Wat verandert: a whole link follows the transaction, a USD payment keeps its amount and shows the rate, a larger one asks first', () => {
+  const now = { amount: 10250, currency: 'EUR' as const, amountEur: 10250, paidOn: '2026-01-03', proof: 'geen' };
+  const line = { amountEur: -10300, day: '2026-01-05', text: 'KBC · 05/01/2026 · € 10.300,00' };
+  assert.deepEqual(linkChange(now, line, { kind: 'higher', lineId: 610, extraEur: 50 }), [], 'no comparison before the choice');
+  const adjust = linkChange(now, line, { kind: 'part', lineId: 610, whole: true, surplus: 'ADJUST' });
+  assert.deepEqual(adjust.map(row => [row.label, plain(row.now), plain(row.after), row.changed]), [
+    ['Bedrag', '€ 10.250,00', '€ 10.300,00', true], ['Betaald op', '03/01/2026', '05/01/2026', true], ['Bewijs', 'geen', 'KBC · 05/01/2026 · € 10.300,00', true]]);
+  const rest = linkChange(now, line, { kind: 'part', lineId: 610, whole: true, surplus: 'INSPECTION' });
+  assert.deepEqual(rest.map(row => [row.label, plain(row.after)]), [['Bedrag', '€ 10.250,00'], ['Betaald op', '05/01/2026'],
+    ['Inspectie via leverancier', '€ 50,00 op dezelfde transactie'], ['Bewijs', 'KBC · 05/01/2026 · € 10.300,00']]);
+  assert.equal(rest[0].changed, false, 'the goods keep their amount');
+  const usd = linkChange({ amount: 11000, currency: 'USD', amountEur: 10000, paidOn: '2026-01-03', proof: '1 bestand' },
+    { amountEur: -10150, day: '2026-01-05', text: 'KBC · 05/01/2026 · € 10.150,00' }, { kind: 'part', lineId: 610, whole: true });
+  assert.deepEqual(usd.map(row => [row.label, plain(row.now), plain(row.after)]), [
+    ['Bedrag', 'US$ 11.000,00 · € 10.000,00', 'US$ 11.000,00 · € 10.150,00'], ['Betaald op', '03/01/2026', '05/01/2026'],
+    ['Koers', '1 USD = 0,9091 EUR', '1 USD = 0,9227 EUR'], ['Bewijs', '1 bestand', 'KBC · 05/01/2026 · € 10.150,00']]);
+  const carve = linkChange({ ...now, amount: 12000, amountEur: 12000 }, { amountEur: -5000, day: '2026-01-05', text: 'KBC' }, { kind: 'part', lineId: 640, whole: false });
+  assert.deepEqual(carve.slice(0, 2).map(row => plain(row.after)), ['€ 5.000,00 op de bank + € 7.000,00 open', '05/01/2026 (deel) · rest 03/01/2026']);
+  assert.equal(plain(carveText(12000, -5000)), 'Deel van deze betaling: € 5.000,00 van € 12.000,00; de rest (€ 7.000,00) blijft open als tweede transactie.');
+  assert.equal(plain(surplusQuestion(300)), 'Transactie is € 300,00 hoger dan deze betaling');
+});
+
+test('the notice after a link names what followed the transaction and what it was', () => {
+  assert.equal(plain(linkNotice({ amountEur: 10250, paidOn: '2026-01-03' }, { amountEur: 10300, paidOn: '2026-01-05' })),
+    'Bedrag en datum gevolgd van de transactie: € 10.300,00 op 05/01/2026 (was € 10.250,00 op 03/01/2026).');
+  assert.equal(plain(linkNotice({ amountEur: 10300, paidOn: '2026-01-03' }, { amountEur: 10300, paidOn: '2026-01-05' })),
+    'Datum gevolgd van de transactie: 05/01/2026 (was 03/01/2026).');
+  assert.equal(plain(linkNotice({ amountEur: 10299.99, paidOn: '2026-01-05' }, { amountEur: 10300, paidOn: '2026-01-05' })),
+    'Bedrag gevolgd van de transactie: € 10.300,00 (was € 10.299,99).');
+  assert.equal(linkNotice({ amountEur: 10300, paidOn: '2026-01-05' }, { amountEur: 10300, paidOn: '2026-01-05' }), null);
+  assert.equal(plain(linkNotice({ amountEur: 10000, paidOn: '2026-01-05' }, { amountEur: 10000, paidOn: '2026-01-05' }, 300)),
+    'Rest als inspectie via leverancier: € 300,00.');
+});
+
+test('a retry after a lost answer: the picked transactions already on the payment are recognised', () => {
+  const parts = [{ bankStatementLineId: 520 }, { bankStatementLineId: 534 }, { bankStatementLineId: null }];
+  assert.equal(pendingAlreadyLinked([{ id: 520 }, { id: 534 }], parts), true);
+  assert.equal(pendingAlreadyLinked([{ id: 520 }, { id: 540 }], parts), false);
+  assert.equal(pendingAlreadyLinked([], parts), false);
+});
+
+test('an invoice covers all payments of its payee, or says how many and offers to assign it to all', () => {
+  const rows = [{ parts: [{ id: 101 }] }, { parts: [{ id: 102 }, { id: 103 }] }, { parts: [{ id: 104 }] }];
+  assert.deepEqual(invoiceCoverage(invoice(7, { paymentIds: [101, 102, 103, 104] }), rows, 'Leverancier'),
+    { covered: 3, total: 3, all: true, text: 'Geldt voor alle betalingen van Leverancier (3)' }, 'a payment in parts counts once');
+  assert.deepEqual(invoiceCoverage(invoice(7, { paymentIds: [103] }), rows, 'Leverancier'),
+    { covered: 1, total: 3, all: false, text: 'Geldt voor 1 van 3 betalingen van Leverancier' });
+  assert.deepEqual(invoiceCoverage(invoice(7), [], 'Leverancier'), { covered: 0, total: 0, all: true, text: 'Geldt voor alle betalingen van Leverancier' });
 });

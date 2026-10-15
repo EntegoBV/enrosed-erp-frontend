@@ -50,6 +50,10 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
       @default {
         @if (ledger(); as book) {
           <div class="pp-content" [class.is-loading]="state() === 'refreshing'" [attr.inert]="state() === 'refreshing' ? '' : null" [attr.aria-busy]="state() === 'refreshing'">
+            @if (notice(); as text) {
+              <div class="ios-banner pp-notice" role="status"><span>{{ text }}</span>
+                <button class="ios-capsule" type="button" aria-label="Melding sluiten" (click)="dismissNotice.emit()">Sluiten</button></div>
+            }
             @if (mode() === 'edit' && dirty()) {
               <div class="ios-banner" role="status"><span>Niet-opgeslagen wijzigingen aan de order</span>
                 <button class="ios-capsule ios-capsule--tinted" type="button" (click)="save.emit()">Opslaan</button></div>
@@ -334,6 +338,11 @@ export class PurchasePaymentOverview {
   readonly roundOnServer = input(false);
   /** '{account label} · {dd/MM}' of a bank line the host has loaded; null shows plain 'op de bank'. */
   readonly bankLineLabel = input<(lineId: number) => string | null>(() => null);
+  /** What the last link changed, until it is closed (editor). */
+  readonly notice = input<string | null>(null);
+  readonly dismissNotice = output<void>();
+  /** Editor only: 'Toewijzen aan alle betalingen' of an invoice. */
+  readonly assignInvoice = output<PurchaseInvoice>();
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();

@@ -74,6 +74,13 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
           <button class="wk-btn wk-btn--icon" type="button" aria-label="Meer acties" (click)="openMenu('more', $event)"><app-icon name="more" [size]="18" /></button>
         </div>
       </div>
+      @if (notice(); as text) {
+        <div class="wk-banner wk-banner--inset pw-note pw-notice" role="status">
+          <app-icon name="bank" [size]="16" />
+          <span class="wk-banner__text">{{ text }}</span>
+          <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm wk-btn--icon" type="button" aria-label="Melding sluiten" (click)="dismissNotice.emit()"><app-icon name="close" [size]="14" /></button></span>
+        </div>
+      }
       @if (dirty()) {
         <div class="wk-banner wk-banner--warn wk-banner--inset pw-note" role="status">
           <app-icon name="alert" [size]="16" />
@@ -522,6 +529,11 @@ export class PurchasePaymentWorkbench {
   readonly roundOnServer = input(false);
   /** '{account label} · {dd/MM}' of a bank line the host has loaded; null shows plain 'op de bank'. */
   readonly bankLineLabel = input<(lineId: number) => string | null>(() => null);
+  /** What the last link changed ('Bedrag en datum gevolgd van de transactie: …'), until it is closed. */
+  readonly notice = input<string | null>(null);
+  readonly dismissNotice = output<void>();
+  /** 'Toewijzen aan alle betalingen': every payment of the invoice's payee points to it. */
+  readonly assignInvoice = output<PurchaseInvoice>();
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();

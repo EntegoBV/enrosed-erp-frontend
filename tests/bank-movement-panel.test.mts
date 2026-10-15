@@ -5,6 +5,7 @@ import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { linkChange, linkNotice, surplusQuestion } from '../src/app/features/purchasing/purchase-payment-links.ts';
 import { bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
@@ -131,7 +132,7 @@ function harness() {
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
     exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
-    invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer,
+    invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
@@ -1074,3 +1075,91 @@ test('Factuur of uitgave: goods and the inspection paid via the supplier become 
   panel.selected.set(bank); panel.localSelectedKey.set(panel.localDocuments()[0].key); panel.purchaseInspectionInput.set('10300');
   assert.equal(panel.canLinkLocal(), false, 'the inspection is smaller than the transfer');
 });
+
+/* ---- round 2 (Emre, 2026-10-15): one payment linked to one transaction follows it */
+
+test('Bestaande betaling: one matching payment goes through bank-part so it follows the transaction, with the notice as the toast', async () => {
+  const { panel, state, sourcing, toasts } = harness();
+  state.purchaseViews.set([roundView()]);
+  const bank = { ...movement(520, -1046.97), source: 'ODOO' as const };
+  state.payments.set([{ id: 80, orderId: 20, orderNumber: 'PO-20', label: 'Douane', amountEur: 1046.95, paidOn: '2026-09-01', payee: 'LOGISTICS' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, amount, options.higher, [...options.withPaymentIds]]);
+    return { payments: [{ id: 80, amountEur: 1046.97, paidOn: '2026-09-08', bankStatementLineId: 520 }], lines: [{ ...bank, allocated: true }] };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.deepEqual([panel.outgoingPart()?.carve, panel.outgoingPart()?.higher, panel.canLinkOutgoing()], [false, false, true]);
+  assert.deepEqual(panel.outgoingChange().map(row => [row.label, row.now.replace(/\u00a0/g, ' '), row.after.replace(/\u00a0/g, ' ')]).slice(0, 2),
+    [['Bedrag', '€ 1.046,95', '€ 1.046,97'], ['Betaald op', '01/09/2026', '08/09/2026']]);
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[80, 520, null, null, []]]);
+  assert.equal(toasts.at(-1)!.replace(/\u00a0/g, ' '), 'Bedrag en datum gevolgd van de transactie: € 1.046,97 op 08/09/2026 (was € 1.046,95 op 01/09/2026).');
+});
+
+test('Bestaande betaling: a larger transaction asks first; the inspection rest only for a supplier payment of a container with an inspection', async () => {
+  const { panel, state, sourcing } = harness();
+  const view = roundView({ order: { ...purchaseView().order, inspectionCostEur: 300 } });
+  state.purchaseViews.set([view]);
+  const bank = { ...movement(610, -10300), source: 'ODOO' as const };
+  state.payments.set([{ id: 201, orderId: 20, orderNumber: 'PO-20', label: 'Aanbetaling 30%', amountEur: 10000, paidOn: '2026-09-01', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, amount, options.higher]); return { payments: [], lines: [{ ...bank, allocated: true }] };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.deepEqual([panel.outgoingPart()?.higher, panel.canLinkOutgoing(), panel.outgoingInspectionOffered()], [true, false, true]);
+  assert.match(panel.allocationBlockedReason().replace(/\u00a0/g, ' '), /^Transactie is € 300,00 hoger dan deze betaling: kies hierboven/);
+  assert.equal(panel.outgoingChange().length, 0, 'no comparison before the choice');
+  panel.chooseOutgoingSurplus('INSPECTION');
+  assert.equal(panel.canLinkOutgoing(), true);
+  assert.equal(panel.outgoingChange().find(row => row.label === 'Inspectie via leverancier')?.after.replace(/\u00a0/g, ' '), '€ 300,00 op dezelfde transactie');
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[201, 610, null, 'INSPECTION']]);
+  // Douane & transport: only 'Bedrag aanpassen'.
+  const other = harness();
+  other.state.purchaseViews.set([view]);
+  other.state.payments.set([{ id: 202, orderId: 20, label: 'Douane', amountEur: 1000, paidOn: '2026-09-01', payee: 'LOGISTICS' }]);
+  await other.panel.openAllocation({ ...movement(611, -1100), source: 'ODOO' });
+  other.panel.toggleOutgoing(other.panel.outgoingCandidates()[0]);
+  assert.deepEqual([other.panel.outgoingPart()?.higher, other.panel.outgoingInspectionOffered()], [true, false]);
+});
+
+test('Factuur of uitgave points at a larger payment of the same term only', async () => {
+  const { panel, state } = harness();
+  const view = roundView();
+  view.reconciliation.supplierInstalments.push({ due: 'SHIPPED', label: 'Saldo', plannedEur: 2800, remainingEur: 2800, paidEur: 0, finalized: false });
+  state.purchaseViews.set([view]);
+  state.payments.set([{ id: 301, orderId: 20, label: 'Voorschot', amountEur: 12000, paidOn: '2026-09-01', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  await panel.openAllocation(movement(640, -5000));
+  panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.due === 'SHIPPED')!);
+  assert.equal(panel.localLargerPayment(), null, 'that payment belongs to another term');
+  panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.due === 'ORDERED')!);
+  assert.equal(panel.localLargerPayment()?.id, 301);
+});
+
+test('Bestaande betaling: the goods and the inspection noted with them go on the transaction together, the inspection keeping its amount', async () => {
+  const { panel, state, sourcing, toasts } = harness();
+  state.purchaseViews.set([roundView()]);
+  const bank = { ...movement(610, -10300), source: 'ODOO' as const };
+  state.payments.set([{ id: 201, orderId: 20, label: 'Aanbetaling 30%', amountEur: 10000, paidOn: '2026-09-01', payee: 'SUPPLIER', instalmentDue: 'ORDERED' },
+    { id: 202, orderId: 20, label: 'Aanbetaling 30% · inspectie', amountEur: 300, paidOn: '2026-09-01', payee: 'SEPARATE' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, options.higher, [...options.withPaymentIds]]);
+    return { payments: [], lines: [{ ...bank, allocated: true }], notice: 'Datum gevolgd van de transactie: 08/09/2026 (was 01/09/2026).' };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  for (const row of panel.outgoingCandidates()) panel.toggleOutgoing(row);
+  assert.deepEqual([panel.outgoingPart()?.row.id, [...panel.outgoingPart()!.withIds], panel.canLinkOutgoing()], [201, [202], true]);
+  assert.equal(panel.outgoingChange().find(row => row.label === 'Inspectie via leverancier')?.after.replace(/\u00a0/g, ' '), '€ 300,00 · zelfde transactie');
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[201, 610, null, [202]]]);
+  assert.equal(toasts.at(-1), 'Datum gevolgd van de transactie: 08/09/2026 (was 01/09/2026).', "the server's own sentence");
+}
+);

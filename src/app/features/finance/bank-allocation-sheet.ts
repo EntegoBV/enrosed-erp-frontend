@@ -184,10 +184,33 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
               }
               @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
             </div>
-            @if (p.allocationMode() === 'expense' && p.outgoingPart()?.carve) {
-              @let carve = p.outgoingPart()!.row;
-              <section class="bank-alloc-preview"><h3>Deel van een bestaande betaling</h3>
-                <p class="fin-hint">Deel van deze betaling: {{ p.abs(row.amountEur) | eur }} van {{ carve.amountEur | eur }}; de rest ({{ carveRest(carve.amountEur, row.amountEur) | eur }}) blijft open als tweede transactie.</p></section>
+            @if (p.allocationMode() === 'expense' && p.outgoingPart(); as part) {
+              <!-- One container payment: it follows the transaction. A larger transaction first asks what the surplus is. -->
+              <section class="bank-alloc-preview"><h3>{{ part.carve ? 'Deel van een bestaande betaling' : part.withIds.length ? 'Goederen + inspectie op deze transactie' : 'Bestaande betaling' }}</h3>
+                @if (part.carve) {
+                  <p class="fin-hint">Deel van deze betaling: {{ p.abs(row.amountEur) | eur }} van {{ part.row.amountEur | eur }}; de rest ({{ carveRest(part.row.amountEur, row.amountEur) | eur }}) blijft open als tweede transactie.</p>
+                }
+                @if (part.higher) {
+                  <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
+                  <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
+                    <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
+                      <b>Bedrag aanpassen naar {{ p.abs(row.amountEur) | eur }}</b><span>De betaling volgt de transactie</span></button>
+                    @if (p.outgoingInspectionOffered()) {
+                      <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'INSPECTION'" (click)="p.chooseOutgoingSurplus('INSPECTION')">
+                        <b>Rest als inspectie via leverancier</b><span>{{ p.abs(row.amountEur) - part.row.amountEur | eur }} als eigen betaling op dezelfde transactie</span></button>
+                    }
+                    <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Annuleren</b><span>Deze betaling niet koppelen</span></button>
+                  </div>
+                }
+                @if (p.outgoingChange().length) {
+                  <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
+                    <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader">Wat verandert</span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
+                    @for (change of p.outgoingChange(); track change.label) {
+                      <div class="bank-alloc-change__row" role="row" [class.is-changed]="change.changed"><span role="rowheader">{{ change.label }}</span><span role="cell">{{ change.now }}</span><span role="cell">{{ change.after }}</span></div>
+                    }
+                  </div>
+                }
+              </section>
             } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
               <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.outgoingDifference() | eur }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {
