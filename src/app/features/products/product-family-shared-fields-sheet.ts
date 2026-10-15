@@ -6,6 +6,7 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import type { Product, ProductFamily } from '../../core/api/models';
 import { Sheet } from '../../shared/ui';
@@ -222,6 +223,8 @@ export class ProductFamilySharedFieldsSheet {
   readonly busy = input(false);
   /** The parent persists the current draft before issuing the atomic family command. */
   readonly saveFirst = input(false);
+  /** The fields ticked on opening (the sales card ticks only the packaging); null ticks all. */
+  readonly initialFields = input<readonly ProductFamilySharedField[] | null>(null);
 
   readonly close = output<void>();
   readonly apply = output<ProductFamilySharedFieldsApply>();
@@ -261,7 +264,8 @@ export class ProductFamilySharedFieldsSheet {
       if (nextKey === this.contextKey) return;
       this.contextKey = nextKey;
       if (nextKey === null) return;
-      this.selectedFields.set(new Set(PRODUCT_FAMILY_SHARED_FIELDS));
+      const initial = untracked(() => this.initialFields());
+      this.selectedFields.set(new Set(initial?.length ? initial : PRODUCT_FAMILY_SHARED_FIELDS));
       this.selectedTargetIds.set(new Set(this.targets().map((target) => target.productId)));
     });
   }

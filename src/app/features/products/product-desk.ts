@@ -247,6 +247,8 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 } @else {
                   <div><dt>Verpakking</dt><dd class="pd-muted">Los, zonder verpakking</dd></div>
                 }
+                @let setup = salesSetup(product);
+                <div><dt>Verkoop</dt><dd class="pd-prose">{{ setup.sentence }}<small>Klant leest: {{ setup.reading.main }} · {{ setup.reading.detail }}</small></dd></div>
                 <div><dt>HS-code</dt><dd class="mono">{{ product.hsCode || '—' }}</dd></div>
                 @if (product.description) {
                   <div><dt>Omschrijving</dt><dd class="pd-prose">{{ product.description }}</dd></div>

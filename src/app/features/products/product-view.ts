@@ -1,5 +1,5 @@
-import { capitalize, otherBasisPrice, productSalesUnit, salesQuantityDetail } from './product-sales-unit';
-import { orderStepLabel, orderStepSentence } from './product-order-step';
+import { capitalize, customerReading, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesSetupText } from './product-sales-unit';
+import { effectiveOrderStep, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -283,6 +283,15 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               <!-- Purchase and sale share one grid, so the pairs land next to
                    each other: the two inputs, then cost against price, the
                    paperwork, and the margin as the full-width closer. -->
+              <!-- How it is sold, in the words of the editor's sales card: unit,
+                   packaging, price basis and order step in one sentence. -->
+              <div class="tiles-kicker">Verkoop</div>
+              <div class="tiles">
+                @let setup = salesSetup(product);
+                <div class="tile"><span>Hoe je dit product verkoopt</span><b>{{ setup.sentence }}</b>
+                  <small>Klant leest: {{ setup.reading.main }} · {{ setup.reading.detail }}</small></div>
+              </div>
+
               <div class="tiles-kicker">Inkoop &amp; verkoop</div>
               <div class="tiles">
                 <div class="tile"><span>EXW-prijs</span><b class="num">
@@ -303,8 +312,6 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 </b><small>{{ hasFixedSalesPrice(product)
                   ? 'vaste verkoopprijs'
                   : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></button>
-                <div class="tile"><span>Eenheid</span><b>{{ capitalize(salesUnit(product).piece.one) }}</b><small>op offertes en de website</small></div>
-                <div class="tile"><span>Verkocht per</span><b>{{ orderStep(product) }}</b><small>offertes, portaal en website</small></div>
                 <div class="tile"><span>HS-code</span><b class="mono">{{ product.hsCode || '—' }}</b></div>
                 @if (sourceOrderId(); as orderId) {
                   <a class="tile tile--link" [routerLink]="['/purchasing', orderId]">
@@ -935,11 +942,15 @@ export class ProductView {
   readonly quantityDetail = salesQuantityDetail;
   readonly capitalize = capitalize;
 
-  /** "Verkocht per" in words: "Volle omdoos (12 stolpen)", "Per display (8 bowls)", "Per stolp". */
-  orderStep(product: Product): string {
-    return orderStepLabel(product, productSalesUnit(product));
+  /** "Je verkoopt diamanten, per 12 in een display. …" and what the customer reads, at the catalogue price. */
+  salesSetup(product: Product): { sentence: string; reading: { main: string; detail: string } } {
+    const step = effectiveOrderStep(product);
+    return {
+      sentence: salesSetupText(product, step),
+      reading: customerReading(product, this.displayPrice(), product.carton.piecesPerCarton, step),
+    };
   }
-  /** The same as one phrase, for a line of its own: "Verkocht per stolp". */
+  /** "Klant bestelt per" as one phrase, for a line of its own: "Klant bestelt per stolp". */
   orderStepSentence(product: Product): string {
     return orderStepSentence(product, productSalesUnit(product));
   }
