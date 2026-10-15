@@ -79,7 +79,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                       <label><span>Betaalde valuta</span><select class="select" [disabled]="p.busy()" [value]="p.purchaseCurrency()" (change)="p.changePurchaseCurrency($any($event.target).value)"><option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option></select></label>
                       <label><span>Betaald bedrag in {{ p.purchaseCurrency() }}</span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseAmountInput()" (input)="p.purchaseAmountInput.set($any($event.target).value)" /></label>
                       @if (p.localInspectionOffered()) {
-                        <label><span>Waarvan inspectie via leverancier <span class="opt"></span></span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseInspectionInput()" (input)="p.purchaseInspectionInput.set($any($event.target).value)" /></label>
+                        <label class="bank-alloc-purchase-fields__wide"><span>Waarvan inspectie via leverancier <span class="opt"></span></span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseInspectionInput()" (input)="p.purchaseInspectionInput.set($any($event.target).value)" /></label>
                       }
                     </div>
                     @if (p.localInspectionOffered() && p.purchaseInspectionInput()) { <p class="fin-hint">Wordt een eigen betaling bij Inspectie & andere kosten op dezelfde banktransactie; de banktransactie is het betaalbewijs van beide.</p> }

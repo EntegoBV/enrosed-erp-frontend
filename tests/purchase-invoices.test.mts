@@ -5,7 +5,7 @@ import {
   invoiceCandidates, invoiceComparison, invoiceDocumentKind, invoiceLine, invoiceOption, invoiceSub, invoiceTermsLine, isInvoiceFile,
   payeeInvoiceComparison, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
 } from '../src/app/features/purchasing/purchase-invoices.ts';
-import { inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan } from '../src/app/features/purchasing/purchase-payment-links.ts';
+import { inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur } from '../src/app/features/purchasing/purchase-payment-links.ts';
 
 /** Intl writes a non-breaking space after the euro sign. */
 const plain = (text: string | null | undefined) => text == null ? text : text.replace(/[  ]/g, ' ');
@@ -110,4 +110,18 @@ test('picked bank transactions: one whole or smaller goes through bank-part, sev
   assert.equal(inspectionSplitBlocked(pendingLinkPlan(10300, [{ id: 610, amountEur: -5000 }, { id: 611, amountEur: -5300 }], true)), true);
   assert.equal(inspectionSplitEur({ amount: 10300, currency: 'EUR', amountEur: 10300 }, 300), 300);
   assert.equal(inspectionSplitEur({ amount: 12000, currency: 'USD', amountEur: 10300 }, 350), 300.42, 'the payment\'s own booked rate');
+});
+
+test('the sheet and the save check picked transactions against the same amount', () => {
+  const stored = { amount: 10000, currency: 'EUR' as const, amountEur: 10000 };
+  // A payment never split: the draft's euro (a corrected amount is written before the link), not the stored one.
+  assert.equal(pendingPartEur(stored, undefined, 10300), 10300);
+  assert.deepEqual(pendingLinkPlan(pendingPartEur(stored, undefined, 10300), [{ id: 610, amountEur: -10300 }], true), { kind: 'part', lineId: 610, whole: true });
+  assert.equal(pendingLinkPlan(pendingPartEur(stored, undefined, 9000), [{ id: 610, amountEur: -10000 }], true).kind, 'invalid',
+    'a lowered amount no longer matches the transaction picked for the old one');
+  // A transfer of a payment in parts: its correction, else its booked euro.
+  assert.equal(pendingPartEur(stored, undefined, null), 10000);
+  assert.equal(pendingPartEur(stored, { amount: 9500 }, null), 9500);
+  assert.equal(pendingPartEur({ amount: 5000, currency: 'USD', amountEur: 4600 }, { amount: 2500 }, null), 2300, 'pro rata at its own rate');
+  assert.equal(pendingPartEur({ amount: 5000, currency: 'USD', amountEur: 4600 }, { amount: 2500, amountEur: 2310 }, null), 2310);
 });

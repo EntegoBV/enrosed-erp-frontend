@@ -47,6 +47,16 @@ test('the betaalbewijs of a row in words: the bank first, then files, else none;
     'op de bank · zelfde transactie als de goederen');
 });
 
+test('a phone row shows its betaalbewijs line only when it adds to the trailing \'geen betaalbewijs\'', () => {
+  assert.equal(menus['bankProofSub'](row()), null, 'no second \'geen betaalbewijs\'');
+  assert.equal(menus['bankProofSub'](row({ hasProof: null, proofs: null })), null);
+  assert.equal(menus['bankProofSub'](row({ bank: { linked: 1, total: 2, sharedWith: [] } })), '1 van 2 op de bank', 'a part on the bank still says so');
+  assert.equal(menus['bankProofSub'](row({ bank: { linked: 1, total: 1, sharedWith: [] }, onBank: true, proven: true })), 'op de bank');
+  assert.equal(menus['bankProofSub'](row({ hasProof: true, proofCount: 1, proofs: [doc(9, 'kbc-0209.pdf')], proven: true })), 'kbc-0209.pdf');
+  assert.equal(menus['bankProofSub'](row({ creditOffset: { creditId: 1, sourceOrderId: 4, sourceOrderNumber: 'INK-9', paymentId: 1, amountEur: 100 }, proven: true })),
+    'verrekend tegoed');
+});
+
 test('the payment menu has no \'Bewijs toevoegen\'; it opens the invoice and older invoice files, and a payment in parts is removed per transaction', () => {
   const plain = ids(menus['paymentMenuItems'](row(), { move: false, busy: false }));
   assert.equal(plain.includes('proof'), false);

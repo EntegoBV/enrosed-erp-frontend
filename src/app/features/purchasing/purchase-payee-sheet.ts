@@ -12,7 +12,7 @@ import {
   type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
-  bankProofLine, creditMenuItems, dayOf, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
+  bankProofSub, creditMenuItems, dayOf, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
 } from './purchase-payment-menus';
 import { invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
@@ -151,7 +151,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                   <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
                     <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
-                    @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked"><app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> {{ text }}</span> }</span>
+                    @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
                   <span class="ios-cell__trail">
                     <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                     @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
@@ -165,11 +165,11 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
           }
         </section>
 
-        @if (mode() === 'edit' && (item.payee === 'SUPPLIER' || item.canUndoSettle || roundOnServer())) {
+        @if (mode() === 'edit' && (item.payee === 'SUPPLIER' || item.canUndoSettle || invoiceLink() || (roundOnServer() && item.payee === 'SEPARATE'))) {
           <div class="payee-sheet__links">
             @if (item.payee === 'SUPPLIER') { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="act('plan')">Betaalplan wijzigen</button> }
             @if (item.payee === 'SUPPLIER') { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="close(creditAdd)">Tegoed noteren…</button> }
-            @if (roundOnServer()) { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="close(addInvoice)">Factuur toevoegen…</button> }
+            @if (invoiceLink()) { <button class="ios-section__link" type="button" [disabled]="busy()" (click)="close(addInvoice)">Factuur toevoegen…</button> }
             @if (roundOnServer() && item.payee === 'SEPARATE') {
               <button class="ios-section__link" type="button" [disabled]="busy()" (click)="close(toggleVia)">Inspectie via leverancier: {{ item.viaSupplier ? 'aan' : 'uit' }}</button>
             }
@@ -243,13 +243,19 @@ export class PurchasePayeeSheet {
   readonly day = dayOf;
   readonly month = monthOf;
   readonly abs = Math.abs;
-  readonly proofText = bankProofLine;
+  readonly proofText = bankProofSub;
   /** Leverancier, Transport and Inspectie always; Bijkomende kosten only once it has invoices or invoice files. */
   readonly showInvoices = computed(() => {
     const item = this.payee();
     if (item.payee !== 'OTHER') return item.invoices.length > 0 || item.invoiceFiles.length > 0 || item.viaSupplier || (this.mode() === 'edit' && this.roundOnServer());
     return item.invoices.length > 0 || item.invoiceFiles.length > 0;
   });
+  /**
+   * 'Factuur toevoegen…' among the links: for an extra invoice, or for
+   * Bijkomende kosten while it shows no Factuur section. An empty Factuur
+   * section already offers 'Factuur toevoegen', so it is never there twice.
+   */
+  readonly invoiceLink = computed(() => this.roundOnServer() && (!this.showInvoices() || this.payee().invoices.length > 0));
   /** 'dekt 30% bij bestelling + 70% bij vertrek' under the supplier's invoice. */
   readonly termsLine = computed(() => {
     const item = this.payee();

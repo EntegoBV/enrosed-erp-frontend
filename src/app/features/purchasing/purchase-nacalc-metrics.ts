@@ -864,8 +864,12 @@ export function nacalcProductCount(row: Pick<NacalcProductRow, 'set'>, quantity:
   return row.set ? { main: `${count(quantity)} ${quantity === 1 ? 'set' : 'sets'}`, sub: `× ${row.set.pieces} ${row.set.other}` } : { main: count(quantity), sub: null };
 }
 
-/** The phone's line under a product: '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk'. */
-export function nacalcProductSub(row: NacalcProductRow, received: boolean): string {
+/**
+ * The phone's line under a product: '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk'. Beside sets (a set or
+ * a mixed container) a piece product says '/stuk' and the price incl. Enrosed kost carries its unit; a container of
+ * pieces keeps its short '/st'.
+ */
+export function nacalcProductSub(row: NacalcProductRow, received: boolean, basis: NacalcSetBasis = 'PIECE'): string {
   const words = row.set ? { one: 'set', other: 'sets', usable: 'bruikbare' } : { one: 'stuk', other: 'stuks', usable: 'bruikbare' };
   const shortfall = [row.missing ? row.missing + ' te weinig' : '', row.damaged ? row.damaged + ' beschadigd' : '', row.over ? row.over + ' te veel' : ''].filter(Boolean);
   const pieces = received
@@ -874,7 +878,8 @@ export function nacalcProductSub(row: NacalcProductRow, received: boolean): stri
   const usable = row.unitEur !== null && row.unitQuantity > 0;
   const unit = !usable ? '' : row.set
     ? ` · ${eur4(row.unitEur!)}/set` + (row.unitPieceEur !== null ? ` · ${eur4(row.unitPieceEur)}/stuk` : '')
-    : ` · ${eur4(row.unitEur!)}/st`;
-  const pricing = row.pricingUnitEur !== null && row.unitQuantity > 0 ? ` · ${eur4(row.pricingUnitEur)} incl. Enrosed kost` : '';
+    : ` · ${eur4(row.unitEur!)}${basis === 'PIECE' ? '/st' : '/stuk'}`;
+  const pricingUnit = row.set ? '/set' : basis === 'PIECE' ? '' : '/stuk';
+  const pricing = row.pricingUnitEur !== null && row.unitQuantity > 0 ? ` · ${eur4(row.pricingUnitEur)}${pricingUnit} incl. Enrosed kost` : '';
   return pieces + unit + pricing;
 }

@@ -733,7 +733,7 @@ test('a set product: the container figure is per set with the piece price beside
   assert.deepEqual(product.set, { pieces: 12, one: 'roos', other: 'rozen' });
   assert.deepEqual(plain(nacalcProductUnit(product, 'DISPLAY')), { main: '€ 31,2000 /set', sub: '€ 2,6000 /stuk' });
   assert.deepEqual(nacalcProductCount(product, 100), { main: '100 sets', sub: '× 12 rozen' });
-  assert.equal(plain(nacalcProductSub(product, false)), '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk · € 33,6000 incl. Enrosed kost');
+  assert.equal(plain(nacalcProductSub(product, false, 'DISPLAY')), '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk · € 33,6000/set incl. Enrosed kost');
   const summary = purchaseNacalcSummary(roses())!;
   assert.deepEqual([summary.unitWord, summary.unitEur, summary.pieceEur, summary.setPieces], ['set', 31.2, 2.6, 12]);
 });
@@ -764,6 +764,10 @@ test('sets next to pieces: the container average is per piece, sets counted with
   assert.equal(nacalcUnitBasis(head), '1.400 stuks · sets als 12 rozen geteld · incl. inspectie');
   assert.equal(nacalcAgreedSub(head), 'calculatie op 300 bestelde verkoopeenheden');
   assert.deepEqual(plain(nacalcProductUnit(result.products[1], 'MIXED')), { main: '€ 5,0000 /stuk', sub: null });
+  // The phone line: beside sets a piece product says '/stuk', and every price incl. Enrosed kost carries its unit.
+  assert.equal(plain(nacalcProductSub(result.products[0], false, 'MIXED')), '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk · € 33,6000/set incl. Enrosed kost');
+  assert.equal(plain(nacalcProductSub(result.products[1], false, 'MIXED')), '200 bestelde stuks · € 5,0000/stuk · € 5,4000/stuk incl. Enrosed kost');
+  assert.equal(plain(nacalcProductSub(result.products[1], false)), '200 bestelde stuks · € 5,0000/st · € 5,4000 incl. Enrosed kost', 'a container of pieces reads as before');
   assert.equal(nacalcUnitBasis({ ...head, setUnitOther: null }), '1.400 stuks · sets als hun aantal stuks geteld · incl. inspectie');
   const partner = { costPct: 20, sharePct: 50, basisEur: null, advanceEur: null, unitEur: 13.7333, shortPieces: 0, ordered: 300, financing: null, shortageAfterAdvance: false };
   assert.equal(nacalcPartnerLine(partner, head, true), 'eindkost van de verkochte sets en stuks, per product + 50 % resultaat; voorschot verrekend');

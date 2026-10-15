@@ -81,6 +81,12 @@ test('example (b): the inspection paid via the supplier in the goods\' transfer,
   ]);
 });
 
+test('every stream is headed with the ERP\'s own payee words, whatever label the server sends', () => {
+  const other = { ...stream('OTHER', 0, 120), label: 'Andere betaling' };
+  const branches = tree(view({ reconciliation: { streams: [{ ...stream('SUPPLIER', 31048.04, 31048.04), label: 'Leverancier (goederen)' }, other], supplierInstalments: [] } }), [], {});
+  assert.deepEqual(branches.map(branch => branch.label), ['Leverancier', 'Bijkomende kosten']);
+});
+
 test('a server with this round but no invoices yet, and an older server without the field', () => {
   const none = tree(view({ invoices: [], invoiceFiles: [] }), [], {});
   assert.deepEqual([none[0].invoices, none[0].invoiceFiles, none[1].viaSupplier], [[], [], null]);

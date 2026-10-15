@@ -746,6 +746,17 @@ test('the invoice of a row comes from the server\'s paymentIds; the payee carrie
   assert.deepEqual([of(off, 'SEPARATE').viaSupplier, of(off, 'SEPARATE').supplierInvoice], [false, null]);
 });
 
+test('a file that \'Gegevens invullen\' made an invoice\'s file is no longer a file without data on its payment', () => {
+  const documents: PurchaseDocument[] = [
+    { ...proof(77, 101), kind: 'COMMERCIAL_INVOICE', kindLabel: 'Commercial invoice', originalFilename: 'invoice.pdf' },
+    { ...proof(78, 101), kind: 'COMMERCIAL_INVOICE', kindLabel: 'Commercial invoice', originalFilename: 'oud.pdf' },
+  ];
+  const promoted = withInvoices(termsView(), [invoiceOf(7, { documentId: 77, documentName: 'invoice.pdf', paymentIds: [101] })]);
+  const row = routed(promoted, [deposit()], documents).rows[0];
+  assert.deepEqual([row.invoice?.documentId, row.invoiceFiles.map(file => file.id)], [77, [78]], 'opened through \'Factuur openen\'; the other file stays listed');
+  assert.deepEqual([row.proven, row.hasProof], [true, false], 'neither is proof; the bank line is');
+});
+
 test('old data: a group whose root was deleted opens on its first part; a part with another payee is its own row', () => {
   const orphan = [payment(5, { groupId: 4, paidOn: '2026-09-02' }), payment(6, { groupId: 4, paidOn: '2026-09-01' })];
   const result = routed(termsView(), orphan);

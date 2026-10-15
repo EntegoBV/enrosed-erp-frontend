@@ -10,7 +10,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
   nacalcPartnerLine, nacalcPartnerShortage, nacalcProductSub, nacalcReceiptUnitLine, nacalcUnitBasis,
-  type NacalcPayeeRow, type NacalcTone, type PurchaseNacalc,
+  type NacalcPayeeRow, type NacalcSetBasis, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
   PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
@@ -199,7 +199,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                 <a class="ios-cell ios-cell--tall np-product" [class.np-product--plain]="!row.productId" [routerLink]="row.productId ? ['/products', row.productId] : null">
                   <span class="ios-cell__body">
                     <span class="ios-cell__title">{{ row.name }}</span>
-                    <span class="ios-cell__sub">{{ productSub(row, !!n.receipt) }}</span>
+                    <span class="ios-cell__sub">{{ productSub(row, !!n.receipt, n.headline.setBasis) }}</span>
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.eindkostEur | eur }}</span>
                     <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? (row.set ? 'geen bruikbare sets' : 'geen bruikbare stuks') : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
@@ -344,7 +344,7 @@ export class PurchaseNacalcOverview {
     return agreed + eindkost + (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · zeevracht via de leverancier (CIF)' : '');
   }
 
-  productSub(row: PurchaseNacalc['products'][number], received: boolean): string { return nacalcProductSub(row, received); }
+  productSub(row: PurchaseNacalc['products'][number], received: boolean, basis: NacalcSetBasis): string { return nacalcProductSub(row, received, basis); }
 
   /** The action cell in words: the Te doen verb, the payee or term, the amount; the read view settles in the editor. */
   todoLabel(todo: LedgerTodo): string {

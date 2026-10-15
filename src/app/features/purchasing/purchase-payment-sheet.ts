@@ -19,8 +19,8 @@ import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, 
 import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
 import { parsePurchasePaymentAmount } from './purchase-payment-amount';
-import { invoiceCandidates, invoiceOption, resolveInvoice } from './purchase-invoices';
-import { inspectionSplitBlocked, pendingLinkPlan } from './purchase-payment-links';
+import { dayText, invoiceCandidates, invoiceOption, resolveInvoice } from './purchase-invoices';
+import { inspectionSplitBlocked, pendingLinkPlan, pendingPartEur } from './purchase-payment-links';
 
 /** The editor's payment draft, as the sheet edits it. */
 export interface PurchasePaymentDraft {
@@ -199,7 +199,7 @@ let nextSheetId = 0;
             </div>
             <div class="field">
               <span class="label">Betaald op</span>
-              <span class="input">{{ dayShort(pay.paidOn) }}</span>
+              <span class="input">{{ dayLong(newestDay()) }}</span>
             </div>
             <p class="hint span-2">Verdeeld over {{ parts().length }} transacties; een deel dat niet op de bank staat pas je hier aan.</p>
           } @else {
@@ -225,7 +225,7 @@ let nextSheetId = 0;
             </div>
             <div class="field">
               <label [for]="ids + '-date'">Betaald op</label>
-              @if (pay.bankTransaction || linkedSingle()) { <span class="input">{{ pay.paidOn }}</span> } @else {
+              @if (pay.bankTransaction || linkedSingle()) { <span class="input">{{ dayLong(pay.paidOn) }}</span> } @else {
                 <app-date-field [fieldId]="ids + '-date'" [value]="pay.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
               }
             </div>
@@ -285,11 +285,11 @@ let nextSheetId = 0;
                 <div class="field">
                   <label [for]="ids + '-inspection'">Waarvan inspectie via leverancier <span class="opt"></span></label>
                   <div class="input-affix">
-                    <input class="input num right" [id]="ids + '-inspection'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || splitBlocked()"
+                    <input class="input num right" [id]="ids + '-inspection'" type="text" inputmode="decimal" autocomplete="off" [disabled]="busy() || (splitBlocked() && !pay.inspectionSplitInput)"
                            [ngModel]="pay.inspectionSplitInput ?? ''" (ngModelChange)="inspectionInput($event)" />
                     <span class="input-affix__suffix">{{ pay.currency }}</span>
                   </div>
-                  @if (splitBlocked()) { <span class="hint">Eerst de banktransacties koppelen, daarna de inspectie afsplitsen.</span> }
+                  @if (splitBlocked()) { <span class="hint" [class.hint--warn]="!!pay.inspectionSplitInput" [attr.role]="pay.inspectionSplitInput ? 'alert' : null">Eerst de banktransacties koppelen, daarna de inspectie afsplitsen.</span> }
                   @else if (pay.inspectionSplitInput && !splitValid()) { <span class="hint hint--warn" role="alert">Vul een bedrag in dat kleiner is dan de betaling.</span> }
                   @else { <span class="hint">Wordt een eigen betaling bij Inspectie & andere kosten op dezelfde banktransactie; het totaal blijft gelijk.</span> }
                 </div>
@@ -400,7 +400,7 @@ let nextSheetId = 0;
               </ul>
             </section>
           }
-          <app-payment-proof-picker [title]="pay.id ? 'Bankafschrift toevoegen (optioneel)' : 'Bankafschrift (optioneel)'" [files]="pay.files" [maxFiles]="proofSlots()"
+          <app-payment-proof-picker title="Bankafschrift toevoegen (optioneel)" [files]="pay.files" [maxFiles]="proofSlots()"
                                     [disabled]="busy() || !!pay.bankLinkPending" (filesChange)="patch.emit({ files: $event })" />
         }
         @if (pay.id && !grouped()) {
@@ -567,7 +567,9 @@ export class PurchasePaymentSheet {
     || (!!edit.amountEurInput && edit.amountEur === null)));
   /** Something typed or picked cannot be saved yet. */
   readonly saveBlocked = computed(() => this.pendingPlan().kind === 'invalid' || this.partEditsInvalid()
-    || (!!this.draft().inspectionSplitInput && !this.splitValid()) || this.newInvoiceInvalid());
+    || (!!this.draft().inspectionSplitInput && !this.splitValid()) || this.newInvoiceInvalid()
+    // The inspection is split off only after a carve or a split over several transactions is done (a later save).
+    || (this.splitBlocked() && (this.draft().inspectionSplit ?? 0) > 0));
 
   lineOf(part: LedgerPart): BankStatementLine | null {
     return part.bankStatementLineId == null ? null : this.bankLines().find(line => line.id === part.bankStatementLineId) ?? null;
@@ -578,12 +580,12 @@ export class PurchasePaymentSheet {
     return `${bankTransactionDay(line).split('-').reverse().join('/')} · ${account} · ${formatEur(Math.abs(line.amountEur))}`;
   }
   dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
-  /** The euro of a transfer as it will be saved: its correction when typed, else as booked. */
+  /** 'Betaald op' read-only: the day as the lists show it (a payment in parts: its newest transfer, as its ledger row). */
+  dayLong(iso: string): string { return dayText(iso); }
+  readonly newestDay = computed(() => { const parts = this.parts(); return parts[parts.length - 1]?.paidOn ?? this.draft().paidOn; });
+  /** The euro of a transfer as it will be saved: a payment never split as the draft values it, a transfer its correction when typed, else as booked. */
   partEur(part: LedgerPart): number {
-    const edit = this.draft().partEdits?.[part.id];
-    if (!edit || edit.amount === null) return part.amountEur;
-    if (part.currency === 'EUR') return edit.amount;
-    return edit.amountEur ?? Math.round(part.amountEur * edit.amount / part.amount * 100) / 100;
+    return pendingPartEur(part, this.draft().partEdits?.[part.id], this.grouped() ? null : this.draftEur());
   }
   partAmountInput(part: LedgerPart): string { return this.draft().partEdits?.[part.id]?.amountInput ?? String(part.amount).replace('.', ','); }
   partEurInput(part: LedgerPart): string { return this.draft().partEdits?.[part.id]?.amountEurInput ?? ''; }
@@ -601,10 +603,14 @@ export class PurchasePaymentSheet {
     this.picking.set(partId);
     if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], toBank: false });
   }
+  /** A pick that carves the payment or splits it over several transactions drops a typed inspection split: that comes after the link. */
   pickLine(partId: number, line: BankStatementLine | null): void {
     if (!line) return;
     const pending = this.draft().pendingPartId === partId ? this.draft().pendingLines ?? [] : [];
-    this.patch.emit({ pendingPartId: partId, pendingLines: [...pending.filter(item => item.id !== line.id), line], toBank: false });
+    const lines = [...pending.filter(item => item.id !== line.id), line];
+    const part = this.parts().find(item => item.id === partId);
+    const blocked = !!part && inspectionSplitBlocked(pendingLinkPlan(this.partEur(part), lines, this.roundOnServer()));
+    this.patch.emit({ pendingPartId: partId, pendingLines: lines, toBank: false, ...(blocked ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) });
   }
   dropPending(line: BankStatementLine): void {
     this.patch.emit({ pendingLines: (this.draft().pendingLines ?? []).filter(item => item.id !== line.id) });

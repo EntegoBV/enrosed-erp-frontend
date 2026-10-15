@@ -939,7 +939,9 @@ function ledgerRow(
     bank: { linked, total: parts.length, sharedWith },
     proven,
     invoice: invoice ? { id: invoice.id, number: invoice.number, documentId: invoice.documentId ?? null, viaSupplier: invoice.payee !== payee } : null,
-    invoiceFiles: documents === null ? [] : documents.filter(document => document.paymentId !== null && ids.has(document.paymentId) && invoiceFile(document, invoices)),
+    // Legacy invoice files without data: a file an invoice now points to opens through 'Factuur openen'.
+    invoiceFiles: documents === null ? [] : documents.filter(document => document.paymentId !== null && ids.has(document.paymentId)
+      && invoiceFile(document, invoices) && !invoices.some(item => item.documentId === document.id)),
     actor: root.actor,
     recordedAt: root.recordedAt,
     creditOffset,

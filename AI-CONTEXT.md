@@ -470,7 +470,10 @@ cijfers'.
   without data come as `view.invoiceFiles` with 'Gegevens invullen'.
   `app-purchase-invoice-sheet` (page level in editor and desk, `invoicing`)
   uploads the file once (COMMERCIAL_INVOICE for the supplier, else INVOICE,
-  no paymentId), then POSTs/PUTs. The betaalbewijs is the bank link: a ledger
+  no paymentId), then POSTs/PUTs; a changed USD/CNY amount drops the typed
+  euro (as payments do), and after 'Ander bestand' the host offers to delete
+  the replaced file (else it stays as a file without data). Kosten & bank
+  heads each stream with the ERP's payee words, never the server's label. The betaalbewijs is the bank link: a ledger
   row is `proven` when it is a credit offset or every transfer is on the bank
   (hard link or old marker; every host passes `bankedPaymentIds`) or has a
   proof file; every 'zonder betaalbewijs' reads `proven === false`, counted per
@@ -488,11 +491,16 @@ cijfers'.
   `/purchase-payment-splits/{id}/bank-part`, 2-10 lines making the amount →
   `/bank-lines` (the server splits and redates each part to its bank day);
   an older server: one matching line through /links with paidOn = the
-  line's day. Inspection via the supplier: `order.inspectionViaSupplier`
+  line's day. The sheet and the save judge picked lines with one rule
+  (`pendingPartEur`: a payment never split at the draft's euro, since the
+  save writes it first; a transfer at its correction or booked euro).
+  Inspection via the supplier: `order.inspectionViaSupplier`
   (server-owned, `PUT …/inspection-via-supplier`; the host refreshes, never
   sets the view from the answer), ticked on a new supplier transfer's
   inspection part or split off a saved goods payment ('Inspectie afsplitsen',
-  `/inspection` with `expectedAmountEur` frozen for retries, after the links);
+  `/inspection` after the links, `expectedAmountEur` = the euro the PUT
+  answered, frozen for retries; never in the same save as a carve or a split
+  over several lines: such a pick clears the field and the save refuses it);
   an inspection on the goods' line reads '· zelfde transactie als de
   goederen'. Every new action hides while `paymentRoundOnServer(view)` is
   false (no `invoices` in the view): the backend ships first.

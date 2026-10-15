@@ -104,7 +104,8 @@ export function containerPaymentTree(
     const termed = payee === 'SUPPLIER' ? view.reconciliation?.supplierInstalments ?? [] : [];
     return {
       payee,
-      label: stream.label || PAYEE_TITLE[payee],
+      // The ERP's own payee words (as Betalingen, Te betalen and the bank targets); the server's stream label says 'Andere betaling'.
+      label: PAYEE_TITLE[payee],
       status: status(stream),
       plannedEur: stream.plannedEur,
       paidEur: stream.paidEur,

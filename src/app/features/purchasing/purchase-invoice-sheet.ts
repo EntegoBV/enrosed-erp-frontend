@@ -86,7 +86,7 @@ function localIsoDay(date = new Date()): string {
             <label [for]="ids + '-amount'">Bedrag</label>
             <div class="input-affix">
               <input class="input num right" [id]="ids + '-amount'" type="text" inputmode="decimal" autocomplete="off"
-                     [ngModel]="form.amountInput" (ngModelChange)="patch({ amountInput: $event })" />
+                     [ngModel]="form.amountInput" (ngModelChange)="setAmount($event)" />
               <select class="input-affix__suffix" aria-label="Munt" [ngModel]="form.currency" (ngModelChange)="patch({ currency: $event, amountEurInput: '' })">
                 <option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option>
               </select>
@@ -119,6 +119,7 @@ function localIsoDay(date = new Date()): string {
               <input class="input" [id]="ids + '-file'" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx"
                      [attr.aria-label]="'Bestand van de factuur'" (change)="patch({ file: $any($event.target).files?.[0] ?? null })" />
               <span class="hint">{{ form.file ? form.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</span>
+              @if (storedFile() && form.replaceFile) { <span class="hint">Het vorige bestand blijft bij de container als factuurbestand zonder gegevens; na het bewaren kun je het verwijderen.</span> }
             }
           </div>
           <div class="field span-2">
@@ -190,13 +191,17 @@ export class PurchaseInvoiceSheet {
     if (action.file) return { documentId: action.file.documentId, name: action.file.originalFilename };
     return null;
   });
-  /** The draft's euro: as typed, else the order rate. */
+  /** The draft's euro: as typed; else the stored euro while amount and currency are unchanged (the server keeps it); else the order rate. */
   private readonly draftEur = computed(() => {
     const form = this.state();
     const amount = this.amount();
     if (amount === null) return null;
     if (form.currency === 'EUR') return amount;
-    return this.amountEur() ?? Math.round(this.eurOf()(amount, form.currency, form.payee) * 100) / 100;
+    const typed = this.amountEur();
+    if (typed !== null) return typed;
+    const stored = this.action().invoice;
+    if (stored && stored.currency === form.currency && Math.round(stored.amount * 100) === Math.round(amount * 100)) return stored.amountEur;
+    return Math.round(this.eurOf()(amount, form.currency, form.payee) * 100) / 100;
   });
   /** 'Afspraak Leverancier: € 31.048,04 · gelijk aan de afspraak', live while typing. */
   readonly agreedLine = computed(() => {
@@ -240,6 +245,14 @@ export class PurchaseInvoiceSheet {
       file: keepFile ? null : form.file,
     };
   });
+
+  /** A changed USD/CNY amount drops the euro that belonged to the old one (as the payment sheet does): empty means the order rate. */
+  setAmount(raw: string): void {
+    this.state.update(form => {
+      const changed = parsePurchasePaymentAmount(raw) !== parsePurchasePaymentAmount(form.amountInput);
+      return { ...form, amountInput: raw, ...(changed && form.currency !== 'EUR' ? { amountEurInput: '' } : {}) };
+    });
+  }
 
   patch(changes: Partial<InvoiceForm>): void {
     this.state.update(form => ({ ...form, ...changes }));

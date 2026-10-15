@@ -32,7 +32,7 @@ import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet, type PurchasePaymentDraft } from './purchase-payment-sheet';
 import { splitTransfer } from './purchase-transfer-split';
 import { invoiceDocumentKind, paymentRoundOnServer, primaryInvoice } from './purchase-invoices';
-import { inspectionSplitEur, pendingLinkPlan } from './purchase-payment-links';
+import { inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur } from './purchase-payment-links';
 import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit } from './purchase-invoice-sheet';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
@@ -2323,15 +2323,19 @@ export class PurchaseEditor {
     // The payment the screen handed over is the root when it is one (it carries what the screen shows); else the group's root.
     const root = payment.id === (payment.groupId ?? payment.id) ? payment
       : members.find(member => member.id === payment.groupId) ?? members[0] ?? payment;
-    const foreign = root.currency !== 'EUR' && Number.isFinite(root.amountEur) && root.amountEur > 0;
-    this.paying.set({ id: root.id, amount: root.amount, amountInput: String(root.amount).replace('.', ','), currency: root.currency, paidOn: root.paidOn,
-      label: root.label ?? '', payee: root.payee ?? 'SUPPLIER', files: [], settles: !!root.settles,
-      instalmentDue: root.instalmentDue ?? null,
-      amountEurInput: foreign ? String(root.amountEur).replace('.', ',') : '', amountEur: foreign ? root.amountEur : null,
-      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '',
-      groupIds: [root.id, ...members.filter(member => member.id !== root.id).map(member => member.id)],
+    this.paying.set({ ...this.storedPaymentDraft(root, members), label: root.label ?? '', payee: root.payee ?? 'SUPPLIER', files: [], settles: !!root.settles,
+      instalmentDue: root.instalmentDue ?? null, toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '',
       invoiceId: root.invoiceId ?? null, invoiceIdChanged: false });
     void this.loadBankLines();
+  }
+
+  /** The money, the day and the transfers of a saved payment as the sheet starts from them; a foreign payment brings its booked euro value. */
+  private storedPaymentDraft(root: PurchasePayment, members: readonly PurchasePayment[]): Pick<PurchasePaymentDraft,
+    'id' | 'amount' | 'amountInput' | 'currency' | 'paidOn' | 'amountEurInput' | 'amountEur' | 'groupIds'> {
+    const foreign = root.currency !== 'EUR' && Number.isFinite(root.amountEur) && root.amountEur > 0;
+    return { id: root.id, amount: root.amount, amountInput: String(root.amount).replace('.', ','), currency: root.currency, paidOn: root.paidOn,
+      amountEurInput: foreign ? String(root.amountEur).replace('.', ',') : '', amountEur: foreign ? root.amountEur : null,
+      groupIds: [root.id, ...members.filter(member => member.id !== root.id).map(member => member.id)] };
   }
 
   /** Every transfer of the payment's group, by day; a payment never split is a group of one. */
@@ -2393,16 +2397,23 @@ export class PurchaseEditor {
     try { this.bankLines.set(await this.banking.list()); } catch { /* a hint only; the next screen load brings them */ }
   }
 
-  /** After an immediate action the sheet stays open on the same payment: the root may have moved when a part was removed. */
+  /**
+   * After an immediate action the sheet stays open on the same payment: the
+   * root may have moved when a part was removed. Its money, day and euro come
+   * from the stored root again (never the removed part's), and what an
+   * earlier failed save left behind goes; the typed words, payee, term,
+   * invoice choice and files stay.
+   */
   private rebindPaying(previousIds: readonly number[]): void {
     const payments = this.payments() ?? [];
     const survivor = payments.find(payment => previousIds.includes(payment.id));
     if (!survivor) { this.paying.set(null); return; }
     const members = this.groupOf(survivor);
     const root = members.find(member => member.id === (survivor.groupId ?? survivor.id)) ?? members[0];
-    this.paying.update(current => current ? { ...current, id: root.id, amount: root.amount, amountInput: String(root.amount).replace('.', ','),
-      paidOn: root.paidOn, currency: root.currency, groupIds: [root.id, ...members.filter(member => member.id !== root.id).map(member => member.id)],
-      pendingLines: [], pendingPartId: null, partEdits: {}, bankLinkError: '' } : current);
+    this.paying.update(current => current ? { ...current, ...this.storedPaymentDraft(root, members),
+      pendingLines: [], pendingPartId: null, partEdits: {}, bankLinkError: '',
+      bankTransaction: null, bankLinkPending: false, bankLinkComplete: false, bankSavedPayment: undefined, inspectionExpectedEur: undefined,
+      ...(root.id !== current.id ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) } : current);
   }
 
   /** 'Losmaken' in the sheet: the bank transaction comes off at once (every payment on it), the sheet stays on the payment. */
@@ -2520,11 +2531,35 @@ export class PurchaseEditor {
       if (this.view()?.order.id !== id) return;
       this.invoicing.set(null);
       this.ui.toast('Factuur bewaard', 'ok');
+      // 'Ander bestand': the file it replaced would stay as an invoice file without data; ask once whether it goes.
+      const previous = action.invoice;
+      if (submission.invoiceId != null && previous?.documentId != null && previous.documentId !== documentId) {
+        this.offerRemoveReplacedFile(id, previous.documentId, previous.documentName);
+      }
     } catch (failure: unknown) {
       if (this.view()?.order.id === id) this.ui.toast(messageOf(failure, 'Factuur bewaren mislukt'), 'err');
     } finally {
       this.payingBusy.set(false);
     }
+  }
+
+  /** After 'Ander bestand': the replaced file goes on a yes; otherwise it stays with the container as an invoice file without data. */
+  private offerRemoveReplacedFile(orderId: number, documentId: number, name: string | null): void {
+    this.ui.confirm({ title: 'Vorig bestand verwijderen',
+      message: `Vorig bestand <b>${escapeHtml(name || 'factuur')}</b> verwijderen? Anders blijft het bij de container als factuurbestand zonder gegevens.`,
+      confirmLabel: 'Verwijderen', danger: true }, async () => {
+      if (this.payingBusy() || this.view()?.order.id !== orderId) return;
+      this.payingBusy.set(true);
+      try {
+        await this.sourcing.deleteDocument(orderId, documentId);
+        await Promise.all([this.refreshPaymentState(orderId), this.loadDocuments(orderId)]);
+        if (this.view()?.order.id === orderId) this.ui.toast('Vorig bestand verwijderd', 'ok');
+      } catch (failure: unknown) {
+        if (this.view()?.order.id === orderId) this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
   }
 
   removeInvoice(invoice: PurchaseInvoice): void {
@@ -2786,10 +2821,8 @@ export class PurchaseEditor {
     const pendingLines = pay.pendingLines ?? [];
     // The picked transactions are checked against that part's amount before any inspection split.
     const pendingPart = pay.id ? parts.find(part => part.id === (pay.pendingPartId ?? pay.id)) ?? null : null;
-    const pendingEdit = pendingPart ? pay.partEdits?.[pendingPart.id] : undefined;
-    const pendingEur = !pendingPart ? 0 : pendingEdit && pendingEdit.amount !== null
-      ? (pendingPart.currency === 'EUR' ? pendingEdit.amount : pendingEdit.amountEur ?? Math.round(pendingPart.amountEur * pendingEdit.amount / pendingPart.amount * 100) / 100)
-      : !grouped && pay.currency === 'EUR' ? pay.amount : pendingPart.amountEur;
+    // The same rule as the sheet: a payment never split as the draft values its money (written before the link), a transfer its correction.
+    const pendingEur = !pendingPart ? 0 : pendingPartEur(pendingPart, pay.partEdits?.[pendingPart.id], grouped ? null : this.paymentDraftEur());
     const plan = pendingPart && pendingLines.length ? pendingLinkPlan(pendingEur, pendingLines, round) : { kind: 'none' as const };
     if (plan.kind === 'invalid') { this.ui.toast(plan.message, 'err'); return; }
     /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; never for an offset, a payment in parts or picked transactions. */
@@ -2802,6 +2835,8 @@ export class PurchaseEditor {
     const stored = pay.id ? (this.payments() ?? []).find(payment => payment.id === pay.id) : undefined;
     const split = round && !!pay.id && !grouped && !offset && pay.payee === 'SUPPLIER' && (stored?.payee ?? 'SUPPLIER') === 'SUPPLIER'
       && pay.instalmentDue !== 'FREIGHT' && (pay.inspectionSplit ?? 0) > 0 ? pay.inspectionSplit! : null;
+    // A carve or a split over several transactions changes the goods payment: the inspection is split off in a later save, never in the same one.
+    if (split !== null && inspectionSplitBlocked(plan)) { this.ui.toast('Eerst de banktransacties koppelen, daarna de inspectie afsplitsen.', 'err'); return; }
     this.payingBusy.set(true);
     let paymentSaved = false;
     const done: string[] = [];
@@ -2920,10 +2955,10 @@ export class PurchaseEditor {
             this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null } : current);
           }
           if (split !== null) {
-            // The goods payment's euro as loaded (a link never changes it; a money correction in this save does, and then the server's answer
-            // counts), frozen at the first try: a retry after a lost answer sends the same body, which the server answers unchanged.
-            const sameMoney = !!stored && stored.currency === pay.currency && Math.round(stored.amount * 100) === Math.round(pay.amount * 100);
-            const expected = this.paying()?.inspectionExpectedEur ?? (sameMoney ? stored!.amountEur : saved.amountEur);
+            // The goods payment's euro as the server answered the write of this save (a whole-match link never changes it; a carve or a
+            // split over several transactions never runs in the same save), frozen at the first try: a retry after a lost answer sends the
+            // same body, which the server answers unchanged.
+            const expected = this.paying()?.inspectionExpectedEur ?? saved.amountEur;
             this.paying.update(current => current?.id === saved.id ? { ...current, inspectionExpectedEur: expected } : current);
             const amountEur = inspectionSplitEur({ amount: saved.amount, currency: saved.currency, amountEur: expected }, split);
             await this.sourcing.splitInspection(saved.id, saved.currency === 'EUR'
@@ -2971,13 +3006,21 @@ export class PurchaseEditor {
       paidOn: part.paidOn, amount: edit?.amount ?? part.amount, currency: part.currency,
       ...(edit && part.currency !== 'EUR' && edit.amountEur != null ? { amountEur: edit.amountEur } : {}),
     });
+    let partWritten = false;
     for (const part of parts) {
       const edit = pay.partEdits?.[part.id];
       if (part.id === root.id || !edit || edit.amount === null || part.bankStatementLineId != null) continue;
       if (Math.round(edit.amount * 100) === Math.round(part.amount * 100) && edit.amountEur == null) continue;
       const stored = part.payment;
-      await this.sourcing.updatePayment(orderId, part.id, { ...write(part, edit), label: stored.label ?? null, payee: stored.payee ?? 'SUPPLIER',
-        settles: !!stored.settles, instalmentDue: stored.instalmentDue ?? null });
+      try {
+        await this.sourcing.updatePayment(orderId, part.id, { ...write(part, edit), label: stored.label ?? null, payee: stored.payee ?? 'SUPPLIER',
+          settles: !!stored.settles, instalmentDue: stored.instalmentDue ?? null });
+      } catch (failure: unknown) {
+        // An earlier transfer of this save did go through: show the group as the server now has it.
+        if (partWritten) await this.refreshPaymentState(orderId);
+        throw failure;
+      }
+      partWritten = true;
       this.paying.update(current => {
         if (!current?.partEdits) return current;
         const { [part.id]: _saved, ...rest } = current.partEdits;
@@ -2985,11 +3028,18 @@ export class PurchaseEditor {
       });
     }
     const rootEdit = root.bankStatementLineId == null ? pay.partEdits?.[root.id] : undefined;
-    const saved = await this.sourcing.updatePayment(orderId, root.id, {
-      ...write(root, rootEdit), label: pay.label || null, payee: pay.payee, settles: pay.settles,
-      instalmentDue: pay.payee === 'SUPPLIER' ? pay.instalmentDue ?? null : null,
-      ...(invoiceId !== undefined ? { invoiceId } : {}), applyToGroup: true,
-    });
+    let saved: PurchasePayment;
+    try {
+      saved = await this.sourcing.updatePayment(orderId, root.id, {
+        ...write(root, rootEdit), label: pay.label || null, payee: pay.payee, settles: pay.settles,
+        instalmentDue: pay.payee === 'SUPPLIER' ? pay.instalmentDue ?? null : null,
+        ...(invoiceId !== undefined ? { invoiceId } : {}), applyToGroup: true,
+      });
+    } catch (failure: unknown) {
+      // A corrected transfer is saved and its edit left the draft: refresh, so the sheet and the ledger show its new amount, not the old one.
+      if (partWritten) await this.refreshPaymentState(orderId);
+      throw failure;
+    }
     this.paying.update(current => current ? { ...current, partEdits: {} } : current);
     return saved;
   }

@@ -48,6 +48,24 @@ export function pendingLinkPlan(partEur: number, lines: readonly { id: number; a
   return { kind: 'lines', lineIds: lines.map(line => line.id) };
 }
 
+/**
+ * The euro the transactions picked for a part are checked against; the
+ * sheet and the save use this one rule. A payment never split: the draft's
+ * own euro (`draftEur`, as the editor values the typed money), because the
+ * save writes the payment before the link. A transfer of a payment in parts:
+ * its correction when typed, else its booked euro.
+ */
+export function pendingPartEur(
+  part: { amount: number; currency: Currency; amountEur: number },
+  edit: { amount: number | null; amountEur?: number | null } | undefined,
+  draftEur: number | null,
+): number {
+  if (draftEur !== null && draftEur > 0) return draftEur;
+  if (!edit || edit.amount === null) return part.amountEur;
+  if (part.currency === 'EUR') return edit.amount;
+  return edit.amountEur ?? Math.round(part.amountEur * edit.amount / part.amount * 100) / 100;
+}
+
 /** The inspection split must wait while two or more transactions, or one smaller one, are about to be linked. */
 export function inspectionSplitBlocked(plan: PendingLinkPlan): boolean {
   return plan.kind === 'lines' || (plan.kind === 'part' && !plan.whole);

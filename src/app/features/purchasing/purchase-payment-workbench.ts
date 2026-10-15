@@ -34,7 +34,8 @@ type MenuState =
   | { kind: 'payment'; point: MenuPoint; row: LedgerRow }
   | { kind: 'credit'; point: MenuPoint; credit: LedgerCredit }
   | { kind: 'proofs'; point: MenuPoint; row: LedgerRow }
-  | { kind: 'invoice'; point: MenuPoint; payee: PayeeLedger; invoice: PurchaseInvoice };
+  | { kind: 'invoice'; point: MenuPoint; payee: PayeeLedger; invoice: PurchaseInvoice }
+  | { kind: 'invoice-file'; point: MenuPoint; payee: PayeeLedger; file: PurchaseInvoiceFile };
 
 /** What the invoice rows ask of the host: add one, correct one, or fill in the data of an invoice file. */
 export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?: PurchaseInvoiceFile }
@@ -285,7 +286,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">{{ invoiceText(item, invoice, first) }}</span>
                             @if (invoice.notes) { <span class="wk-td__sub">{{ invoice.notes }}</span> }</span>
                           <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
-                            @if (invoice.documentId != null) { <button class="wk-btn wk-btn--sm" type="button" (click)="invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName })">Bestand</button> }
+                            @if (invoice.documentId != null) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName })">Bestand</button> }
                             <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor factuur ' + invoice.number" (click)="$event.stopPropagation(); openInvoiceMenu(item, invoice, $event)"><app-icon name="more" [size]="16" /></button>
                           </span>
                         </div>
@@ -314,8 +315,9 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           <div class="wk-tr wk-tr--sub pw-invoice-row pw-invoice-row--file" role="row" aria-level="2">
                             <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">Factuurbestand zonder gegevens · {{ file.originalFilename }}</span></span>
                             <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
-                              <button class="wk-btn wk-btn--sm" type="button" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand</button>
-                              <button class="wk-btn wk-btn--sm" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee, file })">Gegevens invullen</button>
+                              <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand</button>
+                              <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee, file })">Gegevens invullen</button>
+                              <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + file.originalFilename" (click)="$event.stopPropagation(); openInvoiceFileMenu(item, file, $event)"><app-icon name="more" [size]="16" /></button>
                             </span>
                           </div>
                         }
@@ -399,7 +401,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           <span class="wk-td" role="gridcell">
                             <span class="pw-desc">{{ row.label || '—' }}@if (row.parts.length > 1) { <span class="wk-pill pw-settles">{{ row.parts.length }} transacties</span> }@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
                             <span class="wk-td__sub pw-when-narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
-                            @if (rowSub(row); as sub) { <span class="wk-td__sub">{{ sub }}</span> }
+                            @if (rowSub(row); as sub) { <span class="wk-td__sub pw-desc__sub">{{ sub }}</span> }
                           </span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (row.foreign) { {{ row.amount | cur: row.currency }} }</span>
                           <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }
@@ -793,6 +795,12 @@ export class PurchasePaymentWorkbench {
     this.menu.set({ kind: 'invoice', point: { x: rect.left, y: rect.bottom + 4 }, payee, invoice });
   }
 
+  /** An invoice file without data: open it or fill in its data (the text buttons give way to this ⋯ on a narrow desk). */
+  openInvoiceFileMenu(payee: PayeeLedger, file: PurchaseInvoiceFile, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menu.set({ kind: 'invoice-file', point: { x: rect.left, y: rect.bottom + 4 }, payee, file });
+  }
+
   openTermMenu(term: LedgerTerm, event: MouseEvent): void {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     this.menu.set({ kind: 'term', point: { x: rect.left, y: rect.bottom + 4 }, term });
@@ -816,6 +824,7 @@ export class PurchasePaymentWorkbench {
       case 'term': return open.term.label;
       case 'credit': return 'Tegoed · ' + open.credit.reasonLabel;
       case 'invoice': return 'Factuur ' + open.invoice.number;
+      case 'invoice-file': return open.file.originalFilename;
     }
   }
 
@@ -836,6 +845,10 @@ export class PurchasePaymentWorkbench {
       case 'term': return termMenuItems(open.term, busy);
       case 'credit': return creditMenuItems(open.credit, busy);
       case 'invoice': return invoiceMenuItems(open.invoice, busy);
+      case 'invoice-file': return [
+        { id: 'file', label: 'Bestand openen', iconName: 'document' },
+        { id: 'fill', label: 'Gegevens invullen', iconName: 'pencil', disabled: busy },
+      ];
     }
   }
 
@@ -861,6 +874,11 @@ export class PurchasePaymentWorkbench {
     }
     if (open.kind === 'credit') {
       this.credit.emit({ kind: item.id as 'refund' | 'offset' | 'edit' | 'remove' | 'undo-refund' | 'open-offset', credit: open.credit.credit });
+      return;
+    }
+    if (open.kind === 'invoice-file') {
+      if (item.id === 'file') this.invoiceFile.emit({ documentId: open.file.documentId, name: open.file.originalFilename });
+      else if (item.id === 'fill') this.invoice.emit({ payee: open.payee.payee, file: open.file });
       return;
     }
     if (open.kind === 'invoice') {

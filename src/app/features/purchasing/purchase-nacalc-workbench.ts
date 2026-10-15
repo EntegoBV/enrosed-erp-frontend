@@ -218,7 +218,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                           <div class="is-total"><dt>Verlies op inkoopwaarde<span class="wk-td__sub">goederenwaarde bij ontvangst, excl. transport</span></dt><dd>@if (receipt.lossEur === null) { — } @else { {{ receipt.lossEur | eur }} }</dd></div>
                         </dl>
                         @if (receipt.unvaluedPieces > 0 || receipt.lossEur === null) {
-                          <p class="nc-muted wk-amount--warn">@if (receipt.unvaluedPieces > 0) { {{ receipt.unvaluedPieces | num }} afwijkende {{ head.unitPlural }} hebben nog geen bevroren inkoopwaarde en tellen niet mee. } @else { De inkoopwaarde van de afwijkende stuks is nog niet vastgelegd. }
+                          <p class="nc-muted wk-amount--warn">@if (receipt.unvaluedPieces > 0) { {{ receipt.unvaluedPieces | num }} afwijkende {{ head.unitPlural }} hebben nog geen bevroren inkoopwaarde en tellen niet mee. } @else { De inkoopwaarde van de afwijkende {{ head.unitPlural }} is nog niet vastgelegd. }
                             <a class="wk-link" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }">Waarde vastleggen ›</a></p>
                         }
                       }
@@ -308,8 +308,8 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow">{{ n.productTotals.begrootEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ n.productTotals.eindkostEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow" [class.wk-amount--in]="n.productTotals.verschilEur < 0" [class.wk-amount--warn]="n.productTotals.verschilEur > 0">{{ n.productTotals.verschilEur === 0 ? '—' : signed(n.productTotals.verschilEur) }}</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }}{{ totalSuffix(head) }} }</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }}{{ totalSuffix(head) }} }</span>
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }}@if (totalSuffix(head); as suffix) { <span class="wk-td__sub">{{ suffix }}</span> } }</span>
                     </div>
                   </div>
                 }
@@ -505,7 +505,8 @@ export class PurchaseNacalcWorkbench {
     if (head.setBasis === 'MIXED') return `${(which === 'ordered' ? head.orderedPieceQuantity : head.pieceQuantity).toLocaleString('nl-BE')} stuks`;
     return head.setBasis === 'DISPLAY' ? `${quantity.toLocaleString('nl-BE')} sets` : quantity.toLocaleString('nl-BE');
   }
-  totalSuffix(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? ' /set' : head.setBasis === 'MIXED' ? ' /stuk (gem.)' : ''; }
+  /** The total row's unit, on its own (wrapping) line under the figure so it is never cut: '/set', or '/stuk (gem.)' in a mixed container. */
+  totalSuffix(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? '/set' : head.setBasis === 'MIXED' ? '/stuk (gem.)' : ''; }
 
   /** A row click shows the payee's payments; the click that trails a long-press menu is left alone. */
   rowClick(event: MouseEvent, payee: Payee): void {

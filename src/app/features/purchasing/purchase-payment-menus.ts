@@ -193,6 +193,15 @@ export function bankProofLine(row: LedgerRow): string | null {
   return text;
 }
 
+/**
+ * The proof line under a phone ledger row: only when it says something the
+ * row's trailing 'geen betaalbewijs' does not (on the bank, a file, an
+ * offset, or part of a payment in parts on the bank).
+ */
+export function bankProofSub(row: LedgerRow): string | null {
+  return row.creditOffset || (row.bank?.linked ?? 0) > 0 || row.hasProof ? bankProofLine(row) : null;
+}
+
 /** Status text colour through the kit's amount classes: warn, ok (green) or muted. */
 export function toneClass(tone: 'warn' | 'ok' | 'neutral'): string {
   return tone === 'warn' ? 'wk-amount--warn' : tone === 'ok' ? 'wk-amount--in' : 'wk-amount--muted';

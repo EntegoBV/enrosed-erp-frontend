@@ -12,7 +12,7 @@ import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
-import { bankProofLine, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
+import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
 import { invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
@@ -153,13 +153,13 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   </button>
                   @if (item.payee === 'SUPPLIER') {
                     @if (supplierInvoice(item); as invoice) {
-                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
+                      <button class="ios-cell pp-term pp-invoice" type="button" (click)="openPayee.set('SUPPLIER')">
                         <span class="ios-cell__lead"></span>
                         <span class="ios-cell__body"><span class="ios-cell__title">Factuur {{ invoice.number }}</span><span class="ios-cell__sub">{{ invoiceSubText(item, invoice) }}</span></span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                       </button>
                     } @else if (mode() === 'edit' && roundOnServer()) {
-                      <button class="ios-cell pp-term" type="button" [disabled]="busy()" (click)="invoice.emit({ payee: 'SUPPLIER' })">
+                      <button class="ios-cell pp-term pp-invoice" type="button" [disabled]="busy()" (click)="invoice.emit({ payee: 'SUPPLIER' })">
                         <span class="ios-cell__lead"></span>
                         <span class="ios-cell__body"><span class="ios-cell__title">Nog geen factuur</span><span class="ios-cell__sub">Factuur toevoegen</span></span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
@@ -207,7 +207,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                       <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                       <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
                         <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
-                        @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked"><app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> {{ text }}</span> }</span>
+                        @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
                       <span class="ios-cell__trail">
                         <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                         @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
@@ -366,7 +366,7 @@ export class PurchasePaymentOverview {
   readonly month = monthOf;
   readonly round = Math.round;
   readonly abs = Math.abs;
-  readonly proofText = bankProofLine;
+  readonly proofText = bankProofSub;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
