@@ -1,4 +1,6 @@
 import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
+import { bankSearchMatches, legDistance, lineStatus, selectionTotals, vatPeriodLabel } from '../src/app/features/finance/bank-suggestions.ts';
+import { CLASSIFICATION_LABEL } from '../src/app/features/finance/cash-forecast.ts';
 import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/features/finance/bank-allocation-targets.ts';
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
@@ -112,6 +114,13 @@ function harness() {
     movementDraft,
     openMovement: (prefill: { accountKey?: string } = {}) => { movementDraft.set({ ...prefill }); },
     refreshBank: async () => { loads.refreshBank += 1; },
+    // Transacties (2026-10-16): the row's suggestion, saldo and day end, the detail's address and the sheets it opens.
+    suggestions: () => new Map(), running: () => new Map(), dayEndEur: () => null as number | null,
+    lineDay: (row: BankStatementLine) => paymentLocalDay({ receivedAt: row.bookedAt, timeZone: row.timeZone }),
+    openLine: (id: number) => opened.push({ kind: 'line', id }), location: () => ({ line: null as number | null, link: '' }),
+    unbanked: () => [], pendingReceipts: () => [], searchedFrom: signal<string | null>(null), linking: signal<number | null>(null),
+    bookAsLine: signal<BankStatementLine | null>(null), attachmentsFor: () => [], unlinkLine: (_row: BankStatementLine) => {}, unclassifyLine: async (_row: BankStatementLine) => {},
+    linkLine: async () => '', accountLabel: (key: string) => key,
   };
   const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
   const ui = {
@@ -133,7 +142,7 @@ function harness() {
   const tokens = { state: Symbol('FinanceState'), api: Symbol('BankingApi'), ui: Symbol('Ui'), sourcing: Symbol('SourcingApi') };
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
-    exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
+    exports, signal, computed, input: <T>(value: T) => () => value, bankSearchMatches, lineStatus, selectionTotals, legDistance, vatPeriodLabel, CLASSIFICATION_LABEL, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
     inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions, adjustConsequence, amountInputText,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
@@ -346,7 +355,7 @@ test('the withdraw confirmation escapes what was typed and shows the amount in e
   (api as unknown as { delete: (id: number) => Promise<void> }).delete = async (id) => { deleted.push(id); };
   panel.remove({ ...movement(3, -1250.5), counterparty: '<b>Leverancier & Co</b>', reference: 'Factuur "7"' });
   assert.equal(confirms.length, 1);
-  assert.equal(confirms[0].title, 'Bankbeweging intrekken');
+  assert.equal(confirms[0].title, 'Transactie intrekken', 'one name for the manual line (spec §3.4)');
   assert.match(confirms[0].message, /&lt;b&gt;Leverancier &amp; Co&lt;\/b&gt;/);
   assert.match(confirms[0].message, /Factuur &quot;7&quot;/);
   assert.ok(confirms[0].message.includes('€ -1.250,50'), confirms[0].message);
@@ -719,13 +728,17 @@ test('cost and purchase share a bank line without hiding a destination', async (
   assert.equal(menus[0].items.length, 2);
 });
 
-test('paid sales invoice and credit refunds open their actual document with Enter', () => {
+test('Enter opens the transaction (its detail); O opens the paid sales invoice or credit refund itself', async () => {
+  // Reversed on purpose (spec-bank-forecast §1.1, §3.4): a row never jumps away; Enter opens line=<id>, O the linked document.
   const { panel, state, opened } = harness();
   const row = { ...movement(1, -50), allocated: true, salesOrderId: 88, salesPaymentId: 99 };
   state.bankStatements.set([row]);
   panel.focusId.set(1);
   assert.equal(panel.handle('open'), true);
-  assert.deepEqual(opened, [{ kind: 'invoice', id: 88 }]);
+  assert.deepEqual(opened, [{ kind: 'line', id: 1 }]);
+  assert.equal(panel.handle('open-linked'), true);
+  await new Promise((done) => setTimeout(done, 0));
+  assert.deepEqual(opened, [{ kind: 'line', id: 1 }, { kind: 'invoice', id: 88 }]);
 });
 
 test('an explicitly unlinked imported row ignores stale cost-payment cache and misleading markers', () => {
@@ -1059,6 +1072,16 @@ test('a line that paid goods and the inspection of one container names both; one
   assert.equal(panel.linkedLabel(row), 'Inkoop · PO-2026-021');
 });
 
+test('one transfer for several containers reads "Inkoop · 3 containers (…)", the numbers in order (owner addition)', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(112, -16500), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.payments.set([{ id: 905, orderId: 45, orderNumber: 'PO-2026-045', payee: 'SUPPLIER', bankStatementLineId: 112 },
+    { id: 904, orderId: 44, orderNumber: 'PO-2026-044', payee: 'SUPPLIER', bankStatementLineId: 112 },
+    { id: 903, orderId: 43, orderNumber: 'PO-2026-043', payee: 'SUPPLIER', bankStatementLineId: 112 }]);
+  assert.equal(panel.linkedLabel(row), 'Inkoop · 3 containers (PO-2026-043, PO-2026-044, PO-2026-045)');
+});
+
 test('Factuur of uitgave: goods and the inspection paid via the supplier become two payments on the one bank line', async () => {
   const { panel, state, api, toasts } = harness();
   const view = roundView({ order: { ...purchaseView().order, inspectionViaSupplier: true } });
@@ -1248,4 +1271,23 @@ test("Bestaande betaling: no 'Rest als inspectie' once the inspection via the su
   await noted.panel.openAllocation({ ...movement(701, -21783.63), source: 'ODOO' });
   noted.panel.toggleOutgoing(noted.panel.outgoingCandidates().find(row => row.id === 301)!);
   assert.deepEqual([noted.panel.outgoingPart()?.higher, noted.panel.outgoingInspectionOffered()], [true, false]);
+});
+
+test('Transacties over every account: the search reads amounts four ways, In · Uit leave internal transfers out', () => {
+  const { panel, state } = harness();
+  const rent = { ...movement(1, -1452), account: 'KBC', counterparty: 'Huur loods Wilrijk', reference: 'Oktober' };
+  const other = { ...movement(2, 5000), account: 'WISE', counterparty: 'Van KBC', classification: 'INTERNAL_TRANSFER' as const, allocated: true };
+  const fee = { ...movement(3, -14.5), account: 'WISE', counterparty: 'Wise', reference: 'fee' };
+  state.bankStatements.set([rent, other, fee]);
+  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [1, 2, 3], 'no account: every active account');
+  for (const query of ['1452', '1.452,00', '1452.00', '-1452']) {
+    panel.search.set(query);
+    assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id), [1], query);
+  }
+  panel.search.set('');
+  assert.deepEqual({ ...panel.totals() }, { incoming: 0, outgoing: 1466.5, net: -1466.5, internal: 1 });
+  panel.accountFilter.set('WISE');
+  assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [2, 3]);
+  assert.equal(panel.statusLabel(other), 'Interne overboeking');
+  assert.equal(panel.statusLabel(fee), 'Te koppelen');
 });

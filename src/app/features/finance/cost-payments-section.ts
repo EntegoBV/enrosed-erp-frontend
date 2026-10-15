@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import type { BankStatementLine } from '../../core/api/banking-api';
 import { CompanyCost, CostPayment } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
@@ -16,6 +17,9 @@ interface PaymentRow {
   /** The account label of the bank line, else the account name the payment was noted with. */
   account: string;
   banked: boolean;
+  /** The bank line holding it, for "{account} · {dd/mm} · {−€} ›" (line=). */
+  lineId: number | null;
+  lineText: string;
 }
 
 /**
@@ -40,8 +44,10 @@ interface PaymentRow {
               <span class="fin-payment__day">{{ day(row.paidOn) }}</span>
               <b>{{ row.amountEur | eur }}</b>
               <span class="fin-payment__where">
-                @if (row.banked) { {{ row.account }} }
-                @else { @if (row.account) { {{ row.account }} · } <span class="wk-amount--warn">nog niet op de bank</span> }
+                @if (row.banked && row.lineId !== null) { <button class="wk-link" type="button" (click)="state.openLine(row.lineId)">{{ row.lineText }} ›</button> }
+                @else if (row.banked) { {{ row.account }} }
+                @else { @if (row.account) { {{ row.account }} · } <span class="wk-amount--warn">nog niet op de bank</span>
+                  @if (row.payment) { <button class="wk-link" type="button" (click)="search(row)">Transactie zoeken</button> } }
               </span>
               <span class="fin-payment__bank" [class.is-off]="!row.banked" [attr.title]="row.banked ? 'Op de bank genoteerd' : 'Nog niet op de bank'"><app-icon name="bank" [size]="15" /></span>
               <button class="fin-payment__menu" type="button" [attr.aria-label]="'Acties voor de betaling van ' + day(row.paidOn)" [disabled]="state.saving()" (click)="menu(row, $event)"><app-icon name="more" [size]="16" /></button>
@@ -69,14 +75,14 @@ export class CostPaymentsSection {
         const line = (payment.bankStatementLineId != null ? lines.get(payment.bankStatementLineId) : undefined)
           ?? (payment.id ? banked.get(`kostbetaling#${payment.id}`) : undefined);
         return { key: `p${payment.id ?? payment.paidOn}`, payment, paidOn: payment.paidOn, amountEur: payment.amountEur,
-          account: line ? this.state.accountLabel(bankAccountKey(line.account)) : payment.account ?? '', banked: !!line };
+          account: line ? this.state.accountLabel(bankAccountKey(line.account)) : payment.account ?? '', banked: !!line, lineId: line?.id ?? null, lineText: line ? this.lineText(line) : '' };
       });
     }
     /* A cost paid before payments existed: its date is the one full payment. */
     if (!cost.paidOn) return [];
     const line = cost.id ? banked.get(`kost#${cost.id}`) : undefined;
     return [{ key: 'legacy', payment: null, paidOn: cost.paidOn, amountEur: cashTotalOf(cost),
-      account: line ? this.state.accountLabel(bankAccountKey(line.account)) : '', banked: !!line }];
+      account: line ? this.state.accountLabel(bankAccountKey(line.account)) : '', banked: !!line, lineId: line?.id ?? null, lineText: line ? this.lineText(line) : '' }];
   });
   readonly overpaid = computed(() => Math.max(0, Math.round(Math.sign(cashTotalOf(this.cost())) * (paidOf(this.cost()) - cashTotalOf(this.cost())) * 100)) / 100);
   readonly summary = computed(() => {
@@ -91,6 +97,18 @@ export class CostPaymentsSection {
 
   day(date: string | null): string { return dayMonthYear(date); }
 
+  /** "KBC-zichtrekening · 14/10 · − € 86,73". */
+  private lineText(line: BankStatementLine): string {
+    const day = this.state.lineDay(line);
+    return `${this.state.accountLabel(bankAccountKey(line.account))} · ${day.slice(8, 10)}/${day.slice(5, 7)} · ${line.amountEur < 0 ? '−' : '+'} ${formatEuro(Math.abs(line.amountEur))}`;
+  }
+
+  /** "Transactie zoeken": Transacties prefilled with the amount and ± 5 days (§3.11). */
+  search(row: PaymentRow): void {
+    const cost = this.cost();
+    this.state.searchTransaction({ amountEur: row.amountEur, paidOn: row.paidOn, party: cost.party, description: cost.description, incoming: row.amountEur < 0 });
+  }
+
   /** ⋯ on a row: onto the bank when the bank does not hold it yet; off the cost (the bank line stays). A legacy payment goes through 'Weer open zetten'. */
   menu(row: PaymentRow, event: MouseEvent): void {
     const cost = this.cost();
@@ -98,7 +116,7 @@ export class CostPaymentsSection {
     const anchor = this.state.desk() ? { x: rect.left, y: rect.bottom + 6 } : null;
     const items = [
       ...(!row.banked && row.payment ? [{ id: 'link', label: 'Banktransactie koppelen', iconName: 'link' }] : []),
-      ...(!row.banked ? [{ id: 'bank', label: 'Handmatige bankbeweging noteren', iconName: 'bank' }] : []),
+      ...(!row.banked ? [{ id: 'bank', label: 'Transactie noteren', iconName: 'bank' }] : []),
       ...(row.payment ? [{ id: 'delete', label: 'Verwijderen', iconName: 'trash', danger: true, divider: !row.banked }] : []),
     ];
     if (!items.length) return;

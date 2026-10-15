@@ -34,6 +34,17 @@ test('letters and keys map to their commands', () => {
   assert.equal(financeShortcut(press('x'), free), null);
 });
 
+test('S, C, U and O work on Transacties and the transaction detail only; every older key keeps its command', () => {
+  const transactions: ShortcutContext = { ...free, transactions: true };
+  assert.deepEqual(['s', 'c', 'u', 'o'].map((key) => financeShortcut(press(key), transactions)), ['split', 'book-as', 'unlink', 'open-linked']);
+  assert.deepEqual(['S', 'C'].map((key) => financeShortcut(press(key, { shift: true }), transactions)), ['split', 'book-as']);
+  for (const key of ['s', 'c', 'u', 'o']) assert.equal(financeShortcut(press(key), free), null, `${key} outside Transacties`);
+  for (const [key, command] of [['l', 'link'], ['Enter', 'open'], ['b', 'new-movement'], ['n', 'new-cost'], ['e', 'edit'], ['p', 'pay'], ['r', 'refresh'], ['/', 'search']] as const) {
+    assert.equal(financeShortcut(press(key), transactions), command, `${key} on Transacties`);
+  }
+  assert.deepEqual(financeShortcut(press('2', { code: 'Digit2' }), transactions), { section: 2 }, '2 is Transacties');
+});
+
 test('Shift with the arrows extends the selection', () => {
   assert.equal(financeShortcut(press('ArrowUp', { shift: true }), free), 'extend-up');
   assert.equal(financeShortcut(press('ArrowDown', { shift: true }), free), 'extend-down');
@@ -52,4 +63,7 @@ test('the help sheet lists every command', () => {
   assert.equal(FINANCE_SHORTCUT_HELP[0].label, 'Onderdelen');
   assert.ok(FINANCE_SHORTCUT_HELP.some((row) => row.label === 'Betaald zetten'));
   assert.ok(FINANCE_SHORTCUT_HELP.some((row) => row.label === 'Deze lijst'));
+  assert.equal(FINANCE_SHORTCUT_HELP.find((row) => row.keys[0] === 'B')?.label, 'Transactie noteren');
+  assert.deepEqual(FINANCE_SHORTCUT_HELP.filter((row) => row.group === 'Transacties').map((row) => [row.keys[0], row.label]),
+    [['S', 'Splitsen…'], ['C', 'Boeken als…'], ['U', 'Koppeling losmaken'], ['O', 'Gekoppeld document openen']]);
 });

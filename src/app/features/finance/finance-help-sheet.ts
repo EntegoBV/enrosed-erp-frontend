@@ -3,7 +3,7 @@ import { Sheet } from '../../shared/ui';
 import { FINANCE_SHORTCUT_HELP } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
 
-/** The two explanations: how the bank balance is calculated, and the keyboard. */
+/** The two explanations: how the bank balance is calculated (spec §3.14, six paragraphs), and the keyboard. */
 @Component({
   selector: 'app-finance-help-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -13,7 +13,13 @@ import { FinanceState } from './finance-state';
       <app-sheet variant="ios" title="Sneltoetsen" (closed)="state.shortcutsOpen.set(false)">
         <div body class="fin-sheet">
           <dl class="fin-keys">
-            @for (row of shortcuts; track row.label) {
+            @for (row of general; track row.label) {
+              <div><dt>@for (key of row.keys; track key) { <kbd class="wk-kbd">{{ key }}</kbd> }</dt><dd>{{ row.label }}</dd></div>
+            }
+          </dl>
+          <h3 class="fin-keys__group">Transacties</h3>
+          <dl class="fin-keys">
+            @for (row of transactions; track row.label) {
               <div><dt>@for (key of row.keys; track key) { <kbd class="wk-kbd">{{ key }}</kbd> }</dt><dd>{{ row.label }}</dd></div>
             }
           </dl>
@@ -22,17 +28,12 @@ import { FinanceState } from './finance-state';
     } @else {
       <app-sheet variant="ios" title="Hoe werkt je banksaldo?" (closed)="state.helpOpen.set(false)">
         <div body class="fin-sheet fin-help">
-          <ol>
-            <li>Vul per rekening je saldo in.</li>
-            <li>Noteer wat er daarna in- en uitgaat, of zet het vinkje bij Betaald zetten.</li>
-            <li>Koppel ontvangen geld aan de factuur, dan telt het één keer.</li>
-          </ol>
-          <h3>Waarom verandert mijn saldo niet als ik een kost betaald zet?</h3>
-          <p>Een kost of containerbetaling heeft geen bankrekening. Noteer de betaling als bankbeweging (of zet dat aan bij Betaald zetten), dan beweegt het saldo mee.</p>
-          <h3>Wat telt mee?</h3>
-          <p>Elke rekening begint bij haar laatste saldo. Daarna tellen de bankbewegingen op die rekening, en de factuurbetalingen met die rekening die nog aan geen bankbeweging hangen. Een factuurbetaling zonder rekening telt niet mee.</p>
-          <h3>Wat kan nog niet?</h3>
-          <p>Een uitgaande bankbeweging aan een kost of containerbetaling koppelen en een rekeningafschrift inlezen vragen nog werk aan de server. Tot dan helpt 'Nog niet op de bank' je de betalingen terug te vinden.</p>
+          <p>Je saldo = de laatste saldocontrole + alle banktransacties daarna. Rekeningen via Odoo krijgen hun transacties uit Odoo; kies Transacties ophalen om bij te werken.</p>
+          <p>Vul één keer een beginsaldo in per rekening. Daarna rekent Enrosed zelf verder; vergelijk af en toe met je bankapp via Saldo controleren.</p>
+          <p>Koppel elke transactie aan wat ze betaalt: een factuur, een kost, een containertermijn of een bestaande betaling. Bedrag en datum van een bestaande betaling volgen dan de bank.</p>
+          <p>Geen factuur of kost? Kies Boeken als…: interne overboeking, btw, lening, kapitaal, privé of andere. Bankkosten en rente boek je als kost.</p>
+          <p>Het saldo naast elke transactie is het saldo na die transactie. Vóór de eerste saldocontrole van een handmatige rekening is het onbekend.</p>
+          <p>De kaslijn zet open facturen, kosten, vaste kosten, containertermijnen en btw op hun verwachte dag. De volledige prognose met verkoop staat in Analyses › Kasprognose.</p>
         </div>
       </app-sheet>
     }
@@ -40,5 +41,6 @@ import { FinanceState } from './finance-state';
 })
 export class FinanceHelpSheet {
   readonly state = inject(FinanceState);
-  readonly shortcuts = FINANCE_SHORTCUT_HELP;
+  readonly general = FINANCE_SHORTCUT_HELP.filter((row) => !row.group);
+  readonly transactions = FINANCE_SHORTCUT_HELP.filter((row) => row.group === 'Transacties');
 }

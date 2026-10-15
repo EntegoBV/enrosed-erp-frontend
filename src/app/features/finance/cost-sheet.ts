@@ -95,6 +95,10 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
             <input class="input" placeholder="bijv. Standhuur TICA oktober" [ngModel]="draft().description" (ngModelChange)="patch({ description: $event })" /></label>
           <div class="fin-field"><span class="req">{{ dateLabel() }}</span>
             @if (sourceLocked()) { <span>{{ draft().date | dateNl }}</span> } @else { <app-date-field fieldId="k-date" [value]="draft().date" (valueChange)="patch({ date: $event })" /> }</div>
+          @if (state.cashRound()) {
+            <div class="fin-field"><span>Vervalt op</span><app-date-field fieldId="k-due" [value]="draft().dueDate ?? ''" (valueChange)="patch({ dueDate: $event || null })" />
+              <small class="fin-hint">Leeg = de kostdatum telt in de kaslijn</small></div>
+          }
           <label class="fin-field"><span class="req">Categorie</span>
             <select class="select" [ngModel]="categoryChoice()" (ngModelChange)="pickCategory($event)">
               @for (category of categories(); track category.code) { <option [value]="category.code">{{ category.label }}</option> }

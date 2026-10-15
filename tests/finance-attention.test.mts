@@ -142,3 +142,12 @@ test('PO 35: terms the server netted raise no container-due item; a rest it leav
   const [rest] = financeAttention({ ...clear, containerNow: containerNow(po35(10)) });
   assert.deepEqual([rest.kind, rest.count, rest.amountEur], ['container-due', 1, 10]);
 });
+
+test('bank work opens the stream over every account; payments without a transaction open Transacties with their list', () => {
+  const [lines] = financeAttention({ ...clear, bankLines: [{ amountEur: -50, salesPaymentId: null }] });
+  assert.deepEqual(lines.target, { view: 'bank', tab: 'movements', link: 'unlinked' }, 'no account: the cross-account stream');
+  const [unbanked] = financeAttention({ ...clear, unbanked: { count: 2, eur: 80 } });
+  assert.deepEqual([unbanked.kind, unbanked.action, unbanked.actionLabel, unbanked.detail],
+    ['unbanked-payments', 'unbanked', 'Bekijken', 'Betaald gezet, maar geen transactie gevonden']);
+  assert.deepEqual(unbanked.target, { view: 'bank', tab: 'movements' });
+});

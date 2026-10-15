@@ -6,8 +6,10 @@
  */
 
 export type FinanceCommand = 'search' | 'new-cost' | 'new-movement' | 'up' | 'down' | 'extend-up' | 'extend-down'
-  | 'toggle' | 'select-all' | 'open' | 'edit' | 'pay' | 'link' | 'delete' | 'escape' | 'refresh' | 'help';
+  | 'toggle' | 'select-all' | 'open' | 'edit' | 'pay' | 'link' | 'delete' | 'escape' | 'refresh' | 'help'
+  | 'split' | 'book-as' | 'unlink' | 'open-linked';
 
+/** `section` n is the n-th place of FINANCE_NAV (1 Bank, 2 Transacties, … 6 Rapportage). */
 export type FinanceShortcut = FinanceCommand | { section: 1 | 2 | 3 | 4 | 5 | 6 } | null;
 
 export interface ShortcutKey {
@@ -23,6 +25,8 @@ export interface ShortcutContext {
   typing: boolean;
   overlayOpen: boolean;
   inWorkspace: boolean;
+  /** On Transacties or a transaction's detail: S, C, U and O work only there. */
+  transactions?: boolean;
 }
 
 export function financeShortcut(press: ShortcutKey, context: ShortcutContext): FinanceShortcut {
@@ -47,16 +51,20 @@ export function financeShortcut(press: ShortcutKey, context: ShortcutContext): F
     case 'Delete': case 'Backspace': return 'delete';
     case 'Escape': return 'escape';
     case 'r': return 'refresh';
+    case 's': return context.transactions ? 'split' : null;
+    case 'c': return context.transactions ? 'book-as' : null;
+    case 'u': return context.transactions ? 'unlink' : null;
+    case 'o': return context.transactions ? 'open-linked' : null;
     default: return null;
   }
 }
 
-/** The Sneltoetsen sheet. */
-export const FINANCE_SHORTCUT_HELP: readonly { keys: readonly string[]; label: string }[] = [
+/** The Sneltoetsen sheet; rows with a `group` are listed under that heading. */
+export const FINANCE_SHORTCUT_HELP: readonly { keys: readonly string[]; label: string; group?: string }[] = [
   { keys: ['1–6'], label: 'Onderdelen' },
   { keys: ['/'], label: 'Zoeken' },
   { keys: ['N'], label: 'Kost boeken' },
-  { keys: ['B'], label: 'Bankbeweging noteren' },
+  { keys: ['B'], label: 'Transactie noteren' },
   { keys: ['↑', '↓'], label: 'Vorige / volgende' },
   { keys: ['Shift', '↑↓'], label: 'Selectie uitbreiden' },
   { keys: ['Spatie'], label: 'Selecteren' },
@@ -69,4 +77,8 @@ export const FINANCE_SHORTCUT_HELP: readonly { keys: readonly string[]; label: s
   { keys: ['Esc'], label: 'Sluiten' },
   { keys: ['R'], label: 'Vernieuwen' },
   { keys: ['?'], label: 'Deze lijst' },
+  { keys: ['S'], label: 'Splitsen…', group: 'Transacties' },
+  { keys: ['C'], label: 'Boeken als…', group: 'Transacties' },
+  { keys: ['U'], label: 'Koppeling losmaken', group: 'Transacties' },
+  { keys: ['O'], label: 'Gekoppeld document openen', group: 'Transacties' },
 ];

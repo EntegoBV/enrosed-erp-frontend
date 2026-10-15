@@ -1,6 +1,8 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
+import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceReturn } from '../../core/platform/workspace-return';
 import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
@@ -13,8 +15,9 @@ import { WK_DOCK_MIN_PX, elementWidth } from '../../shared/workspace-layout';
 import { AccountCheckSheet } from './account-check-sheet';
 import { AccountHistorySheet } from './account-history-sheet';
 import { AccountantPackageSheet } from './accountant-package-sheet';
-import { BankAllocationSheet } from './bank-allocation-sheet';
 import { BankMovementSheet } from './bank-movement-sheet';
+import { ArchivedAccountsSheet, BufferSheet, ExactLinksSheet, OdooSheet, UnbankedSheet } from './bank-sheets';
+import { BookAsSheet } from './book-as-sheet';
 import { BankPanel } from './bank-panel';
 import { BankAccountSheet } from './bank-account-sheet';
 import { BankSheet } from './bank-sheet';
@@ -29,20 +32,22 @@ import { FinanceCreateMenu } from './finance-create-menu';
 import { FinanceFilters } from './finance-filters';
 import { FinanceHelpSheet } from './finance-help-sheet';
 import { FinanceInspector } from './finance-inspector';
-import { FinanceOverview } from './finance-overview';
 import { FINANCE_SECTION } from './finance-section';
-import { FINANCE_SECTIONS, FINANCE_TABS, financeSection } from './finance-sections';
+import { FINANCE_NAV, FINANCE_TABS, financeNavOf, financeSection } from './finance-sections';
 import { FinanceShell } from './finance-shell';
+import { financeQueryParams, parseFinanceLocation } from './finance-url';
 import { financeShortcut } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
 import { FinanceStatusBar } from './finance-status-bar';
 import { FinanceTabbar } from './finance-tabbar';
 import { FinanceToolbar } from './finance-toolbar';
+import { OdooSyncState } from './odoo-sync-state';
 import { PayablesPanel } from './payables-panel';
 import { PaySheet } from './pay-sheet';
 import { ReceivablesPanel } from './receivables-panel';
 import { RecurringPanel } from './recurring-panel';
 import { RecurringSheet } from './recurring-sheet';
+import { TransactionDetail } from './transaction-detail';
 import { VatReturnPanel } from './vat-return-panel';
 
 /** A quiet refresh when the page comes back after this long. */
@@ -59,12 +64,13 @@ const STALE_MS = 5 * 60_000;
 @Component({
   selector: 'app-costs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [FinanceState],
+  providers: [FinanceState, OdooSyncState],
   host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
-    FinanceCreateMenu, FinanceInspector, FinanceOverview, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
+    FinanceCreateMenu, FinanceInspector, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
     RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankAccountSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
-    AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, BankAllocationSheet, CostPartySheet, FairSheet],
+    AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, CostPartySheet, FairSheet, TransactionDetail, BookAsSheet, ExactLinksSheet, UnbankedSheet,
+    ArchivedAccountsSheet, OdooSheet, BufferSheet],
   template: `
     @if (state.desk()) {
       <div class="wk-page fin-desk">
@@ -92,7 +98,7 @@ const STALE_MS = 5 * 60_000;
             <div class="wk-strip fin-strip"><app-finance-filters class="fin-strip__tools" /></div>
           }
         </div>
-        <div class="wk-body" [class.wk-body--split]="docked() && !!state.inspect()"
+        <div class="wk-body" [class.wk-body--split]="docked() && !!state.inspect()" [class.fin-body--line]="state.inspect()?.kind === 'line'"
              (dragenter)="dragOver($event)" (dragover)="dragOver($event)" (dragleave)="dragLeave($event)" (drop)="drop($event)">
           <div class="wk-pane" id="finance-pane">
             <div class="wk-pane__inner" [class.wk-pane__inner--read]="readView()">
@@ -100,19 +106,27 @@ const STALE_MS = 5 * 60_000;
             </div>
           </div>
           @if (docked() && state.inspect(); as target) {
-            <aside class="wk-inspector" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
+            @if (target.kind === 'line') {
+              <aside class="wk-inspector fin-insp-line" aria-label="Transactie"><app-transaction-detail [lineId]="target.id" [order]="lineOrder()" /></aside>
+            } @else {
+              <aside class="wk-inspector" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
+            }
           }
           @if (dropping()) { <div class="wk-drop">Laat los om een kost met dit document te boeken</div> }
         </div>
         <app-finance-status-bar [text]="section()?.status() ?? ''" [selected]="selectedCount()" />
       </div>
       @if (!docked() && state.inspect(); as target) {
-        <aside class="wk-inspector wk-inspector--drawer fin-drawer" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
+        @if (target.kind === 'line') {
+          <aside class="wk-inspector wk-inspector--drawer fin-drawer fin-insp-line" aria-label="Transactie"><app-transaction-detail [lineId]="target.id" [order]="lineOrder()" /></aside>
+        } @else {
+          <aside class="wk-inspector wk-inspector--drawer fin-drawer" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
+        }
       }
     } @else {
       <div class="ios-page fin-ios">
-        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="bankDetail() ? 'Rekeningen' : subScreen() ? 'Terug' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="bankDetail() ? 'Terug naar alle bankrekeningen' : subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
+        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
+                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
           <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
           <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <div below class="ios-subbar" [hidden]="!phoneSegments().length">
@@ -128,6 +142,9 @@ const STALE_MS = 5 * 60_000;
             }
           </div>
         </app-ios-nav>
+        @if (sync.attention() && state.location().view === 'bank') {
+          <button class="ios-banner fin-ios-banner fin-ios-odoo" type="button" (click)="sync.sheetOpen.set(true)">Odoo: controle nodig ›</button>
+        }
         @if (state.loadErrors().length) {
           <div class="ios-banner fin-ios-banner" role="alert">
             <span>Niet alles is geladen: {{ state.failedSources().join(', ') }}. Je ziet de laatst geladen gegevens.</span>
@@ -147,7 +164,6 @@ const STALE_MS = 5 * 60_000;
         @switch (state.location().view) {
           @case ('open') { <app-payables-panel /> }
           @case ('incoming') { <app-receivables-panel /> }
-          @case ('bank') { <app-bank-panel /> }
           @case ('costs') {
             @switch (state.location().tab) {
               @case ('containers') { <app-container-payments-panel /> }
@@ -162,12 +178,14 @@ const STALE_MS = 5 * 60_000;
               @default { <app-cost-analysis /> }
             }
           }
-          @default { <app-finance-overview /> }
+          @default { <app-bank-panel /> }
         }
       }
     </ng-template>
 
-    @if (phoneInspector(); as target) {
+    @if (phoneLine(); as target) {
+      <app-transaction-detail [lineId]="target.id" [order]="lineOrder()" />
+    } @else if (phoneInspector(); as target) {
       <app-sheet class="fin-inspector-sheet" variant="ios" title="Details" closeLabel="Details sluiten" (closed)="state.closeInspector()">
         <div body>
           <button class="fin-inspector-back" type="button" data-initial-focus (click)="state.backInspector()"><app-icon name="chevron-left" [size]="18" /><span>{{ state.inspectorBackLabel() }}</span></button>
@@ -189,7 +207,12 @@ const STALE_MS = 5 * 60_000;
     @if (state.historyAccount()) { <app-account-history-sheet /> }
     @if (state.packageOpen()) { <app-accountant-package-sheet /> }
     @if (state.helpOpen() || state.shortcutsOpen()) { <app-finance-help-sheet /> }
-    @if (allocationPanel(); as panel) { @if (panel.selected()) { <app-bank-allocation-sheet [panel]="panel" /> } }
+    @if (state.bookAsLine()) { <app-book-as-sheet /> }
+    @if (state.exactLinksOpen()) { <app-exact-links-sheet /> }
+    @if (state.unbankedOpen()) { <app-unbanked-sheet /> }
+    @if (state.archivedOpen()) { <app-archived-accounts-sheet /> }
+    @if (sync.sheetOpen()) { <app-odoo-sheet /> }
+    @if (state.bufferOpen()) { <app-buffer-sheet /> }
     @if (state.menu(); as menu) {
       <app-context-menu [items]="menu.items" [title]="menu.title ?? ''" [anchor]="menu.anchor" variant="ios" [cancelLabel]="menu.cancelLabel ?? ''"
                         (pick)="pickMenu($event)" (closed)="state.menu.set(null)" />
@@ -198,20 +221,24 @@ const STALE_MS = 5 * 60_000;
 })
 export class CostsPage {
   readonly state = inject(FinanceState);
+  readonly sync = inject(OdooSyncState);
   readonly ret = inject(WorkspaceReturn);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly shell = inject(FinanceShell);
   private readonly title = inject(Title);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly section = viewChild(FINANCE_SECTION);
   private readonly bankPanel = viewChild(BankPanel);
-  readonly allocationPanel = computed(() => this.bankPanel()?.movementPanel() ?? null);
+  /** The order of Transacties on screen, for "Transactie {i} van {n}" and J / K in the detail. */
+  readonly lineOrder = computed(() => this.bankPanel()?.movementPanel()?.filteredLines().map((line) => line.id) ?? []);
 
   readonly current = computed(() => financeSection(this.state.location().view));
   readonly selectedCount = computed(() => this.section()?.selectedCosts?.().length ?? 0);
   private readonly width = elementWidth(() => this.host.nativeElement);
   readonly docked = computed(() => this.width() >= WK_DOCK_MIN_PX);
-  readonly readView = computed(() => ['overview', 'analysis'].includes(this.state.location().view));
+  readonly readView = computed(() => this.state.location().view === 'analysis' || (this.state.location().view === 'bank' && this.state.location().tab !== 'movements'));
   readonly hasFilters = computed(() => {
     const { view, tab } = this.state.location();
     return view === 'incoming' || view === 'analysis' || (view === 'costs' && tab !== 'recurring');
@@ -219,19 +246,29 @@ export class CostsPage {
   readonly createMenu = viewChild(FinanceCreateMenu);
   readonly dropping = signal(false);
 
-  /** Account details and reports have an explicit way back to their parent. */
-  readonly bankDetail = computed(() => this.state.location().view === 'bank' && this.state.location().tab === 'movements' && !!this.state.location().account);
-  readonly pageTitle = computed(() => this.bankDetail() ? this.state.accountLabel(this.state.location().account) : this.current().label);
-  readonly phoneSubtitle = computed(() => this.bankDetail() ? null : ({
-    overview: 'Kosten & bank · wat vraagt aandacht?', open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
-    bank: 'Saldi, transacties en bankkoppelingen', costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode',
-  }[this.state.location().view]));
+  /** The place's own name (FINANCE_NAV): Bank, Transacties, Te betalen…; Transacties never takes an account's name. */
+  readonly pageTitle = computed(() => financeNavOf(this.state.location()).label);
+  readonly phoneSubtitle = computed(() => {
+    const location = this.state.location();
+    if (location.view === 'bank' && location.tab === 'movements') return location.account ? this.state.accountLabel(location.account) : 'Alle rekeningen';
+    if (location.view === 'bank') return this.bankSub();
+    return ({ open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
+      costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
+  });
+  /** Bank's sub line: "{label} opgehaald {hh:mm}" per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
+  private readonly bankSub = computed(() => {
+    const at = this.sync.status()?.lastSyncAt ?? null;
+    const time = at ? new Date(at).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' }) : null;
+    return this.state.accountsView().map((account) => account.source === 'ODOO' ? `${account.label} ${time ? 'opgehaald ' + time : 'nog niet opgehaald'}` : `${account.label} handmatig`).join(' · ') || null;
+  });
   readonly phoneInspector = computed(() => !this.state.desk() && !this.state.costDraft() && !this.state.paySheet()
     && !this.state.recurringDraft() && !this.state.menu() ? this.state.inspect() : null);
-  readonly subScreen = computed(() => this.state.location().view === 'analysis' || this.bankDetail());
+  /** A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component). */
+  readonly phoneLine = computed(() => { const target = this.phoneInspector(); return target?.kind === 'line' ? target : null; });
+  /** Transacties is a tab on the phone, no sub-screen; Rapportage still is one. */
+  readonly subScreen = computed(() => this.state.location().view === 'analysis');
   backFromSection(): void {
-    if (this.bankDetail()) this.state.go({ tab: 'accounts' }, 'push');
-    else this.state.leaveAnalysis();
+    this.state.leaveAnalysis();
   }
 
   /** The phone's sticky segmented control: the section's segments (Analyse: Kosten · Btw; its year is a chip row in the panel). */
@@ -268,21 +305,40 @@ export class CostsPage {
       window.removeEventListener('focus', onFocus);
       if (midnight) clearTimeout(midnight);
       this.shell.counts.set(null);
+      this.shell.accounts.set([]);
     });
 
-    /* The sidebar and the tab bar read these counts; they live outside this page's injector. */
+    /* The sidebar and the tab bar read these counts and accounts; they live outside this page's injector. */
     effect(() => {
       const attention = this.state.attention();
       const totals = this.state.payableTotals();
       const count = (kind: string): number => attention.filter((item) => item.kind === kind).reduce((sum, item) => sum + item.count, 0);
+      const bank = count('account-without-reading') + count('stale-reading');
+      const transactions = this.state.unlinkedIncomingCount();
       this.shell.counts.set({
         open: totals.counts.now,
         openWarn: count('overdue-costs') > 0 || count('container-due') > 0,
         incoming: count('old-receivables'),
-        bank: count('unlinked-incoming') + count('account-without-reading') + count('stale-reading'),
-        bankWarn: count('account-without-reading') > 0 || count('stale-reading') > 0,
+        bank, bankWarn: bank > 0,
+        transactions,
         costs: count('recurring-due'),
       });
+      this.shell.accounts.set(this.state.accountsView().map((account) => {
+        const unlinked = this.state.bankStatements().filter((line) => this.state.canonicalAccount(line.account) === account.account && this.state.officialBankLine(line)
+          && !line.allocated && line.salesPaymentId == null).length;
+        return { key: account.account, label: account.label, balanceEur: account.currentEur, ageDays: account.ageDays, unlinked, warn: unlinked > 0 };
+      }));
+    });
+
+    /* One address per place: ?view=overview (and every other default or unknown value) is written back as the bare /costs. */
+    const params = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+    effect(() => {
+      const map = params();
+      const raw: Record<string, string> = {};
+      for (const key of map.keys) raw[key] = map.get(key) ?? '';
+      const canonical = financeQueryParams(parseFinanceLocation((key) => map.get(key)));
+      const same = (a: Record<string, string>, b: Record<string, string>): boolean => Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((key) => a[key] === b[key]);
+      if (!same(raw, canonical)) untracked(() => void this.router.navigate([], { relativeTo: this.route, queryParams: canonical, replaceUrl: true }));
     });
 
     effect(() => this.title.setTitle(`Kosten & bank · ${this.pageTitle()}`));
@@ -317,18 +373,24 @@ export class CostsPage {
     this.state.openMenu({
       title: 'Kosten & bank', anchor: null, cancelLabel: 'Annuleren',
       items: [
+        ...(this.state.hasOdooAccounts() ? [{ id: 'sync', label: this.sync.syncing() ? 'Ophalen…' : 'Transacties ophalen', iconName: 'exchange', disabled: this.sync.busy() || !this.sync.ready() }] : []),
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
         { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
         { id: 'csv', label: 'Exporteer CSV', iconName: 'download' },
         { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
+        { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
+        ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : []),
       ],
       pick: (id) => {
-        if (id === 'refresh') void this.state.load();
+        if (id === 'sync') void this.sync.syncBank();
+        else if (id === 'refresh') void this.state.load();
         else if (id === 'analysis') this.state.openAnalysis();
         else if (id === 'csv') this.exportCurrent();
         else if (id === 'package') this.state.openPackage();
         else if (id === 'help') this.state.helpOpen.set(true);
+        else if (id === 'odoo') this.sync.sheetOpen.set(true);
+        else if (id === 'archived') this.state.archivedOpen.set(true);
       },
     });
   }
@@ -397,12 +459,15 @@ export class CostsPage {
     const target = event.target instanceof Element ? event.target : null;
     if ((event.key === 'Enter' || event.key === ' ') && target?.closest('button, a[href], summary, select, [role="tab"], [role="radio"], [role="menuitem"]')) return;
     const context = keyContext(event, this.host.nativeElement);
+    const location = this.state.location();
+    const transactions = (location.view === 'bank' && location.tab === 'movements') || this.state.inspect()?.kind === 'line';
     const command = financeShortcut({ key: event.key, code: event.code, shift: event.shiftKey, meta: event.metaKey, ctrl: event.ctrlKey, alt: event.altKey },
-      { typing: context.typing, overlayOpen: context.overlayOpen, inWorkspace: context.inScope });
+      { typing: context.typing, overlayOpen: context.overlayOpen, inWorkspace: context.inScope, transactions });
     if (!command) return;
     if (typeof command === 'object') {
       event.preventDefault();
-      this.state.go({ view: FINANCE_SECTIONS[command.section - 1].id });
+      const target = FINANCE_NAV[command.section - 1].target;
+      this.state.go({ view: target.view, tab: target.tab });
       return;
     }
     const section = this.section();
@@ -410,7 +475,10 @@ export class CostsPage {
     switch (command) {
       case 'search': this.focusSearch(); break;
       case 'new-cost': this.state.openCost(null); break;
-      case 'new-movement': this.state.openMovement({ accountKey: this.state.location().view === 'bank' ? this.state.location().account || undefined : undefined }); break;
+      case 'new-movement':
+        if (this.state.manualAccountOptions().length) this.state.openMovement({ accountKey: this.state.location().view === 'bank' ? this.state.location().account || undefined : undefined });
+        else this.state.noteOnOdoo();
+        break;
       case 'refresh': void this.state.load(); break;
       case 'help': this.state.shortcutsOpen.set(true); break;
       case 'escape':

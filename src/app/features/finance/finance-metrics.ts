@@ -1,4 +1,4 @@
-import type { BankBalance, CompanyCost, CostKind, ExpenseType, Payee, RecurringCost, RecurringInterval, VatRegime } from '../../core/api/models';
+import type { CompanyCost, CostKind, ExpenseType, RecurringCost, RecurringInterval, VatRegime } from '../../core/api/models';
 
 /*
  * Pure arithmetic for the Kosten & bank workspace: the one money rule of a
@@ -516,82 +516,6 @@ export function yearComparison(costs: readonly CompanyCost[], year: number): Yea
   return rows;
 }
 
-export interface AccountBalance {
-  account: string;
-  date: string;
-  balanceEur: number;
-  previousEur: number | null;
-  deltaEur: number | null;
-  readings: number;
-}
-
-export interface BankOverview {
-  accounts: AccountBalance[];
-  /** The latest reading of every account added up. */
-  totalEur: number;
-  /** The newest reading date, or null without readings. */
-  asOf: string | null;
-  asOfAt?: string | null;
-  timeZone?: string | null;
-  /** The total over time: on every reading date, each account at its latest reading up to then. */
-  series: { dates: string[]; values: number[] };
-}
-
-function orderedBankReadings(balances: readonly BankBalance[]): BankBalance[] {
-  const checkpoint = (row: BankBalance): number => row.asOfAt ? Date.parse(row.asOfAt) : new Date(`${row.date}T23:59:59.999`).getTime();
-  return [...balances].sort((left, right) => checkpoint(left) - checkpoint(right) || (left.id ?? 0) - (right.id ?? 0));
-}
-
-export function latestBankReading(balances: readonly BankBalance[]): BankBalance | null {
-  return orderedBankReadings(balances).at(-1) ?? null;
-}
-
-/** Same identity rule as bank reconciliation; labels remain human-readable. */
-function bankAccountIdentity(value: string): string {
-  const key = value.trim().replace(/\s+/g, ' ').toUpperCase();
-  return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
-}
-
-export function bankOverview(balances: readonly BankBalance[]): BankOverview {
-  const ordered = orderedBankReadings(balances.filter(row => !!bankAccountIdentity(row.account)));
-  const perAccount = new Map<string, BankBalance[]>();
-  for (const row of ordered) {
-    const key = bankAccountIdentity(row.account);
-    perAccount.set(key, [...(perAccount.get(key) ?? []), row]);
-  }
-  const accounts: AccountBalance[] = [...perAccount.values()].map((rows) => {
-    const latest = rows[rows.length - 1];
-    const previous = rows.length > 1 ? rows[rows.length - 2] : null;
-    return {
-      account: latest.account.trim().replace(/\s+/g, ' '),
-      date: latest.date,
-      balanceEur: finite(latest.balanceEur),
-      previousEur: previous ? finite(previous.balanceEur) : null,
-      deltaEur: previous ? round2(finite(latest.balanceEur) - finite(previous.balanceEur)) : null,
-      readings: rows.length,
-    };
-  }).sort((left, right) => right.balanceEur - left.balanceEur || left.account.localeCompare(right.account));
-  const dates = [...new Set(ordered.map((row) => row.date))];
-  const running = new Map<string, number>();
-  const values: number[] = [];
-  let cursor = 0;
-  for (const date of dates) {
-    while (cursor < ordered.length && ordered[cursor].date <= date) {
-      running.set(bankAccountIdentity(ordered[cursor].account), finite(ordered[cursor].balanceEur));
-      cursor += 1;
-    }
-    values.push(round2([...running.values()].reduce((sum, value) => sum + value, 0)));
-  }
-  return {
-    accounts,
-    totalEur: round2(accounts.reduce((sum, row) => sum + row.balanceEur, 0)),
-    asOf: dates.length ? dates[dates.length - 1] : null,
-    ...(ordered.at(-1)?.asOfAt ? { asOfAt: ordered.at(-1)!.asOfAt } : {}),
-    ...(ordered.at(-1)?.timeZone ? { timeZone: ordered.at(-1)!.timeZone } : {}),
-    series: { dates, values },
-  };
-}
-
 export interface CashOutlook {
   bankEur: number;
   openCostsEur: number;
@@ -674,93 +598,6 @@ export function costsCsv(costs: readonly CompanyCost[], categoryLabel: (code: st
       cost.recurringCostId ? 'ja' : 'nee', ...costRegimeCells(cost), cost.notes,
     ].map(cell).join(';'));
   return [header.join(';'), ...lines].join('\r\n');
-}
-
-export type MovementKind = 'COST' | 'PURCHASE' | 'INVOICE';
-
-/** One thing the ERP saw move on the bank after the last reading: out is negative, in is positive. */
-export interface BankMovement {
-  key?: string;
-  purchaseOrderId?: number;
-  salesOrderId?: number;
-  receivedAt?: string;
-  timeZone?: string;
-  date: string;
-  kind: MovementKind;
-  label: string;
-  detail: string;
-  amountEur: number;
-}
-
-export interface BankMovements {
-  since: string | null;
-  rows: BankMovement[];
-  outEur: number;
-  inEur: number;
-  netEur: number;
-  /** The last reading plus what moved after it. */
-  currentEur: number;
-}
-
-export interface PurchasePaymentLike { id?: number; orderId?: number; paidOn: string; amountEur: number; orderNumber: string | null; orderAlias?: string | null; label: string | null; payee?: Payee | null }
-export interface PaidInvoice { date: string; number: string; customer: string | null; amountEur: number; id?: number; salesOrderId?: number; purchaseOrderId?: number | null; receivedAt?: string; timeZone?: string; purposeLabel?: string; reference?: string | null }
-
-/**
- * The bank rolled forward from its last reading: costs paid, containers paid
- * and invoices received after that day. Without a reading nothing rolls; the
- * ERP cannot know what was on the account before it was told.
- */
-export function movementsSince(since: string | null, bankEur: number, costs: readonly CompanyCost[],
-                               payments: readonly PurchasePaymentLike[], invoices: readonly PaidInvoice[], sinceAt?: string | null,
-                               sinceTimeZone = 'Europe/Brussels'): BankMovements {
-  if (!since) return { since: null, rows: [], outEur: 0, inEur: 0, netEur: 0, currentEur: round2(finite(bankEur)) };
-  const rows: BankMovement[] = [];
-  for (const cost of costs) {
-    if (cost.paidOn && cost.paidOn > since) {
-      rows.push({ date: cost.paidOn, kind: 'COST', label: cost.description, detail: cost.party ? `${cost.party} · kost` : 'kost', amountEur: -cashTotalOf(cost) });
-    }
-  }
-  const seenPaymentIds = new Set<number>();
-  for (const payment of payments) {
-    if (payment.id !== undefined && seenPaymentIds.has(payment.id)) continue;
-    if (payment.id !== undefined) seenPaymentIds.add(payment.id);
-    if (payment.paidOn > since) {
-      const payee = payment.payee === 'LOGISTICS' ? 'Logistiek / douane' : payment.payee === 'SEPARATE' ? 'Aparte kosten'
-        : payment.payee === 'OTHER' ? 'Overige ontvanger' : payment.payee === 'SUPPLIER' ? 'Leverancier' : null;
-      rows.push({
-        date: payment.paidOn, kind: 'PURCHASE',
-        key: payment.id !== undefined ? `payment:${payment.id}` : undefined, purchaseOrderId: payment.orderId,
-        label: payment.orderNumber ? `Inkoop ${payment.orderNumber}` : 'Inkoopbetaling',
-        detail: [payment.orderAlias, payee, payment.label].filter((part): part is string => !!part).join(' · ') || 'inkoop',
-        amountEur: -finite(payment.amountEur),
-      });
-    }
-  }
-  const seenReceiptIds = new Set<number>();
-  for (const invoice of invoices) {
-    if (invoice.id !== undefined && seenReceiptIds.has(invoice.id)) continue;
-    if (invoice.id !== undefined) seenReceiptIds.add(invoice.id);
-    const receiptDay = invoice.receivedAt ? calendarDay(invoice.receivedAt, sinceTimeZone || 'Europe/Brussels') : invoice.date;
-    const after = sinceAt && invoice.receivedAt ? Date.parse(invoice.receivedAt) > Date.parse(sinceAt) : receiptDay > since;
-    if (after) {
-      rows.push({ date: invoice.date, kind: 'INVOICE', label: `Factuur ${invoice.number}`,
-        detail: [invoice.customer, invoice.purposeLabel, invoice.reference].filter(Boolean).join(' · ') || 'ontvangen', amountEur: finite(invoice.amountEur),
-        key: invoice.id !== undefined ? `receipt:${invoice.id}` : undefined, salesOrderId: invoice.salesOrderId,
-        purchaseOrderId: invoice.purchaseOrderId ?? undefined, receivedAt: invoice.receivedAt, timeZone: invoice.timeZone });
-    }
-  }
-  rows.sort((left, right) => right.date.localeCompare(left.date) || (right.receivedAt ?? '').localeCompare(left.receivedAt ?? '') || left.label.localeCompare(right.label));
-  const outEur = round2(rows.filter((row) => row.amountEur < 0).reduce((sum, row) => sum - row.amountEur, 0));
-  const inEur = round2(rows.filter((row) => row.amountEur > 0).reduce((sum, row) => sum + row.amountEur, 0));
-  return { since, rows, outEur, inEur, netEur: round2(inEur - outEur), currentEur: round2(finite(bankEur) + inEur - outEur) };
-}
-
-/** Legacy balance readings mean end of their local calendar day, regardless of the receipt entry's zone. */
-function calendarDay(instant: string, timeZone: string): string {
-  if (!Number.isFinite(Date.parse(instant))) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(instant));
-  const part = (type: string) => parts.find((row) => row.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
 export interface PartyRow { party: string; count: number; exclEur: number; sharePct: number }

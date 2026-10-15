@@ -23,7 +23,7 @@ export class FinanceTabbar {
     const badges: Record<string, number | null> = { open: counts?.open ?? null, incoming: counts?.incoming ?? null, bank: counts?.bank ?? null, costs: counts?.costs ?? null };
     return FINANCE_SECTIONS.filter((section) => section.phoneTab).map((section) => ({
       id: section.id, label: section.short, icon: section.icon, link: '/costs',
-      query: section.id === 'overview' ? {} : { view: section.id }, active: view === section.id,
+      query: { view: section.id }, active: view === section.id,
       badge: badges[section.id] ?? null, badgeTone: 'warn' as const,
     }));
   });

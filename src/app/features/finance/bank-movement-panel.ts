@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { BankingApi, BankMatch, BankStatementLine, ReceivedOdooInvoice, ReceivedOdooInvoicePreview } from '../../core/api/banking-api';
 import type { Currency, Payee, PurchaseDocument, PurchasePaymentRow, SalesOrderView, SalesPayment } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
@@ -7,6 +7,7 @@ import { saveBlob } from '../../core/api/download';
 import { bankAmountsMatch, bankAmountDifference } from '../../shared/bank-transaction-options';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
+import { SwipeActions } from '../../shared/swipe-actions';
 import { EurPipe } from '../../shared/pipes';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { FinanceState } from './finance-state';
@@ -15,6 +16,10 @@ import { paymentLocalDay, paymentMomentLabel } from './incoming-money';
 import { cashTotalOf, openOf } from './finance-metrics';
 import { containerPayables } from './payables';
 import { bankAllocationTargets, filterBankAllocationTargets, type BankAllocationTarget } from './bank-allocation-targets';
+import { bankSearchMatches, legDistance, lineStatus, selectionTotals, vatPeriodLabel } from './bank-suggestions';
+import type { LineSuggestion } from './bank-suggestions';
+import { CLASSIFICATION_LABEL } from './cash-forecast';
+import { eur as signedEur } from './cash-format';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { amountInputText, parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
 import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
@@ -38,6 +43,10 @@ const cents = (amount: number): number => Math.round(amount * 100);
 const inactive = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** One dot colour per active account, in the order of the account list. */
+const ACCOUNT_TONES = ['tone-blue', 'tone-teal', 'tone-amber', 'tone-plum', 'tone-green', 'tone-grey'];
+/** What the Koppeling cell says of a line. */
+interface Koppeling { text: string; sub: string | null; reasons: string[]; open: boolean; }
 
 /**
  * Bank › Bewegingen: the recorded statement lines, their link to an invoice,
@@ -50,66 +59,88 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
  */
 @Component({
   selector: 'app-bank-movement-panel', changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe, Icon, MenuTrigger],
+  imports: [EurPipe, Icon, MenuTrigger, SwipeActions],
   styleUrl: './bank-movement-panel.scss',
   template: `
-    @if (historicalCount()) {
+    @if (historicalCount() && !compact()) {
       <details class="bank-history"><summary>Eerdere registraties · {{ historicalCount() }}</summary>
         <p class="fin-hint">Deze handmatige registraties blijven bewaard. Ze tellen niet mee in het saldo van je Odoo-rekening.</p>
         <button class="fin-inline-btn" type="button" (click)="showHistorical.set(!showHistorical())">{{ showHistorical() ? 'Historische registraties verbergen' : 'Historische registraties tonen' }}</button>
       </details>
     }
     @if (error() && !selected()) { <p class="fin-error" role="alert">{{ error() }}</p> }
+    @if (!compact()) {
+      @if (unbankedCount(); as count) {
+        <button class="bank-unbanked" type="button" (click)="state.unbankedOpen.set(true)"><app-icon name="alert" [size]="16" /><span>Betalingen zonder transactie ({{ count }})</span><app-icon name="chevron-right" [size]="16" /></button>
+      }
+      @if (state.searchedFrom(); as from) {
+        <div class="bank-searched"><span class="wk-chip is-on">Gezocht vanuit: {{ from }}<button class="wk-chip__x" type="button" aria-label="Zoekopdracht wissen" (click)="clearSearched()"><app-icon name="close" [size]="11" /></button></span></div>
+      }
+    }
     @if (state.desk()) {
       @if (filteredLines().length) {
-        <div class="wk-table fin-table fin-table--moves" role="grid" aria-label="Bankbewegingen">
+        <div class="wk-table fin-table fin-table--tx" [class.fin-table--tx-compact]="compact()" role="grid" aria-label="Banktransacties">
           <div class="wk-thead" role="row">
-            <span class="wk-th" role="columnheader">Moment</span>
+            <span class="wk-th" role="columnheader"><span class="fin-sr">Rekening</span></span>
             <span class="wk-th" role="columnheader">Tegenpartij · mededeling</span>
-            <span class="wk-th" role="columnheader">Koppeling</span>
+            <span class="wk-th" role="columnheader">Status</span>
+            @if (!compact()) { <span class="wk-th" role="columnheader" data-hide="inspecting">Koppeling</span> }
+            <span class="wk-th" role="columnheader" data-hide="inspecting"><span class="fin-sr">Actie</span></span>
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
+            @if (!compact()) { <span class="wk-th wk-th--num" role="columnheader">Saldo</span> }
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
-          @for (row of visibleLines(); track row.id) {
-            <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
-                 [attr.aria-selected]="focusId() === row.id" (focusin)="focusId.set(row.id)" (click)="$event.defaultPrevented || openLine(row)" appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
-              <span class="wk-td" role="gridcell" [attr.title]="record(row)">{{ movementStamp(row) }}</span>
-              <span class="wk-td" role="gridcell">{{ row.counterparty || row.reference || 'Bankbeweging' }}@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }@if (row.counterparty && row.reference) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
-              <span class="wk-td" role="gridcell">
-                @if (allocated(row)) {
-                  <button class="wk-link bank-document-link" type="button" [disabled]="openingId() === row.id"
-                    (click)="$event.stopPropagation(); openLinked(row)" [attr.title]="linkedLabel(row)">
-                    <app-icon name="document" [size]="14" />{{ openingId() === row.id ? 'Laden…' : linkedLabel(row) }} <span aria-hidden="true">›</span>
-                  </button>
-                } @else {
-                  <button class="wk-btn wk-btn--sm fin-link-btn" type="button" [disabled]="busy()" (click)="$event.stopPropagation(); openAllocation(row)"><app-icon name="link" [size]="14" />Koppelen</button>
-                  @if (linkedDocuments(row).length) {
-                    <button class="wk-link bank-document-link" type="button" (click)="$event.stopPropagation(); openLinked(row)">Eerdere registratie ›</button>
-                  }
+          @for (group of dayGroups(); track group.day) {
+            <div class="wk-group fin-tx-day" role="row"><span class="fin-tx-day__label" role="rowheader">{{ group.label }} <span class="wk-group__count">{{ group.rows.length }}</span></span>
+              @if (!compact()) { <span class="fin-tx-day__saldo" role="gridcell">{{ dayEndText(group.day) }}</span> }</div>
+            @for (row of group.rows; track row.id) {
+              <div class="wk-tr wk-tr--link fin-tx" role="row" [attr.tabindex]="tabStopId() === row.id ? 0 : -1" [attr.data-key]="'line:' + row.id"
+                   [attr.aria-selected]="focusId() === row.id || state.location().line === row.id" (focusin)="focusId.set(row.id)" (click)="$event.defaultPrevented || openLine(row)"
+                   appMenuTrigger (menuTrigger)="lineMenu(row, $event)">
+                <span class="wk-td" role="gridcell"><i [class]="'wk-dot ' + accountTone(row.account)" [attr.title]="accountName(row.account)"></i></span>
+                <span class="wk-td" role="gridcell"><b class="fin-tx__party">{{ row.counterparty || row.reference || 'Banktransactie' }}</b>@if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }
+                  <span class="wk-td__sub">{{ subOf(row) }}</span></span>
+                <span class="wk-td fin-tx__status" role="gridcell"><span [class]="'wk-pill ' + statusTone(row)">{{ statusLabel(row) }}</span></span>
+                @if (!compact()) {
+                  <span class="wk-td fin-tx__link" role="gridcell" data-hide="inspecting">
+                    @if (koppeling(row); as k) {
+                      @if (k.open) {
+                        <button class="wk-link bank-document-link" type="button" [disabled]="openingId() === row.id" (click)="$event.stopPropagation(); openLinked(row)" [attr.title]="k.text">{{ openingId() === row.id ? 'Laden…' : k.text }} ›</button>
+                      } @else { <span class="fin-tx__target" [attr.title]="k.text">{{ k.text }}</span> }
+                      @if (k.sub) { <span class="wk-td__sub" [attr.title]="k.sub">{{ k.sub }}</span> }
+                      @if (k.reasons.length) { <span class="fin-tx__reasons">@for (reason of k.reasons; track reason) { <span class="wk-pill wk-pill--outline">{{ reason }}</span> }</span> }
+                    }
+                  </span>
                 }
-                @if (row.allocationDifferenceEur) { <span class="wk-td__sub">Verschil {{ row.allocationDifferenceEur | eur }}</span> }
-              </span>
-              <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b></span>
-              <span class="wk-td fin-td-end" role="gridcell">
-                <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="$event.stopPropagation(); lineMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
-              </span>
-            </div>
-            @if (detailsId() === row.id) {
-              <div class="wk-tr wk-tr--sub" role="row"><span class="wk-td wk-td--wrap fin-record" role="gridcell">{{ record(row) }}</span></div>
+                <span class="wk-td" role="gridcell" data-hide="inspecting">
+                  @if (actionOf(row); as action) {
+                    <button class="wk-btn wk-btn--sm" [class.wk-btn--primary]="action.kind === 'link'" type="button" [disabled]="busy() || state.linking() !== null" (click)="$event.stopPropagation(); runAction(row)">{{ action.label }}</button>
+                  }
+                </span>
+                <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b>
+                  @if (row.allocationDifferenceEur) { <span class="wk-td__sub">Verschil {{ row.allocationDifferenceEur | eur }}</span> }</span>
+                @if (!compact()) { <span class="wk-td wk-td--num fin-tx__saldo" role="gridcell" [attr.title]="saldoText(row)">{{ saldoText(row) }}</span> }
+                <span class="wk-td fin-td-end" role="gridcell">
+                  <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="$event.stopPropagation(); lineMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
+                </span>
+              </div>
             }
           }
         </div>
-        @if (visibleLines().length < filteredLines().length) {
+        @if (compact()) {
+          <div class="fin-tx-foot"><button class="wk-link" type="button" (click)="state.go({ view: 'bank', tab: 'movements' }, 'push')">Alle transacties ›</button></div>
+        } @else if (visibleLines().length < filteredLines().length) {
           <div class="fin-more"><button class="wk-btn" type="button" (click)="shown.update(more)">Meer tonen · nog {{ filteredLines().length - visibleLines().length }}</button></div>
         }
       } @else {
         <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="bank" [size]="22" /></span>
-          <p class="wk-empty__title">{{ state.bankStatements().length ? 'Geen bewegingen gevonden' : 'Nog geen bankbewegingen' }}</p>
-          <p class="wk-empty__text">{{ state.bankStatements().length ? 'Pas je zoekopdracht of filters aan.' : 'Noteer wat er op je rekening binnenkwam of wegging, met Bankbeweging noteren.' }}</p></div>
+          <p class="wk-empty__title">{{ emptyTitle() }}</p>
+          <p class="wk-empty__text">{{ emptyText() }}</p>
+          @if (widerSearch()) { <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="searchWider()">Ruimer zoeken</button></div> }</div>
       }
     } @else {
       <div class="ios-search fin-ios-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
-        <input type="search" placeholder="Zoeken" aria-label="Zoeken in bewegingen" [value]="search()" (input)="search.set($any($event.target).value); shown.set(12)" />
+        <input type="search" placeholder="Bedrag, naam of mededeling" aria-label="Zoeken in transacties" [value]="search()" (input)="search.set($any($event.target).value); shown.set(12)" />
         <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="search.set('')"><app-icon name="close" [size]="14" /></button></label></div>
       <div class="ios-chips" role="group" aria-label="Richting">
         <button class="ios-chip" type="button" [attr.aria-pressed]="directionFilter() === 'ALL' && linkFilter() !== 'UNLINKED_IN'" (click)="setChip('ALL')">Alles</button>
@@ -118,6 +149,14 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
         <button class="ios-chip" type="button" [attr.aria-pressed]="linkFilter() === 'UNLINKED_IN'" (click)="setChip('UNLINKED_IN')">Te koppelen
           @if (unlinkedCount()) { <span class="ios-chip__badge">{{ unlinkedCount() }}</span> }</button>
       </div>
+      @if (accountChips().length > 1) {
+        <div class="ios-chips" role="group" aria-label="Rekening">
+          <button class="ios-chip" type="button" [attr.aria-pressed]="!accountFilter()" (click)="accountFilter.set(''); shown.set(12)">Alle rekeningen</button>
+          @for (chip of accountChips(); track chip.key) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="accountFilter() === chip.key" (click)="accountFilter.set(chip.key); shown.set(12)">{{ chip.label }}</button>
+          }
+        </div>
+      }
       <div class="bank-list-tools">
         <span>{{ filteredLines().length }} {{ filteredLines().length === 1 ? 'transactie' : 'transacties' }}</span>
         <button class="fin-inline-btn" type="button" [attr.aria-expanded]="phoneFiltersOpen()" (click)="phoneFiltersOpen.set(!phoneFiltersOpen())"><app-icon name="filter" [size]="14" />Periode{{ from() || to() ? ' · actief' : '' }}</button>
@@ -130,46 +169,59 @@ const WEEKDAY = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numer
         </div>
       }
       @if (invalidPeriod()) { <p class="fin-error" role="alert">De einddatum moet op of na de begindatum liggen.</p> }
-      <details class="bank-totals"><summary>Totalen van deze selectie</summary>
-        <dl><div><dt>Inkomend</dt><dd>{{ totals().incoming | eur }}</dd></div><div><dt>Uitgaand</dt><dd>{{ totals().outgoing | eur }}</dd></div><div><dt>Netto</dt><dd>{{ totals().net | eur }}</dd></div></dl>
-      </details>
+      <p class="bank-totals-line">In {{ totals().incoming | eur }} · Uit {{ totals().outgoing | eur }} · Netto {{ netText(totals().net) }}@if (totals().internal) { <span> · interne overboekingen niet meegeteld</span> }</p>
       @for (group of dayGroups(); track group.day) {
         <section class="ios-section">
-          <div class="ios-section__head"><h2>{{ group.label }}</h2></div>
-          <div class="ios-group ios-group--icons">
+          <div class="ios-section__head bank-day-head"><h2>{{ group.label }}</h2><span class="ios-section__trail">{{ dayEndText(group.day) }}</span></div>
+          <div class="ios-group">
             @for (row of group.rows; track row.id) {
-              <div class="bank-phone-row">
-                <button class="bank-phone-row__open" type="button" (click)="openLine(row)" [disabled]="openingId() === row.id"
-                  [attr.aria-label]="(row.counterparty || row.reference || 'Banktransactie') + ': ' + (allocated(row) ? linkedLabel(row) + ' openen' : 'koppelen')">
-                  <span class="bank-phone-row__party">{{ row.counterparty || row.reference || 'Banktransactie' }}</span>
-                  <strong class="bank-phone-row__amount" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong>
-                  @if (row.counterparty && row.reference) { <span class="bank-phone-row__reference">{{ row.reference }}</span> }
-                  <span class="bank-phone-row__destination" [class.bank-phone-row__destination--open]="!allocated(row)">
-                    <app-icon [name]="allocated(row) ? 'document' : 'link'" [size]="14" />
-                    {{ openingId() === row.id ? 'Document laden…' : allocated(row) ? linkedLabel(row) : 'Factuur of uitgave koppelen' }} <span aria-hidden="true">›</span>
-                  </span>
-                  @if (!state.officialBankLine(row)) { <span class="bank-phone-row__reference">Historische registratie</span> }
-                  @if (row.allocationDifferenceEur) { <span class="bank-phone-row__reference">Verschil {{ row.allocationDifferenceEur | eur }}</span> }
-                </button>
-                <button class="bank-phone-row__more" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="lineMenu(row, null)"><app-icon name="more" [size]="20" /></button>
-                @if (detailsId() === row.id) { <p class="bank-phone-row__details">{{ row.counterparty }}@if (row.counterparty && row.reference) { · }{{ row.reference }}<br />{{ record(row) }}</p> }
+              <div class="ios-swipe bank-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="actionOf(row) ? 1 : 0" [swipeEnd]="allocated(row) ? 0 : 1" swipeFull="start"
+                   (swipeCommit)="$event === 'start' ? runAction(row) : state.bookAsLine.set(row)">
+                @if (actionOf(row); as action) {
+                  <div class="ios-swipe__actions ios-swipe__actions--start">
+                    <button class="ios-swipe__btn tone-ok" type="button" (click)="runAction(row); sw.close()"><app-icon name="link" [size]="20" />{{ action.kind === 'link' ? 'Koppel' : action.label }}</button>
+                  </div>
+                }
+                @if (!allocated(row)) {
+                  <div class="ios-swipe__actions ios-swipe__actions--end">
+                    <button class="ios-swipe__btn tone-blue" type="button" (click)="state.bookAsLine.set(row); sw.close()"><app-icon name="tag" [size]="20" />Boeken als…</button>
+                  </div>
+                }
+                <div class="ios-swipe__row">
+                  <div class="bank-phone-row">
+                    <button class="bank-phone-row__open" type="button" (click)="openLine(row)" [attr.aria-label]="(row.counterparty || row.reference || 'Banktransactie') + ', ' + statusLabel(row) + ': openen'">
+                      <span class="bank-phone-row__party">{{ row.counterparty || row.reference || 'Banktransactie' }}</span>
+                      <strong class="bank-phone-row__amount" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong>
+                      <span class="bank-phone-row__reference">{{ subOf(row) }}</span>
+                      <span class="bank-phone-row__status"><span [class]="'wk-pill ' + statusTone(row)">{{ statusLabel(row) }}</span>@if (koppeling(row); as k) { <span class="bank-phone-row__target">{{ k.text }}</span> }</span>
+                      <span class="bank-phone-row__saldo">{{ saldoText(row) === '—' ? '' : 'saldo ' + saldoText(row) }}</span>
+                      @if (!state.officialBankLine(row)) { <span class="bank-phone-row__reference">Historische registratie</span> }
+                      @if (row.allocationDifferenceEur) { <span class="bank-phone-row__reference">Verschil {{ row.allocationDifferenceEur | eur }}</span> }
+                    </button>
+                    <button class="bank-phone-row__more" type="button" [attr.aria-label]="'Meer acties voor ' + (row.counterparty || row.reference || 'banktransactie')" (click)="lineMenu(row, null)"><app-icon name="more" [size]="20" /></button>
+                  </div>
+                </div>
               </div>
             }
           </div>
         </section>
       } @empty {
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="bank" [size]="26" /></span>
-          <p class="ios-empty__title">{{ state.bankStatements().length ? 'Geen bewegingen gevonden' : 'Nog geen bankbewegingen' }}</p>
-          <p class="ios-empty__text">{{ state.bankStatements().length ? 'Pas je zoekopdracht of filters aan.' : (state.manualAccountAllowed(accountFilter()) ? 'Voeg een transactie toe met Transactie noteren.' : 'Haal de transacties van deze rekening op via de bankverbinding.') }}</p></div>
+          <p class="ios-empty__title">{{ emptyTitle() }}</p>
+          <p class="ios-empty__text">{{ emptyText() }}</p>
+          @if (widerSearch()) { <button class="ios-capsule ios-capsule--tinted" type="button" (click)="searchWider()">Ruimer zoeken</button> }</div>
       }
       @if (visibleLines().length < filteredLines().length) {
-        <div class="ios-group fin-ios-more"><button class="ios-cell ios-cell--action" type="button" (click)="shown.update(more)">Meer tonen</button></div>
+        <div class="ios-group fin-ios-more"><button class="ios-cell ios-cell--action" type="button" (click)="shown.update(more)">Meer tonen · nog {{ filteredLines().length - visibleLines().length }}</button></div>
       }
     }
   `,
 })
 export class BankMovementPanel {
   readonly state = inject(FinanceState);
+  /** 'compact': the cockpit's list next to the rail (12 rows, no Koppeling or Saldo, its own filter, 'Alle transacties ›'). */
+  readonly mode = input<'full' | 'compact'>('full');
+  readonly compact = computed(() => this.mode() === 'compact');
   private readonly api = inject(BankingApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
@@ -812,22 +864,24 @@ export class BankMovementPanel {
   readonly hasFilters = computed(() => !!this.search().trim() || this.directionFilter() !== 'ALL' || this.linkFilter() !== 'ALL' || !!this.from() || !!this.to());
   readonly filteredLines = computed(() => {
     if (this.invalidPeriod()) return [];
-    const search = this.search().trim().toLocaleLowerCase('nl-BE');
+    const search = this.search().trim();
     return this.state.bankStatements().filter(row => {
       if (!this.showHistorical() && !this.state.officialBankLine(row)) return false;
       if (this.state.archivedBankLine(row) && !this.accountFilter()) return false;
       const day = paymentLocalDay({ receivedAt: row.bookedAt, timeZone: row.timeZone });
       const invoice = row.salesOrderId ? this.invoiceMap().get(row.salesOrderId) : null;
-      const text = [row.reference, row.counterparty, row.account, invoice?.order.number, invoice ? this.customerName(invoice.order.customerId) : '', ...this.linkedDocuments(row).map(document => document.label)].join(' ').toLocaleLowerCase('nl-BE');
+      /* Every term: the counterparty, the reference, the account (key and label), a linked target, or the amount (§3.4). */
+      const matches = !search || bankSearchMatches(row, search, [row.account, this.accountName(row.account), invoice?.order.number,
+        invoice ? this.customerName(invoice.order.customerId) : '', ...this.linkedDocuments(row).map(document => document.label)]);
       const link = this.linkFilter();
       return (!this.accountFilter() || this.state.canonicalAccount(row.account) === this.state.canonicalAccount(this.accountFilter()))
         && (this.directionFilter() === 'ALL' || (this.directionFilter() === 'INCOMING' ? row.amountEur > 0 : row.amountEur < 0))
         && (link === 'ALL' || (link === 'LINKED' ? this.allocated(row) : link === 'UNLINKED' ? !this.allocated(row)
           : !this.allocated(row)))
-        && (!this.from() || day >= this.from()) && (!this.to() || day <= this.to()) && (!search || text.includes(search));
+        && (!this.from() || day >= this.from()) && (!this.to() || day <= this.to()) && matches;
     }).sort((left, right) => Date.parse(right.bookedAt) - Date.parse(left.bookedAt) || right.id - left.id);
   });
-  readonly visibleLines = computed(() => this.filteredLines().slice(0, this.shown()));
+  readonly visibleLines = computed(() => this.filteredLines().slice(0, this.compact() ? 12 : this.shown()));
   /** The desk row Tab lands on (roving tabindex): the keyboard's row, else the first. */
   readonly tabStopId = computed(() => {
     const rows = this.visibleLines();
@@ -845,10 +899,10 @@ export class BankMovementPanel {
     return groups;
   });
   readonly unlinkedCount = computed(() => this.state.bankStatements().filter(row => this.state.officialBankLine(row) && !this.state.archivedBankLine(row) && this.onSelectedAccount(row) && !this.allocated(row)).length);
+  /** "In € x · Uit € y" over the filtered rows; internal transfers left out (and said so). */
   readonly totals = computed(() => {
-    const incoming = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur > 0 ? cents(row.amountEur) : 0), 0);
-    const outgoing = this.filteredLines().filter(row => this.state.officialBankLine(row)).reduce((sum, row) => sum + (row.amountEur < 0 ? -cents(row.amountEur) : 0), 0);
-    return { incoming: incoming / 100, outgoing: outgoing / 100, net: (incoming - outgoing) / 100 };
+    const totals = selectionTotals(this.filteredLines().filter(row => this.state.officialBankLine(row)));
+    return { incoming: totals.inEur, outgoing: totals.outEur, net: totals.netEur, internal: totals.internal };
   });
   readonly existingMatches = computed<BankMatch[]>(() => {
     const row = this.selected(); if (!row) return [];
@@ -938,10 +992,12 @@ export class BankMovementPanel {
     if (!row.allocatedAt) return recorded;
     return `${recorded} · Gekoppeld ${this.stamp(row.allocatedAt, row.timeZone)} · ${row.allocationCreatedPayment ? 'factuurbetaling bij koppelen aangemaakt' : 'bestaande factuurbetaling gekoppeld'}`;
   }
+  /** 'Vandaag · wo 15 okt', 'Gisteren · di 14 okt', 'ma 13 okt'. */
   private dayLabel(day: string): string {
     const today = paymentLocalDay({ receivedAt: new Date().toISOString(), timeZone: 'Europe/Brussels' });
     const diff = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86_400_000);
-    return diff === 0 ? 'Vandaag' : diff === 1 ? 'Gisteren' : WEEKDAY.format(new Date(`${day}T12:00:00Z`)).replace(/\./g, '');
+    const date = WEEKDAY.format(new Date(`${day}T12:00:00Z`)).replace(/\./g, '');
+    return diff === 0 ? `Vandaag · ${date}` : diff === 1 ? `Gisteren · ${date}` : date;
   }
 
   /** Resolve saved relationships, never similarity of amounts or supplier names. */
@@ -988,12 +1044,18 @@ export class BankMovementPanel {
   }
   linkedLabel(row: BankStatementLine): string {
     const documents = this.linkedDocuments(row);
+    // One transfer for several containers (owner addition 2026-10-15): 'Inkoop · 3 containers (PO-…, PO-…, PO-…)'.
+    if (documents.length > 1 && documents.every(document => document.kind === 'container')) {
+      const numbers = documents.map(document => { const payment = this.state.payments().find(item => item.orderId === document.id);
+        return payment?.orderNumber || payment?.orderAlias || '#' + document.id; }).sort((a, b) => a.localeCompare(b, 'nl', { numeric: true }));
+      return `Inkoop · ${documents.length} containers (${numbers.join(', ')})`;
+    }
     return documents.length > 1 ? `${documents.length} gekoppelde documenten` : documents[0]?.label || 'Gekoppeld document bekijken';
   }
+  /** A row opens its transaction (detail on the desk, sheet on the phone); it never jumps away. */
   openLine(row: BankStatementLine): void {
     this.focusId.set(row.id);
-    if (this.allocated(row)) void this.openLinked(row);
-    else void this.openAllocation(row);
+    this.state.openLine(row.id);
   }
   private openDocument(document: LinkedDocument): void {
     if (document.kind === 'invoice') this.state.openInvoice(document.id);
@@ -1042,26 +1104,151 @@ export class BankMovementPanel {
       items: [{ id: '', label: 'Alle rekeningen', checked: !this.accountFilter() }, ...this.state.accountOptions().map(option => ({ id: option.key, label: option.label, checked: option.key === this.accountFilter() }))],
       pick: id => { this.accountFilter.set(id); this.shown.set(12); } });
   }
-  /** Secondary actions stay behind the explicit more button or context menu. */
+  /** Secondary actions stay behind the explicit more button or context menu (§3.4). */
   lineMenu(row: BankStatementLine, anchor: { x: number; y: number } | null): void {
     this.focusId.set(row.id);
     const documents = this.linkedDocuments(row);
+    const linked = this.allocated(row);
     const items = [
-      ...(!this.allocated(row) ? [{ id: 'link', label: row.amountEur < 0 ? 'Aan uitgave of terugbetaling koppelen…' : 'Aan factuur koppelen…', iconName: 'link' }] : [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }]),
-      ...(this.allocated(row) || documents.length ? [{ id: 'document', label: documents.length > 1 ? 'Gekoppelde documenten openen' : 'Gekoppeld document openen', iconName: 'document' }] : []),
-      { id: 'details', label: this.detailsId() === row.id ? 'Details verbergen' : 'Details', iconName: 'info' },
+      { id: 'open', label: 'Openen', iconName: 'eye' },
+      ...(!linked ? [{ id: 'link', label: 'Koppelen…', iconName: 'link' }, { id: 'split', label: 'Splitsen…', iconName: 'list' },
+        { id: 'book', label: 'Boeken als…', iconName: 'tag' }] : []),
+      ...(linked && !row.classification ? [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }] : []),
+      ...(row.classification ? [{ id: 'unbook', label: 'Boeken als ongedaan maken', iconName: 'restore' }] : []),
+      ...(!row.classification && (linked || documents.length) ? [{ id: 'document', label: documents.length > 1 ? 'Gekoppelde documenten openen' : 'Gekoppeld document openen', iconName: 'document' }] : []),
       ...(this.canRemove(row) ? [{ id: 'withdraw', label: 'Intrekken', iconName: 'trash', danger: true, divider: true }] : []),
     ];
-    this.state.openMenu({ title: `${row.counterparty || row.reference || 'Bankbeweging'} · ${euro.format(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren', items,
+    this.state.openMenu({ title: `${row.counterparty || row.reference || 'Banktransactie'} · ${euro.format(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren', items,
       pick: id => {
-        if (id === 'link') void this.openAllocation(row);
-        else if (id === 'unlink') this.unlink(row);
+        if (id === 'open' || id === 'link' || id === 'split') this.openLine(row);
+        else if (id === 'book') this.state.bookAsLine.set(row);
+        else if (id === 'unlink') this.state.unlinkLine(row);
+        else if (id === 'unbook') void this.state.unclassifyLine(row);
         else if (id === 'document') void this.openLinked(row);
-        else if (id === 'details') this.detailsId.update(current => current === row.id ? null : row.id);
         else if (id === 'withdraw') this.remove(row);
       } });
   }
-  /** The desk keyboard: arrows move, L or Enter links (Enter opens the invoice of a linked line), Delete withdraws. */
+
+  /* ---- a row of Transacties: status, Koppeling, action and Saldo (§3.4) */
+
+  suggestionOf(row: BankStatementLine): LineSuggestion | undefined {
+    return this.allocated(row) || row.classification ? undefined : this.state.suggestions().get(row.id);
+  }
+  /** "Netto − € 69.595,06": the sign before the euro, as the amounts of the rows. */
+  netText(value: number): string { return signedEur(value); }
+  statusLabel(row: BankStatementLine): string {
+    if (row.classification) return CLASSIFICATION_LABEL[row.classification];
+    const status = lineStatus(row, this.suggestionOf(row));
+    return status === 'LINKED' ? 'Gekoppeld' : status === 'SUGGESTED' ? 'Suggestie' : 'Te koppelen';
+  }
+  statusTone(row: BankStatementLine): string {
+    const status = lineStatus(row, this.suggestionOf(row));
+    return status === 'LINKED' || status === 'BOOKED' ? 'tone-ok' : status === 'SUGGESTED' ? 'tone-accent' : 'tone-warn';
+  }
+  /**
+   * The row's one button: Koppelen when the best match changes nothing but
+   * the date (and no second candidate comes close), Bekijken when it changes
+   * an amount or another candidate is close, Boeken for a cost pattern.
+   */
+  actionOf(row: BankStatementLine): { label: 'Koppelen' | 'Bekijken' | 'Boeken'; kind: 'link' | 'open' | 'book' } | null {
+    const suggestion = this.suggestionOf(row);
+    if (!suggestion) return null;
+    if (suggestion.target.kind === 'cost-pattern') return { label: 'Boeken', kind: 'book' };
+    const rival = suggestion.others.some(other => other.score >= 50);
+    return suggestion.changesAmount || rival ? { label: 'Bekijken', kind: 'open' } : { label: 'Koppelen', kind: 'link' };
+  }
+  runAction(row: BankStatementLine): void {
+    const suggestion = this.suggestionOf(row), action = this.actionOf(row);
+    if (!suggestion || !action) { this.openLine(row); return; }
+    if (suggestion.target.kind === 'cost-pattern') { this.bookPattern(row, suggestion.target.costId); return; }
+    if (action.kind === 'open') { this.openLine(row); return; }
+    void this.state.linkLine(row, suggestion.target);
+  }
+  /** "Boeken" on a cost pattern: the cost registration starts from the latest cost of that pattern. */
+  bookPattern(row: BankStatementLine, costId: number): void {
+    const cost = this.state.costs().find(item => item.id === costId);
+    if (!cost) { this.state.openCostFromBank(row); return; }
+    const gross = Math.abs(row.amountEur), vat = cost.vatPct ?? 0;
+    this.state.openCostFromBank(row, { category: cost.category, description: cost.description, party: cost.party || row.counterparty || null,
+      vatPct: cost.vatPct, vatRegime: cost.vatRegime, vatRegimeConfirmed: !!cost.vatRegime, supplierCountry: cost.supplierCountry, costKind: cost.costKind,
+      expenseType: cost.expenseType, vatDeductiblePct: cost.vatDeductiblePct, taxDeductiblePct: cost.taxDeductiblePct, salesChannel: cost.salesChannel,
+      amountInclEur: gross, amountExclEur: Math.round(gross / (1 + vat / 100) * 100) / 100 });
+  }
+  /** What the Koppeling cell says: the booking, the linked target, the suggestion with its reasons, or that nothing was found. */
+  koppeling(row: BankStatementLine): Koppeling | null {
+    if (row.classification) {
+      const label = CLASSIFICATION_LABEL[row.classification];
+      if (row.classification === 'INTERNAL_TRANSFER') {
+        const other = row.transferLineId != null ? this.state.bankStatements().find(line => line.id === row.transferLineId) : undefined;
+        return { text: label, reasons: [], open: false, sub: other ? `⇄ ${this.accountName(other.account)} · ${legDistance(this.state.lineDay(row), this.state.lineDay(other))}` : 'Andere kant staat niet in Enrosed' };
+      }
+      return { text: label, reasons: [], open: false, sub: row.classification === 'VAT' ? vatPeriodLabel(row.vatPeriod) || row.classificationNote || null : row.classificationNote || null };
+    }
+    if (this.allocated(row)) {
+      const documents = this.linkedDocuments(row);
+      const files = documents.filter(document => document.kind === 'cost').reduce((sum, document) => sum + this.state.attachmentsFor(document.id).length, 0);
+      return { text: this.linkedLabel(row) + (files ? ` · 📎 ${files}` : ''), sub: null, reasons: [], open: true };
+    }
+    const suggestion = this.suggestionOf(row);
+    if (suggestion) {
+      const target = suggestion.target;
+      if (target.kind === 'cost-pattern') return { text: target.label, sub: null, reasons: [], open: false };
+      return { text: target.title, sub: null, reasons: suggestion.reasons, open: false };
+    }
+    const documents = this.linkedDocuments(row);
+    if (documents.length) return { text: 'Eerdere registratie', sub: null, reasons: [], open: true };
+    return { text: 'Geen factuur gevonden', sub: null, reasons: [], open: false };
+  }
+  /** "{account} · {reference}"; a manual line starts with its time. */
+  subOf(row: BankStatementLine): string {
+    return [this.imported(row) ? '' : this.clock(row), this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
+  }
+  /** The saldo after the line: over the active accounts, or the chosen account's own. */
+  saldoText(row: BankStatementLine): string {
+    const balance = this.state.running().get(`bank:${row.id}`);
+    const value = this.accountFilter() ? balance?.accountAfterEur : balance?.totalAfterEur;
+    if (value !== null && value !== undefined) return euro.format(value);
+    return balance?.unknownBefore ? `Saldo onbekend vóór ${balance.unknownBefore.slice(8, 10)}/${balance.unknownBefore.slice(5, 7)}` : '—';
+  }
+  /** "Saldo einde dag € x" of a day group (the chosen account, or every active account). */
+  dayEndText(day: string): string {
+    const value = this.state.dayEndEur(day, this.accountFilter() || null);
+    return value === null ? 'Saldo onbekend' : `Saldo einde dag ${euro.format(value)}`;
+  }
+  accountTone(account: string): string {
+    const index = this.state.accountOptions().findIndex(option => option.key === this.state.canonicalAccount(account));
+    return ACCOUNT_TONES[index < 0 ? ACCOUNT_TONES.length - 1 : index % ACCOUNT_TONES.length];
+  }
+  /** The account chips: every active account (shown with two or more). */
+  readonly accountChips = computed(() => this.state.accountOptions());
+  /** Payments marked paid without a transaction, and receipts on an Odoo account no line carries. */
+  readonly unbankedCount = computed(() => this.state.unbanked().length + this.state.pendingReceipts().length);
+  emptyTitle(): string {
+    if (!this.state.bankStatements().length) return 'Nog geen banktransacties';
+    const amount = this.search().trim().split(/\s+/).length === 1 ? this.search().trim() : '';
+    return this.from() && this.to() && amount && /^-?[\d.,]+$/.test(amount)
+      ? `Geen transactie van € ${amount.replace(/^-/, '')} tussen ${this.dayMon(this.from())} en ${this.dayMon(this.to())}.` : 'Geen transacties gevonden';
+  }
+  emptyText(): string {
+    return this.state.bankStatements().length ? 'Pas je zoekopdracht of filters aan.' : 'Haal je transacties op uit Odoo, of noteer ze met Transactie noteren.';
+  }
+  /** "Ruimer zoeken" after "Transactie zoeken": the same search without the dates. */
+  readonly widerSearch = computed(() => !!this.search().trim() && (!!this.from() || !!this.to()));
+  searchWider(): void { this.from.set(''); this.to.set(''); }
+  clearSearched(): void {
+    this.state.searchedFrom.set(null);
+    this.search.set(''); this.from.set(''); this.to.set(''); this.directionFilter.set('ALL');
+  }
+  private dayMon(day: string): string {
+    const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+    return `${Number(day.slice(8, 10))} ${months[Number(day.slice(5, 7)) - 1]}`;
+  }
+
+  /**
+   * The desk keyboard: arrows move; Enter opens the transaction; L links the
+   * best match (the row button's rule); S splits and C books (in the detail);
+   * U unlinks; O opens the linked document; Delete withdraws a manual line.
+   */
   handle(command: string): boolean {
     const rows = this.visibleLines();
     const index = rows.findIndex(row => row.id === this.focusId());
@@ -1076,8 +1263,11 @@ export class BankMovementPanel {
       return true;
     }
     if (!row) return false;
-    if ((command === 'link' || command === 'open') && !this.allocated(row)) { void this.openAllocation(row); return true; }
-    if (command === 'open' && this.allocated(row)) { void this.openLinked(row); return true; }
+    if (command === 'open' || command === 'split') { this.openLine(row); return true; }
+    if (command === 'link') { if (this.allocated(row)) this.openLine(row); else this.runAction(row); return true; }
+    if (command === 'book-as' && !this.allocated(row)) { this.state.bookAsLine.set(row); return true; }
+    if (command === 'unlink' && this.allocated(row)) { if (row.classification) void this.state.unclassifyLine(row); else this.state.unlinkLine(row); return true; }
+    if (command === 'open-linked' && (this.allocated(row) || this.linkedDocuments(row).length)) { void this.openLinked(row); return true; }
     if (command === 'delete' && this.canRemove(row)) { this.remove(row); return true; }
     if (command === 'escape') { this.focusId.set(null); return true; }
     return false;
@@ -1138,7 +1328,7 @@ export class BankMovementPanel {
   remove(row: BankStatementLine): void {
     if (this.busy() || !this.canRemove(row)) return;
     const what = [row.account, euro.format(row.amountEur), row.counterparty, row.reference || 'Geen referentie'].filter(Boolean).map(part => escapeHtml(part)).join(' · ');
-    this.ui.confirm({ title: 'Bankbeweging intrekken', message: `${what}. Ze telt niet meer mee in het saldo. Het logboek houdt de wijziging bij.`, confirmLabel: 'Intrekken', danger: true },
+    this.ui.confirm({ title: 'Transactie intrekken', message: `${what}. Ze telt niet meer mee in het saldo. Het logboek houdt de wijziging bij.`, confirmLabel: 'Intrekken', danger: true },
       () => this.run(async () => { await this.api.delete(row.id); this.state.bankStatements.update(rows => rows.filter(line => line.id !== row.id)); await this.state.refreshBank(); }));
   }
   private async run(work: () => Promise<unknown>): Promise<void> { if (this.busy()) return; this.busy.set(true); this.error.set(''); try { await work(); } catch (failure) { this.error.set(messageOf(failure, 'Bankbewerking mislukt')); } finally { this.busy.set(false); } }

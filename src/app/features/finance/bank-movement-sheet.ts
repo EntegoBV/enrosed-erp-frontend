@@ -8,7 +8,7 @@ import { partyKey } from './party-suggestions';
 import type { PartyCandidate } from './party-suggestions';
 
 /**
- * 'Bankbeweging noteren': what the statement says, typed over. Money in or
+ * 'Transactie noteren': what the statement says, typed over. Money in or
  * out, the amount, the account, the day and (only when it matters) the time.
  * It records; nothing is paid. Opened from anywhere through FinanceState.
  */
@@ -18,7 +18,7 @@ import type { PartyCandidate } from './party-suggestions';
   imports: [Sheet, DateField, Segmented, PartyField],
   template: `
     @if (state.movementDraft(); as draft) {
-      <app-sheet variant="ios" title="Bankbeweging noteren" (closed)="state.closeMovement()">
+      <app-sheet variant="ios" title="Transactie noteren" (closed)="state.closeMovement()">
         <div body class="fin-sheet">
           <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Richting" [options]="directions" [value]="draft.direction"
                          (changed)="patch({ direction: $any($event) })" />

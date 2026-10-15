@@ -17,15 +17,56 @@ test('legacy addresses land on a sensible section', () => {
   assert.deepEqual([parse({ view: 'bank' }).view, parse({ view: 'bank' }).tab], ['bank', 'accounts']);
   assert.equal(parse({ view: 'costs' }).tab, 'company');
   assert.equal(parse({ view: 'open' }).tab, 'all');
-  assert.equal(parse({ view: 'nonsense' }).view, 'overview');
+  assert.equal(parse({ view: 'nonsense' }).view, 'bank', 'an unknown view opens Bank');
   assert.equal(parse({ view: 'bank', tab: 'nonsense' }).tab, 'accounts');
-  assert.equal(parse({}).view, 'overview');
+  assert.equal(parse({}).view, 'bank', 'Kosten & bank opens on Bank');
+  assert.equal(parse({}).tab, 'accounts');
+});
+
+test('view=overview (the Overzicht until 2026-10-16) lands on Bank and normalises to /costs', () => {
+  const overview = parse({ view: 'overview' });
+  assert.deepEqual([overview.view, overview.tab], ['bank', 'accounts']);
+  assert.deepEqual(financeQueryParams(overview), {}, 'the page replaces ?view=overview by the bare /costs');
+  assert.deepEqual(financeQueryParams(parse({ view: 'bank' })), {});
+  assert.deepEqual(financeQueryParams(parse({ view: 'bank', tab: 'movements' })), { tab: 'movements' });
+});
+
+test('a bank line (line=) is honoured on every section and written back; weeks only on Bank and only when not 8', () => {
+  for (const view of Object.keys(TAB_IDS) as FinanceView[]) {
+    for (const tab of TAB_IDS[view]) {
+      const location = parse({ view, tab, line: '8842' });
+      assert.equal(location.line, 8842, `${view}/${tab}`);
+      assert.equal(financeQueryParams(location)['line'], '8842', `${view}/${tab}`);
+    }
+  }
+  assert.equal(parse({ line: '0' }).line, null);
+  assert.equal(parse({ line: 'abc' }).line, null);
+  const both = parse({ view: 'costs', cost: '12', line: '7' });
+  assert.deepEqual([both.cost, both.line], [12, 7], 'cost and line both stay; the line wins the inspector');
+  assert.equal(parse({ weeks: '4' }).weeks, 4);
+  assert.equal(parse({ weeks: '13' }).weeks, 13);
+  assert.equal(parse({ weeks: '8' }).weeks, null, '8 weeks is the default');
+  assert.equal(parse({ weeks: '9' }).weeks, null);
+  assert.equal(parse({ view: 'bank', tab: 'movements', weeks: '4' }).weeks, null, 'the Kaslijn lives on Bank only');
+  assert.deepEqual(financeQueryParams(parse({ weeks: '13' })), { weeks: '13' });
+  assert.deepEqual(financeQueryParams({ ...DEFAULT_LOCATION, tab: 'accounts', weeks: 8 }), {}, 'never written when 8');
+  const away = patchLocation(parse({ view: 'bank', tab: 'movements', line: '5' }), { view: 'open' });
+  assert.equal(away.line, null, 'another section starts without the line');
+  const kept = patchLocation(parse({ view: 'bank', tab: 'movements', line: '5' }), { dir: 'out' });
+  assert.equal(kept.line, 5, 'a filter keeps the open line');
+});
+
+test('Transacties without an account is the stream over all accounts', () => {
+  const all = parse({ view: 'bank', tab: 'movements', link: 'unlinked' });
+  assert.deepEqual([all.view, all.tab, all.account, all.link], ['bank', 'movements', '', 'unlinked']);
+  assert.deepEqual(financeQueryParams(all), { tab: 'movements', link: 'unlinked' });
+  assert.deepEqual(parse(financeQueryParams(all)), all);
 });
 
 test('invalid ids are refused', () => {
   for (const raw of ['0', '-1', '1e3', 'abc', '', '1.5', '9007199254740992']) assert.equal(positiveId(raw), null, raw);
   assert.equal(positiveId('12'), 12);
-  assert.equal(parse({ container: '0' }).view, 'overview');
+  assert.equal(parse({ container: '0' }).view, 'bank');
   assert.equal(parse({ view: 'costs', cost: 'abc' }).cost, null);
 });
 
@@ -49,7 +90,7 @@ test('from and to imply a custom period; otherwise the section default applies',
 test('the address leaves out every default', () => {
   assert.deepEqual(financeQueryParams(DEFAULT_LOCATION), {});
   assert.deepEqual(financeQueryParams(parse({ view: 'costs', tab: 'company', period: 'year' })), { view: 'costs' });
-  assert.deepEqual(financeQueryParams(parse({ view: 'bank', tab: 'accounts' })), { view: 'bank' });
+  assert.deepEqual(financeQueryParams(parse({ view: 'bank', tab: 'accounts' })), {}, 'Bank is the default section');
   assert.deepEqual(financeQueryParams(parse({ view: 'incoming', tab: 'received', period: 'quarter', dir: 'in' })),
     { view: 'incoming', tab: 'received', period: 'quarter', dir: 'in' });
   assert.equal(parse({ view: 'incoming', tab: 'received', dir: 'offset' }).dir, 'offset', 'the verrekeningen filter of Ontvangen');

@@ -123,3 +123,13 @@ test('a credit offset on a container is never a payment without a bank link', as
   ]);
   assert.deepEqual(Array.from(state.paidOutgoings(), (row: { id: number }) => row.id), [1]);
 });
+
+test('a manual line booked as something else ("Boeken als…") is never guessed as a payment, by amount or by marker', () => {
+  const paid = row(7, '2026-09-10', 121, 'kostbetaling');
+  const booked = { ...line(10, -121, '2026-09-10T10:00:00Z', 'kostbetaling #7'), classification: 'PRIVATE' };
+  assert.equal(matchOutgoings([paid], [booked]).has(paid), false, 'not by its marker');
+  assert.equal(matchOutgoings([paid], [{ ...booked, reference: null }]).has(paid), false, 'not by its amount');
+  assert.equal(matchOutgoings([paid], [{ ...booked, classification: null }]).get(paid)?.id, 10, 'the same line unbooked still matches');
+  const linked = row(7, '2026-09-10', 121, 'kostbetaling', 10);
+  assert.equal(matchOutgoings([linked], [booked]).get(linked)?.id, 10, 'a saved link is a link, booked or not');
+});

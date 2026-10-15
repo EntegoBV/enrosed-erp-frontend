@@ -37,7 +37,7 @@ function setup() {
   const committed = new Map<string, any>();
   Object.assign(state, {
     saving: signal(false), costSheetFocus: signal(null), costs: signal<any[]>([]), bankStatements: signal([bank]), paySheet: signal(null), errorMap: signal({}),
-    today: () => '2026-10-13', archivedBankLine: () => false,
+    today: () => '2026-10-13', archivedBankLine: () => false, cashRound: () => false,
     refreshBank: async () => {}, refreshCosts: async () => {}, reload: async () => {},
     ui: { toast: (message: string) => notices.push(message) },
     finance: {

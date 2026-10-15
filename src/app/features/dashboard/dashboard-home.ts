@@ -501,7 +501,7 @@ export class DashboardHome {
   readonly quickActions: ContextMenuItem[] = [
     { id: 'photo', label: 'Bon of factuur fotograferen', hint: 'Foto nemen en meteen als kost boeken', iconName: 'camera' },
     { id: 'cost', label: 'Kost boeken', iconName: 'receipt' },
-    { id: 'movement', label: 'Bankbeweging noteren', iconName: 'bank' },
+    { id: 'movement', label: 'Transactie noteren', iconName: 'bank' },
     { id: 'order', label: 'Nieuwe order', iconName: 'sales' },
     { id: 'customer', label: 'Nieuwe klant', iconName: 'customers' },
     { id: 'product', label: 'Nieuw product', iconName: 'products' },

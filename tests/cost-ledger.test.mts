@@ -5,7 +5,7 @@ import {
   CONTAINER_PAYMENT_CATEGORIES, containerFilterId, costLedger, costLedgerCsv, costLedgerTotals, filterCostLedger, missingDocument, paymentPayeeLabel,
 } from '../src/app/features/finance/cost-ledger.ts';
 import { costSummary } from '../src/app/features/finance/cost-metrics.ts';
-import { COST_MONEY, cashTotalOf, costRegimeCells, movementsSince, returnVatOf } from '../src/app/features/finance/finance-metrics.ts';
+import { COST_MONEY, cashTotalOf, costRegimeCells, returnVatOf } from '../src/app/features/finance/finance-metrics.ts';
 
 const cost: CompanyCost = { id: 1, date: '2026-09-01', category: 'HUUR', description: 'Huur magazijn', party: 'Verhuurder',
   amountExclEur: 100, vatPct: 21, reference: 'F-1', paidOn: '2026-09-03', salesChannel: null, notes: null, vatRegime: 'BE', vatRegimeConfirmed: true } as CompanyCost;
@@ -67,7 +67,6 @@ test('edits and deletes follow the payment source and duplicate response rows ca
   assert.equal(afterEdit[0].date, '2026-09-04');
   assert.equal(afterEdit[0].category, 'CONTAINER_LOGISTICS');
   assert.deepEqual(ledger([], []), [], 'deleting the source removes the derived cost');
-  assert.equal(movementsSince('2026-09-01', 1000, [], [corrected, corrected], []).currentEur, 400);
 });
 
 test('operating result, VAT and bank cash retain separate bases with one movement per payment', () => {
@@ -77,12 +76,6 @@ test('operating result, VAT and bank cash retain separate bases with one movemen
   assert.equal(operating.exclEur, 100);
   assert.equal(operating.vatEur, 21);
   assert.equal(costLedgerTotals(rows).paidEur, 775.77);
-  const bank = movementsSince('2026-09-01', 1000, [cost], payments, []);
-  assert.equal(bank.outEur, 775.77);
-  assert.equal(bank.rows.length, 3);
-  const purchase = bank.rows.find((row) => row.key === 'payment:1')!;
-  assert.equal(purchase.purchaseOrderId, 10);
-  assert.match(purchase.detail, /Leverancier/);
 });
 
 test('combined CSV exports linkage and exact cash while leaving container VAT and invoice totals empty', () => {

@@ -78,6 +78,7 @@ const DAY = 86_400_000;
             <section class="wk-section">
               <dl class="wk-kv">
                 <div><dt>{{ dateLabel(cost) }}</dt><dd>{{ dayYear(cost.date) }}</dd></div>
+                @if (cost.dueDate) { <div><dt>Vervalt op</dt><dd>{{ dayYear(cost.dueDate) }}</dd></div> }
                 <div><dt>Categorie</dt><dd>{{ cost.vatRegime === 'IMPORT_VAT_PAID' ? 'Invoer-btw' : category(cost.category) }}</dd></div>
                 @if (cost.vatRegime !== 'IMPORT_VAT_PAID') { <div><dt>Excl. btw</dt><dd>{{ cost.amountExclEur | eur }}</dd></div> }
                 <div><dt>{{ vatLabel(cost) }}</dt><dd>{{ vat(cost) | eur }}</dd></div>
