@@ -40,6 +40,8 @@ test('desk price cell: the stored price, its own unit, then the display side', (
 test('phone: the check list multiplies the quantity by the stored price in its own unit', () => {
   // "4 displays × € 49,95 per display", "12 diamanten × € 2,95 per diamant".
   assert.match(editor, /\{\{ line\.quantity \| num \}\} \{\{ line\.quantity === 1 \? lineUnit\(line\.productId\)\.singular : lineUnit\(line\.productId\)\.plural \}\} × \{\{ line\.unitPrice \| eur: 2 \}\} per \{\{ lineUnit\(line\.productId\)\.singular \}\}/);
+  // Then the display side as the desk words it, before the discount: "· = € 35,40 per display van 12".
+  assert.match(editor, /× \{\{ line\.unitPrice \| eur: 2 \}\} per \{\{ lineUnit\(line\.productId\)\.singular \}\}@if \(lineOtherPrice\(line\); as other\) \{ · \{\{ other\.sign \}\} \{\{ other\.price \| eur: 2 \}\} \{\{ other\.per \}\}@if \(lineDiscounted\(line\)\) \{, vóór korting\}\}@if \(line\.discountPct\)/);
   // The line under the price field adds only the display side; the field label already says "Prijs per diamant".
   assert.match(editor, /<p class="line-unit-context">\{\{ detail \}\}@if \(lineOtherPrice\(line\); as other\) \{ · \{\{ other\.sign \}\} \{\{ other\.price \| eur: 2 \}\} per \{\{ other\.unit \}\}@if \(lineDiscounted\(line\)\) \{, vóór korting\} \}\.<\/p>/);
   // The read-only phone view has no price field, so it names the stored price first.

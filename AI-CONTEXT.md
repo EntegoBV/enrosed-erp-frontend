@@ -1313,7 +1313,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
   (Aantal × Eenheidsprijs = Netto); customer channels (portal, website, PDF)
   lead with the display price on purpose. The word "set" is gone from the
   sales and product screens (`primarySalesPrice`/`secondarySalesPrice`
-  removed; a test scans the helpers for it).
+  removed; a test scans the helpers for it). The price field says "Prijs per
+  display" / "Prijs per diamant" / "Stukprijs" (`priceLabel`), and the phone
+  Controleren list adds the display side as the desk does: "12 diamanten ×
+  € 2,95 per diamant · = € 35,40 per display van 12 · op voorraad".
 - Sales card "Hoe verkoop je dit product?" (2026-10-15,
   `features/products/product-sales-setup.ts`, styles global in
   `styles/product-sales-setup.scss` because the editor's component styles

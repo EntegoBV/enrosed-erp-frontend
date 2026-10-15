@@ -1098,7 +1098,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                   }
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
-                    <small>{{ line.quantity | num }} {{ line.quantity === 1 ? lineUnit(line.productId).singular : lineUnit(line.productId).plural }} × {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
+                    <small>{{ line.quantity | num }} {{ line.quantity === 1 ? lineUnit(line.productId).singular : lineUnit(line.productId).plural }} × {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}@if (lineOtherPrice(line); as other) { · {{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
                       @if (!isCreditNoteDoc()) { · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}} }</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>

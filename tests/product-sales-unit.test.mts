@@ -72,7 +72,7 @@ test('keys are cleaned like the server does; blank or unknown keys read as stuk'
 test('a display basis keeps display wording and names the pieces inside with the unit', () => {
   rememberUnitNames(NAMES);
   const unit = productSalesUnit(bowlDisplay('DISPLAY'));
-  assert.deepEqual([unit.singular, unit.plural, unit.short, unit.priceLabel], ['display', 'displays', 'display', 'Displayprijs']);
+  assert.deepEqual([unit.singular, unit.plural, unit.short, unit.priceLabel], ['display', 'displays', 'display', 'Prijs per display']);
   assert.equal(unit.piece.other, 'bowls');
   assert.equal(salesQuantityDetail(bowlDisplay('DISPLAY'), 0), '8 bowls per display');
   assert.equal(salesQuantityDetail(bowlDisplay('DISPLAY'), 2), '2 × 8 = 16 bowls');

@@ -58,7 +58,8 @@ export function productSalesUnit(product: ProductWithPackaging) {
     /** The plural at the start of a label: "Bowls per karton". */
     pluralLabel: capitalize(plural),
     short: isDisplay ? 'display' : piece.short,
-    priceLabel: isDisplay ? 'Displayprijs' : piece.key === DEFAULT_UNIT_KEY ? 'Stukprijs' : `Prijs per ${piece.one}`,
+    /** The price field: "Prijs per display" beside "Prijs per diamant", "Prijs per stolp"; plain pieces keep "Stukprijs". */
+    priceLabel: isDisplay ? 'Prijs per display' : piece.key === DEFAULT_UNIT_KEY ? 'Stukprijs' : `Prijs per ${piece.one}`,
     piecesPerDisplay,
   };
 }
