@@ -14,7 +14,8 @@ import {
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { NACALC_LABEL, NACALC_PILL, purchaseNacalcSummary } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 import {
-  NACALC_REASON_LABEL, nacalcActionLabel, nacalcBridge, nacalcReason, paymentFxEur, purchaseNacalc, type PurchaseNacalc,
+  NACALC_REASON_LABEL, nacalcActionLabel, nacalcAgreedSub, nacalcBridge, nacalcPartnerLine, nacalcProductCount, nacalcProductSub, nacalcProductUnit,
+  nacalcReason, nacalcReceiptUnitLine, nacalcUnitBasis, paymentFxEur, purchaseNacalc, type PurchaseNacalc,
 } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 
 type Stream = PurchaseReconciliationStream;
@@ -481,7 +482,7 @@ test('before receipt a residue up to a euro is rounding and more is inconsistent
   const received = nacalcBridge(view, purchaseNacalcSummary(view, ledgerOf(view, payments)));
   assert.equal(received.consistent, true);
   assert.deepEqual(received.rows.find(item => item.key === 'ORDERED'),
-    { key: 'ORDERED', label: 'Correctie naar bestelde stuks', amountEur: 84.86, note: 'de afspraak blijft op 4.128 bestelde stuks', op: '+' });
+    { key: 'ORDERED', label: 'Correctie naar bestelde aantallen', amountEur: 84.86, note: 'de afspraak blijft op 4.128 bestelde stuks', op: '+' });
   const over = settled();
   const overRows = nacalcBridge(over.view, purchaseNacalcSummary(over.view)).rows;
   assert.deepEqual(overRows.find(item => item.key === 'ORDERED')!.op, '−', 'over-received pieces make the live calculation exceed the budget');
@@ -702,4 +703,76 @@ test('a term only partly covered by another term keeps its netted rest open and 
     ['ORDERED', 'none', 'verrekend met 70% bij vertrek', 10, 0],
     ['SHIPPED', 'open', 'nog € 50,78 open · nu te betalen · € 10,00 verrekend met 30% bij bestelling', -10, 50.78],
   ]);
+});
+
+/* ---- per set / per stuk (2026-10-15): §5.4, a 12-stem rose display sold per set */
+
+/** 'Long stem rose box display': 100 sets of 12 roses ordered, eindkost € 3.120,00, incl. Enrosed kost € 3.360,00. */
+function roses(receipt = false): PurchaseOrderView {
+  const { view } = transit();
+  const usable = receipt ? 98 : 0;
+  const display: Line = { ...line(300, 'Long stem rose box display', 100, 3120, 3120, receipt ? 31.8367 : 31.2, receipt ? 34.2857 : 33.6, receipt ? 98 : 0, 0,
+    receipt ? 'USABLE_RECEIVED' : 'ORDERED'), salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'rose', unitOne: 'roos', unitOther: 'rozen',
+    pieceQuantity: receipt ? 1176 : 1200, forecastExternalPieceEur: receipt ? 2.6531 : 2.6, forecastPricingPieceEur: receipt ? 2.8571 : 2.8 };
+  return { ...view, order: { ...view.order, partnerCustomerId: null }, reconciliation: { ...view.reconciliation!, lines: [display], notes: [],
+    totals: { ...view.reconciliation!.totals, plannedExternalEur: 3120, forecastExternalEur: 3120, varianceEur: 0, orderedQuantity: 100,
+      receivedQuantity: usable, usableQuantity: usable, unitCostQuantity: receipt ? 98 : 100, unitCostBasis: receipt ? 'USABLE_RECEIVED' : 'ORDERED',
+      forecastExternalUnitEur: receipt ? 31.8367 : 31.2, forecastPricingUnitEur: receipt ? 34.2857 : 33.6, receiptRecorded: receipt,
+      setBasis: 'DISPLAY', setPieces: 12, setUnitOther: 'rozen', orderedPieceQuantity: 1200, usablePieceQuantity: receipt ? 1176 : 0,
+      unitCostPieceQuantity: receipt ? 1176 : 1200, forecastExternalPieceEur: receipt ? 2.6531 : 2.6, forecastPricingPieceEur: receipt ? 2.8571 : 2.8 } },
+  } as unknown as PurchaseOrderView;
+}
+
+test('a set product: the container figure is per set with the piece price beside it; quantities say sets', () => {
+  const head = story(roses(), null).headline;
+  assert.deepEqual([head.setBasis, head.unitWord, head.unitLabel, head.unitColumn, head.pricingUnitLabel, head.stripUnitEur, head.pieceEur],
+    ['DISPLAY', 'set', 'Per set', 'Per set', 'Per set incl. Enrosed kost', 31.2, 2.6]);
+  assert.equal(plain(nacalcUnitBasis(head)), '100 bestelde sets × 12 rozen · € 2,6000 per stuk · incl. inspectie');
+  assert.equal(nacalcAgreedSub(head), 'calculatie op 100 bestelde sets');
+  const product = story(roses(), null).products[0];
+  assert.deepEqual(product.set, { pieces: 12, one: 'roos', other: 'rozen' });
+  assert.deepEqual(plain(nacalcProductUnit(product, 'DISPLAY')), { main: '€ 31,2000 /set', sub: '€ 2,6000 /stuk' });
+  assert.deepEqual(nacalcProductCount(product, 100), { main: '100 sets', sub: '× 12 rozen' });
+  assert.equal(plain(nacalcProductSub(product, false)), '100 bestelde sets × 12 rozen · € 31,2000/set · € 2,6000/stuk · € 33,6000 incl. Enrosed kost');
+  const summary = purchaseNacalcSummary(roses())!;
+  assert.deepEqual([summary.unitWord, summary.unitEur, summary.pieceEur, summary.setPieces], ['set', 31.2, 2.6, 12]);
+});
+
+test('after receipt the set and the piece price both rise, and the receipt and the partner speak of sets', () => {
+  const result = story(roses(true), null);
+  const head = result.headline;
+  assert.equal(plain(nacalcUnitBasis(head)), '98 bruikbare sets · 100 besteld · € 2,6531 per stuk · incl. inspectie');
+  assert.equal(plain(nacalcReceiptUnitLine(result.receipt!, head)), 'Kost per bruikbare set € 31,8367 (€ 2,6531 per stuk) · per bestelde set zou dit € 31,2000 zijn (+ € 0,6367)');
+  const partner = { costPct: 20, sharePct: 50, basisEur: null, advanceEur: null, unitEur: 31.8367, shortPieces: 2, ordered: 100, financing: null, shortageAfterAdvance: false };
+  assert.equal(plain(nacalcPartnerLine(partner, head)), 'Bij de veilingafrekening betaalt de partner de eindkost van de verkochte sets (€ 31,8367 per bruikbare set) plus 50 % van het resultaat; het voorschot wordt dan verrekend.');
+  assert.ok(result.notes.some(note => note.includes('verloren sets is de goederenprijs per set')));
+  assert.ok(result.notes.some(note => note.endsWith('gebruikt de calculatie per set.')));
+});
+
+test('sets next to pieces: the container average is per piece, sets counted with their pieces; the sales-unit figures stay', () => {
+  const view = roses();
+  const bowl: Line = { ...line(301, 'Rozenschaal', 200, 1000, 1000, 5, 5.4), salesUnit: 'PIECE', piecesPerUnit: 1, pieceQuantity: 200,
+    forecastExternalPieceEur: 5, forecastPricingPieceEur: 5.4 };
+  const mixed = { ...view, reconciliation: { ...view.reconciliation!, lines: [...view.reconciliation!.lines, bowl],
+    totals: { ...view.reconciliation!.totals, plannedExternalEur: 4120, forecastExternalEur: 4120, orderedQuantity: 300, unitCostQuantity: 300,
+      forecastExternalUnitEur: 13.7333, setBasis: 'MIXED', orderedPieceQuantity: 1400, unitCostPieceQuantity: 1400, forecastExternalPieceEur: 2.9429,
+      forecastPricingPieceEur: 3.1714 } } } as unknown as PurchaseOrderView;
+  const result = story(mixed, null);
+  const head = result.headline;
+  assert.deepEqual([head.unitLabel, head.unitColumn, head.stripUnitEur, head.unitEur, head.unitQuantity, head.unitPlural],
+    ['Gem. per stuk', 'Per eenheid', 2.9429, 13.7333, 300, 'verkoopeenheden'], 'the sales-unit figures stay as the server sent them');
+  assert.equal(nacalcUnitBasis(head), '1.400 stuks · sets als 12 rozen geteld · incl. inspectie');
+  assert.equal(nacalcAgreedSub(head), 'calculatie op 300 bestelde verkoopeenheden');
+  assert.deepEqual(plain(nacalcProductUnit(result.products[1], 'MIXED')), { main: '€ 5,0000 /stuk', sub: null });
+  assert.equal(nacalcUnitBasis({ ...head, setUnitOther: null }), '1.400 stuks · sets als hun aantal stuks geteld · incl. inspectie');
+  const partner = { costPct: 20, sharePct: 50, basisEur: null, advanceEur: null, unitEur: 13.7333, shortPieces: 0, ordered: 300, financing: null, shortageAfterAdvance: false };
+  assert.equal(nacalcPartnerLine(partner, head, true), 'eindkost van de verkochte sets en stuks, per product + 50 % resultaat; voorschot verrekend');
+  assert.equal(purchaseNacalcSummary(mixed)!.unitWord, 'verkoopeenheid');
+});
+
+test('an older response without the per-set fields reads per stuk, as before', () => {
+  const head = story(transit().view, null).headline;
+  assert.deepEqual([head.setBasis, head.unitLabel, head.stripUnitEur, head.pieceEur], ['PIECE', 'Per stuk', 12.6267, 12.6267]);
+  assert.equal(nacalcUnitBasis(head), '5.560 bestelde stuks · incl. inspectie');
+  assert.deepEqual(plain(nacalcProductUnit(story(transit().view, null).products[0], 'PIECE')), { main: '€ 22,0247', sub: null });
 });

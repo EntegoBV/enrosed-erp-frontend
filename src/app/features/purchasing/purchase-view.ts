@@ -505,7 +505,8 @@ type PurchaseWorkspaceSectionId =
                       <span><small>Aantal</small><strong>{{ entry.line.quantity | num }} st</strong></span>
                       <span><small>Dozen</small><strong>{{ entry.line.cartons | num }}</strong></span>
                       <span><small>Volume</small><strong>{{ entry.line.cbm | cbm }}</strong></span>
-                      <span><small>Geland / stuk</small><strong>{{ entry.line.landedUnitEur | eurUp: 3 }}</strong></span>
+                      @let set = setPiecesOf(entry.line.productId);
+                      <span><small>{{ set ? 'Geland / set' : 'Geland / stuk' }}</small><strong>{{ entry.line.landedUnitEur | eurUp: 3 }}</strong>@if (set) { <small>{{ entry.line.landedUnitEur / set | eurUp: 3 }} /stuk</small> }</span>
                       <span class="line-fact--total"><small>Regeltotaal</small><strong>{{ entry.line.totalEur | eur }}</strong></span>
                     </div>
                     @if (data.order.status === 'ONTVANGEN') {
@@ -1506,6 +1507,12 @@ export class PurchaseView {
   cartonNotice(quantity: number, productId: number): string | null {
     const product = this.products().find((candidate) => candidate.id === productId);
     return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
+  }
+
+  /** A product sold per set: its pieces, so the landed cost reads per set with the price per piece under it; null per piece. */
+  setPiecesOf(productId: number): number | null {
+    const unit = productSalesUnit(this.products().find((candidate) => candidate.id === productId));
+    return unit.isDisplay ? unit.piecesPerDisplay : null;
   }
 
   stepIndex(status: string): number {

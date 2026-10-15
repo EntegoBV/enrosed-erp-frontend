@@ -11,7 +11,11 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
-import type { NacalcPayeeRow, NacalcReason, NacalcTone, PurchaseNacalc } from './purchase-nacalc-metrics';
+import {
+  nacalcAgreedSub, nacalcPartnerLine, nacalcPartnerShortage, nacalcProductCount, nacalcProductUnit, nacalcReceiptUnitLine, nacalcUnitBasis,
+  type NacalcHeadline, type NacalcPartner, type NacalcPayeeRow, type NacalcProductRow, type NacalcReason, type NacalcSetBasis, type NacalcTone,
+  type PurchaseNacalc,
+} from './purchase-nacalc-metrics';
 import type { Due, LedgerTone, PaymentLedger, PurchaseSettleRequest, SupplierCreditAction } from './purchase-payment-ledger';
 import { formatEur } from './purchase-payment-menus';
 
@@ -56,7 +60,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
         @let head = n.headline;
         @let concept = head.kind === 'concept';
         <div class="wk-strip nc-strip" aria-label="Afspraak, eindkost en verschil">
-          <div class="wk-strip__item nc-cell"><span class="wk-strip__label">Afspraak</span><span class="wk-strip__value">{{ head.begrootEur | eur }}</span><small class="nc-strip__sub">calculatie op {{ head.orderedQuantity | num }} bestelde stuks</small></div>
+          <div class="wk-strip__item nc-cell"><span class="wk-strip__label">Afspraak</span><span class="wk-strip__value">{{ head.begrootEur | eur }}</span><small class="nc-strip__sub">{{ agreedSub(head) }}</small></div>
           <span class="wk-strip__op nc-op" aria-hidden="true">→</span>
           <div class="wk-strip__item nc-cell nc-cell--grand">
             <span class="wk-strip__label">{{ head.label }} <span class="wk-pill nc-pill" [class]="pillClass(head.pill.tone)">{{ head.pill.label }}</span></span>
@@ -71,9 +75,9 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
           </div>
           <span class="wk-strip__sep nc-sep" aria-hidden="true"></span>
           <div class="wk-strip__item nc-cell">
-            <span class="wk-strip__label">Per stuk</span>
-            <span class="wk-strip__value">@if (head.unitEur !== null) { {{ head.unitEur | eur: 4 }} } @else { — }</span>
-            <small class="nc-strip__sub">{{ unitBasis(n) }}@if (head.pricingUnitEur !== null) { <br />incl. Enrosed kost {{ head.pricingUnitEur | eur: 4 }} }</small>
+            <span class="wk-strip__label">{{ head.unitLabel }}</span>
+            <span class="wk-strip__value">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span>
+            <small class="nc-strip__sub">{{ unitBasis(n) }}@if (head.stripPricingEur !== null) { <br />incl. Enrosed kost {{ head.stripPricingEur | eur: 4 }} }</small>
           </div>
         </div>
         @if (!concept && ledger(); as book) {
@@ -197,7 +201,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                     <a class="wk-link wk-card__trail" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }">Ontvangstanalyse ›</a></header>
                   <div class="wk-card__body">
                     @if (receipt.clean) {
-                      <p class="nc-muted">Alles volgens bestelling: {{ receipt.usable | num }} stuks ontvangen en bruikbaar.</p>
+                      <p class="nc-muted">Alles volgens bestelling: {{ receipt.usable | num }} {{ head.unitPlural }} ontvangen en bruikbaar.</p>
                     } @else {
                       <div class="nc-tiles">
                         <div class="nc-stat"><small>Besteld</small><b>{{ receipt.ordered | num }}</b></div>
@@ -209,18 +213,16 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       </div>
                       @if (receipt.missing > 0 || receipt.damaged > 0) {
                         <dl class="wk-equation nc-receipt__money">
-                          <div><dt>Inkoopwaarde ontbrekende stuks<span class="wk-td__sub">{{ receipt.missing | num }} × inkoopwaarde bij ontvangst</span></dt><dd>@if (receipt.missingValueEur === null) { — } @else { {{ receipt.missingValueEur | eur }} }</dd></div>
-                          <div><dt>Inkoopwaarde beschadigde stuks<span class="wk-td__sub">{{ receipt.damaged | num }} × inkoopwaarde bij ontvangst</span></dt><dd>@if (receipt.damagedValueEur === null) { — } @else { {{ receipt.damagedValueEur | eur }} }</dd></div>
+                          <div><dt>Inkoopwaarde ontbrekende {{ head.unitPlural }}<span class="wk-td__sub">{{ receipt.missing | num }} × inkoopwaarde bij ontvangst</span></dt><dd>@if (receipt.missingValueEur === null) { — } @else { {{ receipt.missingValueEur | eur }} }</dd></div>
+                          <div><dt>Inkoopwaarde beschadigde {{ head.unitPlural }}<span class="wk-td__sub">{{ receipt.damaged | num }} × inkoopwaarde bij ontvangst</span></dt><dd>@if (receipt.damagedValueEur === null) { — } @else { {{ receipt.damagedValueEur | eur }} }</dd></div>
                           <div class="is-total"><dt>Verlies op inkoopwaarde<span class="wk-td__sub">goederenwaarde bij ontvangst, excl. transport</span></dt><dd>@if (receipt.lossEur === null) { — } @else { {{ receipt.lossEur | eur }} }</dd></div>
                         </dl>
                         @if (receipt.unvaluedPieces > 0 || receipt.lossEur === null) {
-                          <p class="nc-muted wk-amount--warn">@if (receipt.unvaluedPieces > 0) { {{ receipt.unvaluedPieces | num }} afwijkende stuks hebben nog geen bevroren inkoopwaarde en tellen niet mee. } @else { De inkoopwaarde van de afwijkende stuks is nog niet vastgelegd. }
+                          <p class="nc-muted wk-amount--warn">@if (receipt.unvaluedPieces > 0) { {{ receipt.unvaluedPieces | num }} afwijkende {{ head.unitPlural }} hebben nog geen bevroren inkoopwaarde en tellen niet mee. } @else { De inkoopwaarde van de afwijkende stuks is nog niet vastgelegd. }
                             <a class="wk-link" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }">Waarde vastleggen ›</a></p>
                         }
                       }
-                      @if (receipt.unitUsableEur !== null && receipt.unitOrderedEur !== null && receipt.unitDeltaEur !== null) {
-                        <p class="nc-muted">Kost per bruikbaar stuk {{ receipt.unitUsableEur | eur: 4 }} · per besteld stuk zou dit {{ receipt.unitOrderedEur | eur: 4 }} zijn ({{ signedUnit(receipt.unitDeltaEur) }}).</p>
-                      }
+                      @if (receiptUnitLine(receipt, head); as line) { <p class="nc-muted">{{ line }}.</p> }
                       @if (receipt.supplierFact; as fact) {
                         <p class="nc-muted">
                           @switch (fact.kind) {
@@ -234,7 +236,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                         </p>
                       }
                       @if (receipt.over > 0) {
-                        <p class="nc-muted">{{ receipt.over | num }} stuks meer dan besteld: de leverancier kan @if (receipt.overValueEur === null) { ≈ — } @else { ≈ {{ receipt.overValueEur | eur }} } extra factureren ({{ receipt.over | num }} × inkoopwaarde). Noteer die betaling als Leverancier en reken dan hoger af.</p>
+                        <p class="nc-muted">{{ receipt.over | num }} {{ head.unitPlural }} meer dan besteld: de leverancier kan @if (receipt.overValueEur === null) { ≈ — } @else { ≈ {{ receipt.overValueEur | eur }} } extra factureren ({{ receipt.over | num }} × inkoopwaarde). Noteer die betaling als Leverancier en reken dan hoger af.</p>
                       }
                     }
                     @if (receipt.credit; as credit) {
@@ -270,7 +272,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="narrow">Afspraak</span>
                       <span class="wk-th wk-th--num" role="columnheader">Eindkost</span>
                       <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="narrow">Verschil</span>
-                      <span class="wk-th wk-th--num" role="columnheader">Per stuk</span>
+                      <span class="wk-th wk-th--num" role="columnheader">{{ head.unitColumn }}</span>
                       <span class="wk-th wk-th--num" role="columnheader" data-nc-hide="mid">Incl. Enrosed kost</span>
                     </div>
                     @for (row of n.products; track row.productId ?? row.name) {
@@ -280,28 +282,34 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                           @if (received && (row.missing || row.damaged || row.over)) {
                             <span class="wk-td__sub">{{ row.ordered | num }} besteld@if (row.missing) { · {{ row.missing | num }} te weinig }@if (row.damaged) { · {{ row.damaged | num }} beschadigd }@if (row.over) { · {{ row.over | num }} te veel }</span>
                           }
-                          @if (row.unitQuantity === 0) { <span class="wk-td__sub wk-amount--warn">Geen bruikbare stuks: de kost blijft bij deze regel.</span> }
+                          @if (row.unitQuantity === 0) { <span class="wk-td__sub wk-amount--warn">Geen bruikbare {{ row.set ? 'sets' : 'stuks' }}: de kost blijft bij deze regel.</span> }
                         </span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ row.ordered | num }}</span>
-                        @if (received) { <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ row.usable | num }}</span> }
+                        @let ordered = productCount(row, row.ordered);
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ ordered.main }}@if (ordered.sub) { <span class="wk-td__sub">{{ ordered.sub }}</span> }</span>
+                        @if (received) {
+                          @let usable = productCount(row, row.usable);
+                          <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ usable.main }}@if (usable.sub) { <span class="wk-td__sub">{{ usable.sub }}</span> }</span>
+                        }
                         <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow">{{ row.begrootEur | eur }}</span>
                         <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ row.eindkostEur | eur }}
                           @if (row.verschilEur !== 0) { <span class="wk-td__sub nc-when-narrow" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ signed(row.verschilEur) }}</span> }</span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0" [class.wk-amount--muted]="row.verschilEur === 0">{{ row.verschilEur === 0 ? '—' : signed(row.verschilEur) }}</span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (row.unitEur !== null && row.unitQuantity > 0) { {{ row.unitEur | eur: 4 }} } @else { — }
-                          @if (row.pricingUnitEur !== null && row.unitQuantity > 0) { <span class="wk-td__sub nc-when-mid">{{ row.pricingUnitEur | eur: 4 }} incl. Enrosed kost</span> }</span>
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (row.pricingUnitEur !== null && row.unitQuantity > 0) { {{ row.pricingUnitEur | eur: 4 }} } @else { — }</span>
+                        @let unit = productUnit(row, head.setBasis);
+                        @let pricing = productPricing(row, head.setBasis);
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (unit) { {{ unit.main }}@if (unit.sub) { <span class="wk-td__sub">{{ unit.sub }}</span> } } @else { — }
+                          @if (pricing) { <span class="wk-td__sub nc-when-mid">{{ pricing.main }} incl. Enrosed kost</span> }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (pricing) { {{ pricing.main }}@if (pricing.sub) { <span class="wk-td__sub">{{ pricing.sub }}</span> } } @else { — }</span>
                       </div>
                     }
                     <div class="wk-tr wk-tr--total" role="row">
                       <span class="wk-td" role="gridcell">Totaal</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ head.orderedQuantity | num }}</span>
-                      @if (received) { <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ head.unitQuantity | num }}</span> }
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ totalCount(head, 'ordered') }}</span>
+                      @if (received) { <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ totalCount(head, 'usable') }}</span> }
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow">{{ n.productTotals.begrootEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ n.productTotals.eindkostEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="narrow" [class.wk-amount--in]="n.productTotals.verschilEur < 0" [class.wk-amount--warn]="n.productTotals.verschilEur > 0">{{ n.productTotals.verschilEur === 0 ? '—' : signed(n.productTotals.verschilEur) }}</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.unitEur !== null) { {{ head.unitEur | eur: 4 }} }</span>
-                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.pricingUnitEur !== null) { {{ head.pricingUnitEur | eur: 4 }} }</span>
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }}{{ totalSuffix(head) }} }</span>
+                      <span class="wk-td wk-td--num wk-amount" role="gridcell" data-nc-hide="mid">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }}{{ totalSuffix(head) }} }</span>
                     </div>
                   </div>
                 }
@@ -347,7 +355,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                   <div><dt>{{ head.label }}</dt><dd>{{ head.eindkostEur | eur }}</dd></div>
                   <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Enrosed kost<span class="wk-td__sub">intern, geen betaling</span></dt><dd>{{ head.markupEur | eur }}</dd></div>
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Kostbasis</dt><dd>{{ head.pricingEur | eur }}</dd></div>
-                  <div class="is-sub"><dt>Per stuk incl. Enrosed kost</dt><dd>@if (head.pricingUnitEur !== null) { {{ head.pricingUnitEur | eur: 4 }} } @else { — }</dd></div>
+                  <div class="is-sub"><dt>{{ head.pricingUnitLabel }}@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="wk-td__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</dt><dd>@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</dd></div>
                 </dl>
                 <p class="nc-muted">Gelijk aan “{{ head.separateApart ? 'Totaal incl. aparte kosten' : 'Totaal geland' }}” in Kosten zolang er niets anders betaald is. De Enrosed kost is geen betaling en past prijzen of offertes niet aan.</p>
               </div>
@@ -373,9 +381,9 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                       @if (fin.unbilledCount > 0) { <div><dt>{{ fin.unbilledCount }} {{ fin.unbilledCount === 1 ? 'voorschottermijn' : 'voorschottermijnen' }} nog te factureren</dt><dd></dd></div> }
                     }
                   </dl>
-                  <p class="nc-muted">Bij de veilingafrekening betaalt de partner de eindkost van de verkochte stuks @if (partner.unitEur !== null) { ({{ partner.unitEur | eur: 4 }} per bruikbaar stuk) } plus {{ partner.sharePct }} % van het resultaat; het voorschot wordt dan verrekend.</p>
+                  <p class="nc-muted">{{ partnerLine(partner, head) }}</p>
                   @if (partner.shortPieces > 0) {
-                    <p class="nc-muted nc-warn">{{ partner.shortPieces | num }} stuks kwamen niet aan: de partner betaalt alleen voor bruikbare stuks, tegen een hogere kost per stuk.@if (partner.shortageAfterAdvance) { Het voorschot is berekend op {{ partner.ordered | num }} bestelde stuks; verreken het verschil bij de slotfactuur of met een creditnota op het voorschot. }</p>
+                    <p class="nc-muted nc-warn">{{ partnerShortage(partner, head) }}</p>
                   }
                 </div>
               </section>
@@ -478,19 +486,26 @@ export class PurchaseNacalcWorkbench {
     if (!value) return formatEur(0);
     return (value > 0 ? '+ ' : '− ') + formatEur(Math.abs(value));
   }
-  signedUnit(value: number): string {
-    const text = Math.abs(value).toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    return (value < 0 ? '− € ' : '+ € ') + text;
-  }
   pct(value: number): string { return Math.abs(value).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %'; }
 
-  unitBasis(n: PurchaseNacalc): string {
-    const head = n.headline;
-    const base = head.unitBasis === 'USABLE_RECEIVED'
-      ? `${head.unitQuantity.toLocaleString('nl-BE')} bruikbare stuks · ${head.orderedQuantity.toLocaleString('nl-BE')} besteld`
-      : `${head.unitQuantity.toLocaleString('nl-BE')} bestelde stuks`;
-    return base + (head.includesInspection ? ' · incl. inspectie' : '') + (head.ddp ? ' · DDP' : '');
+  /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
+  unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
+  readonly agreedSub = nacalcAgreedSub;
+  readonly receiptUnitLine = nacalcReceiptUnitLine;
+  readonly partnerLine = (partner: NacalcPartner, head: NacalcHeadline) => nacalcPartnerLine(partner, head);
+  readonly partnerShortage = nacalcPartnerShortage;
+  readonly productCount = nacalcProductCount;
+  productUnit(row: NacalcProductRow, basis: NacalcSetBasis) { return nacalcProductUnit(row, basis); }
+  productPricing(row: NacalcProductRow, basis: NacalcSetBasis) {
+    return nacalcProductUnit(row, basis, 'pricing', { unit: row.pricingUnitEur, piece: row.pricingPieceEur });
   }
+  /** The total row in the container's counting: sets, or in a mixed container its pieces. */
+  totalCount(head: NacalcHeadline, which: 'ordered' | 'usable'): string {
+    const quantity = which === 'ordered' ? head.orderedQuantity : head.unitQuantity;
+    if (head.setBasis === 'MIXED') return `${(which === 'ordered' ? head.orderedPieceQuantity : head.pieceQuantity).toLocaleString('nl-BE')} stuks`;
+    return head.setBasis === 'DISPLAY' ? `${quantity.toLocaleString('nl-BE')} sets` : quantity.toLocaleString('nl-BE');
+  }
+  totalSuffix(head: NacalcHeadline): string { return head.setBasis === 'DISPLAY' ? ' /set' : head.setBasis === 'MIXED' ? ' /stuk (gem.)' : ''; }
 
   /** A row click shows the payee's payments; the click that trails a long-press menu is left alone. */
   rowClick(event: MouseEvent, payee: Payee): void {

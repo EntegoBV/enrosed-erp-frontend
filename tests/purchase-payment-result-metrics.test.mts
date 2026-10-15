@@ -280,7 +280,8 @@ test('the nacalculatie summary carries the server forecast and variance next to 
   assert.deepEqual(summary, {
     eligible: true, finalized: true, forecastEur: 940, varianceEur: -60, netResultEur: 60, internalMarkupEur: 250, markupWithResultEur: 310,
     kind: 'final', label: 'Eindkost', pill: { label: 'Definitief', tone: 'ok' }, openEur: 0, reviewEur: 0,
-    unitEur: null, unitQuantity: 0, unitBasis: 'ORDERED', settledSavingsEur: 60, settledOverrunsEur: 0, additionalCostsEur: 0,
+    unitEur: null, unitQuantity: 0, unitBasis: 'ORDERED', unitWord: 'stuk', pieceEur: null, pieceQuantity: 0, setPieces: null,
+    settledSavingsEur: 60, settledOverrunsEur: 0, additionalCostsEur: 0,
   });
   const provisional = purchaseNacalcSummary(purchase([stream({ paidEur: 300, remainingEur: 700 })]))!;
   assert.deepEqual([provisional.finalized, provisional.forecastEur, provisional.varianceEur, provisional.netResultEur], [false, 1_000, 0, 0]);

@@ -8,7 +8,10 @@ import { Icon } from '../../shared/icon';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
-import type { NacalcPayeeRow, NacalcTone, PurchaseNacalc } from './purchase-nacalc-metrics';
+import {
+  nacalcPartnerLine, nacalcPartnerShortage, nacalcProductSub, nacalcReceiptUnitLine, nacalcUnitBasis,
+  type NacalcPayeeRow, type NacalcTone, type PurchaseNacalc,
+} from './purchase-nacalc-metrics';
 import {
   PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
@@ -54,8 +57,8 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
             @if (!concept) {
               <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald + open@if (head.creditEur > 0) { − tegoed }</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.paidEur | eur }} + {{ head.openEur | eur }}@if (head.creditEur > 0) { − {{ head.creditEur | eur }} }</span></span></div>
             }
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per stuk</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.unitEur !== null) { {{ head.unitEur | eur: 4 }} } @else { — }</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.unitLabel }}</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span></span></div>
           </div>
           <p class="ios-section__foot">{{ concept ? 'De nacalculatie begint bij de bestelling: zodra betalingen genoteerd zijn, zie je hier wat de container echt kost.' : head.sentence }}</p>
         </section>
@@ -104,7 +107,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
             <div class="ios-section__head"><h2>Ontvangst</h2></div>
             <div class="ios-group">
               @if (receipt.clean) {
-                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Alles volgens bestelling</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ receipt.usable | num }} stuks</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Alles volgens bestelling</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ receipt.usable | num }} {{ head.unitPlural }}</span></span></div>
               } @else {
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Besteld → bruikbaar</span></span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ receipt.ordered | num }} → {{ receipt.usable | num }}</span></span></div>
                 @if (receipt.missing > 0) {
@@ -122,7 +125,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                       @if (receipt.supplierFact; as fact) { <span class="ios-cell__meta">{{ fact.kind === 'settled-lower' ? 'leverancier afgerekend met ' + eur(fact.amountEur) + ' minder' : fact.kind === 'open' ? 'nog ' + eur(fact.amountEur) + ' open bij de leverancier' : receipt.credit ? 'leverancier volledig betaald' : 'leverancier volledig betaald · noteer een tegoed' }}</span> }</span></div>
                 }
                 @if (receipt.unvaluedPieces > 0) {
-                  <a class="ios-cell" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }"><span class="ios-cell__body"><span class="ios-cell__title">{{ receipt.unvaluedPieces | num }} stuks zonder inkoopwaarde</span><span class="ios-cell__sub">tellen niet mee · waarde vastleggen</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+                  <a class="ios-cell" routerLink="/analyses/purchasing" [queryParams]="{ orderId: orderId() }"><span class="ios-cell__body"><span class="ios-cell__title">{{ receipt.unvaluedPieces | num }} {{ head.unitPlural }} zonder inkoopwaarde</span><span class="ios-cell__sub">tellen niet mee · waarde vastleggen</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
                 }
               }
               @if (receipt.credit; as credit) {
@@ -143,18 +146,18 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                 <button class="ios-cell ios-cell--action" type="button" (click)="openReports.emit()">Schade en tekorten ›</button>
               }
             </div>
-            @if (!receipt.clean && receipt.unitUsableEur !== null && receipt.unitOrderedEur !== null && receipt.unitDeltaEur !== null) {
-              <p class="ios-section__foot">Kost per bruikbaar stuk {{ receipt.unitUsableEur | eur: 4 }}; per besteld stuk zou dit {{ receipt.unitOrderedEur | eur: 4 }} zijn ({{ signedUnit(receipt.unitDeltaEur) }}). Inkoopwaarde = goederenprijs per stuk tegen de orderkoers.</p>
+            @if (!receipt.clean && receiptLine(receipt); as line) {
+              <p class="ios-section__foot">{{ line }}. Inkoopwaarde = goederenprijs per {{ head.setBasis === 'DISPLAY' ? 'set' : head.setBasis === 'MIXED' ? 'set of stuk' : 'stuk' }} tegen de orderkoers.</p>
             }
           </section>
         }
 
-        <section class="ios-section" aria-label="Per stuk">
-          <div class="ios-section__head"><h2>Per stuk</h2></div>
+        <section class="ios-section" [attr.aria-label]="head.unitLabel">
+          <div class="ios-section__head"><h2>{{ head.unitLabel }}</h2></div>
           <div class="ios-group">
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">intern, geen betaling</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.markupEur | eur }}</span></span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Kostbasis voor prijzen</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.pricingEur | eur }}</span></span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per stuk incl. Enrosed kost</span></span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.pricingUnitEur !== null) { {{ head.pricingUnitEur | eur: 4 }} } @else { — }</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.pricingUnitLabel }}</span>@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="ios-cell__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</span></span></div>
             <details class="ios-disclosure np-disclosure">
               <summary>Hoe verhoudt dit zich tot Kosten?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
               <div class="np-disclosure__body">
@@ -199,7 +202,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                     <span class="ios-cell__sub">{{ productSub(row, !!n.receipt) }}</span>
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.eindkostEur | eur }}</span>
-                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? 'geen bruikbare stuks' : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
+                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? (row.set ? 'geen bruikbare sets' : 'geen bruikbare stuks') : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
                   @if (row.productId) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </a>
               } @empty {
@@ -231,11 +234,11 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                   @if (fin.unbilledCount > 0) { <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">{{ fin.unbilledCount }} {{ fin.unbilledCount === 1 ? 'voorschottermijn' : 'voorschottermijnen' }} nog te factureren</span></span></div> }
                 </details>
               }
-              <div class="ios-cell ios-cell--tall"><span class="ios-cell__body"><span class="ios-cell__title">Bij de afrekening</span><span class="ios-cell__sub np-wrap">eindkost per bruikbaar stuk@if (partner.unitEur !== null) { ({{ partner.unitEur | eur: 4 }}) } × verkochte stuks + {{ partner.sharePct }} % resultaat; voorschot verrekend</span></span></div>
+              <div class="ios-cell ios-cell--tall"><span class="ios-cell__body"><span class="ios-cell__title">Bij de afrekening</span><span class="ios-cell__sub np-wrap">{{ partnerLine(partner, head) }}</span></span></div>
               <button class="ios-cell ios-cell--action" type="button" (click)="openPartner.emit()">Partnerfinanciering ›</button>
             </div>
             @if (partner.shortPieces > 0) {
-              <p class="ios-section__foot wk-amount--warn">{{ partner.shortPieces | num }} stuks kwamen niet aan: de partner betaalt alleen voor bruikbare stuks, tegen een hogere kost per stuk.@if (partner.shortageAfterAdvance) { Het voorschot is berekend op {{ partner.ordered | num }} bestelde stuks; verreken het verschil bij de slotfactuur of met een creditnota op het voorschot. }</p>
+              <p class="ios-section__foot wk-amount--warn">{{ partnerShortage(partner, head) }}</p>
             }
           </section>
         }
@@ -309,9 +312,6 @@ export class PurchaseNacalcOverview {
     if (!value) return formatEur(0);
     return (value > 0 ? '+ ' : '− ') + formatEur(Math.abs(value));
   }
-  signedUnit(value: number): string {
-    return (value < 0 ? '− € ' : '+ € ') + Math.abs(value).toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  }
 
   heroSub(n: PurchaseNacalc): string {
     const head = n.headline;
@@ -322,13 +322,14 @@ export class PurchaseNacalcOverview {
     return `${formatEur(Math.abs(head.verschilEur))}${pct} ${head.verschilEur < 0 ? 'goedkoper' : 'duurder'} dan afgesproken${review}`;
   }
 
-  unitBasis(n: PurchaseNacalc): string {
-    const head = n.headline;
-    const base = head.unitBasis === 'USABLE_RECEIVED'
-      ? `${head.unitQuantity.toLocaleString('nl-BE')} bruikbare stuks · ${head.orderedQuantity.toLocaleString('nl-BE')} besteld`
-      : `${head.unitQuantity.toLocaleString('nl-BE')} bestelde stuks`;
-    return base + (head.includesInspection ? ' · incl. inspectie' : '') + (head.ddp ? ' · DDP' : '');
+  /** What the unit figure rests on, per set or per stuk (purchase-nacalc-metrics). */
+  unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
+  receiptLine(receipt: NonNullable<PurchaseNacalc['receipt']>): string | null {
+    const head = this.nacalc()?.headline;
+    return head ? nacalcReceiptUnitLine(receipt, head) : null;
   }
+  readonly partnerLine = (partner: NonNullable<PurchaseNacalc['partner']>, head: PurchaseNacalc['headline']) => nacalcPartnerLine(partner, head, true);
+  readonly partnerShortage = nacalcPartnerShortage;
 
   /**
    * The agreement in one line; the eindkost only when it differs from it (the
@@ -343,14 +344,7 @@ export class PurchaseNacalcOverview {
     return agreed + eindkost + (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · zeevracht via de leverancier (CIF)' : '');
   }
 
-  productSub(row: PurchaseNacalc['products'][number], received: boolean): string {
-    const pieces = received
-      ? `${row.usable.toLocaleString('nl-BE')} bruikbare stuks${row.missing || row.damaged || row.over ? ` (${[row.missing ? row.missing + ' te weinig' : '', row.damaged ? row.damaged + ' beschadigd' : '', row.over ? row.over + ' te veel' : ''].filter(Boolean).join(', ')})` : ''}`
-      : `${row.ordered.toLocaleString('nl-BE')} bestelde stuks`;
-    const unit = row.unitEur !== null && row.unitQuantity > 0 ? ` · ${row.unitEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 })}/st` : '';
-    const pricing = row.pricingUnitEur !== null && row.unitQuantity > 0 ? ` · ${row.pricingUnitEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 })} incl. Enrosed kost` : '';
-    return pieces + unit + pricing;
-  }
+  productSub(row: PurchaseNacalc['products'][number], received: boolean): string { return nacalcProductSub(row, received); }
 
   /** The action cell in words: the Te doen verb, the payee or term, the amount; the read view settles in the editor. */
   todoLabel(todo: LedgerTodo): string {

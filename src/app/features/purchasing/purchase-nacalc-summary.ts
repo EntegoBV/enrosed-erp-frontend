@@ -24,7 +24,12 @@ import type { NacalcTone, PurchaseNacalcSummary } from './purchase-payment-resul
             @if (s.kind !== 'concept') {
               <div><dt>Verschil met afspraak</dt><dd [class.wk-amount--muted]="s.varianceEur === 0" [class.wk-amount--warn]="s.varianceEur > 0" [class.wk-amount--in]="s.varianceEur < 0">{{ variance(s) }}</dd></div>
             }
-            <div><dt>Per stuk</dt><dd>@if (s.unitEur !== null) { {{ s.unitEur | eur: 4 }} } @else { — }<small class="nc-summary__basis">{{ s.unitQuantity | num }} {{ s.unitBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></dd></div>
+            @if (s.unitWord === 'verkoopeenheid') {
+              <!-- Sets and pieces together: the average per piece, sets counted with their pieces. -->
+              <div><dt>Gem. per stuk</dt><dd>@if (s.pieceEur !== null) { {{ s.pieceEur | eur: 4 }} } @else { — }<small class="nc-summary__basis">{{ s.pieceQuantity | num }} stuks</small></dd></div>
+            } @else {
+              <div><dt>{{ s.unitWord === 'set' ? 'Per set' : 'Per stuk' }}</dt><dd>@if (s.unitEur !== null) { {{ s.unitEur | eur: 4 }} } @else { — }<small class="nc-summary__basis">{{ s.unitQuantity | num }} {{ s.unitBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} {{ s.unitWord === 'set' ? 'sets' : 'stuks' }}</small></dd></div>
+            }
             @if (s.kind === 'provisional' || s.kind === 'review') {
               @if (s.reviewEur > 0) {
                 <div><dt>Na te kijken</dt><dd class="wk-amount--warn">{{ s.reviewEur | eur }}</dd></div>

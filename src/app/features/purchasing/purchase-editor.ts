@@ -4363,6 +4363,12 @@ export class PurchaseEditor {
     return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
   }
 
+  /** A product sold per set: its pieces, so a per-unit cost reads '/set' with the price per piece beside it; null per piece. */
+  setPiecesOf(productId: number): number | null {
+    const unit = productSalesUnit(this.products().find((candidate) => candidate.id === productId));
+    return unit.isDisplay ? unit.piecesPerDisplay : null;
+  }
+
   stockOf(productId: number): number {
     return this.products().find((product) => product.id === productId)?.stockQuantity ?? 0;
   }

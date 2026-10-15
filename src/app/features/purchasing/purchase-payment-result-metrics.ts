@@ -184,6 +184,11 @@ export interface PurchaseNacalcSummary {
   unitEur: number | null;
   unitQuantity: number;
   unitBasis: UnitCostBasis;
+  /** Per set / per stuk: stuk (PIECE), set (DISPLAY) or verkoopeenheid (MIXED, then the card shows the average per piece). */
+  unitWord: 'stuk' | 'set' | 'verkoopeenheid';
+  pieceEur: number | null;
+  pieceQuantity: number;
+  setPieces: number | null;
   /** The confirmed differences, as purchasePaymentResult counts them; the full nacalculatie explains the Verschil with these. */
   settledSavingsEur: number;
   settledOverrunsEur: number;
@@ -213,6 +218,10 @@ export function purchaseNacalcSummary(
     unitEur: totals.forecastExternalUnitEur ?? null,
     unitQuantity: totals.unitCostQuantity ?? 0,
     unitBasis: totals.unitCostBasis ?? 'ORDERED',
+    unitWord: totals.setBasis === 'DISPLAY' ? 'set' : totals.setBasis === 'MIXED' ? 'verkoopeenheid' : 'stuk',
+    pieceEur: totals.forecastExternalPieceEur ?? null,
+    pieceQuantity: totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0,
+    setPieces: totals.setPieces ?? null,
     settledSavingsEur: result.settledSavingsEur,
     settledOverrunsEur: result.settledOverrunsEur,
     additionalCostsEur: result.additionalCostsEur,
