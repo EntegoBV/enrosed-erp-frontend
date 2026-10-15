@@ -5,6 +5,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { elementWidth } from '../../shared/workspace-layout';
 import { categoryChoices } from './cost-categories';
+import { syncMoment } from './finance-format';
 import { cashTotalOf } from './finance-metrics';
 import { FinanceSectionApi } from './finance-section';
 import { FINANCE_TABS, financeNavOf } from './finance-sections';
@@ -276,11 +277,7 @@ export class FinanceToolbar {
 
   /** '08:12' today, '14 okt' before. */
   private when(instant: string): string {
-    const date = new Date(instant);
-    if (!Number.isFinite(date.getTime())) return '';
-    const day = date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });
-    return day === this.state.today() ? date.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' })
-      : date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', timeZone: 'Europe/Brussels' }).replace('.', '');
+    return syncMoment(instant, this.state.today());
   }
 
   pickCategory(event: MouseEvent): void {

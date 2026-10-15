@@ -9,7 +9,7 @@ import { BankAccountCard } from './bank-account-card';
 import { BankMovementPanel } from './bank-movement-panel';
 import type { CostLedgerRow } from './cost-ledger';
 import { AttentionItem } from './finance-attention';
-import { dayMonth } from './finance-format';
+import { dayMonth, syncMoment } from './finance-format';
 import { periodRange } from './finance-sections';
 import { FinanceState } from './finance-state';
 import { KaslijnCard } from './kaslijn-card';
@@ -41,7 +41,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
           <button class="fin-total" type="button" role="listitem" (click)="totalTile()">
             <span class="fin-total__top"><span>Op de bank</span><small>{{ accountCount() }}</small></span>
             <strong class="fin-total__value">{{ bankKnown() ? (state.currentBankEur() | eur) : 'Nog niet ingesteld' }}</strong>
-            @if (bankKnown()) { <span class="fin-total__sub" [class.is-warn]="bankStale()">{{ bankSub() }}</span> }
+            @if (bankKnown()) { <span class="fin-total__sub" [class.is-warn]="bankStale() || bankPartial()">{{ bankSub() }}</span> }
             @else { <span class="fin-total__sub fin-total__action">Saldo invullen ›</span> }
             <span class="fin-total__sub" [class.is-warn]="bankStale()">{{ computedSub() }}</span>
             <span class="fin-total__moves"><span><small>Vandaag</small><b>{{ signedEur(moves().today) }}</b></span><span><small>Deze week</small><b>{{ signedEur(moves().week) }}</b></span></span>
@@ -129,7 +129,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
       <button class="ios-hero fin-hero" type="button" (click)="totalTile()">
         <span class="ios-hero__label">Op de bank · {{ accountCount() }}</span>
         <div class="ios-hero__value">{{ bankKnown() ? (state.currentBankEur() | eur) : 'Nog niet ingesteld' }}</div>
-        <div class="ios-hero__sub" [class.is-warn]="bankStale()">{{ bankKnown() ? computedSub() : 'Tik om je saldo in te vullen' }}</div>
+        <div class="ios-hero__sub" [class.is-warn]="bankStale() || bankPartial()">{{ bankKnown() ? bankSub() : 'Tik om je saldo in te vullen' }}</div>
         <div class="fin-hero__moves"><span><small>Vandaag</small><b>{{ signedEur(moves().today) }}</b></span><span><small>Deze week</small><b>{{ signedEur(moves().week) }}</b></span></div>
         <app-icon class="ios-hero__chev" name="chevron-right" [size]="18" />
       </button>
@@ -239,6 +239,8 @@ export class BankCockpit {
     && !this.state.containersLoading() && !this.state.loadErrors().length);
   readonly bankKnown = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
   readonly bankStale = computed(() => this.state.accountsView().some((account) => account.ageDays !== null && account.ageDays > 14));
+  /** "deels bekend": an active account still has no reading, so the total leaves it out. */
+  readonly bankPartial = computed(() => this.bankKnown() && this.state.accountsView().some((account) => !account.reading));
   readonly accountCount = computed(() => { const n = this.state.accountsView().length; return `${n} ${n === 1 ? 'rekening' : 'rekeningen'}`; });
   /** Today's Overzicht sub-line, verbatim. */
   readonly bankSub = computed(() => {
@@ -328,7 +330,7 @@ export class BankCockpit {
     const suggestion = this.state.suggestions().get(line.id);
     const capsule = this.capsule(line);
     if (!suggestion || capsule.label === 'Bekijk') { this.state.openLine(line.id); return; }
-    if (suggestion.target.kind === 'cost-pattern') { this.state.openLine(line.id); return; }
+    if (suggestion.target.kind === 'cost-pattern') { this.state.bookPattern(line, suggestion.target.costId); return; }
     void this.state.linkLine(line, suggestion.target);
   }
 
@@ -338,7 +340,7 @@ export class BankCockpit {
     const at = this.sync.status()?.lastSyncAt;
     return [`${n} ${n === 1 ? 'rekening' : 'rekeningen'}`, `${this.unlinkedCount()} te koppelen`, `${this.exactCount()} met exacte suggestie`,
       `${attention} ${attention === 1 ? 'punt vraagt' : 'punten vragen'} aandacht`,
-      ...(this.state.hasOdooAccounts() && at ? [`Odoo opgehaald ${new Date(at).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' })}`] : []),
+      ...(this.state.hasOdooAccounts() && at ? [`Odoo opgehaald ${syncMoment(at, this.state.today())}`] : []),
     ].join(' · ');
   });
 

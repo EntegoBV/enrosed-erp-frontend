@@ -1122,6 +1122,21 @@ export class FinanceState {
   }
 
   /**
+   * "Boeken" on a cost pattern (§3.8; the row, the swipe and the phone's
+   * "Boek"): the cost registration of this transaction starts from the latest
+   * cost of that pattern.
+   */
+  bookPattern(line: BankStatementLine, costId: number): void {
+    const cost = this.costs().find((item) => item.id === costId);
+    if (!cost) { this.openCostFromBank(line); return; }
+    const gross = Math.abs(line.amountEur), vat = cost.vatPct ?? 0;
+    this.openCostFromBank(line, { category: cost.category, description: cost.description, party: cost.party || line.counterparty || null,
+      vatPct: cost.vatPct, vatRegime: cost.vatRegime, vatRegimeConfirmed: !!cost.vatRegime, supplierCountry: cost.supplierCountry, costKind: cost.costKind,
+      expenseType: cost.expenseType, vatDeductiblePct: cost.vatDeductiblePct, taxDeductiblePct: cost.taxDeductiblePct, salesChannel: cost.salesChannel,
+      amountInclEur: gross, amountExclEur: Math.round((gross / (1 + vat / 100)) * 100) / 100 });
+  }
+
+  /**
    * Starts from known cash facts only; the document must supply its VAT
    * treatment and invoice date. `prefill` starts from more: Bankkosten and
    * Rente (Boeken als), or the latest cost of a cost pattern.

@@ -35,6 +35,7 @@ import { FinanceInspector } from './finance-inspector';
 import { FINANCE_SECTION } from './finance-section';
 import { FINANCE_NAV, FINANCE_TABS, financeNavOf, financeSection } from './finance-sections';
 import { FinanceShell } from './finance-shell';
+import { syncMoment } from './finance-format';
 import { financeQueryParams, parseFinanceLocation } from './finance-url';
 import { financeShortcut } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
@@ -259,10 +260,10 @@ export class CostsPage {
     return ({ open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
       costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
   });
-  /** Bank's sub line: "{label} opgehaald {hh:mm}" per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
+  /** Bank's sub line: "{label} opgehaald {hh:mm}" (an older import: "{d mmm}") per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
   private readonly bankSub = computed(() => {
     const at = this.sync.status()?.lastSyncAt ?? null;
-    const time = at ? new Date(at).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' }) : null;
+    const time = at ? syncMoment(at, this.state.today()) : null;
     return this.state.accountsView().map((account) => account.source === 'ODOO' ? `${account.label} ${time ? 'opgehaald ' + time : 'nog niet opgehaald'}` : `${account.label} handmatig`).join(' · ') || null;
   });
   readonly phoneInspector = computed(() => !this.state.desk() && !this.state.costDraft() && !this.state.paySheet()

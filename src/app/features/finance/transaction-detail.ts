@@ -183,7 +183,9 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
               }
             } @else {
               <section class="wk-section fin-txd__steps">
-                @if (pattern(); as hint) { <p class="fin-hint">{{ hint }}</p> }
+                @if (pattern(); as hint) {
+                  <p class="fin-hint fin-txd__pattern"><span>{{ hint }}</span><button class="wk-btn wk-btn--sm wk-btn--primary btn btn--primary" type="button" (click)="bookPattern(row)">Boeken</button></p>
+                }
                 <app-bank-allocation-steps [panel]="this" />
                 @if (engineTarget(); as target) {
                   @if (enginePreview(); as change) {
@@ -505,6 +507,11 @@ export class TransactionDetail extends BankMovementPanel {
   }
   amountOf(target: LinkTarget): number {
     return target.kind === 'cost-new' || target.kind === 'sales-new' ? target.openEur : target.kind === 'term-new' ? target.payable.remainingEur : target.amountEur;
+  }
+  /** "Boeken" beside a cost pattern: the cost registration prefilled from the latest cost of that pattern (the row's action). */
+  bookPattern(row: BankStatementLine): void {
+    const target = this.suggestion()?.target;
+    if (target?.kind === 'cost-pattern') this.state.bookPattern(row, target.costId);
   }
   choose(target: LinkTarget): void { this.chosen.set(target); this.follow.set(true); this.surplus.set('ADJUST'); }
   searchAll(): void { this.view.set('search'); this.setAllocationStep('documents'); this.localSelectedKey.set(null); }

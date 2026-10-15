@@ -1160,19 +1160,9 @@ export class BankMovementPanel {
   runAction(row: BankStatementLine): void {
     const suggestion = this.suggestionOf(row), action = this.actionOf(row);
     if (!suggestion || !action) { this.openLine(row); return; }
-    if (suggestion.target.kind === 'cost-pattern') { this.bookPattern(row, suggestion.target.costId); return; }
+    if (suggestion.target.kind === 'cost-pattern') { this.state.bookPattern(row, suggestion.target.costId); return; }
     if (action.kind === 'open') { this.openLine(row); return; }
     void this.state.linkLine(row, suggestion.target);
-  }
-  /** "Boeken" on a cost pattern: the cost registration starts from the latest cost of that pattern. */
-  bookPattern(row: BankStatementLine, costId: number): void {
-    const cost = this.state.costs().find(item => item.id === costId);
-    if (!cost) { this.state.openCostFromBank(row); return; }
-    const gross = Math.abs(row.amountEur), vat = cost.vatPct ?? 0;
-    this.state.openCostFromBank(row, { category: cost.category, description: cost.description, party: cost.party || row.counterparty || null,
-      vatPct: cost.vatPct, vatRegime: cost.vatRegime, vatRegimeConfirmed: !!cost.vatRegime, supplierCountry: cost.supplierCountry, costKind: cost.costKind,
-      expenseType: cost.expenseType, vatDeductiblePct: cost.vatDeductiblePct, taxDeductiblePct: cost.taxDeductiblePct, salesChannel: cost.salesChannel,
-      amountInclEur: gross, amountExclEur: Math.round(gross / (1 + vat / 100) * 100) / 100 });
   }
   /** What the Koppeling cell says: the booking, the linked target, the suggestion with its reasons, or that nothing was found. */
   koppeling(row: BankStatementLine): Koppeling | null {

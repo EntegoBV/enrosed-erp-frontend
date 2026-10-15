@@ -7,6 +7,7 @@ import { signal, computed } from '@angular/core';
 import { FINANCE_TABS, financeNavOf, financeSection } from '../src/app/features/finance/finance-sections.ts';
 import { parseFinanceLocation, patchLocation } from '../src/app/features/finance/finance-url.ts';
 import { cashTotalOf, openOf, paidOf } from '../src/app/features/finance/finance-metrics.ts';
+import { syncMoment } from '../src/app/features/finance/finance-format.ts';
 
 async function selectedClass(file: string, name: string, members: string[]) {
   const source = await readFile(new URL(`../src/app/features/finance/${file}`, import.meta.url), 'utf8');
@@ -17,7 +18,7 @@ async function selectedClass(file: string, name: string, members: string[]) {
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, kept);
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
-  vm.runInNewContext(js, { exports, signal, computed, FINANCE_TABS, financeSection, financeNavOf, cashTotalOf, openOf, paidOf });
+  vm.runInNewContext(js, { exports, signal, computed, FINANCE_TABS, financeSection, financeNavOf, cashTotalOf, openOf, paidOf, syncMoment });
   return exports[name];
 }
 const State = await selectedClass('finance-state.ts', 'FinanceState', ['inspect', 'inspectParents', 'inspectOrigin', 'inspectorBackLabel', 'inspectorOriginLabel', 'inspectItem', 'inspectRelated', 'backInspector', 'selectInspector', 'closeInspector', 'clearInspector']);
@@ -31,7 +32,7 @@ function setup(params: Record<string, string> = { view: 'bank', tab: 'movements'
   state.go = (patch: any) => { state.location.set(patchLocation(state.location(), patch)); };
   state.inspectTitle = (target: any) => `${target.kind} ${target.id}`;
   Object.assign(state, { desk: signal(false), costDraft: signal(null), paySheet: signal(null), recurringDraft: signal(null), menu: signal(null),
-    accountLabel: () => 'KBC-zichtrekening', segmentWarn: () => false, leaveAnalysis: () => { state.leftAnalysis = true; },
+    accountLabel: () => 'KBC-zichtrekening', segmentWarn: () => false, leaveAnalysis: () => { state.leftAnalysis = true; }, today: signal('2026-10-15'),
     accountsView: () => [{ account: 'BE94731074082814', label: 'KBC-zichtrekening', source: 'ODOO' }] });
   const page = new Page(); page.state = state; page.current = computed(() => financeSection(state.location().view));
   page.sync = { status: () => ({ lastSyncAt: '2026-10-15T06:12:00Z' }) };
@@ -94,6 +95,9 @@ test('mobile section chooser uses full names; Transacties is a phone tab: no bac
   state.go({ view: 'bank', tab: 'accounts' });
   assert.equal(page.pageTitle(), 'Bank');
   assert.match(page.phoneSubtitle(), /^KBC-zichtrekening opgehaald \d\d:\d\d$/, 'Bank\'s sub: what was fetched, short enough for 360 px');
+  assert.equal(page.phoneSubtitle(), 'KBC-zichtrekening opgehaald 08:12');
+  state.today.set('2026-10-20');
+  assert.equal(page.phoneSubtitle(), 'KBC-zichtrekening opgehaald 15 okt', 'an import of an earlier day shows its day, never a bare time');
   state.go({ view: 'analysis' });
   assert.equal(page.subScreen(), true, 'Rapportage stays a sub-screen');
   page.backFromSection(); assert.equal(state.leftAnalysis, true);
