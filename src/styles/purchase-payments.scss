@@ -48,9 +48,12 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-section__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:8px}
 .pw-section__title{margin:0 0 8px;font-size:13.5px;font-weight:700;scroll-margin-top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px)}.pw-section__head>.pw-section__title{margin:0}
 .pw-payees,.pw-ledger{border:1px solid var(--line)}
-/* chev · Ontvanger · Afspraak · Betaald · [Verschil] · Open · Nu · Status · Acties */
-.pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 96px}
-.pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 96px}
+/* chev · Ontvanger · Afspraak · Betaald · [Verschil] · Open · Nu · Status · Acties. The actions column holds
+   'Afrekenen…' and the ⋯ side by side (122 px), so a button never lies over the status. With Verschil the
+   name and the amounts keep a floor (a whole 'Leverancier', € 31.048,54) and Verschil takes less; Status
+   gets what is left and its pill wraps there. */
+.pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1fr) minmax(0,1.4fr) 122px}
+.pw-payees--diff{--wk-cols:28px minmax(112px,1.5fr) repeat(2,minmax(78px,1fr)) minmax(64px,.8fr) minmax(78px,1fr) minmax(78px,1fr) minmax(0,1.4fr) 122px}
 .pw-payees .wk-th{line-height:1.2;white-space:normal}
 /* Datum · Ontvanger · Omschrijving · Bedrag · In euro · Afrekening · Bewijs · Acties */
 .pw-ledger{--wk-cols:92px 100px minmax(0,1.6fr) minmax(104px,1fr) minmax(100px,1fr) minmax(0,1.1fr) 140px 110px}
@@ -69,7 +72,7 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-chev{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .pw-chev:hover{background:var(--surface-2);color:var(--ink)}
 .pw-chev app-icon{transition:transform .15s}.pw-chev[aria-expanded=true] app-icon{transform:rotate(90deg)}
-.pw-sub{display:grid;min-width:0;padding-left:36px}
+.pw-sub{display:grid;min-width:0;padding-left:36px;white-space:normal;overflow-wrap:break-word}
 .pw-note-row>.wk-td{grid-column:1/-1;padding-left:64px;color:var(--muted)}.pw-note-row .wk-btn{margin-left:10px}
 /* what an agreement is made of: label across the name columns, the amount under Open */
 .pw-comp-row>.pw-comp__label{grid-column:2/5;display:grid;min-width:0;padding-left:36px}
@@ -87,6 +90,9 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-divider{margin-top:10px;border-top:1px solid var(--line)}
 .pw-status-link{display:block;margin-top:2px;font-size:11.5px;text-align:left}
 .pw-payees .wk-td--wrap .pw-status-sub{white-space:normal;overflow:visible}
+/* a long status ('Betaald · € 0,50 te veel') wraps inside its pill instead of running out of the column; a netted
+   term's pill keeps 'Betaald · verrekend' and 'met 30% bij bestelling' goes under it (LedgerTerm.statusSplit) */
+.pw-payees :is(.wk-td--wrap,.pw-when-tiny)>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;line-height:1.2;text-align:left}
 .pw-open-sub{display:block}
 .pw-proof{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 6px;overflow:visible}
 .pw-bank{display:inline-flex;align-items:center;gap:4px;color:var(--ok);white-space:nowrap}
@@ -116,8 +122,8 @@ app-purchase-desk .desk-kpi--button span{white-space:normal;line-height:1.3}
    (880 rather than 900 so a 1536 px laptop, at 898 px of main column, keeps the real column) */
 @container pw-main (max-width:879.98px){
  .pw [data-pw-hide~=mid]{display:none}.pw .pw-when-mid{display:inline-flex}.pw .wk-td__sub.pw-when-mid{display:block}
- .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.4fr) 96px}
- .pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) 96px}
+ .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.4fr) 122px}
+ .pw-payees--diff{--wk-cols:28px minmax(112px,1.5fr) repeat(2,minmax(78px,1fr)) minmax(64px,.8fr) minmax(78px,1fr) minmax(0,1.5fr) 122px}
  .pw-ledger{--wk-cols:92px 100px minmax(0,1fr) 116px 160px 110px}}
 /* narrow: Verschil and the text buttons go; the ⋯ carries every action */
 @container pw-main (max-width:759.98px){
@@ -156,6 +162,17 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-row__bank{color:var(--ok)}
 .pp-row__proof{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pp-term{--ios-sep-inset:58px}.pp-term .ios-cell__lead{width:30px}
+/* A term's status stays beside its amounts while both fit; a long one ('Betaald · verrekend met 30% bij
+   bestelling') takes its own line under them and wraps there. Only these term cells: the kit keeps its
+   one-line meta everywhere else. */
+:is(.pp-term,.payee-sheet__term){flex-wrap:wrap;row-gap:2px}
+:is(.pp-term,.payee-sheet__term)>.ios-cell__body{flex:1 1 auto}
+:is(.pp-term,.payee-sheet__term)>.ios-cell__trail{flex:1 1 auto;min-width:0;max-width:100%}
+:is(.pp-term,.payee-sheet__term) .ios-cell__meta{white-space:normal;line-height:1.3}
+.payee-sheet__term .ios-cell__sub{overflow-wrap:anywhere;white-space:normal}
+/* the chevron stays centred on the right when the status drops to its own line */
+.payee-sheet__term:not(.payee-sheet__term--done){padding-right:38px}
+.payee-sheet__term>.ios-cell__chev{position:absolute;top:50%;right:10px;margin:-8px 0 0}
 .pp-detail .ios-cell__value{white-space:normal}
 .payee-sheet__lead{margin:0 16px 14px;color:var(--muted);font-size:14px;text-align:center}
 .payee-sheet__split{margin:10px 0 0;color:var(--muted);font-size:13px}

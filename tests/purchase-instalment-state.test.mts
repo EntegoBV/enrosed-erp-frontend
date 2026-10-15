@@ -35,7 +35,7 @@ test('the canonical lower ORDERED settlement closes only its 30 percent term', (
   const before = structuredClone(view);
   const rows = purchaseInstalmentState(view, plan, [payment()]);
   assert.deepEqual(rows[0], { due: 'ORDERED', label: '30% bij bestelling', full: 17_886,
-    covered: 17_000, amount: 0, settled: true, state: 'paid' });
+    covered: 17_000, offset: 0, amount: 0, settled: true, state: 'paid' });
   assert.equal(rows[0].full - rows[0].covered, 886, 'Show the lower settled amount without claiming the full plan was paid');
   assert.equal(rows.reduce((sum, row) => sum + row.amount, 0), 41_734);
   assert.deepEqual(rows.slice(1).map(row => [row.settled, row.state]), [[false, 'later'], [false, 'later']]);
@@ -182,4 +182,55 @@ test('legacy unpaid cents do not receive a paid badge without an explicit settle
     [payment({ amountEur: 99.98, instalmentDue: null, settles: false })]);
   assert.equal(state[0].amount, 0.02);
   assert.equal(state[0].state, 'due');
+});
+
+/** PO 35 (PO-2026-002) as the netting server sends it: 30 % paid € 61,28 too much, 70 % € 60,78 too little. */
+function po35(): PurchaseInstalmentReconciliation[] {
+  return [
+    { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 9_314.41, paidEur: 9_375.69, remainingEur: 0, settledSavingEur: 0,
+      overpaidEur: 0.5, explicitlySettled: false, finalized: false, offsetEur: -60.78 },
+    { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 21_733.63, paidEur: 21_672.85, remainingEur: 0, settledSavingEur: 0,
+      overpaidEur: 0, explicitlySettled: false, finalized: true, offsetEur: 60.78 },
+  ];
+}
+const po35Plan: Instalment[] = [{ due: 'ORDERED', label: '30% bij bestelling', share: 0.3 }, { due: 'SHIPPED', label: '70% bij vertrek', share: 0.7 }];
+const po35Payments = [payment({ id: 1, amount: 9_375.69, amountEur: 9_375.69, settles: false, instalmentDue: 'ORDERED' }),
+  payment({ id: 2, amount: 21_672.85, amountEur: 21_672.85, settles: false, instalmentDue: 'SHIPPED' })];
+
+test('netted terms: a shortfall another term covered is paid, and nothing is open on either term', () => {
+  const view = purchase(po35());
+  (view.order as { status: string }).status = 'ONTVANGEN';
+  const rows = purchaseInstalmentState(view, po35Plan, po35Payments);
+  assert.deepEqual(rows.map(row => [row.due, row.full, row.covered, row.offset, row.amount, row.settled, row.state]), [
+    ['ORDERED', 9_314.41, 9_375.69, -60.78, 0, false, 'paid'],
+    ['SHIPPED', 21_733.63, 21_672.85, 60.78, 0, false, 'paid'],
+  ]);
+  // Paid plus what the other term covered reaches the Afspraak: paid, even before the server calls it final.
+  const provisional = po35();
+  provisional[1].finalized = false;
+  assert.equal(purchaseInstalmentState(purchase(provisional), po35Plan, po35Payments)[1].state, 'paid');
+  // The mirror: a later surplus covers an earlier gap.
+  const mirror = po35();
+  Object.assign(mirror[0], { paidEur: 9_253.13, overpaidEur: 0, finalized: true, offsetEur: 61.28 });
+  Object.assign(mirror[1], { paidEur: 21_795.41, overpaidEur: 0.5, finalized: false, offsetEur: -61.28 });
+  assert.deepEqual(purchaseInstalmentState(purchase(mirror), po35Plan, po35Payments).map(row => [row.offset, row.amount, row.state]),
+    [[61.28, 0, 'paid'], [-61.28, 0, 'paid']]);
+  // An older response without offsetEur reads as zero: the term is judged on its own figures.
+  const old = po35().map(({ offsetEur: _offset, ...term }) => term);
+  assert.deepEqual(purchaseInstalmentState(purchase(old), po35Plan, po35Payments).map(row => row.offset), [0, 0]);
+});
+
+test('a partly covered term asks only the netted rest, now once it is due and later before', () => {
+  const partly: PurchaseInstalmentReconciliation[] = [
+    { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 300, paidEur: 310, remainingEur: 0, settledSavingEur: 0,
+      overpaidEur: 0, explicitlySettled: false, finalized: true, offsetEur: -10 },
+    { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 700, paidEur: 650, remainingEur: 40, settledSavingEur: 0,
+      overpaidEur: 0, explicitlySettled: false, finalized: false, offsetEur: 10 },
+  ];
+  const sailed = purchase(partly);
+  (sailed.order as { status: string }).status = 'ONDERWEG';
+  const due = purchaseInstalmentState(sailed, po35Plan, po35Payments)[1];
+  assert.deepEqual([due.state, due.amount, due.offset, due.covered], ['due', 40, 10, 650]);
+  const waiting = purchaseInstalmentState(purchase(partly), po35Plan, po35Payments)[1];
+  assert.deepEqual([waiting.state, waiting.amount], ['later', 40]);
 });

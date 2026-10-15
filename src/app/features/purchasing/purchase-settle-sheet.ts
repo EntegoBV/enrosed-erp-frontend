@@ -105,11 +105,12 @@ export class PurchaseSettleSheet {
   readonly editCarrier = output<PurchasePayment>();
 
   readonly desk = computed(() => this.viewport.active());
-  readonly termChoice = computed(() => this.payee().payee === 'SUPPLIER' && this.canonical() && this.payee().terms.length > 0);
+  /** A term netted with another one is settled with the whole supplier only: alone it would reopen the other term. */
+  readonly termChoice = computed(() => this.payee().payee === 'SUPPLIER' && this.canonical() && this.payee().terms.some(term => term.offsetEur === 0));
   readonly scopeOptions = computed<SegmentOption[]>(() => [
     { id: 'GROUP', label: 'Alles aan ' + this.payee().label }, { id: 'TERM', label: 'Eén termijn' },
   ]);
-  readonly choosableTerms = computed(() => this.payee().terms.filter(term => !term.settled || term.due === this.draft().due));
+  readonly choosableTerms = computed(() => this.payee().terms.filter(term => (!term.settled && term.offsetEur === 0) || term.due === this.draft().due));
   readonly selected = computed(() => this.carriers().find(option => option.id === this.draft().paymentId) ?? null);
   /** No payment tied to the term: open the one that lost its term (a whole-supplier settlement strips it), to pick 'Voor termijn' again. */
   readonly relink = computed(() => relinkPayment(this.payee()));
@@ -125,7 +126,7 @@ export class PurchaseSettleSheet {
 
   pickScope(id: string): void {
     if (id !== 'TERM') { this.scope.emit({ scope: 'GROUP', due: null }); return; }
-    const terms = this.payee().terms;
+    const terms = this.payee().terms.filter(term => term.offsetEur === 0);
     const due = this.draft().due ?? terms.find(term => term.canSettle)?.due ?? terms.find(term => !term.settled)?.due ?? terms[0]?.due ?? null;
     this.scope.emit({ scope: 'TERM', due });
   }

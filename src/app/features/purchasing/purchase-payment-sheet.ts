@@ -228,7 +228,7 @@ export class PurchasePaymentSheet {
   /** The bank's day, as the host books the line: a later 'Betaald op' cannot be on a statement yet. */
   readonly today = input.required<string>();
   readonly chips = input<readonly { label: string; amount: number; due?: Due | null }[]>([]);
-  readonly instalmentOptions = input<readonly { due: Due; label: string }[]>([]);
+  readonly instalmentOptions = input<readonly { due: Due; label: string; netted?: boolean }[]>([]);
   /** What is still open for the chosen term or payee. */
   readonly openHint = input<{ label: string; amountEur: number } | null>(null);
   readonly overageEur = input(0);

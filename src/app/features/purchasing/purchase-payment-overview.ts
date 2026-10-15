@@ -124,7 +124,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   @for (todo of todos(); track todo.key) {
                     <div class="ios-cell">
                       <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [class]="todoTone(todo)"><app-icon [name]="todoIcon(todo)" [size]="17" /></span></span>
-                      <span class="ios-cell__body"><span class="ios-cell__title">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
                       <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy() && todo.kind !== 'proof' && todo.kind !== 'incomplete'" (click)="runTodo(todo)">{{ todoAction(todo) }}</button>
                     </div>
                   }
@@ -153,7 +153,8 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                     @for (term of item.terms; track term.due) {
                       <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
                         <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}@if (term.differenceEur) { · {{ abs(term.differenceEur) | eur }} {{ term.differenceEur < 0 ? 'minder' : 'meer' }} }</span>
+                          @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
                         <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
                       </button>
                     }
@@ -307,22 +308,26 @@ export class PurchasePaymentOverview {
   readonly day = dayOf;
   readonly month = monthOf;
   readonly round = Math.round;
+  readonly abs = Math.abs;
   readonly proofLine = proofLine;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
   readonly payeeItems = computed(() => payeeMenuItems(this.ledger()));
+  /** The supplier's terms: a payment of a netted term is settled with the whole supplier (settleWith). */
+  readonly supplierTerms = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER')?.terms ?? []);
   /** What the review headline points at: overpaid, without an agreement or incomplete. */
   readonly review = computed(() => {
     const payee = this.ledger()?.summary.headline.payee;
     if (!payee) return null;
     const kind = payee.status.kind;
     return {
-      amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? payee.higherEur : null,
+      amountEur: kind === 'UNBUDGETED' ? payee.paidEur : kind === 'OVERPAID' ? (payee.reviewEur > 0 ? payee.reviewEur : payee.higherEur) : null,
       text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
+  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** 'Verwachte eindkost € 70.204,31 · geen verschil', or where the Nacalculatie lives while it is not loaded. */
   readonly nacalcSub = computed(() => {
     const n = this.nacalc();
@@ -406,7 +411,7 @@ export class PurchasePaymentOverview {
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
       case 'proof': this.proof.emit(row.payment); break;
-      case 'settle': this.settle.emit(settleWith(row)); break;
+      case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
       case 'remove': this.remove.emit(row.payment); break;
     }
   }

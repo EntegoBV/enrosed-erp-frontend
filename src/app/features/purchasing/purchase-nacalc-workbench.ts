@@ -169,7 +169,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
                               <span class="wk-td" role="gridcell"></span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell" [class.wk-amount--in]="term.verschilEur < 0" [class.wk-amount--warn]="term.verschilEur > 0" [class.wk-amount--muted]="term.verschilEur === 0">{{ signed(term.verschilEur) }}@if (reasonBeyondStatus(term.reason)) { <span class="wk-td__sub nc-reason">{{ term.reasonLabel }}</span> }</span>
-                              <span class="wk-td" role="gridcell" data-nc-hide="mid"><span class="wk-pill" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
+                              <span class="wk-td wk-td--wrap" role="gridcell" data-nc-hide="mid"><span class="wk-pill" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
                               <span class="wk-td" role="gridcell"></span>
                             </div>
                           }
@@ -466,7 +466,7 @@ export class PurchaseNacalcWorkbench {
 
   tone(tone: LedgerTone): string { return tone === 'warn' ? 'tone-warn' : tone === 'ok' ? 'tone-ok' : ''; }
   /** Next to the status pill only a reason that says more than the pill does: how much is open, what is historic, what has no agreement. */
-  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional' || reason === 'credit'; }
+  reasonBeyondStatus(reason: NacalcReason): boolean { return reason === 'open' || reason === 'partly-settled' || reason === 'legacy' || reason === 'additional' || reason === 'credit' || reason === 'offset'; }
   pillClass(tone: NacalcTone): string { return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : ''; }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
   toggle(payee: Payee): void {

@@ -11,9 +11,9 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeRowAction, sortLedgerRows, type Due, type LedgerCredit, type LedgerRow,
-  type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
-  type SupplierCreditAction,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeDifferenceState, payeeRowAction, sortLedgerRows, type Due,
+  type LedgerCredit, type LedgerRow, type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction,
+  type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
   creditMenuItems, formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termPayment,
@@ -126,7 +126,7 @@ type MenuState =
             <div class="pw-content" [class.is-loading]="state() === 'refreshing'" [attr.inert]="state() === 'refreshing' ? '' : null" [attr.aria-busy]="state() === 'refreshing'">
               <div class="pw-main">
                 <div class="pw-summary">
-                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@if (sum.lowerEur > 0) { − {{ sum.lowerEur | eur }} minder betaald }@if (sum.higherEur > 0) { + {{ sum.higherEur | eur }} meer betaald } = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
+                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@if (sum.lowerEur > 0) { − {{ sum.lowerEur | eur }} minder betaald}@if (sum.higherEur > 0) { + {{ sum.higherEur | eur }} meer betaald} = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
                   @if (sum.agreedEur > 0) {
                     <div class="pw-meter">
                       <div class="wk-meter" role="img" [attr.aria-label]="'Betaald ' + pct(sum.meter.paidPct) + '%, nu te betalen ' + pct(sum.meter.duePct) + '%, later ' + pct(sum.meter.laterPct) + '%'">
@@ -177,7 +177,7 @@ type MenuState =
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (item.differenceEur) { {{ abs(item.differenceEur) | eur }}<span class="wk-td__sub">{{ item.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
                         }
                         <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ item.openEur | eur }}
-                          @if (showDifference() && item.differenceEur) { <span class="wk-td__sub pw-open-sub pw-when-narrow">{{ abs(item.differenceEur) | eur }} {{ item.differenceEur < 0 ? 'minder' : 'meer' }} · afgerekend</span> }</span>
+                          @if (showDifference() && item.differenceEur) { <span class="wk-td__sub pw-open-sub pw-when-narrow">{{ abs(item.differenceEur) | eur }} {{ item.differenceEur < 0 ? 'minder' : 'meer' }} · {{ differenceState(item) }}</span> }</span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid" [class.wk-amount--warn]="item.dueNowEur > 0">@if (item.dueNowEur > 0) { {{ item.dueNowEur | eur }} }</span>
                         <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny">
                           <span class="wk-pill" [class]="pill(item.status.tone)">{{ item.status.label }}</span>
@@ -206,11 +206,13 @@ type MenuState =
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.fullEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.paidEur | eur }}</span>
                               @if (showDifference()) {
-                                <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.higherEur - term.lowerEur) { {{ abs(term.higherEur - term.lowerEur) | eur }}<span class="wk-td__sub">{{ term.higherEur < term.lowerEur ? 'minder' : 'meer' }}</span> }</span>
+                                <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.differenceEur) { {{ abs(term.differenceEur) | eur }}<span class="wk-td__sub">{{ term.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
                               }
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (term.state === 'due' && !term.settled && term.openEur > 0) { {{ term.openEur | eur }} }</span>
-                              <span class="wk-td" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(term.status.tone)">{{ term.status.label }}</span></span>
+                              <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny"><span class="wk-pill" [class]="pill(term.status.tone)">{{ term.statusSplit?.pill ?? term.status.label }}</span>
+                                @if (term.statusSplit; as split) { <span class="wk-td__sub pw-status-sub">{{ split.rest }}</span> }
+                                @if (term.statusNote) { <span class="wk-td__sub pw-status-sub">{{ term.statusNote }}</span> }</span>
                               <span class="wk-td wk-td--actions" role="gridcell">
                                 @if (term.openEur > 0 && !term.settled) {
                                   <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="add.emit({ payee: 'SUPPLIER', amount: term.openEur, label: term.label, due: term.due })">Noteer</button>
@@ -479,7 +481,10 @@ export class PurchasePaymentWorkbench {
   readonly actionable = computed(() => !this.busy() && this.state() === 'ready' && !!this.ledger());
   readonly agreements = computed(() => (this.ledger()?.visible ?? []).filter(item => item.payee !== 'OTHER'));
   readonly additional = computed(() => this.ledger()?.visible.find(item => item.payee === 'OTHER') ?? null);
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.higherEur > 0 && !item.finalized) ?? false);
+  /** The supplier's terms: a payment of a netted term is settled with the whole supplier (settleWith). */
+  readonly supplierTerms = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER')?.terms ?? []);
+  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
+  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** The selected payee, or the only one that can be settled. */
   readonly settleTarget = computed(() => {
     const payees = this.ledger()?.payees ?? [];
@@ -495,11 +500,11 @@ export class PurchasePaymentWorkbench {
     if (selected) return `Niets af te rekenen bij ${PAYEE_LABEL[selected]}`;
     return this.ledger()?.payees.some(item => item.canSettle) ? 'Kies eerst een ontvanger' : 'Niets af te rekenen';
   });
-  /** The Verschil column only earns its room once some payee or term was settled for another amount. */
+  /** The Verschil column only earns its room once some payee or term was paid or settled for another amount. */
   readonly showDifference = computed(() => {
     const book = this.ledger();
     return !!book && (book.summary.differenceEur !== 0
-      || book.payees.some(item => item.differenceEur !== 0 || item.terms.some(term => term.higherEur !== term.lowerEur)));
+      || book.payees.some(item => item.differenceEur !== 0 || item.terms.some(term => term.differenceEur !== 0)));
   });
   /** The hint beside the disabled 'Afrekenen…' button, only while there is something to settle. */
   readonly settleHintVisible = computed(() => !this.settleTarget() && !!this.ledger()?.payees.some(item => item.canSettle));
@@ -558,6 +563,8 @@ export class PurchasePaymentWorkbench {
   rowAction(item: PayeeLedger): 'add' | 'settle' | null {
     return payeeRowAction(item);
   }
+
+  readonly differenceState = payeeDifferenceState;
 
   /** What comes next under the status pill, unless the pill already says it. */
   nextSub(item: PayeeLedger): string | null {
@@ -757,7 +764,7 @@ export class PurchasePaymentWorkbench {
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
       case 'proof': this.proof.emit(row.payment); break;
-      case 'settle': this.settle.emit(settleWith(row)); break;
+      case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
       case 'remove': this.remove.emit(row.payment); break;
     }
   }

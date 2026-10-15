@@ -75,7 +75,7 @@ app-purchase-nacalc-workbench{display:block;min-width:0}
 .nc-payee{display:flex;align-items:center;gap:10px;min-width:0}
 .nc-payee__copy{display:grid;min-width:0}.nc-payee__copy b{font-weight:650;white-space:normal;overflow-wrap:anywhere}
 .nc-state{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin-top:3px}.nc-state .nc-reason{flex:1 1 100%}
-.nc-state .wk-pill,.nc-sub .wk-pill{height:auto;min-height:20px;padding-block:2px;white-space:normal;line-height:1.2;text-align:left}
+.nc-state .wk-pill,.nc-sub .wk-pill,.nc-payees .wk-td--wrap>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;line-height:1.2;text-align:left}
 .nc-payee__copy>.nc-basis{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;overflow-wrap:anywhere}
 .nc-tile{display:grid;flex:none;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
 .nc-payee__name{display:flex;align-items:center;gap:2px;min-width:0}

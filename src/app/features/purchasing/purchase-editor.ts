@@ -2480,10 +2480,12 @@ export class PurchaseEditor {
     return purchaseInstalmentState(data, instalmentsOf(data.order, PAYMENT_TERMS), this.payments());
   });
 
+  /** The terms a payment can count for; a netted one (offsetEur) is never settled on its own, see PurchasePaymentScope. */
   readonly paymentInstalmentOptions = computed(() => {
     const data = this.view();
     return data && Array.isArray(data.reconciliation?.supplierInstalments)
-      ? data.reconciliation!.supplierInstalments!.map(({ due, label }) => ({ due, label })) : [];
+      ? data.reconciliation!.supplierInstalments!.map(({ due, label, offsetEur }) =>
+        ({ due, label, netted: Math.round((Number.isFinite(offsetEur) ? offsetEur as number : 0) * 100) !== 0 })) : [];
   });
 
   async confirmPayment(): Promise<void> {
@@ -2494,6 +2496,12 @@ export class PurchaseEditor {
       || this.dirty() || this.paymentPlanBusy()) return;
     if (pay.instalmentDue != null && !Array.isArray(data.reconciliation?.supplierInstalments)) {
       this.ui.toast('Laad de order opnieuw voordat je een betaling aan een termijn koppelt.', 'err');
+      return;
+    }
+    // Closing a netted term alone takes it out of the netting and reopens the term it was netted with.
+    if (pay.settles && pay.payee === 'SUPPLIER' && pay.instalmentDue != null
+      && this.paymentInstalmentOptions().some(option => option.due === pay.instalmentDue && option.netted)) {
+      this.ui.toast('Deze termijn is verrekend met een andere termijn. Reken alles aan de leverancier af, niet deze termijn alleen.', 'err');
       return;
     }
     const invoices = pay.invoiceFiles ?? [];
@@ -2705,7 +2713,8 @@ export class PurchaseEditor {
   readonly settling = signal<{ payee: Payee; scope: 'GROUP' | 'TERM'; due: Due | null; paymentId: number | null } | null>(null);
   readonly settleCarrierOptions = computed(() => {
     const draft = this.settling();
-    return draft ? settleCarriers(this.payments() ?? [], draft.payee, draft.scope, draft.due) : { options: [], defaultId: null };
+    return draft ? settleCarriers(this.payments() ?? [], draft.payee, draft.scope, draft.due, this.view()?.reconciliation?.supplierInstalments)
+      : { options: [], defaultId: null };
   });
   readonly settlePayee = computed(() => {
     const payee = this.settling()?.payee;
@@ -2717,7 +2726,8 @@ export class PurchaseEditor {
       || this.payments() === null || request.payee === 'OTHER') return;
     const scope = request.payee === 'SUPPLIER' && request.scope === 'TERM' && request.due ? 'TERM' : 'GROUP';
     const due = scope === 'TERM' ? request.due : null;
-    const carriers = settleCarriers(this.payments() ?? [], request.payee, scope, due);
+    // Netted supplier terms: the default carrier is a payment of the covered term, so the settlement keeps each term's own + / −.
+    const carriers = settleCarriers(this.payments() ?? [], request.payee, scope, due, this.view()?.reconciliation?.supplierInstalments);
     const paymentId = carriers.options.some(option => option.id === request.paymentId) ? request.paymentId ?? null : carriers.defaultId;
     this.settling.set({ payee: request.payee, scope, due, paymentId });
   }
@@ -2728,7 +2738,7 @@ export class PurchaseEditor {
     const next = draft.payee === 'SUPPLIER' && scope === 'TERM' ? 'TERM' : 'GROUP';
     const nextDue = next === 'TERM' ? due : null;
     this.settling.set({ payee: draft.payee, scope: next, due: nextDue,
-      paymentId: settleCarriers(this.payments() ?? [], draft.payee, next, nextDue).defaultId });
+      paymentId: settleCarriers(this.payments() ?? [], draft.payee, next, nextDue, this.view()?.reconciliation?.supplierInstalments).defaultId });
   }
 
   closeSettle(): void { if (!this.payingBusy()) this.settling.set(null); }

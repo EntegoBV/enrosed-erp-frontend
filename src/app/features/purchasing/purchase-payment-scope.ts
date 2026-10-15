@@ -68,7 +68,8 @@ export class PurchasePaymentScope {
   readonly payee = input.required<Payee>();
   readonly instalmentDue = input<InstalmentDue | null>(null);
   readonly settles = input(false);
-  readonly options = input<readonly { due: InstalmentDue; label: string }[]>([]);
+  /** The supplier's terms; a netted one (the server's offsetEur) is never closed on its own. */
+  readonly options = input<readonly { due: InstalmentDue; label: string; netted?: boolean }[]>([]);
   readonly groupLabel = input('Betaalgroep');
   readonly busy = input(false);
   readonly changed = output<PurchasePaymentScopeChange>();
@@ -81,7 +82,8 @@ export class PurchasePaymentScope {
     return [
       { scope: 'NONE' as const, title: 'Nee, er volgt nog een betaling', hint: 'Wat nog open staat, blijft open', disabled: false },
       ...(term ? [{ scope: 'INSTALMENT' as const, title: 'Ja, deze termijn is klaar',
-        hint: this.knownDue() ? this.dueLabel() : 'Kies eerst een termijn', disabled: !this.knownDue() }] : []),
+        hint: this.netted() ? 'Verrekend met een andere termijn · reken alles af' : this.knownDue() ? this.dueLabel() : 'Kies eerst een termijn',
+        disabled: !this.knownDue() || this.netted() }] : []),
       { scope: 'GROUP' as const, title: `Ja, alles aan ${this.groupLabel()} is klaar`, hint: 'Er volgt geen betaling meer', disabled: false },
     ];
   });
@@ -90,6 +92,12 @@ export class PurchasePaymentScope {
     : this.payee() === 'SUPPLIER' && this.instalmentDue() !== null ? 'INSTALMENT' : 'GROUP');
   readonly knownDue = computed(() => this.instalmentDue() !== null
     && this.options().some(option => option.due === this.instalmentDue()));
+  /**
+   * The chosen term was netted with another one: closing it alone takes it
+   * out of the netting and reopens the term it covered or was covered by, so
+   * only the whole supplier can be settled.
+   */
+  readonly netted = computed(() => this.options().some(option => option.due === this.instalmentDue() && !!option.netted));
 
   dueLabel(): string {
     const due = this.instalmentDue();
@@ -108,7 +116,7 @@ export class PurchasePaymentScope {
 
   chooseScope(scope: SettlementScope): void {
     if (this.busy() || this.payee() === 'OTHER') return;
-    if (scope === 'INSTALMENT' && (this.payee() !== 'SUPPLIER' || !this.knownDue())) return;
+    if (scope === 'INSTALMENT' && (this.payee() !== 'SUPPLIER' || !this.knownDue() || this.netted())) return;
     this.changed.emit({
       instalmentDue: scope === 'GROUP' || this.payee() !== 'SUPPLIER' ? null : this.instalmentDue(),
       settles: scope !== 'NONE',

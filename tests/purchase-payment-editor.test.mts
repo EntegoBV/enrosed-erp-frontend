@@ -43,7 +43,7 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
   'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount',
   'setPaymentPart', 'paymentTransfer', 'paymentTransferEur', 'writeEur', 'paymentGoodsEur', 'bankLines', 'bankedPaymentIds', 'paymentOnBank',
-  'paymentBankAccount', 'transferLine', 'bankToday']);
+  'paymentBankAccount', 'transferLine', 'bankToday', 'paymentInstalmentOptions']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -388,4 +388,28 @@ test('a selected purchase bank row can differ two cents from the original split 
   assert.equal(writes.length, 0); assert.equal(atomic.length, 3);
   assert.equal(Math.round(atomic.reduce((sum, payment) => sum + payment.amountEur, 0) * 100), 123456);
   assert.equal(bank.amountEur, -1234.58); assert.equal(editor.paying(), null);
+});
+
+test('PO 35: a payment never closes a netted term on its own, while the whole supplier and plain saving still work', async () => {
+  // The server netted the 30 % term's + € 61,28 against the 70 % term's − € 60,78.
+  const { editor, writes, toasts } = setup();
+  editor.view.set({ order: { ...order(35), paymentTerms: 'DEPOSIT_30_70' }, reconciliation: { supplierInstalments: [
+    { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 9314.41, paidEur: 9375.69, remainingEur: 0, overpaidEur: 0.5, offsetEur: -60.78 },
+    { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 21733.63, paidEur: 21672.85, remainingEur: 0, overpaidEur: 0, offsetEur: 60.78 },
+  ] } });
+  assert.deepEqual(clone(editor.paymentInstalmentOptions()), [
+    { due: 'ORDERED', label: '30% bij bestelling', netted: true }, { due: 'SHIPPED', label: '70% bij vertrek', netted: true }]);
+  const shipped = { ...payment(), id: 352, orderId: 35, amount: 21672.85, amountEur: 21672.85, payee: 'SUPPLIER', label: '70%', instalmentDue: 'SHIPPED' };
+  editor.payments.set([shipped]);
+  editor.editPayment(shipped);
+  editor.paying.update((draft: any) => ({ ...draft, settles: true }));
+  await editor.confirmPayment();
+  assert.equal(writes.length, 0, 'closing the 70 % term alone would reopen € 60,78 on it');
+  assert.deepEqual(toasts.at(-1), ['Deze termijn is verrekend met een andere termijn. Reken alles aan de leverancier af, niet deze termijn alleen.', 'err']);
+  editor.paying.update((draft: any) => ({ ...draft, settles: true, instalmentDue: null }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes.map(row => [row.type, row.body.settles, row.body.instalmentDue]), [['PUT payment', true, null]], 'the whole supplier settles');
+  // An older response without offsetEur nets nothing: the term can be closed as before.
+  editor.view.update((view: any) => ({ ...view, reconciliation: { supplierInstalments: view.reconciliation.supplierInstalments.map(({ offsetEur, ...term }: any) => term) } }));
+  assert.equal(editor.paymentInstalmentOptions().some((option: { netted: boolean }) => option.netted), false);
 });

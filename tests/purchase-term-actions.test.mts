@@ -10,7 +10,8 @@ import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
 import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
 import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, purchasePaymentLedger, settleCarriers, type LedgerRow, type LedgerTerm, type PaymentLedger,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, nettedCarrierDue, purchasePaymentLedger, settleCarriers, type LedgerRow, type LedgerTerm, type PaymentLedger,
+  type PurchaseSettleRequest,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 
 // purchase-payment-menus.ts imports the payee words at runtime: compile it with the imports stripped and hand them in.
@@ -21,11 +22,12 @@ const menusJs = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updat
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 const menus: Record<string, any> = {};
-vm.runInNewContext(menusJs, { exports: menus, PAYEE_LABEL, PAYEE_ORDER, PAYEE_ICON, Intl });
+vm.runInNewContext(menusJs, { exports: menus, PAYEE_LABEL, PAYEE_ORDER, PAYEE_ICON, nettedCarrierDue, Intl });
 const termMenuItems = menus['termMenuItems'] as (term: LedgerTerm, busy: boolean) => { id: string; label: string; disabled?: boolean }[];
 const termHasMenu = menus['termHasMenu'] as (term: LedgerTerm) => boolean;
 const termPayment = menus['termPayment'] as (term: LedgerTerm, rows: readonly LedgerRow[]) => LedgerRow | null;
 const relinkPayment = menus['relinkPayment'] as (payee: { rows: readonly LedgerRow[] }) => LedgerRow | null;
+const settleWith = menus['settleWith'] as (row: LedgerRow, terms?: readonly LedgerTerm[]) => PurchaseSettleRequest;
 
 // A supplier term paid to the cent is never a dead end: it can be confirmed
 // ('Termijn afrekenen'), undone per term and its payment corrected, on the
@@ -104,8 +106,9 @@ test('canConfirm stays off for an unscoped, open, flagged, settled or differing 
 test('the term menu offers pay, settle or confirm, per-term undo and the tied payment; a bare term has no menu', () => {
   const base: LedgerTerm = {
     due: 'SHIPPED', label: '70% bij vertrek', moment: 'bij vertrek', fullEur: 700, paidEur: 700, openEur: 0, lowerEur: 0, higherEur: 0,
+    differenceEur: 0, offsetEur: 0, offsetWith: [],
     settled: false, finalized: true, state: 'paid', hasScopedPayment: true, paymentIds: [2], canSettle: false, canConfirm: true, canUndo: false,
-    status: { label: 'Betaald', tone: 'ok' },
+    status: { label: 'Betaald', tone: 'ok' }, statusNote: null, statusSplit: null,
   };
   assert.deepEqual(ids(termMenuItems(base, false)), ['settle', 'edit']);
   assert.equal(termMenuItems(base, false).find(item => item.id === 'settle')!.label, 'Termijn afrekenen');
@@ -137,4 +140,70 @@ test('a whole-supplier settlement flags a payment without a term before any term
   assert.equal(group.options.find(option => option.id === group.defaultId)!.reallocates, false);
   const allScoped = settleCarriers([payments[0], payments[2]], 'SUPPLIER', 'GROUP', null);
   assert.equal(allScoped.options.find(option => option.id === allScoped.defaultId)!.reallocates, true, 'only then the warning');
+});
+
+test('netted terms are never settled or confirmed on their own: that would reopen the term they were netted with', () => {
+  // PO 35: 30 % paid € 61,28 too much, 70 % € 60,78 too little; the server nets them to € 0,50 too much.
+  const view = purchase([
+    instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 0.5, finalized: false, offsetEur: -60.78 }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_672.85, offsetEur: 60.78 }),
+  ], stream({ status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, overpaidEur: 0.5, finalized: false }));
+  const payments = [payment(1, { amountEur: 9_375.69, instalmentDue: 'ORDERED' }), payment(2, { amountEur: 21_672.85, instalmentDue: 'SHIPPED' })];
+  const book = ledger(view, payments);
+  const terms = supplierOf(book).terms;
+  for (const item of terms) {
+    assert.deepEqual([item.canSettle, item.canConfirm], [false, false], item.label);
+    assert.deepEqual(ids(termMenuItems(item, false)), ['edit'], 'only the tied payment can still be corrected');
+    assert.equal(termHasMenu(item), true);
+  }
+  assert.deepEqual(supplierOf(book).settleDefault, { payee: 'SUPPLIER', scope: 'GROUP', due: null });
+  const row = book.rows.find(item => item.id === 1)!;
+  assert.deepEqual({ ...settleWith(row, terms) }, { payee: 'SUPPLIER', scope: 'GROUP', due: null },
+    'Afrekenen met deze betaling settles the whole supplier, on a payment the sheet picks (see the carrier test)');
+  assert.deepEqual({ ...settleWith(book.rows.find(item => item.id === 2)!, terms) }, { payee: 'SUPPLIER', scope: 'GROUP', due: null, paymentId: 2 },
+    'the covered term\'s own payment carries it');
+  assert.deepEqual({ ...settleWith(row) }, { payee: 'SUPPLIER', scope: 'TERM', due: 'ORDERED', paymentId: 1 }, 'without netting it stays the term');
+  const plain = ledger(purchase([instalment('ORDERED'), instalment('SHIPPED')]), [payment(1, { amountEur: 300, instalmentDue: 'ORDERED' })]);
+  assert.deepEqual({ ...settleWith(plain.rows[0], supplierOf(plain).terms) }, { payee: 'SUPPLIER', scope: 'TERM', due: 'ORDERED', paymentId: 1 });
+});
+
+test('a whole-supplier settlement of netted terms keeps each term\'s own + / −: the flag goes on a payment of the covered term', () => {
+  // The flag unties its payment and the server books an untied payment on the earliest open gap. On the 30 % payment of PO 35
+  // that gap is the 30 % term itself, so the € 61,28 would slide to the 70 % term (30 % d 0,00, 70 % d + 0,50). On the 70 %
+  // payment nothing moves. The 'after' figures below are what SupplierPaymentAllocation returns for that carrier.
+  const po35 = (after: boolean) => purchase([
+    instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 0.5, finalized: after, explicitlySettled: after, offsetEur: -60.78 }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_672.85, explicitlySettled: after, offsetEur: 60.78 }),
+  ], stream({ status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, overpaidEur: 0.5, finalized: after, explicitlySettled: after }));
+  const before = [payment(1, { paidOn: '2026-03-01', amountEur: 9_375.69, instalmentDue: 'ORDERED' }),
+    payment(2, { paidOn: '2026-06-01', amountEur: 21_672.85, instalmentDue: 'SHIPPED' })];
+  const terms = supplierOf(ledger(po35(false), before)).terms;
+  assert.equal(nettedCarrierDue(terms), 'SHIPPED');
+  const carriers = settleCarriers(before, 'SUPPLIER', 'GROUP', null, terms);
+  assert.equal(carriers.defaultId, 2, 'the 70 % payment, never the newest by accident or the 30 % one');
+  assert.deepEqual(carriers.options.map(option => option.id), [2, 1], 'the other payment stays choosable');
+  // After the settle on payment 2 (flagged, untied), the server keeps the split: + 61,28 / − 60,78.
+  const settled = ledger(po35(true), [before[0], { ...before[1], settles: true, instalmentDue: null }]);
+  assert.deepEqual(supplierOf(settled).terms.map(term => [term.due, term.differenceEur, term.offsetEur]), [['ORDERED', 61.28, -60.78], ['SHIPPED', -60.78, 60.78]]);
+  assert.deepEqual([supplierOf(settled).status.kind, supplierOf(settled).differenceEur], ['SETTLED_HIGHER', 0.5]);
+
+  // The mirror (30 % paid € 61,28 too little, 70 % € 61,78 too much): the newest payment is the 70 % one, the carrier the 30 % one.
+  const mirror = purchase([
+    instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_253.13, offsetEur: 61.28 }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_795.41, overpaidEur: 0.5, finalized: false, offsetEur: -61.28 }),
+  ], stream({ status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, overpaidEur: 0.5, finalized: false }));
+  const mirrored = [payment(1, { paidOn: '2026-03-01', amountEur: 9_253.13, instalmentDue: 'ORDERED' }),
+    payment(2, { paidOn: '2026-06-01', amountEur: 21_795.41, instalmentDue: 'SHIPPED' })];
+  const mirrorTerms = supplierOf(ledger(mirror, mirrored)).terms;
+  assert.equal(settleCarriers(mirrored, 'SUPPLIER', 'GROUP', null, mirrorTerms).defaultId, 1);
+  assert.equal(settleCarriers(mirrored, 'SUPPLIER', 'GROUP', null).defaultId, 2, 'without the terms: the newest, as before');
+  assert.deepEqual({ ...settleWith(ledger(mirror, mirrored).rows.find(row => row.id === 2)!, mirrorTerms) }, { payee: 'SUPPLIER', scope: 'GROUP', due: null });
+  assert.deepEqual({ ...settleWith(ledger(mirror, mirrored).rows.find(row => row.id === 1)!, mirrorTerms) }, { payee: 'SUPPLIER', scope: 'GROUP', due: null, paymentId: 1 });
+
+  // A payment without a term still comes first: flagging it unties nothing.
+  const untied = [...before, payment(3, { paidOn: '2026-02-01', amountEur: 10, instalmentDue: null })];
+  assert.equal(settleCarriers(untied, 'SUPPLIER', 'GROUP', null, terms).defaultId, 3);
+  // Three terms: the earliest covered term carries it, a later one would pull the money forward.
+  assert.equal(nettedCarrierDue([{ due: 'ORDERED', offsetEur: -40 }, { due: 'SHIPPED', offsetEur: 30 }, { due: 'ARRIVED', offsetEur: 10 }]), 'SHIPPED');
+  assert.equal(nettedCarrierDue([{ due: 'ORDERED', offsetEur: 0 }, { due: 'SHIPPED' }]), null);
 });

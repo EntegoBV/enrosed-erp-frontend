@@ -84,7 +84,7 @@ import { formatEur, todoCopy } from './purchase-payment-menus';
                     @for (term of row.terms; track term.due) {
                       <button class="ios-cell np-term" type="button" (click)="openPayee.emit('SUPPLIER')">
                         <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.agreedEur | eur }}</span></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.agreedEur | eur }}@if (term.reason === 'offset') { · {{ term.reasonLabel }} }</span></span>
                         <span class="ios-cell__trail"><span class="ios-cell__value" [class.wk-amount--in]="term.verschilEur < 0" [class.wk-amount--warn]="term.verschilEur > 0">{{ signed(term.verschilEur) }}</span><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
                       </button>
                     }

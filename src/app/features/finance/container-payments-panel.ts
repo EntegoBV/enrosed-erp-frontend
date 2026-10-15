@@ -59,7 +59,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
                   <div class="fin-expand__streams">
                     @for (stream of row.reconciliation.streams; track stream.payee) {
                       <div class="fin-stream">
-                        <div class="fin-stream__head"><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span><b>{{ payee(stream.payee) }}</b><span class="wk-amount--muted">{{ streamStatus(stream) }}</span></div>
+                        <div class="fin-stream__head"><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span><b>{{ payee(stream.payee) }}</b><span class="wk-amount--muted">{{ streamStatus(stream, row.reconciliation.supplierInstalments) }}</span></div>
                         <dl class="fin-stream__figures"><div><dt>Afspraak</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
                         @if (stream.payee === 'SUPPLIER') {
                           @for (term of row.reconciliation.supplierInstalments ?? []; track term.due) {
@@ -197,6 +197,9 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
   payee(code: Payee): string { return paymentPayeeLabel(code); }
   payeeTone(code: string): string { return PAYEE_TONES[code] ?? 'grey'; }
-  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0]): string { return reconciliationStatusLabel(stream); }
+  /** The supplier's terms count too, as in Betalingen and Analyses: a term settled on its own is afgerekend, its overrun no longer to review. */
+  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0], terms: Parameters<typeof reconciliationStatusLabel>[1]): string {
+    return reconciliationStatusLabel(stream, stream.payee === 'SUPPLIER' ? terms : undefined);
+  }
   day(date: string): string { return dayMonth(date); }
 }

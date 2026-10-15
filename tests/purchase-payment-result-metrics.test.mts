@@ -323,3 +323,26 @@ test('with the ledger, an overpaid, unbudgeted or incomplete payee (or figures t
   const summary = purchaseNacalcSummary(unit)!;
   assert.deepEqual([summary.unitEur, summary.unitQuantity, summary.unitBasis], [12.6267, 5_560, 'ORDERED']);
 });
+
+test('PO 35: netted terms leave € 0,50 to review, never the 30 % term’s gross € 61,28', () => {
+  const view = purchase([stream({ status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, remainingEur: 0, forecastEur: 31_048.54,
+    varianceEur: 0.5, overpaidEur: 0.5, paymentCount: 2 })]);
+  view.order.status = 'ONTVANGEN';
+  Object.assign(view.reconciliation!.totals, { plannedExternalEur: 31_048.04, paidEur: 31_048.54, remainingEur: 0,
+    forecastExternalEur: 31_048.54, varianceEur: 0.5, internalMarkupEur: 0 });
+  view.reconciliation!.supplierInstalments = [
+    { due: 'ORDERED', label: '30% bij bestelling', plannedEur: 9_314.41, paidEur: 9_375.69, remainingEur: 0, settledSavingEur: 0,
+      overpaidEur: 0.5, explicitlySettled: false, finalized: false, offsetEur: -60.78 },
+    { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 21_733.63, paidEur: 21_672.85, remainingEur: 0, settledSavingEur: 0,
+      overpaidEur: 0, explicitlySettled: false, finalized: true, offsetEur: 60.78 },
+  ];
+  const result = purchasePaymentResult(view)!;
+  assert.deepEqual([result.unsettledOverrunsEur, result.settledOverrunsEur, result.settledSavingsEur, result.netResultEur], [0.5, 0, 0, 0]);
+  const summary = purchaseNacalcSummary(view)!;
+  assert.deepEqual([summary.kind, summary.reviewEur, summary.forecastEur, summary.varianceEur, summary.openEur], ['review', 0.5, 31_048.54, 0.5, 0]);
+  // Settling the whole supplier makes the € 0,50 a confirmed overrun.
+  for (const term of view.reconciliation!.supplierInstalments) Object.assign(term, { explicitlySettled: true, finalized: true });
+  Object.assign(view.reconciliation!.streams[0], { explicitlySettled: true, finalized: true });
+  const settled = purchasePaymentResult(view)!;
+  assert.deepEqual([settled.unsettledOverrunsEur, settled.settledOverrunsEur, settled.netResultEur], [0, 0.5, -0.5]);
+});
