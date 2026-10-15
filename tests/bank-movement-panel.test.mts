@@ -3,6 +3,8 @@ import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/f
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
+import { invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
 import { bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
@@ -129,6 +131,7 @@ function harness() {
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
     exports, signal, computed, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
+    invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
@@ -985,4 +988,89 @@ test('each recorded payment shows its own signed difference without implying a s
   assert.equal(panel.localRecordedPaymentDifference({ amountEur: Number.NaN }), null);
   panel.selected.set(movement(81, 349.62)); assert.equal(panel.localRecordedPaymentDifference({ amountEur: -423.04 }), -73.42);
   assert.equal(panel.localSelectedKey(), null); assert.equal(panel.allocationReady(), false);
+});
+
+/* ---- the round of 2026-10-15: payments in parts, inspection via the supplier, offsets */
+
+/** A container on a server with invoices (the round's marker for Kosten & bank). */
+function roundView(values: any = {}): any {
+  return { ...purchaseView(), invoices: [], invoiceFiles: [], ...values };
+}
+
+test('a credit offset is never offered for a bank line; a transfer of a payment in parts says so', async () => {
+  const { panel, state } = harness();
+  state.payments.set([{ id: 21, orderId: 3, orderNumber: 'PO-3', label: 'Saldo 70%', amountEur: 100, paidOn: '2026-09-08', groupId: 20 },
+    { id: 20, orderId: 3, orderNumber: 'PO-3', label: 'Saldo 70%', amountEur: 50, paidOn: '2026-09-01', groupId: 20, bankStatementLineId: 9 },
+    { id: 22, orderId: 3, orderNumber: 'PO-3', label: 'Verrekend tegoed INK-9', amountEur: 100, paidOn: '2026-09-08', creditOffset: true }]);
+  await panel.openAllocation(movement(70, -100));
+  assert.deepEqual(JSON.parse(JSON.stringify(panel.outgoingCandidates().map(row => [row.id, row.detail]))), [[21, 'PO-3 · Saldo 70% · deel van een betaling in 2 transacties']]);
+});
+
+test('Bestaande betaling: one larger payment is linked in part (Deel koppelen); a matching transfer of a group goes through bank-part too', async () => {
+  const { panel, state, sourcing } = harness();
+  state.purchaseViews.set([roundView()]);
+  const bank = { ...movement(534, -10000), source: 'ODOO' as const };
+  state.bankStatements.set([bank]);
+  state.payments.set([{ id: 102, orderId: 20, orderNumber: 'PO-20', label: 'Saldo 70%', amountEur: 21733.63, paidOn: '2026-09-10' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number) => { calls.push([id, lineId]); return { payments: [], lines: [{ ...bank, allocated: true }] }; };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.deepEqual([panel.outgoingPart()?.carve, panel.canLinkOutgoing(), panel.allocationActionLabel()], [true, true, 'Deel koppelen']);
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[102, 534]]);
+  // A server without this round: the larger payment cannot be linked at all.
+  const older = harness();
+  older.state.purchaseViews.set([purchaseView()]);
+  older.state.payments.set([{ id: 102, orderId: 20, amountEur: 21733.63, paidOn: '2026-09-10' }]);
+  await older.panel.openAllocation(bank);
+  older.panel.toggleOutgoing(older.panel.outgoingCandidates()[0]);
+  assert.deepEqual([older.panel.outgoingPart(), older.panel.canLinkOutgoing()], [null, false]);
+  // Route 2: the open transfer 103 of group 102 matches the line and takes its day through bank-part.
+  const route = harness();
+  route.state.purchaseViews.set([roundView()]);
+  route.state.payments.set([{ id: 103, orderId: 20, amountEur: 11733.63, paidOn: '2026-09-10', groupId: 102 }]);
+  const parts: any[] = [];
+  (route.sourcing as any).linkPaymentPart = async (id: number, lineId: number) => { parts.push([id, lineId]); return { payments: [], lines: [] }; };
+  await route.panel.openAllocation({ ...movement(534, -11733.65), source: 'ODOO' });
+  route.panel.toggleOutgoing(route.panel.outgoingCandidates()[0]);
+  assert.deepEqual([route.panel.outgoingPart()?.row.id, route.panel.outgoingPart()?.carve, route.panel.canLinkOutgoing()], [103, false, true]);
+  await route.panel.linkOutgoing();
+  assert.deepEqual(parts, [[103, 534]]);
+});
+
+test('a line that paid goods and the inspection of one container names both; one payee keeps Inkoop', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(610, -10300), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 },
+    { id: 202, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SEPARATE', bankStatementLineId: 610 }]);
+  assert.equal(panel.linkedLabel(row), 'Goederen + inspectie (PO-2026-021)');
+  state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 },
+    { id: 203, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', instalmentDue: 'FREIGHT', bankStatementLineId: 610 },
+    { id: 202, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SEPARATE', bankStatementLineId: 610 }]);
+  assert.equal(panel.linkedLabel(row), 'Goederen + zeevracht + inspectie (PO-2026-021)');
+  state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 }]);
+  assert.equal(panel.linkedLabel(row), 'Inkoop · PO-2026-021');
+});
+
+test('Factuur of uitgave: goods and the inspection paid via the supplier become two payments on the one bank line', async () => {
+  const { panel, state, api, toasts } = harness();
+  const view = roundView({ order: { ...purchaseView().order, inspectionViaSupplier: true } });
+  view.reconciliation.streams.push({ payee: 'SEPARATE', status: 'UNPAID', plannedEur: 300, remainingEur: 300, paidEur: 0, finalized: false });
+  state.purchaseViews.set([view]);
+  const bank = movement(610, -10300);
+  await panel.openAllocation(bank);
+  panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.payee === 'SUPPLIER')!);
+  assert.equal(panel.localInspectionOffered(), true);
+  panel.purchaseInspectionInput.set('300');
+  assert.equal(panel.canLinkLocal(), true);
+  const calls: any[] = []; (api as any).addPurchasePayment = async (...args: any[]) => { calls.push(JSON.parse(JSON.stringify(args))); return { line: { ...bank, allocated: true }, payments: [] }; };
+  await panel.linkLocalDocument();
+  assert.deepEqual(calls[0][2].map((part: any) => [part.payee, part.amount, part.instalmentDue, part.invoiceId, part.inspectionViaSupplier ?? false]),
+    [['SUPPLIER', 10000, 'ORDERED', null, false], ['SEPARATE', 300, null, null, true]]);
+  assert.equal(toasts.at(-1), 'Bankbetaling gekoppeld: goederen + inspectie');
+  panel.selected.set(bank); panel.localSelectedKey.set(panel.localDocuments()[0].key); panel.purchaseInspectionInput.set('10300');
+  assert.equal(panel.canLinkLocal(), false, 'the inspection is smaller than the transfer');
 });

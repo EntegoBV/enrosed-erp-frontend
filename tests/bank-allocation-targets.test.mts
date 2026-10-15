@@ -23,3 +23,12 @@ test('only issued sales documents participate and purchase budget remains explic
   const term: any = { key: 'container:4:SUPPLIER:ORDERED', orderId: 4, orderNumber: 'PO-4', alias: 'Rozen', payee: 'SUPPLIER', termLabel: 'Voorschot', due: 'ORDERED', plannedEur: 1000, remainingEur: 800, paidEur: 200 };
   assert.equal(targets(-500, [], [], [term])[0].estimated, true); assert.equal(targets(500, [], [], [term]).length, 0);
 });
+
+test('a container term carries its invoice number: search finds it and a bank reference naming it ranks the term first', () => {
+  const term = (key: string, invoiceNumber: string | null): any => ({ key, orderId: 4, orderNumber: 'PO-4', alias: 'Rozen', payee: 'SUPPLIER', termLabel: 'Saldo', due: 'SHIPPED',
+    plannedEur: 1000, remainingEur: 800, paidEur: 200, invoiceNumber });
+  const rows = targets(-500, [], [], [term('container:4:SUPPLIER:ORDERED', null), term('container:4:SUPPLIER:SHIPPED', 'CI-2026-118')]);
+  assert.equal(rows[1].invoiceNumber, 'CI-2026-118');
+  assert.deepEqual(filterBankAllocationTargets(rows, 'ci-2026-118', { amountEur: -500 }).map(row => row.key), ['container:4:SUPPLIER:SHIPPED']);
+  assert.equal(filterBankAllocationTargets(rows, '', { amountEur: -500, reference: 'PAYMENT CI 2026/118 BALANCE' })[0].key, 'container:4:SUPPLIER:SHIPPED');
+});

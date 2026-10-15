@@ -100,3 +100,26 @@ test('supplier refunds remain a matching task until an incoming Odoo row carries
   assert.equal(matchOutgoings([linked], [bank]).get(linked)?.id, 7);
   assert.equal(unbankedOutgoings([linked], [bank], '2026-01-01').length, 0);
 });
+
+test('a credit offset on a container is never a payment without a bank link', async () => {
+  // FinanceState.paidOutgoings feeds 'Betalingen zonder bankkoppeling', the attention count and the matching.
+  const { readFile } = await import('node:fs/promises');
+  const vm = await import('node:vm');
+  const ts = (await import('typescript')).default;
+  const { computed, signal } = await import('@angular/core');
+  const source = await readFile(new URL('../src/app/features/finance/finance-state.ts', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('finance-state.ts', source, ts.ScriptTarget.Latest, true);
+  const cls = parsed.statements.find((node): node is import('typescript').ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'FinanceState')!;
+  const members = cls.members.filter(member => member.name && member.name.getText(parsed) === 'paidOutgoings');
+  assert.equal(members.length, 1);
+  const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(modifier => !ts.isDecorator(modifier)), cls.name, undefined, undefined, members);
+  const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports: Record<string, any> = {};
+  vm.runInNewContext(js, { exports, computed });
+  const state = new exports['FinanceState']();
+  state.ledger = signal([
+    { cost: null, payment: { id: 1, orderId: 3, bankStatementLineId: null, creditOffset: false }, paidOn: '2026-09-08', amountEur: 100 },
+    { cost: null, payment: { id: 2, orderId: 3, bankStatementLineId: null, creditOffset: true }, paidOn: '2026-09-08', amountEur: 50 },
+  ]);
+  assert.deepEqual(Array.from(state.paidOutgoings(), (row: { id: number }) => row.id), [1]);
+});

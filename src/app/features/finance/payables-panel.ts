@@ -76,7 +76,7 @@ type SortKey = 'date' | 'title' | 'amount';
                     <span class="wk-td" role="gridcell"></span>
                     <span class="wk-td" role="gridcell">{{ row.container!.whenLabel }}</span>
                     <span class="wk-td" role="gridcell">{{ row.title }}@if (row.container!.archived) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }
-                      <span class="wk-td__sub">{{ payee(row) }}{{ row.container!.termLabel ? ' · ' + row.container!.termLabel : '' }}</span></span>
+                      <span class="wk-td__sub">{{ containerSub(row) }}</span></span>
                     <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill tone-blue">Container</span></span>
                     <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + payeeTone(row)"></span> {{ payee(row) }}</span>
                     <span class="wk-td" role="gridcell" data-hide="md"></span>
@@ -129,7 +129,7 @@ type SortKey = 'date' | 'title' | 'amount';
                   <button class="ios-cell ios-cell--tall" type="button" (click)="state.openContainer(row.orderId!)">
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                      <span class="ios-cell__sub">{{ payee(row) }}{{ row.container!.termLabel ? ' · ' + row.container!.termLabel : '' }} · verwacht</span></span>
+                      <span class="ios-cell__sub">{{ containerSub(row) }} · verwacht</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.amountEur | eur }}</span>
                       @if (row.bucket === 'now') { <span class="wk-pill tone-warn">Nu</span> } @else { <span class="ios-cell__meta">{{ row.container!.whenLabel }}</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
@@ -264,6 +264,13 @@ export class PayablesPanel implements FinanceSectionApi {
   }
 
   payee(row: PayableRow): string { return row.container ? paymentPayeeLabel(row.container.payee) : ''; }
+  /** 'Leverancier · 70% bij vertrek · Factuur CI-2026-118'; the inspection paid via the supplier says so. */
+  containerSub(row: PayableRow): string {
+    const container = row.container;
+    if (!container) return '';
+    return this.payee(row) + (container.viaSupplier ? ' · via leverancier' : '') + (container.termLabel ? ' · ' + container.termLabel : '')
+      + (container.invoiceNumber ? ' · Factuur ' + container.invoiceNumber : '');
+  }
   payeeTone(row: PayableRow): string { return PAYEE_TONES[row.container?.payee ?? 'OTHER'] ?? 'grey'; }
   day(date: string | null): string { return dayMonth(date); }
   category(code: string): string { return categoryLabel(code); }

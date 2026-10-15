@@ -47,6 +47,8 @@ import { incomingMoneyTotals, invoiceReceivable, paymentLocalDay, receivableTota
 import { partyKey } from './party-suggestions';
 import type { PartyCandidate } from './party-suggestions';
 import { containerPayables, daysBetween, payableTotals, payablesFor } from './payables';
+import { containerPaymentTree, type PayeeBranch } from './container-payment-tree';
+import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -504,7 +506,8 @@ export class FinanceState {
         if (!payments.length && row.paidOn && cost.id) {
           rows.push({ kind: 'kost' as MarkerKind, id: cost.id, paidOn: row.paidOn, amountEur: row.amountEur, linkedLineId: cost.bankStatementLineId ?? null, row, costId: cost.id });
         }
-      } else if (row.payment && row.paidOn) {
+      } else if (row.payment && row.paidOn && !row.payment.creditOffset) {
+        // A credit offset left no bank: never 'zonder bankkoppeling', never in the attention count or the matching.
         rows.push({ kind: 'containerbetaling' as MarkerKind, id: row.payment.id, paidOn: row.paidOn, amountEur: row.amountEur,
           linkedLineId: row.payment.bankStatementLineId ?? null, row, costId: null });
       }
@@ -587,6 +590,34 @@ export class FinanceState {
   /** Container rows the Uitgaven › Containers list and the inspector read from. */
   paymentsFor(orderId: number): PurchasePaymentRow[] {
     return this.payments().filter((payment) => payment.orderId === orderId).sort((a, b) => b.paidOn.localeCompare(a.paidOn) || b.id - a.id);
+  }
+
+  /** Lines that mark a container payment by text only ('containerbetaling #id'): older than the hard link. */
+  private readonly containerMarkerLines = computed(() => {
+    const map = new Map<number, BankStatementLine>();
+    for (const line of this.bankStatements()) {
+      for (const marker of this.lineMarkers().get(line.id) ?? []) {
+        if (marker.kind === 'containerbetaling' && !map.has(marker.id)) map.set(marker.id, line);
+      }
+    }
+    return map;
+  });
+  /** A container payment's bank line: the hard link, else an older line's marker; never a guess by amount (as the order screens). */
+  readonly containerPaymentLine = (row: PurchasePaymentRow): { accountLabel: string; day: string } | null => {
+    const line = row.bankStatementLineId != null
+      ? this.bankStatements().find((item) => item.id === row.bankStatementLineId) : this.containerMarkerLines().get(row.id);
+    if (!line) return row.bankStatementLineId != null ? { accountLabel: '', day: '' } : null;
+    return { accountLabel: this.accountLabel(line.account), day: bankTransactionDay(line) };
+  };
+  /** One container as invoices → terms → payments, for Uitgaven › Containers and the inspector. */
+  containerTree(view: PurchaseOrderView): PayeeBranch[] {
+    return containerPaymentTree(view, this.payments(), this.containerPaymentLine,
+      (stream) => reconciliationStatusLabel(stream, stream.payee === 'SUPPLIER' ? view.reconciliation?.supplierInstalments : undefined));
+  }
+  /** 'Bestand ↗' of a container invoice: the purchase document's file. */
+  async openPurchaseFile(orderId: number, documentId: number, name: string): Promise<void> {
+    try { saveBlob(await this.sourcing.documentFile(orderId, documentId), name || 'factuur'); }
+    catch (failure) { this.ui.toast(messageOf(failure, 'Bestand openen mislukt'), 'err'); }
   }
 
   readonly categoryName = (code: string): string => CONTAINER_PAYMENT_CATEGORIES.find((category) => category.code === code)?.label ?? categoryLabel(code);

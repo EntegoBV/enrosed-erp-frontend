@@ -1,3 +1,4 @@
+import type { PaymentNode } from './container-payment-tree';
 import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, input, viewChild } from '@angular/core';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
@@ -55,14 +56,33 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                 <section class="bank-alloc-preview" aria-label="Gekozen document controleren">
                   <div class="bank-alloc-preview__title"><div><small>{{ document.label }}</small><h3 #selectionHeading tabindex="-1">{{ document.title }}</h3><p>{{ document.party }} · {{ document.reference }}</p></div><button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.localSelectedKey.set(null)">Andere kiezen</button></div>
                   @if (document.kind === 'purchase') {
-                    @if (p.localPurchaseFilesLoading()) { <p class="fin-hint" role="status">Inkoopfacturen laden…</p> }
-                    @if (p.localPurchaseFilesError()) { <p class="fin-hint fin-hint--warn">{{ p.localPurchaseFilesError() }} <button class="fin-inline-btn" type="button" (click)="p.loadLocalPurchaseFiles(document.id)">Opnieuw laden</button></p> }
-                    @if (p.localPurchaseFiles().length) { <div class="bank-alloc-purchase-docs"><span>Facturen bij deze container</span>@for (file of p.localPurchaseFiles(); track file.id) { <button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.openPurchaseInvoice(file)">{{ file.label || file.originalFilename }} ↗</button> }</div> }
+                    @if (p.localPurchaseInvoices(); as invoices) {
+                      <!-- The container's invoices (and invoice files without data), the terms they cover and the term's payments on the bank. -->
+                      <div class="bank-alloc-purchase-docs bank-alloc-purchase-docs--list">
+                        @for (invoice of invoices; track invoice.key) {
+                          <span class="bank-alloc-purchase-docs__line">{{ invoice.text }}@if (invoice.documentId != null) { <button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.openPurchaseFile(document.id, invoice.documentId, invoice.name)">Bestand ↗</button> }</span>
+                        } @empty { <span>Nog geen factuur bij deze container</span> }
+                        @if (p.localPurchaseTermsLine(); as terms) { <small>{{ terms }}</small> }
+                        @for (payment of p.localPurchasePayments(); track payment.id) {
+                          <small>{{ paymentLine(payment) }}</small>
+                          @for (part of payment.parts; track part.id) { <small class="bank-alloc-purchase-docs__part">{{ partLine(part) }}</small> }
+                        }
+                      </div>
+                    } @else {
+                      @if (p.localPurchaseFilesLoading()) { <p class="fin-hint" role="status">Inkoopfacturen laden…</p> }
+                      @if (p.localPurchaseFilesError()) { <p class="fin-hint fin-hint--warn">{{ p.localPurchaseFilesError() }} <button class="fin-inline-btn" type="button" (click)="p.loadLocalPurchaseFiles(document.id)">Opnieuw laden</button></p> }
+                      @if (p.localPurchaseFiles().length) { <div class="bank-alloc-purchase-docs"><span>Facturen bij deze container</span>@for (file of p.localPurchaseFiles(); track file.id) { <button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.openPurchaseInvoice(file)">{{ file.label || file.originalFilename }} ↗</button> }</div> }
+                    }
+                    @if (p.localLargerPayment(); as larger) { <p class="fin-hint fin-hint--warn">Er staat al een betaling van {{ larger.amountEur | eur }}; koppel een deel via Bestaande betaling.</p> }
                     <p class="fin-hint">Dit bedrag komt uit de bestelafspraak. Controleer de factuur en vul de werkelijke betaling in. De wisselkoers wordt niet uit het bestelbudget afgeleid.</p>
                     <div class="bank-alloc-purchase-fields">
                       <label><span>Betaalde valuta</span><select class="select" [disabled]="p.busy()" [value]="p.purchaseCurrency()" (change)="p.changePurchaseCurrency($any($event.target).value)"><option value="EUR">EUR</option><option value="USD">USD</option><option value="CNY">CNY</option></select></label>
                       <label><span>Betaald bedrag in {{ p.purchaseCurrency() }}</span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseAmountInput()" (input)="p.purchaseAmountInput.set($any($event.target).value)" /></label>
+                      @if (p.localInspectionOffered()) {
+                        <label><span>Waarvan inspectie via leverancier <span class="opt"></span></span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseInspectionInput()" (input)="p.purchaseInspectionInput.set($any($event.target).value)" /></label>
+                      }
                     </div>
+                    @if (p.localInspectionOffered() && p.purchaseInspectionInput()) { <p class="fin-hint">Wordt een eigen betaling bij Inspectie & andere kosten op dezelfde banktransactie; de banktransactie is het betaalbewijs van beide.</p> }
                     @if (p.purchaseCurrency() !== 'EUR') { <p class="fin-hint">Werkelijk afgeschreven: {{ p.abs(row.amountEur) | eur }}. Vul het bijbehorende bedrag op de betaling in {{ p.purchaseCurrency() }} in.</p> }
                   }
                   <dl class="bank-alloc-amounts">
@@ -164,7 +184,11 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
               }
               @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
             </div>
-            @if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
+            @if (p.allocationMode() === 'expense' && p.outgoingPart()?.carve) {
+              @let carve = p.outgoingPart()!.row;
+              <section class="bank-alloc-preview"><h3>Deel van een bestaande betaling</h3>
+                <p class="fin-hint">Deel van deze betaling: {{ p.abs(row.amountEur) | eur }} van {{ carve.amountEur | eur }}; de rest ({{ carveRest(carve.amountEur, row.amountEur) | eur }}) blijft open als tweede transactie.</p></section>
+            } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
               <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.outgoingDifference() | eur }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {
               <section class="bank-alloc-preview"><h3>{{ payment.number }} · bestaande betaling</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betaling</dt><dd>{{ p.existingSalesAmount(payment) | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.matchDifference(payment) | eur }}</dd></div></dl><p class="fin-hint">De bestaande ontvangst of terugbetaling wordt hergebruikt.</p></section>
@@ -185,6 +209,16 @@ export class BankAllocationSheet {
   readonly panel = input.required<BankMovementPanel>();
   private readonly injector = inject(Injector);
   private readonly selectionHeading = viewChild<ElementRef<HTMLElement>>('selectionHeading');
+  /** '03/09 · Aanbetaling 30% · € 10.000,00 · op de bank · KBC'. */
+  paymentLine(payment: PaymentNode): string {
+    return [payment.paidOn.slice(8, 10) + '/' + payment.paidOn.slice(5, 7), payment.label,
+      payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' }), payment.bank].filter(Boolean).join(' · ');
+  }
+  partLine(part: PaymentNode['parts'][number]): string {
+    return `${part.paidOn.slice(8, 10)}/${part.paidOn.slice(5, 7)} · ${part.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })} · ${part.bank}`;
+  }
+  /** What stays open on the payment once the bank line's part is carved out. */
+  carveRest(paymentEur: number, bankEur: number): number { return (Math.round(paymentEur * 100) - Math.round(Math.abs(bankEur) * 100)) / 100; }
   selectDocument(document: BankAllocationTarget): void {
     this.panel().chooseLocalDocument(document);
     afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), { injector: this.injector });

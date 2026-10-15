@@ -1,16 +1,15 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, forwardRef, inject, signal, untracked } from '@angular/core';
-import { Payee, PurchaseOrderView } from '../../core/api/models';
+import { PurchaseOrderView } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
-import { containerCostRows, containerCostTotals, reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
-import { paymentPayeeLabel } from './cost-ledger';
-import { PAYEE_TONES, dayMonth } from './finance-format';
+import { containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
+import { ContainerPaymentTreeView } from './container-payment-tree-view';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' };
@@ -24,7 +23,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
   selector: 'app-container-payments-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => ContainerPaymentsPanel) }],
-  imports: [Icon, EurPipe, Skeleton, MenuTrigger],
+  imports: [Icon, EurPipe, Skeleton, MenuTrigger, ContainerPaymentTreeView],
   template: `
     @if (state.purchaseFiguresVisible()) {
       @if (state.desk()) {
@@ -55,25 +54,11 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
                 <span class="wk-td" role="gridcell"><button class="wk-group__toggle" type="button" tabindex="-1" [attr.aria-expanded]="expanded().has(view.order.id)" aria-label="Details tonen" (click)="$event.stopPropagation(); toggle(view.order.id)"><app-icon name="chevron-down" [size]="14" /></button></span>
               </div>
               @if (expanded().has(view.order.id)) {
-                <div class="fin-expand" role="row">
-                  <div class="fin-expand__streams">
-                    @for (stream of row.reconciliation.streams; track stream.payee) {
-                      <div class="fin-stream">
-                        <div class="fin-stream__head"><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span><b>{{ payee(stream.payee) }}</b><span class="wk-amount--muted">{{ streamStatus(stream, row.reconciliation.supplierInstalments) }}</span></div>
-                        <dl class="fin-stream__figures"><div><dt>Afspraak</dt><dd>{{ stream.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div></dl>
-                        @if (stream.payee === 'SUPPLIER') {
-                          @for (term of row.reconciliation.supplierInstalments ?? []; track term.due) {
-                            <div class="fin-stream__term"><span>{{ term.label }}</span><span>{{ term.paidEur | eur }} van {{ term.plannedEur | eur }}</span></div>
-                          }
-                        }
-                      </div>
-                    }
-                  </div>
+                <div class="fin-expand fin-expand--tree" role="row">
+                  <!-- Per payee: invoices → terms → payments, with where each payment stands on the bank. -->
+                  <div class="fin-expand__streams"><app-container-payment-tree [view]="view" /></div>
                   <div class="fin-expand__payments">
-                    <b>Betalingen</b>
-                    @for (payment of state.paymentsFor(view.order.id); track payment.id) {
-                      <div class="fin-pay-line"><span>{{ day(payment.paidOn) }}</span><span>{{ payment.label || payee(payment.payee ?? 'SUPPLIER') }}</span><b>{{ payment.amountEur | eur }}</b></div>
-                    } @empty { <p class="fin-hint">Nog geen betalingen.</p> }
+                    @if (!state.paymentsFor(view.order.id).length) { <p class="fin-hint">Nog geen betalingen.</p> }
                     <button class="wk-link" type="button" (click)="state.openContainer(view.order.id)">Beheren bij de container ›</button>
                   </div>
                 </div>
@@ -195,11 +180,4 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
 
   key(view: PurchaseOrderView): string { return `container:${view.order.id}`; }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
-  payee(code: Payee): string { return paymentPayeeLabel(code); }
-  payeeTone(code: string): string { return PAYEE_TONES[code] ?? 'grey'; }
-  /** The supplier's terms count too, as in Betalingen and Analyses: a term settled on its own is afgerekend, its overrun no longer to review. */
-  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0], terms: Parameters<typeof reconciliationStatusLabel>[1]): string {
-    return reconciliationStatusLabel(stream, stream.payee === 'SUPPLIER' ? terms : undefined);
-  }
-  day(date: string): string { return dayMonth(date); }
 }

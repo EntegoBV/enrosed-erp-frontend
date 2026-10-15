@@ -7,6 +7,8 @@ export interface BankAllocationTarget {
   title: string; party: string; reference: string; date: string;
   totalEur: number; openBankEur: number; paidEur: number; label: string;
   estimated: boolean; container?: ContainerPayable;
+  /** A container term or stream: the invoice it belongs to, found by search and matched against the bank reference. */
+  invoiceNumber?: string | null;
 }
 
 export function bankAllocationTargets(bankAmount: number, costs: readonly CompanyCost[], sales: readonly SalesOrderView[],
@@ -34,21 +36,25 @@ export function bankAllocationTargets(bankAmount: number, costs: readonly Compan
   if (direction < 0) for (const term of containers) {
     rows.push({ key: term.key, kind: 'purchase', id: term.orderId, title: term.alias || term.orderNumber, party: purchaseIdentity(term.orderId).party || term.orderNumber,
       reference: term.termLabel ?? ({ SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten' }[term.payee]), date: purchaseIdentity(term.orderId).date,
-      totalEur: term.plannedEur, openBankEur: -term.remainingEur, paidEur: term.paidEur, label: 'Inkoop / container', estimated: true, container: term });
+      totalEur: term.plannedEur, openBankEur: -term.remainingEur, paidEur: term.paidEur, label: 'Inkoop / container', estimated: true, container: term,
+      invoiceNumber: term.invoiceNumber ?? null });
   }
   return rows;
 }
 
 const normal = (text: string): string => text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('nl-BE');
+/** An invoice number as a bank reference may write it: without spaces, dashes or dots ('CI 2026/118' finds CI-2026-118). */
+const compact = (text: string): string => normal(text).replace(/[^a-z0-9]/g, '');
 export function filterBankAllocationTargets(rows: readonly BankAllocationTarget[], query: string, bank: { amountEur: number; counterparty?: string | null; reference?: string | null }): BankAllocationTarget[] {
   const terms = normal(query).split(/\s+/).filter(Boolean);
   const hint = normal([bank.counterparty, bank.reference].filter(Boolean).join(' '));
   const score = (row: BankAllocationTarget): number => Number(row.openBankEur !== 0) * 10
     + Number(Math.abs(Math.round(row.openBankEur * 100) - Math.round(bank.amountEur * 100)) <= 2) * 40
     + Number(row.reference.length > 3 && hint.includes(normal(row.reference))) * 30
-    + Number(row.party.length > 3 && hint.includes(normal(row.party))) * 20;
+    + Number(row.party.length > 3 && hint.includes(normal(row.party))) * 20
+    + Number(!!row.invoiceNumber && row.invoiceNumber.length > 2 && compact(hint).includes(compact(row.invoiceNumber))) * 30;
   return rows.filter(row => {
-    const text = normal([row.label, row.title, row.party, row.reference, row.date, row.date.split('-').reverse().join('/'), row.openBankEur ? 'open' : 'betaald',
+    const text = normal([row.label, row.title, row.party, row.reference, row.invoiceNumber ?? '', row.date, row.date.split('-').reverse().join('/'), row.openBankEur ? 'open' : 'betaald',
       Math.abs(row.totalEur).toFixed(2), Math.abs(row.totalEur).toFixed(2).replace('.', ','), Math.abs(row.openBankEur).toFixed(2), Math.abs(row.openBankEur).toFixed(2).replace('.', ',')].join(' '));
     return terms.every(term => text.includes(term));
   }).sort((a, b) => score(b) - score(a) || b.date.localeCompare(a.date) || a.key.localeCompare(b.key));

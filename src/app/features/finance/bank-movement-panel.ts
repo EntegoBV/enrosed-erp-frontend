@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { BankingApi, BankMatch, BankStatementLine, ReceivedOdooInvoice, ReceivedOdooInvoicePreview } from '../../core/api/banking-api';
-import type { Currency, PurchaseDocument, SalesOrderView, SalesPayment } from '../../core/api/models';
+import type { Currency, Payee, PurchaseDocument, PurchasePaymentRow, SalesOrderView, SalesPayment } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { saveBlob } from '../../core/api/download';
@@ -17,12 +17,19 @@ import { containerPayables } from './payables';
 import { bankAllocationTargets, filterBankAllocationTargets, type BankAllocationTarget } from './bank-allocation-targets';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
+import { invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
+import { splitTransfer } from '../purchasing/purchase-transfer-split';
 
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
 /** UNLINKED_IN is the retained URL-compatible name for all transactions still to link. */
 type LinkFilter = 'ALL' | 'LINKED' | 'UNLINKED' | 'UNLINKED_IN';
 interface LinkedDocument { kind: 'cost' | 'container' | 'invoice'; id: number; label: string; }
-interface OutgoingMatch { ownerId: number; key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number; }
+interface OutgoingMatch { ownerId: number; key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number;
+  /** A purchase payment that is one transfer of a payment paid in parts. */
+  grouped?: boolean; }
+/** What a transfer to one container paid for, in the words of a bank line's link: 'Goederen + inspectie (PO-2026-021)'. */
+const PAYEE_PART: Readonly<Record<Payee, string>> = { SUPPLIER: 'goederen', SEPARATE: 'inspectie', LOGISTICS: 'douane & transport', OTHER: 'andere kosten' };
+const PAYEE_SEQUENCE: readonly Payee[] = ['SUPPLIER', 'SEPARATE', 'LOGISTICS', 'OTHER'];
 const cents = (amount: number): number => Math.round(amount * 100);
 const inactive = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -202,6 +209,52 @@ export class BankMovementPanel {
   readonly localNewConfirmed = signal(false);
   readonly purchaseCurrency = signal<Currency>('EUR');
   readonly purchaseAmountInput = signal('');
+  /** 'Waarvan inspectie via leverancier' of a supplier target: the inspection paid in the same transfer, in the purchase currency. */
+  readonly purchaseInspectionInput = signal('');
+  /** The server knows invoices and payments in parts; Kosten & bank reads it from the first container it has. */
+  readonly roundOnServer = computed(() => paymentRoundOnServer(this.state.purchaseViews()[0]));
+  /** The container of a purchase target. */
+  readonly localPurchaseView = computed(() => {
+    const target = this.localDocument();
+    return target?.kind === 'purchase' ? this.state.purchaseViews().find(view => view.order.id === target.id) ?? null : null;
+  });
+  /** Its invoices and invoice files without data, as the documents step lists them. */
+  readonly localPurchaseInvoices = computed(() => {
+    const view = this.localPurchaseView();
+    if (!view || view.invoices === undefined) return null;
+    return [
+      ...[...view.invoices].sort((left, right) => left.id - right.id).map(invoice => ({ key: 'invoice:' + invoice.id, text: invoiceLine(invoice), documentId: invoice.documentId ?? null, name: invoice.documentName || invoice.number })),
+      ...(view.invoiceFiles ?? []).map(file => ({ key: 'file:' + file.documentId, text: `${file.originalFilename} · zonder gegevens`, documentId: file.documentId, name: file.originalFilename })),
+    ];
+  });
+  /** 'dekt 30% bij bestelling + 70% bij vertrek' under the supplier's invoices. */
+  readonly localPurchaseTermsLine = computed(() => {
+    const view = this.localPurchaseView();
+    return view && this.localDocument()?.container?.payee === 'SUPPLIER' && view.invoices?.length ? invoiceTermsLine(view.reconciliation?.supplierInstalments ?? []) : '';
+  });
+  /** The term's (or stream's) payments with their bank status, from the container tree. */
+  readonly localPurchasePayments = computed(() => {
+    const view = this.localPurchaseView(), container = this.localDocument()?.container;
+    if (!view || !container) return [];
+    const branch = this.state.containerTree(view).find(item => item.payee === container.payee);
+    return (container.due ? branch?.terms.find(term => term.due === container.due)?.payments : branch?.payments) ?? [];
+  });
+  /** An unlinked payment of this payee larger than the bank line: carve a part of it rather than recording another payment. */
+  readonly localLargerPayment = computed(() => {
+    const target = this.localDocument(), bank = this.selected();
+    if (!bank || target?.kind !== 'purchase' || !this.roundOnServer()) return null;
+    return this.state.payments().find(payment => payment.orderId === target.id && (payment.payee ?? 'SUPPLIER') === target.container?.payee
+      && payment.bankStatementLineId == null && !payment.creditOffset && cents(payment.amountEur) > cents(Math.abs(bank.amountEur)) + 2) ?? null;
+  });
+  /** The inspection field shows for a supplier target when the container's inspection has an Afspraak or is paid via the supplier. */
+  readonly localInspectionOffered = computed(() => {
+    const view = this.localPurchaseView(), container = this.localDocument()?.container;
+    if (!view || container?.payee !== 'SUPPLIER' || container.due === 'FREIGHT' || !this.roundOnServer()) return false;
+    const separate = view.reconciliation?.streams.find(stream => stream.payee === 'SEPARATE');
+    return !!view.order.inspectionViaSupplier || (separate?.plannedEur ?? 0) > 0;
+  });
+  readonly purchaseInspection = computed(() => this.localInspectionOffered() && this.purchaseInspectionInput().trim()
+    ? parsePurchasePaymentAmount(this.purchaseInspectionInput()) : null);
   readonly localDocuments = computed(() => bankAllocationTargets(this.selected()?.amountEur ?? 0, this.state.costs(), this.state.salesOrders(),
     containerPayables(this.state.purchaseViews()), id => this.customerName(id), cashTotalOf, openOf, id => {
       const order = this.state.purchaseViews().find(view => view.order.id === id)?.order;
@@ -269,7 +322,10 @@ export class BankMovementPanel {
     }
     const payment = target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
       : bankAmountsMatch(bank.amountEur, open) ? open : bank.amountEur;
-    const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment)
+    const inspection = target.kind === 'purchase' ? this.purchaseInspection() : null;
+    const inspectionValid = target.kind !== 'purchase' || !this.purchaseInspectionInput().trim() || !this.localInspectionOffered()
+      || (inspection !== null && cents(inspection) < cents(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0));
+    const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment) && inspectionValid
       : sameDirection && (Math.abs(bank.amountEur) <= Math.abs(open) || bankAmountsMatch(bank.amountEur, open) || (target.kind === 'sales' && bank.amountEur > 0));
     return { paymentEur: payment, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(payment))) / 100,
       differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
@@ -296,6 +352,7 @@ export class BankMovementPanel {
   });
   readonly allocationActionLabel = computed(() => {
     if (this.busy()) return 'Koppelen…';
+    if (this.allocationStep() === 'payments' && this.allocationMode() === 'expense' && this.outgoingPart()?.carve) return 'Deel koppelen';
     if (this.allocationStep() === 'documents' && this.localReusablePayment()) return 'Bestaande betaling koppelen';
     if (this.allocationStep() === 'new' && !this.receivedPreview()?.companyCostId && !this.receivedExistingCostId()) return 'Registreren en koppelen';
     return 'Koppelen';
@@ -346,7 +403,7 @@ export class BankMovementPanel {
         if (!this.outgoingSelected().length) return 'Selecteer eerst één of meer bestaande betalingen.';
         if (chosen.length !== this.outgoingSelected().length) return 'Een geselecteerde betaling is niet meer beschikbaar. Kies de bestaande betalingen opnieuw.';
         if (chosen.filter(payment => payment.kind === 'cost').length > 1) return 'Kies maximaal één kostenbetaling; meerdere containerbetalingen kunnen samen worden gekoppeld.';
-        if (!bankAmountsMatch(-this.outgoingTotal(), bank.amountEur)) return 'Het totaal van de gekozen betalingen past niet bij de banktransactie. Maximaal € 0,02 verschil op het totaal is toegestaan.';
+        if (!bankAmountsMatch(-this.outgoingTotal(), bank.amountEur) && !this.outgoingPart()?.carve) return 'Het totaal van de gekozen betalingen past niet bij de banktransactie. Maximaal € 0,02 verschil op het totaal is toegestaan.';
       } else {
         if (this.matchingLoading()) return 'De passende ontvangsten en terugbetalingen worden nog geladen.';
         const choice = this.choice();
@@ -376,9 +433,10 @@ export class BankMovementPanel {
   chooseLocalDocument(target: BankAllocationTarget): void {
     if (this.busy()) return;
     this.localSelectedKey.set(target.key); this.localNewConfirmed.set(false); this.error.set('');
-    this.purchaseCurrency.set('EUR'); this.purchaseAmountInput.set(Math.abs(this.selected()?.amountEur ?? 0).toFixed(2));
+    this.purchaseCurrency.set('EUR'); this.purchaseAmountInput.set(Math.abs(this.selected()?.amountEur ?? 0).toFixed(2)); this.purchaseInspectionInput.set('');
     this.localPurchaseFiles.set([]); this.localPurchaseFilesError.set('');
-    if (target.kind === 'purchase') void this.loadLocalPurchaseFiles(target.id);
+    // A server with invoices lists them from the container view; an older one keeps the commercial invoice files.
+    if (target.kind === 'purchase' && this.state.purchaseViews().find(view => view.order.id === target.id)?.invoices === undefined) void this.loadLocalPurchaseFiles(target.id);
   }
   changePurchaseCurrency(currency: Currency): void {
     if (this.busy()) return;
@@ -408,6 +466,10 @@ export class BankMovementPanel {
   async openPurchaseInvoice(document: PurchaseDocument): Promise<void> {
     await this.run(async () => saveBlob(await this.sourcing.documentFile(document.orderId, document.id), document.originalFilename));
   }
+  /** 'Bestand ↗' of a container invoice or invoice file. */
+  async openPurchaseFile(orderId: number, documentId: number, name: string): Promise<void> {
+    await this.run(async () => saveBlob(await this.sourcing.documentFile(orderId, documentId), name));
+  }
   reuseLocalPayment(payment: OutgoingMatch): void {
     if (this.busy()) return;
     this.outgoingSelected.set([payment.key]); this.allocationMode.set('expense'); this.allocationStep.set('payments');
@@ -420,12 +482,20 @@ export class BankMovementPanel {
   async linkLocalDocument(): Promise<void> {
     const bank = this.selected(), target = this.localDocument(); if (!bank || !target || !this.canLinkLocal()) return;
     const amount = parsePurchasePaymentAmount(this.purchaseAmountInput()), currency = this.purchaseCurrency();
+    const inspection = target.kind === 'purchase' && target.container?.payee === 'SUPPLIER' ? this.purchaseInspection() : null;
     const confirmNew = this.localNewConfirmed();
     await this.run(async () => {
       let saved: BankStatementLine;
       if (target.kind === 'cost') saved = await this.api.addCostPayment(bank.id, target.id, confirmNew);
       else if (target.kind === 'sales') saved = await this.api.allocate(bank.id, target.id, null);
-      else {
+      else if (inspection !== null) {
+        // Goods and the inspection paid via the supplier in one transfer: two payments on this line, the inspection setting the container's flag.
+        const parts = splitTransfer({ amount: Math.round((amount! - inspection) * 100) / 100, currency, paidOn: bankTransactionDay(bank),
+          label: target.reference || 'Bankbetaling', payee: 'SUPPLIER', settles: false, instalmentDue: target.container!.due,
+          amountEur: currency === 'EUR' ? null : Math.abs(bank.amountEur), separateAmount: inspection, inspectionViaSupplier: true, invoiceId: null },
+          value => value).writes;
+        saved = (await this.api.addPurchasePayment(bank.id, target.id, parts)).line;
+      } else {
         const result = await this.api.addPurchasePayment(bank.id, target.id, [{ paidOn: bankTransactionDay(bank), amount: amount!, currency,
           amountEur: currency === 'EUR' ? null : Math.abs(bank.amountEur), label: target.reference || 'Bankbetaling',
           payee: target.container!.payee, instalmentDue: target.container!.due, settles: false }]);
@@ -433,7 +503,7 @@ export class BankMovementPanel {
       }
       this.state.bankStatements.update(rows => [saved, ...rows.filter(row => row.id !== saved.id)]);
       ++this.allocationVersion; this.selected.set(null); this.localSelectedKey.set(null);
-      this.ui.toast(`Bankbetaling gekoppeld aan ${target.title}`, 'ok');
+      this.ui.toast(inspection !== null ? 'Bankbetaling gekoppeld: goederen + inspectie' : `Bankbetaling gekoppeld aan ${target.title}`, 'ok');
       await this.state.refreshBank(); await this.state.reload(['costs', 'payments', 'containers']);
     });
   }
@@ -447,10 +517,15 @@ export class BankMovementPanel {
       result.push({ ownerId: cost.id!, key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
         detail: [cost.description, cost.reference, payment.note].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
+    const groups = new Map<number, number>();
+    for (const payment of this.state.payments()) if (payment.groupId != null) groups.set(payment.groupId, (groups.get(payment.groupId) ?? 0) + 1);
     for (const payment of this.state.payments()) {
-      if (payment.bankStatementLineId != null || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
+      // A credit offset left no bank: it is never offered for a bank line.
+      if (payment.bankStatementLineId != null || payment.creditOffset || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
+      const parts = payment.groupId != null ? groups.get(payment.groupId) ?? 0 : 0;
       result.push({ ownerId: payment.orderId, key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',
-        detail: [payment.orderNumber, payment.label].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
+        detail: [payment.orderNumber, payment.label, parts > 1 ? `deel van een betaling in ${parts} transacties` : null].filter(Boolean).join(' · '),
+        paidOn: payment.paidOn, amountEur: payment.amountEur, grouped: payment.groupId != null });
     }
     return result.sort((a, b) => b.paidOn.localeCompare(a.paidOn) || a.id - b.id);
   });
@@ -462,11 +537,25 @@ export class BankMovementPanel {
   readonly chosenOutgoing = computed(() => this.outgoingCandidates().filter(row => this.outgoingSelected().includes(row.key)));
   readonly outgoingTotal = computed(() => this.chosenOutgoing().reduce((sum, row) => sum + cents(row.amountEur), 0) / 100);
   readonly outgoingDifference = computed(() => this.selected() ? bankAmountDifference(this.selected()!.amountEur, -this.outgoingTotal()) : 0);
+  /**
+   * One purchase payment alone, through the split endpoint (bank-part): a
+   * payment larger than the line gets the line's part carved out ('Deel
+   * koppelen'; the rest stays open as a second transfer), and a transfer of a
+   * payment paid in parts that matches takes the line's day. Every other
+   * selection keeps /links, dates unchanged.
+   */
+  readonly outgoingPart = computed<{ row: OutgoingMatch; carve: boolean } | null>(() => {
+    const line = this.selected(), rows = this.chosenOutgoing();
+    if (!line || !this.roundOnServer() || rows.length !== 1 || this.outgoingSelected().length !== 1 || rows[0].kind !== 'purchase') return null;
+    const row = rows[0];
+    if (cents(row.amountEur) > cents(Math.abs(line.amountEur)) + 2) return { row, carve: true };
+    return row.grouped && bankAmountsMatch(-row.amountEur, line.amountEur) ? { row, carve: false } : null;
+  });
   readonly canLinkOutgoing = computed(() => {
     const line = this.selected(), rows = this.chosenOutgoing();
     return !this.busy() && !!line && line.amountEur !== 0 && !this.allocated(line) && rows.length > 0
       && rows.length === this.outgoingSelected().length && rows.filter(row => row.kind === 'cost').length <= 1
-      && bankAmountsMatch(-this.outgoingTotal(), line.amountEur);
+      && (bankAmountsMatch(-this.outgoingTotal(), line.amountEur) || !!this.outgoingPart()?.carve);
   });
   toggleOutgoing(row: OutgoingMatch): void {
     if (this.busy()) return;
@@ -476,6 +565,18 @@ export class BankMovementPanel {
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();
+    const part = this.outgoingPart();
+    if (part) {
+      await this.run(async () => {
+        const result = await this.sourcing.linkPaymentPart(part.row.id, line.id);
+        const saved = result.lines.find(item => item.id === line.id);
+        if (saved) this.state.bankStatements.update(lines => lines.map(row => row.id === saved.id ? saved : row));
+        ++this.allocationVersion; this.selected.set(null); this.outgoingSelected.set([]);
+        this.ui.toast(part.carve ? 'Deel van de betaling gekoppeld' : 'Banktransactie gekoppeld');
+        await this.state.refreshBank(); await this.state.reload(['costs', 'payments', 'containers']);
+      });
+      return;
+    }
     await this.run(async () => {
       const cost = rows.find(row => row.kind === 'cost');
       const saved = await this.api.linkPayments(line.id, { purchasePaymentIds: rows.filter(row => row.kind === 'purchase').map(row => row.id), ...(cost ? { costPaymentId: cost.id } : {}) });
@@ -730,8 +831,15 @@ export class BankMovementPanel {
       add(cost.bankStatementLineId, target);
       for (const payment of cost.payments ?? []) add(payment.bankStatementLineId, target);
     }
+    // A line that carries several payees of one container names what it paid: 'Goederen + inspectie (PO-2026-021)'.
+    const parts = new Map<string, PurchasePaymentRow[]>();
+    for (const payment of this.state.payments()) {
+      if (payment.bankStatementLineId == null) continue;
+      const key = `${payment.bankStatementLineId}:${payment.orderId}`;
+      parts.set(key, [...(parts.get(key) ?? []), payment]);
+    }
     for (const payment of this.state.payments()) add(payment.bankStatementLineId,
-      { kind: 'container', id: payment.orderId, label: `Inkoop · ${payment.orderNumber || payment.orderAlias || '#' + payment.orderId}` });
+      { kind: 'container', id: payment.orderId, label: containerLinkLabel(parts.get(`${payment.bankStatementLineId}:${payment.orderId}`) ?? [payment]) });
     return links;
   });
   linkedDocuments(row: BankStatementLine): LinkedDocument[] {
@@ -906,4 +1014,15 @@ export class BankMovementPanel {
       () => this.run(async () => { await this.api.delete(row.id); this.state.bankStatements.update(rows => rows.filter(line => line.id !== row.id)); await this.state.refreshBank(); }));
   }
   private async run(work: () => Promise<unknown>): Promise<void> { if (this.busy()) return; this.busy.set(true); this.error.set(''); try { await work(); } catch (failure) { this.error.set(messageOf(failure, 'Bankbewerking mislukt')); } finally { this.busy.set(false); } }
+}
+
+/** 'Inkoop · PO-2026-021', or for a line that paid several payees of the container 'Goederen + zeevracht + inspectie (PO-2026-021)'. */
+export function containerLinkLabel(payments: readonly PurchasePaymentRow[]): string {
+  const first = payments[0];
+  const number = first?.orderNumber || first?.orderAlias || '#' + first?.orderId;
+  const payees = PAYEE_SEQUENCE.filter(payee => payments.some(payment => (payment.payee ?? 'SUPPLIER') === payee));
+  if (payees.length < 2) return `Inkoop · ${number}`;
+  const words = payees.map(payee => payee === 'SUPPLIER' && payments.some(payment => (payment.payee ?? 'SUPPLIER') === 'SUPPLIER' && payment.instalmentDue === 'FREIGHT')
+    ? PAYEE_PART.SUPPLIER + ' + zeevracht' : PAYEE_PART[payee]).join(' + ');
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)} (${number})`;
 }

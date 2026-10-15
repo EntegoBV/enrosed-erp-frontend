@@ -235,6 +235,18 @@
   .fin-stream__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0;
     dt { color: var(--muted); font-size: 11px; } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; } }
   .fin-stream__term { display: flex; justify-content: space-between; gap: 8px; padding-top: 4px; color: var(--ink-2); }
+  /* the unfolded container as invoices → terms → payments (container-payment-tree-view) */
+  .fin-expand--tree { grid-template-columns: minmax(0, 1fr) auto; }
+  .fin-tree { display: grid; gap: 3px; align-content: start; }
+  .fin-tree__invoice { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; padding-top: 6px; color: var(--ink);
+    > span { min-width: 0; overflow-wrap: anywhere; } .wk-link { flex: none; } }
+  .fin-tree__invoice--file > span { color: var(--muted); }
+  .fin-tree__note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+  .fin-tree__term { display: flex; justify-content: space-between; gap: 8px; padding-top: 6px; padding-left: 10px; color: var(--ink-2); font-weight: 600; }
+  .fin-tree__payment { padding-left: 10px; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+    &.fin-tree__payment--nested { padding-left: 22px; } }
+  .fin-tree__part { padding-left: 22px; color: var(--muted); &.fin-tree__payment--nested { padding-left: 34px; } }
+  .fin-insp-tree { display: grid; gap: 10px; }
 
   /* ---- Overzicht: five tiles as 1 + 2 + 2, as 2 + 3 from a 730px pane and in one row from 1190px, the widths at which a six-digit amount (180px) still fits its tile */
   .fin-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; > .fin-tile:first-child { grid-column: 1 / -1; } }

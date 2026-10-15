@@ -28,6 +28,10 @@ export interface ContainerPayable {
   remainingEur: number;
   bucket: 'now' | 'later';
   whenLabel: 'nu' | 'bij vertrek' | 'bij aankomst';
+  /** The payee's primary invoice; for the inspection its own, else the supplier's when that one covers the inspection. */
+  invoiceNumber: string | null;
+  /** Inspectie & andere kosten paid via the supplier ('Inspectie via leverancier'). */
+  viaSupplier: boolean;
 }
 
 const SKIPPED = new Set(['PAID', 'SETTLED_LOWER', 'NOT_APPLICABLE']);
@@ -58,6 +62,15 @@ export function containerPayables(views: readonly PurchaseOrderView[]): Containe
     const reconciliation = view.reconciliation;
     if (!reconciliation || order.status === 'CONCEPT') continue;
     const base = { orderId: order.id, orderNumber: order.number, alias: order.alias ?? null, status: order.status, archived: !!order.archivedAt };
+    // The first registered invoice of a payee is its primary (as the server and the order screens read it).
+    const primary = (payee: Payee) => [...(view.invoices ?? [])].filter(invoice => invoice.payee === payee).sort((a, b) => a.id - b.id)[0] ?? null;
+    const invoiceOf = (payee: Payee): string | null => {
+      const own = primary(payee);
+      if (own || payee !== 'SEPARATE') return own?.number ?? null;
+      const supplier = primary('SUPPLIER');
+      return supplier?.coversInspection ? supplier.number : null;
+    };
+    const extra = (payee: Payee) => ({ invoiceNumber: invoiceOf(payee), viaSupplier: payee === 'SEPARATE' && !!order.inspectionViaSupplier });
     for (const stream of [...reconciliation.streams].sort((a, b) => PAYEE_ORDER.indexOf(a.payee) - PAYEE_ORDER.indexOf(b.payee))) {
       if (stream.finalized || SKIPPED.has(stream.status)) continue;
       const terms = stream.payee === 'SUPPLIER' ? reconciliation.supplierInstalments ?? [] : [];
@@ -68,7 +81,7 @@ export function containerPayables(views: readonly PurchaseOrderView[]): Containe
           const now = reached(term.due, order.status);
           rows.push({ ...base, key: `container:${order.id}:SUPPLIER:${term.due}`, payee: 'SUPPLIER', termLabel: term.label || null, due: term.due,
             plannedEur: cents(term.plannedEur) / 100, paidEur: cents(term.paidEur) / 100, remainingEur: cents(term.remainingEur) / 100,
-            bucket: now ? 'now' : 'later', whenLabel: now ? 'nu' : term.due === 'ARRIVED' ? 'bij aankomst' : 'bij vertrek' });
+            bucket: now ? 'now' : 'later', whenLabel: now ? 'nu' : term.due === 'ARRIVED' ? 'bij aankomst' : 'bij vertrek', ...extra('SUPPLIER') });
         }
         continue;
       }
@@ -76,7 +89,7 @@ export function containerPayables(views: readonly PurchaseOrderView[]): Containe
       const now = streamDue(stream.payee, order.status);
       rows.push({ ...base, key: `container:${order.id}:${stream.payee}`, payee: stream.payee, termLabel: null, due: null,
         plannedEur: cents(stream.plannedEur) / 100, paidEur: cents(stream.paidEur) / 100, remainingEur: cents(stream.remainingEur) / 100,
-        bucket: now ? 'now' : 'later', whenLabel: now ? 'nu' : 'bij vertrek' });
+        bucket: now ? 'now' : 'later', whenLabel: now ? 'nu' : 'bij vertrek', ...extra(stream.payee) });
     }
   }
   return rows.sort((a, b) => a.orderNumber.localeCompare(b.orderNumber, 'nl') || a.orderId - b.orderId);

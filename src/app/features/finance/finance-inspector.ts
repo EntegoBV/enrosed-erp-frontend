@@ -1,3 +1,4 @@
+import { ContainerPaymentTreeView } from './container-payment-tree-view';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MediaAssetSummary } from '../../core/api/media-models';
@@ -6,12 +7,11 @@ import { formatBytes } from '../../shared/format-bytes';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
-import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
 import { categoryLabel } from './cost-categories';
 import { countryName } from './cost-countries';
 import { paymentPayeeLabel } from './cost-ledger';
 import { CostPaymentsSection } from './cost-payments-section';
-import { PAYEE_TONES, dayMonth, dayMonthYear } from './finance-format';
+import { dayMonth, dayMonthYear } from './finance-format';
 import { REVERSE_CHARGE, acquisitionValueOf, cashTotalOf, expenseOf, intervalLabel, isInvestment, monthlyEquivalentEur, occurrencesBetween, addDays, openOf, paidOf, regimeLabel, revisionUntil, vatOf } from './finance-metrics';
 import { FinanceState, InspectTarget, formatEuro } from './finance-state';
 import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
@@ -32,7 +32,7 @@ const DAY = 86_400_000;
   selector: 'app-finance-inspector',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
-  imports: [RouterLink, Icon, EurPipe, Skeleton, CostPaymentsSection],
+  imports: [RouterLink, Icon, EurPipe, Skeleton, CostPaymentsSection, ContainerPaymentTreeView],
   template: `
     @let t = target();
     @if (layout() === 'foot') {
@@ -146,28 +146,10 @@ const DAY = 86_400_000;
               <strong class="fin-insp-amount">{{ (view.reconciliation?.totals?.remainingEur ?? 0) | eur }}</strong>
               <span class="wk-amount--muted">nog open · verwacht</span>
             </section>
-            @for (stream of view.reconciliation?.streams ?? []; track stream.payee) {
-              <section class="wk-section">
-                <h3 class="wk-section__title"><span><span [class]="'wk-dot tone-' + payeeTone(stream.payee)"></span> {{ payee(stream.payee) }}</span><span class="fin-insp-state">{{ streamStatus(stream, view.reconciliation?.supplierInstalments) }}</span></h3>
-                <dl class="wk-kv">
-                  <div><dt>Afspraak</dt><dd>{{ stream.plannedEur | eur }}</dd></div>
-                  <div><dt>Betaald</dt><dd>{{ stream.paidEur | eur }}</dd></div>
-                  <div><dt>Open</dt><dd>{{ stream.remainingEur | eur }}</dd></div>
-                </dl>
-                @if (stream.payee === 'SUPPLIER' && view.reconciliation?.supplierInstalments?.length) {
-                  <ul class="fin-terms">
-                    @for (term of view.reconciliation!.supplierInstalments!; track term.due) {
-                      <li><span>{{ term.label }}</span><span>{{ term.paidEur | eur }} / {{ term.plannedEur | eur }}</span></li>
-                    }
-                  </ul>
-                }
-              </section>
-            }
-            <section class="wk-section">
-              <h3 class="wk-section__title">Betalingen</h3>
-              @for (payment of state.paymentsFor(view.order.id); track payment.id) {
-                <div class="fin-pay-line"><span>{{ day(payment.paidOn) }}</span><span>{{ payment.label || payee(payment.payee ?? 'SUPPLIER') }}</span><b>{{ payment.amountEur | eur }}</b></div>
-              } @empty { <p class="fin-hint">Nog geen betalingen geregistreerd.</p> }
+            <!-- Per payee: invoices → terms → payments, with where each payment stands on the bank (as Uitgaven › Containers). -->
+            <section class="wk-section fin-insp-tree">
+              <app-container-payment-tree [view]="view" />
+              @if (!state.paymentsFor(view.order.id).length) { <p class="fin-hint">Nog geen betalingen geregistreerd.</p> }
             </section>
             @if (layout() === 'pane') { <footer class="wk-inspector__foot"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openContainer(view.order.id)">Beheren bij de container ›</button></footer> }
           } @else if (state.containersLoading()) {
@@ -353,17 +335,12 @@ export class FinanceInspector {
   category(code: string): string { return categoryLabel(code); }
   channel(code: string): string { return this.state.channelName(code); }
   payee(code: Payee): string { return paymentPayeeLabel(code); }
-  payeeTone(code: string): string { return PAYEE_TONES[code] ?? 'grey'; }
   rhythm(code: string): string { return intervalLabel(code); }
   monthly(definition: RecurringCost): number { return monthlyEquivalentEur(definition); }
   purposeLabel(purpose: 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT'): string { return purpose === 'STANDARD' ? 'Klant' : incomingPurposeLabel(purpose); }
   moment(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }); }
   size(asset: MediaAssetSummary): string { return formatBytes(asset.sizeBytes); }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
-  /** The supplier's terms count too, as in Betalingen and Analyses: a term settled on its own is afgerekend, its overrun no longer to review. */
-  streamStatus(stream: Parameters<typeof reconciliationStatusLabel>[0], terms: Parameters<typeof reconciliationStatusLabel>[1]): string {
-    return reconciliationStatusLabel(stream, stream.payee === 'SUPPLIER' ? terms : undefined);
-  }
   recurringOf(id: number | null | undefined) { return id ? this.state.recurring().find((row) => row.id === id) ?? null : null; }
   anchor(event: MouseEvent): { x: number; y: number } {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();

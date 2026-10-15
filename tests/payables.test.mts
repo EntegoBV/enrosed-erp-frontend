@@ -127,3 +127,23 @@ test('PO 35: terms netted by the server leave nothing to pay, so Kosten & bank l
   const [rest] = containerPayables([po35({ remainingEur: 12.34, finalized: false })]);
   assert.deepEqual([rest.due, rest.termLabel, rest.remainingEur, rest.bucket], ['SHIPPED', '70% bij vertrek', 12.34, 'now']);
 });
+
+test('a container row names its payee\'s primary invoice; the inspection via the supplier names the supplier\'s, and terms still replace the stream', () => {
+  const invoices = [
+    { id: 9, payee: 'SUPPLIER', number: 'CI-2026-131', coversInspection: false },
+    { id: 7, payee: 'SUPPLIER', number: 'CI-2026-118', coversInspection: true },
+    { id: 8, payee: 'LOGISTICS', number: 'FW-55', coversInspection: false },
+  ];
+  const view = (flag: boolean, list = invoices) => ({ ...order(4, 'BESTELD', [stream('SUPPLIER', 600), stream('LOGISTICS', 0), stream('SEPARATE', 300)],
+    [term('ORDERED', 300), term('SHIPPED', 300)]), invoices: list, order: { id: 4, number: 'INK-2026-04', alias: null, status: 'BESTELD', inspectionViaSupplier: flag } }) as unknown as PurchaseOrderView;
+  const rows = containerPayables([view(true)]);
+  assert.deepEqual(rows.map((row) => [row.payee, row.due, row.invoiceNumber, row.viaSupplier]), [
+    ['SUPPLIER', 'ORDERED', 'CI-2026-118', false], ['SUPPLIER', 'SHIPPED', 'CI-2026-118', false], ['SEPARATE', null, 'CI-2026-118', true],
+  ], 'the first registered invoice is the primary; the terms replace the supplier stream');
+  assert.equal(rows.reduce((sum, row) => sum + row.remainingEur, 0), 900);
+  const own = containerPayables([view(true, [...invoices, { id: 12, payee: 'SEPARATE', number: 'INS-1', coversInspection: false }])]);
+  assert.equal(own.find((row) => row.payee === 'SEPARATE')?.invoiceNumber, 'INS-1');
+  const plain = containerPayables([view(false, invoices.map((invoice) => ({ ...invoice, coversInspection: false })))]);
+  assert.deepEqual(plain.find((row) => row.payee === 'SEPARATE') && [plain.find((row) => row.payee === 'SEPARATE')!.invoiceNumber, plain.find((row) => row.payee === 'SEPARATE')!.viaSupplier], [null, false]);
+  assert.equal(containerPayables([order(5, 'BESTELD', [stream('SUPPLIER', 100)])])[0].invoiceNumber, null, 'an older server sends no invoices');
+});
