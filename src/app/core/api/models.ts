@@ -3001,6 +3001,35 @@ export interface ProductCostHistoryEntry {
   exwPrice: number | null;
   exwCurrency: string | null;
   appliedBy: string | null;
+  /*
+   * Since the cost-history round (2026-10-16); absent on an older server and
+   * null on rows written before it. The basis holds the effective values the
+   * cost was applied on; a row without one reads on the product's basis.
+   */
+  /** APPLY, REAPPLY (same container, other cost), SEED (cost before the history began) or COPY (taken over by a copy). */
+  kind?: 'APPLY' | 'REAPPLY' | 'SEED' | 'COPY' | null;
+  /** DISPLAY only for a display sold per display. */
+  salesUnit?: 'PIECE' | 'DISPLAY' | null;
+  /** Pieces in one display; null unless the packaging is a display of more than one piece. */
+  piecesPerUnit?: number | null;
+  /** What one piece is called (a unit-names key). */
+  unitKey?: string | null;
+  /** The extra unit cost on top of the factory price, in the EXW currency. */
+  extraUnitCost?: number | null;
+  /** What one unit was made of, in euro, each part at 4 decimals; null when not kept. */
+  goodsEur?: number | null;
+  originEur?: number | null;
+  freightEur?: number | null;
+  dutyEur?: number | null;
+  destinationEur?: number | null;
+  /** The Enrosed kost (the container's extra revenue) for one unit. */
+  enrosedEur?: number | null;
+  /** Inspection and other named costs, when a key spread them into the piece price. */
+  separateEur?: number | null;
+  /** The container's name as it is today (Herkenbare naam, else its number). */
+  containerName?: string | null;
+  /** The container is in the trash or gone. */
+  containerGone?: boolean | null;
 }
 
 /* ----------------------------------------------------------- creditnota's */
