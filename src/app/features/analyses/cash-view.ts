@@ -157,15 +157,20 @@ export function underBuffer(forecast: Pick<CashForecast, 'mode' | 'bufferEur'>, 
   return forecast.mode !== 'relative' && typeof eur === 'number' && eur < forecast.bufferEur;
 }
 
-/** The labelled points: the lowest with the scenario, where the fixed line crosses zero, both ends (one when they are the same). */
-export function forecastMarkers(forecast: CashForecast, ends = true): CashChartMarker[] {
+/**
+ * The labelled points: the lowest with the scenario, where the fixed line crosses zero, both ends (one when they are
+ * the same). `short` is the phone's narrow chart: the labels keep the figure and the day, the figures under the chart
+ * say the rest ("Laagste € 2.124", "Onder nul · 3 jan"), so they find room next to their points.
+ */
+export function forecastMarkers(forecast: CashForecast, ends = true, short = false): CashChartMarker[] {
   const markers: CashChartMarker[] = [
-    { day: forecast.lowestWith.day, eur: forecast.lowestWith.eur, kind: 'lowest', label: `Laagste ${eurWhole(forecast.lowestWith.eur)} · ${weekdayDayMonth(forecast.lowestWith.day)}` },
+    { day: forecast.lowestWith.day, eur: forecast.lowestWith.eur, kind: 'lowest',
+      label: short ? `Laagste ${eurWhole(forecast.lowestWith.eur)}` : `Laagste ${eurWhole(forecast.lowestWith.eur)} · ${weekdayDayMonth(forecast.lowestWith.day)}` },
   ];
   if (forecast.zeroBase) {
     const day = forecast.days.find((row) => row.day === forecast.zeroBase);
-    const words = forecast.mode === 'relative' ? 'Zonder verkoop lager dan vandaag' : 'Zonder verkoop onder nul';
-    if (day) markers.push({ day: day.day, eur: day.baseEur, kind: 'zero', label: `${words} · ${weekdayDayMonth(day.day)}` });
+    const words = forecast.mode === 'relative' ? short ? 'Lager dan vandaag' : 'Zonder verkoop lager dan vandaag' : short ? 'Onder nul' : 'Zonder verkoop onder nul';
+    if (day) markers.push({ day: day.day, eur: day.baseEur, kind: 'zero', label: `${words} · ${short ? dayMon(day.day) : weekdayDayMonth(day.day)}` });
   }
   if (ends) {
     markers.push({ day: forecast.horizonEnd, eur: forecast.endWithEur, kind: 'end', label: eurWhole(forecast.endWithEur) });

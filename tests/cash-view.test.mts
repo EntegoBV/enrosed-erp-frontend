@@ -151,6 +151,8 @@ test('the chart: past line runs into today, markers and pins', () => {
     ['end', '2027-04-15', '€ 27.084'], ['end', '2027-04-15', '− € 7.450 vastligt']]);
   assert.equal(view.forecastMarkers(base).filter((marker) => marker.kind === 'end').length, 1, 'without a scenario the two ends are one');
   assert.equal(view.forecastMarkers(scenario, false).length, 2);
+  /* The phone's narrow chart: short labels that fit next to their points. */
+  assert.deepEqual(view.forecastMarkers(scenario, false, true).map((marker) => marker.label), ['Laagste − € 4.286', 'Onder nul · 25 jan']);
   assert.deepEqual(view.pinLegend([{ n: 1, from: '2026-11-18', to: '2026-11-20', label: 'PO-2026-041 · Saldo bij aankomst', amountEur: -11008.4 }]),
     ['① PO-2026-041 · Saldo bij aankomst · 18–20 nov · − € 11.008']);
   assert.deepEqual(view.dayItems(base, '2026-12-01'), ['PO-2026-043 · 70% bij vertrek − € 21.000', 'PO-2026-044 · 2e voorschot + € 12.100', 'Huur loods Wilrijk − € 1.452']);

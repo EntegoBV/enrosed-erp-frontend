@@ -347,7 +347,7 @@ export class CashPhone {
         : card.id === 'scenario' ? 'incl. btw' : card.sub }));
   });
   readonly buffered = computed(() => { const f = this.forecast(); return f ? chartBuffer(f) : { bufferEur: null, tight: [] }; });
-  readonly markers = computed(() => { const f = this.forecast(); return f ? forecastMarkers(f, false) : []; });
+  readonly markers = computed(() => { const f = this.forecast(); return f ? forecastMarkers(f, false, true) : []; });
   readonly accountsLine = computed(() => {
     const f = this.forecast();
     if (!f) return '';
