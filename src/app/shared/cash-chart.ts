@@ -3,6 +3,7 @@ import {
 } from '@angular/core';
 import type { ForecastPin } from '../features/finance/cash-forecast';
 import { dayMon, eur, eurWhole, weekdayDayMonth } from '../features/finance/cash-format';
+import { planLabels, type PlacedLabel, type Point } from './chart-labels';
 
 export interface CashChartPoint { day: string; eur: number | null; }
 export interface CashChartSeries { id: 'past' | 'base' | 'with' | 'slow' | 'lane'; label: string; points: CashChartPoint[];
@@ -65,75 +66,6 @@ function timeTicks(t0: number, t1: number, plotWidth: number): { at: number; lab
   return ticks.filter((_, index) => index % every === 0);
 }
 
-interface Box { x1: number; x2: number; y1: number; y2: number; }
-/** A place for a label: its anchor and baseline, and how much less natural it is than the first choice. */
-interface Spot { anchor: 'start' | 'middle' | 'end'; x: number; y: number; cost: number; }
-
-/** The box a 10 px label covers around its baseline (cap height and descenders; the width includes the halo). */
-function textBox(anchor: Spot['anchor'], x: number, y: number, width: number): Box {
-  const x1 = anchor === 'start' ? x : anchor === 'end' ? x - width : x - width / 2;
-  return { x1, x2: x1 + width, y1: y - 8, y2: y + 2.5 };
-}
-const grow = (box: Box, by: number): Box => ({ x1: box.x1 - by, x2: box.x2 + by, y1: box.y1 - by, y2: box.y2 + by });
-const overlaps = (a: Box, b: Box): boolean => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
-/** The distance between two boxes (0 when they touch). */
-const gap = (a: Box, b: Box): number => Math.hypot(Math.max(0, a.x1 - b.x2, b.x1 - a.x2), Math.max(0, a.y1 - b.y2, b.y1 - a.y2));
-
-/** Whether a drawn line (points left to right, in px) passes through the box. */
-function crosses(points: { x: number; y: number }[], box: Box): boolean {
-  if (points.length === 1) return overlaps({ x1: points[0].x - 1, x2: points[0].x + 1, y1: points[0].y - 1, y2: points[0].y + 1 }, box);
-  for (let index = 0; index + 1 < points.length; index++) {
-    const a = points[index];
-    const b = points[index + 1];
-    const lo = Math.min(a.x, b.x);
-    const hi = Math.max(a.x, b.x);
-    if (hi < box.x1 || lo > box.x2) continue;
-    let ya = a.y;
-    let yb = b.y;
-    if (b.x !== a.x) {
-      const at = (px: number) => a.y + ((b.y - a.y) * (px - a.x)) / (b.x - a.x);
-      ya = at(Math.max(lo, box.x1));
-      yb = at(Math.min(hi, box.x2));
-    }
-    if (Math.max(ya, yb) >= box.y1 && Math.min(ya, yb) <= box.y2) return true;
-  }
-  return false;
-}
-
-/**
- * Where a marker's label may go, most natural first: under a low point (lowest, zero), above or below and to the
- * left of an end point, to the right of a break-even flag; then beside the point and further away, a line at a time.
- */
-function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spot[] {
-  const spots: Spot[] = [];
-  if (kind === 'breakeven') {
-    spots.push({ anchor: 'start', x: mx + 11, y: my - 11, cost: 0 }, { anchor: 'end', x: mx - 4, y: my - 24, cost: 2 },
-      { anchor: 'start', x: mx + 6, y: my + 15, cost: 8 }, { anchor: 'end', x: mx - 6, y: my + 15, cost: 9 });
-    for (let step = 1; step <= 3; step++) {
-      spots.push({ anchor: 'start', x: mx + 11, y: my - 11 - 12 * step, cost: 12 * step }, { anchor: 'end', x: mx - 4, y: my - 24 - 12 * step, cost: 2 + 12 * step });
-    }
-    return spots;
-  }
-  const lowFirst = kind !== 'end';
-  for (let step = 0; step <= 6; step++) {
-    const below = my + 15 + 12 * step;
-    const above = my - 9 - 12 * step;
-    const far = 12 * step;
-    const belowCost = far + (lowFirst ? 0 : 4);
-    const aboveCost = far + (lowFirst ? 8 : 0);
-    if (kind !== 'end') {
-      for (const shift of [0, -40, 40, -80, 80]) {
-        spots.push({ anchor: 'middle', x: mx + shift, y: below, cost: belowCost + Math.abs(shift) / 8 }, { anchor: 'middle', x: mx + shift, y: above, cost: aboveCost + Math.abs(shift) / 8 });
-      }
-    }
-    spots.push({ anchor: 'end', x: mx - 6, y: below, cost: belowCost + 3 }, { anchor: 'end', x: mx - 6, y: above, cost: aboveCost + 3 });
-    if (kind !== 'end') spots.push({ anchor: 'start', x: mx + 6, y: below, cost: belowCost + 3 }, { anchor: 'start', x: mx + 6, y: above, cost: aboveCost + 3 });
-  }
-  spots.push({ anchor: 'end', x: mx - 9, y: my + 3.5, cost: 5 });
-  if (kind !== 'end') spots.push({ anchor: 'start', x: mx + 9, y: my + 3.5, cost: 5 });
-  return spots;
-}
-
 /**
  * The cash line of the Kaslijn (Kosten & bank), the Kasprognose and a
  * container's lane (Analyses): the bank so far, the expected balance per
@@ -182,7 +114,7 @@ function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spo
           }
           @if (l.buffer; as buffer) {
             <line class="cc-buffer" [attr.x1]="l.left" [attr.x2]="l.right" [attr.y1]="buffer.y" [attr.y2]="buffer.y" />
-            <text class="cc-mark cc-mark--warn" [attr.x]="buffer.labelX" [attr.y]="buffer.labelY" [attr.text-anchor]="buffer.anchor">{{ buffer.label }}</text>
+            @if (buffer.text; as t) { <text class="cc-mark cc-mark--warn" [attr.x]="t.x" [attr.y]="t.y" [attr.text-anchor]="t.anchor">{{ buffer.label }}</text> }
           }
           @if (variant() === 'lane') {
             <line class="cc-zero" [attr.x1]="l.left" [attr.x2]="l.right" [attr.y1]="l.zeroY" [attr.y2]="l.zeroY" />
@@ -199,7 +131,7 @@ function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spo
           }
           @if (l.todayX !== null) {
             <line class="cc-today" [attr.x1]="l.todayX" [attr.x2]="l.todayX" [attr.y1]="l.top - 6" [attr.y2]="l.bottom" />
-            <text class="cc-mark" [attr.x]="l.todayX + 5" [attr.y]="l.top + 2">{{ variant() === 'lane' ? 'vandaag' : 'Vandaag' }}</text>
+            @if (l.todayLabel?.text; as t) { <text class="cc-mark" [attr.x]="t.x" [attr.y]="t.y" [attr.text-anchor]="t.anchor">{{ l.todayLabel?.label }}</text> }
           }
           @for (marker of l.markers; track marker.key) {
             @if (marker.kind === 'breakeven') {
@@ -208,7 +140,9 @@ function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spo
             } @else {
               <circle [class]="'cc-dot cc-dot--' + marker.kind" [attr.cx]="marker.x" [attr.cy]="marker.y" r="4" />
             }
-            <text class="cc-mark cc-mark--strong" [class.cc-mark--danger]="marker.kind === 'zero'" [attr.x]="marker.labelX" [attr.y]="marker.labelY" [attr.text-anchor]="marker.anchor">{{ marker.label }}</text>
+            @if (marker.text; as t) {
+              <text class="cc-mark cc-mark--strong" [class.cc-mark--danger]="marker.kind === 'zero'" [attr.x]="t.x" [attr.y]="t.y" [attr.text-anchor]="t.anchor">{{ marker.label }}</text>
+            }
           }
           @for (pin of l.pins; track pin.n) {
             <g class="cc-pin" (click)="pickPin($event, pin.n)" (pointerdown)="$event.stopPropagation()" (pointerup)="$event.stopPropagation()">
@@ -236,6 +170,10 @@ function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spo
           </div>
         }
       </div>
+      @if (l.notes.length) {
+        <!-- Labels with no free place on the plot: listed here, never drawn over a line, a point or another label. -->
+        <ul class="cc-notes">@for (note of l.notes; track $index) { <li [class]="'cc-note--' + note.tone">{{ note.text }}</li> }</ul>
+      }
     } @else {
       <div class="cc-empty" [style.height.px]="height()"><span></span>{{ emptyText() }}</div>
     }
@@ -297,6 +235,8 @@ function markerSpots(kind: CashChartMarker['kind'], mx: number, my: number): Spo
     .cc-key--band{height:9px;border:0;border-radius:2px;background:color-mix(in srgb,var(--warn) 22%,transparent)}
     .cc-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 6px;padding:0;list-style:none}
     .cc-legend li{display:flex;align-items:center;gap:6px}
+    .cc-notes{display:flex;flex-wrap:wrap;gap:2px 14px;margin:4px 0 0;padding:0;list-style:none;font-size:10.5px;font-weight:650;font-variant-numeric:tabular-nums}
+    .cc-note--ink{color:var(--ink-2)}.cc-note--warn{color:var(--warn)}.cc-note--danger{color:var(--danger)}
     .cc-empty{display:grid;place-content:center;gap:8px;justify-items:center;color:var(--muted);font-size:11.5px}
     .cc-empty span{width:64px;height:2px;border-radius:2px;background:var(--line-strong)}
   `,
@@ -359,7 +299,10 @@ export class CashChart {
 
   protected dash(style: CashChartSeries['style']): string | null { return DASH[style]; }
 
-  /** The width of a 10 px label (.cc-mark) plus its halo, measured in the chart's own font once it is known. */
+  /**
+   * The width of a 10 px label (.cc-mark) plus its halo, measured in the chart's own font once it is known. The labels
+   * draw tabular figures and a canvas cannot: every digit is measured as a 0 (the width tabular figures share).
+   */
   private textWidth(text: string): number {
     const family = this.font();
     if (family && typeof document !== 'undefined') {
@@ -367,7 +310,7 @@ export class CashChart {
       const context = CashChart.measurer;
       if (context) {
         context.font = `650 10px ${family}`;
-        const measured = context.measureText(text).width;
+        const measured = context.measureText(text.replace(/\d/g, '0')).width;
         if (measured > 0) return Math.ceil(measured) + 4;
       }
     }
@@ -471,79 +414,36 @@ export class CashChart {
       return { x: from, width: Math.max(1, to - from) };
     });
     /*
-     * Labels: each marker's on the free spot nearest its point, then the buffer's somewhere along its line. A spot
-     * never lies over another label, a marker or a flag, and avoids every drawn line (the series, the buffer, today,
-     * the lane's zero); when no spot is free, the one that covers the least wins.
+     * Labels (chart-labels.ts): today's, each marker's on the free spot nearest its point, then the buffer's along
+     * its line. A label never covers another label, a dot, a flag or any drawn line (each piece of every series,
+     * dashed ones too, the buffer, today, the lane's zero); one with no free place on the plot is listed under it.
      */
     const inPlot = markers.filter((marker) => dayTime(marker.day) >= t0 && dayTime(marker.day) <= t1);
-    const polylines = series.flatMap((row) => segmentsOf(row.points).map((segment) => segment.map((point) => ({ x: x(point.day), y: y(point.eur) }))));
-    const rules: Box[] = [];
-    if (buffer !== null && variant !== 'lane') rules.push({ x1: left, x2: right, y1: y(buffer), y2: y(buffer) });
-    if (todayX !== null) rules.push({ x1: todayX, x2: todayX, y1: top - 6, y2: bottom });
-    if (variant === 'lane') rules.push({ x1: left, x2: right, y1: zeroY, y2: zeroY });
-    /* Each marker's dot (r 4 plus its 1 px ring) or flag; a flag's own label sits against its cloth. */
-    const marks = inPlot.map((marker) => {
-      const mx = x(marker.day);
-      const my = y(marker.eur);
-      return marker.kind === 'breakeven' ? { x1: mx - 2, x2: mx + 10, y1: my - 20, y2: my + 2 } : { x1: mx - 5, x2: mx + 5, y1: my - 5, y2: my + 5 };
+    const drawn: Point[][] = series.flatMap((row) => segmentsOf(row.points).map((segment) => segment.map((point) => ({ x: x(point.day), y: y(point.eur) }))));
+    if (variant === 'lane') drawn.push([{ x: left, y: zeroY }, { x: right, y: zeroY }]);
+    const todayText = variant === 'lane' ? 'vandaag' : 'Vandaag';
+    const bufferText = buffer !== null && variant !== 'lane' ? `Buffer ${eurWhole(buffer)}` : null;
+    const plan = planLabels({
+      left, right, top, bottom, lines: drawn,
+      today: todayX !== null ? { x: todayX, label: todayText, width: this.textWidth(todayText) } : null,
+      markers: inPlot.map((marker) => ({ kind: marker.kind, x: x(marker.day), y: y(marker.eur), label: marker.label, width: this.textWidth(marker.label) })),
+      buffer: buffer !== null && bufferText !== null ? { y: y(buffer), label: bufferText, width: this.textWidth(bufferText) } : null,
     });
-    const taken: Box[] = [...marks];
-    if (todayX !== null) taken.push(textBox('start', todayX + 5, top + 2, this.textWidth(variant === 'lane' ? 'vandaag' : 'Vandaag')));
-    /* self: the label's own line (the buffer's) or its own marker (a flag's label may touch its cloth). */
-    const place = (label: string, spots: Spot[], self: { rule?: Box; mark?: Box; flag?: boolean }): Spot => {
-      const w = this.textWidth(label);
-      let best: (Spot & { score: number }) | null = null;
-      for (const spot of spots) {
-        let { anchor, x: lx } = spot;
-        if (anchor === 'middle') {
-          const x1 = Math.min(Math.max(lx - w / 2, left + 2), right - 2 - w);
-          lx = x1 + w / 2;
-        }
-        const box = textBox(anchor, lx, spot.y, w);
-        if (box.x1 < left - 0.5 || box.x2 > right + 0.5 || box.y1 < 2 || box.y2 > bottom - 1) continue;
-        const near = grow(box, 1);
-        const wide = grow(box, 2);
-        let score = spot.cost + Math.abs(lx - spot.x) * 0.3;
-        score += taken.filter((other) => !(self.flag && other === self.mark) && overlaps(near, other)).length * 1000;
-        score += polylines.filter((line) => crosses(line, wide)).length * 300;
-        score += rules.filter((rule) => rule !== self.rule && crosses([{ x: rule.x1, y: rule.y1 }, { x: rule.x2, y: rule.y2 }], wide)).length * 120;
-        /* A label closer to another marker than to its own would name the wrong point. */
-        const mine = self.mark;
-        if (mine && marks.some((mark) => mark !== mine && gap(box, mark) < gap(box, mine))) score += 150;
-        if (!best || score < best.score) best = { anchor, x: lx, y: spot.y, cost: spot.cost, score };
-      }
-      const chosen = best ?? spots[0];
-      taken.push(textBox(chosen.anchor, chosen.x, chosen.y, w));
-      return chosen;
-    };
-    const order: Record<CashChartMarker['kind'], number> = { lowest: 0, zero: 1, end: 2, breakeven: 3 };
-    const placed = inPlot.map((marker, index) => ({ marker, index })).sort((a, b) => order[a.marker.kind] - order[b.marker.kind] || a.index - b.index)
-      .map(({ marker, index }) => {
-        const mx = x(marker.day);
-        const my = y(marker.eur);
-        const spot = place(marker.label, markerSpots(marker.kind, mx, my), { mark: marks[index], flag: marker.kind === 'breakeven' });
-        return { key: `${marker.kind}-${index}`, kind: marker.kind, label: marker.label, x: mx, y: my, anchor: spot.anchor, labelX: spot.x, labelY: spot.y };
-      });
-    let bufferLine: { y: number; labelX: number; labelY: number; anchor: Spot['anchor']; label: string } | null = null;
-    if (buffer !== null && variant !== 'lane') {
-      const by = y(buffer);
-      const label = `Buffer ${eurWhole(buffer)}`;
-      const along = [left + 6, ...(todayX !== null ? [todayX + 6] : []), left + plotW * 0.25, left + plotW * 0.5, left + plotW * 0.75];
-      const spots: Spot[] = [
-        ...along.map((at, index) => ({ anchor: 'start' as const, x: at, y: by - 5, cost: index * 4 })),
-        ...along.map((at, index) => ({ anchor: 'start' as const, x: at, y: by + 13, cost: 3 + index * 4 })),
-        { anchor: 'end', x: right - 6, y: by - 5, cost: 22 }, { anchor: 'end', x: right - 6, y: by + 13, cost: 25 },
-      ];
-      const spot = place(label, spots, { rule: rules[0] });
-      bufferLine = { y: by, labelX: spot.x, labelY: spot.y, anchor: spot.anchor, label };
-    }
+    const placed = inPlot.map((marker, index) => ({ key: `${marker.kind}-${index}`, kind: marker.kind, label: marker.label, x: x(marker.day), y: y(marker.eur), text: plan.markers[index] }));
+    const bufferLine: { y: number; label: string; text: PlacedLabel | null } | null = buffer !== null && bufferText !== null ? { y: y(buffer), label: bufferText, text: plan.buffer } : null;
+    const todayLabel: { label: string; text: PlacedLabel | null } | null = todayX !== null ? { label: todayText, text: plan.today } : null;
+    const notes: { text: string; tone: 'ink' | 'warn' | 'danger' }[] = [
+      ...(todayLabel && !todayLabel.text ? [{ text: todayLabel.label, tone: 'ink' as const }] : []),
+      ...placed.filter((marker) => !marker.text).map((marker) => ({ text: marker.label, tone: marker.kind === 'zero' ? 'danger' as const : 'ink' as const })),
+      ...(bufferLine && !bufferLine.text ? [{ text: bufferLine.label, tone: 'warn' as const }] : []),
+    ];
     const pins = variant === 'full' ? this.pins().filter((pin) => dayTime(pin.from) >= t0 && dayTime(pin.from) <= t1).map((pin) => ({
       n: pin.n, x: x(pin.from), title: `${pin.n}. ${pin.label} · ${dayMon(pin.from)}${pin.to !== pin.from ? `–${dayMon(pin.to)}` : ''} · ${eur(pin.amountEur)}`,
     })) : [];
     const days: string[] = [];
     for (let t = t0; t <= t1; t += DAY_MS) days.push(isoOf(t));
     return {
-      width, height, left, right, top, bottom, zeroY, todayX, lines, band, tight, markers: placed, pins, days, x, y,
+      width, height, left, right, top, bottom, zeroY, todayX, todayLabel, lines, band, tight, markers: placed, notes, pins, days, x, y,
       yTicks: ticks.map((value, index) => ({ at: y(value), label: tickLabels[index], zero: value === 0 })),
       xTicks: timeTicks(t0, t1, compact ? plotW * 0.8 : plotW).map((tick) => ({ at: x(isoOf(tick.at)), label: tick.label })),
       buffer: bufferLine,

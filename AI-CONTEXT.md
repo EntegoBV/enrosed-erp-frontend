@@ -1807,15 +1807,20 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   Kasprognose desk, `compact` on the phone and the Kaslijn, `lane` in the
   container sheet): past, base, with and slow series, the slow band, buffer,
   krap columns, pins, markers and a tooltip (touch-and-hold on a phone).
-  Marker labels take the free spot nearest their point and never cover a
-  label, a dot, a flag or a drawn line; the buffer's label goes along its
-  line after them. A change to the chart shows on both pages: check the
-  Kaslijn's compact look too.
+  Where the labels go is `shared/chart-labels.ts` (pure, node-tested in
+  `tests/cash-chart-labels.test.mts`): "Vandaag", then the markers' labels
+  on the free spot nearest their point, then the buffer's along its line.
+  A label never covers another label, a dot, a flag or any drawn line (each
+  piece of every series, dashed ones too, the buffer, today's line, the
+  lane's zero); with no free place on the plot it is listed under the chart
+  (`.cc-notes`) instead. A change to the chart shows on both pages: check
+  the Kaslijn's compact look too.
 
 ### Ownership and module rules
 - Shared (one change serves both pages, so check both): `cash-forecast.ts`,
   `cash-forecast-input.ts`, `cash-format.ts` (nl-BE money and day words for
   the Kasprognose), `cash-dismissed.ts`, `shared/cash-chart.ts`,
+  `shared/chart-labels.ts`,
   `core/api/cash-forecast-api.ts` and the round's additions to
   `banking-api.ts`, `finance-api.ts` and `models.ts`.
 - Kosten & bank: the rest of `features/finance/` and
