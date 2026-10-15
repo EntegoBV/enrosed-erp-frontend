@@ -22,6 +22,8 @@ export interface LinkChoice {
   surplus: 'ADJUST' | 'INSPECTION';
   /** The server knows followBank / keepDifferenceAs (the 2026-10-16 round). */
   cashRound: boolean;
+  /** A new cost payment beside an existing one that is not on the bank: "Ik heb de bestaande betalingen gecontroleerd; dit is een nieuwe betaling." */
+  confirmNew?: boolean;
 }
 export interface LinkOutcome {
   /** The linked line(s) as the server returned them. */
@@ -55,7 +57,7 @@ export async function runLink(apis: LinkApis, line: BankStatementLine, target: L
     case 'sales-existing':
       return { lines: [await apis.banking.allocate(line.id, target.salesOrderId, target.paymentId, choice.follow && choice.cashRound)], purchasePayments: [], serverNotice: null };
     case 'cost-new':
-      return { lines: [await apis.banking.addCostPayment(line.id, target.costId)], purchasePayments: [], serverNotice: null };
+      return { lines: [await apis.banking.addCostPayment(line.id, target.costId, choice.confirmNew === true)], purchasePayments: [], serverNotice: null };
     case 'cost-existing':
       return { lines: [await apis.banking.linkPayments(line.id, { costPaymentId: target.costPaymentId, ...(choice.follow && choice.cashRound ? { followBank: true } : {}) })],
         purchasePayments: [], serverNotice: null };

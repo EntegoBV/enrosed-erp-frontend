@@ -17,6 +17,7 @@ import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { dayMonth as ddmm } from './cash-format';
 import { ContainerSplit } from './container-split';
 import { dayMonth } from './finance-format';
+import { SERVER_PENDING } from './finance-state';
 
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const WEEKDAY_LONG = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -206,7 +207,10 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
               <section class="wk-section fin-txd__offer">
                 <div><b>Splitsen</b><small>Goederen + inspectie, of meerdere betalingen.</small></div>
                 <span class="fin-txd__offer-actions"><button class="wk-btn wk-btn--sm" type="button" (click)="splitPayments()">Splitsen…</button>
-                  @if (row.amountEur < 0) { <button class="wk-btn wk-btn--sm" type="button" (click)="view.set('containers')">Verdelen over containers…</button> }</span>
+                  @if (row.amountEur < 0) {
+                    <!-- An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). -->
+                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="view.set('containers')">Verdelen over containers…</button>
+                  }</span>
               </section>
               <section class="wk-section fin-txd__offer">
                 <div><b>Geen factuur of kost?</b><small>Overboeking, bankkosten, btw, lening, privé</small></div>
@@ -264,6 +268,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly chosen = signal<LinkTarget | null>(null);
   readonly proofFiles = signal<PurchaseDocument[]>([]);
   readonly keepOnlyEqual = 'Betaling houden kan alleen als de bedragen gelijk zijn (± € 0,02).';
+  readonly serverPending = SERVER_PENDING;
 
   readonly line = computed(() => this.state.bankStatements().find((row) => row.id === this.lineId()) ?? null);
   readonly suggestion = computed<LineSuggestion | undefined>(() => { const row = this.line(); return row ? this.suggestionOf(row) : undefined; });
@@ -293,8 +298,12 @@ export class TransactionDetail extends BankMovementPanel {
   readonly preview = computed(() => {
     const row = this.line(), target = this.best();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.follow(), this.keepAs(), this.surplus()) : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus()) : null;
   });
+  /** The switch as the server can carry it out: an existing cost payment or receipt follows the bank only from the 2026-10-16 round on (linkLine's rule). */
+  private effectiveFollow(target: LinkTarget): boolean {
+    return this.follow() && (target.kind === 'purchase-existing' || this.state.cashRound());
+  }
   /** Follow the bank can be switched for an existing payment (cost and receipt only when the server knows it). */
   readonly followable = computed(() => {
     const target = this.best();
@@ -511,7 +520,8 @@ export class TransactionDetail extends BankMovementPanel {
   async linkBest(row: BankStatementLine, target: LinkTarget): Promise<void> {
     if (!this.canLinkBest()) return;
     const parts = target.kind === 'term-new' ? this.termParts(row, target) : undefined;
-    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus(), parts });
+    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus(), parts,
+      confirmNew: target.kind === 'cost-new' && this.localNewConfirmed() });
     if (!failure) this.afterLink();
   }
   /** The purchase payment(s) of a new term from the state machine's fields (currency, amount, the inspection paid with it). */

@@ -83,6 +83,8 @@ const INACTIVE = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 export const formatEuro = (value: number): string => euro.format(value);
+/** A phase-2 control on a server without the 2026-10-16 round (cashRound false), as the Inkoop sheet words it. */
+export const SERVER_PENDING = 'Kan zodra de server bijgewerkt is.';
 const shortDay = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 
 /** What the inspector (desk) or the detail sheet (phone) shows; a bank line ('line') has its own address (line=). */
@@ -2238,9 +2240,11 @@ export class FinanceState {
    * the notice as a toast with "Ongedaan maken". Returns the refusal, or ''.
    */
   async linkLine(line: BankStatementLine, target: LinkTarget, options: { follow?: boolean; keepAs?: KeepAs; surplus?: 'ADJUST' | 'INSPECTION';
-    parts?: BankPurchasePaymentPart[]; toast?: boolean } = {}): Promise<string> {
+    parts?: BankPurchasePaymentPart[]; toast?: boolean; confirmNew?: boolean } = {}): Promise<string> {
     if (this.linking() !== null) return 'Er loopt al een koppeling.';
-    const choice = { follow: options.follow ?? true, keepAs: options.keepAs ?? 'BANKKOSTEN' as KeepAs, surplus: options.surplus ?? 'ADJUST' as const, cashRound: this.cashRound() };
+    /* An existing cost payment or receipt follows the bank only on a server that knows followBank; the preview and toast say what really happens. */
+    const follow = (options.follow ?? true) && (target.kind === 'purchase-existing' || this.cashRound());
+    const choice = { follow, keepAs: options.keepAs ?? 'BANKKOSTEN' as KeepAs, surplus: options.surplus ?? 'ADJUST' as const, cashRound: this.cashRound(), confirmNew: options.confirmNew === true };
     const preview = changePreview(target, { amountEur: line.amountEur, day: this.lineDay(line), accountLabel: this.accountLabel(line.account) }, choice.follow, choice.keepAs, choice.surplus);
     const parts = options.parts ?? (target.kind === 'term-new' ? [this.termPart(line, target)] : []);
     this.linking.set(line.id);
@@ -2290,6 +2294,8 @@ export class FinanceState {
    * one atomic call. The toast's "Ongedaan maken" unlinks and removes them.
    */
   async linkContainers(line: BankStatementLine, parts: BankPurchasePaymentPart[], numbers: readonly string[]): Promise<string> {
+    /* An older server reads only the request's order and would book every part on the first container. */
+    if (!this.cashRound()) return SERVER_PENDING;
     if (this.linking() !== null || !parts.length) return 'Er loopt al een koppeling.';
     this.linking.set(line.id);
     try {
