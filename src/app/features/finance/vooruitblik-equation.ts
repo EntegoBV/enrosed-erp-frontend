@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { EurPipe } from '../../shared/pipes';
+import { eur } from './cash-format';
 import { FinanceState } from './finance-state';
 
 /**
@@ -8,28 +8,28 @@ import { FinanceState } from './finance-state';
  * "Na wat nu betaald moet worden"; + what is still to come in − containers
  * later = "Als alles betaald en ontvangen is" (or the "Netto open positie"
  * without a reading). The Kaslijn card's right column on a desk, the
- * Vooruitblik sheet on a phone.
+ * Vooruitblik sheet on a phone. Amounts read as the Kaslijn's: a negative one
+ * is '− € 10.714,75' (cash-format), never '€ -10.714,75'.
  */
 @Component({
   selector: 'app-vooruitblik-equation',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe],
   template: `
     @let o = state.outlook();
     <dl class="wk-equation" [class.fin-equation--compact]="compact()">
-      <div><dt>Op de bank</dt><dd>@if (hasReading()) { {{ o.bankEur | eur }} } @else { onbekend · <button class="wk-link" type="button" (click)="state.openBank(null)">Saldo invullen</button> }</dd></div>
-      <div class="is-sub"><dt><span class="wk-equation__op">−</span>Open kosten (incl. btw)</dt><dd>{{ o.openCostsEur | eur }}</dd></div>
-      @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · nu te betalen (verwacht)</dt><dd>{{ o.containerNowEur | eur }}</dd></div> }
-      <div class="is-sub"><dt><span class="wk-equation__op">−</span>Vaste kosten · komende 30 dagen</dt><dd>{{ o.upcomingEur | eur }}</dd></div>
+      <div><dt>Op de bank</dt><dd>@if (hasReading()) { {{ money(o.bankEur) }} } @else { onbekend · <button class="wk-link" type="button" (click)="state.openBank(null)">Saldo invullen</button> }</dd></div>
+      <div class="is-sub"><dt><span class="wk-equation__op">−</span>Open kosten (incl. btw)</dt><dd>{{ money(o.openCostsEur) }}</dd></div>
+      @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · nu te betalen (verwacht)</dt><dd>{{ money(o.containerNowEur) }}</dd></div> }
+      <div class="is-sub"><dt><span class="wk-equation__op">−</span>Vaste kosten · komende 30 dagen</dt><dd>{{ money(o.upcomingEur) }}</dd></div>
       @if (hasReading()) {
-        <div class="is-total"><dt><span class="wk-equation__op">=</span>Na wat nu betaald moet worden</dt><dd [class.wk-amount--warn]="o.afterPayablesEur < 0">{{ o.afterPayablesEur | eur }}</dd></div>
+        <div class="is-total"><dt><span class="wk-equation__op">=</span>Na wat nu betaald moet worden</dt><dd [class.wk-amount--warn]="o.afterPayablesEur < 0">{{ money(o.afterPayablesEur) }}</dd></div>
       }
-      <div class="is-sub"><dt><span class="wk-equation__op">+</span>Nog te ontvangen (klant &amp; partner)</dt><dd>{{ o.openInvoicesEur | eur }}</dd></div>
-      @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · later (verwacht)</dt><dd>{{ o.containerLaterEur | eur }}</dd></div> }
+      <div class="is-sub"><dt><span class="wk-equation__op">+</span>Nog te ontvangen (klant &amp; partner)</dt><dd>{{ money(o.openInvoicesEur) }}</dd></div>
+      @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · later (verwacht)</dt><dd>{{ money(o.containerLaterEur) }}</dd></div> }
       @if (hasReading()) {
-        <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Als alles betaald en ontvangen is</dt><dd [class.wk-amount--warn]="o.expectedEur < 0">{{ o.expectedEur | eur }}</dd></div>
+        <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Als alles betaald en ontvangen is</dt><dd [class.wk-amount--warn]="o.expectedEur < 0">{{ money(o.expectedEur) }}</dd></div>
       } @else {
-        <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Netto open positie</dt><dd>{{ o.netOpenEur | eur }}</dd></div>
+        <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Netto open positie</dt><dd>{{ money(o.netOpenEur) }}</dd></div>
       }
     </dl>
     @if (!hasReading()) { <p class="fin-hint fin-hint--warn">Banksaldo onbekend: vul eerst een saldo in.</p> }
@@ -42,6 +42,7 @@ export class VooruitblikEquation {
   /** The Kaslijn card's 28 px rows (the cockpit's fold). */
   readonly compact = input(false);
 
+  readonly money = eur;
   readonly hasReading = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
   /** Why the totals may not be the whole story; containers still loading count, their terms are not in yet. */
   readonly incomplete = computed(() => {
