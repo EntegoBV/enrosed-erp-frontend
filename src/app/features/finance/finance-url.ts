@@ -40,14 +40,17 @@ export interface FinanceLocation {
   quarter: '' | '1' | '2' | '3' | '4';
   /** Uitgaven › Bedrijfskosten: a regime code, or 'unconfirmed' for the derived and unknown ones. */
   regime: string;
+  /** A bank line in the inspector (desk) or the detail sheet (phone); honoured on every section. */
+  line: number | null;
+  /** The Kaslijn's span on Bank; null is the default, 8 weeks. */
+  weeks: 4 | 8 | 13 | null;
 }
 
 export const NO_ACCOUNT = '__none__';
 
-const VIEWS: readonly FinanceView[] = ['overview', 'open', 'incoming', 'bank', 'costs', 'analysis'];
+const VIEWS: readonly FinanceView[] = ['bank', 'open', 'incoming', 'costs', 'analysis'];
 /** Kept in step with FINANCE_TABS in finance-sections.ts (a node test checks both). */
 export const TAB_IDS: Readonly<Record<FinanceView, readonly string[]>> = {
-  overview: [],
   open: ['all', 'costs', 'containers', 'recurring'],
   incoming: ['open', 'received'],
   bank: ['accounts', 'movements'],
@@ -61,19 +64,20 @@ const REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FO
 
 type Field = Exclude<keyof FinanceLocation, 'view' | 'tab'>;
 
-/** Which filters each section and segment honours; the rest never reaches the address. */
-function honoured(view: FinanceView, tab: string): readonly Field[] {
+/** Which filters each section and segment honours; the rest never reaches the address. A bank line (`line`) opens anywhere. */
+export function honoured(view: FinanceView, tab: string): readonly Field[] {
   switch (`${view}/${tab}`) {
-    case 'open/all': case 'open/costs': case 'open/containers': case 'open/recurring': return ['q'];
-    case 'incoming/open': return ['kind', 'q'];
-    case 'incoming/received': return ['period', 'from', 'to', 'dir', 'purpose', 'account', 'q'];
-    case 'bank/movements': return ['dir', 'link', 'account', 'period', 'from', 'to', 'q'];
-    case 'costs/company': return ['period', 'from', 'to', 'q', 'cat', 'status', 'channel', 'docs', 'cost', 'regime'];
-    case 'costs/containers': return ['container', 'scope', 'q'];
-    case 'costs/lists': return ['q'];
-    case 'analysis/costs': return ['year'];
-    case 'analysis/vat': return ['year', 'quarter'];
-    default: return [];
+    case 'bank/accounts': return ['line', 'weeks'];
+    case 'bank/movements': return ['dir', 'link', 'account', 'period', 'from', 'to', 'q', 'line'];
+    case 'open/all': case 'open/costs': case 'open/containers': case 'open/recurring': return ['q', 'line'];
+    case 'incoming/open': return ['kind', 'q', 'line'];
+    case 'incoming/received': return ['period', 'from', 'to', 'dir', 'purpose', 'account', 'q', 'line'];
+    case 'costs/company': return ['period', 'from', 'to', 'q', 'cat', 'status', 'channel', 'docs', 'cost', 'regime', 'line'];
+    case 'costs/containers': return ['container', 'scope', 'q', 'line'];
+    case 'costs/lists': return ['q', 'line'];
+    case 'analysis/costs': return ['year', 'line'];
+    case 'analysis/vat': return ['year', 'quarter', 'line'];
+    default: return ['line'];
   }
 }
 
@@ -90,8 +94,9 @@ export function defaultTab(view: FinanceView): string {
 }
 
 export const DEFAULT_LOCATION: FinanceLocation = {
-  view: 'overview', tab: '', period: '', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '',
+  view: 'bank', tab: '', period: '', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '',
   container: null, cost: null, scope: '', account: '', dir: '', link: '', kind: '', purpose: '', year: '', quarter: '', regime: '',
+  line: null, weeks: null,
 };
 
 /** A positive safe integer id, or null ('0', '-1', '1e3', 'abc' are all refused). */
@@ -104,14 +109,16 @@ export function positiveId(raw: string | null | undefined): number | null {
 const isDay = (raw: string | null): raw is string => !!raw && /^\d{4}-\d{2}-\d{2}$/.test(raw);
 
 /**
- * Reads the address. Older links keep working: view=recurring is Uitgaven ›
- * Vaste kosten, container=<id> (from the purchase order) opens Uitgaven ›
- * Containers on that container, cost=<id> (or the older kost=<id>) inspects
- * that company cost, and anything unknown falls back to a sensible default.
+ * Reads the address. Older links keep working: view=overview (the Overzicht
+ * before 2026-10-16) and any unknown view are Bank, view=recurring is
+ * Uitgaven › Vaste kosten, container=<id> (from the purchase order) opens
+ * Uitgaven › Containers on that container, cost=<id> (or the older
+ * kost=<id>) inspects that company cost, and anything unknown falls back to
+ * a sensible default.
  */
 export function parseFinanceLocation(get: (key: string) => string | null): FinanceLocation {
   const raw = get('view');
-  let view: FinanceView = VIEWS.includes(raw as FinanceView) ? raw as FinanceView : 'overview';
+  let view: FinanceView = VIEWS.includes(raw as FinanceView) ? raw as FinanceView : 'bank';
   let tab = get('tab') ?? '';
   if (raw === 'recurring') { view = 'costs'; tab = 'recurring'; }
   const container = positiveId(get('container'));
@@ -147,6 +154,9 @@ export function parseFinanceLocation(get: (key: string) => string | null): Finan
   location.regime = REGIMES.has(regimeCode) ? regimeCode : '';
   location.container = allowed.has('container') ? container : null;
   location.cost = allowed.has('cost') ? cost : null;
+  location.line = allowed.has('line') ? positiveId(get('line')) : null;
+  const weeks = text('weeks');
+  location.weeks = weeks === '4' ? 4 : weeks === '13' ? 13 : null;
 
   if (allowed.has('period')) {
     const from = get('from'), to = get('to');
@@ -166,7 +176,7 @@ export function parseFinanceLocation(get: (key: string) => string | null): Finan
 export function financeQueryParams(location: FinanceLocation): Record<string, string> {
   const params: Record<string, string> = {};
   const { view, tab } = location;
-  if (view !== 'overview') params['view'] = view;
+  if (view !== 'bank') params['view'] = view;
   if (tab && tab !== defaultTab(view) && TAB_IDS[view].includes(tab)) params['tab'] = tab;
   for (const field of honoured(view, tab || defaultTab(view))) {
     if (field === 'from' || field === 'to') continue;
@@ -180,6 +190,7 @@ export function financeQueryParams(location: FinanceLocation): Record<string, st
       continue;
     }
     const value = location[field];
+    if (field === 'weeks' && value === 8) continue;
     if (value !== null && value !== '') params[field] = String(value);
   }
   return params;

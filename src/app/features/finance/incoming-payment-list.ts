@@ -1,3 +1,4 @@
+import type { BankStatementLine } from '../../core/api/banking-api';
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { IncomingPaymentRow } from '../../core/api/models';
@@ -36,6 +37,7 @@ import { Sheet } from '../../shared/ui';
             <span class="wk-th" role="columnheader">Factuur · klant</span>
             <span class="wk-th" role="columnheader" data-hide="xs">Waarvoor</span>
             <span class="wk-th" role="columnheader" data-hide="sm">Rekening</span>
+            <span class="wk-th" role="columnheader" data-hide="md">Transactie</span>
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
@@ -47,6 +49,7 @@ import { Sheet } from '../../shared/ui';
               <span class="wk-td" role="gridcell">@if (offset(row)) { Verrekening · <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a> ↔ {{ row.offsetOrderNumber || 'document' }} } @else { <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }} }@if (row.reference && !offset(row)) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
               <span class="wk-td" role="gridcell" data-hide="xs">@if (offset(row)) { <span class="wk-pill tone-grey" title="Een creditnota verrekend met een factuur: geen geld op de bank.">Verrekening</span> } @else { <span class="wk-pill" [class.tone-plum]="row.purpose !== 'STANDARD'" [attr.title]="row.purpose === 'PARTNER_ADVANCE' ? 'Een partnervoorschot is financiering, geen omzet.' : null">{{ purpose(row) }}</span> }</span>
               <span class="wk-td" role="gridcell" data-hide="sm">@if (offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> } @else if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
+              <span class="wk-td wk-td--wrap" role="gridcell" data-hide="md">@if (!offset(row)) { @if (lineOf(row); as line) { <button class="wk-link fin-wrap-link" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openLine(line.id)">{{ lineText(line) }} ›</button> } @else { <span class="wk-amount--muted">niet op de bank</span> } }</span>
               <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0 && !offset(row)" [class.wk-amount--muted]="offset(row)">{{ signed(row.amountEur) }}</b></span>
               <span class="wk-td fin-td-end" role="gridcell">
                 <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" tabindex="-1" aria-label="Acties" (click)="$event.stopPropagation(); rowMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
@@ -185,6 +188,16 @@ export class IncomingPaymentList {
 
   account(row: IncomingPaymentRow): string {
     return this.state.accountLabel(this.state.receiptAccountKey(row));
+  }
+
+  /** The bank line that carries the receipt (its hard link), for "{account} · {dd/mm} ›". */
+  lineOf(row: IncomingPaymentRow): BankStatementLine | null {
+    return this.state.bankStatements().find((line) => line.salesPaymentId === row.id) ?? null;
+  }
+
+  lineText(line: BankStatementLine): string {
+    const day = this.state.lineDay(line);
+    return `${this.state.accountLabel(line.account)} · ${day.slice(8, 10)}/${day.slice(5, 7)}`;
   }
 
   purpose(row: IncomingPaymentRow): string {

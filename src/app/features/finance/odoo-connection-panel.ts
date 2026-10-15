@@ -1,13 +1,17 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
 import { OdooApi } from '../../core/api/odoo-api';
-import type { OdooAttachment, OdooBankSyncResult, OdooConnectionStatus, OdooDocument, OdooDocumentDirection } from '../../core/api/odoo-api';
+import type { OdooAttachment, OdooDocument, OdooDocumentDirection } from '../../core/api/odoo-api';
 import { saveBlob } from '../../core/api/download';
 import { messageOf, readableFailure } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
 import { Skeleton } from '../../shared/skeleton';
-import { FinanceState } from './finance-state';
+import { OdooSyncState } from './odoo-sync-state';
 
-/** Bank import and Odoo document access, without issuing or sending invoices. */
+/**
+ * Bank import and Odoo document access, without issuing or sending invoices.
+ * The connection state and "Transacties ophalen" are the page's OdooSyncState;
+ * this panel is its view (the Odoo-verbinding sheet) plus the invoice browser.
+ */
 @Component({
   selector: 'app-odoo-connection-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -173,23 +177,25 @@ import { FinanceState } from './finance-state';
     }
   `],
 })
-export class OdooConnectionPanel {
+export class OdooConnectionPanel implements OnInit {
   private readonly api = inject(OdooApi);
-  private readonly finance = inject(FinanceState);
+  private readonly sync = inject(OdooSyncState);
   private readonly destroyRef = inject(DestroyRef);
+  /** In the Odoo-verbinding sheet the details start open. */
+  readonly expanded = input(false);
   readonly detailsOpen = signal(false);
-  readonly status = signal<OdooConnectionStatus | null>(null);
-  readonly loading = signal(true);
-  readonly checking = signal(false);
-  readonly syncing = signal(false);
-  readonly error = signal('');
-  readonly syncResult = signal<OdooBankSyncResult | null>(null);
+  readonly status = this.sync.status;
+  readonly loading = this.sync.loading;
+  readonly checking = this.sync.checking;
+  readonly syncing = this.sync.syncing;
+  readonly error = this.sync.error;
+  readonly syncResult = this.sync.syncResult;
   readonly visibleSyncResult = computed(() => {
     const result = this.syncResult();
     return result && (this.detailsOpen() || !result.complete || result.conflicts > 0 || result.skippedNonEur > 0) ? result : null;
   });
-  readonly ready = computed(() => !!this.status()?.enabled && !!this.status()?.configured);
-  readonly busy = computed(() => this.loading() || this.checking() || this.syncing());
+  readonly ready = this.sync.ready;
+  readonly busy = this.sync.busy;
   readonly connectionLabel = computed(() => {
     if (!this.status()) return 'Niet beschikbaar';
     if (!this.status()!.enabled) return 'Nog niet actief';
@@ -207,7 +213,7 @@ export class OdooConnectionPanel {
   readonly direction = signal<OdooDocumentDirection>('incoming');
   readonly documents = signal<OdooDocument[]>([]);
   readonly documentsLoading = signal(false);
-  readonly documentsError = signal('');
+  readonly documentsError = this.sync.documentsError;
   readonly hasMore = signal(false);
   readonly peppolSupported = signal<boolean | null>(null);
   readonly downloadId = signal<number | null>(null);
@@ -217,59 +223,20 @@ export class OdooConnectionPanel {
 
   constructor() {
     this.destroyRef.onDestroy(() => { ++this.documentVersion; });
-    void this.refreshStatus();
   }
 
-  private async refreshStatus(): Promise<void> {
-    try {
-      const result = await this.api.status();
-      if (this.destroyRef.destroyed) return;
-      this.status.set(result);
-      this.syncResult.set(result.lastSync);
-    } catch (failure) {
-      if (!this.destroyRef.destroyed) this.error.set(messageOf(failure, 'De Odoo-status ophalen is niet gelukt.'));
-    } finally {
-      if (!this.destroyRef.destroyed) this.loading.set(false);
-    }
+  ngOnInit(): void {
+    if (this.expanded()) this.detailsOpen.set(true);
   }
 
   async checkConnection(): Promise<void> {
-    if (this.busy()) return;
-    this.checking.set(true);
-    this.error.set('');
-    try {
-      const result = this.ready() ? await this.api.check() : await this.api.status();
-      if (this.destroyRef.destroyed) return;
-      this.status.set(result);
-      this.syncResult.set(result.lastSync);
-      if (this.documentsOpen() && this.ready() && !this.documentsLoaded) void this.loadDocuments();
-    } catch (failure) {
-      if (!this.destroyRef.destroyed) this.error.set(messageOf(failure, 'De verbinding met Odoo controleren is niet gelukt.'));
-    } finally {
-      if (!this.destroyRef.destroyed) this.checking.set(false);
-    }
+    await this.sync.checkConnection();
+    if (this.documentsOpen() && this.ready() && !this.documentsLoaded) void this.loadDocuments();
   }
 
-  async syncBank(): Promise<void> {
-    if (!this.ready() || this.busy()) return;
-    this.syncing.set(true);
-    this.error.set('');
-    this.syncResult.set(null);
-    try {
-      const result = await this.api.syncBank();
-      // Account navigation can replace this component while the import is in flight.
-      // Its successful import still needs to refresh the shared bank register.
-      await this.finance.refreshBank();
-      if (this.destroyRef.destroyed) return;
-      this.syncResult.set(result);
-      // The last import time comes from the server, never the browser's clock.
-      const status = await this.api.status();
-      if (!this.destroyRef.destroyed) this.status.set(status);
-    } catch (failure) {
-      if (!this.destroyRef.destroyed) this.error.set(messageOf(failure, 'Banktransacties ophalen is niet gelukt. Probeer opnieuw.'));
-    } finally {
-      if (!this.destroyRef.destroyed) this.syncing.set(false);
-    }
+  /** "Transacties ophalen": the page's import (it outlives this panel). */
+  syncBank(): Promise<void> {
+    return this.sync.syncBank();
   }
 
   toggleDocuments(): void {

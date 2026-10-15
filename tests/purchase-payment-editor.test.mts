@@ -19,6 +19,7 @@ import { bankMarker, lineMarkers } from '../src/app/features/finance/bank-marker
 import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
 import { preservePurchaseDraft } from '../src/app/features/purchasing/purchase-payment-refresh.ts';
 import { PAYEE_LABEL } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
+import { alsoNotice, alsoTotalEur, alsoWrites } from '../src/app/features/purchasing/purchase-also-containers.ts';
 /** The menus module imports the payee words at runtime; its euro format is handed in as it reads. */
 const formatEur = (value: number): string => value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });
 import { receiptInstant, receiptLocalParts } from '../src/app/shared/received-at.ts';
@@ -61,7 +62,9 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   // round 3: a save that changes nothing of the payment writes nothing; where its term stands
   'storedUnchanged', 'payingTermStanding',
   // round-2 review: the file goes to the invoice the sheet showed
-  'invoiceFileTarget']);
+  'invoiceFileTarget',
+  // owner addition 2026-10-15: one transfer for several containers
+  'alsoPartsOf']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -87,7 +90,7 @@ function setup() {
   vm.runInNewContext(javascript, { exports, signal, computed, bankAmountsMatch, parsePurchasePaymentAmount, purchasePaymentOverage,
     paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocumentKind, invoicesOf, paymentRoundOnServer, primaryInvoice, inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur,
     carveText, carveForeignText, linkNotice, pendingAlreadyLinked, surplusQuestion, transferCompanions, invoiceNumberKey, resolveInvoice,
-    amountInputText, growLinkPlan, alreadyLinkedText, paymentFigure,
+    amountInputText, growLinkPlan, alreadyLinkedText, paymentFigure, alsoNotice, alsoTotalEur, alsoWrites,
     bankTransactionDay, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
     PAYEE_LABEL, formatEur, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
@@ -376,6 +379,35 @@ test('an imported transfer with a different total cannot save payments before li
   await editor.confirmPayment();
   assert.equal(writes.length, 0); assert.equal(lines.length, 0);
   assert.match(toasts.at(-1)[0], /0,02/);
+});
+
+test('one transfer for three containers: one atomic call, each other part on its own order; only this container\'s payments stay in the sheet', async () => {
+  const { editor, writes, toasts } = setup(); const requests: any[] = [];
+  editor.banking.addPurchasePayment = async (id: number, orderId: number, payments: any[]) => {
+    requests.push(clone({ id, orderId, payments }));
+    return { line: { id, amountEur: -16500, source: 'ODOO' }, payments: payments.map((body, i) => ({ ...payment(), ...body, orderId: body.purchaseOrderId ?? orderId, id: 81 + i })) };
+  };
+  const bankTransaction = { id: 103, amountEur: -16500, bookedAt: '2026-10-12T22:00:00Z', timeZone: 'Europe/Brussels', account: 'BE94731074082814', source: 'ODOO' };
+  const also = [{ orderId: 44, number: 'PO-2026-044', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.000,00', amount: 3000 },
+    { orderId: 45, number: 'PO-2026-045', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '4.500,00', amount: 4500 }];
+  const draft = { id: null, amount: 9000, amountInput: '9.000,00', currency: 'EUR', paidOn: '2026-10-13', label: '30% bij bestelling', payee: 'SUPPLIER', files: [], settles: false,
+    instalmentDue: 'ORDERED', toBank: false, bankTransaction, alsoOpen: true, alsoParts: also };
+  // The parts must make the transaction: 9.000 + 3.000 alone is refused before anything is written.
+  editor.paying.set({ ...draft, alsoParts: also.slice(0, 1) }); await editor.confirmPayment();
+  assert.equal(requests.length, 0); assert.match(toasts.at(-1)[0], /Samen mogen de containers maximaal € 0,02 afwijken/);
+  editor.paying.set({ ...draft, alsoParts: [{ ...also[0], amount: null, amountInput: 'x' }, also[1]] }); await editor.confirmPayment();
+  assert.equal(requests.length, 0); assert.match(toasts.at(-1)[0], /positief bedrag/);
+  editor.paying.set(draft); await editor.confirmPayment();
+  assert.equal(requests.length, 1); assert.equal(writes.length, 0, 'no separate payment call');
+  assert.equal(requests[0].orderId, 50);
+  assert.deepEqual(requests[0].payments.map((row: any) => [row.purchaseOrderId ?? null, row.amount, row.instalmentDue, row.paidOn]),
+    [[null, 9000, 'ORDERED', '2026-10-13'], [44, 3000, 'ORDERED', '2026-10-13'], [45, 4500, 'ORDERED', '2026-10-13']]);
+  assert.equal(editor.paying(), null);
+  assert.equal(plain(toasts.at(-1)[0]), 'Betaling bewaard en banktransactie gekoppeld · Ook op PO-2026-044 en PO-2026-045');
+  // A USD payment or another payee never sends the parts it may still carry.
+  requests.length = 0;
+  editor.paying.set({ ...draft, payee: 'LOGISTICS', amount: 16500, amountInput: '16.500,00' }); await editor.confirmPayment();
+  assert.equal(requests[0].payments.length, 1);
 });
 
 test('a selected bank debit remains fixed while foreign goods or EUR freight shares are edited', () => {

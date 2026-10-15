@@ -1407,6 +1407,9 @@ export interface PurchasePaymentRow {
   invoiceNumber?: string | null;
   /** A credit of another container offset on this one: no bank transfer, never needs proof. */
   creditOffset?: boolean;
+  /** What the payment said before it first followed a bank transaction (2026-10-16); null when it never did or was edited by hand since. */
+  bankAdjustedFromEur?: number | null;
+  bankAdjustedFromOn?: string | null;
 }
 
 export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
@@ -2853,6 +2856,11 @@ export interface CompanyCost {
   paidEur?: number;
   openEur?: number;
   cashTotalEur?: number;
+  /**
+   * When the cost falls due (2026-10-16); missing or null = the cost date counts in the Kaslijn.
+   * Sent on POST; on update only PUT /api/costs/{id}/due-date changes it (the cost PUT keeps the stored value).
+   */
+  dueDate?: string | null;
 }
 
 /** A name in the "Aan wie" list: whom the company pays, with the defaults a new cost to that name takes. */
@@ -2914,6 +2922,37 @@ export interface RecurringCost {
   vatDeductiblePct: number | null;
   taxDeductiblePct: number | null;
 }
+
+/* ------------------------------------------------------------ cash forecast (2026-10-16) */
+
+/** How the Kasprognose prices a container's sales: markup %, euros per unit, list price or the invoiced price of the last 12 months. */
+export type PriceMode = 'MARKUP_PCT' | 'EUR_PER_UNIT' | 'LIST' | 'HISTORIC';
+/** The cost the markup sits on: the external cost, or the pricing cost with the Enrosed share. */
+export type CostBasis = 'EXTERNAL' | 'PRICING';
+
+/** The stored Kasprognose choices of one purchase order; every null field follows the link default or the history. */
+export interface PurchaseOrderForecast {
+  orderId: number;
+  priceMode: PriceMode | null;
+  markupPct: number | null;
+  markupEurPerUnit: number | null;
+  costBasis: CostBasis | null;
+  sellWeeks: number | null;
+  paymentDays: number | null;
+  seasonal: boolean | null;
+  /** In the scenario ('Meetellen'); null = the status decides (Besteld/Onderweg yes, Concept no). */
+  included: boolean | null;
+  /** The departure the owner fixed for a Besteld order. */
+  expectedShipOn: string | null;
+  /** A Concept's planned order day. */
+  orderDateOverride: string | null;
+  updatedAt: string | null;
+  actor: string | null;
+}
+/** PUT /api/purchase-order-forecasts/{orderId}: the whole set of choices; all null removes the row. */
+export type PurchaseOrderForecastWrite = Omit<PurchaseOrderForecast, 'orderId' | 'updatedAt' | 'actor'>;
+/** GET/PUT /api/cash-forecast/settings: the company's 'krap' buffer (stored false = the € 10.000 default). */
+export interface CashForecastSettings { cashBufferEur: number; cashBufferStored: boolean; }
 
 /** What an account held on a day, typed over from the bank. */
 export interface BankBalance {

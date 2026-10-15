@@ -272,6 +272,9 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__accounts{display:flex;flex-wrap:wrap;gap:8px}
 .pay-sheet__account{min-width:0;font-weight:600}
 .pay-sheet__account[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+/* 'Deze transactie dekt ook andere containers': one transfer for several containers, each with its amount (owner addition 2026-10-15) */
+.pay-sheet__also .pay-sheet__alsoamount{flex:0 0 190px}
+.pay-sheet__also .pay-sheet__alsowarn{color:var(--warn);font-weight:650}
 .pay-sheet__linked{display:flex;align-items:center;gap:6px;color:var(--ok);font-weight:650}
 /* Banktransacties, proof files and the invoice of a saved payment (2026-10-15) */
 .pay-sheet__bankblock{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}

@@ -25,6 +25,7 @@ import {
   pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions, type ForeignLink, type LinkChangeRow, type SurplusChoice, type TermStanding,
 } from './purchase-payment-links';
 import { appendPaymentProofs, PROOF_ACCEPT, proofFileKey } from '../../shared/payment-proof-selection';
+import { alsoPartFor, alsoTotalEur, rebalancedGoods, type AlsoContainerOption, type AlsoContainerPart } from './purchase-also-containers';
 
 /** The editor's payment draft, as the sheet edits it. */
 export interface PurchasePaymentDraft {
@@ -113,6 +114,9 @@ export interface PurchasePaymentDraft {
   paymentWritten?: boolean;
   /** Corrections of unlinked transfers of a payment paid in parts, by their id. */
   partEdits?: Record<number, { amountInput: string; amount: number | null; amountEurInput?: string; amountEur?: number | null }>;
+  /** "Deze transactie dekt ook andere containers" (a new EUR supplier payment on a picked transaction): open, and the other containers' parts. */
+  alsoOpen?: boolean;
+  alsoParts?: AlsoContainerPart[];
 }
 
 let nextSheetId = 0;
@@ -153,7 +157,47 @@ let nextSheetId = 0;
         }
         @if (!pay.id) {
           @if (!bankLinked() && !creditOffset()) {
-            <app-bank-transaction-picker direction="OUTGOING" heading="Transactie toevoegen" [amount]="transferEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />
+            <app-bank-transaction-picker direction="OUTGOING" heading="Transactie toevoegen" [amount]="pickerEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />
+          }
+          @if (alsoOffered()) {
+            <!-- One transfer for several containers: each part becomes a payment on its own container, all on this transaction (one atomic save). -->
+            <div class="pay-sheet__tobank pay-sheet__also">
+              <label class="pay-sheet__switch"><span>Deze transactie dekt ook andere containers<small>Bijvoorbeeld 30% van drie containers in één overschrijving</small></span>
+                <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.alsoOpen" [disabled]="busy() || !!pay.bankLinkPending"
+                       (change)="toggleAlso($any($event.target).checked)" /></label>
+              @if (pay.alsoOpen) {
+                @if (!alsoState().supported) {
+                  <span class="hint">Kan zodra de server bijgewerkt is.</span>
+                } @else {
+                  @if ((pay.alsoParts ?? []).length) {
+                    <ul class="pay-sheet__lines">
+                      @for (part of pay.alsoParts ?? []; track part.orderId) {
+                        <li class="pay-sheet__line pay-sheet__line--note">
+                          <span class="pay-sheet__linecopy"><b>{{ part.number }}</b><small>{{ part.label }}@if (otherSupplier(part)) { <span class="pay-sheet__alsowarn"> · andere leverancier</span> }</small></span>
+                          <div class="input-affix pay-sheet__alsoamount">
+                            <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + part.number" [disabled]="busy() || !!pay.bankLinkPending"
+                                   [ngModel]="part.amountInput" (ngModelChange)="setAlsoAmount(part.orderId, $event)" />
+                            <span class="input-affix__suffix">EUR</span>
+                          </div>
+                          <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" [attr.aria-label]="part.number + ' weghalen'" (click)="removeAlso(part.orderId)">Weghalen</button>
+                          @if (part.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in.</span> }
+                        </li>
+                      }
+                    </ul>
+                  }
+                  @if (alsoState().loading) { <span class="hint">Containers laden…</span> }
+                  @else if (alsoChoices().length) {
+                    <select class="select" aria-label="Container toevoegen" [disabled]="busy() || !!pay.bankLinkPending" (change)="addAlso($any($event.target).value); $any($event.target).value = ''">
+                      <option value="">Container toevoegen…</option>
+                      @for (option of alsoChoices(); track option.orderId) {
+                        <option [value]="option.orderId">{{ option.number }}{{ option.alias ? ' · ' + option.alias : '' }}{{ option.supplierId !== supplierId() ? ' · ' + (option.supplier || 'andere leverancier') : '' }}</option>
+                      }
+                    </select>
+                  } @else { <span class="hint">Geen andere container met een open bedrag voor de leverancier.</span> }
+                  <span class="hint" [class.hint--warn]="!alsoMatches()" role="status">Samen {{ alsoTotal() | eur }} van {{ lineEur() | eur }}{{ alsoMatches() ? ' ✓' : '' }}</span>
+                }
+              }
+            </div>
           }
         } @else if (!creditOffset()) {
           <!-- Betaalbewijs: the bank transaction first (it is the proof), then every file of the payment; files are added here and nowhere else. -->
@@ -642,6 +686,12 @@ export class PurchasePaymentSheet {
   readonly bankLines = input<readonly BankStatementLine[]>([]);
   /** Where the payment's term (or payee) stands against the Afspraak, this payment counted: what more paid does to it. */
   readonly termStanding = input<TermStanding | null>(null);
+  /** "Deze transactie dekt ook andere containers": the containers that may share the transfer, as the host loaded them. */
+  readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[] }>({ loading: false, supported: true, options: [] });
+  /** The container's supplier: others are allowed, with a warning. */
+  readonly supplierId = input<number | null>(null);
+  /** The section opened: the host loads the containers (once). */
+  readonly alsoLoad = output<void>();
   readonly patch = output<Partial<PurchasePaymentDraft>>();
   readonly amountInput = output<string>();
   readonly amountEurInput = output<string>();
@@ -1070,12 +1120,57 @@ export class PurchasePaymentSheet {
     if (fresh) this.patch.emit({ newInvoice: { ...fresh, ...changes } });
   }
 
+  /* ------------------------------------------- one transfer, several containers */
+
+  /** A new EUR supplier payment on a picked transaction may share it with other containers. */
+  readonly alsoOffered = computed(() => {
+    const pay = this.draft();
+    return !pay.id && !!pay.bankTransaction && pay.payee === 'SUPPLIER' && pay.currency === 'EUR' && !this.creditOffset() && this.roundOnServer();
+  });
+  readonly alsoChoices = computed(() => {
+    const chosen = new Set((this.draft().alsoParts ?? []).map(part => part.orderId));
+    return this.alsoState().options.filter(option => !chosen.has(option.orderId));
+  });
+  readonly lineEur = computed(() => Math.abs(this.draft().bankTransaction?.amountEur ?? 0));
+  /** This payment's transfer and the other containers' parts together, against the transaction. */
+  readonly alsoTotal = computed(() => Math.round((this.transferEur() + alsoTotalEur(this.draft().alsoParts)) * 100) / 100);
+  readonly alsoMatches = computed(() => bankAmountsMatch(this.alsoTotal(), this.lineEur()));
+  /** What the picked transaction is held against: this transfer, with the other containers' parts when they share it. */
+  readonly pickerEur = computed(() => (this.alsoOffered() && this.draft().alsoOpen ? this.alsoTotal() : this.transferEur()));
+  otherSupplier(part: AlsoContainerPart): boolean { return this.supplierId() !== null && part.supplierId !== this.supplierId(); }
+  toggleAlso(open: boolean): void {
+    const pay = this.draft();
+    if (open) { this.patch.emit({ alsoOpen: true }); this.alsoLoad.emit(); return; }
+    this.patch.emit({ alsoOpen: false, alsoParts: [], ...this.rebalance(pay.alsoParts ?? [], []) });
+  }
+  addAlso(value: string): void {
+    const option = this.alsoState().options.find(item => item.orderId === Number(value));
+    if (!option) return;
+    const before = this.draft().alsoParts ?? [];
+    const after = [...before, alsoPartFor(option, this.draft().instalmentDue ?? null)];
+    this.patch.emit({ alsoParts: after, ...this.rebalance(before, after) });
+  }
+  removeAlso(orderId: number): void {
+    const before = this.draft().alsoParts ?? [];
+    const after = before.filter(part => part.orderId !== orderId);
+    this.patch.emit({ alsoParts: after, ...this.rebalance(before, after) });
+  }
+  setAlsoAmount(orderId: number, raw: string): void {
+    const amount = parsePurchasePaymentAmount(raw);
+    this.patch.emit({ alsoParts: (this.draft().alsoParts ?? []).map(part => part.orderId === orderId ? { ...part, amountInput: raw, amount: amount !== null && amount > 0 ? amount : null } : part) });
+  }
+  /** While the transaction was balanced, this payment's goods give or take what a container added or removed takes. */
+  private rebalance(before: readonly AlsoContainerPart[], after: readonly AlsoContainerPart[]): Partial<PurchasePaymentDraft> {
+    const goods = rebalancedGoods(this.draft().amount, this.transferEur(), alsoTotalEur(before), alsoTotalEur(after), this.lineEur());
+    return goods === null ? {} : { amount: goods, amountInput: amountInputText(goods) };
+  }
+
   chooseBank(row: BankStatementLine | null): void {
     const pay = this.draft();
     if (this.busy() || pay.bankLinkPending) return;
-    if (!row) { this.patch.emit({ bankTransaction: null, bankLinkError: '' }); return; }
+    if (!row) { this.patch.emit({ bankTransaction: null, bankLinkError: '', alsoOpen: false, alsoParts: [] }); return; }
     const total = Math.abs(row.amountEur);
-    const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0);
+    const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0) + alsoTotalEur(pay.alsoParts);
     const goods = Math.round((total - parts) * 100) / 100;
     this.patch.emit({ bankTransaction: row, toBank: false, bankAccount: row.account, paidOn: bankTransactionDay(row), bankLinkError: '',
       ...(pay.id || bankAmountsMatch(this.transferEur(), total) ? {} : pay.currency === 'EUR' ? { amount: goods, amountInput: amountInputText(goods) }

@@ -41,6 +41,11 @@ export class FinanceApi {
     return firstValueFrom(this.http.put<CompanyCost>(api(`/api/costs/${id}`), cost));
   }
 
+  /** The cost's due date ('Vervalt op'); null clears it. The cost PUT never changes it (server-owned on update). */
+  setCostDueDate(id: number, dueDate: string | null): Promise<CompanyCost> {
+    return firstValueFrom(this.http.put<CompanyCost>(api(`/api/costs/${id}/due-date`), { dueDate }));
+  }
+
   /** Pays what is still open on a cost as one payment; no day means today. The response carries the payments. */
   markCostPaid(id: number, paidOn?: string | null): Promise<CompanyCost> {
     return firstValueFrom(this.http.post<CompanyCost>(api(`/api/costs/${id}/paid`), { paidOn: paidOn ?? null }));

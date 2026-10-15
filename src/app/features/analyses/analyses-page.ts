@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal, afterRenderEffect, ElementRef, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, afterRenderEffect, ElementRef, untracked, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -34,17 +34,24 @@ import { WebsiteAnalytics } from './website-analytics';
 import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { incomingMoneyTotals } from '../finance/incoming-money';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { CashDesk } from './cash-desk';
+import { CashOverviewCard } from './cash-overview-card';
+import { CashPhone } from './cash-phone';
+import { CashPageData, CashSources } from './cash-sources';
+import { CashState } from './cash-state';
 
-type AnalysisSection = 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
+type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
 const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string; icon: string; tone: string }> = [
+  { id: 'cash', label: 'Kasprognose', icon: 'bank', tone: 'green' },
   { id: 'overview', label: 'Overzicht', icon: 'analytics', tone: 'blue' },
   { id: 'sales', label: 'Verkoop', icon: 'sales', tone: 'rose' },
   { id: 'inventory', label: 'Voorraad', icon: 'stock', tone: 'green' },
   { id: 'purchasing', label: 'Inkoop', icon: 'purchase', tone: 'amber' },
   { id: 'result', label: 'Resultaat', icon: 'exchange', tone: 'purple' },
   { id: 'market', label: 'Markt & container', icon: 'truck', tone: 'blue' },
-  { id: 'website', label: 'Website', icon: 'countries', tone: 'purple' },
+  { id: 'website', label: 'Bezoekers', icon: 'countries', tone: 'purple' },
 ];
 
 interface VarianceGroup {
@@ -100,7 +107,8 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
 @Component({
   selector: 'app-analyses-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, TrendChart,
+  providers: [CashSources, CashState],
+  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone,
     FormsModule,
     RouterLink,
     PageHeader,
@@ -112,6 +120,9 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     MarketAnalysis, WebsiteAnalytics, ContainerCostAnalysis,
   ],
   template: `
+    @if (section() === 'cash' && !desk.active()) {
+      <app-cash-phone [tabs]="analysisTabs" [pageWarnings]="dataWarnings()" (refreshed)="refresh()" />
+    } @else {
     <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
       @if (section() !== 'market' && section() !== 'website') {
         <button class="btn btn--sm" type="button" [disabled]="loading() || refreshing()"
@@ -130,7 +141,12 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         }
       </nav>
 
+      @if (section() === 'cash') {
+        <app-cash-desk [pageWarnings]="dataWarnings()" />
+      }
+
       @if (section() === 'overview') {
+      <app-cash-overview-card />
       <section class="analysis-section" aria-labelledby="company-picture-title">
         <header class="section-copy">
           <span class="eyebrow">Bedrijfsfoto</span>
@@ -811,6 +827,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
       </section>
       }
     </main>
+    }
   `,
   styles: `
     :host{display:block}.analyses-page{max-width:1180px;padding-bottom:110px}.analysis-section+.analysis-section{margin-top:34px}
@@ -867,12 +884,16 @@ export class AnalysesPage {
   private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
+  readonly desk = inject(DesktopViewport);
+  private readonly cashSources = inject(CashSources);
+  private readonly cashState = inject(CashState);
 
   private readonly analysisNavigation = viewChild<ElementRef<HTMLElement>>('analysisNavigation');
   readonly analysisTabs = ANALYSIS_TABS;
   readonly section = toSignal(this.route.paramMap.pipe(map((params) =>
-    analysisSection(params.get('section')))), { initialValue: 'overview' as AnalysisSection });
+    analysisSection(params.get('section')))), { initialValue: 'cash' as AnalysisSection });
   readonly sectionSubtitle = computed(() => ({
+    cash: 'Banksaldo vandaag en wat er komt',
     overview: 'De belangrijkste signalen op één plek',
     result: 'Wat we overhouden: marge op de goederen min onze eigen kosten',
     sales: 'Pijplijn, conversie en facturen',
@@ -1059,7 +1080,26 @@ export class AnalysesPage {
       (right.receivedOn ?? '').localeCompare(left.receivedOn ?? '') || right.orderId - left.orderId);
   });
 
+  /** What the Kasprognose reads from this page's own load (spec §4.1: never fetched twice). */
+  private readonly cashPage = computed<CashPageData>(() => ({
+    purchases: this.purchases(), suppliers: this.suppliers(), products: this.products(), salesOrders: this.salesOrders(),
+    customers: this.customers(), costs: this.costs(), incomingPayments: this.incomingPayments(),
+  }));
+
   constructor() {
+    this.cashState.attach(this.cashPage, this.loading, TODAY);
+    /* The bank and forecast data load the first time Kasprognose or Overzicht is shown. */
+    effect(() => {
+      const section = this.section();
+      if (section === 'cash' || section === 'overview') untracked(() => this.cashSources.ensure(TODAY));
+    });
+    /* The advance schedules need the page's partner financings: once per round, after the page loaded. */
+    effect(() => {
+      const round = this.cashSources.generation();
+      if (round === 0 || this.loading()) return;
+      const financings = this.partnerSummaries();
+      untracked(() => void this.cashSources.loadSchedules(financings, round));
+    });
     afterRenderEffect(() => {
       this.section();
       const navigation = this.analysisNavigation()?.nativeElement;
@@ -1082,7 +1122,9 @@ export class AnalysesPage {
   async refresh(): Promise<void> {
     if (this.loading() || this.refreshing()) return;
     this.refreshing.set(true);
-    try { await this.load(); } finally { this.refreshing.set(false); }
+    try {
+      await Promise.all([this.load(), this.cashSources.state() === 'idle' ? Promise.resolve() : this.cashSources.reload(TODAY)]);
+    } finally { this.refreshing.set(false); }
   }
 
   async load(): Promise<void> {
@@ -1252,5 +1294,5 @@ function localIsoDay(date = new Date()): string {
 }
 
 function analysisSection(value: string | null): AnalysisSection {
-  return ANALYSIS_TABS.some((tab) => tab.id === value) ? value as AnalysisSection : 'overview';
+  return ANALYSIS_TABS.some((tab) => tab.id === value) ? value as AnalysisSection : 'cash';
 }

@@ -1,0 +1,362 @@
+/* ==========================================================================
+   Kosten & bank · Bank cockpit, Transacties and the transaction detail
+   (spec-bank-forecast §3). Loaded from styles.scss; every rule hangs on its
+   own host class under the page host (#finance-workspace), except the
+   sidebar's account rows, which the app shell renders (.wk-side). The Inkoop
+   payment sheet's "dekt ook andere containers" lives with the sheet's own
+   rules in purchase-payments.scss.
+   ========================================================================== */
+
+/* ---- the sidebar's account rows under Transacties (desk only; hidden in the 680-899 rail) */
+.wk-side .fin-side-account {
+  display: none;
+}
+@media (min-width: 900px) {
+  .wk-side .fin-side-account {
+    display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 4px 10px 4px 30px;
+    .wk-dot { width: 7px; height: 7px; }
+    .fin-side-account__text { display: grid; min-width: 0; line-height: 1.25; }
+    .fin-side-account__label { overflow: hidden; color: inherit; font-size: 12.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    small { overflow: hidden; color: rgb(255 255 255 / 48%); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap;
+      &.is-warn { color: #e8b56a; } }
+    .fin-side-account__ok { color: rgb(255 255 255 / 45%); font-size: 12px; }
+  }
+  .wk-side .wk-side__item.is-open:not(.active) { color: #fff; }
+}
+
+#finance-workspace {
+  /*
+   * ---- toolbar: Bank's sub line. It shows at every desk width (1100 included); the import words give way first
+   * (an ellipsis, the whole line in their title) so "Odoo: controle nodig ›" always stays on the bar.
+   */
+  .fin-toolbar__sub { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .fin-toolbar__sync-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    .wk-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; } }
+  .fin-toolbar__warn { flex: none; color: var(--warn); }
+  /*
+   * Transacties carries the most tools (segmented, search, "Transacties ophalen", the primary split). Below 1400 the
+   * segmented sizes each option to its words (equal columns would all take "Te koppelen {n}"'s width), so the selected
+   * option carries the raised look itself instead of the sliding indicator, and "Transacties ophalen" keeps its icon
+   * (aria-label and title keep the words). That keeps, at 1440 px wide (a 1152 px bar), the title, the "Te koppelen"
+   * count and the whole search placeholder "Bedrag, naam of mededeling" (the kit's 240 px search, at every width from
+   * 900). Narrower, the title steps aside (the sidebar marks the place); the "Te koppelen" count stays at every width
+   * (a key number). Only from 940 to 970, where "Nieuw" still carries its words beside the 240 px search, the options
+   * narrow to 7 px sides and the count stands without its dot (16 px to spare with a three-digit count); below 900
+   * "Inkomend" and "Uitgaand" read "In" and "Uit" and the search folds to its icon (the kit). The widths are the bar's
+   * content box (its 20 px paddings left out). Measured: nothing slides under the tools from 680 to 1440.
+   */
+  @container wk-bar (max-width: 1399.98px) {
+    .fin-toolbar--tx .fin-toolbar__label { display: none; }
+    .fin-toolbar--tx .wk-seg { grid-auto-columns: auto;
+      &::before { display: none; }
+      .wk-seg__opt { padding: 0 10px; }
+      .wk-seg__opt[aria-checked='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
+  }
+  @container wk-bar (max-width: 1119.98px) {
+    .fin-toolbar--tx .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+  @container wk-bar (min-width: 940px) and (max-width: 969.98px) {
+    .fin-toolbar--tx .wk-seg .wk-seg__opt { padding: 0 7px; }
+    .fin-toolbar--tx .wk-seg__opt:has(.wk-seg__count) .wk-seg__dot { display: none; }
+  }
+  /* The clear button is hidden while the placeholder shows: its 28 px go to "Bedrag, naam of mededeling" (whole at 240 px). */
+  @container wk-bar (min-width: 900px) { .fin-toolbar--tx .wk-search input:placeholder-shown { padding-right: 8px; } }
+
+  /* ---- the inspector is 424 px for a transaction (other kinds keep 360) */
+  .wk-body--split.fin-body--line { --wk-inspector-w: 424px; }
+  .fin-insp-line.wk-inspector--drawer { width: min(440px, calc(100vw - 120px)); }
+
+  /* ==================================================== desk cockpit */
+  .fin-cockpit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; > * { min-width: 0; margin: 0; } }
+  .fin-accounts { display: flex; gap: 12px; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; padding-bottom: 2px; scrollbar-width: thin;
+    > * { flex: 1 0 248px; max-width: 360px; } > .fin-total { flex: 0 0 300px; } }
+  .fin-total { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 14px 16px; border: 1px solid #2c2622; border-radius: 16px; background: #1f1b19;
+    color: #fff; font: inherit; text-align: left; cursor: pointer;
+    &:hover { box-shadow: 0 4px 14px rgb(26 22 20 / 18%); } }
+  .fin-total__top { display: flex; justify-content: space-between; gap: 8px; color: rgb(255 255 255 / 66%); font-size: 12px; font-weight: 650; small { font-size: 11.5px; font-weight: 600; } }
+  .fin-total__value { font-size: 27px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+  .fin-total__sub { color: rgb(255 255 255 / 64%); font-size: 11.5px; line-height: 1.35; &.is-warn { color: #f4cf9a; } }
+  .fin-total__action { color: #fff; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
+  .fin-total__moves { display: flex; gap: 22px; margin-top: 6px; padding-top: 8px; border-top: 1px solid rgb(255 255 255 / 12%);
+    span { display: grid; gap: 1px; } small { color: rgb(255 255 255 / 55%); font-size: 11px; } b { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; } }
+
+  /* one account as a card */
+  app-bank-account-card { display: block; min-width: 0; }
+  .fin-acct { position: relative; height: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
+  /*
+   * Name, then the balance with its 30-day sparkline, then the source and the foot, as wrapping lines: the sparkline
+   * takes what the balance leaves (64 to 104 px) and drops under the balance when not even 64 px are left, so a long
+   * balance ("€ 66.427,27" in a 248 px card at 1100) is always whole and never touches it.
+   */
+  .fin-acct__open { display: flex; flex-wrap: wrap; align-items: center;
+    gap: 4px 10px; width: 100%; height: 100%; padding: 13px 14px 12px; border: 0; border-radius: 16px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    &:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); } &.is-static { cursor: default; background: none; }
+    > .fin-acct__head, > .fin-acct__source, > .fin-acct__foot { flex: 1 0 100%; } > .fin-acct__balance { flex: none; } }
+  .fin-acct__head { grid-area: head; display: flex; align-items: center; gap: 10px; min-width: 0; padding-right: 28px; }
+  .fin-acct__icon { display: grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--rose-soft); color: var(--rose-dark); }
+  .fin-acct__name { display: grid; min-width: 0; b { font-size: 13.5px; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } }
+  .fin-acct__balance { grid-area: balance; font-size: 21px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+  .fin-acct__balance--none { color: var(--muted); font-size: 15px; font-weight: 650; }
+  .fin-acct__spark { grid-area: spark; flex: 1 1 64px; width: 100%; min-width: 0; max-width: 104px; height: 30px; margin-left: auto; overflow: visible; path { fill: none; stroke: var(--rose); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; } }
+  .fin-acct__source { grid-area: source; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+  .fin-acct__checked { display: block; &.is-warn { color: var(--warn); } }
+  .fin-acct__foot { grid-area: foot; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; small { margin-left: auto; color: var(--muted); font-size: 11.5px; } }
+  .fin-acct__more { position: absolute; top: 10px; right: 10px; }
+  .fin-acct__fill { position: absolute; right: 14px; bottom: 34px; }
+  .fin-acct--empty { display: grid; place-content: center; gap: 8px; padding: 18px; color: var(--muted); font-size: 13px; text-align: center; p { margin: 0; } }
+  /*
+   * On top of Transacties: one row (name and balance, sparkline, source, pills) while the card has 900 px; the name and
+   * balance column never narrows below the balance, the source below its longest word, and the pills wrap before
+   * anything is squeezed. A narrower card (1100 wide) stacks: name and balance beside the sparkline, then the source
+   * and the pills across the card ("€ 12.300,00" of Wise EUR ran into the sparkline at 1100).
+   */
+  .fin-acct--wide { margin-bottom: 12px; container: fin-acct-wide / inline-size;
+    .fin-acct__open { display: grid; grid-template-columns: minmax(min-content, 1.2fr) minmax(0, 150px) minmax(min-content, 1fr) auto; grid-template-areas: 'head spark source foot' 'balance spark source foot'; gap: 2px 18px; padding: 12px 16px; }
+    .fin-acct__head { padding-right: 0; }
+    .fin-acct__spark { max-width: none; margin-left: 0; }
+    .fin-acct__foot { margin: 0; } .fin-acct__more { position: static; } }
+  @container fin-acct-wide (max-width: 899.98px) {
+    .fin-acct--wide .fin-acct__open { grid-template-columns: minmax(min-content, 1fr) minmax(0, 150px); grid-template-areas: 'head spark' 'balance spark' 'source source' 'foot foot'; gap: 4px 18px; }
+  }
+  app-bank-account-card.fin-tx-account .fin-acct--wide { display: flex; align-items: center; padding-right: 10px; }
+
+  /* the Geld strip: four cells, each opens its section */
+  .fin-geld { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; }
+  .fin-geld__cell { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 16px; border: 0; border-left: 1px solid var(--line); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    &:first-child { border-left: 0; } &:hover { background: var(--surface-2); } }
+  .fin-geld__label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; app-icon { margin-left: auto; color: var(--muted-2); } }
+  .fin-geld__value { font-size: 19px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.015em; white-space: nowrap; }
+  .fin-geld__sub { color: var(--muted); font-size: 11.5px; line-height: 1.4; &.is-warn { color: var(--warn); } }
+  .fin-geld__sub--credit { color: #7b4f9d; }
+
+  /* the Kaslijn */
+  .fin-kaslijn { margin: 0; }
+  .fin-kaslijn__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 16px 4px; }
+  .fin-kaslijn__sub { color: var(--muted); font-size: 12px; }
+  .fin-kaslijn__head app-segmented { margin-left: auto; }
+  .fin-kaslijn__more { flex: none; }
+  .fin-kaslijn__banner { display: flex; align-items: center; gap: 8px; margin: 2px 16px 4px; padding: 4px 6px 4px 12px; border: 1px solid #f0dcbc; border-radius: 10px;
+    background: var(--warn-soft); color: #7c450b; font-size: 12.5px;
+    > app-icon { flex: none; color: var(--warn); } .wk-btn, .wk-link { flex: none; } }
+  /* the whole sentence, on a second line when it needs one (nothing is cut at 1440; the fold keeps its first row) */
+  .fin-kaslijn__banner-text { flex: 1; min-width: 0; line-height: 1.35; }
+  /* chart left, the three facts stacked beside it (one row less: the fold) */
+  .fin-kaslijn__grid { display: grid; grid-template-columns: minmax(0, 1fr) 250px; align-items: start; }
+  .fin-kaslijn__plot { min-width: 0; padding: 2px 8px 10px 16px; }
+  .fin-kaslijn__facts { display: grid; gap: 6px; margin: 4px 0 8px; padding: 0 16px; border-left: 1px solid var(--line);
+    > div { display: grid; align-content: start; gap: 1px; min-width: 0; } dt { color: var(--muted); font-size: 11px; font-weight: 650; }
+    dd { display: grid; gap: 1px; margin: 0; font-size: 12.5px; b { font-variant-numeric: tabular-nums; } small { color: var(--muted); font-size: 11.5px; line-height: 1.35; } .wk-link { font-size: 11.5px; justify-self: start; } } }
+  /* the Vooruitblik equation, compact 28 px rows, as the rail's first card */
+  .fin-outlook__body { padding: 2px 16px 12px; }
+  .fin-equation--compact { > div { min-height: 0; padding: 3px 0; font-size: 12.5px; line-height: 22px; } > .is-sub { font-size: 12px; }
+    > .is-total { margin-top: 2px; padding-top: 4px; font-size: 13px; } > .is-grand dd { font-size: 16px; } }
+  .fin-outlook .fin-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.4; }
+
+  /* the transactions beside the rail */
+  .fin-cockpit__cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+  .fin-cockpit__tx { margin: 0; overflow: hidden; }
+  .fin-cockpit__tx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px 8px; }
+  .fin-cockpit__exact { margin-left: auto; }
+  .fin-cockpit__rail { display: grid; gap: 14px; > .wk-card { margin: 0; } }
+  .fin-cockpit__rail .fin-attention__row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 6px 12px; }
+  .fin-cockpit__rail .fin-attention__text { b { font-size: 13px; } small { font-size: 11.5px; line-height: 1.35; } .fin-attention__amount { color: var(--ink-2); font-weight: 650; } }
+  .fin-recent__row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 7px 16px; border: 0; border-top: 1px solid var(--line);
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; &:hover { background: var(--surface-2); } }
+  .fin-recent__day { color: var(--muted); font-size: 11.5px; }
+  .fin-recent__text { display: grid; min-width: 0; b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; } small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; } }
+  .fin-recent__amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fin-recent__empty { padding: 0 16px 14px; }
+
+  /* ==================================================== Transacties */
+  .fin-tx-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px;
+    app-finance-filters { display: flex; align-items: center; gap: 8px; } }
+  .fin-tx-bar__totals { margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; small { color: var(--muted); font-size: 11px; } }
+  /*
+   * Transacties' tracks must fit the pane: the tracks, the 12 px gaps, the rows' 2 × 16 px and the table's border within
+   * the pane minus its 2 × 24 px. Koppeling steps aside below 1024 (data-hide md), Saldo below 720 (xs: the day heads keep
+   * "Saldo einde dag", the detail its own saldo). Beside the detail (wk-body--split) Koppeling and the action go; the
+   * cockpit's compact list has neither Koppeling nor Saldo. :not(compact) keeps the pane sets off the compact list.
+   */
+  .fin-table--tx { --wk-cols: 10px minmax(216px, 1fr) 112px minmax(150px, 200px) 96px 120px 116px 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(200px, 1fr) 112px 120px 116px 36px; }
+  .fin-table--tx-compact, .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 92px 112px 30px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
+  /* The cockpit's list reads without its column heads (kept for screen readers; the day heads stick to the top): one row more above the fold. */
+  .fin-table--tx-compact { --wk-head-h: 0px; }
+  .fin-table--tx-compact > .wk-thead { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); border: 0; white-space: nowrap; }
+  .fin-tx-day { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .fin-tx-day__label { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 700; }
+  .fin-tx-day__saldo { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fin-tx { min-height: 48px; }
+  /*
+   * Nothing in a row is cut (1440 with or without the detail, the cockpit's compact list): the counterparty, its sub
+   * line, the Koppeling and "Saldo onbekend vóór {dd/mm}" take a second line instead of an ellipsis.
+   */
+  .fin-tx__party { display: block; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
+  .fin-tx .wk-td__sub { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+  .fin-tx__link { display: grid; align-content: center; gap: 2px; white-space: normal;
+    .bank-document-link { padding: 0; font-size: 12.5px; } }
+  .fin-tx__target { display: block; color: var(--ink-2); font-size: 12.5px; overflow-wrap: anywhere; white-space: normal; }
+  .fin-tx__reasons { display: flex; flex-wrap: wrap; gap: 3px; .wk-pill { height: 17px; padding: 0 6px; font-size: 10px; } }
+  .fin-tx__saldo { color: var(--ink-2); font-size: 12px; line-height: 1.3; white-space: normal; }
+  /* "Interne overboeking" is wider than the 112 px column: the chip takes two lines rather than cutting the word. */
+  .fin-tx__status .wk-pill { height: auto; min-height: 20px; padding-block: 2px; line-height: 1.2; white-space: normal; }
+  .fin-tx-foot { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
+  .bank-unbanked { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 10px; padding: 10px 14px; border: 1px solid #f0dcbc; border-radius: 12px; background: var(--warn-soft);
+    color: #7c450b; font: inherit; font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; span { flex: 1; } }
+  .bank-searched { margin: 0 0 10px; }
+
+  @container wk-pane (max-width: 1023.98px) {
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(180px, 1fr) 104px 96px 116px 112px 36px; }
+    .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }
+    .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr); }
+    .fin-kaslijn__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 16px 12px; padding: 8px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+    .fin-cockpit__cols { grid-template-columns: minmax(0, 1fr); }
+  }
+  @container wk-pane (max-width: 859.98px) {
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(130px, 1fr) 96px 88px 104px 102px 36px; }
+    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(170px, 1fr) 104px 116px 112px 36px; }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 36px; }
+    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(140px, 1fr) 104px 112px 36px; }
+    .fin-table--tx-compact { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 30px; }
+  }
+
+  /* ==================================================== the transaction detail */
+  .fin-txd { display: flex; flex-direction: column; min-height: 100%; }
+  .fin-txd__head { align-items: center; gap: 6px; padding: 12px 16px 10px; }
+  .fin-txd__position { color: var(--muted); font-size: 12px; font-weight: 650; }
+  .fin-txd__step { cursor: pointer; &:disabled { opacity: .4; cursor: default; } }
+  .fin-txd__spacer { flex: 1; }
+  .fin-txd__hero { display: grid; gap: 4px; }
+  .fin-txd__dir { color: var(--muted); font-size: 12px; }
+  .fin-txd__who { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .fin-txd__party { margin: 0; min-width: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+  .fin-txd__amount { flex: none; font-size: 21px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+  .fin-txd__meta { color: var(--ink-2); font-size: 12.5px; }
+  .fin-txd__ref { display: block; margin-top: 4px; padding: 7px 10px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; overflow-wrap: anywhere; white-space: normal; }
+  .fin-txd__pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .fin-txd__saldo { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .fin-txd__match { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--rose) 30%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); }
+  .fin-txd__match-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; b { min-width: 0; font-size: 13.5px; overflow-wrap: anywhere; } .wk-link { flex: none; } }
+  .fin-txd__compare { display: grid; margin: 0; > div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+    dt { color: var(--muted); } dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; &.is-ok { color: var(--ok); } } }
+  .fin-txd__reasons { display: flex; flex-wrap: wrap; gap: 4px; }
+  .fin-txd__change { display: grid; gap: 8px; margin-top: 12px; h4 { margin: 0; font-size: 12px; font-weight: 700; } }
+  .fin-txd .bank-alloc-change { display: grid; font-size: 12.5px; }
+  .fin-txd .bank-alloc-change__row { display: grid; grid-template-columns: minmax(78px, .7fr) minmax(0, 1fr) minmax(0, 1.1fr); gap: 4px 10px; padding: 5px 0; border-top: 1px solid var(--line);
+    > span { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; } > span:first-child { color: var(--muted); }
+    &.is-changed > span:last-child { color: var(--ok); font-weight: 650; } }
+  .fin-txd .bank-alloc-change__row--head { border-top: 0; color: var(--muted); font-size: 11.5px; font-weight: 650; }
+  .fin-switch-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; cursor: pointer;
+    span { display: grid; gap: 2px; } b { font-size: 13px; } small { color: var(--muted); font-size: 12px; line-height: 1.4; } }
+  .fin-txd__radios { display: grid; gap: 6px; font-size: 13px; label { display: flex; align-items: center; gap: 8px; } input { accent-color: var(--rose); } }
+  .fin-txd__keep { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; .select { width: auto; } }
+  .fin-txd__details { margin-top: 10px; summary { color: var(--rose-dark); font-size: 12.5px; font-weight: 650; cursor: pointer; } }
+  .fin-txd__part { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 7px 0; border: 0; border-top: 1px solid var(--line);
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    > span:first-child { display: grid; min-width: 0; b { font-size: 13px; font-weight: 650; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 11.5px; } }
+    &:hover b { color: var(--rose-dark); } }
+  .fin-txd__part-amount { display: grid; justify-items: end; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; small { color: var(--ok); font-size: 11px; } }
+  .fin-txd__other { margin: 0 0 4px; font-size: 12px; }
+  .fin-txd__sum { margin: 6px 0 0; color: var(--ok); font-size: 12.5px; font-weight: 650; &.is-off { color: var(--warn); } }
+  .fin-txd__line { margin: 0 0 4px; font-size: 13px; small { display: block; color: var(--muted); font-size: 12px; } }
+  .fin-txd__file { display: flex; margin-top: 4px; }
+  .fin-txd__history { white-space: normal; overflow-wrap: anywhere; }
+  .fin-txd__offer { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    > div { display: grid; min-width: 0; b { font-size: 13px; } small { color: var(--muted); font-size: 12px; } } }
+  .fin-txd__offer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .fin-txd__foot { align-items: center; .wk-btn--primary { min-width: 120px; } }
+  .fin-txd__reason { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .fin-txd__steps .fin-alloc { gap: 10px; }
+  .fin-txd__pattern { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; > span { min-width: 0; } .btn { flex: none; } }
+  .fin-txd .btn:not(.wk-btn) { font: inherit; }
+
+  /* "Verdelen over containers" */
+  .fin-split { display: grid; gap: 6px; margin: 8px 0; }
+  .fin-split__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+    &.is-on { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 112px; align-items: center; border-color: var(--rose-line); background: var(--rose-soft); } }
+  .fin-split__pick { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; span { display: grid; min-width: 0; } b { font-size: 13px; } small { color: var(--muted); font-size: 11.5px; } }
+  .fin-split__row.is-on .fin-split__pick { grid-column: 1 / -1; }
+  .fin-split__warn { color: var(--warn); }
+  /* desk: the 424 px inspector's compact fields (the phone keeps 16 px, no zoom) */
+  .fin-split__term, .fin-split__amount { min-width: 0; width: 100%; height: 34px; padding-block: 0; font-size: 13px; }
+  .fin-split__row.is-on .fin-split__term { grid-column: 1 / span 2; }
+  .fin-split__amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .fin-split__total { margin: 8px 0; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; &.is-ok { color: var(--ok); } }
+  .fin-split__search { margin-top: 4px; }
+
+  /* "Boeken als…", "Exacte suggesties koppelen", the buffer */
+  .fin-bookas__line { display: grid; gap: 2px; margin: 0; b { font-size: 14px; } span { color: var(--muted); font-size: 12.5px; } }
+  .fin-bookas__options { display: grid; gap: 6px; }
+  .fin-bookas__option { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    input { margin-top: 3px; accent-color: var(--rose); } span { display: grid; gap: 1px; } b { font-size: 13.5px; } small { color: var(--muted); font-size: 12px; }
+    &.is-on { border-color: var(--rose-line); background: var(--rose-soft); } }
+  .fin-bookas__field { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; font-size: 13px;
+    legend { margin-bottom: 4px; color: var(--ink-2); font-weight: 650; } label { display: flex; align-items: center; gap: 8px; } input[type='radio'] { accent-color: var(--rose); } }
+  .fin-exact__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none;
+    label { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+    input { margin-top: 3px; accent-color: var(--rose); } span { display: grid; gap: 2px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 12px; } }
+  .fin-sheet__foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .fin-sheet__link { justify-self: start; margin-top: 4px; }
+  .fin-amount-field { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .fin-keys__group { margin: 14px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+
+  /*
+   * Uitgaven › Containers and Ontvangen: where a payment stands on the bank. Their tracks (with "Op de bank" and
+   * "Transactie") live in finance-workspace.scss beside their narrower sets: a set here would come later in the
+   * stylesheet and win over every narrower one there.
+   */
+  /* "0 van 1 betaling · 1 zonder transactie" takes two lines rather than an ellipsis */
+  .fin-onbank { font-size: 12.5px; line-height: 1.3; white-space: normal; }
+  .fin-tree__bank { padding: 0; font-size: 12px; font-weight: 600; }
+  .fin-tree__adjusted { padding-left: 22px; color: var(--muted); font-size: 11.5px; &.fin-tree__payment--nested { padding-left: 34px; } }
+}
+
+/* ==================================================== phone */
+@media (max-width: 679.98px) {
+  #finance-workspace {
+    .fin-ios-odoo { width: calc(100% - 2 * var(--ios-inset)); border: 0; font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
+    .fin-hero { background: linear-gradient(150deg, #1d3a2f, #142721); }
+    .fin-hero__moves { display: flex; gap: 22px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgb(255 255 255 / 14%);
+      span { display: grid; gap: 1px; } small { color: rgb(255 255 255 / 60%); font-size: 12px; } b { font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; } }
+    .fin-carousel { display: flex; gap: 10px; margin: 0 0 16px; padding: 0 var(--ios-inset) 4px; scroll-padding-inline: var(--ios-inset); overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; scrollbar-width: none;
+      &::-webkit-scrollbar { display: none; }
+      > app-bank-account-card { flex: 0 0 min(78%, 300px); scroll-snap-align: start; } }
+    .fin-acct--phone { border: 0; border-radius: 20px;
+      .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'source' 'foot'; padding: 14px; }
+      .fin-acct__spark { display: none; } .fin-acct__balance { font-size: 22px; } }
+    .fin-widgets .ios-widget { min-height: 104px; }
+    .fin-widget__value { font-size: clamp(17px, 5.6vw, 22px); white-space: nowrap; }
+    .fin-widget__sub { color: var(--muted); font-size: 12.5px; line-height: 1.3; overflow-wrap: anywhere; }
+    .fin-kaslijn-phone { padding: 14px 14px 10px; }
+    .fin-kaslijn-phone__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px;
+      h2 { margin: 0; font-size: 17px; font-weight: 750; small { color: var(--muted); font-size: 13px; font-weight: 500; } } }
+    .fin-kaslijn-phone__banner { display: flex; align-items: flex-start; gap: 8px; width: 100%; margin: 6px 0; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--warn-soft);
+      color: #7c450b; font: inherit; font-size: 13.5px; line-height: 1.35; text-align: left; cursor: pointer; app-icon { flex: none; margin-top: 2px; color: var(--warn); } }
+    .fin-kaslijn-phone__rows { display: grid; margin: 4px 0 0;
+      > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: .5px solid var(--ios-sep); font-size: 15px; }
+      dt { min-width: 0; color: var(--ink-2); } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; } }
+    .fin-tolink { gap: 8px; padding-right: 10px; }
+    .fin-tolink__open { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    /* "Yunnan Pubei Flowers Co., Ltd" and the reference take a second line at 390 rather than an ellipsis */
+    .fin-tolink__party { min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+    .fin-tolink__amount { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .fin-tolink__sub { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+    .fin-attention-phone .ios-cell__title--2 { display: block; }
+    .fin-nobreak { white-space: nowrap; }
+    .fin-tolink__status { font-weight: 650; &.is-suggested { color: var(--ok); } &.is-open { color: var(--warn); } }
+    .fin-tx-account .fin-acct--wide { display: block; margin: 0 var(--ios-inset) 12px;
+      .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'source' 'foot'; } .fin-acct__spark { display: none; }
+      .fin-acct__more { position: absolute; top: 10px; right: 10px; span { display: none; } } }
+    .bank-unbanked, .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
+    .bank-totals-line { margin: 0 var(--ios-inset) 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; span { color: var(--muted); } }
+    .fin-txd--phone { padding: 0 2px; .wk-section { padding: 12px 16px; } }
+    /* Each button starts from its own words ("Registreren en koppelen" is 180 px) and the two share what is left; a pair that does not fit takes two lines. */
+    .fin-txd__foot--phone { display: flex; flex-wrap: wrap; gap: 8px; .btn { flex: 1 1 auto; } }
+    .fin-split__row.is-on { grid-template-columns: minmax(0, 1fr) 120px; .fin-split__term { grid-column: 1 / -1; } .fin-split__amount { grid-column: 2; } }
+    .fin-split__term, .fin-split__amount { height: 44px; font-size: 16px; }
+  }
+}

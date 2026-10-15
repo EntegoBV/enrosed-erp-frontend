@@ -1,40 +1,43 @@
 import type { PaymentNode } from './container-payment-tree';
 import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, input, viewChild } from '@angular/core';
 import { EurPipe } from '../../shared/pipes';
-import { Sheet } from '../../shared/ui';
-import { BankMovementPanel } from './bank-movement-panel';
+import type { BankMovementPanel } from './bank-movement-panel';
 import type { BankAllocationTarget } from './bank-allocation-targets';
 
-/** One bank payment, local documents first. Rendered at page level with the other finance sheets. */
+/**
+ * Today's three ways to link a transaction, as sections of the transaction
+ * detail (spec-bank-forecast §3.5): "Factuur of uitgave" (documents and
+ * container terms in ENROSED, with the full preview of the old allocation
+ * sheet), "Bestaande betaling" and "Nog te registreren" (received Odoo
+ * invoices). The state machine is the detail's own (it is a
+ * BankMovementPanel); `only="preview"` shows just the chosen document's
+ * preview (the "Details" of a best match).
+ */
 @Component({
-  selector: 'app-bank-allocation-sheet',
+  selector: 'app-bank-allocation-steps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet, EurPipe],
-  styleUrl: './bank-allocation-sheet.scss',
+  imports: [EurPipe],
+  styleUrl: './bank-allocation-steps.scss',
   template: `
     @let p = panel();
     @if (p.selected(); as row) {
-      <app-sheet variant="ios" title="Banktransactie koppelen" [wide]="true" (closed)="p.closeAllocation()">
-        <div body class="fin-sheet fin-alloc">
-          <div class="bank-alloc-movement">
-            <div><span>{{ row.amountEur > 0 ? 'Ontvangen van' : 'Betaald aan' }}</span><strong>{{ row.counterparty || 'Onbekende tegenpartij' }}</strong><small>{{ p.movementStamp(row) }} · {{ p.accountName(row.account) }}</small></div>
-            <b>{{ row.amountEur | eur }}</b>
-            @if (row.reference) { <p>{{ row.reference }}</p> }
-          </div>
+        <div class="fin-sheet fin-alloc" [class.fin-alloc--preview]="only() === 'preview'">
           @if (p.localBankProblem()) { <p class="fin-error" role="alert">{{ p.localBankProblem() }}</p> }
+          @if (only() !== 'preview') {
           <div class="bank-alloc-tabs" role="group" aria-label="Wat koppel je aan deze banktransactie?">
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'documents'" (click)="p.setAllocationStep('documents')">Factuur of uitgave</button>
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Bestaande betaling</button>
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Nog te registreren</button>
           </div>
+          }
           @if (p.allocationStep() !== 'new') {
             @if (p.localLoading()) { <p class="fin-hint" role="status">Facturen en uitgaven bijwerken…</p> }
             @if (p.localError()) { <p class="fin-error" role="alert">{{ p.localError() }} <button class="fin-inline-btn" type="button" [disabled]="p.localLoading() || p.busy()" (click)="p.loadLocalDocuments()">Opnieuw laden</button></p> }
           }
-          @if (p.allocationStep() === 'documents') {
-            @if (!p.localDocument()) {
+          @if (p.allocationStep() === 'documents' || only() === 'preview') {
+            @if (!p.localDocument() && only() !== 'preview') {
             <p class="fin-hint">Kies een factuur, uitgave of inkooptermijn die al in ENROSED staat. De bankbetaling wordt daarop afgepunt.</p>
-            <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Leverancier, klant, factuurnummer, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
+            <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Naam, factuur, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
             <div class="fin-choice" role="group" aria-label="Documentsoort">
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'all'" (click)="p.localKind.set('all')">Alles</button>
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'cost'" (click)="p.localKind.set('cost')">{{ row.amountEur < 0 ? 'Uitgaven' : 'Creditnota leverancier' }}</button>
@@ -54,7 +57,9 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             @if (p.localDocument(); as document) {
               @if (p.localPreview(); as preview) {
                 <section class="bank-alloc-preview" aria-label="Gekozen document controleren">
-                  <div class="bank-alloc-preview__title"><div><small>{{ document.label }}</small><h3 #selectionHeading tabindex="-1">{{ document.title }}</h3><p>{{ document.party }} · {{ document.reference }}</p></div><button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.localSelectedKey.set(null)">Andere kiezen</button></div>
+                  @if (only() !== 'preview') {
+                    <div class="bank-alloc-preview__title"><div><small>{{ document.label }}</small><h3 #selectionHeading tabindex="-1">{{ document.title }}</h3><p>{{ document.party }} · {{ document.reference }}</p></div><button class="fin-inline-btn" type="button" [disabled]="p.busy()" (click)="p.localSelectedKey.set(null)">Andere kiezen</button></div>
+                  }
                   @if (document.kind === 'purchase') {
                     @if (p.localPurchaseInvoices(); as invoices) {
                       <!-- The container's invoices (and invoice files without data), the terms they cover and the term's payments on the bank. -->
@@ -134,7 +139,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             }
             <h3 class="fin-alloc__label">Zelf een ontvangen {{ row.amountEur < 0 ? 'factuur' : 'creditnota' }} kiezen</h3>
             <p class="fin-hint">Kies een document uit Odoo. We controleren eerst de bedragen en bestaande registraties. Het document blijft bij de kost bewaard.</p>
-            <input class="input" type="search" placeholder="Zoek factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
+            <input class="input" type="search" placeholder="Factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
             @if (p.receivedError()) { <p class="fin-error" role="alert">{{ p.receivedError() }} <button class="fin-inline-btn" type="button" [disabled]="p.busy() || p.receivedLoading()" (click)="p.loadReceivedInvoices()">Opnieuw laden</button></p> }
             <div class="fin-alloc__cards fin-received-list" role="group" aria-label="Ontvangen documenten">
               @for (document of p.visibleReceivedInvoices(); track document.id) {
@@ -183,7 +188,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             }
           } @else {
             <p class="fin-hint">Deze betalingen zijn al geboekt. Hergebruik ze om de banktransactie te koppelen zonder een extra betaling aan te maken. Meerdere containerdelen kunnen samen één bankbetaling vormen.</p>
-            <label class="bank-alloc-search"><span>Zoek bestaande betalingen</span><input class="input" type="search" placeholder="Factuur, tegenpartij, container, datum of bedrag" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" /></label>
+            <label class="bank-alloc-search"><span>Zoek bestaande betalingen</span><input class="input" type="search" placeholder="Naam, factuur, container of bedrag" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" /></label>
             <div class="bank-alloc-list" role="group" aria-label="Bestaande betalingen">
               @for (payment of p.visibleExistingSales(); track payment.existingPaymentId) {
                 <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales' && p.isChosen(payment)" (click)="p.reuseLocalSales(payment)"><span class="bank-alloc-document__identity"><small>{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Ontvangst klant' }}</small><b>{{ payment.number }}</b><span>{{ payment.reference }}</span><small>{{ p.matchStamp(payment) }}</small></span><span class="bank-alloc-document__amount"><b>{{ p.existingSalesAmount(payment) | eur }}</b><small>hergebruiken</small></span></button>
@@ -194,7 +199,12 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
               @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
             </div>
             @if (p.allocationMode() === 'expense' && p.outgoingPart(); as part) {
-              <!-- One container payment: it follows the transaction. A larger transaction first asks what the surplus is. -->
+              <!--
+                One container payment: it follows the transaction. A larger transaction first asks what the surplus is.
+                In the transaction detail one payment alone shows the spec's "Wat verandert" below (ownsChange): only
+                the USD/CNY part field stays here, and the rest of this section steps aside.
+              -->
+              @if (!p.ownsChange() || part.foreign) {
               <section class="bank-alloc-preview"><h3>{{ part.carve ? 'Deel van een bestaande betaling' : part.withIds.length ? 'Goederen + inspectie op deze transactie' : 'Bestaande betaling' }}</h3>
                 @if (part.foreign; as foreign) {
                   <!-- USD/CNY: the transaction is the whole payment (its euro and day follow) unless the part it paid is named in the payment's currency. -->
@@ -204,10 +214,10 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   @if (p.outgoingForeignWarning(); as warning) { <p class="fin-hint fin-hint--warn">{{ warning }}</p> }
                   @else if (!part.carve && !p.outgoingForeignInput().trim()) { <p class="fin-hint">Leeg: de hele betaling neemt het eurobedrag van de transactie over; de koers volgt.</p> }
                 }
-                @if (part.carve) {
+                @if (part.carve && !p.ownsChange()) {
                   <p class="fin-hint">{{ p.outgoingCarveText() }}</p>
                 }
-                @if (part.higher) {
+                @if (part.higher && !p.ownsChange()) {
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
                   <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
                     <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
@@ -219,7 +229,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                     <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Niet koppelen</b><span>Een andere betaling kiezen</span></button>
                   </div>
                 }
-                @if (p.outgoingChange().length) {
+                @if (p.outgoingChange().length && !p.ownsChange()) {
                   <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
                     <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader">Wat verandert</span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
                     @for (change of p.outgoingChange(); track change.label) {
@@ -228,6 +238,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   </div>
                 }
               </section>
+              }
             } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
               <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.outgoingDifference() | eur }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {
@@ -236,17 +247,13 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
           }
           @if (p.error()) { <p class="fin-error" role="alert">{{ p.error() }}</p> }
         </div>
-        <div foot class="bank-alloc-footer">
-          @if (p.allocationBlockedReason(); as reason) { <p id="bank-allocation-reason" class="bank-alloc-footer__reason" role="status">{{ reason }}</p> }
-          <div class="bank-alloc-footer__actions"><button class="btn" type="button" [disabled]="p.busy()" (click)="p.closeAllocation()">Annuleren</button><span class="spacer"></span>
-          <button class="btn btn--primary" type="button" [disabled]="!p.allocationReady()" [attr.aria-describedby]="p.allocationBlockedReason() ? 'bank-allocation-reason' : null" (click)="p.submitAllocation()">{{ p.allocationActionLabel() }}</button></div>
-        </div>
-      </app-sheet>
     }
   `,
 })
-export class BankAllocationSheet {
+export class BankAllocationSteps {
   readonly panel = input.required<BankMovementPanel>();
+  /** 'preview': only the chosen document's preview and fields (the best match's "Details"). */
+  readonly only = input<'all' | 'preview'>('all');
   private readonly injector = inject(Injector);
   private readonly selectionHeading = viewChild<ElementRef<HTMLElement>>('selectionHeading');
   /** '03/09 · Aanbetaling 30% · € 10.000,00 · op de bank · KBC'. */

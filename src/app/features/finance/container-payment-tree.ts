@@ -1,7 +1,7 @@
 import type {
   Instalment, Payee, PurchaseInvoice, PurchaseOrderView, PurchasePaymentRow, PurchaseReconciliationStream,
 } from '../../core/api/models';
-import { invoiceComparison, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
+import { invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
 
 /*
  * One container in Kosten & bank as invoices → terms → payments (round of
@@ -23,10 +23,16 @@ export interface PaymentNode {
   firstPaidOn: string | null;
   label: string;
   amountEur: number;
-  /** 'op de bank · KBC', 'niet op de bank', 'verrekend tegoed', 'via leverancier · zelfde transactie'; '' for a group (its parts say it). */
+  /** 'op de bank · KBC · 14 okt', 'niet op de bank', 'verrekend tegoed', 'via leverancier · zelfde transactie'; '' for a group (its parts say it). */
   bank: string;
+  /** The bank line the payment is on (a hard link), for 'op de bank … ›' (line=); null without one. */
+  lineId: number | null;
+  /** 'aangepast aan de bank (was € 12.480,00 op 13/10)' once the payment followed a transaction (2026-10-16). */
+  adjusted: string | null;
+  /** 'zelfde transactie als PO-2026-044 en PO-2026-045': one transfer that paid several containers. */
+  sharedWith: string | null;
   /** The transfers of a payment paid in parts, by day; empty for a payment never split. */
-  parts: { id: number; paidOn: string; amountEur: number; bank: string }[];
+  parts: { id: number; paidOn: string; amountEur: number; bank: string; lineId: number | null; adjusted: string | null; sharedWith: string | null }[];
 }
 
 export interface PayeeBranch {
@@ -36,8 +42,11 @@ export interface PayeeBranch {
   plannedEur: number;
   paidEur: number;
   remainingEur: number;
-  /** `name` is the file's name, for 'Bestand ↗'. */
-  invoices: { id: number; text: string; comparison: string | null; documentId: number | null; name: string; primary: boolean }[];
+  /**
+   * `name` is the file's name, for 'Bestand ↗'. `coverage`: round 2's 'Geldt voor alle betalingen van
+   * Leverancier (3)' on the supplier's primary invoice (R2-3); null elsewhere.
+   */
+  invoices: { id: number; text: string; comparison: string | null; documentId: number | null; name: string; primary: boolean; coverage: string | null }[];
   /** view.invoiceFiles of this payee: '{originalFilename} · zonder gegevens'. */
   invoiceFiles: { documentId: number; text: string; name: string }[];
   /** SEPARATE with 'Inspectie via leverancier' and no invoice of its own: 'Factuur via leverancier · CI-2026-140'. */
@@ -52,6 +61,12 @@ const PAYEE_TITLE: Readonly<Record<Payee, string>> = {
   SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten',
 };
 const cents = (value: number | null | undefined): number => Math.round((value ?? 0) * 100);
+const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+/** '14 okt' of an ISO day; '' without one. */
+const dayMon = (iso: string): string => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}` : '');
+const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
+/** 'PO-2026-044', 'PO-2026-044 en PO-2026-045', 'PO-1, PO-2 en PO-3'. */
+const joined = (words: readonly string[]): string => words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} en ${words[words.length - 1]}`;
 const payeeOf = (row: Pick<PurchasePaymentRow, 'payee'>): Payee => row.payee ?? 'SUPPLIER';
 const byDay = (left: PurchasePaymentRow, right: PurchasePaymentRow): number => left.paidOn.localeCompare(right.paidOn) || left.id - right.id;
 
@@ -63,7 +78,7 @@ const byDay = (left: PurchasePaymentRow, right: PurchasePaymentRow): number => l
  */
 export function containerPaymentTree(
   view: PurchaseOrderView, rows: readonly PurchasePaymentRow[],
-  line: (row: PurchasePaymentRow) => { accountLabel: string; day: string } | null,
+  line: (row: PurchasePaymentRow) => { accountLabel: string; day: string; lineId?: number | null } | null,
   status: (stream: PurchaseReconciliationStream) => string = () => '',
 ): PayeeBranch[] {
   const own = rows.filter(row => row.orderId === view.order.id);
@@ -75,7 +90,17 @@ export function containerPaymentTree(
     if (!found) return 'niet op de bank';
     const shared = payeeOf(row) === 'SEPARATE' && row.bankStatementLineId != null
       && own.some(other => payeeOf(other) === 'SUPPLIER' && other.bankStatementLineId === row.bankStatementLineId);
-    return shared ? 'via leverancier · zelfde transactie' : 'op de bank' + (found.accountLabel ? ' · ' + found.accountLabel : '');
+    return shared ? 'via leverancier · zelfde transactie' : ['op de bank', found.accountLabel, dayMon(found.day)].filter(Boolean).join(' · ');
+  };
+  const lineOf = (row: PurchasePaymentRow): number | null => (row.creditOffset ? null : line(row)?.lineId ?? row.bankStatementLineId ?? null);
+  const adjustedOf = (row: PurchasePaymentRow): string | null => row.bankAdjustedFromEur == null ? null
+    : `aangepast aan de bank (was ${EURO.format(row.bankAdjustedFromEur)}${row.bankAdjustedFromOn ? ' op ' + row.bankAdjustedFromOn.slice(8, 10) + '/' + row.bankAdjustedFromOn.slice(5, 7) : ''})`;
+  /* One transfer for several containers (owner addition 2026-10-15): the other containers on the same line. */
+  const sharedOf = (row: PurchasePaymentRow): string | null => {
+    if (row.bankStatementLineId == null) return null;
+    const others = [...new Set(rows.filter(other => other.bankStatementLineId === row.bankStatementLineId && other.orderId !== view.order.id)
+      .map(other => other.orderNumber || other.orderAlias || '#' + other.orderId))].sort();
+    return others.length ? `zelfde transactie als ${joined(others)}` : null;
   };
   const nodes = (payee: Payee): (PaymentNode & { due: Due | null })[] => {
     const groups = new Map<number, PurchasePaymentRow[]>();
@@ -92,8 +117,10 @@ export function containerPaymentTree(
       return {
         id: root.id, paidOn: sorted[sorted.length - 1].paidOn, firstPaidOn: grouped ? sorted[0].paidOn : null,
         label: grouped ? `${label} · ${sorted.length} transacties` : label, amountEur,
-        bank: grouped ? '' : bankOf(root), due: root.instalmentDue ?? null,
-        parts: grouped ? sorted.map(row => ({ id: row.id, paidOn: row.paidOn, amountEur: row.amountEur, bank: bankOf(row) })) : [],
+        bank: grouped ? '' : bankOf(root), lineId: grouped ? null : lineOf(root), adjusted: grouped ? null : adjustedOf(root),
+        sharedWith: grouped ? null : sharedOf(root), due: root.instalmentDue ?? null,
+        parts: grouped ? sorted.map(row => ({ id: row.id, paidOn: row.paidOn, amountEur: row.amountEur, bank: bankOf(row), lineId: lineOf(row),
+          adjusted: adjustedOf(row), sharedWith: sharedOf(row) })) : [],
       };
     }).sort((left, right) => left.paidOn.localeCompare(right.paidOn) || left.id - right.id);
   };
@@ -106,6 +133,8 @@ export function containerPaymentTree(
     const supplierPrimary = primaryInvoice(invoices, 'SUPPLIER');
     const all = nodes(payee);
     const termed = payee === 'SUPPLIER' ? view.reconciliation?.supplierInstalments ?? [] : [];
+    /* The payee's payments as the coverage reads them: a payment in parts once, with its transfers. */
+    const coverageRows = all.map(node => ({ parts: node.parts.length ? node.parts : [{ id: node.id }] }));
     return {
       payee,
       // The ERP's own payee words (as Betalingen, Te betalen and the bank targets); the server's stream label says 'Andere betaling'.
@@ -118,6 +147,7 @@ export function containerPaymentTree(
         id: invoice.id, text: invoiceLine(invoice), documentId: invoice.documentId ?? null, name: invoice.documentName || invoice.number,
         primary: invoice.id === primary?.id,
         comparison: invoice.id === primary?.id ? comparison?.text ?? null : 'extra factuur',
+        coverage: invoice.id === primary?.id && payee === 'SUPPLIER' && invoice.paymentIds !== undefined ? invoiceCoverage(invoice, coverageRows, PAYEE_TITLE[payee]).text : null,
       })),
       invoiceFiles: (view.invoiceFiles ?? []).filter(file => file.payee === payee)
         .map(file => ({ documentId: file.documentId, text: `${file.originalFilename} · zonder gegevens`, name: file.originalFilename })),

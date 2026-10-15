@@ -86,6 +86,21 @@ export function invoiceReceivable(view: SalesOrderView): { receivedEur: number; 
   return { receivedEur: paid ? Math.max(0, total) : 0, remainingEur: paid ? 0 : Math.max(0, total), overpaidEur: 0, creditEur: Math.max(0, -total) };
 }
 
+/** One issued invoice or credit note with what is received and still open on it. */
+export interface IssuedReceivable { view: SalesOrderView; receivedEur: number; remainingEur: number; overpaidEur: number; creditEur: number }
+
+function issuedReceivables(views: readonly SalesOrderView[]): IssuedReceivable[] {
+  return views.filter((view) => (view.order.docType === 'FACTUUR' || view.order.docType === 'CREDITNOTA') && !INACTIVE.has(view.order.status))
+    .map((view) => ({ view, ...invoiceReceivable(view) }));
+}
+
+const isOpenInvoiceRow = (row: IssuedReceivable): boolean => row.view.order.docType === 'FACTUUR' && row.remainingEur > 0;
+
+/** The open invoices receivableTotals counts (count, totalEur): issued, not cancelled, something still to receive. */
+export function openInvoiceRows(views: readonly SalesOrderView[]): IssuedReceivable[] {
+  return issuedReceivables(views).filter(isOpenInvoiceRow);
+}
+
 /**
  * Open invoices, plus money the other way: creditEur is every credit the
  * customers hold (overpaid or negative invoices included, as it always was),
@@ -93,9 +108,8 @@ export function invoiceReceivable(view: SalesOrderView): { receivedEur: number; 
  * outlook and the 'tegoed af te handelen' sublines read.
  */
 export function receivableTotals(views: readonly SalesOrderView[]) {
-  const issued = views.filter((view) => (view.order.docType === 'FACTUUR' || view.order.docType === 'CREDITNOTA') && !INACTIVE.has(view.order.status));
-  const rows = issued.map((view) => ({ view, ...invoiceReceivable(view) }));
-  const open = rows.filter((row) => row.view.order.docType === 'FACTUUR' && row.remainingEur > 0);
+  const rows = issuedReceivables(views);
+  const open = rows.filter(isOpenInvoiceRow);
   const notes = rows.filter((row) => row.view.order.docType === 'CREDITNOTA' && row.creditEur > 0);
   const partner = (view: SalesOrderView): boolean => view.order.purpose
     ? view.order.purpose !== 'STANDARD' : !!view.order.partnerPurchaseOrderId;

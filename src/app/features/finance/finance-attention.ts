@@ -14,8 +14,8 @@ export const DOCUMENT_WINDOW_DAYS = 90;
 export type AttentionKind = 'container-due' | 'overdue-costs' | 'account-without-reading' | 'recurring-due' | 'unlinked-incoming'
   | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document' | 'open-credits' | 'unconfirmed-regimes';
 export type AttentionTone = 'danger' | 'warn' | 'info';
-/** What the row's button does directly; null means it just opens the target. */
-export type AttentionAction = 'book' | 'link' | 'check' | 'fill' | null;
+/** What the row's button does directly; null means it just opens the target. 'unbanked' opens Transacties with the payments without a transaction. */
+export type AttentionAction = 'book' | 'link' | 'check' | 'fill' | 'unbanked' | null;
 
 export interface AttentionItem {
   id: string;
@@ -137,8 +137,8 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
   if (input.unbanked.count > 0) {
     const n = input.unbanked.count;
     add({ kind: 'unbanked-payments', tone: 'info', count: n, amountEur: input.unbanked.eur,
-      title: `${n} ${plural(n, 'betaling', 'betalingen')} nog niet op de bank`, detail: 'Betaald gezet, maar geen bankbeweging gevonden',
-      action: null, actionLabel: 'Bekijken', target: { view: 'bank' } });
+      title: `${n} ${plural(n, 'betaling', 'betalingen')} nog niet op de bank`, detail: 'Betaald gezet, maar geen transactie gevonden',
+      action: 'unbanked', actionLabel: 'Bekijken', target: { view: 'bank', tab: 'movements' } });
   }
 
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - DOCUMENT_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
