@@ -14,7 +14,7 @@ import {
 import {
   bankProofSub, creditMenuItems, dayOf, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
 } from './purchase-payment-menus';
-import { invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import { invoiceCoverage, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 
 /**
@@ -55,11 +55,18 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             @if (item.invoices.length || item.invoiceFiles.length || (mode() === 'edit' && roundOnServer())) {
               <div class="ios-group">
                 @for (invoice of item.invoices; track invoice.id; let first = $first) {
+                  @let cover = coverage(invoice);
                   <button class="ios-cell payee-sheet__invoice" type="button" [disabled]="mode() !== 'edit' && invoice.documentId == null" (click)="tapInvoice(invoice)">
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ invoice.number }}@if (!first) { · extra factuur }</span>
-                      <span class="ios-cell__sub">{{ invoiceText(invoice, first) }}</span></span>
+                      <span class="ios-cell__sub">{{ invoiceText(invoice, first) }}</span>
+                      <!-- What the invoice covers belongs to the invoice: its payments, and for the supplier's main invoice its terms. -->
+                      <span class="ios-cell__sub">{{ cover.text }}</span>
+                      @if (first && termsLine(); as line) { <span class="ios-cell__sub">{{ line }}</span> }</span>
                     @if (mode() === 'edit' || invoice.documentId != null) { <app-icon class="ios-cell__chev" [name]="mode() === 'edit' ? 'chevron-right' : 'download'" [size]="16" /> }
                   </button>
+                  @if (mode() === 'edit' && roundOnServer() && !cover.all) {
+                    <button class="ios-cell ios-cell--action payee-sheet__assign" type="button" [disabled]="busy()" (click)="close(assignAll(invoice))">Toewijzen aan alle betalingen</button>
+                  }
                 } @empty {
                   @if (mode() === 'edit' && roundOnServer()) {
                     <button class="ios-cell ios-cell--action" type="button" [disabled]="busy()" (click)="close(addInvoice)">Factuur toevoegen</button>
@@ -69,16 +76,16 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                   <button class="ios-cell ios-cell--action" type="button" (click)="filesOpen.set(true)">{{ item.invoiceFiles.length }} factuurbestanden zonder gegevens ›</button>
                 } @else {
                   @for (file of item.invoiceFiles; track file.documentId) {
-                    <div class="ios-cell">
+                    <!-- The name and its words get the whole width; 'Gegevens invullen' goes on its own line under them. -->
+                    <div class="ios-cell payee-sheet__filecell">
                       <button class="ios-cell__body payee-sheet__file" type="button" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">
                         <span class="ios-cell__title">{{ file.originalFilename }}</span><span class="ios-cell__sub">Factuurbestand zonder gegevens</span></button>
-                      @if (mode() === 'edit') { <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy()" (click)="fillIn(file)">Gegevens invullen</button> }
+                      @if (mode() === 'edit') { <button class="ios-capsule ios-capsule--tinted payee-sheet__fill" type="button" [disabled]="busy()" (click)="fillIn(file)">Gegevens invullen</button> }
                     </div>
                   }
                 }
               </div>
             }
-            @if (termsLine(); as line) { <p class="ios-section__foot">{{ line }}</p> }
             @if (item.viaSupplier && !item.invoices.length) {
               <p class="ios-section__foot">{{ item.supplierInvoice ? 'Factuur via leverancier · ' + item.supplierInvoice.number : 'Factuur van de leverancier nog niet ingevoerd' }}</p>
             }
@@ -150,7 +157,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                         (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || act('edit', row.payment)">
                   <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                    <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
+                    <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties · eerste {{ dayShort(row.firstPaidOn) }} }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
                     @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
                   <span class="ios-cell__trail">
                     <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
@@ -224,6 +231,8 @@ export class PurchasePayeeSheet {
   readonly invoiceFile = output<{ documentId: number; name: string | null }>();
   /** Editor only: 'Inspectie via leverancier' on (true) or off. */
   readonly inspectionVia = output<boolean>();
+  /** Editor only: 'Toewijzen aan alle betalingen' of an invoice. */
+  readonly assignInvoice = output<PurchaseInvoice>();
   readonly settle = output<PurchaseSettleRequest>();
   readonly undoSettle = output<{ payee: PayeeLedger['payee']; due?: Due | null }>();
   readonly planChange = output<void>();
@@ -238,6 +247,7 @@ export class PurchasePayeeSheet {
   readonly creditAdd = () => this.credit.emit({ kind: 'add' });
   readonly addInvoice = () => this.invoice.emit({ payee: this.payee().payee });
   readonly toggleVia = () => this.inspectionVia.emit(!this.payee().viaSupplier);
+  readonly assignAll = (invoice: PurchaseInvoice) => () => this.assignInvoice.emit(invoice);
   readonly filesOpen = signal(false);
   readonly tone = toneClass;
   readonly day = dayOf;
@@ -274,6 +284,10 @@ export class PurchasePayeeSheet {
   });
 
   moment(due: Due): string { return DUE_MOMENT[due]; }
+  dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
+
+  /** 'Geldt voor alle betalingen van Leverancier (3)' or 'Geldt voor 2 van 3 betalingen van Leverancier'. */
+  coverage(invoice: PurchaseInvoice): { all: boolean; text: string } { return invoiceCoverage(invoice, this.payee().rows, this.payee().label); }
 
   /** '20/08/2026 · € 31.048,04 · gelijk aan de afspraak' (the comparison on the primary only). */
   invoiceText(invoice: PurchaseInvoice, primary: boolean): string {

@@ -61,10 +61,13 @@ export class ContainerPaymentTreeView {
   tone(payee: string): string { return PAYEE_TONES[payee] ?? 'grey'; }
   /** '02/08', as the order screens write a payment's day. */
   day(date: string): string { return date.slice(8, 10) + '/' + date.slice(5, 7); }
-  /** '10/09 · Saldo 70% · 2 transacties · € 21.733,63', with where it stands on the bank for a payment in one transfer. */
+  /**
+   * '24/09 · Saldo 70% · 2 transacties · € 21.733,63 · eerste 10/09' (a payment in parts: its newest transfer's day, as in
+   * Betalingen), with where it stands on the bank for a payment in one transfer.
+   */
   line(node: PaymentNode): string {
     const amount = node.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });
-    return [this.day(node.paidOn), node.label, amount, node.bank].filter(Boolean).join(' · ');
+    return [this.day(node.paidOn), node.label, amount, node.bank, node.firstPaidOn ? 'eerste ' + this.day(node.firstPaidOn) : ''].filter(Boolean).join(' · ');
   }
   open(view: PurchaseOrderView, documentId: number, name: string): void {
     void this.state.openPurchaseFile(view.order.id, documentId, name);

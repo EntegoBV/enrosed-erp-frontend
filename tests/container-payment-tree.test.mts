@@ -55,8 +55,10 @@ test('example (a) and (c): the invoice, its file without data, the terms and a p
   assert.deepEqual(supplier.invoiceFiles, [{ documentId: 77, text: 'invoice.pdf · zonder gegevens', name: 'invoice.pdf' }]);
   assert.deepEqual(supplier.terms.map(term => [term.label, term.paidEur, term.plannedEur, term.payments.map(node => [node.paidOn, node.label, node.amountEur, node.bank])]), [
     ['30% bij bestelling', 9314.41, 9314.41, [['2026-08-02', 'Aanbetaling 30%', 9314.41, 'op de bank · KBC']]],
-    ['70% bij vertrek', 21733.63, 21733.63, [['2026-09-10', 'Saldo 70% · 2 transacties', 21733.63, '']]],
+    ['70% bij vertrek', 21733.63, 21733.63, [['2026-09-24', 'Saldo 70% · 2 transacties', 21733.63, '']]],
   ]);
+  assert.deepEqual([supplier.terms[1].payments[0].firstPaidOn, supplier.terms[0].payments[0].firstPaidOn], ['2026-09-10', null],
+    'one date rule with Betalingen: the newest transfer, the first one beside it');
   assert.deepEqual(supplier.terms[1].payments[0].parts.map(part => [part.paidOn, part.amountEur, part.bank]),
     [['2026-09-10', 10000, 'op de bank · KBC'], ['2026-09-24', 11733.63, 'op de bank · KBC']]);
   assert.deepEqual([supplier.payments, supplier.status, supplier.viaSupplier], [[], 'PAID', null]);

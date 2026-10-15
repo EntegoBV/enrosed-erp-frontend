@@ -152,8 +152,10 @@ export interface LedgerRow {
   payee: Payee;
   payeeLabel: string;
   payeeShort: string;
-  /** The newest part's day. */
+  /** The newest part's day: one rule for the ledger, the sheet and Kosten & bank. */
   paidOn: string;
+  /** The first part's day ('eerste 10/09' under a payment in parts); paidOn for a payment never split. */
+  firstPaidOn: string;
   /** The description, or the payee when there is none. */
   title: string;
   label: string | null;
@@ -922,6 +924,7 @@ function ledgerRow(
     payeeLabel: PAYEE_LABEL[payee],
     payeeShort: PAYEE_SHORT[payee],
     paidOn: newest.paidOn,
+    firstPaidOn: parts[0].paidOn,
     title: root.label?.trim() || (creditOffset ? ('Verrekend tegoed ' + (creditOffset.sourceOrderNumber ?? '')).trim() : PAYEE_LABEL[payee]),
     label: root.label?.trim() || null,
     due,

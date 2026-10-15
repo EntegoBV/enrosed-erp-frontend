@@ -61,10 +61,11 @@ export function payeeRowMenuItems(payee: PayeeLedger, busy: boolean, invoices = 
   ];
 }
 
-/** The menu of one invoice line on the desk: correct it, open its file, remove its data. */
-export function invoiceMenuItems(invoice: { documentId: number | null }, busy: boolean): ContextMenuItem[] {
+/** The menu of one invoice line on the desk: correct it, assign it to every payment of its payee, open its file, remove its data. */
+export function invoiceMenuItems(invoice: { documentId: number | null }, busy: boolean, assignable = false): ContextMenuItem[] {
   return [
     { id: 'edit', label: 'Aanpassen…', iconName: 'pencil', disabled: busy },
+    ...(assignable ? [{ id: 'assign', label: 'Toewijzen aan alle betalingen', iconName: 'link', disabled: busy }] : []),
     ...(invoice.documentId != null ? [{ id: 'file', label: 'Bestand openen', iconName: 'document' }] : []),
     { id: 'remove', label: 'Verwijderen', iconName: 'trash', danger: true, divider: true, disabled: busy },
   ];

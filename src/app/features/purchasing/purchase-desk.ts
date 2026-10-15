@@ -195,7 +195,7 @@ type DeskRow =
                 [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
                 [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
-                (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)"
+                (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)" (assignInvoice)="assignInvoiceToAll($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
                 (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />

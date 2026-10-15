@@ -691,6 +691,8 @@ test('a payment paid in two transfers is one row with two parts, on the bank, it
   const row = result.rows.find(item => item.id === 102)!;
   assert.deepEqual(result.rows.map(item => item.id), [102, 101]);
   assert.deepEqual([row.payment.id, row.parts.map(part => part.id), row.paidOn, row.amountEur], [102, [102, 103], '2026-09-24', 21733.63]);
+  assert.deepEqual([row.firstPaidOn, result.rows.find(item => item.id === 101)!.firstPaidOn], ['2026-09-10', '2026-08-02'],
+    'one date rule: the newest transfer, the first one beside it (a payment never split: its own day)');
   assert.deepEqual(row.bank, { linked: 2, total: 2, sharedWith: [] });
   assert.deepEqual([row.onBank, row.proven, row.hasProof], [true, true, false], 'the bank transactions are the proof; no file needed');
   assert.deepEqual(of(result, 'SUPPLIER').terms.find(term => term.due === 'SHIPPED')!.paymentIds, [102]);

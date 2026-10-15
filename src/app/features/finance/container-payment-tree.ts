@@ -17,7 +17,10 @@ type Due = Instalment['due'];
 
 export interface PaymentNode {
   id: number;
+  /** The newest transfer's day (one rule with Betalingen and the payment sheet). */
   paidOn: string;
+  /** A payment paid in parts: its first transfer's day ('eerste 10/09'); null for a payment never split. */
+  firstPaidOn: string | null;
   label: string;
   amountEur: number;
   /** 'op de bank · KBC', 'niet op de bank', 'verrekend tegoed', 'via leverancier · zelfde transactie'; '' for a group (its parts say it). */
@@ -87,7 +90,8 @@ export function containerPaymentTree(
       const amountEur = sorted.reduce((sum, row) => sum + cents(row.amountEur), 0) / 100;
       const grouped = sorted.length > 1;
       return {
-        id: root.id, paidOn: sorted[0].paidOn, label: grouped ? `${label} · ${sorted.length} transacties` : label, amountEur,
+        id: root.id, paidOn: sorted[sorted.length - 1].paidOn, firstPaidOn: grouped ? sorted[0].paidOn : null,
+        label: grouped ? `${label} · ${sorted.length} transacties` : label, amountEur,
         bank: grouped ? '' : bankOf(root), due: root.instalmentDue ?? null,
         parts: grouped ? sorted.map(row => ({ id: row.id, paidOn: row.paidOn, amountEur: row.amountEur, bank: bankOf(row) })) : [],
       };

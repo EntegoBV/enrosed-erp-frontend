@@ -14,7 +14,7 @@ import {
 } from './purchase-payment-ledger';
 import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
-import { invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
+import { invoiceCoverage, invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -159,7 +159,8 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                     @if (supplierInvoice(item); as invoice) {
                       <button class="ios-cell pp-term pp-invoice" type="button" (click)="openPayee.set('SUPPLIER')">
                         <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">Factuur {{ invoice.number }}</span><span class="ios-cell__sub">{{ invoiceSubText(item, invoice) }}</span></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">Factuur {{ invoice.number }}</span><span class="ios-cell__sub">{{ invoiceSubText(item, invoice) }}</span>
+                          <span class="ios-cell__sub">{{ coverageText(item, invoice) }}</span></span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                       </button>
                     } @else if (mode() === 'edit' && roundOnServer()) {
@@ -210,7 +211,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                             (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || tapRow(row)">
                       <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                       <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
+                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties · eerste {{ dayShort(row.firstPaidOn) }} }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
                         @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
                       <span class="ios-cell__trail">
                         <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
@@ -243,7 +244,8 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
         (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)"
         (download)="download.emit($event)" (settle)="afterPayeeSheet(settle, $event)" (undoSettle)="afterPayeeSheet(undoSettle, $event)"
         (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" (credit)="afterPayeeSheet(credit, $event)"
-        (invoice)="afterPayeeSheet(invoice, $event)" (invoiceFile)="invoiceFile.emit($event)" (inspectionVia)="afterPayeeSheet(inspectionVia, $event)" />
+        (invoice)="afterPayeeSheet(invoice, $event)" (invoiceFile)="invoiceFile.emit($event)" (inspectionVia)="afterPayeeSheet(inspectionVia, $event)"
+        (assignInvoice)="afterPayeeSheet(assignInvoice, $event)" />
     }
     @if (detail(); as row) {
       <app-sheet title="Betaling" variant="ios" (closed)="detail.set(null)">
@@ -251,13 +253,13 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
           <div class="ios-group pp-detail">
             <div class="ios-cell"><span class="ios-cell__body">Bedrag</span><span class="ios-cell__value ios-cell__value--strong">{{ row.amount | cur: row.currency }}</span></div>
             @if (row.foreign) { <div class="ios-cell"><span class="ios-cell__body">In euro</span><span class="ios-cell__value">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span></div> }
-            <div class="ios-cell"><span class="ios-cell__body">Betaald op</span><span class="ios-cell__value">{{ row.paidOn | dateNl }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body">Betaald op</span><span class="ios-cell__value">{{ row.paidOn | dateNl }}@if (row.parts.length > 1) { · eerste {{ dayShort(row.firstPaidOn) }} }</span></div>
             <div class="ios-cell"><span class="ios-cell__body">Ontvanger</span><span class="ios-cell__value">{{ row.payeeLabel }}</span></div>
             @if (row.termLabel) { <div class="ios-cell"><span class="ios-cell__body">Termijn</span><span class="ios-cell__value">{{ row.termLabel }}</span></div> }
             <div class="ios-cell"><span class="ios-cell__body">Afrekening</span><span class="ios-cell__value">{{ row.settlesLabel || 'Niet afgerekend' }}</span></div>
             @if (row.label) { <div class="ios-cell"><span class="ios-cell__body">Omschrijving</span><span class="ios-cell__value">{{ row.label }}</span></div> }
           </div>
-          @if (row.actor) { <p class="ios-section__foot">Genoteerd door {{ actor(row.actor) }}</p> }
+          @if (row.actor) { <p class="ios-section__foot pp-detail__actor">Genoteerd door {{ actor(row.actor) }}</p> }
           <section class="ios-section pp-detail__proofs">
             <div class="ios-section__head"><h2>Betaalbewijs</h2></div>
             @if (row.creditOffset) {
@@ -427,6 +429,10 @@ export class PurchasePaymentOverview {
   invoiceSubText(item: PayeeLedger, invoice: PurchaseInvoice): string {
     return invoiceSub(invoice, payeeInvoiceComparison(item)?.text ?? null);
   }
+
+  /** 'Geldt voor alle betalingen van Leverancier (3)'. */
+  coverageText(item: PayeeLedger, invoice: PurchaseInvoice): string { return invoiceCoverage(invoice, item.rows, item.label).text; }
+  dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
 
   /** '10/09 · € 10.000,00' of one transfer. */
   partTitle(part: LedgerRow['parts'][number]): string {

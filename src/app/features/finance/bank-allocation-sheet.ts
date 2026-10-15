@@ -235,7 +235,8 @@ export class BankAllocationSheet {
   /** '03/09 · Aanbetaling 30% · € 10.000,00 · op de bank · KBC'. */
   paymentLine(payment: PaymentNode): string {
     return [payment.paidOn.slice(8, 10) + '/' + payment.paidOn.slice(5, 7), payment.label,
-      payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' }), payment.bank].filter(Boolean).join(' · ');
+      payment.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' }), payment.bank,
+      payment.firstPaidOn ? 'eerste ' + payment.firstPaidOn.slice(8, 10) + '/' + payment.firstPaidOn.slice(5, 7) : ''].filter(Boolean).join(' · ');
   }
   partLine(part: PaymentNode['parts'][number]): string {
     return `${part.paidOn.slice(8, 10)}/${part.paidOn.slice(5, 7)} · ${part.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })} · ${part.bank}`;

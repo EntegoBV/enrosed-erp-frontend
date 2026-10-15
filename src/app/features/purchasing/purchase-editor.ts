@@ -1200,7 +1200,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
-                (credit)="requestCredit($event)" (invoice)="requestInvoice($event)" (invoiceFile)="openDocumentFile($event)"
+                (credit)="requestCredit($event)" (invoice)="requestInvoice($event)" (invoiceFile)="openDocumentFile($event)" (assignInvoice)="assignInvoiceToAll($event)"
                 (inspectionVia)="setInspectionVia($event)" />
             </section>
 

@@ -21,7 +21,7 @@ import {
   creditMenuItems, formatEur, invoiceMenuItems, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems,
   termPayment, todoCopy,
 } from './purchase-payment-menus';
-import { invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import { invoiceCoverage, invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -220,7 +220,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           @for (term of item.terms; track term.due) {
                             <div class="wk-tr wk-tr--sub" role="row" aria-level="2">
                               <span class="wk-td" role="gridcell"></span>
-                              <span class="wk-td" role="gridcell"><span class="pw-sub">{{ term.label }}<span class="wk-td__sub">{{ term.moment }}</span></span></span>
+                              <span class="wk-td" role="gridcell"><span class="pw-sub">{{ term.label }}@if (termSub(term); as sub) { <span class="wk-td__sub">{{ sub }}</span> }</span></span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.fullEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.paidEur | eur }}</span>
                               @if (showDifference()) {
@@ -289,17 +289,18 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                     <ng-template #invoiceRows let-item>
                       <!-- The payee's invoices: number, date and amount against the Afspraak; the supplier's terms point to its primary one. -->
                       @for (invoice of item.invoices; track invoice.id; let first = $first) {
+                        @let cover = coverage(item, invoice);
                         <div class="wk-tr wk-tr--sub pw-invoice-row" role="row" aria-level="2">
                           <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">{{ invoiceText(item, invoice, first) }}</span>
+                            <!-- What the invoice covers sits on the invoice itself: the payments (all, or how many) and the supplier's terms. -->
+                            <span class="wk-td__sub pw-invoice__cover">{{ cover.text }}@if (first && item.payee === 'SUPPLIER' && termsLine(item)) { · {{ termsLine(item) }} }</span>
                             @if (invoice.notes) { <span class="wk-td__sub">{{ invoice.notes }}</span> }</span>
                           <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
-                            @if (invoice.documentId != null) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName })">Bestand</button> }
+                            @if (roundOnServer() && !cover.all) { <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); assignInvoice.emit(invoice)">Toewijzen aan alle betalingen</button> }
+                            @if (invoice.documentId != null) { <button class="wk-link pw-invoice__file" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName })">Bestand openen</button> }
                             <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor factuur ' + invoice.number" (click)="$event.stopPropagation(); openInvoiceMenu(item, invoice, $event)"><app-icon name="more" [size]="16" /></button>
                           </span>
                         </div>
-                        @if (first && item.payee === 'SUPPLIER' && termsLine(item)) {
-                          <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2"><span class="wk-td" role="gridcell">{{ termsLine(item) }}</span></div>
-                        }
                       } @empty {
                         @if (item.payee === 'SUPPLIER' && roundOnServer()) {
                           <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
@@ -322,7 +323,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           <div class="wk-tr wk-tr--sub pw-invoice-row pw-invoice-row--file" role="row" aria-level="2">
                             <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">Factuurbestand zonder gegevens · {{ file.originalFilename }}</span></span>
                             <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
-                              <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand</button>
+                              <button class="wk-link pw-invoice__file" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand openen</button>
                               <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee, file })">Gegevens invullen</button>
                               <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + file.originalFilename" (click)="$event.stopPropagation(); openInvoiceFileMenu(item, file, $event)"><app-icon name="more" [size]="16" /></button>
                             </span>
@@ -391,7 +392,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                     <div class="wk-table pw-ledger" role="grid" aria-labelledby="pw-ledger-title">
                       <div class="wk-thead" role="row">
                         <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('date')"><button class="wk-th__btn" type="button" (click)="sortBy('date')">Datum@if (sort().key === 'date') { <app-icon [name]="sortIcon('date')" [size]="12" /> }</button></span>
-                        <span class="wk-th" role="columnheader" data-pw-hide="narrow">Ontvanger</span>
+                        <span class="wk-th" role="columnheader" data-pw-hide="mid">Ontvanger</span>
                         <span class="wk-th" role="columnheader">Omschrijving</span>
                         <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="mid">Bedrag</span>
                         <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('amount')"><button class="wk-th__btn" type="button" (click)="sortBy('amount')">In euro@if (sort().key === 'amount') { <app-icon [name]="sortIcon('amount')" [size]="12" /> }</button></span>
@@ -403,12 +404,13 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                         <div class="wk-tr" role="row" [id]="'pw-row-' + row.id" [attr.tabindex]="tabStop() === row.id ? 0 : -1" [attr.aria-selected]="selectedRow() === row.id"
                              appMenuTrigger (menuTrigger)="menu.set({ kind: 'payment', point: $event, row })"
                              (click)="selectedRow.set(row.id)" (focus)="selectedRow.set(row.id)" (dblclick)="edit.emit(row.payment)" (keydown)="onRowKey($event, row)">
-                          <span class="wk-td wk-amount" role="gridcell">{{ row.paidOn | dateNl }}</span>
-                          <span class="wk-td" role="gridcell" data-pw-hide="narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
+                          <span class="wk-td wk-amount" role="gridcell">{{ row.paidOn | dateNl }}@if (row.parts.length > 1) { <span class="wk-td__sub">eerste {{ dayShort(row.firstPaidOn) }}</span> }</span>
+                          <span class="wk-td" role="gridcell" data-pw-hide="mid"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
                           <span class="wk-td" role="gridcell">
-                            <span class="pw-desc">{{ row.label || '—' }}@if (row.parts.length > 1) { <span class="wk-pill pw-settles">{{ row.parts.length }} transacties</span> }@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
-                            <span class="wk-td__sub pw-when-narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
-                            @if (rowSub(row); as sub) { <span class="wk-td__sub pw-desc__sub">{{ sub }}</span> }
+                            <span class="pw-desc"><span class="wk-pill pw-when-mid pw-desc__payee" [class]="tone(row.payee)">{{ row.payeeShort }}</span>{{ row.label || '—' }}@if (row.parts.length > 1) { <span class="wk-pill pw-settles">{{ row.parts.length }} transacties</span> }@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
+                            @if (rowSubParts(row); as parts) {
+                              @if (parts.length) { <span class="wk-td__sub pw-desc__sub">@for (part of parts; track $index; let last = $last) { <span class="pw-nowrap">{{ part }}</span>@if (!last) { · } }</span> }
+                            }
                           </span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (row.foreign) { {{ row.amount | cur: row.currency }} }</span>
                           <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }
@@ -429,7 +431,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                             }
                           </span>
                           <span class="wk-td wk-td--actions" role="gridcell">
-                            <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); edit.emit(row.payment)">Aanpassen</button>
+                            <button class="wk-btn wk-btn--sm wk-btn--ghost pw-edit" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); edit.emit(row.payment)">Aanpassen</button>
                             <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + row.title" (click)="$event.stopPropagation(); openMenu('payment', $event, row)"><app-icon name="more" [size]="16" /></button>
                           </span>
                         </div>
@@ -664,10 +666,30 @@ export class PurchasePaymentWorkbench {
 
   openFiles(payee: Payee): void { this.filesOpen.update(open => new Set([...open, payee])); }
 
-  /** The line under a payment: its term, the invoice it belongs to and who noted it. */
-  rowSub(row: LedgerRow): string {
+  /** The line under a payment, in parts that never break inside: its term, the invoice it belongs to ('CI-2026-118' whole) and who noted it. */
+  rowSubParts(row: LedgerRow): string[] {
     return [row.termLabel, row.invoice ? (row.invoice.viaSupplier ? 'via factuur ' : 'factuur ') + row.invoice.number : null,
-      row.actor ? this.actor(row.actor) : null].filter(Boolean).join(' · ');
+      row.actor ? this.actor(row.actor) : null].filter((part): part is string => !!part);
+  }
+  dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
+
+  /** 'Geldt voor alle betalingen van Leverancier (3)' or 'Geldt voor 2 van 3 betalingen van Leverancier'. */
+  coverage(item: PayeeLedger, invoice: PurchaseInvoice): { all: boolean; text: string } {
+    return invoiceCoverage(invoice, item.rows, item.label);
+  }
+
+  /**
+   * The line under a term: its moment (unless the name says it already), the
+   * payments tied to it and, when one was paid in parts, its bank transfers
+   * ('bij vertrek · 2 betalingen · 3 transacties'). A credit offset is a
+   * payment without a transfer.
+   */
+  termSub(term: LedgerTerm): string {
+    const rows = (this.ledger()?.rows ?? []).filter(row => term.paymentIds.includes(row.id));
+    const transfers = rows.reduce((sum, row) => sum + (row.creditOffset ? 0 : row.parts.length), 0);
+    const moment = term.label.includes(term.moment) ? null : term.moment;
+    return [moment, rows.length ? `${rows.length} ${rows.length === 1 ? 'betaling' : 'betalingen'}` : null,
+      transfers > rows.filter(row => !row.creditOffset).length ? `${transfers} transacties` : null].filter(Boolean).join(' · ');
   }
 
   /** The bank line(s) of a payment, for the pill's tooltip. */
@@ -832,7 +854,7 @@ export class PurchasePaymentWorkbench {
       case 'more': return 'Betalingen';
       case 'payee': return open.payee.label;
       case 'payment': return open.row.title;
-      case 'proofs': return 'Bewijzen';
+      case 'proofs': return 'Betaalbewijs';
       case 'term': return open.term.label;
       case 'credit': return 'Tegoed · ' + open.credit.reasonLabel;
       case 'invoice': return 'Factuur ' + open.invoice.number;
@@ -856,7 +878,7 @@ export class PurchasePaymentWorkbench {
       case 'proofs': return (open.row.proofs ?? []).map(proof => ({ id: 'open:' + proof.id, label: proof.originalFilename, iconName: 'document' }));
       case 'term': return termMenuItems(open.term, busy);
       case 'credit': return creditMenuItems(open.credit, busy);
-      case 'invoice': return invoiceMenuItems(open.invoice, busy);
+      case 'invoice': return invoiceMenuItems(open.invoice, busy, this.roundOnServer() && !this.coverage(open.payee, open.invoice).all);
       case 'invoice-file': return [
         { id: 'file', label: 'Bestand openen', iconName: 'document' },
         { id: 'fill', label: 'Gegevens invullen', iconName: 'pencil', disabled: busy },
@@ -898,6 +920,7 @@ export class PurchasePaymentWorkbench {
       if (item.id === 'edit') this.invoice.emit({ payee: open.payee.payee, invoice });
       else if (item.id === 'file' && invoice.documentId != null) this.invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName });
       else if (item.id === 'remove') this.removeInvoice.emit(invoice);
+      else if (item.id === 'assign') this.assignInvoice.emit(invoice);
       return;
     }
     if (open.kind === 'payee') {

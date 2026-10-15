@@ -81,4 +81,6 @@ test('every payee row offers \'Factuur toevoegen…\' and the inspection its swi
   assert.deepEqual([via.label, via.hint, via.iconName], ['Inspectie via leverancier', 'aan', 'search']);
   assert.deepEqual(ids(menus['invoiceMenuItems']({ documentId: 88 }, false)), ['edit', 'file', 'remove']);
   assert.deepEqual(ids(menus['invoiceMenuItems']({ documentId: null }, false)), ['edit', 'remove']);
+  assert.deepEqual(ids(menus['invoiceMenuItems']({ documentId: 88 }, false, true)), ['edit', 'assign', 'file', 'remove'],
+    'an invoice not yet on every payment of its payee: Toewijzen aan alle betalingen');
 });
