@@ -1,7 +1,8 @@
 import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
+import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -52,7 +53,7 @@ import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, type AlsoCo
 import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
-import { ContextMenu } from '../../shared/context-menu';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { amountInputText, parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
@@ -61,13 +62,12 @@ import {
   type LedgerPart, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type SupplierCreditSubmit } from './purchase-supplier-credit-sheet';
-import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
+import { formatEur, payeeMenuItems } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Clearance, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseInvoice, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
-import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
 import { FilePicker } from '../../shared/file-picker';
 import { MediaApi } from '../../core/api/media-api';
@@ -104,7 +104,16 @@ import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from '
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
-import { stepTarget, type PhoneStep } from './purchase-phone-model';
+import {
+  STEP_BUTTON, actionsMenu, editNextStep, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type PhoneStep, type PhoneTab,
+} from './purchase-phone-model';
+import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
+import { IosNav } from '../../shared/ios-nav';
+import { Icon } from '../../shared/icon';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
+import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 
 /**
  * Landed-cost calculation of a container.
@@ -148,188 +157,71 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
+            IosNav, Icon, Segmented, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number"
-                       [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
-                       [showBack]="true" [showBell]="false"
-                       [titleEditable]="true"
-                       (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm pdf-header-button" type="button" (click)="pdfOpen.set(true)"
-                [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-          PDF
-        </button>
-        @if (dirty()) {
-          <button class="btn btn--primary btn--sm" type="button"
-                  [disabled]="saving() || negativeExtra()" (click)="save()">
-            {{ saving() ? 'Bezig…' : 'Opslaan' }}
-          </button>
-        } @else if (nextStep(); as step) {
-          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
-            {{ step.action }}
-          </button>
-        } @else {
-          <button class="btn btn--primary btn--sm" type="button" disabled>Opgeslagen</button>
-        }
-      </app-page-header>
-
-      <div class="content po-page erp-workspace erp-workspace--purchase erp-workspace--edit">
-
-        @if (isReceived()) {
-          <div class="alert alert--info po-notice">
-            <span class="alert__icon" aria-hidden="true">✓</span>
-            <div>
-              <b>Ontvangst gesloten.</b> De voorraad is bijgeboekt. Producten en aantallen
-              staan vast; notities en kostengegevens kun je nog corrigeren.
+      <div class="mpo-phone mpo-phone--edit">
+        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()">
+          <button trail class="ios-capsule ios-capsule--sm mpo-actions" type="button" aria-haspopup="dialog" [attr.aria-expanded]="actionsOpen()"
+                  (click)="actionsOpen.set(true)">Acties <app-icon name="chevron-down" [size]="14" /></button>
+          <!-- As the product editor: what is being edited, its status, and two figures that open their tab. -->
+          <section hero class="mpo-summary mpo-summary--edit" id="purchase-overview" tabindex="-1" aria-labelledby="mpo-edit-title">
+            <div class="mpo-summary__top">
+              <span class="mpo-summary__eyebrow">Container bewerken</span>
+              <span class="wk-pill" [class]="statusTone(data.order.status)"><span class="wk-pill__dot" aria-hidden="true"></span>{{ statusText(data.order.status) }}</span>
             </div>
-          </div>
-        }
-
-        <section class="po-overview erp-workspace__hero" id="purchase-overview"
-                 aria-labelledby="po-overview-title" tabindex="-1">
-          <div class="po-overview__top">
-            <div class="po-overview__copy">
-              <span class="po-eyebrow">Inkoopcontainer</span>
-              <h1 id="po-overview-title">{{ supplierName() }}</h1>
-              <p>
-                {{ data.order.orderDate | dateNl }}
-                @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
-                <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
-                @if (!data.order.clearance) { <span aria-hidden="true"> · </span>inklaring te bevestigen }
-              </p>
+            <h1 id="mpo-edit-title" class="mpo-summary__title" [title]="containerName(data.order)">{{ containerName(data.order) }}</h1>
+            <p class="mpo-summary__sub" [title]="data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName()">{{ data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName() }}</p>
+            <div class="mpo-tiles">
+              @let ladingFill = isDdp() ? null : data.costing.containerFill;
+              @let lading = (ladingFill ? (ladingFill.fillPercent | num: 0) + '% · ' : '') + (data.costing.totals.pieces | num) + ' st';
+              <button class="mpo-tile mpo-tile--neutral" type="button" [attr.aria-label]="'Lading ' + lading + ', naar Producten'" (click)="jumpToSection('purchase-products-section')">
+                <span class="mpo-tile__label">Lading</span>
+                <span class="mpo-tile__value" [class.mpo-tile__value--long]="lading.length > 10"
+                      [class.fill-pct--full]="!!ladingFill && ladingFill.overflowCbm <= 0 && ladingFill.fillPercent >= 97"
+                      [class.fill-pct--over]="!!ladingFill && ladingFill.fillPercent > 100 && ladingFill.fillPercent <= 105"
+                      [class.fill-pct--danger]="!!ladingFill && ladingFill.fillPercent > 105">{{ lading }}</span>
+                <app-icon class="mpo-tile__chev" name="chevron-right" [size]="14" />
+              </button>
+              @let landed = data.costing.totals.totalEur | eur;
+              <button class="mpo-tile mpo-tile--landed" type="button" [attr.aria-label]="'Totaal geland ' + landed + ', naar Kosten'" (click)="jumpToSection('purchase-costs-section')">
+                <span class="mpo-tile__label">Totaal geland</span>
+                <span class="mpo-tile__value" [class.mpo-tile__value--long]="landed.length > 10">{{ landed }}</span>
+                <app-icon class="mpo-tile__chev" name="chevron-right" [size]="14" />
+              </button>
             </div>
-            <span class="po-status"
-                  [class.po-status--done]="isReceived()">
-              <span class="po-status__dot" aria-hidden="true"></span>
-              {{ data.order.status === 'CONCEPT' ? 'Concept' : data.order.status === 'BESTELD' ? 'Besteld'
-                : data.order.status === 'ONDERWEG' ? 'Vertrokken' : 'Ontvangen' }}
-            </span>
+          </section>
+          <div below class="ios-subbar mpo-tabs">
+            <app-segmented class="ios-seg--stacked" variant="ios" semantics="tabs" label="Onderdelen van deze container" controls="mpo-panes"
+                           [options]="tabOptions()" [value]="phoneTab()" (changed)="setPhoneTab($any($event))" (click)="tabsClicked($event)" />
           </div>
+        </app-ios-nav>
 
-          <div class="stepper overview-stepper" aria-label="Voortgang van de inkooporder">
-            @for (step of statusSteps; track step.value; let last = $last) {
-              <div class="stepper__step"
-                   [class.stepper__step--done]="stepIndex(data.order.status) >= $index"
-                   [class.stepper__step--arrived]="step.value === 'ONTVANGEN' && data.order.status === 'ONTVANGEN'"
-                   [class.stepper__step--now]="stepIndex(data.order.status) === $index">
-                <span class="stepper__dot" aria-hidden="true">
-                  @if (stepIndex(data.order.status) >= $index) { ✓ } @else { {{ $index + 1 }} }
-                </span>
-                <span class="stepper__label">{{ step.label }}</span>
+        <div id="mpo-panes" class="mpo-panes">
+          <!-- ===== Overzicht ===== -->
+          <section class="mpo-pane" id="mpo-pane-overzicht" role="tabpanel" aria-label="Overzicht" [hidden]="phoneTab() !== 'overzicht'">
+            @if (isReceived()) {
+              <div class="ios-banner ios-banner--info mpo-received" role="status">
+                @if (data.order.stockBooked === false) {
+                  <span><b>Ontvangst gesloten.</b> Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.</span>
+                  <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="booking()" (click)="stepOpen.set('BIJBOEKEN')">Bijboeken</button>
+                } @else {
+                  <span><b>Ontvangst gesloten.</b> De voorraad is bijgeboekt. Producten en aantallen staan vast; notities en kostengegevens kun je nog corrigeren.</span>
+                }
               </div>
-              @if (!last) {
-                <span class="stepper__line"
-                      [class.stepper__line--done]="stepIndex(data.order.status) > $index"
-                      [class.stepper__line--half]="stepIndex(data.order.status) === $index"></span>
-              }
             }
-          </div>
-
-          @if (data.attention?.length) {
-            <div class="po-attention" role="status">
-              <span class="attention-dot">{{ data.attention!.length }}</span>
-              <div class="po-attention__body">
-                <b>Actie vereist</b>
-                @for (item of data.attention; track item) { <span>{{ item }}</span> }
+            @if (data.attention?.length) {
+              <div class="ios-banner mpo-attention" role="status">
+                <span class="mpo-attention__count" aria-hidden="true">{{ data.attention!.length }}</span>
+                <span class="mpo-attention__body"><b>Actie vereist</b>@for (item of data.attention; track item) { <span>{{ item }}</span> }</span>
               </div>
-            </div>
-          }
-
-          <div class="po-facts">
-            <div class="po-fact">
-              <span class="po-fact__label">Vertrekhaven</span>
-              <strong>{{ costLabels().loadingPort }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Container</span>
-              <strong>{{ containerLabel(data.order.containerType) }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Aankomsthaven</span>
-              <strong>{{ data.order.destinationPort || 'Rotterdam' }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Lossen op</span>
-              <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Lading</span>
-              @if (!isDdp() && data.costing.containerFill; as fill) {
-                <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                        [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                        [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
-              } @else {
-                <strong>{{ data.costing.totals.pieces | num }} st</strong>
-              }
-            </div>
-            <!-- Six facts fill the grid on every width; the landed total is
-                 the one figure a buyer wants at the top anyway. Shown as a
-                 dash when purchase figures are hidden. -->
-            <div class="po-fact po-fact--total">
-              <span class="po-fact__label">Totaal geland</span>
-              <strong>{{ data.costing.totals.totalEur | eur }}</strong>
-            </div>
-          </div>
-        </section>
-
-        <nav class="erp-workspace__nav purchase-editor__mobile-nav workflow-nav workflow-nav--wide" aria-label="Onderdelen van deze inkooporder">
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-order-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-order-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-order-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-order-section', 'order')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">1</span>
-            <span class="workflow-nav__copy"><b>Order</b><small>{{ containerLabel(data.order.containerType) }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-products-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-products-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">2</span>
-            <span class="workflow-nav__copy"><b>Producten</b><small>{{ data.costing.lines.length }} regels</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-costs-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-costs-section', 'costs')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">3</span>
-            <span class="workflow-nav__copy"><b>Kosten</b><small>{{ data.costing.totals.totalEur | eur }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-payments-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-payments-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">4</span>
-            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ paymentNavLabel() }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-files-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-files-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">5</span>
-            <span class="workflow-nav__copy"><b>Dossier</b><small>{{ (documents() ?? []).length }} bestanden</small></span>
-          </button>
-          <button class="erp-workspace__nav-item erp-workspace__nav-item--action workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-actions-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-actions-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">6</span>
-            <span class="workflow-nav__copy"><b>Volgende stap</b><small>{{ nextStep()?.action || 'Afgerond' }}</small></span>
-          </button>
-        </nav>
-
-        <div class="purchase-grid erp-workspace__layout"
-             [attr.data-phone-step]="phoneStep()">
-          <main class="purchase-main erp-workspace__main">
-            <section class="card flow-card erp-workspace__section" id="purchase-order-section"
+            }
+            <app-purchase-nacalc-glance [nacalc]="nacalc()" [state]="paymentState()" (open)="jumpToSection('purchase-result-section')" />
+            <div class="mpo-host">
+<section class="card flow-card erp-workspace__section" id="purchase-order-section"
                      tabindex="-1">
               <button class="section-toggle" type="button"
                       [attr.aria-expanded]="sectionOpen('order')"
@@ -402,8 +294,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
                     @if (data.order.status !== 'CONCEPT') {
                       <div class="field">
-                        <label for="po-tracking">Track &amp; trace <span class="opt"></span></label>
-                        <input class="input" id="po-tracking" placeholder="Containernummer, B/L of link van de rederij"
+                        <label for="mpo-tracking">Track &amp; trace <span class="opt"></span></label>
+                        <input class="input" id="mpo-tracking" placeholder="Containernummer, B/L of link van de rederij"
                                [ngModel]="data.order.trackingReference ?? ''"
                                (ngModelChange)="patch({ trackingReference: $event || null })" />
                         @if (data.order.shippedOn) {
@@ -510,7 +402,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               }
               <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-partner-section')" (unlink)="unlinkPartnerDoc($event)" />
             </section>
+            </div>
+          </section>
 
+          <!-- ===== Producten ===== -->
+          <section class="mpo-pane" id="mpo-pane-producten" role="tabpanel" aria-label="Producten" [hidden]="phoneTab() !== 'producten'">
+            <div class="mpo-host">
             <section class="card flow-card products-card erp-workspace__section"
                      id="purchase-products-section" tabindex="-1"
                      aria-labelledby="purchase-products-title">
@@ -751,7 +648,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </div>
               </div>
             </section>
+            </div>
+          </section>
 
+          <!-- ===== Kosten ===== -->
+          <section class="mpo-pane" id="mpo-pane-kosten" role="tabpanel" aria-label="Kosten" [hidden]="phoneTab() !== 'kosten'">
+            <div class="mpo-host">
             <section class="card flow-card erp-workspace__section" id="purchase-costs-section"
                      tabindex="-1">
               <button class="section-toggle" type="button"
@@ -990,9 +892,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </div>
               }
             </section>
-          </main>
-
-          <aside class="purchase-summary erp-workspace__sidebar" aria-label="Containersamenvatting">
+            </div>
+            <div class="mpo-host">
             <section class="card summary-card erp-workspace__section" id="purchase-summary-section"
                      tabindex="-1">
               <div class="section-heading summary-heading">
@@ -1179,26 +1080,26 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </div>
               </div>
             </section>
-
-            <!-- Nacalculatie: what the container really cost, under Kosten. Every action goes through the editor's sheets. -->
-            <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-              <span class="section-kicker">Nacalculatie</span>
+            </div>
+            <!-- Nacalculatie: what the container really cost, complete and never collapsed. Every action goes through the editor's sheets. -->
+            <section class="mpo-result mpo-host" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
               <app-purchase-nacalc-overview mode="edit" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
                 [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
                 [orderId]="data.order.id"
                 (openPayee)="openPayee($event)" (pay)="requestPayment($event)" (settle)="requestSettle($event)"
                 (openPayments)="jumpToSection('purchase-payments-section')" (openPartner)="jumpToSection('purchase-partner-section')"
-                (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="jumpToSection('purchase-actions-section')"
+                (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="apply()"
                 (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" (credit)="requestCredit($event)" />
             </section>
+          </section>
 
+          <!-- ===== Betalingen ===== -->
+          <section class="mpo-pane" id="mpo-pane-betalingen" role="tabpanel" aria-label="Betalingen" [hidden]="phoneTab() !== 'betalingen'">
             <!-- Money out, per payee: the supplier for the goods in its planned
                  terms, the forwarder and customs, the inspection and other named
                  costs, and the bijkomende kosten of paying. The Enrosed kost is
                  ours and nobody's invoice. -->
-            <section class="card erp-workspace__section purchase-payments-plain"
-                     id="purchase-payments-section" tabindex="-1"
-                     aria-labelledby="purchase-payments-title">
+            <section class="mpo-host purchase-payments-plain" id="purchase-payments-section" tabindex="-1" aria-label="Betalingen">
               <app-purchase-payment-overview mode="edit" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [nacalc]="nacalcSummary()"
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
@@ -1212,11 +1113,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <!-- Money in: a partner who co-finances the container. -->
             @if (data.order.partnerCustomerId != null) {
-              <section class="erp-workspace__section purchase-partner-card" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
+              <section class="mpo-host" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
                 <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
               </section>
             }
+          </section>
 
+          <!-- ===== Dossier ===== -->
+          <section class="mpo-pane" id="mpo-pane-dossier" role="tabpanel" aria-label="Dossier" [hidden]="phoneTab() !== 'dossier'">
+            <div class="mpo-host">
             <!-- The container's diary: agreements, then the receipt, the
                  booking and every payment write themselves in here. -->
             <section class="card note-card erp-workspace__section erp-workspace__support-card"
@@ -1293,83 +1198,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <app-purchase-activity class="purchase-activity-step"
                                    [orderId]="data.order.id" [collapsible]="true" />
-
-            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
-                     id="purchase-actions-section" tabindex="-1"
-                     aria-labelledby="purchase-actions-title">
-              <div class="action-card__head">
-                <span class="po-eyebrow">Afronden</span>
-                <h2 id="purchase-actions-title">
-                  {{ nextStep() ? 'Klaar voor de volgende stap?' : 'Container afgerond' }}
-                </h2>
-                <p>
-                  @if (data.order.status === 'CONCEPT') {
-                    Controleer de producten en kosten voordat je de bestelling vastlegt.
-                  } @else if (!isReceived()) {
-                    Bij ontvangst tel je wat er echt in de container zat; bijboeken kan meteen of later.
-                  } @else if (!(data.order.stockBooked ?? true)) {
-                    Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.
-                  } @else {
-                    De voorraad is bijgeboekt. Je kunt nog een variant maken of kostprijzen toepassen.
-                  }
-                </p>
-              </div>
-
-              <div class="action-card__buttons">
-                @if (nextStep(); as step) {
-                  <button class="btn btn--primary btn--block" type="button"
-                          (click)="advanceStatus()">
-                    {{ step.action }}
-                  </button>
-                }
-                @if (isReceived() && !(data.order.stockBooked ?? true)) {
-                  <!-- Received but not on the shelf yet: the one action left. -->
-                  <button class="btn btn--primary btn--block" type="button" [disabled]="booking()"
-                          (click)="bookStock()">
-                    {{ booking() ? 'Bezig…' : 'Voorraad bijboeken' }}
-                  </button>
-                }
-                <button class="btn btn--block" type="button" (click)="apply()">
-                  {{ costsApplied() ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen' }}
-                </button>
-                <button class="btn btn--block" type="button" (click)="duplicate()">
-                  Deze container kopiëren
-                </button>
-                <button class="btn btn--block" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)">
-                  {{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}
-                </button>
-              </div>
-
-              @if (!isReceived()) {
-                <details class="danger-zone">
-                  <summary>Meer acties</summary>
-                  <div>
-                    @if (data.order.status === 'BESTELD' || data.order.status === 'ONDERWEG') {
-                      <!-- A status set by mistake goes back here; the sheet names what changes. -->
-                      <button class="btn btn--block mb-8" type="button" [disabled]="stepBackBusy()" (click)="openStepBack()">
-                        Status terugzetten…
-                      </button>
-                    }
-                    <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
-                    <button class="btn btn--danger btn--block" type="button"
-                            [disabled]="deletingOrder() || saving()" (click)="remove()">
-                      {{ deletingOrder() ? 'Verwijderen…' : 'Calculatie verwijderen' }}
-                    </button>
-                  </div>
-                </details>
-              }
-            </section>
-          </aside>
+            </div>
+          </section>
         </div>
-      </div>
 
-      @if (!desktop.active()) {
-        <nav class="purchase-mobile-dock erp-workspace__mobile-dock"
-             aria-label="Inkooporder navigatie en acties">
-          <!-- A hairline along the top edge: how full the container is while
-               you are composing it, without stealing room from the buttons. -->
-          @if (phoneStep() === 1 && !isDdp() && data.costing.containerFill; as fill) {
-            <div class="dock-fill" role="meter" aria-label="Containervulling"
+        <nav class="erp-workspace__mobile-actions mpo-savebar" [class.is-dirty]="dirty()" aria-label="Opslaan">
+          <!-- A hairline along the top edge on Producten: how full the container is while you compose it. -->
+          @if (phoneTab() === 'producten' && !isDdp() && data.costing.containerFill; as fill) {
+            <div class="dock-fill mpo-savebar__fill" role="meter" aria-label="Containervulling"
                  aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="fill.fillPercent"
                  [class.dock-fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
                  [class.dock-fill--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
@@ -1378,41 +1214,31 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <span class="dock-fill__track"><i [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></span>
             </div>
           }
-          @if (phoneStep() > 0) {
-            <button class="purchase-mobile-dock__back" type="button"
-                    (click)="previousPhoneStep()"
-                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
-          }
-          <span class="purchase-mobile-dock__context">
-            <small>Stap {{ phoneStep() + 1 }} van {{ phoneStepLabels.length }}</small>
-            <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
+          <span class="mpo-savebar__state" role="status">
+            @if (saving()) {
+              <strong>Opslaan…</strong><small>Even geduld</small>
+            } @else if (dirty()) {
+              @let what = negativeExtra() ? 'Enrosed kost onder nul: eerst rechtzetten' : unsavedText();
+              <strong>Niet opgeslagen</strong><small [title]="what">{{ what }}</small>
+            } @else {
+              <strong>Alles opgeslagen</strong><small>Je kunt verder bewerken</small>
+            }
           </span>
-          @if (phoneStep() === 3) {
-            <button class="btn purchase-mobile-dock__pdf" type="button" aria-label="Betaling noteren"
-                    [disabled]="payingBusy() || paymentStateLoading() || payments() === null" (click)="payeeMenuOpen.set(true)">＋ Betaling</button>
-          } @else {
-            <button class="btn purchase-mobile-dock__pdf" type="button"
-                    (click)="pdfOpen.set(true)"
-                    [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-              PDF
-            </button>
-          }
-          <button class="btn purchase-mobile-dock__save" type="button"
-                  [class.btn--primary]="dirty()"
-                  [disabled]="saving() || !dirty() || negativeExtra()" (click)="save()">
-            {{ saving() ? 'Opslaan…' : 'Opslaan' }}
-          </button>
-          @if (phoneStep() < phoneStepLabels.length - 1) {
-            <button class="purchase-mobile-dock__next" type="button"
-                    (click)="nextPhoneStep()"
-                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">›</button>
-          } @else if (!dirty() && nextStep(); as step) {
-            <button class="btn btn--primary purchase-mobile-dock__primary" type="button"
-                    (click)="advanceStatus()">
-              {{ step.action }}
-            </button>
+          @if (dirty()) {
+            <button class="btn btn--primary mpo-savebar__btn" type="button" [disabled]="saving() || negativeExtra()" (click)="save()"><span aria-hidden="true">✓</span> Opslaan</button>
+          } @else if (editStep(); as step) {
+            <button class="btn btn--primary mpo-savebar__btn" type="button" (click)="runEditStep(step)">{{ editStepLabel(step) }}</button>
           }
         </nav>
+      </div>
+
+      <!-- The phone's own sheets, at host level: never inside the sticky nav, the tabs or a pane. -->
+      @if (actionsOpen()) {
+        <app-context-menu title="Acties" variant="ios" cancelLabel="Annuleren" [items]="actionsMenuItems()" (pick)="pickAction($event)" (closed)="actionsOpen.set(false)" />
+      }
+      @if (stepOpen(); as step) {
+        <app-purchase-step-confirm-sheet [text]="stepText(step)" [tracking]="data.order.trackingReference ?? ''" [busy]="saving()"
+                                         (cancel)="stepOpen.set(null)" (confirmed)="confirmPhoneStep($event)" />
       }
 
       @if (quoteOpen()) {
@@ -1699,7 +1525,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (orderPlaced()) {
-        <app-purchase-ordered-success [orderNumber]="data.order.number"
+        <app-purchase-ordered-success [orderNumber]="data.order.number" [overviewAvailable]="!handedFromView()"
                                       (closed)="closeOrderPlaced()"
                                       (overview)="openOrderView()" />
       }
@@ -1721,62 +1547,21 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
       }
     } @else {
-      <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
-                       [showBack]="true" [showBell]="false" />
-      <div class="content po-page" role="status" aria-live="polite" aria-label="Inkooporder laden">
-        <app-skeleton kind="card" [rows]="1" />
-        <app-skeleton kind="stats" [rows]="3" />
-        <app-skeleton kind="list" [rows]="4" />
+      <div class="mpo-phone mpo-phone--edit">
+        <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()" />
+        <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
+          <app-skeleton kind="card" [rows]="3" />
+          <app-skeleton kind="lines" [rows]="4" />
+        </div>
       </div>
     }
   `,
   styles: [`
 
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
-    :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
-    .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
-    .po-overview:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
-    .po-overview__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.po-overview__copy{min-width:0}
+    :host{display:block;min-width:0}
     :is(.po-eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
-    .po-overview h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.po-overview__copy p{color:var(--muted);font-size:12px}
-    .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
-    .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.overview-stepper{margin:16px 0}
-    .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
-    .po-fact--total strong{color:var(--rose-dark)}
-    .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over,.po-fact strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger,.po-fact strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
-    .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-    .purchase-mobile-dock{display:flex;align-items:center;gap:7px}.dock-fill{position:absolute;top:0;right:14px;left:14px;height:3px;pointer-events:none}.dock-fill__track{display:block;height:3px;overflow:hidden;border-radius:0 0 3px 3px;background:var(--line)}.dock-fill__track i{display:block;height:100%;border-radius:inherit;background:var(--rose);transition:width .2s ease}.dock-fill__label{position:absolute;top:-22px;right:0;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:rgb(255 255 255 / 90%);color:var(--muted);font-size:9.5px;font-weight:650;line-height:1.4;white-space:nowrap;box-shadow:0 2px 8px rgb(26 22 20 / 8%);backdrop-filter:blur(8px)}.dock-fill__label b{color:var(--rose-dark);font-weight:800}.dock-fill--full .dock-fill__track i{background:var(--ok)}.dock-fill--full .dock-fill__label b{color:var(--ok)}.dock-fill--over .dock-fill__track i{background:var(--warn)}.dock-fill--over .dock-fill__label b{color:var(--warn)}.dock-fill--danger .dock-fill__track i{background:var(--danger)}.dock-fill--danger .dock-fill__label b{color:var(--danger)}
-    .purchase-mobile-dock__back,.purchase-mobile-dock__next{width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer}
-    .purchase-mobile-dock__next{background:var(--ink);color:#fff}
-    .purchase-mobile-dock__context{min-width:48px;display:grid;flex:1;line-height:1.15}
-    .purchase-mobile-dock__context small{color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase}
-    .purchase-mobile-dock__context strong{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
-    .purchase-mobile-dock .btn{min-height:42px;margin:0;padding-inline:10px}
-    .purchase-mobile-dock__pdf{flex:none}
-    .purchase-mobile-dock__save:disabled{opacity:.58}
-    .purchase-mobile-dock__primary{flex:none}
-    @media(max-width:390px){.purchase-mobile-dock__context{display:none}.purchase-mobile-dock__save,.purchase-mobile-dock__pdf{padding-inline:9px!important}.purchase-mobile-dock__save,.purchase-mobile-dock__primary{flex:1}}
-    @media(max-width:679px){
-      .pdf-header-button{display:none}
-      .po-page{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 128px)}
-      .purchase-grid .erp-workspace__section,.purchase-grid .purchase-activity-step{display:none}
-      .purchase-grid[data-phone-step="0"] #purchase-order-section,
-      .purchase-grid[data-phone-step="1"] #purchase-products-section,
-      .purchase-grid[data-phone-step="2"] #purchase-costs-section,
-      .purchase-grid[data-phone-step="2"] #purchase-summary-section,
-      .purchase-grid[data-phone-step="3"] #purchase-payments-section,
-      .purchase-grid[data-phone-step="3"] #purchase-partner-section,
-      .purchase-grid[data-phone-step="2"] #purchase-result-section,
-      .purchase-grid[data-phone-step="4"] #purchase-notes-section,
-      .purchase-grid[data-phone-step="4"] #purchase-files-section,
-      .purchase-grid[data-phone-step="4"] .purchase-activity-step,
-      .purchase-grid[data-phone-step="5"] #purchase-actions-section{display:block}
-      .purchase-grid[data-phone-step="0"] .purchase-summary,
-      .purchase-grid[data-phone-step="1"] .purchase-summary{display:none}
-      .purchase-grid[data-phone-step="3"] .purchase-main,
-      .purchase-grid[data-phone-step="4"] .purchase-main,
-      .purchase-grid[data-phone-step="5"] .purchase-main{display:none}
-    }
+    .fill-overview strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
 
     :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
     .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
@@ -1898,12 +1683,6 @@ export class PurchaseEditor {
       this.applyingCosts.set(false);
     }
   }
-  readonly phoneStep = signal(0);
-  readonly phoneStepLabels = ['Order', 'Producten', 'Kosten', 'Betalingen', 'Dossier', 'Afronden'] as const;
-  private readonly phoneStepIds = [
-    'purchase-order-section', 'purchase-products-section', 'purchase-costs-section',
-    'purchase-payments-section', 'purchase-files-section', 'purchase-actions-section',
-  ] as const;
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
   /* Per piece is what the buying conversation is about; totals are the
      exception you toggle to. */
@@ -1935,27 +1714,124 @@ export class PurchaseEditor {
     return this.openSections().has(name);
   }
 
-  nextPhoneStep(): void {
-    this.movePhoneStep(1);
+  /* ---- the phone: five tabs, the save bar and Acties (the desk has its own shell) ---- */
+
+  /** ?tab= from the route; Overzicht when absent. A field, not load(): the order may reload under it. */
+  readonly tab = input<string>();
+  readonly phoneTab = linkedSignal<PhoneTab>(() => parseTab(this.tab()));
+  readonly tabOptions = computed<SegmentOption[]>(() => {
+    const data = this.view();
+    return tabSegments({
+      producten: !!data && productsDot(data),
+      betalingen: paymentsDot(this.paymentLedger()?.summary, this.paymentState()),
+    });
+  });
+  readonly location = inject(Location);
+  private readonly phoneHost = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** Switches the tab in place: the URL follows without a history entry, a stuck bar stays stuck over the new pane's top. */
+  setPhoneTab(tab: PhoneTab, { scroll = true }: { scroll?: boolean } = {}): void {
+    const stick = phoneStickPoint(this.phoneHost.nativeElement);
+    const stuck = phoneTabsStuck(stick);
+    this.phoneTab.set(tab);
+    replaceTabInUrl(this.location, tab);
+    if (scroll) keepPhoneTabsStuck(stick, stuck);
   }
 
-  previousPhoneStep(): void {
-    this.movePhoneStep(-1);
+  /** Tapping the tab that is already open, with the bar stuck, goes back to its top. */
+  tabsClicked(event: Event): void {
+    if (!tappedSelectedTab(event)) return;
+    const stick = phoneStickPoint(this.phoneHost.nativeElement);
+    if (phoneTabsStuck(stick)) scrollPhoneTabsTop(stick);
   }
 
-  private movePhoneStep(direction: -1 | 1): void {
-    const next = Math.max(0, Math.min(this.phoneStepLabels.length - 1, this.phoneStep() + direction));
-    const disclosure = next === 0 ? 'order' : next === 2 ? 'costs' : undefined;
-    this.jumpToSection(this.phoneStepIds[next], disclosure);
+  /**
+   * Back: to the read view when it handed a step over (history is then
+   * [list, edit]), else one entry back; the unsaved-changes guard asks first.
+   */
+  goBack(): void {
+    const id = this.view()?.order.id ?? (Number(this.id()) || null);
+    if (this.handedFromView() && id != null) {
+      void this.router.navigate(['/purchasing', id], { replaceUrl: true, queryParams: { tab: tabParam(this.phoneTab()) } });
+    } else if (window.history.length > 1) {
+      this.location.back();
+    } else if (id != null) {
+      void this.router.navigate(['/purchasing', id]);
+    }
   }
 
-  /** The phone step that shows a section: a step of its own, or a card living on one. */
-  private phoneStepFor(sectionId: string): number {
-    const index = (this.phoneStepIds as readonly string[]).indexOf(sectionId);
-    if (index >= 0) return index;
-    if (sectionId === 'purchase-result-section') return 2;
-    if (sectionId === 'purchase-partner-section') return 3;
-    return -1;
+  readonly statusTone = statusTone;
+  readonly statusText = statusLabel;
+  readonly STEP_BUTTON = STEP_BUTTON;
+
+  /** The save bar's step when nothing is unsaved: an empty concept asks for products first. */
+  readonly editStep = computed(() => {
+    const data = this.view();
+    return data ? editNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked }) : null;
+  });
+
+  editStepLabel(step: PhoneStep | 'PRODUCTEN'): string {
+    return step === 'PRODUCTEN' ? 'Producten toevoegen' : STEP_BUTTON[step];
+  }
+
+  runEditStep(step: PhoneStep | 'PRODUCTEN'): void {
+    if (step === 'PRODUCTEN') {
+      this.setPhoneTab('producten');
+      this.openPicker();
+    } else {
+      this.stepOpen.set(step);
+    }
+  }
+
+  /** What the save bar says is not saved yet. */
+  readonly unsavedText = computed(() => {
+    const data = this.view();
+    const saved = this.savedOrder();
+    if (!data || !saved) return '';
+    const labels = this.costLabels();
+    return unsavedSummary(JSON.parse(saved) as PurchaseOrder, data.order,
+      { seaFreight: labels.seaFreightLabel, origin: labels.originCostsLabel, destination: labels.destinationCostsLabel });
+  });
+
+  /** The step the confirmation sheet asks about; the save bar, Acties and the received banner open it. */
+  readonly stepOpen = signal<PhoneStep | null>(null);
+
+  stepText(step: PhoneStep) {
+    const order = this.view()!.order;
+    return stepConfirm(step, { number: order.number, planLabel: this.planLabel(order), location: this.receivingLocationName(order.receivingLocationId),
+      dirty: this.dirty(), again: this.costsApplied() });
+  }
+
+  confirmPhoneStep(event: { tracking: string | null }): void {
+    const step = this.stepOpen();
+    this.stepOpen.set(null);
+    if (step && !this.runStep(step, event.tracking)) this.ui.toast('De container staat al verder; er is niets gewijzigd.');
+  }
+
+  /** Acties: what the old Afronden step and its Meer acties held. */
+  readonly actionsOpen = signal(false);
+  readonly actionsMenuItems = computed<ContextMenuItem[]>(() => {
+    const data = this.view();
+    if (!data) return [];
+    return actionsMenu({
+      status: data.order.status, step: this.nextStep()?.to ?? null, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
+      costsApplied: this.costsApplied(), partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
+      dirty: this.dirty(), saving: this.saving(), booking: this.booking(), deleting: this.deletingOrder(), stepBackBusy: this.stepBackBusy(),
+    });
+  });
+
+  pickAction(item: ContextMenuItem): void {
+    this.actionsOpen.set(false);
+    switch (item.id) {
+      case 'next': { const step = stepToward(this.nextStep()?.to); if (step) this.stepOpen.set(step); break; }
+      case 'book': this.stepOpen.set('BIJBOEKEN'); break;
+      case 'apply': this.apply(); break;
+      case 'quote': this.quoteOpen.set(true); break;
+      case 'copy': void this.duplicate(); break;
+      case 'pdf': this.pdfOpen.set(true); break;
+      case 'step-back': this.openStepBack(); break;
+      case 'delete': this.remove(); break;
+    }
   }
 
   private readonly paymentOverview = viewChild(PurchasePaymentOverview);
@@ -1966,26 +1842,28 @@ export class PurchaseEditor {
     this.paymentOverview()?.openPayee.set(payee);
   }
 
-  /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
+  /**
+   * Phone: the tab the section lives on, then its top under the stuck bar
+   * (a tab's root or the card) or the card itself. Desk: opens a collapsed
+   * section first, then lands it below the sticky workspace rail.
+   */
   jumpToSection(sectionId: string, disclosure?: 'order' | 'costs', scroll = true): void {
+    if (!this.desktop.active()) {
+      const tab = tabOfSection(sectionId);
+      this.setPhoneTab(tab, { scroll: false });
+      if (!scroll) return;
+      requestAnimationFrame(() => {
+        const target = document.getElementById(sectionId);
+        if (sectionId === rootSectionOf(tab) || sectionId === 'purchase-overview') scrollPhoneTabsTop(phoneStickPoint(this.phoneHost.nativeElement));
+        else target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target?.focus({ preventScroll: true });
+      });
+      return;
+    }
     if (disclosure && !this.sectionOpen(disclosure)) {
       const next = new Set(this.openSections());
       next.add(disclosure);
       this.openSections.set(next);
-    }
-    if (!this.desktop.active()) {
-      const phoneStep = this.phoneStepFor(sectionId);
-      if (phoneStep >= 0) this.phoneStep.set(phoneStep);
-      this.workspaceSection.set(phoneStep >= 0 ? this.phoneStepIds[phoneStep] : sectionId);
-      if (!scroll) return;
-      /* A step starts at the top; a card further down a step is scrolled to. */
-      if (this.phoneStepIds[phoneStep] === sectionId) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-      requestAnimationFrame(() => {
-        const target = document.getElementById(sectionId);
-        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        target?.focus({ preventScroll: true });
-      });
-      return;
     }
     this.workspaceSection.set(sectionId);
     if (!scroll) return;
@@ -3435,10 +3313,6 @@ export class PurchaseEditor {
   });
   readonly paymentState = computed<'loading' | 'refreshing' | 'error' | 'ready'>(() => this.paymentStateError() ? 'error'
     : this.payments() === null ? 'loading' : this.paymentStateLoading() ? 'refreshing' : 'ready');
-  readonly paymentNavLabel = computed(() => paymentsNavLabel(this.paymentLedger(), {
-    error: !!this.paymentStateError(), loading: this.paymentStateLoading() || this.payments() === null,
-    concept: this.view()?.order.status === 'CONCEPT',
-  }));
 
   /** What is still open for the term or payee the payment sheet is filled in for. */
   readonly payingOpenHint = computed(() => {
@@ -4573,7 +4447,10 @@ export class PurchaseEditor {
   celebrationAction(kind: 'SHIPPED' | 'RECEIVED'): void {
     this.statusCelebration.set(null);
     if (kind === 'SHIPPED') {
-      if (!this.sectionOpen('order')) this.toggleSection('order');
+      // Track & trace invullen: the field on Overzicht, and the screen stays here instead of returning to the view.
+      this.keepAfterStep.set(true);
+      this.setPhoneTab('overzicht');
+      setTimeout(() => document.getElementById('mpo-tracking')?.focus(), 150);
     } else {
       void this.bookStock();
     }
@@ -4666,7 +4543,7 @@ export class PurchaseEditor {
   /* The order on screen is a draft: every edit lands here at once and the
      figures are recalculated by the server without saving. Only Opslaan
      (or a status step, which is an action) writes the order. */
-  private readonly savedOrder = signal<string>('');
+  protected readonly savedOrder = signal<string>('');
   readonly saving = signal(false);
   readonly deletingOrder = signal(false);
   readonly dirty = computed(() => {

@@ -72,6 +72,38 @@ test('the read view: one card over five panes, every section once, the Nacalcula
   }
 });
 
+test('the editor: the product editor\'s shell over the same five panes, a save bar and Acties', async () => {
+  const source = await read('app/features/purchasing/purchase-editor.ts');
+  const template = templateOf(source);
+  assert.equal(parseTemplate(template, 'purchase-editor.html').errors, null);
+  assert.doesNotMatch(template, /purchase-mobile-dock|data-phone-step|purchase-editor__mobile-nav|<app-page-header/);
+  for (const words of ['mpo-savebar', 'Niet opgeslagen', 'Alles opgeslagen', '<app-context-menu title="Acties"', '[customLarge]="true"', 'semantics="tabs"']) {
+    assert.ok(template.includes(words), words);
+  }
+  for (const tag of ['<app-purchase-step-confirm-sheet', '<app-purchase-status-back-sheet ', '<app-purchase-nacalc-overview mode="edit"',
+    '<app-purchase-payment-overview mode="edit"', 'ios-seg--stacked', '<app-purchase-nacalc-glance']) {
+    assert.equal(count(template, tag), 1, tag);
+  }
+  const at = (marker: string) => { const index = template.indexOf(marker); assert.ok(index >= 0, marker); return index; };
+  const nacalc = at('<app-purchase-nacalc-overview mode="edit"');
+  assert.ok(at('id="mpo-pane-kosten"') < nacalc && nacalc < at('id="mpo-pane-betalingen"'), 'the Nacalculatie sits in the Kosten pane');
+  const payments = at('<app-purchase-payment-overview mode="edit"');
+  assert.ok(at('id="mpo-pane-betalingen"') < payments && payments < at('id="mpo-pane-dossier"'), 'the payments sit in the Betalingen pane');
+  const glance = at('<app-purchase-nacalc-glance');
+  assert.ok(at('id="mpo-pane-overzicht"') < glance && glance < at('id="mpo-pane-producten"'));
+  for (const pane of ['overzicht', 'producten', 'kosten', 'betalingen', 'dossier']) {
+    assert.match(template, new RegExp(`id="mpo-pane-${pane}" role="tabpanel" aria-label="[A-Z][a-z]+" \\[hidden\\]="phoneTab\\(\\) !== '${pane}'"`), pane);
+  }
+  // The phone's sheets and every existing sheet stay at host level, after the phone frame.
+  const frameEnd = at('<!-- The phone\'s own sheets, at host level');
+  for (const sheet of ['<app-context-menu title="Acties"', '<app-purchase-step-confirm-sheet', '<app-purchase-status-back-sheet ', '<app-purchase-payment-sheet',
+    '<app-purchase-quote-sheet', '<app-purchase-pdf-sheet', '<app-purchase-ordered-success']) {
+    assert.ok(at(sheet) > frameEnd, sheet);
+  }
+  assert.match(template, /<app-purchase-ordered-success \[orderNumber\]="data\.order\.number" \[overviewAvailable\]="!handedFromView\(\)"/);
+  assert.doesNotMatch(source, /begroot/i);
+});
+
 test('the kit gains the stacked segments and the nav its [hero] slot', async () => {
   assert.match(await read('styles/workspace-kit.scss'), /\.ios-seg\.ios-seg--stacked\{/);
   const nav = await read('app/shared/ios-nav.ts');

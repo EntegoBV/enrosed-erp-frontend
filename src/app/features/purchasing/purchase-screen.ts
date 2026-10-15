@@ -35,7 +35,7 @@ import type { PhoneTab } from './purchase-phone-model';
     @if (desktop.active()) {
       <app-purchase-desk [id]="id()" [mode]="mode()" />
     } @else if (mode() === 'edit') {
-      <app-purchase-editor [id]="id()" />
+      <app-purchase-editor [id]="id()" [tab]="tab()" />
     } @else {
       <app-purchase-view [id]="id()" [tab]="tab()" />
     }

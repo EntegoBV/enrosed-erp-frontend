@@ -426,14 +426,20 @@ test('the unsaved-edits line follows the edits made before the tap, not the stat
 
 test('desk and phone offer the step back once, only for Besteld and Vertrokken, and render the sheet', async () => {
   const desk = await readFile(new URL('../src/app/features/purchasing/purchase-desk.ts', import.meta.url), 'utf8');
+  const phoneMenu = await readFile(new URL('../src/app/features/purchasing/purchase-phone-model.ts', import.meta.url), 'utf8');
   for (const [name, text] of [['phone', source], ['desk', desk]] as const) {
-    assert.equal(text.match(/\(click\)="openStepBack\(\)"/g)?.length, 1, name);
     assert.equal(text.match(/<app-purchase-status-back-sheet /g)?.length, 1, name);
     /* The sheet reads the state frozen during a step back, never the draft status or the live dirty flag. */
     assert.match(text, /@if \(stepBack\(\) && stepBackSheet\(\)\.options\.length\) \{\s*<app-purchase-status-back-sheet \[current\]="stepBackSheet\(\)\.status" \[options\]="stepBackSheet\(\)\.options"\s+\[dirty\]="stepBackSheet\(\)\.dirty" \[busy\]="stepBackBusy\(\)"/, name);
-    assert.match(text, /@if \(data\.order\.status === 'BESTELD' \|\| data\.order\.status === 'ONDERWEG'\) \{\s*(<!--[^>]*-->\s*)?<button[^>]*openStepBack/, name);
-    assert.match(text, /Status terugzetten…/, name);
   }
+  // The desk: one button, only for Besteld and Vertrokken.
+  assert.equal(desk.match(/\(click\)="openStepBack\(\)"/g)?.length, 1);
+  assert.match(desk, /@if \(data\.order\.status === 'BESTELD' \|\| data\.order\.status === 'ONDERWEG'\) \{\s*(<!--[^>]*-->\s*)?<button[^>]*openStepBack/);
+  assert.match(desk, /Status terugzetten…/);
+  // The phone: the Acties menu item (shown only for Besteld and Vertrokken by actionsMenu) opens the sheet.
+  assert.match(source, /case 'step-back':\s*this\.openStepBack\(\)/);
+  assert.match(phoneMenu, /Status terugzetten…/);
+  assert.match(phoneMenu, /if \(s\.status === 'BESTELD' \|\| s\.status === 'ONDERWEG'\) \{\s*items\.push\(\{ id: 'step-back'/);
   const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(sheetSource)?.[1];
   assert.ok(template);
   assert.equal(parseTemplate(template, 'purchase-status-back-sheet.html').errors, null);

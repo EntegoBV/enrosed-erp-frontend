@@ -154,6 +154,23 @@
 /* ---- read view: the dock above the ERP tab bar */
 .mpo-dock .mpo-dock__edit{display:inline-flex;flex:none;align-items:center;gap:6px;padding-inline:16px}
 
+/* ---- editor: the Acties capsule, the received banner, the save bar (the product editor's) with the fill hairline on Producten */
+.mpo-actions{gap:3px}
+.mpo-received>.ios-capsule{flex:none}
+.mpo-savebar .mpo-savebar__state{display:grid;flex:1;gap:1px;min-width:0;padding-inline:6px;line-height:1.2}
+.mpo-savebar__state strong{font-size:13px;font-weight:700}
+.mpo-savebar.is-dirty .mpo-savebar__state strong{color:var(--warn)}
+.mpo-savebar__state small{display:-webkit-box;overflow:hidden;color:var(--muted);font-size:11.5px;line-height:1.25;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.mpo-savebar .mpo-savebar__btn{flex:none;min-width:120px}
+.mpo-savebar .dock-fill{position:absolute;top:0;right:14px;left:14px;height:3px;pointer-events:none}
+.mpo-savebar .dock-fill__track{display:block;height:3px;overflow:hidden;border-radius:0 0 3px 3px;background:var(--line)}
+.mpo-savebar .dock-fill__track i{display:block;height:100%;border-radius:inherit;background:var(--rose);transition:width .2s ease}
+.mpo-savebar .dock-fill__label{position:absolute;top:-22px;right:0;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:rgb(255 255 255/90%);color:var(--muted);font-size:9.5px;font-weight:650;line-height:1.4;white-space:nowrap;box-shadow:0 2px 8px rgb(26 22 20/8%)}
+.mpo-savebar .dock-fill__label b{color:var(--rose-dark);font-weight:800}
+.mpo-savebar .dock-fill--full .dock-fill__track i{background:var(--ok)}.mpo-savebar .dock-fill--full .dock-fill__label b{color:var(--ok)}
+.mpo-savebar .dock-fill--over .dock-fill__track i{background:var(--warn)}.mpo-savebar .dock-fill--over .dock-fill__label b{color:var(--warn)}
+.mpo-savebar .dock-fill--danger .dock-fill__track i{background:var(--danger)}.mpo-savebar .dock-fill--danger .dock-fill__label b{color:var(--danger)}
+
 /* ---- toasts clear the dock and the save bar */
 body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 96px)}
 }
