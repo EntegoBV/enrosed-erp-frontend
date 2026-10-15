@@ -1,0 +1,119 @@
+/* ==========================================================================
+   Inkoop · the phone purchase order (2026-10-15): the read view
+   (app-purchase-view) and the editor (app-purchase-editor) below 680px, as
+   one white summary card over five tabs (Overzicht · Producten · Kosten ·
+   Betalingen · Dossier), grouped inset lists and sheets. Built on the
+   workspace kit: the wk- and ios- kit classes are used bare, never restyled
+   here; only their custom properties are set. Every rule is scoped under a
+   purchase host, the mpo- prefix or body:has(app-purchase-…). The page keeps
+   its beige --bg; cards and lists are --surface white.
+   ========================================================================== */
+
+@media (max-width:679.98px){
+/* ---- frame: the kit's sticky nav and subbar stick against .mpo-phone */
+:is(app-purchase-view,app-purchase-editor) .mpo-phone{--ios-bg:var(--bg);--mpo-tabs-h:74px;display:block;min-width:0}
+.mpo-phone--view{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 108px)}
+.mpo-phone--edit{padding-bottom:calc(var(--safe-b) + 112px)}
+.mpo-tabs{padding-top:10px}
+.mpo-panes{min-height:calc(100dvh - var(--safe-t) - var(--ios-nav-h) - var(--mpo-tabs-h))}
+.mpo-pane{display:block;min-width:0;padding-top:10px}
+.mpo-pane[hidden]{display:none!important}
+/* scrollIntoView lands under the nav and the tabs */
+:is(app-purchase-view,app-purchase-editor) [id^="purchase-"]{scroll-margin-top:calc(var(--safe-t) + var(--ios-nav-h) + var(--mpo-tabs-h))}
+:is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;text-overflow:clip;white-space:normal}
+
+/* ---- summary card ([hero] of app-ios-nav) */
+.mpo-summary{margin:2px 16px 12px;padding:16px;border-radius:var(--ios-radius);background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}
+.mpo-summary:focus{outline:none}
+.mpo-summary__top{display:flex;align-items:center;gap:8px;min-width:0}
+.mpo-summary__top .wk-pill{flex:none}
+.mpo-summary__route,.mpo-summary__eyebrow{flex:1;min-width:0;overflow:hidden;color:var(--muted);font-size:13px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.mpo-summary__route{text-align:right}
+.mpo-summary__eyebrow{font-size:12.5px;font-weight:650}
+.mpo-summary__title{display:-webkit-box;margin:10px 0 2px;overflow:hidden;color:var(--ink);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.15;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.mpo-summary--edit .mpo-summary__title{margin-top:6px;font-size:22px}
+.mpo-summary__sub{margin:0;overflow:hidden;color:var(--muted);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.mpo-summary__meta{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.mpo-progress{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:14px 0;padding:0;list-style:none}
+.mpo-progress__step{display:grid;align-content:start;gap:4px;min-width:0}
+.mpo-progress__bar{display:block;height:4px;border-radius:2px;background:var(--line)}
+.mpo-progress__step.is-done .mpo-progress__bar,.mpo-progress__step.is-now .mpo-progress__bar{background:var(--rose)}
+.mpo-progress__label{overflow:hidden;color:var(--ink-2);font-size:12px;font-weight:550;text-overflow:ellipsis;white-space:nowrap}
+.mpo-progress__step.is-now .mpo-progress__label{color:var(--ink);font-weight:650}
+.mpo-progress__step.is-todo .mpo-progress__label{color:var(--muted)}
+.mpo-progress__date{display:-webkit-box;overflow:hidden;color:var(--muted);font-size:11px;line-height:1.3;font-variant-numeric:tabular-nums;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.mpo-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.mpo-tile{position:relative;display:grid;align-content:start;gap:2px;min-width:0;padding:12px 12px 11px;border:0;border-radius:16px;background:var(--surface-2);color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mpo-tile:active{filter:brightness(.97)}
+.mpo-tile:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+.mpo-tile__label{padding-right:14px;overflow:hidden;color:var(--muted);font-size:12.5px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.mpo-tile__value{color:var(--ink);font-size:21px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.2;white-space:nowrap}
+.mpo-tile__value--long{font-size:17px;line-height:1.45}
+.mpo-tile__sub{display:-webkit-box;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.3;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.mpo-tile__chev{position:absolute;top:11px;right:8px;color:var(--muted-2)}
+.mpo-tile--landed{background:color-mix(in srgb,var(--rose) 9%,var(--surface))}
+.mpo-tile--landed .mpo-tile__value{color:var(--rose-dark)}
+.mpo-tile--warn{background:var(--warn-soft)}
+.mpo-tile--ok{background:var(--ok-soft)}
+.mpo-tile--neutral{background:var(--surface-2)}
+:is(app-purchase-view,app-purchase-editor) :is(.mpo-tile__value,.mpo-fill__pct,.ios-figures strong).fill-pct--full{color:var(--ok)}
+:is(app-purchase-view,app-purchase-editor) :is(.mpo-tile__value,.mpo-fill__pct,.ios-figures strong).fill-pct--over{color:var(--warn)}
+:is(app-purchase-view,app-purchase-editor) :is(.mpo-tile__value,.mpo-fill__pct,.ios-figures strong).fill-pct--danger{color:var(--danger)}
+
+/* ---- pane heads, banners, the fill card and the Totaal / Per stuk row */
+.mpo-head{display:flex;align-items:center;gap:12px;margin:8px 16px 14px}
+.mpo-head__copy{flex:1;min-width:0}
+.mpo-head__copy h2{margin:0;font-size:20px;font-weight:750;letter-spacing:-.01em}
+.mpo-head__copy p{margin:1px 0 0;color:var(--muted);font-size:13px;line-height:1.35}
+.mpo-head>.wk-pill,.mpo-head>.ios-capsule{flex:none}
+.mpo-attention{align-items:flex-start}
+.mpo-attention__count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:12px;font-weight:800;line-height:1}
+.mpo-attention__body{display:grid;gap:2px}
+.mpo-attention__body b{color:var(--warn);font-size:12px;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
+.mpo-fill__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.mpo-fill__copy{min-width:0}
+.mpo-fill__title{margin:0;font-size:16px;font-weight:700}
+.mpo-fill__sub{margin:2px 0 0;color:var(--muted);font-size:12.5px;line-height:1.35}
+.mpo-fill__pct{flex:none;color:var(--rose-dark);font-size:26px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.1;white-space:nowrap}
+.mpo-fill .wk-meter{margin-top:12px}
+.mpo-fill__foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;margin-top:9px;color:var(--muted);font-size:12.5px}
+.mpo-fill__state{font-weight:650}.mpo-fill__state--ok{color:var(--ok)}.mpo-fill__state--tight{color:var(--warn)}.mpo-fill__state--danger{color:var(--danger)}
+.mpo-rate{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px;margin:0 16px 14px;color:var(--muted);font-size:13px}
+.mpo-rate>span{min-width:0;font-variant-numeric:tabular-nums}
+.mpo-rate app-segmented{flex:none;width:180px;margin-left:auto}
+
+/* ---- rows with a field on the right */
+.mpo-field-row{gap:10px}
+.mpo-field-row>.ios-cell__body{flex:1 1 auto}
+.mpo-field-row>:not(.ios-cell__body){flex:none}
+.mpo-input{width:110px;min-width:0;height:34px;padding:0 10px;border:0;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink);font:inherit;font-size:16px;font-variant-numeric:tabular-nums;text-align:right;appearance:none;-webkit-appearance:none}
+.mpo-input:focus{outline:2px solid var(--rose);outline-offset:0}
+.mpo-input:disabled{opacity:.55}
+.mpo-input--wide{width:150px;text-align:left}
+/* A field whose placeholder or value is long stacks under its label, across the row. */
+.mpo-field-row--stack{flex-wrap:wrap;row-gap:6px}
+.mpo-field-row--stack>.ios-cell__body{flex:1 1 100%}
+.mpo-field-row.mpo-field-row--stack>:not(.ios-cell__body){flex:1 1 100%;width:100%}
+.mpo-field-row--stack .mpo-input{padding-inline:8px}
+.mpo-field-row--stack .mpo-input::placeholder{font-size:13px}
+.mpo-qty{width:84px}
+
+/* ---- the step confirmation and the Nacalculatie glance */
+.mpo-confirm{display:grid;gap:14px;min-width:0}
+.mpo-confirm__text{margin:0;padding:4px 20px 0;color:var(--ink-2);font-size:15px;line-height:1.45}
+.mpo-confirm .ios-group{margin-bottom:0}
+.mpo-confirm__note{margin:0;padding:0 20px 4px}
+.mpo-glance .ios-section__head{align-items:center}
+.mpo-glance__value{display:block;color:var(--ink);font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.25;white-space:nowrap}
+.mpo-glance__words{white-space:normal}
+.mpo-glance__empty{margin:0 32px}
+
+/* ---- unchanged components, re-hosted: they draw their own cards without a gutter */
+:is(app-purchase-view,app-purchase-editor) .mpo-host{display:block;min-width:0;padding-inline:16px}
+:is(app-purchase-view,app-purchase-editor) .mpo-host+.mpo-host{margin-top:16px}
+:is(app-purchase-view,app-purchase-editor) .mpo-partner .po-partner,
+:is(app-purchase-view,app-purchase-editor) .mpo-partner .po-partner--on{margin:0 16px 22px;border:0;border-radius:var(--ios-radius);background:var(--surface)}
+
+/* ---- toasts clear the dock and the save bar */
+body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 96px)}
+}

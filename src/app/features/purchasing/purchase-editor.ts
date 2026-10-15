@@ -104,6 +104,7 @@ import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from '
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
+import { stepTarget, type PhoneStep } from './purchase-phone-model';
 
 /**
  * Landed-cost calculation of a container.
@@ -1840,6 +1841,63 @@ export class PurchaseEditor {
   /** The container as an offer: the sheet that picks the customer and opens the new quote. */
   readonly quoteOpen = signal(false);
   readonly quoteLines = computed<PurchaseQuoteLine[]>(() => quoteLinesOf(this.view()));
+
+  /* ---- the phone's confirmed next step: the read view's handoff, the save bar or Acties. The desk never calls these. */
+  /** 'Track & trace invullen' after a departure: the screen stays in the editor instead of returning to the view. */
+  readonly keepAfterStep = signal(false);
+  /** The step was confirmed on the read view: back leads there, not one history entry back. */
+  readonly handedFromView = signal(false);
+  readonly applyingCosts = signal(false);
+  /** A step is still running or waiting on a sheet: a save, the count, a celebration, a payment. */
+  readonly stepFlowBusy = computed(() => this.saving() || this.booking() || this.applyingCosts() || this.receiving() !== null
+    || this.orderPlaced() || this.statusCelebration() !== null || this.firstInstalmentPrompt() !== null
+    || this.paying() !== null || this.payingBusy());
+
+  /**
+   * A confirmed phone step (read-view handoff, save bar or Acties). False only
+   * when the step no longer applies to the container; a save that is refused
+   * says so itself. A departure writes a changed track & trace first, the way
+   * the desk's confirmAdvance does.
+   */
+  runStep(step: PhoneStep, tracking: string | null): boolean {
+    const data = this.view();
+    if (!data) return false;
+    if (step === 'BESTELLEN' || step === 'VERTROKKEN' || step === 'ONTVANGEN') {
+      if (this.nextStep()?.to !== stepTarget(step)) return false;
+      if (step === 'VERTROKKEN' && tracking !== null && tracking.trim() !== (data.order.trackingReference ?? '')) {
+        this.patch({ trackingReference: tracking.trim() || null });
+      }
+      this.advanceStatus();
+      return true;
+    }
+    if (data.order.status !== 'ONTVANGEN') return false;
+    if (step === 'BIJBOEKEN') {
+      if (data.order.stockBooked !== false) return false;
+      // Booking replaces the draft with the server's order: unsaved notes or costs are saved first.
+      if (this.dirty()) void this.save().then((saved) => { if (saved) void this.bookStock(); });
+      else void this.bookStock();
+      return true;
+    }
+    void this.applyCostsNow();
+    return true;
+  }
+
+  /** apply()'s confirmed work without its question: the phone asked already. */
+  async applyCostsNow(): Promise<void> {
+    const data = this.view();
+    if (!data || this.applyingCosts()) return;
+    this.applyingCosts.set(true);
+    try {
+      await this.sourcing.applyLandedCosts(data.order.id);
+      this.products.set(await this.catalog.products(data.order.supplierId));
+      await this.reloadOrderQuietly();
+      this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Kostprijzen toepassen mislukt'), 'err');
+    } finally {
+      this.applyingCosts.set(false);
+    }
+  }
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Order', 'Producten', 'Kosten', 'Betalingen', 'Dossier', 'Afronden'] as const;
   private readonly phoneStepIds = [
