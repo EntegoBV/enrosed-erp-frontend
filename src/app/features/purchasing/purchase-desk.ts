@@ -35,6 +35,7 @@ import { AuthImage } from '../../core/api/auth-image';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
+import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { FilePicker } from '../../shared/file-picker';
@@ -68,7 +69,7 @@ type DeskRow =
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
@@ -859,7 +860,7 @@ type DeskRow =
                       <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="booking()" (click)="bookStock()">{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</button>
                     }
                     <div class="desk-actions">
-                      <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                      <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)"><span><b>{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</b><small>{{ data.order.partnerCustomerId ? 'Eén conceptfactuur per voorschottermijn, nog niet verstuurd.' : 'Dezelfde producten en aantallen op een nieuwe offerte voor een klant.' }}</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" (click)="pdfOpen.set(true)"><span><b>PDF maken</b><small>Voor de leverancier, controleur of als intern dossier.</small></span><i aria-hidden="true">›</i></button>
@@ -1184,6 +1185,9 @@ type DeskRow =
         <app-purchase-status-success [kind]="celebration" [orderNumber]="data.order.number"
                                      [showAction]="celebration === 'SHIPPED' ? !data.order.trackingReference : !(data.order.stockBooked ?? true)"
                                      (closed)="statusCelebration.set(null)" (action)="celebrationAction(celebration)" />
+      }
+      @if (applyPlan(); as plan) {
+        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()" (confirm)="confirmApply()" (cancel)="closeApply()" />
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [saving]="saving()"
