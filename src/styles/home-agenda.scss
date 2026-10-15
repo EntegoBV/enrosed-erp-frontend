@@ -1,4 +1,144 @@
 /* ==========================================================================
-   Agenda (spec-home §5.2): the month grid, the 7-day strip and the Agenda
-   page with its fold into the week. Filled by W7.
+   Agenda (spec-home §5.2): the month grid (app-agenda-month), the agenda
+   rows (app-agenda-rows), the home's 7-day card (app-agenda-strip) and the
+   phone Agenda page with its fold into the week (app-agenda-page).
+
+   One day button (.home-day: weekday, number, markers) serves the grid,
+   the strip and the folded week. Markers: an appointment is the accent, a
+   task a ring (red when late), a container blue, money amber; krap days
+   carry a 2 px amber underline. Layout follows media queries only (no
+   container query above the planner sheets), and the fold neither moves
+   nor transforms anything: the subbar sits in a zero-height sticky slot
+   under the nav.
    ========================================================================== */
+
+app-agenda-page, app-agenda-month, app-agenda-strip, app-agenda-rows { display: block; min-width: 0; }
+
+/* ---- markers and the day button */
+.home-dot { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone, var(--muted-2)); }
+.home-dot--taak { background: none; box-shadow: inset 0 0 0 1.5px var(--tone); }
+.home-day { position: relative; display: grid; align-content: center; justify-items: center; gap: 4px; min-width: 0; min-height: 44px; padding: 2px 0 4px;
+  border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.home-day:hover:not(.is-skel), .home-day:active:not(.is-skel) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.home-day__wd { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
+.home-day__num { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-size: 17px; font-variant-numeric: tabular-nums; line-height: 1; }
+.home-day__dots { display: flex; align-items: center; justify-content: center; gap: 3px; height: 6px; color: var(--muted); font-size: 10px; }
+.home-day.is-out, .home-day.is-weekend .home-day__num { color: var(--muted-2); }
+.home-day.is-out .home-day__dots { opacity: .5; }
+.home-day.is-today .home-day__num { background: var(--rose); color: #fff; font-weight: 700; }
+.home-day.is-today .home-day__wd { color: var(--rose-dark); }
+.home-day.is-selected .home-day__num { outline: 2px solid var(--rose); outline-offset: 1px; }
+.home-day.is-krap::after { content: ''; position: absolute; right: 7px; bottom: 1px; left: 7px; height: 2px; border-radius: 1px; background: #c7851d; }
+.home-day.is-skel { cursor: default; }
+:is(.home-day, .home-arow__main, .home-arow__check, .home-strip__pin):focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 45%, transparent); outline-offset: -2px; }
+
+/* ---- month grid */
+.home-month__grid { display: grid; gap: 2px; }
+.home-month__row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.home-month__row--head { color: var(--muted); font-size: 11.5px; font-weight: 650; text-align: center; }
+.home-month__wk { display: grid; place-items: center; color: var(--muted-2); font-size: 10.5px; }
+.home-month__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 10px 0 0; color: var(--muted); font-size: 11.5px; }
+.home-month__legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.home-month__krap-key { width: 12px; height: 2px; background: #c7851d; }
+/* desk: week numbers, the grid beside the selected day and Komend */
+.home-month--desk { display: grid; grid-template-columns: 328px minmax(0, 1fr); gap: 24px; align-items: start; }
+.home-month--desk .home-month__row { grid-template-columns: 24px repeat(7, minmax(0, 1fr)); }
+.home-month--desk .home-day { gap: 3px; min-height: 40px; border-radius: 9px; }
+.home-month--desk .home-day__num { width: 25px; height: 25px; font-size: 13px; }
+.home-month__name { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+.home-month__name::first-letter { text-transform: uppercase; }
+.home-month__side { min-width: 0; }
+.home-month__day-head { display: flex; align-items: center; gap: 8px; min-height: 26px; margin-bottom: 4px; }
+.home-month__day-head h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.home-month__count { margin-left: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 899.98px) {
+  .home-month--desk { grid-template-columns: minmax(0, 1fr); }
+  .home-month--desk .home-month__cal { max-width: 420px; }
+}
+.home-month__label, .home-strip__label { margin: 14px 0 4px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.home-month__empty, .home-strip__empty, .home-strip__more { margin: 4px 0; color: var(--muted); font-size: 13px; }
+
+/* ---- agenda rows: when, type bar, title and sub, signed amount */
+.home-arows { display: grid; min-width: 0; }
+.home-arow { display: flex; min-width: 0; background: var(--surface); }
+.home-arows--desk .home-arow, .home-arows--flat .home-arow { border-radius: 8px; background: none; }
+.home-arows--flat .home-arow + .home-arow { border-top: .5px solid var(--ios-sep); border-radius: 0; }
+.home-arow__check { display: grid; flex: none; place-items: center; width: 46px; padding: 0 0 0 12px; border: 0; background: none; cursor: pointer; }
+.home-arow.is-late .ios-check:not(.is-on) { border-color: var(--danger); }
+.home-arow__main { display: grid; flex: 1; grid-template-columns: 44px 3px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; min-height: 52px;
+  padding: 7px 16px 7px 14px; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; }
+.home-arow.is-task .home-arow__main { padding-left: 8px; }
+.home-arow.no-when .home-arow__main { grid-template-columns: 3px minmax(0, 1fr) auto; padding-left: 22px; }
+button.home-arow__main { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button.home-arow__main:is(:hover, :active) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.home-arows--desk .home-arow__main { grid-template-columns: 50px 3px minmax(0, 1fr) auto; gap: 8px; min-height: 38px; padding: 4px 8px; border-radius: 8px; font-size: 12.5px; }
+.home-arows--desk .home-arow__check { width: 28px; padding: 0 0 0 4px; }
+.home-arows--desk .ios-check { width: 18px; height: 18px; }
+.home-arows--desk .home-arow.is-task .home-arow__main { padding-left: 4px; }
+.home-arows--desk .home-arow.no-when .home-arow__main { grid-template-columns: 3px minmax(0, 1fr) auto; padding-left: 38px; }
+.home-arows--flat .home-arow__main { grid-template-columns: 40px 3px minmax(0, 1fr) auto; min-height: 44px; padding: 6px 0; }
+.home-arow__when { display: grid; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
+.home-arow__when b { font-weight: 600; }
+.home-arow__when small { color: var(--muted); font-size: 11.5px; }
+.home-arow__bar { align-self: stretch; min-height: 26px; border-radius: 2px; background: var(--tone, var(--muted-2)); }
+.home-arow.is-task .home-arow__bar { background: repeating-linear-gradient(var(--tone) 0 3px, transparent 3px 6px); }
+.home-arow__text { display: grid; gap: 1px; min-width: 0; }
+.home-arow__title, .home-arow__sub { overflow: hidden; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.home-arow__title { font-size: 15px; font-weight: 500; }
+.home-arow__sub { color: var(--muted); font-size: 12.5px; }
+.home-arows--desk :is(.home-arow__title, .home-arow__when, .home-arow__eur) { font-size: 13px; }
+.home-arows--desk .home-arow__sub { font-size: 11.5px; }
+.home-arow__eur { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-arow:is(.is-past, .is-done) :is(.home-arow__title, .home-arow__when, .home-arow__eur) { color: var(--muted); font-weight: 500; }
+.home-arow.is-done .home-arow__title { text-decoration: line-through; }
+
+/* ---- the home's 7-day card */
+.home-strip { position: relative; display: grid; gap: 10px; }
+.home-strip.ios-card { padding: 16px 16px 12px; }
+.home-strip--desk { padding: 14px 16px; }
+/* Placed inside a card of the page's own, the strip is that card's content. */
+:is(.ios-card, .wk-card) > app-agenda-strip > .home-strip { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.home-strip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.home-strip__title { margin: 0; font-size: 17px; font-weight: 750; }
+.home-strip__go { color: inherit; text-decoration: none; }
+.home-strip__go::after { content: ''; position: absolute; inset: 0; border-radius: 16px; }
+.home-strip__go:focus-visible { outline: 0; }
+.home-strip__go:focus-visible::after { outline: 3px solid color-mix(in srgb, var(--rose) 45%, transparent); }
+.home-strip__week { color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.home-strip__raise { position: relative; z-index: 1; }
+.home-strip__pin { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 0 12px; border-radius: 12px; background: var(--rose-soft);
+  color: var(--rose-dark); font-size: 13px; text-decoration: none; }
+.home-strip__pin > * { flex: none; white-space: nowrap; }
+.home-strip__pin > .home-strip__pin-title { flex: 0 1 auto; min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; }
+.home-strip__pin-in { margin-left: auto; padding-left: 4px; }
+.home-strip__pin-in.is-late { color: var(--danger); }
+.home-strip__pin-more { padding: 1px 6px; border-radius: 999px; background: var(--rose-line); font-size: 11px; font-weight: 700; }
+.home-strip__error { justify-self: start; margin: 0; color: var(--warn); font-size: 13px; font-weight: 600; }
+.home-strip__retry { min-height: 36px; padding: 0 8px; border: 0; background: none; color: var(--rose-dark); font: inherit; font-weight: 700; cursor: pointer; }
+.home-strip__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin: 0; padding: 0; list-style: none; }
+.home-strip__days .home-day { min-height: 62px; border-radius: 14px; }
+.home-strip .home-strip__label { margin: 4px 0 -6px; }
+
+/* ---- the phone Agenda page */
+.home-agenda__trail { display: flex; align-items: center; gap: 2px; }
+.home-agenda__fold { position: sticky; top: calc(var(--ios-nav-h) + var(--safe-t)); z-index: 29; height: 0; opacity: 0; visibility: hidden;
+  transition: opacity .18s, visibility 0s .18s; }
+.home-agenda__fold.is-folded { opacity: 1; visibility: visible; transition: opacity .18s; }
+.home-agenda__subbar { display: grid; gap: 6px; }
+.home-agenda__week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.home-agenda__week .home-day__num { width: 28px; height: 28px; font-size: 16px; }
+.home-agenda__card { padding: 6px 10px 14px; }
+.home-agenda__months { display: flex; align-items: center; padding-left: 8px; }
+.home-agenda__month { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 700; }
+.home-agenda__sentinel { height: 1px; margin-top: -1px; }
+.home-agenda__seg { margin: 0 var(--ios-inset) 18px; }
+.home-agenda__seg.is-covered { visibility: hidden; }
+/* Room enough under a short day to scroll the month away (the fold), as a phone calendar does. */
+.home-agenda__panel { min-height: calc(100dvh - var(--ios-nav-h) - var(--safe-t) - 120px); }
+.home-agenda__empty { margin: 0; padding: 15px 16px; color: var(--muted); font-size: 15px; }
+.home-agenda__skel { padding: 6px 16px; }
+.home-agenda__more { margin-bottom: 22px; }
+.home-agenda app-planner-cards { display: block; margin: 0 var(--ios-inset); }
+@media (prefers-reduced-motion: reduce) {
+  .home-agenda__fold { transition: none !important; }
+}
