@@ -108,6 +108,28 @@ test('a transaction (line=) opens its own sheet on the phone, not the generic de
   assert.equal(page.phoneInspector().id, 26);
 });
 
+test('opening anything else while a transaction is open takes line= off the address, so it cannot win the inspector back', () => {
+  // Facturen & kosten: cost 14 → its transaction → another cost row. Before 2026-10-16's review the address kept line=105.
+  const { state } = setup({ view: 'costs', tab: 'company', cost: '14', line: '105' });
+  state.inspect.set({ kind: 'line', id: 105 });
+  state.inspectItem({ kind: 'cost', id: 17 });
+  assert.deepEqual([state.location().cost, state.location().line], [17, null]);
+  // Elsewhere a container or a recent row opened from a transaction drops line=, and Back pushes it again.
+  const bank = setup({ view: 'bank', tab: 'movements', line: '105' }).state;
+  bank.inspect.set({ kind: 'line', id: 105 });
+  bank.inspectRelated({ kind: 'container', id: 43 });
+  assert.equal(bank.location().line, null); assert.deepEqual(bank.inspect(), { kind: 'container', id: 43 });
+  bank.backInspector();
+  assert.equal(bank.location().line, 105);
+  // On Facturen & kosten a container from the transaction drops cost= too; the same cost keeps cost=.
+  const stale = setup({ view: 'costs', tab: 'company', cost: '26', line: '105' }).state;
+  stale.inspectItem({ kind: 'container', id: 43 });
+  assert.deepEqual([stale.location().cost, stale.location().line], [null, null]);
+  const same = setup({ view: 'costs', tab: 'company', cost: '26', line: '105' }).state;
+  same.inspectItem({ kind: 'cost', id: 26 });
+  assert.deepEqual([same.location().cost, same.location().line], [26, null]);
+});
+
 test('supplier credit stays open until refunded, and partial/over-refund status follows signed money', () => {
   const row = new Row(); const cost = signal<any>({ amountExclEur: -78.99, amountInclEur: -95.58, vatPct: null, openEur: -95.58, paidEur: 0 }); row.cost = cost;
   assert.equal(row.credit(), true); assert.equal(row.status(), 'open'); assert.equal(row.overpaid(), 0);

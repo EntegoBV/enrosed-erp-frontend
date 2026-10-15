@@ -879,6 +879,8 @@ export class FinanceState {
         else if (location.cost) this.inspect.set({ kind: 'cost', id: location.cost });
         else if (here !== section || open?.kind === 'line' || (open?.kind === 'cost' && location.view === 'costs' && location.tab === 'company')) this.clearInspector();
         if (location.view !== 'analysis') this.analysisPushed = false;
+        /* "Gezocht vanuit" belongs to the search it describes: gone once Transacties is left or searches something else. */
+        if (this.searchedFrom() !== null && (location.view !== 'bank' || location.tab !== 'movements' || location.q !== this.searchedQuery)) this.searchedFrom.set(null);
         section = here;
       });
     });
@@ -931,13 +933,19 @@ export class FinanceState {
       else this.inspect.set(target);
       return;
     }
+    /*
+     * line= wins the inspector and cost= (only ever on Facturen & kosten)
+     * comes back with the next address change (the location effect), so
+     * anything else first takes them off the address; Back to a transaction
+     * pushes line= again (above).
+     */
     const company = location.view === 'costs' && location.tab === 'company';
     if (target.kind === 'cost' && company) {
-      if (location.cost !== target.id) this.go({ cost: target.id });
+      if (location.cost !== target.id || location.line) this.go({ cost: target.id, line: null });
       else this.inspect.set(target);
       return;
     }
-    if (company && location.cost) this.go({ cost: null });
+    if (location.cost || location.line) this.go({ cost: null, line: null });
     this.inspect.set(target);
   }
 
@@ -2217,8 +2225,10 @@ export class FinanceState {
   readonly linking = signal<number | null>(null);
   /** "Betalingen zonder transactie" as a sheet over Transacties. */
   readonly unbankedOpen = signal(false);
-  /** "Gezocht vanuit: {party} · {description}" over Transacties after "Transactie zoeken". */
+  /** "Gezocht vanuit: {party} · {description}" over Transacties after "Transactie zoeken"; it goes with that search (the location effect). */
   readonly searchedFrom = signal<string | null>(null);
+  /** The amount "Transactie zoeken" put in the search: the chip stays while Transacties still searches it ("Ruimer zoeken" keeps it). */
+  private searchedQuery: string | null = null;
   /** "Boeken als…" on this line. */
   readonly bookAsLine = signal<BankStatementLine | null>(null);
   /** "{k} exacte suggesties koppelen". */
@@ -2370,6 +2380,7 @@ export class FinanceState {
     const amount = Math.abs(round2(payment.amountEur)).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const account = payment.account ? this.canonicalAccount(payment.account) : '';
     this.searchedFrom.set([payment.party, payment.description].filter(Boolean).join(' · ') || null);
+    this.searchedQuery = amount;
     this.unbankedOpen.set(false);
     this.go({ view: 'bank', tab: 'movements', dir: payment.incoming ? 'in' : 'out', link: '', q: amount,
       from: addDays(payment.paidOn, -5), to: addDays(payment.paidOn, 5), account: account && this.bankLedger().accounts.some((row) => row.account === account && !row.archived) ? account : '' }, 'push');

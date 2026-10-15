@@ -155,7 +155,7 @@ function harness() {
       throw new Error(`Unexpected service injection: ${String(token)}`);
     },
     bankAccountKey: bankExports.bankAccountKey, receiptLocalParts, receiptRequest,
-    paymentLocalDay, paymentMomentLabel, crypto: globalThis.crypto, escapeHtml,
+    paymentLocalDay, paymentMomentLabel, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
@@ -739,6 +739,26 @@ test('Enter opens the transaction (its detail); O opens the paid sales invoice o
   assert.equal(panel.handle('open-linked'), true);
   await new Promise((done) => setTimeout(done, 0));
   assert.deepEqual(opened, [{ kind: 'line', id: 1 }, { kind: 'invoice', id: 88 }]);
+});
+
+test('with a transaction in the detail, J / K step the detail and C / U act on the transaction shown, not on the list focus', () => {
+  // Review 2026-10-16: the detail's J button moved line= but the keys still read the row clicked first.
+  const { panel, state } = harness();
+  const gone: any[] = []; let shown: number | null = 2;
+  Object.assign(state, { location: () => ({ line: shown, link: '' }), go: (patch: any) => { gone.push(patch); shown = patch.line ?? shown; } });
+  const booked: BankStatementLine[] = []; state.bookAsLine = { set: (row: BankStatementLine) => booked.push(row) } as any;
+  state.bankStatements.set([movement(1, -10), movement(2, -20), movement(3, -30)]);
+  panel.focusId.set(3);
+  assert.deepEqual(Array.from(panel.visibleLines(), (line) => line.id), [3, 2, 1]);
+  assert.equal(panel.handle('book-as'), true);
+  assert.equal(booked[0].id, 2, '"Boeken als…" for the transaction in the detail');
+  assert.equal(panel.handle('down'), true);
+  assert.deepEqual(gone.map((patch) => patch.line), [1], 'J steps the detail from the transaction it shows');
+  assert.equal(panel.focusId(), 1);
+  assert.equal(panel.handle('up'), true); assert.equal(gone.at(-1).line, 2);
+  shown = null; panel.focusId.set(3);
+  assert.equal(panel.handle('book-as'), true); assert.equal(booked[1].id, 3, 'without a detail the focused row');
+  assert.equal(panel.handle('down'), true); assert.equal(gone.length, 2, 'the arrows move the focus only');
 });
 
 test('an explicitly unlinked imported row ignores stale cost-payment cache and misleading markers', () => {

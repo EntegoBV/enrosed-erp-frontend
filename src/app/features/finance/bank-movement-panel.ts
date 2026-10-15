@@ -1251,17 +1251,24 @@ export class BankMovementPanel {
    */
   handle(command: string): boolean {
     const rows = this.visibleLines();
-    const index = rows.findIndex(row => row.id === this.focusId());
-    const row = index >= 0 ? rows[index] : null;
+    /* With a transaction in the detail, J / K step the detail and S / C / U / O / L act on the transaction it shows, not on the list's focus. */
+    const shownId = this.state.location().line;
+    const shown = shownId != null ? this.state.bankStatements().find(line => line.id === shownId) ?? null : null;
+    const shownIndex = shown ? rows.findIndex(row => row.id === shown.id) : -1;
+    const focusIndex = rows.findIndex(row => row.id === this.focusId());
+    const focused = focusIndex >= 0 ? rows[focusIndex] : null;
     if (command === 'up' || command === 'down') {
       if (!rows.length) return false;
+      const index = shownIndex >= 0 ? shownIndex : focusIndex;
       const next = rows[index < 0 ? (command === 'down' ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + (command === 'down' ? 1 : -1)))];
       this.focusId.set(next.id);
+      if (shownIndex >= 0 && next.id !== shownId) this.state.go({ line: next.id });
       const element = document.querySelector<HTMLElement>(`[data-key="line:${next.id}"]`);
       element?.focus({ preventScroll: true });
       element?.scrollIntoView({ block: 'nearest' });
       return true;
     }
+    const row = shown && ['split', 'book-as', 'unlink', 'open-linked', 'link'].includes(command) ? shown : focused;
     if (!row) return false;
     if (command === 'open' || command === 'split') { this.openLine(row); return true; }
     if (command === 'link') { if (this.allocated(row)) this.openLine(row); else this.runAction(row); return true; }

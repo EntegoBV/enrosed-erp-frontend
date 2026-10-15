@@ -566,6 +566,20 @@ export class TransactionDetail extends BankMovementPanel {
     const id = this.order()[pos.index + delta];
     if (id != null) this.state.go({ line: id });
   }
+  /**
+   * S, C, U, O and L while this transaction is open (CostsPage sends them
+   * here, whatever list is behind it): S opens "Splitsen", L links the best
+   * match with the switches as they stand; the rest act as on its row.
+   */
+  override handle(command: string): boolean {
+    const row = this.line();
+    if (!row) return false;
+    const open = this.status() !== 'LINKED' && this.status() !== 'BOOKED';
+    if (command === 'split' && open) { this.splitPayments(); return true; }
+    const match = this.best();
+    if (command === 'link' && match) { if (this.canLinkBest()) void this.linkBest(row, match); return true; }
+    return super.handle(command);
+  }
   /** "Splitsing aanpassen": unlink, then reopen "Bestaande betaling" with the parts selected. */
   adjustSplit(row: BankStatementLine): void {
     const keys = this.linkedPurchases().map((payment) => `purchase:${payment.id}`);

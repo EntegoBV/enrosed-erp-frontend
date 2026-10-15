@@ -52,6 +52,8 @@ import { VatReturnPanel } from './vat-return-panel';
 
 /** A quiet refresh when the page comes back after this long. */
 const STALE_MS = 5 * 60_000;
+/** The shortcuts of the open transaction (spec-bank-forecast §1.1): they act on the transaction shown, not on the list's focus. */
+const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlink', 'open-linked', 'link']);
 
 /**
  * Kosten & bank: a workspace of its own. On a desk it is a desktop app
@@ -231,6 +233,8 @@ export class CostsPage {
 
   readonly section = viewChild(FINANCE_SECTION);
   private readonly bankPanel = viewChild(BankPanel);
+  /** The open transaction (desk inspector, drawer or phone sheet): S / C / U / O / L act on it, whatever list is behind it. */
+  private readonly lineDetail = viewChild(TransactionDetail);
   /** The order of Transacties on screen, for "Transactie {i} van {n}" and J / K in the detail. */
   readonly lineOrder = computed(() => this.bankPanel()?.movementPanel()?.filteredLines().map((line) => line.id) ?? []);
 
@@ -487,7 +491,10 @@ export class CostsPage {
           else handled = false;
         }
         break;
-      default: handled = !!section?.handle(command);
+      default: {
+        const detail = this.state.inspect()?.kind === 'line' && DETAIL_COMMANDS.has(command) ? this.lineDetail() : undefined;
+        handled = detail ? detail.handle(command) : !!section?.handle(command);
+      }
     }
     if (handled) event.preventDefault();
   }
