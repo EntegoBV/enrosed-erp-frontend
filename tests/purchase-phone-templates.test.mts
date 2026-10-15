@@ -104,6 +104,29 @@ test('the editor: the product editor\'s shell over the same five panes, a save b
   assert.doesNotMatch(source, /begroot/i);
 });
 
+test('review round 1: figures and their words reach a screen reader, a keyboard and a 360px phone', async () => {
+  const view = templateOf(await read('app/features/purchasing/purchase-view.ts'));
+  const editor = templateOf(await read('app/features/purchasing/purchase-editor.ts'));
+  // A tile's aria-label replaces its content: it carries the sub line too.
+  assert.match(view, /\[attr\.aria-label\]="'Totaal geland ' \+ landedText \+ ', ' \+ landed\.sub \+ ', naar Kosten'"/);
+  assert.match(view, /\[attr\.aria-label\]="pay\.label \+ \(payText \? ' ' \+ payText : ''\) \+ \(pay\.sub \? ', ' \+ pay\.sub : ''\) \+ ', naar Betalingen'"/);
+  // A line row is a button: Enter and Space open it.
+  assert.match(editor, /role="button" tabindex="0"[^>]*\(keydown\.enter\)="lineSheet\.set\(line\.productId\)"\s*\(keydown\.space\)="\$event\.preventDefault\(\); lineSheet\.set\(line\.productId\)"/);
+  // Lading: the fill as the value, the pieces as its sub; '103% · 12.400 st' never runs past the tile.
+  assert.match(editor, /@let lading = ladingFill \? \(ladingFill\.fillPercent \| num: 0\) \+ '%' : ladingPieces;/);
+  assert.match(editor, /@if \(ladingFill\) \{ <span class="mpo-tile__sub">\{\{ ladingPieces \}\}<\/span> \}/);
+  assert.match(editor, /'Lading ' \+ lading \+ \(ladingFill \? ', ' \+ ladingPieces : ''\)/);
+  // A display product's landed total is per display, with the per-piece figure beside it, in both sheets.
+  for (const [name, template, line] of [['view', view, 'entry.line'], ['editor', editor, 'line']] as const) {
+    assert.ok(template.includes("perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal'"), name);
+    assert.ok(template.includes(`@if (perPiece() && display) { <span class="ios-cell__meta">{{ ${line}.landedUnitEur / display | eurUp: 3 }} /stuk</span> }`), name);
+  }
+  assert.ok(!editor.includes("{{ perPiece() && display ? ' /display' : '' }}"), 'the label says display; the value has no unit tail');
+  // The glance's row title wraps rather than cutting the difference.
+  assert.match(templateOf(await read('app/features/purchasing/purchase-nacalc-glance.ts')), /<span class="ios-cell__title mpo-wrap">Verschil met afspraak<\/span>/);
+  assert.match(await read('styles/purchase-phone.scss'), /\.mpo-tile__label\{display:-webkit-box;[^}]*-webkit-line-clamp:2\}/);
+});
+
 test('the kit gains the stacked segments and the nav its [hero] slot', async () => {
   assert.match(await read('styles/workspace-kit.scss'), /\.ios-seg\.ios-seg--stacked\{/);
   const nav = await read('app/shared/ios-nav.ts');

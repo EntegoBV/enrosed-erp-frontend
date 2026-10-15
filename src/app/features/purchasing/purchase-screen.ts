@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, afterEveryRender, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, afterEveryRender, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -37,7 +37,7 @@ import type { PhoneTab } from './purchase-phone-model';
     } @else if (mode() === 'edit') {
       <app-purchase-editor [id]="id()" [tab]="tab()" />
     } @else {
-      <app-purchase-view [id]="id()" [tab]="tab()" />
+      <app-purchase-view [id]="id()" [tab]="tab()" [section]="section()" />
     }
   `,
 })
@@ -85,6 +85,7 @@ export class PurchaseScreen {
     effect(() => this.runHandedStep());
     effect(() => this.returnFromStep());
     afterEveryRender(() => this.focusRequestedSection());
+    inject(DestroyRef).onDestroy(() => this.dropUntakenStep());
   }
 
   private openRequestedSection(): void {
@@ -236,10 +237,18 @@ export class PurchaseScreen {
     untracked(() => void this.router.navigate(['/purchasing', id], { queryParams: { section: 'ledger' }, replaceUrl: true }));
   }
 
-  /** A step confirmed on the read view: run it once the editor has the order and its payments, once. */
+  /**
+   * A step confirmed on the read view: run it once the editor has the order
+   * and its payments, once. The editor counts as handed from the view as
+   * soon as the handoff waits for it, so back leads to the view (history is
+   * [list, edit]) even while the order or its payments are still loading.
+   */
   private runHandedStep(): void {
     const editor = this.editor();
     const id = this.id();
+    if (editor && !untracked(() => editor.handedFromView()) && untracked(() => this.stepHandoff.waiting(Number(id), Date.now()))) {
+      untracked(() => editor.handedFromView.set(true));
+    }
     if (!editor || editor.view()?.order.id !== Number(id) || editor.payments() === null
       || editor.paymentStateLoading() || editor.paymentStateError()) return;
     untracked(() => {
@@ -247,9 +256,18 @@ export class PurchaseScreen {
       if (!handoff) return;
       const started = editor.runStep(handoff.step, handoff.tracking);
       this.returnAfterStep.set({ editor, id, tab: handoff.tab });
-      if (started) editor.handedFromView.set(true);
-      else this.ui.toast('De container staat al verder; er is niets gewijzigd.');
+      editor.handedFromView.set(true);
+      if (!started) this.ui.toast('De container staat al verder; er is niets gewijzigd.');
     });
+  }
+
+  /**
+   * The edit screen goes away (back, another route) before its editor took
+   * the read view's step: the step is dropped, so a later editor for the same
+   * order never runs it without asking again.
+   */
+  private dropUntakenStep(): void {
+    if (this.mode() === 'edit') this.stepHandoff.discard(Number(this.id()));
   }
 
   /**

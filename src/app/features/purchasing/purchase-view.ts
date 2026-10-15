@@ -109,7 +109,7 @@ import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop
             <div class="mpo-tiles">
               @let landed = landedTileOf(data);
               @let landedText = landed.valueEur | eur;
-              <button class="mpo-tile mpo-tile--landed" type="button" [attr.aria-label]="'Totaal geland ' + landedText + ', naar Kosten'"
+              <button class="mpo-tile mpo-tile--landed" type="button" [attr.aria-label]="'Totaal geland ' + landedText + ', ' + landed.sub + ', naar Kosten'"
                       (click)="scrollToCard('purchase-costs-section', 'purchase-costs-section')">
                 <span class="mpo-tile__label">Totaal geland</span>
                 <span class="mpo-tile__value" [class.mpo-tile__value--long]="landedText.length > 10">{{ landedText }}</span>
@@ -119,7 +119,7 @@ import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop
               @let pay = payTile();
               @let payText = pay.valueEur === null ? '' : (pay.valueEur | eur);
               <button class="mpo-tile" type="button" [class.mpo-tile--warn]="pay.tone === 'warn'" [class.mpo-tile--ok]="pay.tone === 'ok'" [class.mpo-tile--neutral]="pay.tone === 'neutral'"
-                      [attr.aria-label]="pay.label + (payText ? ' ' + payText : '') + ', naar Betalingen'"
+                      [attr.aria-label]="pay.label + (payText ? ' ' + payText : '') + (pay.sub ? ', ' + pay.sub : '') + ', naar Betalingen'"
                       (click)="scrollToCard('purchase-payments-section', 'purchase-payments-section')">
                 <span class="mpo-tile__label">{{ pay.label }}</span>
                 @if (payText) { <span class="mpo-tile__value" [class.mpo-tile__value--long]="payText.length > 10">{{ payText }}</span> }
@@ -628,8 +628,9 @@ import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop
                   <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(entry.line.extraRevenueEur, entry.line) | eurUp: decimals() }}</span></span></div>
                 }
-                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? 'Geland per stuk' : 'Geland totaal' }}</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (entry.line.landedUnitEur | eurUp: 3) : (entry.line.totalEur | eur) }}</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (entry.line.landedUnitEur | eurUp: 3) : (entry.line.totalEur | eur) }}</span>
+                    @if (perPiece() && display) { <span class="ios-cell__meta">{{ entry.line.landedUnitEur / display | eurUp: 3 }} /stuk</span> }</span></div>
               </div>
             </section>
             <div class="ios-group">
@@ -737,6 +738,8 @@ export class PurchaseView {
 
   /** ?tab= from the route; Overzicht when absent. */
   readonly tab = input<string>();
+  /** ?section= from the route (PurchaseScreen acts on it): a deep link's card wins over ?tab=. */
+  readonly section = input<string>();
   readonly activeTab = computed<PhoneTab>(() => tabOfSection(this.workspaceSection()));
   readonly tabOptions = computed<SegmentOption[]>(() => {
     const data = this.view();
@@ -1138,15 +1141,26 @@ export class PurchaseView {
   constructor() {
     /* Carton notices speak the product's unit ("1 bowl meer"); "stuks" until the list arrives. */
     void this.catalog.unitNames().catch(() => undefined);
-    effect(() => {
-      const orderId = Number(this.id());
-      if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
-    });
-    /* A route with another ?tab= (Back onto this screen) opens that tab. */
-    effect(() => {
-      const tab = parseTab(this.tab());
-      untracked(() => this.workspaceSection.set(rootSectionOf(tab)));
-    });
+    effect(() => this.loadRouteOrder());
+    effect(() => this.applyRouteTab());
+  }
+
+  /** The order the route names. Only the id reloads it: whatever load() reads (the tab) stays untracked. */
+  private loadRouteOrder(): void {
+    const orderId = Number(this.id());
+    if (Number.isInteger(orderId) && orderId > 0) untracked(() => void this.load(orderId));
+  }
+
+  /**
+   * A route with another ?tab= (Back onto this screen) opens that tab. A deep
+   * link's ?section= in the same navigation wins: PurchaseScreen opens its
+   * card, and this effect runs after the screen's.
+   */
+  private applyRouteTab(): void {
+    const tab = parseTab(this.tab());
+    const section = this.section();
+    if (section === 'payments' || section === 'ledger' || section === 'payment-result') return;
+    untracked(() => this.workspaceSection.set(rootSectionOf(tab)));
   }
 
   readonly stockLocations = signal<StockLocation[]>([]);

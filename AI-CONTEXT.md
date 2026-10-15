@@ -1239,7 +1239,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
   bar stuck starts the new pane at its top under it; tapping the open tab
   goes back to its top (`purchase-phone-scroll.ts`). Warn dots: Producten
   after damage/shortage/reports on a received order, Betalingen when
-  something is due now.
+  something is due now; the dot is aria-hidden, so the tab's aria-label
+  says it. A `?tab=` change never reloads the read view (`load` runs
+  untracked), and a `?section=` deep link in the same navigation wins over
+  `?tab=` (the view gets `section` and skips its tab effect).
 - Read view: card with status pill, route, name (`containerName`), PO ·
   supplier, creator, the four progress steps with their days (verwacht
   arrival), tiles Totaal geland and the payment headline; Overzicht has the
@@ -1262,20 +1265,25 @@ and on copies. Without the blocks (older backend) every screen is as before.
   container staat al verder; er is niets gewijzigd.') and `returnFromStep`
   goes back to the view once `stepFlowBusy` clears (history stays [list,
   view]); 'Track & trace invullen' (`keepAfterStep`) and a refused save
-  keep the editor. KOSTPRIJZEN runs `applyCostsNow` (apply()'s work, its
+  keep the editor. The editor counts as `handedFromView` as soon as a
+  handoff waits for it (back then leads to the view, even while loading);
+  an edit screen that goes away before its editor took the step discards
+  it, so a later editor never runs it unasked. KOSTPRIJZEN runs `applyCostsNow` (apply()'s work, its
   question asked by the sheet); `readNextStep` skips it when a newer
   container's costs sit on the products. Merge rule with the cost-history
   apply sheet: whichever lands second makes the KOSTPRIJZEN step open that
   sheet in the editor and drops `applyCostsNow` and its `stepConfirm` row.
-- Editor: header 'Container bewerken' + pill + tiles Lading and Totaal
-  geland, 'Acties ⌄' (next status, Voorraad bijboeken, Kostprijzen (opnieuw)
+- Editor: header 'Container bewerken' + pill + tiles Lading (fill %, the
+  pieces below) and Totaal geland, 'Acties ⌄' (next status, Voorraad bijboeken, Kostprijzen (opnieuw)
   toepassen, offer/advance invoices, copy, PDF, Status terugzetten… on
   Besteld/Vertrokken, Calculatie verwijderen); the save bar says 'Niet
   opgeslagen' with what changed (`unsavedSummary`) and Opslaan, or 'Alles
   opgeslagen' with the next step. Rows with the field on the right
   (`mpo-field-row`, `--stack` for long fields, `--pick` for pop-up selects),
-  line rows with an inline count and swipe to Verwijder, sheets Regel
-  bewerken and Verdeelsleutels. Status terugzetten lives under Acties on the
+  line rows with an inline count and swipe to Verwijder (a row states the
+  order's own price 'afgesproken', else the product card's 'kaartprijs' in
+  the card's currency, never the converted, levelled goods figure), sheets
+  Regel bewerken and Verdeelsleutels. Status terugzetten lives under Acties on the
   phone and in the desk's Afronden tab only, never on the read view.
 - Known limit: the Nacalculatie component still says 'Kostprijzen toepassen
   bij Afronden ›' (the desk keeps its Afronden tab); on the phone it opens

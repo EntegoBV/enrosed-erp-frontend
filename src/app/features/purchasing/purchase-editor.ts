@@ -106,7 +106,7 @@ import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
-  STEP_BUTTON, actionsMenu, editNextStep, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  STEP_BUTTON, actionsMenu, editNextStep, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -177,14 +177,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             <h1 id="mpo-edit-title" class="mpo-summary__title" [title]="containerName(data.order)">{{ containerName(data.order) }}</h1>
             <p class="mpo-summary__sub" [title]="data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName()">{{ data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName() }}</p>
             <div class="mpo-tiles">
+              <!-- The fill as the value, the pieces below it: an overfull container's '103% · 12.400 st' never runs past the tile. -->
               @let ladingFill = isDdp() ? null : data.costing.containerFill;
-              @let lading = (ladingFill ? (ladingFill.fillPercent | num: 0) + '% · ' : '') + (data.costing.totals.pieces | num) + ' st';
-              <button class="mpo-tile mpo-tile--neutral" type="button" [attr.aria-label]="'Lading ' + lading + ', naar Producten'" (click)="jumpToSection('purchase-products-section')">
+              @let ladingPieces = (data.costing.totals.pieces | num) + ' st';
+              @let lading = ladingFill ? (ladingFill.fillPercent | num: 0) + '%' : ladingPieces;
+              <button class="mpo-tile mpo-tile--neutral" type="button" [attr.aria-label]="'Lading ' + lading + (ladingFill ? ', ' + ladingPieces : '') + ', naar Producten'"
+                      (click)="jumpToSection('purchase-products-section')">
                 <span class="mpo-tile__label">Lading</span>
                 <span class="mpo-tile__value" [class.mpo-tile__value--long]="lading.length > 10"
                       [class.fill-pct--full]="!!ladingFill && ladingFill.overflowCbm <= 0 && ladingFill.fillPercent >= 97"
                       [class.fill-pct--over]="!!ladingFill && ladingFill.fillPercent > 100 && ladingFill.fillPercent <= 105"
                       [class.fill-pct--danger]="!!ladingFill && ladingFill.fillPercent > 105">{{ lading }}</span>
+                @if (ladingFill) { <span class="mpo-tile__sub">{{ ladingPieces }}</span> }
                 <app-icon class="mpo-tile__chev" name="chevron-right" [size]="14" />
               </button>
               @let landed = data.costing.totals.totalEur | eur;
@@ -451,14 +455,15 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                   @else { <span class="ios-tile tone-grey mpo-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span> }
                                 </span>
                                 <span class="ios-cell__body mpo-line__body" role="button" tabindex="0" [attr.aria-label]="'Regel ' + line.productName + ' bewerken'"
-                                      (click)="lineSheet.set(line.productId)" (keydown.enter)="lineSheet.set(line.productId)">
+                                      (click)="lineSheet.set(line.productId)" (keydown.enter)="lineSheet.set(line.productId)"
+                                      (keydown.space)="$event.preventDefault(); lineSheet.set(line.productId)">
                                   <span class="ios-cell__title mpo-wrap">{{ line.productName }}</span>
                                   @if (productVariantLabel(line.productId); as variant) {
                                     <span class="ios-cell__sub mpo-wrap">@if (productColour(line.productId)) { <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
                                       [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i> }{{ variant }}</span>
                                   }
                                   <span class="ios-cell__sub mpo-wrap">{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
-                                  <span class="ios-cell__sub mpo-wrap"><span class="mpo-nowrap">{{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ exwShown(line) }} afgesproken</span> · <span class="mpo-nowrap">{{ line.landedUnitEur | eurUp: 3 }}{{ display ? ' /display' : '' }} geland</span></span>
+                                  <span class="ios-cell__sub mpo-wrap">@if (rowPriceText(line.productId); as price) {<span class="mpo-nowrap">{{ price }}</span> · }<span class="mpo-nowrap">{{ line.landedUnitEur | eurUp: 3 }}{{ display ? ' /display' : '' }} geland</span></span>
                                 </span>
                                 <span class="mpo-line__qty">
                                   <input class="mpo-input mpo-qty" [id]="'qty-' + line.productId" type="number" min="0" step="1" inputmode="numeric"
@@ -919,8 +924,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? 'per stuk' : 'hele regel' }}</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></span></div>
                 }
-                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? 'Geland per stuk' : 'Geland totaal' }}</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}{{ perPiece() && display ? ' /display' : '' }}</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span>
+                    @if (perPiece() && display) { <span class="ios-cell__meta">{{ line.landedUnitEur / display | eurUp: 3 }} /stuk</span> }</span></div>
               </div>
             </section>
             <div class="ios-group">
@@ -1494,11 +1500,11 @@ export class PurchaseEditor {
     else if (!value) field.value = this.view()?.order.number ?? '';
   }
 
-  /** The agreed price a line row shows: the order's own, else the calculated one the field shows as its placeholder. */
-  exwShown(line: { productId: number; quantity: number; goodsUsd: number }): string {
-    const own = this.orderLine(line.productId)?.exwPrice;
-    const value = own ?? (line.quantity ? line.goodsUsd / line.quantity : null);
-    return value == null ? '—' : new NumUpPipe().transform(value, 3);
+  /** The price a line row states: the order's own 'afgesproken', else the product card's 'kaartprijs' in its own currency. */
+  rowPriceText(productId: number): string | null {
+    const pipe = new NumUpPipe();
+    return linePriceText({ price: this.orderLine(productId)?.exwPrice, currency: this.effectiveExwCurrency(productId) },
+      this.productCardPrice(productId), (value) => pipe.transform(value, 3));
   }
 
   productSku(productId: number): string | null {

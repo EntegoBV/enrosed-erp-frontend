@@ -21,4 +21,14 @@ export class PurchaseStepHandoff {
     if (taken || (pending && !takeHandoff(pending, pending.orderId, now))) this.pending = null;
     return taken;
   }
+
+  /** A fresh handoff waits for this order; it stays waiting. */
+  waiting(orderId: number, now: number): boolean {
+    return takeHandoff(this.pending, orderId, now) !== null;
+  }
+
+  /** The editor this order's handoff was meant for went away before it ran the step: the step never runs later. */
+  discard(orderId: number): void {
+    if (this.pending?.orderId === orderId) this.pending = null;
+  }
 }

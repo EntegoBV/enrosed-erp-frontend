@@ -7,7 +7,7 @@ import type { LedgerSummary, PayeeLedger } from '../src/app/features/purchasing/
 import type { NacalcHeadline } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import {
-  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, nacalcGlance, parseTab,
+  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance, parseTab,
   paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
   type ActionsMenuState, type PhoneStep, type PhoneTab, type StepHandoff,
@@ -56,6 +56,14 @@ test('the segments keep the order, labels and icons, with a warn dot only where 
   assert.deepEqual(both.map((s) => s.dot), [null, 'warn', null, 'warn', null]);
   assert.equal(both.some((s) => s.count != null), false, 'no counts');
   assert.deepEqual(tabSegments({ producten: false, betalingen: true }).map((s) => s.dot), [null, null, null, 'warn', null]);
+});
+
+test('a warn dot is aria-hidden, so the tab says what it means; a tab without one keeps its plain name', () => {
+  assert.equal(tabSegments({ producten: false, betalingen: false }).some((s) => 'ariaLabel' in s), false);
+  assert.deepEqual(seen(tabSegments({ producten: true, betalingen: true })).map((s) => s.ariaLabel ?? null),
+    [null, 'Producten, afwijkingen bij ontvangst', null, 'Betalingen, er is nu iets te betalen', null]);
+  assert.deepEqual(tabSegments({ producten: false, betalingen: true }).map((s) => s.ariaLabel ?? null),
+    [null, null, null, 'Betalingen, er is nu iets te betalen', null]);
 });
 
 type DotView = Pick<PurchaseOrderView, 'order' | 'receiptReports' | 'receiptVariance'>;
@@ -148,6 +156,18 @@ test('the review tile follows the headline rule: without agreement, overpaid or 
   assert.deepEqual(review(null, 7), { label: 'Nakijken', valueEur: 7, sub: '', tone: 'warn' });
 });
 
+test('a line row states the agreed price, else the product card price in its own currency, never the converted costing figure', () => {
+  const format = (value: number) => value.toFixed(3).replace('.', ',');
+  // A CNY card at ¥70 on a line without its own price: never '¥ 9,800 afgesproken' (70 × 0.14 USD under the yuan sign).
+  assert.equal(seen(linePriceText({ price: null, currency: 'CNY' }, { amount: 70, currency: 'CNY' }, format)), '¥ 70,000 kaartprijs');
+  assert.equal(linePriceText({ price: undefined, currency: 'USD' }, { amount: 12.5, currency: 'EUR' }, format), '€ 12,500 kaartprijs',
+    'the card keeps its own currency');
+  assert.equal(linePriceText({ price: 2, currency: 'USD' }, { amount: 3, currency: 'USD' }, format), '$ 2,000 afgesproken', 'the order\'s own price wins');
+  assert.equal(linePriceText({ price: 0, currency: 'CNY' }, { amount: 3, currency: 'USD' }, format), '¥ 0,000 afgesproken', 'zero is a price');
+  assert.equal(linePriceText({ price: 64.5, currency: 'EUR' }, null, format), '€ 64,500 afgesproken');
+  assert.equal(linePriceText({ price: null, currency: 'USD' }, null, format), null, 'neither: the row leaves the price out');
+});
+
 test('Totaal geland says what the road adds on top of the goods', () => {
   assert.deepEqual(seen(landedTile({ totalEur: 50_333, goodsEur: 42_655 }, false)), { valueEur: 50_333, sub: '+ 18 % op de goederen' });
   assert.deepEqual(landedTile({ totalEur: 50_333, goodsEur: 50_333 }, true), { valueEur: 50_333, sub: 'DDP · transport en rechten in de prijs' });
@@ -168,14 +188,20 @@ test('the Nacalculatie glance: concept, zero, cheaper, dearer, a review and a mi
   const zero = seen(nacalcGlance(head()));
   assert.deepEqual([zero.concept, zero.label, zero.pill, zero.pillTone, zero.afspraakEur, plain(zero.verschilText), zero.verschilWords, zero.verschilTone, zero.sub, zero.foot],
     [false, 'Verwachte eindkost', 'Voorlopig', 'tone-warn', 49_433, '€ 0,00', 'geen verschil', 'none', '', 'Voorlopig · 3 ontvangers nog open']);
+  // The trail holds the signed amount only; the percentage leads the words below it, so 390px never cuts it.
   const cheaper = seen(nacalcGlance(head({ eindkostEur: 49_383, verschilEur: -50, verschilPct: -0.5, pill: { label: 'Afgerond', tone: 'ok' } as NacalcHeadline['pill'] })));
-  assert.deepEqual([plain(cheaper.verschilText), cheaper.verschilWords, cheaper.verschilTone, cheaper.pillTone], ['− € 50,00 (0,5 %)', 'goedkoper dan afgesproken', 'in', 'tone-ok']);
+  assert.deepEqual([plain(cheaper.verschilText), cheaper.verschilWords, cheaper.verschilTone, cheaper.pillTone], ['− € 50,00', '0,5 % goedkoper dan afgesproken', 'in', 'tone-ok']);
   const dearer = seen(nacalcGlance(head({ verschilEur: 120, verschilPct: 1.24 })));
-  assert.deepEqual([plain(dearer.verschilText), dearer.verschilWords, dearer.verschilTone], ['+ € 120,00 (1,2 %)', 'duurder dan afgesproken', 'warn']);
+  assert.deepEqual([plain(dearer.verschilText), dearer.verschilWords, dearer.verschilTone], ['+ € 120,00', '1,2 % duurder dan afgesproken', 'warn']);
+  const large = nacalcGlance(head({ eindkostEur: 112_345.67, begrootEur: 100_000, verschilEur: 12_345.67, verschilPct: 12.345 }));
+  assert.deepEqual([plain(large.verschilText), large.verschilWords], ['+ € 12.345,67', '12,3 % duurder dan afgesproken']);
   const review = seen(nacalcGlance(head({ reviewEur: 30 })));
   assert.deepEqual([plain(review.verschilWords), review.verschilTone], ['geen verschil · waarvan € 30,00 na te kijken', 'warn']);
+  const dearerReview = nacalcGlance(head({ verschilEur: 120, verschilPct: 1.24, reviewEur: 30 }));
+  assert.equal(plain(dearerReview.verschilWords), '1,2 % duurder dan afgesproken · waarvan € 30,00 na te kijken');
   const noPct = seen(nacalcGlance(head({ verschilEur: 1_250.5, verschilPct: null })));
   assert.equal(plain(noPct.verschilText), '+ € 1.250,50');
+  assert.equal(noPct.verschilWords, 'duurder dan afgesproken');
   assert.equal(nacalcGlance(head({ pill: { label: 'Open', tone: 'neutral' } as unknown as NacalcHeadline['pill'] })).pillTone, '');
 });
 
@@ -260,6 +286,17 @@ test('a handoff is taken only for its order, within thirty seconds, and only onc
   service.offer(offered);
   assert.equal(service.take(51, 1_000_000 + HANDOFF_MS + 5), null);
   assert.equal(service.take(50, 1_000_000), null, 'the stale one was cleared on the way');
+  // Waiting is a look, never a take; discard drops only this order's handoff.
+  service.offer(offered);
+  assert.equal(service.waiting(51, 1_000_100), false);
+  assert.equal(service.waiting(50, 1_000_000 + HANDOFF_MS + 1), false, 'stale');
+  assert.equal(service.waiting(50, 1_000_100), true);
+  assert.equal(service.waiting(50, 1_000_100), true, 'still waiting');
+  service.discard(51);
+  assert.equal(service.waiting(50, 1_000_100), true, 'another order\'s editor leaves it');
+  service.discard(50);
+  assert.equal(service.waiting(50, 1_000_100), false);
+  assert.equal(service.take(50, 1_000_100), null, 'a discarded step never runs');
 });
 
 test('costs count as applied when a product carries this container\'s number; a newer container supersedes', () => {

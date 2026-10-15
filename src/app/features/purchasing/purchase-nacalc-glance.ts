@@ -27,7 +27,7 @@ import { nacalcGlance, type PhonePaymentState } from './purchase-phone-model';
           @if (!g.concept) {
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Afspraak</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value">{{ g.afspraakEur | eur }}</span></span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Verschil met afspraak</span>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Verschil met afspraak</span>
               <span class="ios-cell__sub mpo-glance__words">{{ g.verschilWords }}</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong"
                 [class.wk-amount--in]="g.verschilTone === 'in'" [class.wk-amount--warn]="g.verschilTone === 'warn'">{{ g.verschilText }}</span></span></div>

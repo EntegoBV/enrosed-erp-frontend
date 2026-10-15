@@ -3,8 +3,8 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { computed, signal } from '@angular/core';
-import { stepTarget, type StepHandoff } from '../src/app/features/purchasing/purchase-phone-model.ts';
+import { computed, signal, untracked } from '@angular/core';
+import { linePriceText, parseTab, rootSectionOf, stepTarget, type StepHandoff } from '../src/app/features/purchasing/purchase-phone-model.ts';
 
 /*
  * The phone's confirmed next step: the read view hands it over in memory, the
@@ -30,7 +30,8 @@ function isolatedClass(text: string, file: string, className: string, names: Rea
 /* ---- PurchaseScreen: take, run, return ---------------------------------- */
 
 const screenSource = await readFile(new URL('../src/app/features/purchasing/purchase-screen.ts', import.meta.url), 'utf8');
-const screenJs = isolatedClass(screenSource, 'purchase-screen.ts', 'PurchaseScreen', new Set(['runHandedStep', 'returnFromStep', 'returnAfterStep']));
+const screenJs = isolatedClass(screenSource, 'purchase-screen.ts', 'PurchaseScreen',
+  new Set(['runHandedStep', 'returnFromStep', 'returnAfterStep', 'dropUntakenStep']));
 
 function editorStub(started = true) {
   const calls: unknown[][] = [];
@@ -50,13 +51,18 @@ function screenHarness(handoff: StepHandoff | null, editor = editorStub()) {
   vm.runInNewContext(screenJs, { exports, signal, untracked: (callback: () => void) => callback() });
   const screen = new exports['PurchaseScreen']();
   Object.assign(screen, {
-    id: signal('50'), editor: signal<ReturnType<typeof editorStub> | null>(editor),
-    stepHandoff: { take: (orderId: number, now: number) => {
-      calls.push(['take', orderId, typeof now]);
-      const taken = pending && pending.orderId === orderId ? pending : null;
-      if (taken) pending = null;
-      return taken;
-    } },
+    id: signal('50'), mode: signal<'view' | 'edit'>('edit'), editor: signal<ReturnType<typeof editorStub> | null>(editor),
+    stepHandoff: {
+      take: (orderId: number, now: number) => {
+        calls.push(['take', orderId, typeof now]);
+        const taken = pending && pending.orderId === orderId ? pending : null;
+        if (taken) pending = null;
+        return taken;
+      },
+      waiting: (orderId: number) => !!pending && pending.orderId === orderId,
+      discard: (orderId: number) => { calls.push(['discard', orderId]); if (pending?.orderId === orderId) pending = null; },
+      get pending() { return pending; },
+    },
     ui: { toast: (text: string) => calls.push(['toast', text]) },
     router: { navigate: (commands: unknown[], extras: unknown) => { calls.push(['navigate', structuredClone(commands), structuredClone(extras)]); return Promise.resolve(true); } },
   });
@@ -129,7 +135,7 @@ test('a step that no longer applies says so and goes back to the view', () => {
   const state = screenHarness(handoff({ tab: 'betalingen' }), editorStub(false));
   state.run();
   assert.deepEqual(state.calls.filter((call) => call[0] === 'toast'), [['toast', 'De container staat al verder; er is niets gewijzigd.']]);
-  assert.equal(state.editor.handedFromView(), false);
+  assert.equal(state.editor.handedFromView(), true, 'history is [list, edit] all the same: back leads to the view');
   state.run();
   assert.deepEqual(state.calls.filter((call) => call[0] === 'navigate'), [['navigate', ['/purchasing', '50'], { queryParams: { tab: 'betalingen' }, replaceUrl: true }]]);
 });
@@ -139,6 +145,104 @@ test('without a handoff the editor is left alone', () => {
   state.run();
   assert.deepEqual(state.editor.calls, []);
   assert.deepEqual(state.calls.map((call) => call[0]), ['take']);
+  assert.equal(state.editor.handedFromView(), false, 'back stays one history entry back');
+});
+
+test('an editor a handoff waits for counts as handed at once, so back leads to the view while it still loads', () => {
+  const state = screenHarness(handoff());
+  state.editor.view.set(null);
+  state.run();
+  assert.equal(state.editor.handedFromView(), true);
+  assert.deepEqual(state.editor.calls, [], 'the step waits for the order and its payments');
+  assert.equal(state.screen.stepHandoff.pending?.step, 'VERTROKKEN', 'still waiting, not taken');
+  const other = screenHarness(handoff({ orderId: 49 }));
+  other.editor.view.set(null);
+  other.run();
+  assert.equal(other.editor.handedFromView(), false, 'another order\'s handoff');
+});
+
+test('leaving the edit screen before its editor took the step drops it: a later editor never runs it unasked', () => {
+  // The finding's path: back from the loading editor, reopen the same container, Bewerken within 30 s.
+  const left = screenHarness(handoff());
+  left.editor.view.set(null);
+  left.run();
+  left.screen.dropUntakenStep();
+  assert.deepEqual(left.calls.filter((call) => call[0] === 'discard'), [['discard', 50]]);
+  const later = screenHarness(left.screen.stepHandoff.pending);
+  later.run();
+  assert.deepEqual(later.editor.calls, [], 'no PUT status from a step the user walked away from');
+  assert.equal(later.editor.handedFromView(), false);
+  // The read view's own screen goes away right after it offered the step: that one keeps it.
+  const view = screenHarness(handoff());
+  view.screen.mode.set('view');
+  view.screen.dropUntakenStep();
+  assert.equal(view.calls.some((call) => call[0] === 'discard'), false);
+  assert.equal(view.screen.stepHandoff.pending?.orderId, 50);
+  assert.match(screenSource, /inject\(DestroyRef\)\.onDestroy\(\(\) => this\.dropUntakenStep\(\)\)/, 'registered on destroy');
+});
+
+/* ---- PurchaseView: the route's order and tab ------------------------------ */
+
+const viewSource = await readFile(new URL('../src/app/features/purchasing/purchase-view.ts', import.meta.url), 'utf8');
+const viewJs = isolatedClass(viewSource, 'purchase-view.ts', 'PurchaseView', new Set(['loadRouteOrder', 'applyRouteTab']));
+
+function viewHarness(route: { id: string; tab?: string; section?: string }) {
+  const loads: number[] = [];
+  const exports: Record<string, new () => any> = {};
+  vm.runInNewContext(viewJs, { exports, untracked, parseTab, rootSectionOf });
+  const view = new exports['PurchaseView']();
+  Object.assign(view, {
+    id: signal(route.id), tab: signal<string | undefined>(route.tab), section: signal<string | undefined>(route.section),
+    workspaceSection: signal('purchase-overview'),
+    // As the real load: it reads the tab before its first await.
+    load: (id: number) => { loads.push(id); view.workspaceSection.set(rootSectionOf(parseTab(view.tab()))); return Promise.resolve(); },
+  });
+  // A computed tracks what an effect would: it reruns only when something it read changes.
+  const loadEffect = computed(() => { view.loadRouteOrder(); return loads.length; });
+  const tabEffect = computed(() => { view.applyRouteTab(); return view.workspaceSection(); });
+  return { view, loads, loadEffect, tabEffect };
+}
+
+test('a ?tab= change keeps the order on screen; only another id loads again', () => {
+  const state = viewHarness({ id: '21', tab: 'producten' });
+  state.loadEffect();
+  assert.deepEqual(state.loads, [21]);
+  state.view.tab.set(undefined);
+  state.view.section.set('payments');
+  state.loadEffect();
+  assert.deepEqual(state.loads, [21], 'no skeleton, no refetch of the order, payments and documents');
+  state.view.id.set('22');
+  state.loadEffect();
+  assert.deepEqual(state.loads, [21, 22]);
+});
+
+test('a deep link and a tab change in one navigation: the deep link\'s card stays open', () => {
+  // /purchasing/21?tab=producten → 'Factuurtermijnen openen ›' → /purchasing/21?section=payments.
+  const state = viewHarness({ id: '21', tab: 'producten' });
+  state.tabEffect();
+  assert.equal(state.view.workspaceSection(), 'purchase-products-section');
+  state.view.tab.set(undefined);
+  state.view.section.set('payments');
+  state.view.workspaceSection.set('purchase-payments-section'); // PurchaseScreen.openRequestedSection, which runs first
+  state.tabEffect();
+  assert.equal(state.view.workspaceSection(), 'purchase-payments-section');
+  for (const section of ['ledger', 'payment-result']) {
+    state.view.section.set(section);
+    state.view.tab.set('dossier');
+    state.view.workspaceSection.set('purchase-costs-section');
+    state.tabEffect();
+    assert.equal(state.view.workspaceSection(), 'purchase-costs-section', section);
+  }
+  // Back onto an entry without a deep link opens its tab again.
+  state.view.section.set(undefined);
+  state.view.tab.set('kosten');
+  state.tabEffect();
+  assert.equal(state.view.workspaceSection(), 'purchase-costs-section');
+  state.view.tab.set(undefined);
+  state.tabEffect();
+  assert.equal(state.view.workspaceSection(), 'purchase-overview');
+  assert.match(viewSource, /effect\(\(\) => this\.loadRouteOrder\(\)\);\n\s*effect\(\(\) => this\.applyRouteTab\(\)\);/);
+  assert.match(screenSource, /<app-purchase-view \[id\]="id\(\)" \[tab\]="tab\(\)" \[section\]="section\(\)" \/>/);
 });
 
 /* ---- PurchaseEditor.runStep and stepFlowBusy ----------------------------- */
@@ -245,4 +349,31 @@ test('stepFlowBusy follows every save, sheet, celebration and payment of a step'
     editor[name].set(before);
     assert.equal(editor.stepFlowBusy(), false, name);
   }
+});
+
+/* ---- PurchaseEditor: the line row's price ------------------------------- */
+
+test('an editor line row without its own price states the card price in the card\'s currency, never goodsUsd per piece', () => {
+  const js = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['rowPriceText', 'effectiveExwCurrency', 'productCardPrice', 'orderLine']));
+  const exports: Record<string, new () => any> = {};
+  class NumUpPipe { transform(value: number, decimals: number) { return value.toFixed(decimals).replace('.', ','); } }
+  vm.runInNewContext(js, { exports, linePriceText, NumUpPipe });
+  const editor = new exports['PurchaseEditor']();
+  const lines: Record<number, { productId: number; exwPrice: number | null; exwCurrency: string | null }> = {
+    1: { productId: 1, exwPrice: null, exwCurrency: null },
+    2: { productId: 2, exwPrice: 64, exwCurrency: 'CNY' },
+    3: { productId: 3, exwPrice: null, exwCurrency: null },
+  };
+  Object.assign(editor, {
+    // A CNY card at ¥70; the costing's goodsUsd per piece would be 9.8 (70 × 0.14).
+    products: () => [{ id: 1, exwPrice: 70, exwCurrency: 'CNY' }, { id: 2, exwPrice: 70, exwCurrency: 'CNY' }, { id: 3, exwPrice: null, exwCurrency: 'EUR' }],
+    view: () => ({ order: { lines: Object.values(lines) } }),
+  });
+  assert.equal(editor.rowPriceText(1), '¥ 70,000 kaartprijs');
+  assert.equal(editor.rowPriceText(2), '¥ 64,000 afgesproken');
+  assert.equal(editor.rowPriceText(3), null);
+  const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(editorSource)?.[1] ?? '';
+  const row = template.slice(template.indexOf('class="ios-cell mpo-line"'), template.indexOf('class="mpo-line__qty"'));
+  assert.match(row, /rowPriceText\(line\.productId\)/);
+  assert.doesNotMatch(row, /goodsUsd|afgesproken|exwShown/, 'the row never derives a price from the costing');
 });

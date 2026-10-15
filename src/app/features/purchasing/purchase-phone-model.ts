@@ -4,7 +4,7 @@
  * the editor's save bar and Acties menu. Pure and node-tested: type-only
  * imports; the euro formatting is its own, the same as the payment menus.
  */
-import type { Payee, Product, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
+import type { Currency, Payee, Product, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
 import type { LedgerSummary } from './purchase-payment-ledger';
 import type { NacalcHeadline } from './purchase-nacalc-metrics';
 import type { ContextMenuItem } from '../../shared/context-menu';
@@ -77,12 +77,21 @@ export function rootSectionOf(tab: PhoneTab): string {
   return ROOT_SECTION[tab];
 }
 
+/** What a tab's warn dot means, for a screen reader: the dot itself is aria-hidden. */
+const DOT_WORDS: Readonly<Partial<Record<PhoneTab, string>>> = {
+  producten: 'afwijkingen bij ontvangst',
+  betalingen: 'er is nu iets te betalen',
+};
+
 /** The five segments, with a warn dot where something waits: never a count. */
 export function tabSegments(dots: { producten: boolean; betalingen: boolean }): SegmentOption[] {
-  return PHONE_TABS.map((tab) => ({
-    id: tab.id, label: tab.label, icon: tab.icon,
-    dot: (tab.id === 'producten' && dots.producten) || (tab.id === 'betalingen' && dots.betalingen) ? 'warn' : null,
-  }));
+  return PHONE_TABS.map((tab) => {
+    const dot = (tab.id === 'producten' && dots.producten) || (tab.id === 'betalingen' && dots.betalingen);
+    return {
+      id: tab.id, label: tab.label, icon: tab.icon, dot: dot ? 'warn' : null,
+      ...(dot ? { ariaLabel: `${tab.label}, ${DOT_WORDS[tab.id]}` } : {}),
+    };
+  });
 }
 
 /** A received container with damage, a shortage or a report on it. */
@@ -174,6 +183,22 @@ export function landedTile(totals: { totalEur: number; goodsEur: number }, ddp: 
   return { valueEur: totals.totalEur, sub };
 }
 
+/* ---- the editor's line rows ------------------------------------------- */
+
+const CURRENCY_SIGN: Readonly<Record<Currency, string>> = { USD: '$', CNY: '¥', EUR: '€' };
+
+/**
+ * The purchase price a line row states: the order's own agreed price, else
+ * the product card's price in the card's own currency, named as such; null
+ * without either. Never the costing's goods figure, which is converted to
+ * USD and levelled across a family's variants.
+ */
+export function linePriceText(own: { price: number | null | undefined; currency: Currency },
+  card: { amount: number; currency: Currency } | null, format: (value: number) => string): string | null {
+  if (own.price != null) return `${CURRENCY_SIGN[own.currency]} ${format(own.price)} afgesproken`;
+  return card ? `${CURRENCY_SIGN[card.currency]} ${format(card.amount)} kaartprijs` : null;
+}
+
 export interface NacalcGlance {
   concept: boolean; label: string; pill: string; pillTone: string; eindkostEur: number; afspraakEur: number;
   verschilText: string; verschilWords: string; verschilTone: 'in' | 'warn' | 'none'; sub: string; foot: string;
@@ -183,7 +208,7 @@ export interface NacalcGlance {
 export function nacalcGlance(head: NacalcHeadline): NacalcGlance {
   const concept = head.kind === 'concept';
   const verschil = head.verschilEur;
-  const pct = head.verschilPct === null || !verschil ? '' : ` (${ONE_DECIMAL.format(Math.abs(head.verschilPct))} %)`;
+  const pct = head.verschilPct === null || !verschil ? '' : `${ONE_DECIMAL.format(Math.abs(head.verschilPct))} % `;
   const review = head.reviewEur > 0 ? ` · waarvan ${eur(head.reviewEur)} na te kijken` : '';
   const tone = head.pill.tone;
   return {
@@ -193,8 +218,9 @@ export function nacalcGlance(head: NacalcHeadline): NacalcGlance {
     pillTone: tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : '',
     eindkostEur: head.eindkostEur,
     afspraakEur: head.begrootEur,
-    verschilText: verschil ? `${verschil > 0 ? '+ ' : '− '}${eur(Math.abs(verschil))}${pct}` : eur(0),
-    verschilWords: (verschil < 0 ? 'goedkoper dan afgesproken' : verschil > 0 ? 'duurder dan afgesproken' : 'geen verschil') + review,
+    // Only the signed amount stands in the row's trail; the percentage leads the words below, so a phone never cuts it.
+    verschilText: verschil ? `${verschil > 0 ? '+ ' : '− '}${eur(Math.abs(verschil))}` : eur(0),
+    verschilWords: pct + (verschil < 0 ? 'goedkoper dan afgesproken' : verschil > 0 ? 'duurder dan afgesproken' : 'geen verschil') + review,
     verschilTone: verschil < 0 ? 'in' : verschil > 0 || head.reviewEur > 0 ? 'warn' : 'none',
     sub: concept ? 'volgens de calculatie · nog niets betaald' : '',
     foot: concept
