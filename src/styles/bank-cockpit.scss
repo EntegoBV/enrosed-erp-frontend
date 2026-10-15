@@ -39,10 +39,11 @@
    * option carries the raised look itself instead of the sliding indicator, and "Transacties ophalen" keeps its icon
    * (aria-label and title keep the words). That keeps, at 1440 px wide (a 1152 px bar), the title, the "Te koppelen"
    * count and the whole search placeholder "Bedrag, naam of mededeling" (the kit's 240 px search, at every width from
-   * 900). Narrower, the title steps aside (the sidebar marks the place), then the count steps aside for its dot (the
-   * sidebar's Transacties badge carries the same number); below 900 "Inkomend" and "Uitgaand" read "In" and "Uit"
-   * and the search folds to its icon (the kit). The widths are the bar's content box (its 20 px paddings left out).
-   * Measured: nothing slides under the tools from 680 to 1440.
+   * 900). Narrower, the title steps aside (the sidebar marks the place); the "Te koppelen" count stays at every width
+   * (a key number). Only from 940 to 970, where "Nieuw" still carries its words beside the 240 px search, the options
+   * narrow to 7 px sides and the count stands without its dot (16 px to spare with a three-digit count); below 900
+   * "Inkomend" and "Uitgaand" read "In" and "Uit" and the search folds to its icon (the kit). The widths are the bar's
+   * content box (its 20 px paddings left out). Measured: nothing slides under the tools from 680 to 1440.
    */
   @container wk-bar (max-width: 1399.98px) {
     .fin-toolbar--tx .fin-toolbar__label { display: none; }
@@ -54,7 +55,10 @@
   @container wk-bar (max-width: 1119.98px) {
     .fin-toolbar--tx .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
-  @container wk-bar (max-width: 969.98px) { .fin-toolbar--tx .wk-seg__count { display: none; } }
+  @container wk-bar (min-width: 940px) and (max-width: 969.98px) {
+    .fin-toolbar--tx .wk-seg .wk-seg__opt { padding: 0 7px; }
+    .fin-toolbar--tx .wk-seg__opt:has(.wk-seg__count) .wk-seg__dot { display: none; }
+  }
   /* The clear button is hidden while the placeholder shows: its 28 px go to "Bedrag, naam of mededeling" (whole at 240 px). */
   @container wk-bar (min-width: 900px) { .fin-toolbar--tx .wk-search input:placeholder-shown { padding-right: 8px; } }
 

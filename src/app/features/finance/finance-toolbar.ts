@@ -19,8 +19,10 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
  * refresh and the 'Nieuw' split on the right. With costs selected it turns
  * into the selection toolbar with the bulk actions, the way a mail app does.
  * It measures itself: below 980px the segments lose their counts and take
- * their short labels and 'Nieuw' shows only its '+'; below 900px the title
- * steps aside (the sidebar marks the section), so nothing slides under the tools.
+ * their short labels and 'Nieuw' shows only its '+' (Transacties keeps its
+ * "Te koppelen" count at every width; its options shorten below 900 by a
+ * container query); below 900px the title steps aside (the sidebar marks the
+ * section), so nothing slides under the tools.
  */
 @Component({
   selector: 'app-finance-toolbar',
