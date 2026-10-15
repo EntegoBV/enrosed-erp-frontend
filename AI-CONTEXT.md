@@ -104,17 +104,22 @@ the workspaces. All CSS lives in one global partial,
 ## Workspaces
 
 ### Kosten & bank
-- Six sections, one question each (finance-sections.ts, same order in the
-  sidebar, the phone tab bar and the shortcuts 1-6): Overzicht, Te betalen
-  (Alles/Kosten/Containers/Vaste kosten; buckets Nu / Binnenkort 30 dagen /
-  Later), Te ontvangen (Openstaand/Ontvangen), Bank (Rekeningen/Bewegingen),
-  Uitgaven (Bedrijfskosten/Containers/Vaste kosten) and Analyse (phone: ⋯).
+- Five sections, one question each (finance-sections.ts `FINANCE_SECTIONS`,
+  the `view`): Bank (`accounts` = the cockpit, `movements` = Transacties),
+  Te betalen (Alles/Kosten/Containers/Vaste kosten; buckets Nu / Binnenkort
+  30 dagen / Later), Te ontvangen (Openstaand/Ontvangen), Inkoop & kosten
+  (Facturen & kosten/Containers/Vaste kosten/Aan wie & beurzen) and
+  Rapportage (phone: ⋯). The sidebar, the phone tab bar and the keys 1-6 go
+  by `FINANCE_NAV`, where Bank and Transacties are two places. The Overzicht
+  is gone since 2026-10-16: see "Bank cockpit and Kasprognose" below.
 - The address is the state: finance-url.ts alone parses and writes it
   (`view`, `tab`, period/from/to, q, cat, status, channel, docs, container,
-  cost, scope, account, dir, link, kind, purpose, year; defaults omitted).
-  Filters replace the history entry, drill-ins push. Legacy view=recurring,
-  view=bank and ?container=<id> keep working; ?cost=<id> inspects a cost.
-- Money basis: cash figures (Overzicht, Te betalen, Te ontvangen, Bank) are
+  cost, scope, account, dir, link, kind, purpose, year, quarter, regime,
+  line, weeks; defaults omitted). Filters replace the history entry,
+  drill-ins push. Legacy view=overview (now Bank), view=recurring,
+  view=bank and ?container=<id> keep working; ?cost=<id> inspects a cost,
+  ?line=<id> a bank transaction (on every section).
+- Money basis: cash figures (Bank, Te betalen, Te ontvangen) are
   incl. btw and may add container EUR, labelled 'verwacht' when forecast;
   cost figures (Uitgaven › Bedrijfskosten, Analyse) are excl. btw with the
   btw beside them and never include container cash.
@@ -1485,10 +1490,11 @@ screens show them, collect decisions with a reason and build the writes.
 
 ## Account-led banking and manual invoices (2026-10-13)
 
-- Bank opens the account list; selecting an account opens its register, balance,
-  filters and management. The old `tab=movements&account=...` URLs still work.
-  Never merge accounts silently: an unscoped link chooses the sole active account
-  or shows account selection while preserving the work-queue filters.
+- Superseded on 2026-10-16 (see "Bank cockpit and Kasprognose"): Bank opens
+  the cockpit, and Transacties without `account` is one stream over every
+  active account (each row names its account, the Saldo column is the total
+  of the active accounts). The old `tab=movements&account=...` URLs still
+  open one account's register.
 - Allocation starts with local documents (costs, sales invoices, purchase terms),
   then existing recorded payments, then missing documents (manual or Odoo/Peppol).
   Purchase terms are expected budgets, not invented invoices; original currency
@@ -1536,3 +1542,312 @@ screens show them, collect decisions with a reason and build the writes.
   and bank-link status. The original matching guard remains unchanged.
 - Bank transaction rows omit the repetitive Odoo badge; source metadata, sync
   controls and the detailed provenance remain available.
+
+## Bank cockpit and Kasprognose (2026-10-16)
+
+Kosten & bank now opens on the bank, every bank transaction has its own
+detail, and Analyses gained a cash forecast (Kasprognose). Both pages draw
+the expected balance per day from one pure module. Owner choices: Bank
+replaces the Overzicht and keeps every figure it had; the forecast lives in
+Analyses, with only a short Kaslijn in Kosten & bank; a payment follows the
+bank when it is linked, and the screen says what changes first. Backend
+counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
+
+### Places and addresses
+- `FINANCE_NAV` (finance-sections.ts) drives the desk sidebar, the phone tab
+  bar (Bank · Transacties · Betalen · Ontvangen · Kosten; Rapportage behind
+  `⋯`) and the keys 1-6. Bank = `view=bank` (`tab=accounts`, the default, so
+  `/costs` is the cockpit); Transacties = `view=bank&tab=movements`, with
+  `account=<key>` for one account. `financeNavOf` picks the active place.
+  Counts (`FinanceShell`): `bank` = accounts without a reading plus stale
+  readings, `transactions` = lines to link on active accounts (both
+  directions, booked lines excluded). Under Transacties the desk sidebar
+  lists every active account (`FinanceShell.accounts`: balance, "{n} d oud",
+  its own count), also with a single account.
+- `line=<id>` (finance-url.ts) opens a transaction on every section: the desk
+  inspector (424 px for a line, other kinds keep 360) or the phone sheet. It
+  wins the inspector over `cost`/`container`; closing removes it; links and
+  toast actions push it, so Back returns. `weeks=4|13` is the Kaslijn's span
+  (8 is the default and never written).
+- Keys `s` Splitsen…, `c` Boeken als…, `u` Koppeling losmaken, `o` gekoppeld
+  document openen work on Transacties and the detail only; `Enter` opens the
+  detail, `l` links the best match.
+- Analyses: `/analyses` redirects to `/analyses/cash`; Kasprognose is the
+  first tab, Website reads "Bezoekers", the desk sidebar shows a "nieuw" pill
+  until the end of 2026, Meer lists it first.
+
+### Bank cockpit (`bank-cockpit.ts`, `bank-panel.ts`)
+- Desk: the total tile "Op de bank" (all active accounts, "Vandaag · Deze
+  week"), one card per active account (`bank-account-card.ts`: IBAN, 30-day
+  sparkline, source, "{n} te koppelen", "telt niet mee in de kasprognose",
+  `⋯` with the four account actions plus "Telt mee in de kasprognose"), the
+  Geld strip (the old Overzicht tiles Te betalen / Te ontvangen / Uitgegeven
+  deze maand / Btw dit kwartaal with every sub-line), the Kaslijn, and
+  Transacties beside the rail. The rail starts with "Vooruitblik" (the
+  equation, `vooruitblik-equation.ts`; moved there so the first transactions
+  stay above the 1440×900 fold), then "Vraagt aandacht" and "Laatst geboekt".
+  The phone Bank tab shows the same as hero, account carousel, 2×2 widgets,
+  Kaslijn card, "Te koppelen", attention, recent and a Rapportage cell.
+- `OdooSyncState` (odoo-sync-state.ts, provided by CostsPage beside
+  FinanceState) owns the Odoo import: status, `syncBank()`, the result toast
+  ("Import afgerond · {n} nieuw · …", warn with "Details" when incomplete) and
+  `attention`, which adds the warn link "Odoo: controle nodig ›". The
+  toolbar button, the phone `⋯`, the status bar and the Odoo-verbinding
+  sheet all read it, so an import still refreshes the bank after the sheet
+  closed.
+
+### Transacties and the transaction detail
+- One stream over every active account (newest first), day groups with
+  "Saldo einde dag", a Saldo column (`FinanceState.running` =
+  `runningBalances`: the total of the active accounts, or the account's own
+  with `account=`; "Saldo onbekend vóór {dd/mm}" before a manual account's
+  first reading). Status chips Gekoppeld / the booked label / Suggestie /
+  Te koppelen, "In € · Uit €" without internal transfers, a first row
+  "Betalingen zonder transactie ({n})" whose "Transactie zoeken" prefills
+  dir, ±5 days and the amount.
+- `bank-suggestions.ts` (pure, node-tested; the caller hands in
+  `bankAllocationTargets` per line): candidates are documents, terms and
+  free payments in the line's direction; score amount ±€0,02 +40, PO /
+  invoice / reference in the text +30, name +20, still open +10, existing
+  payment within 10 days +10. Suggestie from 70 with a matching amount;
+  exact = one text signal and no other candidate at 50 or more (only exact
+  ones go into "{k} exacte suggesties koppelen", `bank-sheets.ts`, linked one
+  by one in booking order, stopping at the first refusal). An outgoing line
+  whose counterparty went to costs of one category at least twice in a year
+  suggests "Kost · {categorie} · zoals de vorige {n} keer" (never exact).
+- `transaction-detail.ts` is a BankMovementPanel, so the old allocation
+  state machine and its tests carry over. By status: Suggestie (Beste match
+  with "Wat verandert", the old preview under "Details", other candidates,
+  Splitsen, Boeken als), Te koppelen (the three steps: Zoek in ENROSED,
+  Bestaande betaling, Nog te registreren), Gekoppeld (every part on the line,
+  invoice, container, proof, history, "Koppeling losmaken"), Geboekt als
+  (label, other leg or quarter, "Ongedaan maken").
+- "Wat verandert" (`bank-change-preview.ts`, pure, node-tested) compares
+  "Betaling nu" with "Na koppelen" (Bedrag, Betaald/Ontvangen op, Rekening,
+  In USD/CNY and Koers for foreign purchase payments, Bewijs). The switch
+  "Betaling volgt de bank" is on by default: the payment takes the line's
+  amount, day and account, the button reads "Koppelen en aanpassen" and the
+  toast "Bedrag en datum gevolgd van de transactie: … (was …)" with
+  "Ongedaan maken" (unlinks and deletes payments the link created; it never
+  restores old amounts). A smaller line on a purchase payment carves its
+  part out ("Rest … blijft open als tweede transactie"); a larger line offers
+  "Bedrag aanpassen" or "Rest als inspectie via leverancier"; with follow off
+  only a purchase payment under a larger line (and no other payment on it)
+  may keep its amount and book the difference as Bankkosten or
+  Koersverschil. The recorded amount is always
+  shown as "Betaling nu", so a registration mistake stays visible before it
+  follows the bank.
+- `bank-link-actions.ts` holds one call per target kind; `followPurchaseLink`
+  is the only caller of round 2's bank-part follow (R2-2).
+- "Boeken als…" (`book-as-sheet.ts`): Bankkosten and Rente are costs (the
+  cost registration, prefilled); Interne overboeking (the other leg: another
+  active account, exact opposite amount, within 5 days, or "Andere kant staat
+  niet in Enrosed"), Btw (quarter, stored `YYYY-Qn`), Lening, Kapitaal, Privé
+  and Andere (note required) are classifications on the line itself
+  (`classify`/`unclassify`); a booked line counts as allocated and leaves
+  every "Te koppelen". `bank-markers.ts` never guesses a booked line as a
+  payment.
+- "Verdelen over containers" (`container-split.ts`) and Inkoop's "Deze
+  transactie dekt ook andere containers" (`purchase-also-containers.ts`): one
+  transfer for a term of several containers, one POST `/purchase-payment`
+  whose parts each carry their own `purchaseOrderId`; the line reads
+  "Inkoop · 3 containers (PO-…, …)", each container's payments "zelfde
+  transactie als PO-… en PO-…".
+- Op de bank (Inkoop & kosten › Containers and the container inspector):
+  strip "Betaald, op de bank" / "Betaald, nog niet op de bank", column "{k}
+  van {n} betalingen · {m} zonder transactie" or "aanbetaling verwacht {d}",
+  payment nodes link to their line ("op de bank · {account} · {d} ›") and
+  show "aangepast aan de bank (was € x op dd/mm)" from the payment's
+  `bankAdjustedFromEur`/`bankAdjustedFromOn`. The cost inspector and Te
+  ontvangen › Ontvangen link payments to their line too.
+- Cost sheet "Vervalt op" (`dueDate`): sent in the POST of a new cost and
+  through PUT `/costs/{id}/due-date` after the PUT of an existing one (the
+  server owns the field); empty = the cost date counts in the Kaslijn.
+
+### Kaslijn (`kaslijn-card.ts`)
+- `FinanceState.kaslijn` = `buildCashForecast(cashInput(), { scenario: false,
+  pastDays: 28, horizonEnd: today + weeks × 7, … })`: the counted accounts 4
+  weeks back and 4 / 8 / 13 weeks ahead, base items only (no sales), buffer,
+  "Laagste" and "Verwacht" markers, three facts (lowest point, under the
+  buffer, largest outflow) and "Per dag in Kasprognose ›". Kosten & bank
+  loads complete statements (`statementsFrom: null`) and no products.
+- Double-count banner: an unlinked line that likely already paid an open
+  item ("{€} telt mogelijk dubbel …") with Koppelen (`line=`, the item as
+  Beste match) and "Niet deze" (`cash-dismissed.ts`, per browser in
+  `localStorage['enrosed.cash.dismissed']`; nothing else touches that key).
+- The buffer ("buffer € x · aanpassen") is one company amount
+  (PUT `/api/cash-forecast/settings`), shared with the Kasprognose.
+- "Telt mee in de kasprognose" (account `⋯`, PUT
+  `/api/bank-accounts/{key}/cash`): an account that does not count stays on
+  Bank and in every bank total, but leaves the Kaslijn and Kasprognose start.
+
+### Kasprognose (Analyses, `features/analyses/cash-*.ts`)
+- `CashSources` (cash-sources.ts, scoped to AnalysesPage, loaded lazily the
+  first time Kasprognose or Overzicht shows) fetches the bank first, then
+  statements from `statementsFromOf` = the first day of the month three
+  months back, earlier when an active account's latest reading is older
+  (`banking.list(from)`), recurring costs, purchase payments, advance
+  schedules, company, stored choices and settings; purchase orders, sales,
+  products and costs come from the page's own load. Each source fails on
+  its own, keeps its last good data and names itself in "Niet alle actuele
+  cijfers konden laden: …". `CashState` (cash-state.ts) holds the address,
+  the forecast (`pastDays: 42`), the PO sheet and the order-date hint; the
+  Overzicht card ("Op de bank … · laagste stand … · Kasprognose ›") shares
+  it, so nothing loads twice. `cash-view.ts` builds every text and grouping
+  (node-tested through a transpile harness).
+- Address (`cash-url.ts`, pure): `h` 3/6/12 (default 6), `po` (the open
+  container sheet; opening and closing push, everything else replaces),
+  link defaults `prijs` opslag|stuk|lijst|historisch, `opslag`, `stuk`,
+  `basis` ext|enr, `weken`, `verloop` vlak|seizoen, `termijn`,
+  `voorraad=0`, `uit` (comma list facturen, offertes, partner, containers,
+  kosten, btw) and `open=1`. Invalid values fall back to the default. The
+  buffer is never in the link; "Link kopiëren" copies the address.
+- Desk: header with horizon, Buffer and Link kopiëren; krap banner ("Toon
+  die dagen" filters the register); five figures; "Saldo per dag" with pins,
+  the month strip (fixed 104 px columns in their own scroller) and "Per
+  maand ›"; "Komende bewegingen" (past bank rows, the black today bar, month
+  groups, filters, CSV); the scenario column (360 px, sticky; the container
+  sheet replaces it while `po` is set); "Wat telt mee" and "Aansluiting met
+  de Vooruitblik" with data-quality lines. Below 1060 px of page (a container
+  query on `.cf`) the scenario stays beside the chart and scrolls in the
+  chart's height, and the register takes the full width; a container sheet
+  opened from the register is scrolled into view after the router's scroll to
+  the top (only scenario sales rows open the sheet; other container rows go
+  to `/costs?container=`). Under 760 px everything stacks. Texts wrap;
+  nothing ends in "…".
+- Phone: one `ios-page` with its own nav and the Analyses tabs as chips (the
+  page renders neither its header nor its tab row then): hero, banner,
+  compact chart (short marker labels "Laagste € x", "Onder nul · 3 jan"),
+  four figures, scenario cells with their sheets, result, order-date card,
+  movements (8, then "Alle {n} bewegingen") and cells for Per maand, Wat telt
+  mee and Aansluiting.
+- Container sheet (`cash-po-sheet.ts`): net and "Terugverdiend op …", the
+  lane chart, Betaald / Nog uit / Terug, price (Opslag % chips, € / stuk,
+  Lijst, Historisch), cost basis, weeks, payment days, season, "In het
+  scenario", Vertrek (BESTELD) or "Bestellen op" (CONCEPT), the money flow
+  with "Lijkt al betaald" (Koppelen / Niet deze) and per product. Every
+  control writes the order's full `PurchaseOrderForecastWrite`
+  (PUT `/api/purchase-order-forecasts/{id}`) 600 ms after the last change,
+  last write wins, a refusal shows inline and reverts; "Terug naar
+  standaard" deletes the row. A stored choice wins over the link default,
+  which wins over history.
+
+### `cash-forecast.ts` and its input (shared by both pages)
+- Both pages compute every forecast figure as
+  `buildCashForecast(cashForecastInput(sources), options)`; nothing else
+  computes one. `cash-forecast.ts` is pure and node-tested (only `import
+  type`, local helpers, integer cents inside, euros out).
+  `cash-forecast-input.ts` builds the input from the API data with the
+  helpers Kosten & bank already trusts (reconciledBank, containerPayables,
+  receivableTotals, vatReturn, …) and exports `vooruitblikOf`, the one
+  Vooruitblik formula (`FinanceState.outlook` uses it), so Bank, Kaslijn and
+  Kasprognose never disagree. Its test (tests/cash-forecast-input.test.mts)
+  is a transpile harness that rewrites the imports of the modules it pulls
+  in: a new runtime import there breaks it.
+- `statementsFrom` (Analyses only): movements before it are dropped, an
+  account's opening is the balance before its first kept movement, day ends
+  before it are null; older unlinked lines stay in `bankLines` for the
+  double-count check. An older server ignores `?from=`; the builder
+  truncates itself.
+- Start = Σ current balance of active accounts that count and have a
+  reading or a line; any of them without a balance → relative mode
+  (differences from today, no buffer or krap). Constants: buffer € 10.000,
+  transit 38 d, lead time 35 d, inspection 7 d before departure, logistics
+  2 d after arrival, slow band +28 d, krap runs merge within 3 days,
+  likely-paid window 90 d, pins from € 5.000 (4 largest groups).
+- Date rules (a date before today becomes today with " · nu"):
+
+  | Source | Day | Certainty |
+  |---|---|---|
+  | open cost | `dueDate`, else the cost date | Vast / Verwacht |
+  | recurring cost | each occurrence (domiciliëring noted) | Vast |
+  | container term ORDERED | today (CONCEPT: the order day) | Vast (Scenario) |
+  | term SHIPPED / FREIGHT | departure: shipped, stored `expectedShipOn`, ETA − transit, or order day + lead time | that rule's |
+  | term ARRIVED | arrival: received, ETA, or departure + transit | that rule's |
+  | logistics / inspection / other streams | arrival + 2 d / departure − 7 d / arrival | that rule's |
+  | import VAT (BE customs, not deferred, not already a cost) | arrival | that rule's |
+  | open invoice | due date + the customer's usual delay (mean of ≥ 2 paid invoices) | Vast / Geschat |
+  | partner advance row | its due date | Vast |
+  | accepted quote | delivery (week) + payment terms; prepay today; split p % today, rest at delivery | Geschat |
+  | open quote (off by default) | valid until + 30 d, value × conversion % | Geschat |
+  | VAT return | the 25th after the quarter (§ below) | Vast / Geschat |
+  | scenario sales | sale day + payment days, weekend → Monday | Scenario |
+
+- `likelyPaid`: an open container, cost, invoice or advance item and an
+  unlinked, unbooked line of the same sign within € 0,02 and 90 days, backed
+  by the order / invoice / reference in the bank text (beats) or the party's
+  name; ties match nothing, each line once; a paid VAT return is matched to
+  a line after its quarter naming FOD Financiën or btw. A match leaves the
+  forecast (`excludedItems`) and shows as "Lijkt al betaald"; "Niet deze"
+  dismisses it.
+- VAT rows: the previous quarter (unless its deadline passed or a line is
+  booked as that quarter's VAT), the current one, then later quarters up to
+  the horizon: known return − output VAT of expected receipts + deductible
+  import VAT, a credit carried forward. Only a payable return is an item;
+  scenario sales add a "btw op scenarioverkoop" item.
+- Scenario: sources are the current stock and every non-archived BESTELD,
+  ONDERWEG or CONCEPT order (partner orders listed, locked, never selling;
+  CONCEPT off by default, its terms and import VAT scenario items when
+  included). `resolveChoice`: stored → link → history (realised markup or
+  50 %, external cost, `defaultSellWeeks` from pace 2..52, customers' mean
+  payment days or 30, season when 12 months of revenue exist). Sales start
+  7 days after arrival (stock: today), one item per week, cents spread with
+  `distributeCents`; the slow band shifts them 28 days.
+- Reconciliation (asserted by a node test): from the Vooruitblik "als alles
+  betaald en ontvangen is" through named lines (rekeningen die niet
+  meetellen, vaste kosten na 30 dagen, btw, btw bij invoer, offertes,
+  partnervoorschotten, "Na {horizon}", "Lijkt al betaald", "Uitgezet in Wat
+  telt mee") to "Wat vastligt op {horizon}", which must equal the base
+  series' last day; otherwise the page says "De aansluiting klopt niet; meld
+  dit."
+- `poSheet` and `suggestOrderDate` (the first Monday from which ordering a
+  CONCEPT keeps the lowest point above the buffer, or no lower than now).
+  A sales window that runs into another year names both years.
+- The chart (`shared/cash-chart.ts`, `app-cash-chart`; `full` on the
+  Kasprognose desk, `compact` on the phone and the Kaslijn, `lane` in the
+  container sheet): past, base, with and slow series, the slow band, buffer,
+  krap columns, pins, markers and a tooltip (touch-and-hold on a phone).
+  Marker labels take the free spot nearest their point and never cover a
+  label, a dot, a flag or a drawn line; the buffer's label goes along its
+  line after them. A change to the chart shows on both pages: check the
+  Kaslijn's compact look too.
+
+### Ownership and module rules
+- Shared (one change serves both pages, so check both): `cash-forecast.ts`,
+  `cash-forecast-input.ts`, `cash-format.ts` (nl-BE money and day words for
+  the Kasprognose), `cash-dismissed.ts`, `shared/cash-chart.ts`,
+  `core/api/cash-forecast-api.ts` and the round's additions to
+  `banking-api.ts`, `finance-api.ts` and `models.ts`.
+- Kosten & bank: the rest of `features/finance/` and
+  `shared/bank-transaction-picker.ts`; styles `bank-cockpit.scss`,
+  `finance-workspace.scss`, `finance-bank.scss`, `finance-phone.scss`.
+  Analyses: `features/analyses/cash-*.ts`, the routes and tabs; styles only
+  `styles/cash-forecast.scss`. `finance-format.ts` stays Kosten & bank's.
+- Node-tested with only `import type`: cash-forecast.ts, cash-url.ts,
+  bank-change-preview.ts, bank-suggestions.ts, finance-sections.ts,
+  finance-url.ts, finance-shortcuts.ts. cash-forecast-input.ts and
+  cash-view.ts have runtime imports and are loaded through transpile
+  harnesses.
+- The desk page `.cf` is a size container: never put an `app-sheet`, a
+  context menu or another `position: fixed` layer inside it (trap rule).
+
+### Older-server guards (a new ERP on an old backend)
+- Kosten & bank: `FinanceState.cashRound` = GET `/api/cash-forecast/settings`
+  answered (404 → null → false). False hides or disables: Boeken als beyond
+  Bankkosten and Rente (with a hint), "Telt mee in de kasprognose", "Vervalt
+  op", the buffer link, "Verdelen over containers" and Inkoop's "dekt ook
+  andere containers" ("Kan zodra de server bijgewerkt is.": an older server
+  books every part on the request's order). `followBank` and
+  `keepDifferenceAs` are sent only with `cashRound`; without it an existing
+  cost or sales payment must match within € 0,02, and a purchase payment
+  still follows through round 2's bank-part.
+- Analyses: `CashSources.cashRound` needs the stored choices and the
+  settings to have answered at least once (a 404 counts) and settings to
+  exist; `choicesFailed` (a load finished without both) blocks every write,
+  because a write is the order's full row and would wipe what is stored.
+  Without the round the container controls work on the link defaults,
+  "In het scenario" and the dates last for the visit, the sheet's foot reads
+  "Bewaren bij de container kan zodra de server bijgewerkt is." and the
+  buffer is disabled.
+- `?from=` on an older server returns every line; the payments round's own
+  guard (`paymentRoundOnServer`) is unchanged.
