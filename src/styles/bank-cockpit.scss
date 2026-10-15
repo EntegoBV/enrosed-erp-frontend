@@ -2,8 +2,9 @@
    Kosten & bank · Bank cockpit, Transacties and the transaction detail
    (spec-bank-forecast §3). Loaded from styles.scss; every rule hangs on its
    own host class under the page host (#finance-workspace), except the
-   sidebar's account rows, which the app shell renders (.wk-side), and the
-   Inkoop payment sheet's "dekt ook andere containers" (.pay-sheet__also).
+   sidebar's account rows, which the app shell renders (.wk-side). The Inkoop
+   payment sheet's "dekt ook andere containers" lives with the sheet's own
+   rules in purchase-payments.scss.
    ========================================================================== */
 
 /* ---- the sidebar's account rows under Transacties (desk only; hidden in the 680-899 rail) */
@@ -21,12 +22,6 @@
     .fin-side-account__ok { color: rgb(255 255 255 / 45%); font-size: 12px; }
   }
   .wk-side .wk-side__item.is-open:not(.active) { color: #fff; }
-}
-
-/* ---- Inkoop › Betaling noteren: "Deze transactie dekt ook andere containers" (owner addition 2026-10-15; the sheet lives outside #finance-workspace) */
-.pay-sheet__also {
-  .pay-sheet__alsoamount { flex: 0 0 190px; }
-  .pay-sheet__alsowarn { color: var(--warn); font-weight: 650; }
 }
 
 #finance-workspace {
