@@ -37,8 +37,9 @@ const editorFile = await isolate('product-editor.ts', 'ProductEditor',
   new Set(['salesUnit', 'patchPackaging', 'settleOrderStep', 'packagingOf', 'missingFields']));
 const cardFile = await isolate('product-sales-setup.ts', 'ProductSalesSetup', new Set([
   'capitalize', 'packagingOptions', 'unit', 'piece', 'kind', 'count', 'unitKey', 'step', 'choices', 'example', 'fellBack', 'sentence',
-  'reading', 'erp', 'pieceFigure', 'displayFigure', 'cartonLine', 'change', 'warning', 'convertTarget', 'convertLabel', 'familyOthers',
-  'colourName', 'attention', 'canCollapse', 'collapsed', 'patch', 'whole', 'chooseUnit', 'chooseKind', 'chooseBasis', 'chooseStep', 'restore',
+  'reading', 'erp', 'pieceFigure', 'displayFigure', 'cartonLine', 'change', 'warning', 'switched', 'switchNow', 'convertBase',
+  'convertTarget', 'convertLabel', 'familyOthers', 'colourName', 'attention', 'canCollapse', 'collapsed', 'patch', 'whole', 'chooseUnit',
+  'chooseKind', 'chooseBasis', 'fill', 'patchBasis', 'undoConvertedPrice', 'chooseStep', 'restore',
 ]));
 
 const NAMES: UnitName[] = [
@@ -63,7 +64,7 @@ function setup(packaging: Record<string, unknown>, options: { piecesPerCarton?: 
   };
   Object.assign(editor, { draft: signal(product), autoCartonPieces: signal(null), priceStrategy: signal('FIXED') });
   const cardExports: { ProductSalesSetup?: new () => any } = {};
-  vm.runInNewContext(cardFile.javascript, { exports: cardExports, computed, ...salesUnits, ...orderSteps });
+  vm.runInNewContext(cardFile.javascript, { exports: cardExports, computed, signal, ...salesUnits, ...orderSteps });
   const card = new cardExports.ProductSalesSetup!();
   const prices: number[] = [];
   Object.assign(card, {
@@ -146,7 +147,11 @@ test('a save stores what the card shows: "per display" without a display to coun
     editor.settleOrderStep();
     assert.equal(editor.draft(), before, JSON.stringify(packaging));
   }
-  assert.match(editorFile.source, /this\.settleOrderStep\(\);\s*const missing = this\.missingFields\(\);/, 'save() settles it before it sends');
+  assert.match(editorFile.source, /this\.settleOrderStep\(\);\s*const wasNew = this\.isNew\(\);/, 'save() settles it before it sends');
+  const save = editorFile.source.slice(editorFile.source.indexOf('async save(): Promise<void> {'));
+  assert.ok(save.indexOf("title: 'Prijsbasis wijzigen?'") < save.indexOf('this.settleOrderStep();'),
+    'and only after "Prijsbasis wijzigen?": Annuleren must not leave a settled step in the draft');
+  assert.ok(save.indexOf("title: 'Prijsbasis wijzigen?'") < save.indexOf('this.patchCarton('), 'nor an automatic carton count');
 });
 
 test('DIAM-D-RD: the sentence, the customer line and the other option at today\'s price', () => {
@@ -170,7 +175,7 @@ test('switching the basis of a saved product warns, offers the price only, and T
   assert.equal(plain(card.convertLabel()), 'Prijs × 12 = € 35,40 invullen');
   assert.equal(card.attention(), true, 'a phone keeps the card open while it warns');
   // The button fills the price and nothing else.
-  editor.draft.update((p: any) => ({ ...p, fixedSalesPriceEur: card.convertTarget() }));
+  card.fill(card.convertTarget());
   assert.equal(editor.draft().fixedSalesPriceEur, 35.4);
   assert.equal(card.convertTarget(), null, 'done once');
   assert.equal(editor.draft().stockQuantity, 96);
@@ -178,8 +183,55 @@ test('switching the basis of a saved product warns, offers the price only, and T
   card.restore();
   assert.equal(editor.draft().packaging.salesUnit, 'PIECE');
   assert.equal(editor.draft().fixedSalesPriceEur, 2.95, 'a converted price goes back too');
-  assert.deepEqual(prices, [2.95]);
+  assert.deepEqual(prices, [35.4, 2.95]);
   assert.equal(card.change(), null);
+});
+
+test('going back with the option or the packaging takes a converted price back, as Terugzetten does', () => {
+  const diam = setup({ kind: 'DISPLAY', piecesPerUnit: 12, unitKey: 'diamant', orderStep: 'PACKAGE' }, { piecesPerCarton: 12 });
+  diam.card.chooseBasis('DISPLAY');
+  diam.card.fill(diam.card.convertTarget());
+  assert.equal(diam.editor.draft().fixedSalesPriceEur, 35.4);
+  diam.card.chooseBasis('PIECE');
+  assert.equal(diam.card.change(), null);
+  assert.equal(diam.editor.draft().fixedSalesPriceEur, 2.95, 'not € 35,40 per diamant without a warning or a question');
+  assert.deepEqual(diam.prices, [35.4, 2.95]);
+  // The steelrozen the other way: Los, "Prijs ÷ 12 ≈ € 4,16 invullen", then Display again.
+  const roses = setup({ kind: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos', salesUnit: 'DISPLAY', orderStep: 'UNIT' }, { price: 49.95, piecesPerCarton: 4 });
+  roses.card.chooseKind('NONE');
+  assert.equal(roses.card.change().leftDisplay, true);
+  roses.card.fill(roses.card.convertTarget());
+  assert.equal(roses.editor.draft().fixedSalesPriceEur, 4.16);
+  roses.card.chooseKind('DISPLAY');
+  assert.equal(roses.card.change(), null);
+  assert.equal(roses.editor.draft().fixedSalesPriceEur, 49.95, 'not € 4,16 per display');
+  // A price typed after the switch is the user's own: it stays, and the field shows it.
+  const typed = setup({ kind: 'DISPLAY', piecesPerUnit: 12, unitKey: 'diamant' });
+  typed.card.chooseBasis('DISPLAY');
+  typed.editor.draft.update((p: any) => ({ ...p, fixedSalesPriceEur: 36 }));
+  assert.equal(typed.card.convertTarget(), null, 'typed over: the button is done');
+  typed.card.chooseBasis('PIECE');
+  assert.equal(typed.editor.draft().fixedSalesPriceEur, 36);
+  assert.deepEqual(typed.prices, []);
+});
+
+test('the convert button converts the price as it stood at the switch, and says "≈" when it is rounded', () => {
+  const { editor, card, prices } = setup({ kind: 'DISPLAY', piecesPerUnit: 12, unitKey: 'diamant', orderStep: 'PACKAGE' }, { piecesPerCarton: 12 });
+  editor.draft.update((p: any) => ({ ...p, fixedSalesPriceEur: 3.1 }));
+  card.chooseBasis('DISPLAY');
+  assert.match(plain(card.warning()), /Nu € 3,10, dus ≈ € 0,26 per diamant/);
+  assert.equal(plain(card.convertLabel()), 'Prijs × 12 = € 37,20 invullen', 'the box agrees with itself');
+  card.fill(card.convertTarget());
+  assert.equal(editor.draft().fixedSalesPriceEur, 37.2);
+  card.restore();
+  assert.equal(editor.draft().fixedSalesPriceEur, 3.1, 'Terugzetten puts the typed price back, not the saved one');
+  assert.deepEqual(prices, [37.2, 3.1]);
+  const roses = setup({ kind: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos', salesUnit: 'DISPLAY', orderStep: 'UNIT' }, { price: 49.95, piecesPerCarton: 4 });
+  roses.card.chooseBasis('PIECE');
+  assert.equal(plain(roses.card.convertLabel()), 'Prijs ÷ 12 ≈ € 4,16 invullen');
+  const bowls = setup({ kind: 'DISPLAY', piecesPerUnit: 8, salesUnit: 'DISPLAY' }, { price: 31.6 });
+  bowls.card.chooseBasis('PIECE');
+  assert.equal(plain(bowls.card.convertLabel()), 'Prijs ÷ 8 = € 3,95 invullen');
 });
 
 test('with cost + markup there is no price to fill in', () => {
@@ -217,7 +269,7 @@ test('the card is the first block of Verkoopprijs; Basisgegevens keeps one line 
   const sales = source.slice(source.indexOf('id="sales"'), source.indexOf('<fieldset class="price-method">'));
   assert.match(sales, /<app-product-sales-setup[\s\S]*\(packagingChange\)="patchPackaging\(\$event\)"[\s\S]*\(priceChange\)="setFixedSalesPrice\(\$event\)"/);
   assert.doesNotMatch(sales, /p-unit-label|p-order-step-label|Klant leest/, 'the old chips and the "Klant leest" line live in the card now');
-  const basis = source.slice(source.indexOf('<legend>Geschenkverpakking of display</legend>'), source.indexOf('id="p-packaging-barcode"'));
+  const basis = source.slice(source.indexOf('<legend>Geschenkdoosje of display</legend>'), source.indexOf('id="p-packaging-barcode"'));
   assert.match(basis, /\{\{ packagingLine\(\) \}\}/);
   assert.match(basis, /Wijzigen bij/);
   assert.doesNotMatch(basis, /<select|p-packaging-pieces|p-packaging-sales-unit|Volledig display \(set\)/);

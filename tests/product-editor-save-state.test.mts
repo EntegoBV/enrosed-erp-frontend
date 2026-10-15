@@ -42,7 +42,7 @@ function harness() {
   const copy = editor.copy.bind(editor);
   const loadStockHistory = editor.loadStockHistory.bind(editor);
   const notifications: { message: string; type?: string }[] = [];
-  const confirms: { title: string; message: string; confirmLabel?: string; onConfirm: () => void }[] = [];
+  const confirms: { title: string; message: string; confirmLabel?: string; onConfirm: () => void; onCancel?: () => void }[] = [];
   const navigations: { target: unknown; saving: boolean }[] = [];
   const initial = { id: 10, active: true, name: 'SKU', carton: { piecesPerCarton: 1, weightKg: 1 }, publicationIssues: [] };
   Object.assign(editor, {
@@ -63,7 +63,9 @@ function harness() {
     planPublishFix: () => null,
     ui: {
       toast: (message: string, type?: string) => notifications.push({ message, type }),
-      confirm: (options: { title: string; message: string; confirmLabel?: string }, onConfirm: () => void) => { confirms.push({ ...options, onConfirm }); },
+      confirm: (options: { title: string; message: string; confirmLabel?: string }, onConfirm: () => void, _secondary?: () => void, onCancel?: () => void) => {
+        confirms.push({ ...options, onConfirm, onCancel });
+      },
     },
     router: {
       navigate: async (target: unknown) => { navigations.push({ target, saving: editor.saving() }); return true; },
@@ -405,25 +407,58 @@ test('leaving a stock field during another write cannot start a second correctio
   }
 });
 
-test('a new price basis asks before it saves, and saves only on Bewaren', async () => {
-  const { editor, save, confirms } = harness();
-  let writes = 0;
-  editor.updateWithPendingPhotos = async () => { writes++; return structuredClone(editor.draft()); };
-  editor.draft.set({ ...editor.draft(), name: 'Per display now', carton: { piecesPerCarton: 12, weightKg: 1 }, stockQuantity: 96,
-    packaging: { kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'stuk' } });
+function basisSwitch() {
+  const context = harness();
+  const { editor } = context;
+  const writes: unknown[] = [];
+  const settled: string[] = [];
+  editor.updateWithPendingPhotos = async () => { writes.push(structuredClone(editor.draft())); return structuredClone(editor.draft()); };
+  editor.draft.set({ ...editor.draft(), name: 'Per display now', carton: { piecesPerCarton: 0, weightKg: null }, stockQuantity: 96,
+    packaging: { kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'stuk', orderStep: 'PACKAGE' } });
   editor.savedDraft.set({ ...editor.draft(), packaging: { ...editor.draft().packaging, salesUnit: 'PIECE' } });
   editor.priceBasisChange.set({ to: 'DISPLAY', pieces: 12, leftDisplay: false });
   editor.salesPrice.set(35.4);
-  await save();
-  assert.equal(writes, 0, 'nothing is written before the answer');
+  // What save() changes in the draft on its way to the server: the automatic carton and the order step.
+  editor.autoCartonPieces.set(12);
+  editor.autoCartonWeight.set(4.8);
+  editor.patchCarton = (changes: Record<string, unknown>) => editor.draft.update((p: any) => ({ ...p, carton: { ...p.carton, ...changes } }));
+  editor.settleOrderStep = () => { settled.push('settled'); editor.draft.update((p: any) => ({ ...p, packaging: { ...p.packaging, orderStep: 'UNIT' } })); };
+  return { ...context, writes, settled };
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('a new price basis asks before it saves, and saves only on Bewaren', async () => {
+  const { editor, save, confirms, writes, settled } = basisSwitch();
+  let finished = false;
+  const saving = save().then(() => { finished = true; });
+  await tick();
+  assert.equal(writes.length, 0, 'nothing is written before the answer');
+  assert.equal(finished, false, 'a caller that awaits save() waits for the answer');
   assert.equal(confirms.length, 1);
   assert.equal(confirms[0].title, 'Prijsbasis wijzigen?');
   assert.equal(confirms[0].confirmLabel, 'Bewaren');
   assert.match(confirms[0].message, /per display van 12 in plaats van per stuk/);
-  assert.match(confirms[0].message, /Voorraad \(96\), doosinhoud \(12\) en kostprijs worden niet omgerekend/);
-  editor.save = save;
+  assert.match(confirms[0].message, /Voorraad \(96\), doosinhoud \(12\) en kostprijs worden niet omgerekend/,
+    'the automatic carton count is named without writing it into the draft first');
   confirms[0].onConfirm();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(writes, 1, 'Bewaren saves without asking again');
+  await saving;
+  assert.equal(writes.length, 1, 'Bewaren saves without asking again, before save() resolves');
   assert.equal(confirms.length, 1);
+  assert.deepEqual(settled, ['settled']);
+  assert.equal((writes[0] as any).carton.piecesPerCarton, 12);
+  assert.equal(editor.dirty(), false, 'Copy to the colours and Opslaan on leaving read a clean editor after Bewaren');
+});
+
+test('Annuleren on the price basis question leaves the draft exactly as it was', async () => {
+  const { editor, save, confirms, writes, settled } = basisSwitch();
+  const before = structuredClone(editor.draft());
+  const saving = save();
+  await tick();
+  confirms[0].onCancel!();
+  await saving;
+  assert.equal(writes.length, 0);
+  assert.deepEqual(settled, [], 'the order step is not settled behind the question');
+  assert.deepEqual(editor.draft(), before, 'no carton patch and "klant bestelt per display" stays PACKAGE');
+  assert.equal(editor.draft().packaging.orderStep, 'PACKAGE');
+  assert.equal(editor.dirty(), true, 'a caller that awaited save() sees the work is still unsaved');
 });

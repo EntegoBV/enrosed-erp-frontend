@@ -99,8 +99,8 @@ test('read-only views say the setting in a few words', () => {
   assert.equal(orderStepLabel(product({}, null), STOLP), 'Volle omdoos (doosinhoud ontbreekt)');
   assert.equal(orderStepLabel(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Per display (8 bowls)');
   assert.equal(orderStepLabel(product({ orderStep: 'UNIT' }), STOLP), 'Per stolp');
-  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Per stolp (geschenkverpakking)');
-  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' }), STOLP), 'Per stolp (geschenkverpakking)');
+  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Per stolp (geschenkdoosje)');
+  assert.equal(orderStepLabel(product({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' }), STOLP), 'Per stolp (geschenkdoosje)');
 });
 
 test('as one phrase the setting reads "Klant bestelt per", without a doubled "per"', () => {
@@ -108,7 +108,7 @@ test('as one phrase the setting reads "Klant bestelt per", without a doubled "pe
   assert.equal(orderStepSentence(product({}, null), STOLP), 'Klant bestelt per volle omdoos (doosinhoud ontbreekt)');
   assert.equal(orderStepSentence(bowlDisplay({ orderStep: 'PACKAGE' }), BOWL), 'Klant bestelt per display (8 bowls)');
   assert.equal(orderStepSentence(product({ orderStep: 'UNIT' }), STOLP), 'Klant bestelt per stolp');
-  assert.equal(orderStepSentence(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Klant bestelt per stolp (geschenkverpakking)');
+  assert.equal(orderStepSentence(product({ kind: 'GIFT_BOX', orderStep: 'UNIT' }), STOLP), 'Klant bestelt per stolp (geschenkdoosje)');
 });
 
 test('notices name the step; a step of one needs no multiple', () => {

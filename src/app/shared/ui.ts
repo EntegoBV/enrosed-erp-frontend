@@ -200,6 +200,8 @@ export interface ConfirmRequest {
   secondaryLabel?: string;
   onConfirm: () => void;
   onSecondary?: () => void;
+  /** Annuleren, closing, or another question taking its place: for a caller that awaits the answer. */
+  onCancel?: () => void;
 }
 
 /** Escapes dynamic copy before it is embedded in a confirm dialog's rich text. */
@@ -245,7 +247,9 @@ export class Ui {
       secondaryLabel?: string },
     onConfirm: () => void,
     onSecondary?: () => void,
+    onCancel?: () => void,
   ): void {
+    const replaced = this.confirmRequest();
     this.confirmRequest.set({
       title: options.title,
       message: options.message,
@@ -254,7 +258,10 @@ export class Ui {
       secondaryLabel: options.secondaryLabel,
       onConfirm,
       onSecondary,
+      onCancel,
     });
+    /* A question that never gets its answer counts as Annuleren. */
+    replaced?.onCancel?.();
   }
 
   resolveConfirm(accepted: boolean, secondary = false): void {
@@ -263,6 +270,7 @@ export class Ui {
     if (!request) return;
     if (secondary) request.onSecondary?.();
     else if (accepted) request.onConfirm();
+    else request.onCancel?.();
   }
 }
 

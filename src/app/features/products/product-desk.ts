@@ -235,7 +235,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                   } @else { — }
                 </dd></div>
                 @if (product.packaging.kind !== 'NONE') {
-                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }}</dt><dd>
+                  <div><dt>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkdoosje' }}</dt><dd>
                     {{ size(product.packaging.dimensions) }}
                     <small>{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : 'gewicht onbekend' }}@if (product.packaging.kind === 'DISPLAY' && product.packaging.piecesPerUnit) { · {{ product.packaging.piecesPerUnit | num }} {{ salesUnit(product).piece.other }} per display }</small>
                   </dd></div>
@@ -805,7 +805,7 @@ export class ProductDesk extends ProductView {
       const pieces = packaging.piecesPerUnit ?? 0;
       return pieces > 1 ? `Display van ${pieces.toLocaleString('nl-BE')} ${this.salesUnit(product).piece.other}` : 'Display';
     }
-    return 'Geschenkverpakking';
+    return 'Geschenkdoosje';
   }
 
   /** "Reference 2" in the note is a link to that photo. */

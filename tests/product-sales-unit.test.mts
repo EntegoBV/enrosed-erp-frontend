@@ -7,7 +7,7 @@ import type { Packaging, Product, UnitName } from '../src/app/core/api/models.ts
 import * as units from '../src/app/features/products/product-sales-unit.ts';
 
 const {
-  basisOptionFigure, convertedPrice, customerReading, erpReading, otherBasisPrice, packagingSummary, priceBasisChange,
+  basisOptionFigure, convertedPrice, convertPriceLabel, customerReading, erpReading, otherBasisPrice, packagingSummary, priceBasisChange,
   priceBasisConfirmation, priceBasisWarning, productSalesUnit, rememberUnitNames, salesQuantityDetail, salesQuantityLabel,
   salesSetupSentence, salesSetupText, unitCount, unitName,
 } = units;
@@ -236,6 +236,11 @@ test('a saved product changing its price basis is named, and only the price can 
   assert.deepEqual(left, { to: 'PIECE', pieces: 12, leftDisplay: true });
   assert.equal(convertedPrice(49.95, { to: 'DISPLAY', pieces: null, leftDisplay: false }), null, 'no count, no conversion');
   assert.equal(convertedPrice(0, toDisplay), null);
+  // The button's sign follows the figures around it: "≈" when it does not split to the cent.
+  assert.equal(plain(convertPriceLabel(2.95, toDisplay)), 'Prijs × 12 = € 35,40 invullen');
+  assert.equal(plain(convertPriceLabel(49.95, toPiece)), 'Prijs ÷ 12 ≈ € 4,16 invullen');
+  assert.equal(plain(convertPriceLabel(31.6, { to: 'PIECE', pieces: 8, leftDisplay: false })), 'Prijs ÷ 8 = € 3,95 invullen');
+  assert.equal(convertPriceLabel(49.95, null), '');
 });
 
 test('the warning names the numbers that are not converted', () => {
@@ -252,9 +257,11 @@ test('the warning names the numbers that are not converted', () => {
   assert.equal(plain(priceBasisWarning(loose, priceBasisChange(roses, loose)!, 49.95, 4)),
     'Deze prijs gold per display van 12. Zonder display geldt hij per roos: nu € 49,95 per roos. Voorraad, doosinhoud (4) en kostprijs worden niet omgerekend; pas ze zelf aan.');
   assert.equal(plain(priceBasisConfirmation(saved, draft, priceBasisChange(saved, draft)!, 35.4, 12, 96)),
-    'De prijs geldt dan per display van 12 in plaats van per diamant. Het prijsveld wordt € 35,40 per display. Voorraad (96), doosinhoud (12) en kostprijs worden niet omgerekend. Bestaande offertes houden hun aantallen en bedragen.');
+    'De prijs geldt dan per display van 12 in plaats van per diamant. Het prijsveld wordt € 35,40 per display. Voorraad (96), doosinhoud (12) en kostprijs worden niet omgerekend.'
+    + ' Bestaande offertes houden hun bedragen, maar hun aantallen tellen voortaan in displays: 10 diamanten op een offerte worden 10 displays. Controleer open offertes.');
   assert.equal(plain(priceBasisConfirmation(roses, loose, priceBasisChange(roses, loose)!, 4.16, 4, 40)),
-    'De prijs geldt dan per roos in plaats van per display van 12. Het prijsveld wordt € 4,16 per roos. Voorraad (40), doosinhoud (4) en kostprijs worden niet omgerekend. Bestaande offertes houden hun aantallen en bedragen.');
+    'De prijs geldt dan per roos in plaats van per display van 12. Het prijsveld wordt € 4,16 per roos. Voorraad (40), doosinhoud (4) en kostprijs worden niet omgerekend.'
+    + ' Bestaande offertes houden hun bedragen, maar hun aantallen tellen voortaan in rozen: 10 displays op een offerte worden 10 rozen. Controleer open offertes.');
 });
 
 // product-family-shared-fields.ts imports siblings without an extension, which
@@ -272,15 +279,15 @@ vm.runInNewContext(ts.transpileModule(sharedSource, {
     './carton-capacity': { calculateGpCapacity: () => ({ value: null, source: 'UNKNOWN' }), isAutoGpCapacity: () => false },
   } as Record<string, unknown>)[id],
 });
-const { PRODUCT_FAMILY_SHARED_FIELD_GROUPS, productFamilySharedFieldValue } = sharedModule.exports;
+const { PRODUCT_FAMILY_SHARED_FIELD_GROUPS, productFamilyPriceBasisWarnings, productFamilySharedFieldValue } = sharedModule.exports;
 
 test('the family PACKAGING bundle says it carries the unit, the price basis and "klant bestelt per", and shows them', () => {
   rememberUnitNames(NAMES);
   const packaging = PRODUCT_FAMILY_SHARED_FIELD_GROUPS
     .flatMap((group: any) => group.fields).find((field: any) => field.key === 'PACKAGING');
   assert.match(packaging.summary, /eenheid/);
-  assert.match(packaging.summary, /waarvoor de prijs geldt/);
-  assert.match(packaging.summary, /klant bestelt per/);
+  assert.match(packaging.summary, /waarvoor de prijs geldt en per hoeveel de klant bestelt \(stuk, display of omdoos\);/);
+  assert.equal(packaging.label, 'Geschenkdoosje of display', 'one word for the gift box, as on the card');
   assert.equal(productFamilySharedFieldValue('PACKAGING', bowl()), 'Geen verkoopverpakking · eenheid bowl · klant bestelt per volle omdoos');
   assert.equal(productFamilySharedFieldValue('PACKAGING', product()), 'Geen verkoopverpakking · eenheid stuk · klant bestelt per volle omdoos');
   assert.equal(productFamilySharedFieldValue('PACKAGING', product({ unitKey: 'stolp', orderStep: 'UNIT' })),
@@ -294,4 +301,32 @@ test('the family PACKAGING bundle says it carries the unit, the price basis and 
     / · prijs per display · klant bestelt per display$/);
   assert.match(productFamilySharedFieldValue('PACKAGING', bowl({ kind: 'GIFT_BOX', orderStep: 'PACKAGE' })), / · klant bestelt per bowl$/);
   assert.match(productFamilySharedFieldValue('CARTON', { ...bowl(), carton: { ...bowl().carton, piecesPerCarton: 40 } }), / 40 bowls /);
+});
+
+test('copying the packaging to colours on another price basis names each one, and what is not converted', () => {
+  rememberUnitNames(NAMES);
+  const red = { ...carton(diamonds('DISPLAY'), 12), id: 45, colour: 'Red', computedSalesPriceEur: 35.4, stockQuantity: 8 } as Product;
+  const navy = { ...carton(diamonds(), 12), id: 46, colour: 'Navy', computedSalesPriceEur: 2.95, fixedSalesPriceEur: 2.95, stockQuantity: 96 } as Product;
+  const white = { ...carton(diamonds('DISPLAY'), 12), id: 47, colour: 'White', computedSalesPriceEur: 35.4, stockQuantity: 4 } as Product;
+  const target = (item: Product) => ({ productId: item.id!, name: 'Diamantroos', sku: null, colour: item.colour ?? null, colourHex: null, size: null, active: true });
+  const targets = [navy, white].map(target);
+  const all = new Set([46, 47]);
+  // Spread into this realm: the module ran in a vm context with its own Array.
+  const warnings = (fields: string[], ids = all) => [...productFamilyPriceBasisWarnings(red, targets, [red, navy, white], ids, new Set(fields))]
+    .map((warning: { productId: number; text: string }) => ({ ...warning, text: plain(warning.text) }));
+  assert.deepEqual(warnings(['PACKAGING']), [{ productId: 46,
+    text: 'Navy: € 2,95 geldt dan per display van 12 in plaats van per diamant. Prijs, voorraad (96) en doosinhoud (12) worden niet omgerekend.' }],
+    'White already sells per display of 12: nothing to say');
+  assert.deepEqual(warnings(['PACKAGING', 'SALES_PRICE', 'CARTON']).map((warning: { text: string }) => warning.text),
+    ['Navy: de prijs geldt dan per display van 12 in plaats van per diamant. Voorraad (96) wordt niet omgerekend.'],
+    'a price and carton count copied along fit the new basis');
+  assert.deepEqual(warnings(['SALES_PRICE']), [], 'without the packaging the basis stays');
+  assert.deepEqual(warnings(['PACKAGING'], new Set([47])), [], 'only ticked colours');
+  // The other way, and a display of another size on the same basis.
+  const loose = { ...red, packaging: { ...red.packaging, salesUnit: 'PIECE' } } as Product;
+  assert.match(plain(productFamilyPriceBasisWarnings(loose, targets, [loose, navy, white], all, new Set(['PACKAGING']))[0].text),
+    /^White: € 35,40 geldt dan per diamant in plaats van per display van 12\./);
+  const six = { ...white, packaging: { ...white.packaging, piecesPerUnit: 6 } } as Product;
+  assert.match(plain(productFamilyPriceBasisWarnings(red, [target(six)], [red, six], new Set([47]), new Set(['PACKAGING']))[0].text),
+    /^White: € 35,40 geldt dan per display van 12 in plaats van per display van 6\./);
 });

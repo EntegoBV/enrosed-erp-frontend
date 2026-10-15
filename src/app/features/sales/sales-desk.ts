@@ -532,6 +532,18 @@ interface JourneyStep {
                                       (click)="toggleDisc(line.productId)">{{ line.manualPercent ? '−' + (line.manualPercent | pct: 1) : 'Korting' }}</button>
                               }
                             </div>
+                          } @else {
+                            <b>{{ line.unitPrice | eur: 2 }}</b>
+                          }
+                          <!-- The word under a price names what that price is for, right
+                               under the figure; the display side of it goes on the line
+                               below, and only then the discounts, so "per display" never
+                               reads as part of "−5 % korting". -->
+                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          @if (lineOtherPrice(line); as other) {
+                            <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
+                          }
+                          @if (commercialEditable()) {
                             @if (discOpen() === line.productId) {
                               <div class="desk-price-disc">
                                 <input class="input num right desk-cell" type="number" min="0" max="100" step="0.5" inputmode="decimal" autofocus
@@ -542,17 +554,10 @@ interface JourneyStep {
                               </div>
                             }
                             @if (creditPriceHint(line.productId); as hint) { <div class="desk-line-cap danger-text" role="alert">{{ hint }}</div> }
-                          } @else {
-                            <b>{{ line.unitPrice | eur: 2 }}</b>
-                            @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
+                          } @else if (line.discountPct) {
+                            <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small>
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
-                          <!-- The word under a price names what that price is for; the
-                               display side of it goes on the line below. -->
-                          <small>per {{ lineUnit(line.productId).singular }}</small>
-                          @if (lineOtherPrice(line); as other) {
-                            <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
-                          }
                         </td>
                         <td class="c-disc num">
                           @if (commercialEditable() && !isCreditNoteDoc()) {

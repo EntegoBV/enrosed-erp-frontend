@@ -29,6 +29,12 @@ test('desk price cell: the stored price, its own unit, then the display side', (
   assert.match(cell, /@if \(lineDiscounted\(line\)\) \{, vóór korting\}/, '"vóór korting" only with a discount');
   // One unit word for both branches: the label sits outside the editable/read-only split.
   assert.equal(cell.match(/<small>per \{\{ lineUnit\(line\.productId\)\.singular \}\}<\/small>/g)?.length, 1);
+  // Right under the figure: nothing (no korting, staffel or open extra-korting field) sits between them.
+  assert.match(cell, /<b>\{\{ line\.unitPrice \| eur: 2 \}\}<\/b>\s*\}\s*(<!--[\s\S]*?-->\s*)?<small>per \{\{ lineUnit/);
+  assert.equal(cell.indexOf('<small'), word, 'the unit word is the first small line of the cell');
+  for (const after of ['desk-price-disc', 'korting</small>', 'staffel −', 'creditPriceHint']) {
+    assert.ok(cell.indexOf(after) > other, `${after} comes after the display side`);
+  }
 });
 
 test('phone: the check list multiplies the quantity by the stored price in its own unit', () => {

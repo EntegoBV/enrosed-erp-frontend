@@ -247,16 +247,16 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>Gewicht per {{ salesUnit(product).piece.one }}</span>
                   <b class="num">{{ product.dimensions.weightKg ? (product.dimensions.weightKg | kg) : '—' }}</b></div>
                 @if (product.packaging.kind !== 'NONE') {
-                  <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking' }} B × D × H</span>
+                  <div class="tile"><span>{{ product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkdoosje' }} B × D × H</span>
                     <b class="num">{{ size(product.packaging.dimensions) }}</b></div>
                   @if (product.packaging.piecesPerUnit) {
-                    <div class="tile"><span>{{ capitalize(salesUnit(product).piece.other) }} in de {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
+                    <div class="tile"><span>{{ capitalize(salesUnit(product).piece.other) }} in {{ product.packaging.kind === 'DISPLAY' ? 'de display' : 'het geschenkdoosje' }}</span>
                       <b class="num">{{ product.packaging.piecesPerUnit | num }}</b></div>
                   }
-                  <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
+                  <div class="tile"><span>Gewicht {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkdoosje' }}</span>
                     <b class="num">{{ product.packaging.dimensions.weightKg ? (product.packaging.dimensions.weightKg | kg) : '—' }}</b></div>
                   @if (product.packaging.barcode; as code) {
-                    <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}</span>
+                    <div class="tile"><span>Barcode {{ product.packaging.kind === 'DISPLAY' ? 'display' : 'geschenkdoosje' }}</span>
                       <b class="mono">
                         <button class="barcode-link" type="button" [title]="'Barcode-afbeelding (300 dpi) van ' + code"
                                 (click)="downloadBarcode(code)">

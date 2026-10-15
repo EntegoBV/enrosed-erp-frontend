@@ -316,6 +316,19 @@ export function convertedPrice(savedPrice: number | null | undefined, change: Pr
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * The convert button: "Prijs × 12 = € 35,40 invullen", or "Prijs ÷ 12 ≈ € 4,16
+ * invullen" when the price does not split to the cent (49,95 ÷ 12 = 4,1625),
+ * the same "≈" as the figures around it. Empty when there is nothing to convert.
+ */
+export function convertPriceLabel(price: number | null | undefined, change: PriceBasisChange | null): string {
+  const target = convertedPrice(price, change);
+  if (target === null || !change?.pieces) return '';
+  const raw = change.to === 'DISPLAY' ? price! * change.pieces : price! / change.pieces;
+  const sign = Math.abs(raw * 100 - Math.round(raw * 100)) < 1e-6 ? '=' : '≈';
+  return `Prijs ${change.to === 'DISPLAY' ? '×' : '÷'} ${change.pieces.toLocaleString('nl-BE')} ${sign} ${euro(target)} invullen`;
+}
+
 /** "€ 35,40", for a button or a sentence. */
 export function euroText(value: number): string {
   return euro(value);
@@ -350,7 +363,12 @@ export function priceBasisWarning(
   return `Let op: het prijsveld wordt de prijs van één ${piece.one}${priced ? ':' : ''}${now} ${tail}`;
 }
 
-/** The confirmation before a save that changes the price basis, as plain text. */
+/**
+ * The confirmation before a save that changes the price basis, as plain text.
+ * Stored amounts and quantities stay, but every ERP sales screen (and a newly
+ * made PDF) words a line from the live product: an open quote of 10 diamanten
+ * reads 10 displays afterwards, so it says so instead of reassuring.
+ */
 export function priceBasisConfirmation(
   saved: ProductWithPackaging,
   draft: ProductWithPackaging,
@@ -371,6 +389,8 @@ export function priceBasisConfirmation(
     'kostprijs',
   ];
   const list = `${counts[0].charAt(0).toLocaleUpperCase('nl-BE')}${counts[0].slice(1)}, ${counts[1]} en ${counts[2]}`;
+  const quotes = `Bestaande offertes houden hun bedragen, maar hun aantallen tellen voortaan in ${after.plural}:`
+    + ` 10 ${before.plural} op een offerte worden 10 ${after.plural}. Controleer open offertes.`;
   return `De prijs geldt dan per ${name(after, displayCount(draft))} in plaats van per ${name(before, displayCount(saved))}.${field}`
-    + ` ${list} worden niet omgerekend. Bestaande offertes houden hun aantallen en bedragen.`;
+    + ` ${list} worden niet omgerekend. ${quotes}`;
 }

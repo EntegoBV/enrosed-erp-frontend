@@ -376,7 +376,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <details class="hint">
                 <summary>Kleur- en formaatcodes</summary>
                 <p>RD rood · PK roze · CP kersenroze · WH wit · BL blauw · NV marineblauw · LB lichtblauw · MX gemengd · PD panda.</p>
-                <p>DOM stolp · BOWL bowl · M/XL maat · 12X25 afmeting in cm · NB zonder geschenkdoos.</p>
+                <p>DOM stolp · BOWL bowl · M/XL maat · 12X25 afmeting in cm · NB zonder geschenkdoosje.</p>
               </details>
             </div>
                 <div class="field identity-colour">
@@ -495,7 +495,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           </div>
 
           <details class="identity-extra identity-extra--measurements" [open]="desktop.active()">
-            <summary><span>Afmetingen &amp; verpakking<small>Product, geschenkdoos en barcode</small></span><span aria-hidden="true">⌄</span></summary>
+            <summary><span>Afmetingen &amp; verpakking<small>Product, geschenkdoosje of display en barcode</small></span><span aria-hidden="true">⌄</span></summary>
           <div class="identity-layout__measurements">
           <fieldset class="measure-group">
             <legend>Productafmeting</legend>
@@ -543,7 +543,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <!-- Presentation packaging: a gift box or display is a third size,
                between the bare article and the shipping carton. -->
           <fieldset class="measure-group">
-            <legend>Geschenkverpakking of display</legend>
+            <legend>Geschenkdoosje of display</legend>
             <!-- Kind, count and price basis are set in the sales card (Verkoopprijs);
                  the physical facts of the packaging stay here. -->
             <p class="pss-basis-line"><b>{{ packagingLine() }}</b>
@@ -587,9 +587,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                   </span>
                 </label>
               </div>
-              <p>Buitenmaat van de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }}, zoals die in de winkel staat. Het gewicht is dat van de {{ draft().packaging.kind === 'DISPLAY' ? 'gevulde display' : 'geschenkverpakking mét het product erin' }}; daarmee rekent de omdoos.</p>
+              <p>Buitenmaat van {{ draft().packaging.kind === 'DISPLAY' ? 'de display, zoals die' : 'het geschenkdoosje, zoals dat' }} in de winkel staat. Het gewicht is dat van {{ draft().packaging.kind === 'DISPLAY' ? 'de gevulde display' : 'het geschenkdoosje mét het product erin' }}; daarmee rekent de omdoos.</p>
               <div class="field mt-8">
-                <label for="p-packaging-barcode">Barcode op de {{ draft().packaging.kind === 'DISPLAY' ? 'display' : 'geschenkverpakking' }} <span class="opt"></span></label>
+                <label for="p-packaging-barcode">Barcode op {{ draft().packaging.kind === 'DISPLAY' ? 'de display' : 'het geschenkdoosje' }} <span class="opt"></span></label>
 <span class="magic-field">
               <input class="input mono" id="p-packaging-barcode" inputmode="numeric"
                        [ngModel]="draft().packaging.barcode" placeholder="EAN-13"
@@ -802,7 +802,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </select>
           </div>
           <div class="field">
-            <label for="p-extra">Extra kost per {{ salesUnit(draft()).singular }} (bijvoorbeeld display, geschenkverpakking) <span class="opt"></span></label>
+            <label for="p-extra">Extra kost per {{ salesUnit(draft()).singular }} (bijvoorbeeld display, geschenkdoosje) <span class="opt"></span></label>
             <div class="input-affix">
               <input class="input num right" id="p-extra" appDecimal
                      inputmode="decimal" [ngModel]="draft().extraUnitCost"
@@ -3637,11 +3637,36 @@ export class ProductEditor implements OnDestroy {
     return ProductEditor.CHECKED_TABS.has(tab) ? 'compleet' : '';
   }
 
-  async save(basisConfirmed = false): Promise<void> {
+  async save(): Promise<void> {
     if (!this.editorReady()) return;
-    if (this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving()) return;
+    const busy = () => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving();
+    if (busy()) return;
     /* Every reason not to save is said out loud and the screen jumps to
-       the field - a greyed-out button explained nothing. */
+       the field - a greyed-out button explained nothing. The check reads
+       the automatic carton count as filled in, so it changes nothing yet. */
+    const missing = this.missingFields();
+    if (missing.length) {
+      const first = missing[0];
+      this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
+      this.focusField(first.tab, first.field);
+      return;
+    }
+    /* A new price basis converts nothing on its own: say what stays as it is,
+       and ask before anything in the draft changes, so Annuleren leaves it
+       exactly as it was. The answer is awaited: a caller that saves first
+       (copy to the colours, Opslaan when leaving) goes on after Bewaren and
+       stops on Annuleren. */
+    const basisChange = this.priceBasisChange();
+    if (basisChange) {
+      const draft = this.draft();
+      const confirmed = await new Promise<boolean>((resolve) => this.ui.confirm({
+        title: 'Prijsbasis wijzigen?',
+        message: escapeHtml(priceBasisConfirmation(this.savedDraft(), draft, basisChange, this.salesPrice(),
+          draft.carton.piecesPerCarton || this.autoCartonPieces(), draft.stockQuantity)),
+        confirmLabel: 'Bewaren',
+      }, () => resolve(true), undefined, () => resolve(false)));
+      if (!confirmed || busy()) return;
+    }
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() !== null) {
       /* Left empty on purpose: the sizes already say what fits. */
       this.patchCarton({ piecesPerCarton: this.autoCartonPieces() });
@@ -3650,25 +3675,6 @@ export class ProductEditor implements OnDestroy {
       this.patchCarton({ weightKg: this.autoCartonWeight() });
     }
     this.settleOrderStep();
-    const missing = this.missingFields();
-    if (missing.length) {
-      const first = missing[0];
-      this.ui.toast(`Nog invullen: ${missing.map((m) => m.label).join(', ')}.`, 'err');
-      this.focusField(first.tab, first.field);
-      return;
-    }
-    /* A new price basis converts nothing on its own: say what stays as it is, then save. */
-    const basisChange = this.priceBasisChange();
-    if (basisChange && !basisConfirmed) {
-      const draft = this.draft();
-      this.ui.confirm({
-        title: 'Prijsbasis wijzigen?',
-        message: escapeHtml(priceBasisConfirmation(this.savedDraft(), draft, basisChange, this.salesPrice(),
-          draft.carton.piecesPerCarton || this.autoCartonPieces(), draft.stockQuantity)),
-        confirmLabel: 'Bewaren',
-      }, () => void this.save(true));
-      return;
-    }
     const wasNew = this.isNew();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);

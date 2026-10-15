@@ -139,7 +139,7 @@ export function orderStepLabel(
 ): string {
   switch (effectiveOrderStep(product)) {
     case 'PACKAGE': return `Per display (${count(packageStepPieces(product)!, unit)})`;
-    case 'UNIT': return `Per ${unit.singular}${product.packaging?.kind === 'GIFT_BOX' ? ' (geschenkverpakking)' : ''}`;
+    case 'UNIT': return `Per ${unit.singular}${product.packaging?.kind === 'GIFT_BOX' ? ' (geschenkdoosje)' : ''}`;
     default: {
       const carton = cartonCount(product.carton?.piecesPerCarton);
       return `Volle omdoos (${carton === null ? 'doosinhoud ontbreekt' : count(carton, unit)})`;

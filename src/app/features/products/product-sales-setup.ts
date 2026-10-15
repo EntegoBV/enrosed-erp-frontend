@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, input, model, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { OrderStep, PackagingKind, Product, ProductFamily, UnitName } from '../../core/api/models';
 import {
-  basisOptionFigure, capitalize, convertedPrice, customerReading, DEFAULT_UNIT_KEY, erpReading, euroText,
+  basisOptionFigure, capitalize, convertedPrice, convertPriceLabel, customerReading, DEFAULT_UNIT_KEY, erpReading,
   priceBasisChange, priceBasisWarning, productSalesUnit, salesSetupSentence, unitCount,
 } from './product-sales-unit';
 import {
@@ -122,7 +122,7 @@ type Packaging = Product['packaging'];
                     }
                     <div class="pss__warn-actions">
                       @if (convertTarget(); as target) {
-                        <button class="btn btn--sm" type="button" [disabled]="disabled()" (click)="priceChange.emit(target)">{{ convertLabel() }}</button>
+                        <button class="btn btn--sm" type="button" [disabled]="disabled()" (click)="fill(target)">{{ convertLabel() }}</button>
                       }
                       <button class="btn btn--sm" type="button" [disabled]="disabled()" (click)="restore()">Terugzetten</button>
                     </div>
@@ -239,19 +239,34 @@ export class ProductSalesSetup {
     const change = this.change();
     return change ? priceBasisWarning(this.product(), change, this.price(), this.cartonCount()) : '';
   });
-  /** The saved fixed price on the new basis, when the draft does not hold it yet. */
-  readonly convertTarget = computed(() => {
+  /**
+   * The basis switch in progress, for the saved product it started from: the
+   * draft price when the basis left the saved one (a price typed just before
+   * counts), and the price the convert button filled in. A save or another
+   * product makes it stale; then the saved price stands in.
+   */
+  private readonly switched = signal<{ saved: Product | null; price: number | null; filled: number | null } | null>(null);
+  private readonly switchNow = computed(() => {
+    const switched = this.switched();
+    return switched && switched.saved === this.saved() && this.change() ? switched : null;
+  });
+  /** What the convert button converts: the price as it stood when the basis changed. */
+  readonly convertBase = computed(() => {
     const saved = this.saved();
-    if (!this.fixedPrice() || !saved) return null;
-    const target = convertedPrice(saved.fixedSalesPriceEur ?? saved.computedSalesPriceEur, this.change());
-    return target !== null && target !== this.product().fixedSalesPriceEur ? target : null;
+    const switched = this.switchNow();
+    return switched ? switched.price : saved?.fixedSalesPriceEur ?? saved?.computedSalesPriceEur ?? null;
   });
-  readonly convertLabel = computed(() => {
-    const change = this.change();
-    const target = this.convertTarget();
-    if (!change?.pieces || target === null) return '';
-    return `Prijs ${change.to === 'DISPLAY' ? '×' : '÷'} ${change.pieces} = ${euroText(target)} invullen`;
+  /**
+   * That price on the new basis, while the draft still holds it unconverted;
+   * once the price is filled in or typed over, the button is done.
+   */
+  readonly convertTarget = computed(() => {
+    const base = this.convertBase();
+    if (!this.fixedPrice() || !this.saved() || base === null || this.product().fixedSalesPriceEur !== base) return null;
+    const target = convertedPrice(base, this.change());
+    return target !== null && target !== base ? target : null;
   });
+  readonly convertLabel = computed(() => this.convertTarget() === null ? '' : convertPriceLabel(this.convertBase(), this.change()));
 
   readonly familyOthers = computed(() => {
     const product = this.product();
@@ -282,11 +297,42 @@ export class ProductSalesSetup {
   }
 
   chooseKind(kind: PackagingKind): void {
-    if (kind !== this.kind()) this.patch({ kind });
+    if (kind !== this.kind()) this.patchBasis({ kind });
   }
 
   chooseBasis(basis: 'PIECE' | 'DISPLAY'): void {
-    if (basis !== (this.unit().isDisplay ? 'DISPLAY' : 'PIECE')) this.patch({ salesUnit: basis });
+    if (basis !== (this.unit().isDisplay ? 'DISPLAY' : 'PIECE')) this.patchBasis({ salesUnit: basis });
+  }
+
+  /** The convert button: the price only, remembered so going back takes it back. */
+  fill(target: number): void {
+    const base = this.convertBase();
+    this.switched.set({ saved: this.saved(), price: base, filled: target });
+    this.priceChange.emit(target);
+  }
+
+  /**
+   * A packaging patch that can move the price basis. Leaving the saved basis
+   * remembers the price it left from; coming back to it (with the option, the
+   * packaging or Terugzetten) takes a converted price back, so a price filled
+   * in for one basis never stays behind on the other without the warning.
+   */
+  private patchBasis(changes: Partial<Packaging>): void {
+    const product = this.product();
+    const before = this.change();
+    const after = priceBasisChange(this.saved(), { ...product, packaging: { ...product.packaging, ...changes } });
+    if (before && !after) this.undoConvertedPrice();
+    else if (!before && after) this.switched.set({ saved: this.saved(), price: product.fixedSalesPriceEur ?? null, filled: null });
+    this.patch(changes);
+  }
+
+  /** The price before the convert button, while the draft still holds what it filled in. */
+  private undoConvertedPrice(): void {
+    const switched = this.switchNow();
+    if (switched?.filled != null && switched.price != null && this.product().fixedSalesPriceEur === switched.filled) {
+      this.priceChange.emit(switched.price);
+    }
+    this.switched.set(null);
   }
 
   chooseStep(step: OrderStep): void {
@@ -297,12 +343,9 @@ export class ProductSalesSetup {
   restore(): void {
     const saved = this.saved();
     if (!saved) return;
-    const target = convertedPrice(saved.fixedSalesPriceEur ?? saved.computedSalesPriceEur, this.change());
+    this.undoConvertedPrice();
     const packaging = saved.packaging;
     this.patch({ kind: packaging.kind, piecesPerUnit: packaging.piecesPerUnit ?? null,
       salesUnit: packaging.salesUnit ?? 'PIECE', orderStep: packaging.orderStep ?? null });
-    if (target !== null && this.product().fixedSalesPriceEur === target && saved.fixedSalesPriceEur != null) {
-      this.priceChange.emit(saved.fixedSalesPriceEur);
-    }
   }
 }
