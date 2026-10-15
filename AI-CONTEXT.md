@@ -668,9 +668,10 @@ weekly by the backend's Drewry scrape).
 ### Sales editor (the heart)
 - Card sections: status/history (newest first, latest event on the bar),
   Order (customer, country, incoterm, payment terms pick-list with "Van
-  de klant" default and "Anders…"), lines (picker prefills one carton; a typed quantity is
+  de klant" default and "Anders…"), lines (picker prefills one order step - see "Verkocht
+  per" under Products; a typed quantity is
   re-priced without saving 5 s after the last digit, or at once on blur/Enter (`flushPreview`) -
-  never between two digits, because the server's carton-rounded quantity is what the field shows;
+  never between two digits, because the server's rounded quantity is what the field shows;
   meanwhile the amounts fade (`figuresWaiting`); every other edit re-prices after 250 ms;
   per-line delivery week via week-field), totals (journey layout, freight
   "aanpassen" inline panel: TE_BEPALEN or own amount), revision handling
@@ -1301,6 +1302,76 @@ and on copies. Without the blocks (older backend) every screen is as before.
   Screens that print units call `catalog.unitNames()` once. The portal uses
   the localized `line.unit` / `item.unit` (UnitDto) when present, else the
   old `stuks` keys.
+- Verkocht per (order step, 2026-10-14): `packaging.orderStep` CARTON |
+  PACKAGE | UNIT says what a sales quantity is rounded up to - a full outer
+  carton (absent/null/unknown, so every older product), a display of N
+  pieces, or one sales unit (per stolp, per box, per display for a display
+  basis). One setting for quotes, invoices, the portal, the website quote
+  request and website ordering; the unit price never changes, and freight
+  still counts a part carton as one full carton (`line.cartons`). Stored
+  quantities stay in the sales unit; nothing converts them. Rule, mirrored
+  from the backend `OrderSteps`: units per step = CARTON `max(1,
+  piecesPerCarton)`, PACKAGE `piecesPerUnit` only for kind DISPLAY + PIECE
+  basis + at least 2 pieces (else 1), UNIT 1; rounding `ceil(q/step)*step`,
+  0 stays 0. `features/products/product-order-step.ts` holds it plus the
+  Dutch wording (`orderStepOf`, `unitsPerOrderStep` - the server's
+  `Product.unitsPerOrderStep` first, `roundToOrderStep`, `orderStepChoices`,
+  `orderStepLabel` "Volle omdoos (12 stolpen)" / "Per display (8 bowls)" /
+  "Per stolp", `orderStepNotice`, `orderStepMultiple`). Only Angular
+  components import it at runtime; node-tested modules inline the rule or
+  take the step as data (`analysis-metrics.ts`, `sales-split-state.ts`
+  `salesSplitStep`, `product-picker-family-groups.ts` gets a
+  `defaultQuantity` callback, the portal has `portalUnitsPerStep` in
+  `portal-sales-unit.ts`, `product-family-shared-fields.ts` words it inline).
+  - Product editor: chips "Verkocht per" right under "Eenheid" in Verkoop:
+    "Volle omdoos · 12 stolpen" (or "doosinhoud ontbreekt"), "Per display ·
+    8 bowls" only while the draft's display qualifies, "Per stolp" ("·
+    geschenkverpakking" on a gift box); counted from the draft, never the
+    saved product. Another packaging kind (no display any more) rewrites
+    PACKAGE to UNIT in the draft at once (the server refuses PACKAGE without
+    packaging). Retyping the display contents (8 → "1" → 12) or switching
+    the basis keeps the stored PACKAGE: meanwhile `effectiveOrderStep` shows
+    it as per unit, and `save()` calls `settleOrderStep()` so a PACKAGE that
+    still does not qualify is stored as UNIT - what the chips show is what
+    is saved. `blankProduct()` starts on CARTON. Product view tiles
+    "Eenheid" and "Verkocht per", desk price step "Verkocht per stolp"
+    (`orderStepSentence`, wraps); the family PACKAGING bundle carries the
+    setting and says so.
+  - Server-owned figures are never sent back: `CatalogApi` strips
+    `Product.unitsPerOrderStep`, `SalesApi.previewOrder/updateOrder` strip
+    the line stamp `SalesOrderLine.unitsPerOrderStep` (the step the server
+    last rounded that line to, so a step change never re-prices a sent or
+    paid document).
+  - Sales editor/desk: `unitsPerStep(productId)` (was `piecesPerCarton`) is
+    what the next save rounds to: the priced line's `unitsPerOrderStep` when
+    it is 1 (the server does not round: partner deal, CONTAINER_COST, credit
+    note, split allocation), otherwise the product's step of today - a
+    loaded line carries the step it was stamped with, and a save or preview
+    re-stamps with today's. A line not priced yet takes the product's step;
+    an older server sends none and the product step is a full carton. The hint
+    shows only when `roundToOrderStep(wanted, step) !== wanted` and the step
+    is above 1: "Volle doos: wordt 24" / "Per display van 8: wordt 16"; per
+    unit never. The 5 s typing pause and `flushPreview` are untouched. After
+    a preview answer and after a save, `syncQuantityFields` (after render,
+    `sales-quantity-fields.ts`) writes the priced quantity into every
+    `data-quantity-line` field that is not focused: [ngModel] skips an
+    unchanged value, so 13 rounded back to the bound 24 stayed 13. The
+    focused field catches up on blur unless a newer number waits. Desk:
+    the quantity detail and rounding hint wrap to the width of the other meta,
+    so they no longer run under the quantity. Save
+    toast "aantal afgerond op het bestelveelvoud"; the website review says
+    "Aantallen volgen per product het bestelveelvoud (doos, display of
+    stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and
+    split sheet/state (`salesSplitStep`: `unitsPerOrderStep ??
+    piecesPerCarton`; "in displays van 8 stuks") use the same step.
+  - Product picker, selling (`enforceCartons()` true): a pick starts on one
+    order step (`defaultQuantity`, also for a whole family), single mode
+    snaps to it, and the carton notices and "Een halve doos mag bij inkoop"
+    show only for CARTON products. Purchasing is unchanged.
+  - Analyses "Minder dan één outer carton" lists CARTON products only.
+  - Rollout: no production product leaves CARTON before the website build
+    that sends `quantity` items is live - the older site drops or inflates
+    a non-carton line when a customer changes an order.
 
 ### Translation workspace (Codex, 2026-08-21)
 - Settings → translation workspace (`content-translation-workspace.ts`):
@@ -1334,7 +1405,13 @@ and on copies. Without the blocks (older backend) every screen is as before.
 
 ### Portal (customer-facing, calm colours)
 Quote view in the customer's language (texts from the backend bundle),
-carton rounding parity with the backend, digital signing, change
+order-step rounding parity with the backend (`portalUnitsPerStep`: the
+catalogue item's `unitsPerOrderStep` - the step the proposal is rounded
+to, also for products already on the quote - else the quote line's (the
+step it was last priced with), the carton content from an older server; a step of 1 never snaps or announces; an addition starts on
+ten cartons for a CARTON product, one display or unit otherwise; the notice
+names a display step with the existing `salesUnitsPerDisplay` key), the
+per-line "{n} dozen" stays (logistics), digital signing, change
 proposals with "wij kijken ernaar" status, PDF download. Terms/privacy
 page NL/EN.
 

@@ -9,7 +9,7 @@ import { parseTemplate } from '@angular/compiler';
 import { firstValueFrom, of } from 'rxjs';
 import { messageOf } from '../src/app/core/api/errors.ts';
 import { salesLineUnavailable, salesLineRequestedQuantity } from '../src/app/features/sales/sales-line-availability.ts';
-import { salesSplitBlockReason, salesSplitRequest, salesSplitPreviewMatches } from '../src/app/features/sales/sales-split-state.ts';
+import { salesSplitBlockReason, salesSplitRequest, salesSplitPreviewMatches, salesSplitStep } from '../src/app/features/sales/sales-split-state.ts';
 
 const source = await readFile(new URL('../src/app/features/sales/sales-split-sheet.ts', import.meta.url), 'utf8');
 const apiSource = await readFile(new URL('../src/app/core/api/sales-api.ts', import.meta.url), 'utf8');
@@ -38,8 +38,8 @@ const result = () => ({ groupId: 'split-uuid', current: view(), later: { ...view
 const request = () => salesSplitRequest(eligibility(), { 101: 24, 102: 0 }, '2026-W45');
 
 class ElementStub { control: any = null; closest() { return this.control; } }
-const Sheet = isolate(source, 'SalesSplitSheet', ['wasUnavailable', 'isUnavailable', 'requestedQuantity', 'unavailableLines', 'newlyUnavailableQuantity', 'toggleUnavailable', 'load', 'laterQuantity', 'remaining', 'laneLines', 'laneQuantity', 'photo', 'sku', 'setQuantity', 'step', 'move', 'setWeek', 'freight', 'extraDiscount', 'discount', 'setOverride', 'invalidatePreview', 'startDrag', 'allowDrop', 'drop', 'endDrag', 'check', 'edit', 'confirm', 'close', 'current', 'ngOnDestroy'],
-  { messageOf, salesLineUnavailable, salesLineRequestedQuantity, salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, crypto: { randomUUID }, Element: ElementStub, Error });
+const Sheet = isolate(source, 'SalesSplitSheet', ['wasUnavailable', 'isUnavailable', 'requestedQuantity', 'unavailableLines', 'newlyUnavailableQuantity', 'toggleUnavailable', 'load', 'laterQuantity', 'remaining', 'laneLines', 'laneQuantity', 'photo', 'sku', 'setQuantity', 'stepOf', 'step', 'move', 'setWeek', 'freight', 'extraDiscount', 'discount', 'setOverride', 'invalidatePreview', 'startDrag', 'allowDrop', 'drop', 'endDrag', 'check', 'edit', 'confirm', 'close', 'current', 'ngOnDestroy'],
+  { messageOf, salesLineUnavailable, salesLineRequestedQuantity, salesSplitBlockReason, salesSplitPreviewMatches, salesSplitRequest, salesSplitStep, crypto: { randomUUID }, Element: ElementStub, Error });
 function harness() {
   const sheet = new Sheet(), calls: any[] = [], saved: any[] = [], busy: boolean[] = [], closed: boolean[] = [];
   Object.assign(sheet, { view: signal(view()), dirty: signal(false), externalBusy: signal(false), eligibility: signal(null), quantities: signal({}), unavailable: signal({}), quantityErrors: signal({}), overrides: signal({}), deliveryWeek: signal(''), preview: signal(null), loading: signal(false), checking: signal(false), saving: signal(false), uncertain: signal(false), error: signal(''), dragOver: signal(null), desktopDrag: true, freightRequired: () => sheet.view().order.freight === 'TE_BEPALEN',
@@ -118,6 +118,29 @@ test('both parts need products and only valid whole-carton quantities may be con
   assert.throws(() => salesSplitRequest(eligibility(), { 101: 48, 102: 24 }, ''), /eerste deel/);
   assert.throws(() => salesSplitRequest(eligibility(), { 101: 24 }, '2026-W99'), /leverweek/);
   assert.throws(() => salesSplitRequest({ ...eligibility(), allowed: false, reason: 'Al uitgeboekt' }, { 101: 24 }, ''), /Al uitgeboekt/);
+});
+
+test('each line splits by its own order step: a display, any whole number per unit, cartons from older servers', () => {
+  const lines = (line: Record<string, unknown>) => ({ ...eligibility(), lines: [
+    { ...eligibility().lines[0], ...line }, eligibility().lines[1],
+  ] });
+  const display = lines({ quantity: 48, piecesPerCarton: 40, orderStep: 'PACKAGE', unitsPerOrderStep: 8 });
+  assert.throws(() => salesSplitRequest(display, { 101: 12 }, ''), /Verdeel Rode roos in displays van 8 stuks/);
+  assert.equal(salesSplitRequest(display, { 101: 16 }, '').lines[0].laterQuantity, 16);
+  const unit = lines({ quantity: 7, piecesPerCarton: 12, orderStep: 'UNIT', unitsPerOrderStep: 1 });
+  assert.equal(salesSplitRequest(unit, { 101: 3 }, '').lines[0].laterQuantity, 3, 'per unit every split stands');
+  assert.equal(salesSplitStep({ piecesPerCarton: 24 }), 24);
+  assert.equal(salesSplitStep({ piecesPerCarton: 24, unitsPerOrderStep: 1 }), 1, 'the server does not round this line');
+  assert.equal(salesSplitStep({ piecesPerCarton: null }), 1);
+});
+
+test('the split steppers move by the order step of the line', async () => {
+  const { sheet } = harness(); await sheet.load();
+  const line = { ...eligibility().lines[0], orderStep: 'PACKAGE', unitsPerOrderStep: 8 };
+  sheet.step(line, 1); assert.equal(sheet.laterQuantity(line), 8);
+  const unit = { ...eligibility().lines[0], orderStep: 'UNIT', unitsPerOrderStep: 1 };
+  sheet.step(unit, 1); assert.equal(sheet.laterQuantity(unit), 9);
+  assert.match(source, /\[step\]="stepOf\(line\)"/);
 });
 
 test('freight and full extra-discount overrides distinguish zero from retained defaults and validate inputs', () => {

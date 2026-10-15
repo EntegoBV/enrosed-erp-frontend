@@ -8,6 +8,7 @@ import { CurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
 import { cartonQuantityNotice } from './carton-quantity-notice';
 import { productSalesUnit } from '../features/products/product-sales-unit';
+import { orderStepOf, orderStepSentence, unitsPerOrderStep } from '../features/products/product-order-step';
 import { COLOUR_SWATCHES, STANDARD_COLOURS } from '../core/api/geo';
 import {
   ProductPickerCategoryKey,
@@ -232,8 +233,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
               @if (carton.pending(); as note) {
                 @if (enforceCartons()) {
                   <span class="hint warn-text">
-                    Wordt zo <b>{{ note.to | num }}</b> — er gaan er
-                    {{ product.carton.piecesPerCarton }} in een doos.
+                    Wordt zo <b>{{ note.to | num }}</b> —
+                    @if (sellsPerCarton(product)) { er gaan er {{ product.carton.piecesPerCarton }} in een doos. }
+                    @else { {{ orderStepText(product) }}. }
                   </span>
                 } @else if (cartonNotice(carton.value(), product); as cartonNote) {
                   <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
@@ -242,8 +244,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                 <span class="hint warn-text">
                   Bijgesteld van {{ note.from | num }} naar <b>{{ note.to | num }}</b>.
                 </span>
-              } @else {
+              } @else if (sellsPerCarton(product)) {
                 <span class="hint">{{ cartons() | num }} volle doos(en).</span>
+              } @else {
+                <span class="hint">{{ orderStepText(product) }}.</span>
               }
             </div>
 
@@ -361,7 +365,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             }
           </div>
           }
-          <span class="hint">Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.</span>
+          <span class="hint">{{ batchHint() }}</span>
         } @else {
           @if (groupByFamily()) {
           <div class="picker-grouped">
@@ -811,10 +815,32 @@ export class ProductPicker implements OnDestroy {
     }));
   readonly batchReady = computed(() => this.batch().length > 0 && this.batch().every((entry) => entry.quantity > 0));
 
-  /** "1 bowl meer = 16": the notice in the product's own unit. */
+  /** "1 bowl meer = 16": the notice in the product's own unit; a sale per display or per unit has no carton to fill. */
   cartonNotice(quantity: number, product: Product): string | null {
+    if (!this.sellsPerCarton(product)) return null;
     return cartonQuantityNotice(quantity, product.carton.piecesPerCarton, productSalesUnit(product));
   }
+
+  /** Buying always thinks in cartons; selling only for a product sold per full carton ("Verkocht per"). */
+  sellsPerCarton(product: Product): boolean {
+    return !this.enforceCartons() || orderStepOf(product) === 'CARTON';
+  }
+
+  /** Where a new pick starts: one order step when selling (carton, display or unit), one carton when buying. */
+  defaultQuantity(product: Product): number {
+    return this.enforceCartons() ? unitsPerOrderStep(product) : product.carton.piecesPerCarton ?? 1;
+  }
+
+  /** "Verkocht per display (8 bowls)", "Verkocht per stolp". */
+  orderStepText(product: Product): string {
+    return orderStepSentence(product, productSalesUnit(product));
+  }
+
+  /** Under the numbers of a batch: buying may take half a carton; selling starts each product on its own step. */
+  readonly batchHint = computed(() => !this.enforceCartons()
+    || this.batch().every((entry) => orderStepOf(entry.product) === 'CARTON')
+    ? 'Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.'
+    : 'Aantal per product; elk product start op zijn eigen bestelveelvoud (volle doos, display of stuk).');
 
   isSelected(product: Product): boolean {
     return this.selected().has(product.id!);
@@ -824,7 +850,7 @@ export class ProductPicker implements OnDestroy {
     this.selected.update((map) => {
       const next = new Map(map);
       if (next.has(product.id!)) next.delete(product.id!);
-      else next.set(product.id!, { product, quantity: product.carton.piecesPerCarton ?? 1 });
+      else next.set(product.id!, { product, quantity: this.defaultQuantity(product) });
       return next;
     });
     if (this.quantityStep() && !this.selected().size) this.quantityStep.set(false);
@@ -848,9 +874,10 @@ export class ProductPicker implements OnDestroy {
     return `Alle ${available} varianten van ${group.name} selecteren`;
   }
 
-  /** One explicit family action, while preserving every variant's carton default. */
+  /** One explicit family action, while preserving every variant's own default (order step or carton). */
   toggleGroupSelection(group: ProductPickerFamilyGroup): void {
-    this.selected.update((current) => toggleProductPickerFamilySelection(group, current));
+    this.selected.update((current) => toggleProductPickerFamilySelection(group, current,
+      (product) => this.defaultQuantity(product)));
     if (this.quantityStep() && !this.selected().size) this.quantityStep.set(false);
   }
 
@@ -928,8 +955,9 @@ export class ProductPicker implements OnDestroy {
   readonly categoryFilter = signal<ProductPickerCategoryKey | null>(null);
   readonly colourFilter = signal<string | null>(null);
   readonly chosen = signal<Product | null>(null);
+  /* Selling snaps to the product's order step; buying only compares with the carton. */
   readonly carton = new CartonQuantity(
-    () => this.chosen()?.carton.piecesPerCarton ?? 1,
+    () => { const product = this.chosen(); return product ? this.defaultQuantity(product) : 1; },
     () => this.enforceCartons());
 
   readonly categoryOptions = computed(() =>
@@ -1035,9 +1063,9 @@ export class ProductPicker implements OnDestroy {
 
   choose(product: Product): void {
     this.chosen.set(product);
-    /* One carton as the starting point: at the table you type the real
-       number anyway, and ten boxes preloaded reads as a pushy default. */
-    this.carton.reset(product.carton.piecesPerCarton ?? 1);
+    /* One carton (selling: one order step) as the starting point: at the table
+       you type the real number anyway, and ten boxes preloaded reads as a pushy default. */
+    this.carton.reset(this.defaultQuantity(product));
   }
 
   clear(): void {

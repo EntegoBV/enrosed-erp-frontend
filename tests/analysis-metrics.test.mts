@@ -218,6 +218,16 @@ function product(input: ProductFixture): Product {
   } as Product;
 }
 
+test('only products sold per full carton are short of one; per display or per unit they still sell', () => {
+  const sold = (id: number, orderStep?: 'CARTON' | 'PACKAGE' | 'UNIT' | null) =>
+    ({ ...product({ id, stock: 5, per: 12 }), packaging: { orderStep } } as Product);
+  const result = inventoryAnalysis([
+    product({ id: 1, stock: 5, per: 12 }), sold(2, 'CARTON'), sold(3, null), sold(4, 'UNIT'), sold(5, 'PACKAGE'),
+  ], [], { topLimit: 3 });
+  assert.deepEqual(result.belowCarton.rows.map((row) => row.productId), [1, 2, 3]);
+  assert.equal(result.belowCarton.count, 3);
+});
+
 test('inventory analysis separates current value, data gaps and carton attention', () => {
   const products: Product[] = [
     product({ id: 1, name: 'Nul met levering', stock: 0, per: 6, cost: 5, sales: 10 }),

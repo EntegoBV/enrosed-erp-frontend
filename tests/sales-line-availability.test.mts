@@ -83,11 +83,24 @@ test('packing choices omit unavailable and zero rows, including during an outsta
 
 test('the manual restore sheet requires an explicit positive full-carton quantity', () => {
   const sheet = new Restore(), restored: number[] = [];
-  Object.assign(sheet, { piecesPerCarton: () => 24, restored: { emit: (value: number) => restored.push(value) } });
+  Object.assign(sheet, { unitsPerStep: () => 24, multiple: () => 'volle dozen van 24 stolpen', units: () => 'stolpen', restored: { emit: (value: number) => restored.push(value) } });
   for (const value of [null, 0, -24, 12, 24.5, NaN, Infinity]) {
     sheet.quantity.set(value); sheet.confirm(); assert.equal(restored.length, 0); assert.ok(sheet.error());
   }
+  assert.equal(sheet.error(), 'Vul een positief aantal in in volle dozen van 24 stolpen.');
   sheet.quantity.set(48); sheet.confirm(); assert.deepEqual(restored, [48]);
+});
+
+test('the restore sheet asks for whole displays, and any whole number for a step of one', () => {
+  const display = new Restore(), restored: number[] = [];
+  Object.assign(display, { unitsPerStep: () => 8, multiple: () => 'displays van 8 bowls', units: () => 'bowls', restored: { emit: (value: number) => restored.push(value) } });
+  display.quantity.set(12); display.confirm();
+  assert.equal(display.error(), 'Vul een positief aantal in in displays van 8 bowls.');
+  display.quantity.set(16); display.confirm(); assert.deepEqual(restored, [16]);
+  const unit = new Restore();
+  Object.assign(unit, { unitsPerStep: () => 1, multiple: () => null, units: () => 'stolpen', restored: { emit: (value: number) => restored.push(value) } });
+  unit.quantity.set(3); unit.confirm(); assert.deepEqual(restored, [16, 3]);
+  unit.quantity.set(0); unit.confirm(); assert.equal(unit.error(), 'Vul een positief aantal in.');
 });
 
 test('availability changes retain line identity and pricing and never rewrite unrelated pallet placements', () => {

@@ -129,3 +129,41 @@ test('opening a proposal keeps the unit of each quote line', () => {
   page.addFromCatalog({ item: { productId: 3, description: 'Bowl', unit: BOWL }, quantity: 40 });
   assert.equal(page.additions().get(3).unit, BOWL);
 });
+
+test('proposals snap to the order step of each line: a display, nothing for one unit, cartons from older servers', () => {
+  const { page, timers } = harness();
+  page.quote.set({ lines: [
+    { productId: 1, description: 'Bowl', quantity: 16, piecesPerCarton: 40, orderStep: 'PACKAGE', unitsPerOrderStep: 8 },
+    { productId: 2, description: 'Stolp', quantity: 3, piecesPerCarton: 12, orderStep: 'UNIT', unitsPerOrderStep: 1 },
+    { productId: 3, description: 'Roos', quantity: 24, piecesPerCarton: 24 },
+  ] });
+  page.openProposal();
+  page.setProposal(1, 10);
+  assert.equal(page.pendingRound()[1], 16);
+  timers[0]();
+  assert.equal(page.proposalLines()[0].quantity, 16);
+  page.setProposal(2, 5);
+  assert.equal(page.pendingRound()[2], undefined, 'per unit nothing is rounded and nothing is announced');
+  assert.equal(timers.length, 1);
+  assert.equal(page.proposalLines()[1].quantity, 5);
+  page.setProposal(3, 25);
+  assert.equal(page.pendingRound()[3], 48);
+});
+
+test('a proposal rounds with the step of today from the catalogue, not the step the quote line was priced with', () => {
+  const { page, timers } = harness();
+  page.quote.set({ lines: [
+    { productId: 1, description: 'Stolp', quantity: 12, piecesPerCarton: 12, orderStep: 'CARTON', unitsPerOrderStep: 12 },
+    { productId: 2, description: 'Roos', quantity: 24, piecesPerCarton: 24, orderStep: 'CARTON', unitsPerOrderStep: 24 },
+  ] });
+  // Product 1 is sold per stolp since the quote was saved; product 2 is not in the catalogue (inactive).
+  page.catalog.set([{ productId: 1, description: 'Stolp', piecesPerCarton: 12, orderStep: 'UNIT', unitsPerOrderStep: 1 }]);
+  page.openProposal();
+  assert.equal(page.proposalLines()[0].orderStep, 'UNIT');
+  page.setProposal(1, 13);
+  assert.equal(page.pendingRound()[1], undefined, 'the server accepts 13, so nothing snaps');
+  assert.equal(timers.length, 0);
+  assert.equal(page.proposalLines()[0].quantity, 13);
+  page.setProposal(2, 25);
+  assert.equal(page.pendingRound()[2], 48, 'without a catalogue item the line keeps its own step');
+});

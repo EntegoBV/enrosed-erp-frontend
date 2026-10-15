@@ -1,4 +1,4 @@
-import { portalCartonContents, portalDisplayPieces, portalPrimaryPrice, portalPriceUnitKey, portalQuantityUnit, portalQuantityUnitKey, portalSecondaryPrice, PortalSalesUnit, portalUnitNoun } from './portal-sales-unit';
+import { portalCartonContents, portalDisplayPieces, PortalOrderStep, portalPrimaryPrice, portalPriceUnitKey, portalQuantityUnit, portalQuantityUnitKey, portalRoundToStep, portalSecondaryPrice, PortalSalesUnit, portalStepContents, portalUnitNoun, portalUnitsPerStep } from './portal-sales-unit';
 import {
   ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal,
 } from '@angular/core';
@@ -538,11 +538,11 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
               @if (pendingRound()[line.productId]; as to) {
                 <span class="hint warn-text">
                   {{ t('portalRoundingNotice') }} <b>{{ to | num: 0: locale() }}</b>
-                  ({{ cartonContents(line) }})
+                  ({{ stepContents(line) }})
                 </span>
               } @else {
                 <span class="hint">
-                  {{ cartonContents(line) }}
+                  {{ stepContents(line) }}
                 </span>
               }
               }
@@ -756,10 +756,10 @@ export class PortalPage implements OnDestroy {
 
   readonly proposalSheet = signal(false);
   readonly proposalLines = signal<({
-    productId: number; description: string; quantity: number; piecesPerCarton: number;
+    productId: number; description: string; quantity: number;
     unavailable: boolean; requestedQuantity: number | null;
-  } & PortalSalesUnit)[]>([]);
-  /** Quantities about to snap to a full carton; visible now, not yet applied. */
+  } & PortalSalesUnit & PortalOrderStep)[]>([]);
+  /** Quantities about to snap to the order step (a full carton, a display); visible now, not yet applied. */
   readonly pendingRound = signal<Record<number, number>>({});
   private roundTimers = new Map<number, ReturnType<typeof setTimeout>>();
   /** Products not on the quote yet that the customer can add. */
@@ -997,6 +997,11 @@ export class PortalPage implements OnDestroy {
     return portalCartonContents(line, (key) => this.t(key), this.locale());
   }
 
+  /** What the rounding is to: "8 bowls per display" for a display step, the carton contents otherwise. */
+  stepContents(line: PortalSalesUnit & PortalOrderStep): string {
+    return portalStepContents(line, (key) => this.t(key), this.locale());
+  }
+
   quantityDetail(line: PortalSalesUnit & { quantity: number }): string | null {
     const pieces = portalDisplayPieces(line);
     if (!pieces) return null;
@@ -1026,9 +1031,15 @@ export class PortalPage implements OnDestroy {
   openProposal(): void {
     const quote = this.quote();
     if (!quote || quote.advanceAgreement) return;
+    /* A quote line carries the step it was last priced with; a proposal is
+       rounded with the product's step of today, which the catalogue item
+       of the same quote carries. The line's own step is the fallback. */
+    const catalog = new Map(this.catalog().map((item) => [item.productId, item]));
     this.proposalLines.set(quote.lines.map((line) => ({
       productId: line.productId, description: line.description, quantity: line.quantity,
       piecesPerCarton: Math.max(1, line.piecesPerCarton || 1),
+      orderStep: catalog.get(line.productId)?.orderStep ?? line.orderStep ?? null,
+      unitsPerOrderStep: catalog.get(line.productId)?.unitsPerOrderStep ?? line.unitsPerOrderStep ?? null,
       salesUnit: line.salesUnit, piecesPerDisplay: line.piecesPerDisplay, unit: line.unit ?? null,
       unavailable: line.unavailable === true, requestedQuantity: line.requestedQuantity ?? null,
     })));
@@ -1078,7 +1089,8 @@ export class PortalPage implements OnDestroy {
   }
 
   /**
-   * The customer's quantity, rounded to a full carton.
+   * The customer's quantity, rounded to the server's order step for this
+   * line: a full carton, a display, or nothing at all for a step of one.
    *
    * The same contract as on our own screens: the notice appears at once,
    * the field only snaps after two seconds. Whoever types 240 is at "2"
@@ -1096,8 +1108,7 @@ export class PortalPage implements OnDestroy {
       lines.map((line) => (line.productId === productId ? { ...line, quantity: wanted } : line)));
 
     const line = this.proposalLines().find((l) => l.productId === productId);
-    const per = Math.max(1, line?.piecesPerCarton ?? 1);
-    const snapped = Math.ceil(wanted / per) * per;
+    const snapped = portalRoundToStep(wanted, portalUnitsPerStep(line));
 
     clearTimeout(this.roundTimers.get(productId));
     this.pendingRound.update((map) => {

@@ -77,7 +77,8 @@ interface JourneyStep {
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
-      <app-sales-line-restore-sheet [description]="restore.description" [piecesPerCarton]="restore.piecesPerCarton"
+      <app-sales-line-restore-sheet [description]="restore.description" [unitsPerStep]="restore.unitsPerStep"
+        [multiple]="lineStepMultiple(restore.productId, restore.unitsPerStep)" [units]="lineUnit(restore.productId).plural"
         (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" />
     }
 
@@ -478,9 +479,9 @@ interface JourneyStep {
                                   @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} {{ lineUnit(line.productId).short }} aangevraagd</span> }
                                 } @else {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
-                                @if (lineQuantityDetail(line); as detail) { <span>{{ detail }}</span> }
+                                @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="is-warn" role="status">Volle doos: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
+                                  <span class="desk-product__note is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>
@@ -511,7 +512,7 @@ interface JourneyStep {
                         <td class="c-qty num">
                           @if (commercialEditable()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
-                                   [attr.aria-label]="'Aantal ' + line.description"
+                                   [attr.aria-label]="'Aantal ' + line.description" [attr.data-quantity-line]="line.productId"
                                    [ngModel]="line.quantity" (ngModelChange)="setLineQuantity(line.productId, $event)"
                                    (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
                           } @else {
@@ -1363,6 +1364,9 @@ interface JourneyStep {
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
     .desk-product__meta{display:flex;flex-wrap:wrap;align-items:center;margin-top:2px;color:var(--muted);font-size:11px}
     .desk-product__meta>*{white-space:nowrap}.desk-product__meta>*:not(:last-child)::after{content:'·';margin:0 6px;color:var(--line-strong)}.desk-product__meta .is-warn{color:var(--warn);font-weight:650}
+    /* The product column is narrow next to the rail: a sentence ("2 displays van 8 bowls", "Per display van 8: wordt 16 bowls")
+       wraps to the width of the other meta, so it stays in the column instead of running under the quantity. */
+    .desk-product__meta>.desk-product__note{white-space:normal}
     .desk-product__link{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650;cursor:pointer}.desk-product__link:hover{text-decoration:underline}
     .desk-cell{min-height:34px;padding:5px 10px 5px 8px;font-size:13px}.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{padding-right:6px}
     .desk-disc{display:flex;align-items:center}.desk-disc .desk-cell{flex:1;min-width:0;border-radius:var(--r-sm) 0 0 var(--r-sm)}.desk-disc__unit{display:grid;place-items:center;min-height:34px;padding:0 8px;border:1px solid var(--line-strong);border-left:0;border-radius:0 var(--r-sm) var(--r-sm) 0;background:var(--surface-2);color:var(--muted);font-size:12px}

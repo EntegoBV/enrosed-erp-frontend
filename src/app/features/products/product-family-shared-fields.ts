@@ -60,7 +60,7 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
       {
         key: 'PACKAGING',
         label: 'Geschenkverpakking of display',
-        summary: 'Type, afmetingen, gewicht, inhoud en de eenheid op documenten (stuk, bowl, …); de barcode wordt niet overgenomen.',
+        summary: 'Type, afmetingen, gewicht, inhoud, de eenheid op documenten (stuk, bowl, …) en verkocht per (omdoos, display of stuk); de barcode wordt niet overgenomen.',
       },
     ],
   },
@@ -131,14 +131,21 @@ export function productFamilySharedFieldValue(
     }
     case 'DIMENSIONS': return dimensions(product.dimensions);
     case 'PACKAGING': {
-      // The unit travels with the packaging bundle, also for a loose article.
+      // The unit and "verkocht per" travel with the packaging bundle, also for a loose article.
       const unit = productSalesUnit(product);
       const named = `eenheid ${unit.piece.one}`;
-      if (product.packaging.kind === 'NONE') return `Geen verkoopverpakking · ${named}`;
-      const kind = product.packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking';
-      const pieces = product.packaging.piecesPerUnit && product.packaging.piecesPerUnit > 1
-        ? ` · ${product.packaging.piecesPerUnit} ${unit.piece.other}` : '';
-      return `${kind} · ${dimensions(product.packaging.dimensions)}${pieces} · ${named} · prijs en aantal per ${unit.singular}`;
+      // Inline on purpose (node-tested module): absent or unknown is a full carton,
+      // a display that cannot be a step sells per unit, as on the server.
+      const packaging = product.packaging;
+      const step = packaging.orderStep === 'UNIT' || packaging.orderStep === 'PACKAGE' ? packaging.orderStep : 'CARTON';
+      const display = packaging.kind === 'DISPLAY' && (packaging.salesUnit ?? 'PIECE') === 'PIECE' && (packaging.piecesPerUnit ?? 0) >= 2;
+      const sold = step === 'CARTON' ? 'verkocht per volle omdoos'
+        : step === 'PACKAGE' && display ? 'verkocht per display' : `verkocht per ${unit.singular}`;
+      if (packaging.kind === 'NONE') return `Geen verkoopverpakking · ${named} · ${sold}`;
+      const kind = packaging.kind === 'DISPLAY' ? 'Display' : 'Geschenkverpakking';
+      const pieces = packaging.piecesPerUnit && packaging.piecesPerUnit > 1
+        ? ` · ${packaging.piecesPerUnit} ${unit.piece.other}` : '';
+      return `${kind} · ${dimensions(packaging.dimensions)}${pieces} · ${named} · prijs en aantal per ${unit.singular} · ${sold}`;
     }
     case 'CARTON': {
       const box = product.carton;

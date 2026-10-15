@@ -157,7 +157,7 @@ function editor(initial: any, api: Record<string, (...args: any[]) => any> = {})
   const record = (name: string, answer: (...args: any[]) => any) => async (...args: any[]) => { calls.push(`${name} ${JSON.stringify(args)}`); return answer(...args); };
   Object.assign(screen, {
     view: signal(initial), advanceAgreement: () => null, revisions: signal([]), previewError: signal(null), figuresWaiting: signal(false), saving: signal(false), linePending: signal({}),
-    transportSaving: () => false, customerEmail: signal('inkoop@bloemist.example'), sendIssues: () => [], loadCreditContext: () => undefined, schedulePreview: () => undefined,
+    transportSaving: () => false, customerEmail: signal('inkoop@bloemist.example'), sendIssues: () => [], loadCreditContext: () => undefined, schedulePreview: () => undefined, syncQuantityFields: () => undefined,
     flushTransport: async () => true, flushPendingEdits: async () => true, loadHistory: async () => undefined, lineUnit: () => ({ short: 'st' }), refreshWorkQueue: () => undefined,
     reload: async (id: number) => { reloads.push(id); }, scrollToSection: () => undefined,
     ui: { toast: (text: string) => toasts.push(text) }, work: { refresh: async () => undefined }, router: { navigate: async () => true },

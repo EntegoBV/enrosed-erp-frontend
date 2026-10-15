@@ -501,11 +501,15 @@ export function inventoryAnalysis(
     .map((product) => inventoryAttentionRow(product, expectedByProduct.get(product.id!)))
     .sort((left, right) => Number(left.expectedPieces > 0) - Number(right.expectedPieces > 0)
       || compareName(left.name, right.name));
+  /* Only a product sold per full carton is short of a sale below one carton;
+     per display or per unit it still sells (absent or unknown reads as CARTON). */
   const belowCartonRows = products
     .filter((product) => {
       const stock = finite(product.stockQuantity);
       const per = cartonSize(product);
+      const step = product.packaging?.orderStep;
       return product.id != null && product.active && !product.demo
+        && step !== 'PACKAGE' && step !== 'UNIT'
         && product.inventoryKnown === true && stock > 0 && per !== null && per > 1 && stock < per;
     })
     .map((product) => inventoryAttentionRow(product, expectedByProduct.get(product.id!)))

@@ -1,4 +1,4 @@
-import type { LocalizedUnit } from '../../core/api/models';
+import type { LocalizedUnit, OrderStep } from '../../core/api/models';
 
 /** The server's names for a product's unit in the portal language (UnitDto). */
 export type PortalUnit = LocalizedUnit;
@@ -80,4 +80,49 @@ export function portalCartonContents(
   const count = new Intl.NumberFormat(locale).format(item.piecesPerCarton);
   const noun = portalQuantityUnit(item, item.piecesPerCarton, locale);
   return noun ? t('unitsPerCarton').replace('%s', `${count} ${noun}`) : `${count} ${t('portalPerBox')}`;
+}
+
+/** A quote line or catalogue item with what the server rounds it to. */
+export interface PortalOrderStep {
+  piecesPerCarton: number;
+  /** The product's "Verkocht per"; absent from older servers (full cartons). */
+  orderStep?: OrderStep | null;
+  /** What the server rounds this quotation's quantity to; 1 when it does not round. */
+  unitsPerOrderStep?: number | null;
+}
+
+/** The multiple a proposal is rounded to: the server's step, full cartons from an older server. */
+export function portalUnitsPerStep(item: PortalOrderStep | null | undefined): number {
+  const step = item?.unitsPerOrderStep;
+  if (step != null && Number.isSafeInteger(step) && step >= 1) return step;
+  return Math.max(1, item?.piecesPerCarton || 1);
+}
+
+/** Up to the next whole step; zero stays zero. */
+export function portalRoundToStep(quantity: number, step: number): number {
+  const per = Math.max(1, step || 1);
+  return quantity > 0 ? Math.ceil(quantity / per) * per : quantity;
+}
+
+/** Where an addition starts: ten cartons as always for a carton product, one step for one sold per display or unit. */
+export function portalStartQuantity(item: PortalOrderStep): number {
+  return item.orderStep === 'PACKAGE' || item.orderStep === 'UNIT'
+    ? portalUnitsPerStep(item) : item.piecesPerCarton * 10;
+}
+
+/**
+ * What one step holds, next to a rounding notice: "8 bowls per display" for a
+ * display step, the carton contents otherwise. Existing text keys only.
+ */
+export function portalStepContents(
+  item: PortalSalesUnit & PortalOrderStep,
+  t: (key: string) => string,
+  locale: string,
+): string {
+  const step = portalUnitsPerStep(item);
+  if (item.orderStep !== 'PACKAGE' || step <= 1) return portalCartonContents(item, t, locale);
+  const count = new Intl.NumberFormat(locale).format(step);
+  return item.unit
+    ? t('salesUnitsPerDisplay').replace('%s', `${count} ${portalUnitNoun(item.unit, step, locale)}`)
+    : t('salesPiecesPerDisplay').replace('%s', count);
 }

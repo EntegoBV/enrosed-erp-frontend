@@ -50,9 +50,12 @@ toont de datum in de taal van de **browser**, niet van de pagina, en een `<input
 heeft in Safari en Firefox helemaal geen kiezer. Gebruik die twee componenten, geen kale
 inputs.
 
-**Aantallen** worden op volle dozen afgerond: de melding verschijnt meteen, het veld springt
-na twee seconden. Die vertraging is er omdat je anders niet kan typen — wie 240 intikt is na
-de eerste toets bij "2".
+**Aantallen** worden per product afgerond op wat het per keer verkoopt: een volle omdoos, een
+display of één stuk ("Verkocht per" bij het product). In offertes en facturen verschijnt de
+melding meteen en rekent de server vijf seconden na de laatste toets opnieuw (of zodra je het
+veld verlaat of Enter drukt); dan toont het veld het afgeronde aantal. In het klantportaal
+springt het veld na twee seconden. Die vertraging is er omdat je anders niet kan typen — wie
+240 intikt is na de eerste toets bij "2".
 
 ## Structuur
 

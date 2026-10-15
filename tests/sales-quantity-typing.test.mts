@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { signal } from '@angular/core';
 import { messageOf } from '../src/app/core/api/errors.ts';
+import * as orderSteps from '../src/app/features/products/product-order-step.ts';
+import { QUANTITY_FIELD_ATTRIBUTE, showServerQuantities } from '../src/app/features/sales/sales-quantity-fields.ts';
 
 const source = (file: string) => readFile(new URL(`../src/app/features/sales/${file}.ts`, import.meta.url), 'utf8');
 
@@ -16,15 +18,16 @@ async function isolate(names: string[]) {
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
   /* The timers are looked up per call, so the mocked clock of a test is the one the editor uses. */
-  vm.runInNewContext(js, { exports, signal, messageOf, Math, Number,
+  vm.runInNewContext(js, { exports, signal, messageOf, Math, Number, ...orderSteps,
     setTimeout: (run: () => void, ms: number) => globalThis.setTimeout(run, ms), clearTimeout: (id: any) => globalThis.clearTimeout(id) });
   return exports.SalesEditor;
 }
-const Editor = await isolate(['enqueue', 'schedulePreview', 'flushPreview', 'preview', 'setLine', 'setLineQuantity', 'currentQuantity', 'piecesPerCarton']);
+const Editor = await isolate(['enqueue', 'schedulePreview', 'flushPreview', 'preview', 'setLine', 'setLineQuantity', 'currentQuantity',
+  'unitsPerStep', 'lineOrderStep', 'lineStepNotice']);
 
 /** A quote with one line of 60 pieces in cartons of 30; the server prices whole cartons, as the real one does. */
 function harness() {
-  const requests: number[] = [], answers: Array<() => void> = [];
+  const requests: number[] = [], answers: Array<() => void> = [], synced: number[] = [];
   const priced = (quantity: number) => { const whole = Math.ceil(quantity / 30) * 30; return { lines: [{ productId: 1, quantity: whole, net: whole * 5.75 }] }; };
   const screen = new Editor();
   Object.assign(screen, {
@@ -34,6 +37,8 @@ function harness() {
     previewTimer: null, previewVersion: 0,
     canEdit: () => true, mobileCommercialEditable: () => true, mobileAcceptsDraft: () => true,
     lineUnavailable: () => false, creditLineCap: () => null, canToggleLineAvailability: () => false,
+    /* The fields themselves are a browser matter; here it only counts when they are brought in line. */
+    syncQuantityFields: () => synced.push(screen.view().priced.lines[0].quantity),
     sales: { previewOrder: (_id: number, order: any) => {
       const quantity = order.lines[0].quantity; requests.push(quantity);
       return new Promise(resolve => answers.push(() => resolve({ order, priced: priced(quantity) })));
@@ -41,14 +46,14 @@ function harness() {
   });
   /** Lets every answer that is under way land. */
   const answer = async () => { for (const land of answers.splice(0)) land(); await new Promise(setImmediate); };
-  return { screen, requests, answer, shown: () => screen.view().priced.lines[0] };
+  return { screen, requests, answer, synced, shown: () => screen.view().priced.lines[0] };
 }
 const clock = (t: { mock: { timers: { enable(options: { apis: string[] }): void; tick(ms: number): void } } }) => {
   t.mock.timers.enable({ apis: ['setTimeout'] }); return t.mock.timers;
 };
 
 test('a typed quantity is priced five seconds after the last digit, once, and without saving', async (t) => {
-  const timers = clock(t), { screen, requests, answer, shown } = harness();
+  const timers = clock(t), { screen, requests, answer, synced, shown } = harness();
   screen.setLineQuantity(1, 9);
   timers.tick(1000);
   assert.deepEqual(requests, [], 'nothing is priced between two digits');
@@ -63,6 +68,7 @@ test('a typed quantity is priced five seconds after the last digit, once, and wi
   assert.equal(shown().quantity, 90); assert.equal(shown().net, 517.5);
   assert.equal(screen.figuresWaiting(), false);
   assert.equal(screen.view().order.lines[0].quantity, 90, 'the draft keeps what was typed');
+  assert.deepEqual(synced, [90], 'the fields are brought in line with the answer, once it is on screen');
 });
 
 test('leaving the field or pressing Enter prices at once', async (t) => {
@@ -77,12 +83,13 @@ test('leaving the field or pressing Enter prices at once', async (t) => {
 });
 
 test('an answer for an older number does not land on a newer one', async (t) => {
-  const timers = clock(t), { screen, requests, answer, shown } = harness();
+  const timers = clock(t), { screen, requests, answer, synced, shown } = harness();
   screen.setLineQuantity(1, 9);
   screen.flushPreview();
   screen.setLineQuantity(1, 90);
   await answer();
   assert.equal(shown().quantity, 60, 'the answer for 9 would write 30 into the field');
+  assert.deepEqual(synced, [], 'nor into any other field');
   assert.equal(screen.figuresWaiting(), true);
   timers.tick(5000); await answer();
   assert.deepEqual(requests, [9, 90]); assert.equal(shown().quantity, 90);
@@ -113,5 +120,102 @@ test('both quantity fields end the pause on blur and on Enter, and show which am
     assert.equal(field?.length, 1, file);
     assert.equal(text.match(/setLineQuantity\(line\.productId, \$event\)/g)?.length, 1, file);
     assert.match(text, /--waiting\]="figuresWaiting\(\)"/, file);
+    /* The marked field is the one bound to the line's quantity: that is where the server's figure goes. */
+    const marked = text.match(/\[attr\.data-quantity-line\]="line\.productId"\s*\n?\s*\[ngModel\]="line\.quantity"/g);
+    assert.equal(marked?.length, 1, file);
+    assert.equal(text.match(/data-quantity-line/g)?.length, 1, file);
   }
+  const editor = await source('sales-editor');
+  assert.match(editor, /this\.figuresWaiting\.set\(false\);\n\s*this\.syncQuantityFields\(\);/, 'after a preview answer');
+  assert.match(editor, /if \(this\.dirty\(\)\) this\.schedulePreview\(\);\n\s*else this\.syncQuantityFields\(\);/, 'after a save');
+  assert.match(editor, /afterNextRender\(\(\) => this\.showServerQuantities\(\)/);
+});
+
+test('every quantity field but the one being typed in shows the server\'s quantity of its line', () => {
+  const field = (productId: number | null, value: string) => ({ value,
+    getAttribute: (name: string) => name === QUANTITY_FIELD_ATTRIBUTE && productId !== null ? String(productId) : null });
+  // 13 typed on a line of 24 and 5 on a display of 8: the server answers 24 and 8, the bound values of before.
+  const soap = field(104, '13'), bowl = field(102, '5'), typing = field(101, '3'), added = field(105, '6');
+  const lines = [{ productId: 104, quantity: 24 }, { productId: 102, quantity: 8 }, { productId: 101, quantity: 12 }];
+  assert.equal(showServerQuantities([soap, bowl, typing, added], lines, typing), typing, 'the focused field is handed back');
+  assert.deepEqual([soap.value, bowl.value], ['24', '8']);
+  assert.equal(typing.value, '3', 'never rewritten under the fingers');
+  assert.equal(added.value, '6', 'a line the answer does not know keeps its bound value');
+  assert.equal(showServerQuantities([soap, bowl], lines, null), null);
+  assert.equal(showServerQuantities([typing], lines, null), null);
+  assert.equal(typing.value, '12', 'once it is left it catches up');
+});
+
+/** The quote of the harness, with one product as the catalogue has it and, optionally, the server's answer for the line. */
+function stepHarness(product: Record<string, unknown>, pricedLine: Record<string, unknown> = {}) {
+  const screen = new Editor();
+  Object.assign(screen, {
+    view: signal({ order: { id: 78, lines: [{ productId: 1, quantity: 12 }] }, priced: { lines: [{ productId: 1, quantity: 12, ...pricedLine }] } }),
+    products: () => [{ id: 1, ...product }],
+    previewError: signal(null), figuresWaiting: signal(false), linePending: signal({}), creditPriceOver: signal({}),
+    previewTimer: null, previewVersion: 0,
+    canEdit: () => true, mobileCommercialEditable: () => true, mobileAcceptsDraft: () => true,
+    lineUnavailable: () => false, creditLineCap: () => null, canToggleLineAvailability: () => false,
+    sales: { previewOrder: () => new Promise(() => {}) },
+  });
+  return screen;
+}
+const stolp = (orderStep?: string) => ({ carton: { piecesPerCarton: 12 }, packaging: { kind: 'NONE', unitKey: 'stolp', orderStep } });
+const bowlDisplay = (orderStep?: string) => ({ carton: { piecesPerCarton: 40 },
+  packaging: { kind: 'DISPLAY', piecesPerUnit: 8, salesUnit: 'PIECE', unitKey: 'bowl', orderStep } });
+
+test('the hint follows the order step: a full carton, a display, never one unit', (t) => {
+  clock(t);
+  const carton = stepHarness(stolp());
+  carton.setLineQuantity(1, 13);
+  assert.equal(carton.linePending()[1], 24);
+  assert.equal(carton.lineStepNotice(1), 'Volle doos');
+
+  const display = stepHarness(bowlDisplay('PACKAGE'));
+  display.setLineQuantity(1, 10);
+  assert.equal(display.linePending()[1], 16);
+  assert.equal(display.lineStepNotice(1), 'Per display van 8');
+  display.setLineQuantity(1, 24);
+  assert.equal(display.linePending()[1], undefined, 'three whole displays need no notice');
+
+  const unit = stepHarness(stolp('UNIT'));
+  unit.setLineQuantity(1, 3);
+  assert.deepEqual({ ...unit.linePending() }, {}, 'per stolp every number stands');
+  assert.equal(unit.view().order.lines[0].quantity, 3, 'the draft keeps what was typed');
+});
+
+test('the priced line decides: the server\'s step wins over the catalogue, a step of one shows nothing', (t) => {
+  clock(t);
+  // A partner deal or a container-cost quote: the server does not round, so neither does the hint.
+  const exempt = stepHarness(stolp(), { unitsPerOrderStep: 1, orderStep: 'CARTON' });
+  exempt.setLineQuantity(1, 13);
+  assert.deepEqual({ ...exempt.linePending() }, {});
+  // A loaded line stamped with an earlier step: the next save rounds with today's step, so the hint does too.
+  const nowPerUnit = stepHarness(stolp('UNIT'), { unitsPerOrderStep: 12, orderStep: 'UNIT' });
+  nowPerUnit.setLineQuantity(1, 13);
+  assert.deepEqual({ ...nowPerUnit.linePending() }, {}, 'sold per stolp since: 13 stays 13');
+  const fuller = stepHarness({ ...stolp(), carton: { piecesPerCarton: 24 } }, { unitsPerOrderStep: 12, orderStep: 'CARTON' });
+  fuller.setLineQuantity(1, 25);
+  assert.equal(fuller.linePending()[1], 48, 'the carton of today, not the one of 12');
+  // A product the screen does not know: the server's figure is all there is.
+  const unknown = stepHarness(stolp(), { unitsPerOrderStep: 12, orderStep: 'CARTON' });
+  unknown.products = () => [];
+  unknown.setLineQuantity(1, 13);
+  assert.equal(unknown.linePending()[1], 24);
+  // Fixtures and older servers without any step read as full cartons.
+  const older = stepHarness({ carton: { piecesPerCarton: 30 } });
+  older.setLineQuantity(1, 31);
+  assert.equal(older.linePending()[1], 60);
+  assert.equal(older.lineStepNotice(1), 'Volle doos');
+});
+
+test('both quantity hints name the step and the save toast no longer promises full cartons', async () => {
+  for (const file of ['sales-desk', 'sales-editor']) {
+    const text = await source(file);
+    assert.match(text, /\{\{ lineStepNotice\(line\.productId\) \}\}: wordt/, file);
+    assert.doesNotMatch(text, /Volle doos: wordt/, file);
+  }
+  const editor = await source('sales-editor');
+  assert.match(editor, /aantal afgerond op het bestelveelvoud/);
+  assert.doesNotMatch(editor, /naar volle dozen berekend/);
 });

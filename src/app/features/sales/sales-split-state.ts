@@ -1,4 +1,4 @@
-import type { SalesOrderView, SalesSplitEligibility, SalesSplitPreview, SalesSplitRequest } from '../../core/api/models';
+import type { SalesOrderView, SalesSplitEligibility, SalesSplitLine, SalesSplitPreview, SalesSplitRequest } from '../../core/api/models';
 
 /** A useful local explanation; the server also checks history and current stock. */
 export function salesSplitBlockReason(view: SalesOrderView | null | undefined): string | null {
@@ -22,6 +22,20 @@ export function salesSplitBlockReason(view: SalesOrderView | null | undefined): 
   return null;
 }
 
+/**
+ * What both parts of a line must be a multiple of: the server's order step for
+ * this line (1 when it does not round), full cartons from an older server.
+ */
+export function salesSplitStep(line: Pick<SalesSplitLine, 'unitsPerOrderStep' | 'piecesPerCarton'>): number {
+  const step = line.unitsPerOrderStep ?? line.piecesPerCarton;
+  return step != null && Number.isSafeInteger(step) && step > 1 ? step : 1;
+}
+
+/** "volle dozen van 24 stuks" / "displays van 8 stuks", after "in". */
+export function salesSplitMultiple(line: Pick<SalesSplitLine, 'unitsPerOrderStep' | 'piecesPerCarton' | 'orderStep'>): string {
+  return `${line.orderStep === 'PACKAGE' ? 'displays' : 'volle dozen'} van ${salesSplitStep(line)} stuks`;
+}
+
 export type SalesSplitQuantities = Record<number, number | null>;
 export type SalesSplitUnavailable = Record<number, boolean>;
 export type SalesSplitOverrides = Pick<SalesSplitRequest, 'currentFreightEur' | 'laterFreightEur' | 'currentExtraDiscountPct' | 'laterExtraDiscountPct'>;
@@ -34,9 +48,9 @@ export function salesSplitRequest(eligibility: SalesSplitEligibility, quantities
     if (!Number.isSafeInteger(laterQuantity) || laterQuantity < 0 || laterQuantity > line.quantity) {
       throw new Error(`Vul voor ${line.description} een geheel aantal van 0 tot ${line.quantity} in.`);
     }
-    if (!parked && line.piecesPerCarton && line.piecesPerCarton > 1
-      && (laterQuantity % line.piecesPerCarton !== 0 || (line.quantity - laterQuantity) % line.piecesPerCarton !== 0)) {
-      throw new Error(`Verdeel ${line.description} in volle dozen van ${line.piecesPerCarton} stuks.`);
+    const step = salesSplitStep(line);
+    if (!parked && step > 1 && (laterQuantity % step !== 0 || (line.quantity - laterQuantity) % step !== 0)) {
+      throw new Error(`Verdeel ${line.description} in ${salesSplitMultiple(line)}.`);
     }
     return { lineId: line.lineId, laterQuantity, ...(parked ? { unavailable: true } : {}) };
   });

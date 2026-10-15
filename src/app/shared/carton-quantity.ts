@@ -1,7 +1,9 @@
 import { signal } from '@angular/core';
 
 /**
- * A quantity field that respects full cartons.
+ * A quantity field that respects full cartons - or, when selling, the
+ * product's order step ("Verkocht per": a carton, a display, one unit);
+ * the caller hands in the step as `perCarton`.
  *
  * The rules are the same everywhere a quantity is typed:
  *
