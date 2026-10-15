@@ -142,12 +142,12 @@ function inDaysText(days: number): string {
           }
           @case ('maand') {
             <div class="home-ag__month">
-              <app-agenda-month variant="desk" [selected]="selected()" (selectedChange)="select($event)" />
+              <app-agenda-month variant="desk" [selected]="selected()" (selectedChange)="select($event)" [cards]="sheets" />
             </div>
           }
         }
-        <!-- Always here: the Taken card on 'taken', and on every view the sheets the desk page opens. -->
-        <app-planner-cards [section]="view() === 'taken' ? 'tasks' : 'none'" />
+        <!-- Always here: the Taken card on 'taken', and on every view the sheets the desk page opens (the month's too). -->
+        <app-planner-cards #sheets [section]="view() === 'taken' ? 'tasks' : 'none'" />
       </div>
     </section>
   `,

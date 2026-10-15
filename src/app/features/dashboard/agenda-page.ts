@@ -256,9 +256,14 @@ export class AgendaPage {
   tone = dotTone;
 
   constructor() {
-    /* A desk has the month in the home's Agenda card. */
+    /* A desk has the month in the home's Agenda card: the same day (?dag=), or its Taken view. */
     effect(() => {
-      if (this.desk()) untracked(() => void this.router.navigate(['/dashboard'], { queryParams: { agenda: 'maand' }, replaceUrl: true }));
+      if (!this.desk()) return;
+      untracked(() => {
+        const taken = this.seg() === 'taken';
+        const day = taken ? null : validDay(this.query().get('dag'));
+        void this.router.navigate(['/dashboard'], { queryParams: { agenda: taken ? 'taken' : 'maand', dag: day }, replaceUrl: true });
+      });
     });
     /*
      * The fold: the sentinel sits between the segments and the panel. Once it passes under where the subbar's
