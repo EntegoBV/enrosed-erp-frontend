@@ -1725,19 +1725,31 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   Bank and in every bank total, but leaves the Kaslijn and Kasprognose start.
 
 ### Kasprognose (Analyses, `features/analyses/cash-*.ts`)
-- `CashSources` (cash-sources.ts, scoped to AnalysesPage, loaded lazily the
-  first time Kasprognose or Overzicht shows) fetches the bank first, then
-  statements from `statementsFromOf` = the first day of the month three
-  months back, earlier when an active account's latest reading is older
-  (`banking.list(from)`), recurring costs, purchase payments, advance
-  schedules, company, stored choices and settings; purchase orders, sales,
+- `CashData` (cash-sources.ts, root; `CashSources` is its old name, kept
+  for one release) is shared by Analyses and the home's Kas card. It loads
+  lazily: `ensure(today)` fetches when nothing is loaded, when the last
+  round was for another day or is older than 2 minutes
+  (`CASH_DATA_MAX_AGE_MS`), else does nothing; `reload(today)` ("Opnieuw",
+  "Vernieuwen") always fetches, and returns at once while a round runs
+  (read `state()`, `refreshing()`, `generation()`, `loadedAt()`). It
+  fetches the bank first, then statements from `statementsFromOf` = the
+  first day of the month three months back, earlier when an active
+  account's latest reading is older (`banking.list(from)`), recurring
+  costs, purchase payments, advance schedules (`loadSchedules(financings,
+  round)`, once per round; call it only after the partner financings
+  loaded), company, stored choices and settings; purchase orders, sales,
   products and costs come from the page's own load. Each source fails on
   its own, keeps its last good data and names itself in "Niet alle actuele
-  cijfers konden laden: …". `CashState` (cash-state.ts) holds the address,
-  the forecast (`pastDays: 42`), the PO sheet and the order-date hint; the
-  Overzicht card ("Op de bank … · laagste stand … · Kasprognose ›") shares
-  it, so nothing loads twice. `cash-view.ts` builds every text and grouping
-  (node-tested through a transpile harness).
+  cijfers konden laden: …". `CashState` (cash-state.ts, scoped to
+  AnalysesPage) holds the address, the forecast, the PO sheet and the
+  order-date hint; the Overzicht card ("Op de bank … · laagste stand … ·
+  Kasprognose ›") shares it, so nothing loads twice. `cash-options.ts`
+  `cashOptionsOf(location, today, dismissed)` is the one ForecastOptions
+  builder (`pastDays: 42`); the home uses it with `DEFAULT_CASH_LOCATION`
+  so its lowest point equals Analyses'. `features/dashboard/home-cash.ts`
+  (pure) turns a forecast into the home's Kas headline and sparkline.
+  `cash-view.ts` builds every text and grouping (node-tested through a
+  transpile harness).
 - Address (`cash-url.ts`, pure): `h` 3/6/12 (default 6), `po` (the open
   container sheet; opening and closing push, everything else replaces),
   link defaults `prijs` opslag|stuk|lijst|historisch, `opslag`, `stuk`,
