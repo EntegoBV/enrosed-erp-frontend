@@ -9,7 +9,9 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE } from './purchase-payment-ledger';
 import { reconciliationStatusLabel } from './purchase-reconciliation-metrics';
-import { mixPricingRange, mixRange, nacalcUnitMix, type NacalcUnitMix } from './purchase-payment-result-metrics';
+import {
+  mixPricingRange, mixRange, nacalcUnitMix, reconciliationLineUnit, reconciliationUnit, type NacalcUnitMix, type ReconciliationUnit,
+} from './purchase-payment-result-metrics';
 
 /**
  * The server-owned settlement picture in Analyses › Inkoop (Containerafrekening):
@@ -73,10 +75,12 @@ import { mixPricingRange, mixRange, nacalcUnitMix, type NacalcUnitMix } from './
 
         <dl class="wk-equation reconciliation__unit">
           @let mix = unitMix(r);
+          @let unit = unitOf(t);
           @if (mix.uniform) {
+            <!-- One product in its own unit: a set product per set, its piece price beside it ('€ 2,5800 per stuk'). -->
             <div>
-              <dt>{{ t.finalized ? 'Externe kost per stuk' : 'Verwachte externe kost per stuk' }}<span class="wk-td__sub">{{ t.unitCostQuantity | num }} {{ t.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbaar ontvangen' : 'bestelde' }} stuks, incl. inspectie</span></dt>
-              <dd>@if (t.forecastExternalUnitEur !== null) { {{ t.forecastExternalUnitEur | eur: 4 }} }</dd>
+              <dt>{{ t.finalized ? 'Externe kost per ' : 'Verwachte externe kost per ' }}{{ unit.unit }}<span class="wk-td__sub">@if (unit.pieceEur !== null) { {{ unit.pieceEur | eur: 4 }} per stuk · }{{ unit.quantity | num }} {{ unit.usable ? 'bruikbaar ontvangen' : 'bestelde' }} {{ unit.plural }}, incl. inspectie</span></dt>
+              <dd>@if (unit.unitEur !== null) { {{ unit.unitEur | eur: 4 }} }</dd>
             </div>
           } @else {
             <!-- Several products have no one price per stuk: their range, each one under Per product; never an average over them. -->
@@ -91,7 +95,7 @@ import { mixPricingRange, mixRange, nacalcUnitMix, type NacalcUnitMix } from './
           <div class="is-sub"><dt>Interne Enrosed opslag</dt><dd>{{ t.internalMarkupEur | eur }}</dd></div>
           <div class="is-sub"><dt>Kostbasis incl. opslag</dt><dd>{{ t.forecastPricingEur | eur }}</dd></div>
           @if (mix.uniform) {
-            <div class="is-sub"><dt>Per stuk incl. opslag</dt><dd>@if (t.forecastPricingUnitEur !== null) { {{ t.forecastPricingUnitEur | eur: 4 }} }</dd></div>
+            <div class="is-sub"><dt>Per {{ unit.unit }} incl. opslag@if (unit.pricingPieceEur !== null) { <span class="wk-td__sub">{{ unit.pricingPieceEur | eur: 4 }} per stuk</span> }</dt><dd>@if (unit.pricingUnitEur !== null) { {{ unit.pricingUnitEur | eur: 4 }} }</dd></div>
           } @else {
             <div class="is-sub"><dt>Per {{ mix.unit }} incl. opslag · {{ mix.count }} producten</dt><dd>{{ pricingRange(mix) ?? '—' }}</dd></div>
           }
@@ -103,12 +107,13 @@ import { mixPricingRange, mixRange, nacalcUnitMix, type NacalcUnitMix } from './
             <summary>Per product <span>{{ r.lines.length }} {{ r.lines.length === 1 ? 'productregel' : 'productregels' }}</span></summary>
             <div class="rc-products">
               @for (line of r.lines; track line.productId ?? line.productName) {
+                @let lineUnit = lineUnitOf(line);
                 <div class="rc-product">
                   <span class="rc-product__copy">
                     @if (line.productId) { <a [routerLink]="['/products', line.productId]">{{ line.productName }}</a> } @else { <b>{{ line.productName }}</b> }
-                    <!-- Four decimals, like the totals above and the product pages: this is where a product gets priced. -->
-                    <small>{{ line.unitCostQuantity | num }} {{ line.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks@if (line.forecastExternalUnitEur !== null) { · {{ line.forecastExternalUnitEur | eur: 4 }} per stuk }@if (line.forecastPricingUnitEur !== null) { · {{ line.forecastPricingUnitEur | eur: 4 }} incl. opslag }</small>
-                    @if (line.unitCostQuantity === 0) { <small class="wk-amount--warn">Geen bruikbare stuks: de kost blijft bij deze productregel.</small> }
+                    <!-- Four decimals, like the totals above and the product pages: this is where a product gets priced. A set per set, its piece price beside it. -->
+                    <small>{{ lineUnit.quantity | num }} {{ lineUnit.usable ? 'bruikbare' : 'bestelde' }} {{ lineUnit.plural }}@if (lineUnit.unitEur !== null) { · {{ lineUnit.unitEur | eur: 4 }} per {{ lineUnit.unit }} }@if (lineUnit.pieceEur !== null) { · {{ lineUnit.pieceEur | eur: 4 }} per stuk }@if (lineUnit.pricingUnitEur !== null) { · {{ lineUnit.pricingUnitEur | eur: 4 }}@if (lineUnit.unit === 'set') { per set } incl. opslag }</small>
+                    @if (line.unitCostQuantity === 0) { <small class="wk-amount--warn">Geen bruikbare {{ lineUnit.plural }}: de kost blijft bij deze productregel.</small> }
                   </span>
                   <span class="rc-product__amount">
                     <b>{{ line.forecastExternalEur | eur }}</b>
@@ -153,8 +158,10 @@ export class PurchaseReconciliation {
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
 
-  /** One product (or the server's like products) keeps the container's per-stuk figure; several get their range. */
+  /** One product keeps the container's own figure, in its unit (unitOf); several get their range. */
   unitMix(r: Reconciliation): NacalcUnitMix { return nacalcUnitMix(r); }
+  unitOf(totals: Reconciliation['totals']): ReconciliationUnit { return reconciliationUnit(totals); }
+  lineUnitOf(line: Reconciliation['lines'][number]): ReconciliationUnit { return reconciliationLineUnit(line); }
   range(mix: NacalcUnitMix): string { return mixRange(mix); }
   pricingRange(mix: NacalcUnitMix): string | null { return mixPricingRange(mix); }
 

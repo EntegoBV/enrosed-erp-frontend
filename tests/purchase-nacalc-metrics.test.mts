@@ -312,6 +312,8 @@ test('reason precedence: bijkomend, onvolledig, betaald zonder afspraak, te veel
   assert.equal(reason({ status: { kind: 'INCOMPLETE', label: 'Onvolledig', tone: 'warn' } }).reason, 'incomplete');
   assert.equal(reason({ status: { kind: 'UNBUDGETED', label: 'Betaald zonder afspraak', tone: 'warn' } }).reason, 'unbudgeted');
   assert.equal(reason({ status: { kind: 'OVERPAID', label: 'Te veel betaald · nakijken', tone: 'warn' } }).reason, 'review');
+  const koers = reason({ payee: 'SUPPLIER', status: { kind: 'FX', label: 'Koersverschil € 44,80 (bank)', tone: 'neutral' } });
+  assert.deepEqual([koers.reason, koers.label], ['fx', 'koersverschil (bank) · zit al in betaald'], 'the bank\'s rate is no overpayment to review');
   const historic = reason({ payee: 'SUPPLIER', paymentCount: 0 }, 34428.8);
   assert.deepEqual(plain([historic.reason, historic.label]), ['legacy', 'historisch € 34.428,80 betaald bij ontvangst · niet in het logboek']);
   assert.equal(reason({ payee: 'SUPPLIER', paymentCount: 1 }, 34428.8).reason, 'open', 'once a supplier payment exists the header is no longer the story');
@@ -331,7 +333,7 @@ test('reason precedence: bijkomend, onvolledig, betaald zonder afspraak, te veel
   assert.deepEqual(plain([credit.reason, credit.label]), ['credit', 'tegoed leverancier − € 500,00 · € 200,00 te ontvangen']);
   assert.equal(plain(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 0, creditEur: 500, creditOpenEur: 0 }).label), 'tegoed leverancier − € 500,00');
   assert.equal(reason({ payee: 'SUPPLIER', paymentCount: 1, openEur: 100, dueNowEur: 100, creditEur: 500 }).reason, 'open');
-  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 12);
+  assert.equal(Object.keys(NACALC_REASON_LABEL).length, 13);
 });
 
 test('the row action mirrors the workbench: Noteer for anything due or open later, Afrekenen for a remainder, Nakijken only for an overpayment', () => {

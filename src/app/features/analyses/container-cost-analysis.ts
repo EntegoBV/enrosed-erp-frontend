@@ -5,7 +5,7 @@ import type { PurchaseOrderView } from '../../core/api/models';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { PurchaseReconciliation } from '../purchasing/purchase-reconciliation';
 import { ContainerCostFilter, containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
-import { mixRange, nacalcUnitMix, purchasePaymentResult, type NacalcUnitMix } from '../purchasing/purchase-payment-result-metrics';
+import { mixRange, nacalcUnitMix, purchasePaymentResult, reconciliationUnit, type NacalcUnitMix, type ReconciliationUnit } from '../purchasing/purchase-payment-result-metrics';
 import { containerPaymentResultTotals } from './container-payment-result-metrics';
 
 /** Payment reconciliation remains independent of the receipt-quality date filter below it. */
@@ -90,7 +90,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
           </div>
           <div class="container-cost-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
             <table>
-              <thead><tr><th>Container</th><th>Status</th><th>Afspraak</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per stuk</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
+              <thead><tr><th>Container</th><th>Status</th><th>Afspraak</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
               <tbody>
                 @for (row of rows(); track row.view.order.id) {
                   <tr [class.selected]="expandedId() === row.view.order.id">
@@ -111,10 +111,12 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
                     </td>
                     @let mix = unitMix(row.reconciliation);
                     @if (mix.uniform) {
-                      <td data-label="Per stuk">{{ row.reconciliation.totals.forecastExternalUnitEur === null ? '—' : (row.reconciliation.totals.forecastExternalUnitEur | eur: 4) }}<small>{{ row.reconciliation.totals.unitCostQuantity | num }} {{ row.reconciliation.totals.unitCostBasis === 'USABLE_RECEIVED' ? 'bruikbare' : 'bestelde' }} stuks</small></td>
+                      <!-- One product in its own unit: a set product per set with its piece price beside it, never 'per stuk' for a set. -->
+                      @let unit = unitOf(row.reconciliation.totals);
+                      <td data-label="Per eenheid">@if (unit.unitEur === null) { — } @else { {{ unit.unitEur | eur: 4 }} per {{ unit.unit }} }@if (unit.pieceEur !== null) { <small>{{ unit.pieceEur | eur: 4 }} per stuk</small> }<small>{{ unit.quantity | num }} {{ unit.usable ? 'bruikbare' : 'bestelde' }} {{ unit.plural }}</small></td>
                     } @else {
                       <!-- Several products: their range per {{ mix.unit }}, never an average over them. -->
-                      <td data-label="Per stuk">{{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small></td>
+                      <td data-label="Per eenheid">{{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small></td>
                     }
                     <td class="container-cost-table__actions"><button class="btn btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + row.view.order.number" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
                   </tr>
@@ -341,8 +343,9 @@ export class ContainerCostAnalysis {
   readonly expanded = computed(() => this.rows().find((row) => row.view.order.id === this.expandedId()) ?? null);
   readonly unavailable = computed(() => this.purchases().filter((row) => !row.reconciliation).length);
   toggle(id: number): void { this.expandedId.update((current) => current === id ? null : id); }
-  /** One product (or the server's like products) keeps the container's per-stuk figure; several get their range, never an average. */
+  /** One product keeps the container's own figure in its unit (unitOf); several get their range, never an average. */
   unitMix(reconciliation: NonNullable<PurchaseOrderView['reconciliation']>): NacalcUnitMix { return nacalcUnitMix(reconciliation); }
+  unitOf(totals: NonNullable<PurchaseOrderView['reconciliation']>['totals']): ReconciliationUnit { return reconciliationUnit(totals); }
   range(mix: NacalcUnitMix): string { return mixRange(mix); }
   orderStatus(status: PurchaseOrderView['order']['status']): string {
     return { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' }[status];

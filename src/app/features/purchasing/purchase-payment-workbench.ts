@@ -13,7 +13,8 @@ import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeDifferenceState, payeeRowAction, sortLedgerRows, type Due,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, differenceWord, ledgerDifferenceNote, payeeDifferenceText, payeeRowAction,
+  sortLedgerRows, type Due,
   type LedgerCredit, type LedgerRow, type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction,
   type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
@@ -111,7 +112,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                 <span class="wk-strip__op pw-op pw-strip__wide" aria-hidden="true">±</span>
                 <div class="wk-strip__item pw-strip__wide"><span class="wk-strip__label">Verschil</span>
                   <span class="wk-strip__value">{{ abs(sum.differenceEur) | eur }} {{ sum.differenceEur < 0 ? 'minder' : 'meer' }}</span>
-                  <small class="pw-strip__sub">{{ reviewHigher() ? 'nog na te kijken' : 'na afrekening' }}</small></div>
+                  <small class="pw-strip__sub">{{ differenceNote(sum) }}</small></div>
               }
               <span class="wk-strip__op pw-op" aria-hidden="true">=</span>
               <div class="wk-strip__item pw-cell"><span class="wk-strip__label">Open</span><span class="wk-strip__value">{{ sum.openEur | eur }}</span><small class="pw-strip__sub">@if (sum.laterEur > 0) { waarvan later {{ sum.laterEur | eur }} } @else if (sum.openEur > 0) { volledig nu te betalen } @else { niets meer open }</small></div>
@@ -186,15 +187,16 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                         </span>
                         <span class="wk-td" role="gridcell"><span class="pw-payee"><span class="pw-tile" [class]="item.tone"><app-icon [name]="item.icon" [size]="14" /></span>
                           <span class="pw-payee__copy"><b>{{ item.label }}</b><span class="wk-td__sub pw-basis" [title]="item.basis">{{ basis(item) }}</span>
+                            @if (basisVia(item)) { <span class="wk-td__sub pw-basis-via">via leverancier</span> }
                             @if (item.dueNowEur > 0) { <span class="wk-td__sub pw-when-mid">{{ item.dueNowEur | eur }} nu</span> }
                             <span class="pw-when-tiny"><span class="wk-pill" [class]="pill(item.status.tone)">{{ item.status.label }}</span></span></span></span></span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ item.agreedEur | eur }}</span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ item.paidEur | eur }}</span>
                         @if (showDifference()) {
-                          <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (item.differenceEur) { {{ abs(item.differenceEur) | eur }}<span class="wk-td__sub">{{ item.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
+                          <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (item.differenceEur) { {{ abs(item.differenceEur) | eur }}<span class="wk-td__sub pw-diff-word">{{ differenceWord(item) }}</span> }</span>
                         }
                         <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ item.openEur | eur }}
-                          @if (showDifference() && item.differenceEur) { <span class="wk-td__sub pw-open-sub pw-when-narrow">{{ abs(item.differenceEur) | eur }} {{ item.differenceEur < 0 ? 'minder' : 'meer' }} · {{ differenceState(item) }}</span> }</span>
+                          @if (showDifference() && item.differenceEur) { <span class="wk-td__sub pw-open-sub pw-when-narrow">{{ differenceText(item) }}</span> }</span>
                         <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid" [class.wk-amount--warn]="item.dueNowEur > 0">@if (item.dueNowEur > 0) { {{ item.dueNowEur | eur }} }</span>
                         <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="tiny">
                           <span class="wk-pill" [class]="pill(item.status.tone)">{{ item.status.label }}</span>
@@ -224,7 +226,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.fullEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.paidEur | eur }}</span>
                               @if (showDifference()) {
-                                <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.differenceEur) { {{ abs(term.differenceEur) | eur }}<span class="wk-td__sub">{{ term.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
+                                <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (term.differenceEur) { {{ abs(term.differenceEur) | eur }}<span class="wk-td__sub pw-diff-word">{{ differenceWord(term) }}</span> }</span>
                               }
                               <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ term.openEur | eur }}</span>
                               <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (term.state === 'due' && !term.settled && term.openEur > 0) { {{ term.openEur | eur }} }</span>
@@ -337,7 +339,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.agreedEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.paidOnAgreementEur | eur }}</span>
                       @if (showDifference()) {
-                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (sum.differenceEur) { {{ abs(sum.differenceEur) | eur }}<span class="wk-td__sub">{{ sum.differenceEur < 0 ? 'minder' : 'meer' }}</span> }</span>
+                        <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="narrow">@if (sum.differenceEur) { {{ abs(sum.differenceEur) | eur }}<span class="wk-td__sub pw-diff-word">{{ differenceWord(sum) }}</span> }</span>
                       }
                       <span class="wk-td wk-td--num wk-amount" role="gridcell">{{ sum.openEur | eur }}</span>
                       <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (sum.dueNowEur > 0) { {{ sum.dueNowEur | eur }} }</span>
@@ -462,6 +464,10 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                       } @else {
                         <p class="pw-muted">Niets te doen · alles is bij</p>
                       }
+                      @if (sum.fxEur > 0) {
+                        <!-- The bank's exchange rate on a foreign amount paid as agreed: said here, never a 'nakijken' to-do. -->
+                        <p class="pw-fx-note" role="note"><b>Koersverschil {{ sum.fxEur | eur }} (bank)</b><small>Bankkoers t.o.v. de orderkoers · in vreemde munt betaald zoals afgesproken</small></p>
+                      }
                       @if (partnerLinked()) {
                         <p class="pw-muted pw-card__foot"><button class="wk-link" type="button" (click)="openPartner.emit()">Verkoopdocumenten van deze container ›</button></p>
                       }
@@ -578,8 +584,6 @@ export class PurchasePaymentWorkbench {
   readonly additional = computed(() => this.ledger()?.visible.find(item => item.payee === 'OTHER') ?? null);
   /** The supplier's terms: a payment of a netted term is settled with the whole supplier (settleWith). */
   readonly supplierTerms = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER')?.terms ?? []);
-  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** The selected payee, or the only one that can be settled. */
   readonly settleTarget = computed(() => {
     const payees = this.ledger()?.payees ?? [];
@@ -654,10 +658,12 @@ export class PurchasePaymentWorkbench {
   /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only what is paid for (goods, + zeevracht under CIF). */
   basis(item: PayeeLedger): string {
     if (item.payee === 'SUPPLIER') return item.terms.length && this.isExpanded('SUPPLIER') ? item.basis.split(' · ')[0] || SUPPLIER_GOODS : item.basis;
-    // The Afspraak stands in its own column beside the name: the cell keeps to two lines ('Afspraak € 300,00 · via leverancier'), the title has it whole.
-    if (item.payee === 'SEPARATE' && (item.agreedEur ?? 0) > 0) return `Afspraak ${formatEur(item.agreedEur!)}${item.viaSupplier ? ' · via leverancier' : ''}`;
+    // The Afspraak in short ('Afspraak € 300,00'); 'via leverancier' goes on its own line (basisVia), the title has it whole.
+    if (item.payee === 'SEPARATE' && (item.agreedEur ?? 0) > 0) return `Afspraak ${formatEur(item.agreedEur!)}`;
     return item.basis;
   }
+  /** Inspectie & andere kosten paid through the supplier: 'via leverancier' as its own line under the Afspraak, so the narrow name column never cuts it. */
+  basisVia(item: PayeeLedger): boolean { return item.payee === 'SEPARATE' && (item.agreedEur ?? 0) > 0 && item.viaSupplier; }
   proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
 
   /** 'Factuur CI-2026-118 · 20/08/2026 · € 31.048,04 · gelijk aan de afspraak'; a later invoice of the payee is 'extra factuur'. */
@@ -717,7 +723,10 @@ export class PurchasePaymentWorkbench {
     return payeeRowAction(item);
   }
 
-  readonly differenceState = payeeDifferenceState;
+  /** The Verschil in words: 'Koersverschil € 44,80 (bank)' when the bank's rate is all of it (payeeDifferenceText). */
+  readonly differenceText = payeeDifferenceText;
+  readonly differenceWord = differenceWord;
+  readonly differenceNote = ledgerDifferenceNote;
 
   /** What comes next under the status pill, unless the pill already says it. */
   nextSub(item: PayeeLedger): string | null {

@@ -150,7 +150,9 @@ const REVIEW_STATUSES: ReadonlySet<PayeeStatusKind> = new Set<PayeeStatusKind>([
  * The state machine. With the ledger, a payee that is overpaid, unbudgeted or
  * incomplete (or figures that do not close) means review; without it the
  * server report alone decides: an unsettled overrun or a stream missing its
- * euro amount. Final needs every stream finalized on a non-concept order.
+ * euro amount. The bank's koersverschil on a foreign amount paid as agreed
+ * (the ledger's fxEur) is no overrun to review: it stays provisional until
+ * settled. Final needs every stream finalized on a non-concept order.
  */
 export function nacalcKind(
   result: Pick<PurchasePaymentResult, 'eligible' | 'finalized' | 'unsettledOverrunsEur' | 'streams'>,
@@ -159,9 +161,15 @@ export function nacalcKind(
 ): NacalcKind {
   if (!result.eligible) return 'concept';
   const ledgerReview = !!ledger && (!ledger.summary.balanced || ledger.payees.some(payee => REVIEW_STATUSES.has(payee.status.kind)));
-  const serverReview = result.unsettledOverrunsEur > 0 || result.streams.some(stream => !stream.finalized && stream.paidEur === null);
+  const serverReview = reviewOverrunEur(result, ledger) > 0 || result.streams.some(stream => !stream.finalized && stream.paidEur === null);
   if (ledgerReview || serverReview) return 'review';
   return totals.finalized === true && result.finalized ? 'final' : 'provisional';
+}
+
+/** The unsettled overrun still to review: the server's, less the koersverschil the ledger recognised (PayeeLedger.fxEur). */
+function reviewOverrunEur(result: Pick<PurchasePaymentResult, 'unsettledOverrunsEur'>, ledger?: Pick<PaymentLedger, 'payees'> | null): number {
+  const fx = (ledger?.payees ?? []).reduce((sum, payee) => sum + Math.round((payee.fxEur ?? 0) * 100), 0);
+  return Math.max(0, Math.round(result.unsettledOverrunsEur * 100) - fx) / 100;
 }
 
 /** What the Betalingen workbench and the desk rail show of the Nacalculatie in one card, and what the full story starts from. */
@@ -180,7 +188,7 @@ export interface PurchaseNacalcSummary {
   pill: { label: string; tone: NacalcTone };
   /** totals.remainingEur: what still has to be paid on the agreements. */
   openEur: number;
-  /** Paid beyond an agreement and not yet settled: inside the forecast, apart from every result. */
+  /** Paid beyond an agreement and not yet settled: inside the forecast, apart from every result; a koersverschil is not in it. */
   reviewEur: number;
   unitEur: number | null;
   unitQuantity: number;
@@ -219,12 +227,12 @@ export interface NacalcMixRow {
 /**
  * Per product, never a mixed average (Emre, 2026-10-15: 'Per stuk € 2,4473 ·
  * 6.920 bestelde stuks — want als meerdere producten dan klopt dat niet').
- * The container's per-unit figure stands only when it holds one product, or
- * every line shares the product family, the sales unit and the set size;
- * otherwise the screens show '2 producten · € min – € max per stuk' (per set
- * when every line is a set of one size, else per stuk with sets at their
- * piece price) and the products by value. No average over the products is
- * shown anywhere, not even as a sub-line.
+ * The container's per-unit figure stands only when it holds one product
+ * (variants of one family are different products too); otherwise the screens
+ * show '2 producten · € min – € max per stuk' (per set when every line is a
+ * set of one size, else per stuk with sets at their piece price) and the
+ * products by value. No average over the products is shown anywhere, not
+ * even as a sub-line.
  */
 export interface NacalcUnitMix {
   uniform: boolean;
@@ -245,13 +253,12 @@ export interface NacalcUnitMix {
 
 /**
  * The products of a container against its per-unit figure. The server's
- * totals.containerAverage decides when it is there; else `familyOf` maps a
- * product to its family (null without one) and without it only one product
- * is uniform.
+ * totals.containerAverage decides when it is there; an older server leaves
+ * it to the same rule here (ReconciliationUnits.containerAverage): one
+ * product at most.
  */
 export function nacalcUnitMix(
   report: { lines: readonly PurchaseReconciliationLine[]; totals: PurchaseReconciliationTotals } | null | undefined,
-  familyOf: (productId: number) => number | null = () => null,
 ): NacalcUnitMix {
   const lines = report?.lines ?? [];
   const totals = report?.totals;
@@ -259,11 +266,9 @@ export function nacalcUnitMix(
   const products = new Map<string, PurchaseReconciliationLine[]>();
   for (const line of lines) products.set(keyOf(line), [...(products.get(keyOf(line)) ?? []), line]);
   const unitOf = (line: PurchaseReconciliationLine) => `${line.salesUnit ?? 'PIECE'}|${line.salesUnit === 'DISPLAY' ? line.piecesPerUnit ?? 1 : 1}`;
-  const families = new Set(lines.map(line => line.productId != null ? familyOf(line.productId) : null));
   const sameUnit = new Set(lines.map(unitOf)).size <= 1;
-  const oneFamily = families.size === 1 && !families.has(null);
-  // The server says it since round 2 (it knows every product's family); an older one leaves it to the same rule here.
-  const uniform = typeof totals?.containerAverage === 'boolean' ? totals.containerAverage : products.size <= 1 || (oneFamily && sameUnit);
+  // The server says it since round 2; an older one leaves it to the same rule here: one product, never a family of them.
+  const uniform = typeof totals?.containerAverage === 'boolean' ? totals.containerAverage : products.size <= 1;
   const allSets = lines.length > 0 && sameUnit && lines.every(line => line.salesUnit === 'DISPLAY');
   const unit: 'set' | 'stuk' = allSets ? 'set' : 'stuk';
   const rows: NacalcMixRow[] = [...products.values()].map((group): NacalcMixRow => {
@@ -304,6 +309,69 @@ export function nacalcUnitMix(
 }
 
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
+
+/**
+ * One product's cost in its own unit, as Analyses › Inkoop writes it (the
+ * container table, the Afrekening and its Per product list): a set product
+ * per set with the piece price beside it ('€ 30,9600 per set · € 2,5800 per
+ * stuk · 400 bestelde sets'), a product sold per piece per stuk. Only for a
+ * container's own figure when it holds one product (nacalcUnitMix.uniform),
+ * or for one product line; several products get their range instead.
+ */
+export interface ReconciliationUnit {
+  unit: 'set' | 'stuk';
+  plural: 'sets' | 'stuks';
+  unitEur: number | null;
+  /** A set's figure per stuk; null for a product sold per stuk (its unitEur is already per stuk). */
+  pieceEur: number | null;
+  pricingUnitEur: number | null;
+  pricingPieceEur: number | null;
+  /** What the figure rests on, in `unit`: sets for a set product. */
+  quantity: number;
+  /** Bruikbaar ontvangen (after receipt) or besteld. */
+  usable: boolean;
+}
+
+/**
+ * The container's own figure in its unit: per set when every line is a set of
+ * one size (setBasis DISPLAY), per stuk otherwise; sets beside pieces (MIXED)
+ * count per stuk with their pieces. Without the server's set fields: per stuk.
+ */
+export function reconciliationUnit(totals: PurchaseReconciliationTotals): ReconciliationUnit {
+  const usable = totals.unitCostBasis === 'USABLE_RECEIVED';
+  const basis = totals.setBasis ?? 'PIECE';
+  if (basis === 'DISPLAY') {
+    return setUnit(totals.forecastExternalUnitEur ?? null, totals.forecastExternalPieceEur, totals.forecastPricingUnitEur ?? null,
+      totals.forecastPricingPieceEur, totals.setPieces ?? null, totals.unitCostQuantity ?? 0, usable);
+  }
+  if (basis === 'MIXED') {
+    return { unit: 'stuk', plural: 'stuks', unitEur: totals.forecastExternalPieceEur ?? null, pieceEur: null,
+      pricingUnitEur: totals.forecastPricingPieceEur ?? null, pricingPieceEur: null,
+      quantity: totals.unitCostPieceQuantity ?? totals.unitCostQuantity ?? 0, usable };
+  }
+  return { unit: 'stuk', plural: 'stuks', unitEur: totals.forecastExternalUnitEur ?? null, pieceEur: null,
+    pricingUnitEur: totals.forecastPricingUnitEur ?? null, pricingPieceEur: null, quantity: totals.unitCostQuantity ?? 0, usable };
+}
+
+/** One product line in its unit: a set (sales unit DISPLAY) per set with its piece price, else per stuk. */
+export function reconciliationLineUnit(line: PurchaseReconciliationLine): ReconciliationUnit {
+  const usable = line.unitCostBasis === 'USABLE_RECEIVED';
+  if (line.salesUnit === 'DISPLAY') {
+    return setUnit(line.forecastExternalUnitEur ?? null, line.forecastExternalPieceEur, line.forecastPricingUnitEur ?? null,
+      line.forecastPricingPieceEur, line.piecesPerUnit ?? null, line.unitCostQuantity ?? 0, usable);
+  }
+  return { unit: 'stuk', plural: 'stuks', unitEur: line.forecastExternalUnitEur ?? null, pieceEur: null,
+    pricingUnitEur: line.forecastPricingUnitEur ?? null, pricingPieceEur: null, quantity: line.unitCostQuantity ?? 0, usable };
+}
+
+/** A set's figures: the server's piece price, else the set price over its pieces. */
+function setUnit(unitEur: number | null, pieceEur: number | null | undefined, pricingUnitEur: number | null, pricingPieceEur: number | null | undefined,
+  pieces: number | null, quantity: number, usable: boolean): ReconciliationUnit {
+  const per = (value: number | null, server: number | null | undefined) =>
+    server ?? (value !== null && pieces && pieces > 0 ? round4(value / pieces) : null);
+  return { unit: 'set', plural: 'sets', unitEur, pieceEur: per(unitEur, pieceEur), pricingUnitEur,
+    pricingPieceEur: per(pricingUnitEur, pricingPieceEur), quantity, usable };
+}
 const EURO4 = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const eur4 = (value: number): string => EURO4.format(value);
 
@@ -360,8 +428,8 @@ export function mixReceiptLine(mix: Pick<NacalcUnitMix, 'rows'>): string | null 
 
 /**
  * The calculation's landed cost per unit as the order header and the Kosten
- * chain say it (eurUp: 3 in the template). One product, or one family in one
- * unit and set size (`uniform`, the Nacalculatie's rule): the container's own
+ * chain say it (eurUp: 3 in the template). One product (`uniform`, the
+ * Nacalculatie's rule): the container's own
  * figure, per set with the piece price beside it for a set product
  * ('€ 30,960 per set · € 2,580 per stuk'). Several products: their count and
  * range, per set when every line is a set of one size, else per stuk with a
@@ -415,7 +483,6 @@ export function landedUnitText(unit: LandedUnit | null, money: (value: number) =
 
 export function purchaseNacalcSummary(
   view: Pick<PurchaseOrderView, 'order' | 'reconciliation'>, ledger?: Pick<PaymentLedger, 'payees' | 'summary'> | null,
-  familyOf?: (productId: number) => number | null,
 ): PurchaseNacalcSummary | null {
   const result = purchasePaymentResult(view);
   const totals = view.reconciliation?.totals;
@@ -433,7 +500,7 @@ export function purchaseNacalcSummary(
     label: NACALC_LABEL[kind],
     pill: NACALC_PILL[kind],
     openEur: totals.remainingEur,
-    reviewEur: result.unsettledOverrunsEur,
+    reviewEur: reviewOverrunEur(result, ledger),
     unitEur: totals.forecastExternalUnitEur ?? null,
     unitQuantity: totals.unitCostQuantity ?? 0,
     unitBasis: totals.unitCostBasis ?? 'ORDERED',
@@ -444,6 +511,6 @@ export function purchaseNacalcSummary(
     settledSavingsEur: result.settledSavingsEur,
     settledOverrunsEur: result.settledOverrunsEur,
     additionalCostsEur: result.additionalCostsEur,
-    mix: nacalcUnitMix(view.reconciliation, familyOf),
+    mix: nacalcUnitMix(view.reconciliation),
   };
 }

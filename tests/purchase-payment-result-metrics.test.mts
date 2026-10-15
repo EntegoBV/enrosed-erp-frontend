@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { PurchaseOrderView, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
 import {
   NACALC_LABEL, NACALC_PILL, landedUnit, landedUnitText, mixHeadline, mixPricingRange, mixQuantity, mixReceiptLine, mixRowFigure, nacalcKind, nacalcUnitMix,
-  purchaseNacalcSummary, purchasePaymentResult,
+  purchaseNacalcSummary, purchasePaymentResult, reconciliationLineUnit, reconciliationUnit,
 } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 import type { PurchaseReconciliationLine, PurchaseReconciliationTotals } from '../src/app/core/api/models.ts';
 
@@ -377,14 +377,14 @@ test('one product keeps its per-unit figure; several get their range and the pro
   assert.equal(plain(mixRowFigure(mixed.rows[0])), '€ 3,1000 /stuk');
 });
 
-test('one family in one unit and set size keeps the container figure; sets and pieces together range per stuk', () => {
-  const family = (id: number) => id === 10 || id === 11 ? 5 : null;
-  const colours = nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(11, 'Box Roze')], totals: totals() }, family);
-  assert.equal(colours.uniform, true, 'colour variants of one family');
-  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(12, 'Lint')], totals: totals() }, family).uniform, false);
+test('only one product keeps the container figure, like the server (no family rule); sets and pieces together range per stuk', () => {
+  const colours = nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(11, 'Box Roze')], totals: totals() });
+  assert.equal(colours.uniform, false, 'colour variants of one family are two products: their range, no average');
+  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood'), line(10, 'Box Rood', { orderedQuantity: 200 })], totals: totals() }).uniform, true,
+    'two lines of one product are one product');
   const set = { salesUnit: 'DISPLAY' as const, piecesPerUnit: 12, unitOther: 'rozen' };
-  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood', set), line(11, 'Box Roze', { ...set, piecesPerUnit: 24 })], totals: totals() }, family).uniform, false,
-    'one family, but two set sizes');
+  assert.equal(nacalcUnitMix({ lines: [line(10, 'Box Rood', set), line(11, 'Box Roze', set)], totals: totals() }).uniform, false,
+    'one family in one set size is still two products');
   const mixed = nacalcUnitMix({ lines: [line(10, 'Long stem rose box', { ...set, forecastExternalEur: 15740.4, forecastExternalUnitEur: 31.6072, forecastExternalPieceEur: 2.6339 }),
     line(12, 'Rozenschaal Roze', { forecastExternalEur: 17892.93, forecastExternalUnitEur: 8.9465 })],
     totals: totals({ setBasis: 'MIXED', forecastExternalUnitEur: 13.334, forecastExternalPieceEur: 4.2168, unitCostPieceQuantity: 7976 }) });
@@ -397,15 +397,17 @@ test('one family in one unit and set size keeps the container figure; sets and p
     [false, 'set', 30, 33, '498 sets', '2 producten · € 30,0000 – € 33,0000 per set']);
 });
 
-test('the summary card carries the mix, with the family of each product; the server\'s word wins when it sends one', () => {
+test('the summary card carries the mix; the server\'s word wins when it sends one', () => {
   const view = purchase();
   view.reconciliation!.lines = [line(10, 'A'), line(11, 'B')];
   assert.equal(purchaseNacalcSummary(view)!.mix.uniform, false);
-  assert.equal(purchaseNacalcSummary(view, null, () => 3)!.mix.uniform, true);
   Object.assign(view.reconciliation!.totals, { containerAverage: false, productCount: 2 });
-  assert.deepEqual([purchaseNacalcSummary(view, null, () => 3)!.mix.uniform, purchaseNacalcSummary(view)!.mix.count], [false, 2]);
+  assert.deepEqual([purchaseNacalcSummary(view)!.mix.uniform, purchaseNacalcSummary(view)!.mix.count], [false, 2]);
   Object.assign(view.reconciliation!.totals, { containerAverage: true });
   assert.equal(purchaseNacalcSummary(view)!.mix.uniform, true);
+  view.reconciliation!.lines = [line(10, 'A')];
+  delete view.reconciliation!.totals.containerAverage;
+  assert.equal(purchaseNacalcSummary(view)!.mix.uniform, true, 'an older server: one product keeps its figure');
 });
 
 /* ---- round 3: no mixed average anywhere (Emre: the container-wide 'Per stuk' 'klopt niet' with several products) */
@@ -437,7 +439,33 @@ test("the order header: one product keeps its figure (a set per set with its pie
   const one = landedUnit([{ productId: 301, quantity: 400, totalEur: 12384 }], 30.96, true, sets);
   assert.equal(plain(landedUnitText(one, up)), '€ 30,960 per set · € 2,580 per stuk', "PO-30's set price is per set");
   assert.equal(plain(landedUnitText(landedUnit([bowls], 8.8667, true, sets), up)), '€ 8,867 per stuk');
-  const family = landedUnit([{ productId: 302, quantity: 1000, totalEur: 8000 }, { productId: 303, quantity: 1000, totalEur: 9000 }], 8.5, true, sets);
-  assert.equal(plain(landedUnitText(family, up)), '€ 8,500 per stuk', 'one family in one unit keeps its figure');
+  const family = landedUnit([{ productId: 302, quantity: 1000, totalEur: 8000 }, { productId: 303, quantity: 1000, totalEur: 9000 }], 8.5, false, sets);
+  assert.equal(plain(landedUnitText(family, up))!.replace(/\u2060/g, ''), '2 producten · € 8,000 – € 9,000 per stuk',
+    'two variants of one family are two products (the mix says so since the family rule is gone): their range');
   assert.equal(landedUnit([], 0, true, sets), null);
+});
+
+/* ---- Analyses › Inkoop: a set product per set with its piece price, never its set figure called 'per stuk' */
+
+test("one set product reads per set with 'per stuk' beside it; pieces stay per stuk; a mixed basis counts per stuk", () => {
+  const set = { salesUnit: 'DISPLAY' as const, piecesPerUnit: 12, unitOther: 'rozen' };
+  // PO-30: 400 sets of 12 rozen at € 30,96 (the server sends the piece price).
+  const po30 = reconciliationUnit(totals({ setBasis: 'DISPLAY', setPieces: 12, forecastExternalUnitEur: 30.96, forecastExternalPieceEur: 2.58,
+    forecastPricingUnitEur: 33.282, forecastPricingPieceEur: 2.7735, unitCostQuantity: 400, unitCostBasis: 'ORDERED' }));
+  assert.deepEqual([po30.unit, po30.plural, po30.unitEur, po30.pieceEur, po30.pricingUnitEur, po30.pricingPieceEur, po30.quantity, po30.usable],
+    ['set', 'sets', 30.96, 2.58, 33.282, 2.7735, 400, false]);
+  const older = reconciliationUnit(totals({ setBasis: 'DISPLAY', setPieces: 12, forecastExternalUnitEur: 30.96, forecastPricingUnitEur: 33.282, unitCostQuantity: 400 }));
+  assert.deepEqual([older.pieceEur, older.pricingPieceEur], [2.58, 2.7735], 'without the server\'s piece price: the set price over its pieces');
+  const pieces = reconciliationUnit(totals({ forecastExternalUnitEur: 8.06, forecastPricingUnitEur: 8.6645, unitCostQuantity: 5000, unitCostBasis: 'USABLE_RECEIVED' }));
+  assert.deepEqual([pieces.unit, pieces.plural, pieces.unitEur, pieces.pieceEur, pieces.quantity, pieces.usable], ['stuk', 'stuks', 8.06, null, 5000, true]);
+  const mixed = reconciliationUnit(totals({ setBasis: 'MIXED', forecastExternalUnitEur: 13.334, forecastExternalPieceEur: 4.2168,
+    forecastPricingPieceEur: 4.5, unitCostQuantity: 2500, unitCostPieceQuantity: 7976 }));
+  assert.deepEqual([mixed.unit, mixed.unitEur, mixed.pricingUnitEur, mixed.quantity], ['stuk', 4.2168, 4.5, 7976], 'never the per-unit average of sets and pieces');
+  // PO-14's Per product list: the display per set (498 usable sets), the bowl per stuk.
+  const display = reconciliationLineUnit(line(10, 'Long stem rose box display Rood', { ...set, unitCostBasis: 'USABLE_RECEIVED', unitCostQuantity: 498,
+    forecastExternalUnitEur: 31.6072, forecastExternalPieceEur: 2.6339, forecastPricingUnitEur: 33.9778, forecastPricingPieceEur: 2.8315 }));
+  assert.deepEqual([display.unit, display.plural, display.unitEur, display.pieceEur, display.pricingUnitEur, display.quantity, display.usable],
+    ['set', 'sets', 31.6072, 2.6339, 33.9778, 498, true]);
+  const bowl = reconciliationLineUnit(line(12, 'Rozenschaal Roze', { forecastExternalUnitEur: 8.9465, forecastPricingUnitEur: 9.6175, unitCostQuantity: 2000 }));
+  assert.deepEqual([bowl.unit, bowl.unitEur, bowl.pieceEur, bowl.pricingUnitEur, bowl.quantity], ['stuk', 8.9465, null, 9.6175, 2000]);
 });

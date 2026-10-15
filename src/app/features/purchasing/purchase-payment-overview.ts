@@ -97,7 +97,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   <div><dt>Afspraak</dt><dd>{{ sum.agreedEur | eur }}</dd></div>
                   <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
                   @if (sum.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ sum.lowerEur | eur }}</dd></div> }
-                  @if (sum.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ reviewHigher() ? ' · nakijken' : '' }}</dt><dd>{{ sum.higherEur | eur }}</dd></div> }
+                  @if (sum.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ sum.reviewEur > 0 ? ' · nakijken' : sum.fxEur > 0 ? ' · koersverschil (bank)' : '' }}</dt><dd>{{ sum.higherEur | eur }}</dd></div> }
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
                   @if (sum.dueNowEur > 0 && sum.laterEur > 0) { <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div> }
                   @if (sum.laterEur > 0) { <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div> }
@@ -123,7 +123,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               </details>
             </section>
 
-            @if (todos().length) {
+            @if (todos().length || sum.fxEur > 0) {
               <section class="ios-section">
                 <div class="ios-section__head"><h2>Te doen</h2></div>
                 <div class="ios-group ios-group--icons">
@@ -132,6 +132,13 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                       <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [class]="todoTone(todo)"><app-icon [name]="todoIcon(todo)" [size]="17" /></span></span>
                       <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ todoTitle(todo) }}</span><span class="ios-cell__sub">{{ todoDetail(todo) }}</span></span>
                       <button class="ios-capsule ios-capsule--tinted" type="button" [disabled]="busy() && todo.kind !== 'proof' && todo.kind !== 'incomplete'" (click)="runTodo(todo)">{{ todoAction(todo) }}</button>
+                    </div>
+                  }
+                  @if (sum.fxEur > 0) {
+                    <!-- The bank's exchange rate on a foreign amount paid as agreed: neutral, no button, never a 'nakijken' to-do. -->
+                    <div class="ios-cell pp-fx" role="note">
+                      <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="info" [size]="17" /></span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Koersverschil {{ sum.fxEur | eur }} (bank)</span><span class="ios-cell__sub">Bankkoers t.o.v. de orderkoers · in vreemde munt betaald zoals afgesproken</span></span>
                     </div>
                   }
                 </div>
@@ -397,8 +404,6 @@ export class PurchasePaymentOverview {
       text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
-  /** Some overpayment nobody settled yet; a term settled on its own already confirmed its overrun. */
-  readonly reviewHigher = computed(() => this.ledger()?.payees.some(item => item.reviewEur > 0) ?? false);
   /** 'Verwachte eindkost € 70.204,31 · geen verschil', or where the Nacalculatie lives while it is not loaded. */
   readonly nacalcSub = computed(() => {
     const n = this.nacalc();

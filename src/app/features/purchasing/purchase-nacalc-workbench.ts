@@ -159,7 +159,7 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0 || row.reason === 'review'" [class.wk-amount--muted]="row.verschilEur === 0 && row.reason !== 'review'">
                             @if (row.reason === 'incomplete') { — } @else { {{ signed(row.verschilEur) }} }
                             <span class="wk-td__sub nc-reason" data-nc-hide="mid">{{ row.reasonLabel }}</span>
-                            @if (row.fxEur !== 0) { <span class="wk-td__sub nc-reason">waarvan koersverschil {{ signed(row.fxEur) }}</span> }</span>
+                            @if (row.fxEur !== 0 && row.reason !== 'fx') { <span class="wk-td__sub nc-reason">waarvan koersverschil {{ signed(row.fxEur) }}</span> }</span>
                           <span class="wk-td wk-td--wrap" role="gridcell" data-nc-hide="mid"><span class="wk-pill" [class]="tone(row.status.tone)">{{ row.status.label }}</span></span>
                           <span class="wk-td wk-td--actions nc-actions" role="gridcell">
                             @if (row.actionLabel; as label) {

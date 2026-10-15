@@ -95,7 +95,7 @@ export const SUPPLIER_CREDIT_STATUS_LABEL: Readonly<Record<SupplierCreditStatus,
 };
 
 export type LedgerTone = 'warn' | 'ok' | 'neutral';
-export type PayeeStatusKind = 'NONE' | 'ADDITIONAL' | 'INCOMPLETE' | 'UNBUDGETED' | 'OVERPAID' | 'SETTLED_HIGHER'
+export type PayeeStatusKind = 'NONE' | 'ADDITIONAL' | 'INCOMPLETE' | 'UNBUDGETED' | 'OVERPAID' | 'FX' | 'SETTLED_HIGHER'
   | 'SETTLED_LOWER' | 'PAID' | 'PLANNED' | 'DUE' | 'LATER' | 'SMALL_DIFFERENCE' | 'PARTIAL';
 
 export interface PayeeStatus { kind: PayeeStatusKind; label: string; tone: LedgerTone }
@@ -233,6 +233,11 @@ export interface LedgerTerm {
   differenceEur: number;
   /** + another term's surplus covered this shortfall, − this surplus covered another term; 0 for an older response. */
   offsetEur: number;
+  /**
+   * The term's unsettled overpayment when it is a koersverschil (ledgerFxRate): the foreign amount paid is the
+   * foreign amount agreed, only the bank's euro differs. Then it equals higherEur; 0 otherwise.
+   */
+  fxEur: number;
   /** The labels of the terms this one was netted with. */
   offsetWith: string[];
   settled: boolean;
@@ -290,9 +295,11 @@ export interface PayeeLedger {
   /**
    * The part of higherEur nobody settled yet: what 'Betaald · € 0,50 te veel'
    * and the review to-do name. A term settled on its own keeps its confirmed
-   * overrun out of it.
+   * overrun out of it, and a koersverschil (fxEur) is no overpayment to review.
    */
   reviewEur: number;
+  /** The part of higherEur nobody settled yet that is a koersverschil: 'Koersverschil € 44,80 (bank)', neutral, never a to-do. */
+  fxEur: number;
   differenceEur: number;
   dueNowEur: number;
   laterEur: number;
@@ -348,6 +355,9 @@ export interface LedgerSummary {
   laterEur: number;
   /** Paid to the bijkomende kosten, outside every agreement. */
   additionalEur: number;
+  /** The payees' overpayments still to review, and the koersverschil beside them (PayeeLedger.reviewEur, fxEur). */
+  reviewEur: number;
+  fxEur: number;
   paidTotalEur: number;
   /** Credits of the supplier (any status) and the part still to receive. */
   creditEur: number;
@@ -453,6 +463,8 @@ const STATUS: Readonly<Record<Exclude<PayeeStatusKind, 'LATER'>, PayeeStatus>> =
   UNBUDGETED: { kind: 'UNBUDGETED', label: 'Betaald zonder afspraak', tone: 'warn' },
   /** Paid beyond the agreement, not settled yet: payeeStatus names the amount, 'Betaald · € 0,50 te veel'. */
   OVERPAID: { kind: 'OVERPAID', label: 'Betaald · te veel', tone: 'warn' },
+  /** Paid, beyond the agreement only by the bank's exchange rate (the foreign amount is the agreed one): 'Koersverschil € 44,80 (bank)'. */
+  FX: { kind: 'FX', label: 'Koersverschil (bank)', tone: 'neutral' },
   SETTLED_HIGHER: { kind: 'SETTLED_HIGHER', label: 'Afgerekend · meer betaald', tone: 'neutral' },
   SETTLED_LOWER: { kind: 'SETTLED_LOWER', label: 'Afgerekend · minder betaald', tone: 'ok' },
   PAID: { kind: 'PAID', label: 'Betaald', tone: 'ok' },
@@ -470,8 +482,9 @@ export function purchasePaymentLedger(input: PaymentLedgerInput): PaymentLedger 
   const canonical = Array.isArray(instalments);
   const concept = view.order.status === 'CONCEPT';
   const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? [], input.bankedPaymentIds, view.invoices ?? []);
-  const terms = ledgerTerms(input.terms, instalments, payments, rows, canonical, concept);
-  const payees = PAYEE_ORDER.map(payee => payeeLedger(payee, input, rows, payee === 'SUPPLIER' ? terms : [], canonical, concept));
+  const rateOf = (currency: Currency) => ledgerFxRate(view, currency);
+  const terms = ledgerTerms(input.terms, instalments, payments, rows, canonical, concept, rateOf);
+  const payees = PAYEE_ORDER.map(payee => payeeLedger(payee, input, rows, payee === 'SUPPLIER' ? terms : [], canonical, concept, rateOf));
   const summary = ledgerSummary(input, payees, rows, concept);
   return {
     payees,
@@ -487,6 +500,7 @@ export function purchasePaymentLedger(input: PaymentLedgerInput): PaymentLedger 
 
 function payeeLedger(
   payee: Payee, input: PaymentLedgerInput, allRows: readonly LedgerRow[], terms: LedgerTerm[], canonical: boolean, concept: boolean,
+  rateOf: (currency: Currency) => number | null,
 ): PayeeLedger {
   const { view } = input;
   const other = payee === 'OTHER';
@@ -518,8 +532,15 @@ function payeeLedger(
   }
   const balanced = other || !known || (agreed ?? 0) - paid - lower + higher === open;
   // Paid beyond the agreement and settled by nobody yet: the server's terms tell a confirmed overrun (a term settled on its own) from one to review.
-  const review = other || finalized ? 0 : canonical && terms.length
+  const unsettled = other || finalized ? 0 : canonical && terms.length
     ? terms.filter(term => !term.finalized).reduce((sum, term) => sum + cents(term.higherEur), 0) : higher;
+  // Of that, what the bank's exchange rate made of a foreign amount paid as agreed: a koersverschil, not an overpayment to review.
+  const fx = unsettled <= 0 ? 0 : canonical && terms.length
+    ? terms.filter(term => !term.finalized).reduce((sum, term) => sum + cents(term.fxEur), 0)
+    : payee === 'SUPPLIER' && stream && !purchaseCif(view)
+      && paidAsAgreed(input.payments?.filter(payment => payeeOf(payment) === 'SUPPLIER') ?? [], cents(stream.paidEur), cents(stream.plannedEur), rateOf)
+      ? unsettled : 0;
+  const review = Math.max(0, unsettled - fx);
 
   let dueNow = 0;
   let later = 0;
@@ -544,7 +565,7 @@ function payeeLedger(
 
   const settledRows = rows.some(row => row.settles);
   const status = payeeStatus({
-    payee, known, agreed, paid, open, lower, higher, review, finalized, explicitlySettled, settledRows, missingAmount, balanced,
+    payee, known, agreed, paid, open, lower, higher, review, fx, finalized, explicitlySettled, settledRows, missingAmount, balanced,
     count: rows.length, dueNow, laterDue, concept, tolerance: cents(input.toleranceEur),
   });
   const composition = payeeComposition(payee, view, agreed === null ? null : euro(agreed));
@@ -590,6 +611,7 @@ function payeeLedger(
     lowerEur: euro(lower),
     higherEur: euro(higher),
     reviewEur: euro(review),
+    fxEur: euro(fx),
     differenceEur: euro(higher - lower),
     dueNowEur: euro(dueNow),
     laterEur: euro(later),
@@ -749,12 +771,79 @@ export function payeeDifferenceState(item: Pick<PayeeLedger, 'reviewEur'>): 'afg
 }
 
 /**
+ * A payee's Verschil in words where it has no column of its own: 'Koersverschil
+ * € 44,80 (bank)' when the bank's exchange rate is all of it, else '€ 2.500,00
+ * meer · nakijken', '€ 120,00 minder · afgerekend', with any koersverschil named
+ * beside it.
+ */
+export function payeeDifferenceText(item: Pick<PayeeLedger, 'differenceEur' | 'reviewEur' | 'fxEur'>): string {
+  const difference = cents(item.differenceEur);
+  const fx = cents(item.fxEur);
+  if (fx > 0 && fx === difference) return `Koersverschil ${eur(fx)} (bank)`;
+  const words = `${eur(Math.abs(difference))} ${difference < 0 ? 'minder' : 'meer'}`;
+  const koers = fx > 0 ? ` · koersverschil ${eur(fx)} (bank)` : '';
+  return cents(item.reviewEur) > 0 ? `${words} · nakijken${koers}` : koers ? words + koers : `${words} · afgerekend`;
+}
+
+/** The word under a Verschil amount (payee, term, total): 'koersverschil (bank)' when the bank's rate is all of it, else meer or minder. */
+export function differenceWord(item: { differenceEur: number; fxEur: number }): string {
+  const fx = cents(item.fxEur);
+  return fx > 0 && fx === cents(item.differenceEur) ? 'koersverschil (bank)' : item.differenceEur < 0 ? 'minder' : 'meer';
+}
+
+/** Under the headline Verschil: what is still to review, the koersverschil, or 'na afrekening'. */
+export function ledgerDifferenceNote(summary: Pick<LedgerSummary, 'differenceEur' | 'reviewEur' | 'fxEur'>): string {
+  const fx = cents(summary.fxEur);
+  if (cents(summary.reviewEur) > 0) return fx > 0 ? `nog na te kijken · waarvan koersverschil ${eur(fx)} (bank)` : 'nog na te kijken';
+  if (fx > 0) return fx === cents(summary.differenceEur) ? 'koersverschil (bank)' : `waarvan koersverschil ${eur(fx)} (bank)`;
+  return 'na afrekening';
+}
+
+/**
+ * The order rate of a foreign currency when the supplier's goods are agreed in
+ * it: every order line that names its price currency names this one (a line
+ * without one follows its product), at least one does, and the order has its
+ * rates. Null otherwise: a euro agreement, mixed currencies, a missing rate.
+ * Only the supplier's goods are agreed abroad; the CIF freight term converts
+ * at the transport rate and stays out (ledgerTerms).
+ */
+export function ledgerFxRate(view: Pick<PurchaseOrderView, 'order'>, currency: Currency): number | null {
+  if (currency === 'EUR') return null;
+  const lines = view.order.lines ?? [];
+  if (!lines.some(line => line.exwCurrency === currency) || lines.some(line => line.exwCurrency != null && line.exwCurrency !== currency)) return null;
+  const usd = view.order.usdToEurGoods;
+  if (!(Number.isFinite(usd) && usd > 0)) return null;
+  if (currency === 'USD') return usd;
+  const cny = view.order.cnyToUsd;
+  return Number.isFinite(cny) && cny > 0 ? cny * usd : null;
+}
+
+/**
+ * Koersverschil (Emre, 2026-10-15): a USD/CNY payment linked to its bank
+ * transaction takes the bank's euro, so a term paid exactly its foreign amount
+ * can still differ from its euro Afspraak. True when these payments are all of
+ * what was booked (paidCents) and, in the agreement's currency at the order
+ * rate, land on the Afspraak within 0.01 of that currency, plus the euro cent
+ * the Afspraak itself was rounded to.
+ */
+function paidAsAgreed(payments: readonly PurchasePayment[], paidCents: number, plannedCents: number, rateOf: (currency: Currency) => number | null): boolean {
+  if (!payments.length || plannedCents <= 0) return false;
+  const currency = payments[0].currency;
+  const rate = rateOf(currency);
+  if (rate === null || payments.some(payment => payment.currency !== currency || !Number.isFinite(payment.amount) || !Number.isFinite(payment.amountEur))) return false;
+  // Untied money that landed on the term (or a part of another payee's line) has no foreign amount here: no claim.
+  if (payments.reduce((sum, payment) => sum + cents(payment.amountEur), 0) !== paidCents) return false;
+  const foreign = payments.reduce((sum, payment) => sum + cents(payment.amount), 0);
+  return Math.abs(foreign * rate - plannedCents) <= rate + 1 + 1e-9;
+}
+
+/**
  * The one word per payee. A payee paid in full reads 'Betaald · afgerekend'
  * as soon as any of its payments carries a settlement, a whole-payee one or
  * a term's: that is exactly when the row offers to undo it.
  */
 function payeeStatus(values: {
-  payee: Payee; known: boolean; agreed: number | null; paid: number; open: number; lower: number; higher: number; review: number;
+  payee: Payee; known: boolean; agreed: number | null; paid: number; open: number; lower: number; higher: number; review: number; fx: number;
   finalized: boolean; explicitlySettled: boolean; settledRows: boolean; missingAmount: boolean; balanced: boolean; count: number;
   dueNow: number; laterDue: Due | null; concept: boolean; tolerance: number;
 }): PayeeStatus {
@@ -764,7 +853,8 @@ function payeeStatus(values: {
   if (agreed === 0 && paid === 0) return STATUS.NONE;
   if (agreed === 0) return finalized ? STATUS.SETTLED_HIGHER : STATUS.UNBUDGETED;
   if (open === 0 && (lower > 0 || higher > 0)) {
-    // Only what is still to review: a term settled on its own already confirmed its overrun.
+    // Only what is still to review: a term settled on its own already confirmed its overrun; the bank's koersverschil is neutral.
+    if (!finalized && higher > 0 && values.review <= 0 && values.fx > 0) return { ...STATUS.FX, label: `Koersverschil ${eur(values.fx)} (bank)` };
     if (!finalized && higher > 0) return { ...STATUS.OVERPAID, label: `Betaald · ${eur(values.review > 0 ? values.review : higher)} te veel` };
     const net = higher - lower;
     return net > 0 ? STATUS.SETTLED_HIGHER : net < 0 ? STATUS.SETTLED_LOWER : STATUS.PAID;
@@ -818,12 +908,27 @@ function legacyAgreed(payee: Payee, view: PurchaseOrderView): number {
 function ledgerTerms(
   states: readonly PurchaseInstalmentState[], instalments: readonly PurchaseInstalmentReconciliation[] | undefined,
   payments: readonly PurchasePayment[], rows: readonly LedgerRow[], canonical: boolean, concept: boolean,
+  rateOf: (currency: Currency) => number | null,
 ): LedgerTerm[] {
   const supplier = payments.filter(payment => payeeOf(payment) === 'SUPPLIER');
   const offsets = states.map(state => cents(state.offset));
   /** The terms netted the other way: a covered term names the terms whose surplus covered it, and the other way round. */
   const nettedWith = (offset: number): string[] => offset === 0 ? []
     : states.filter((_, index) => Math.sign(offsets[index]) === -Math.sign(offset)).map(state => state.label);
+  /*
+   * Koersverschil: the supplier's foreign payments are its foreign Afspraak when every term that money was
+   * booked on or netted with was paid exactly its foreign amount (paidAsAgreed). A term short or over in the
+   * foreign currency itself, or one only netted (no payment of its own), keeps today's words on every term; the
+   * CIF freight term converts at its own rate and never counts as paid as agreed.
+   */
+  const asAgreed = states.map(state => {
+    const server = instalments?.find(item => item.due === state.due);
+    return !!server && state.due !== 'FREIGHT' && paidAsAgreed(supplier.filter(payment => payment.instalmentDue === state.due),
+      cents(server.paidEur), cents(server.plannedEur), rateOf);
+  });
+  // A term settled on its own stays out (as it does of the netting); a term closed by netting is in.
+  const involved = states.map((state, index) => !state.settled && (cents(state.covered) > 0 || offsets[index] !== 0));
+  const paidAsAgreedAll = !concept && involved.some(Boolean) && involved.every((on, index) => !on || asAgreed[index]);
   return states.map((state, index) => {
     const server = instalments?.find(item => item.due === state.due);
     const lower = cents(server?.settledSavingEur);
@@ -837,13 +942,16 @@ function ledgerTerms(
     const difference = server ? cents(server.paidEur) - cents(server.plannedEur) + cents(server.remainingEur) : higher - lower;
     const scoped = supplier.filter(payment => payment.instalmentDue === state.due).sort(byNewest);
     const moment = DUE_MOMENT[state.due];
+    // What is still overpaid on the term is the bank's koersverschil when the supplier's foreign payments are its foreign Afspraak.
+    const fx = paidAsAgreedAll && asAgreed[index] && higher > 0 && !finalized ? higher : 0;
+    const koers: LedgerTerm['status'] = { label: `Koersverschil ${eur(fx)} (bank)`, tone: 'neutral' };
     const status: LedgerTerm['status'] = concept ? { label: 'Gepland', tone: 'neutral' }
       : state.settled && lower > 0 ? { label: 'Afgerekend · minder betaald', tone: 'ok' }
       : higher > 0 && finalized ? { label: 'Afgerekend · meer betaald', tone: 'neutral' }
       : offset > 0 && open === 0 ? { label: 'Betaald · ' + verrekend, tone: 'ok' }
-      : offset < 0 && higher > 0 ? { label: `Betaald · ${eur(higher)} te veel`, tone: 'warn' }
+      : offset < 0 && higher > 0 ? fx > 0 ? koers : { label: `Betaald · ${eur(higher)} te veel`, tone: 'warn' }
       : offset < 0 ? { label: 'Betaald · ' + verrekend, tone: 'ok' }
-      : higher > 0 ? { label: 'Te veel betaald · nakijken', tone: 'warn' }
+      : higher > 0 ? fx > 0 ? koers : { label: 'Te veel betaald · nakijken', tone: 'warn' }
       : state.settled && state.state === 'paid' ? { label: 'Betaald · afgerekend', tone: 'ok' }
       : state.state === 'paid' ? { label: 'Betaald', tone: 'ok' }
       : state.state === 'due' ? { label: state.covered > 0 || offset > 0 ? 'Deels betaald' : 'Nu te betalen', tone: 'warn' }
@@ -861,6 +969,7 @@ function ledgerTerms(
       higherEur: euro(higher),
       differenceEur: euro(difference),
       offsetEur: euro(offset),
+      fxEur: euro(fx),
       offsetWith,
       settled: state.settled,
       finalized,
@@ -1009,6 +1118,8 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
   const dueNow = sum('dueNowEur');
   const later = sum('laterEur');
   const additional = cents(payees.find(payee => payee.payee === 'OTHER')?.paidEur);
+  const review = agreements.reduce((total, payee) => total + cents(payee.reviewEur), 0);
+  const fx = agreements.reduce((total, payee) => total + cents(payee.fxEur), 0);
   const supplier = payees.find(payee => payee.payee === 'SUPPLIER');
   const credit = cents(supplier?.creditEur);
   const creditOpen = cents(supplier?.creditOpenEur);
@@ -1017,11 +1128,12 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
     : rows.reduce((total, row) => total + (Number.isFinite(row.amountEur) ? cents(row.amountEur) : 0), 0);
   const scale = Math.max(agreed, paid + open);
   const pct = (value: number) => scale > 0 ? Math.min(100, (value / scale) * 100) : 0;
-  const review = agreements.find(payee => ['OVERPAID', 'UNBUDGETED', 'INCOMPLETE'].includes(payee.status.kind)) ?? null;
+  // A koersverschil (status FX) is no review: the headline reads done or later.
+  const reviewed = agreements.find(payee => ['OVERPAID', 'UNBUDGETED', 'INCOMPLETE'].includes(payee.status.kind)) ?? null;
   const kind: LedgerHeadlineKind = concept ? 'concept'
     : agreed === 0 && rows.length === 0 ? 'empty'
     : dueNow > 0 ? 'due'
-    : review ? 'review'
+    : reviewed ? 'review'
     : open > 0 ? 'later' : 'done';
   const nexts = payees.map(payee => payee.next).filter((next): next is LedgerNext => next !== null);
   const next = nexts.find(item => item.now) ?? nexts[0] ?? null;
@@ -1035,6 +1147,8 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
     dueNowEur: euro(dueNow),
     laterEur: euro(later),
     additionalEur: euro(additional),
+    reviewEur: euro(review),
+    fxEur: euro(fx),
     paidTotalEur: euro(paidTotal),
     creditEur: euro(credit),
     creditOpenEur: euro(creditOpen),
@@ -1048,7 +1162,7 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
     missingProofCount: rows.some(row => row.proven === null) ? null : rows.filter(row => row.proven === false).length,
     headline: {
       kind,
-      payee: kind === 'review' ? review : kind === 'due' || kind === 'later'
+      payee: kind === 'review' ? reviewed : kind === 'due' || kind === 'later'
         ? payees.find(payee => payee.payee === next?.payee) ?? null : null,
     },
     next,

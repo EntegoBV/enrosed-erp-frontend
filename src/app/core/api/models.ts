@@ -1716,10 +1716,11 @@ export interface PurchaseReconciliationTotals {
   /** Round 2: the different products on the container (lines of one product count once). */
   productCount?: number;
   /**
-   * Round 2: a container-wide figure per stuk or per set means something (one
-   * product, or every line of one family, sales unit, set size and piece
-   * name); otherwise the screens show the cost per product. Missing on an
-   * older server: the ERP applies the same rule (nacalcUnitMix).
+   * Round 2: a container-wide figure per stuk or per set means something:
+   * only with one product (ReconciliationUnits.containerAverage counts
+   * products, never families); otherwise the screens show the cost per
+   * product. Missing on an older server: the ERP applies the same rule
+   * (nacalcUnitMix).
    */
   containerAverage?: boolean;
 }

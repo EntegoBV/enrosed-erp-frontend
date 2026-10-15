@@ -90,7 +90,7 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
                     <span class="ios-cell__lead"><span class="ios-tile" [class]="row.tone"><app-icon [name]="row.icon" [size]="17" /></span></span>
                     <!-- The reason reads under the agreement, on the wide side of the cell; the trail carries only the verschil. -->
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ row.label }}</span><span class="ios-cell__sub">{{ payeeSub(row) }}</span>
-                      <span class="ios-cell__meta np-payee__reason" [class]="tone(row.status.tone)">{{ row.reasonLabel }}@if (row.fxEur !== 0) { · waarvan koersverschil {{ signed(row.fxEur) }} }</span></span>
+                      <span class="ios-cell__meta np-payee__reason" [class]="tone(row.status.tone)">{{ row.reasonLabel }}@if (row.fxEur !== 0 && row.reason !== 'fx') { · waarvan koersverschil {{ signed(row.fxEur) }} }</span></span>
                     <span class="ios-cell__trail">
                       <span class="ios-cell__value" [class.ios-cell__value--strong]="row.verschilEur !== 0" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">@if (row.reason === 'incomplete') { — } @else { {{ signed(row.verschilEur) }} }</span>
                     </span>

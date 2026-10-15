@@ -54,9 +54,12 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
    'Afrekenen…' and the ⋯ side by side (122 px), so a button never lies over the status. Every column keeps a
    floor: the amounts a whole bold total (€ 40.300,00 is 82 px), the name a whole 'Leverancier', and Status
    its longest word with the pill's padding ('verrekend', '€ 28.000,00' under it), so a pill wraps between
-   words only, never inside one. With Verschil the gaps narrow and Status takes what is left over the floors. */
+   words only, never inside one. With Verschil the gaps narrow to 4 px and Status takes what is left over the
+   floors: the name 138 px, so 'Afspraak € 300,00' stands on one line beside its tile and 'Inspectie & andere
+   kosten' on two, and Status 104 px for a whole 'Koersverschil' in its pill. That needs a main column of
+   782 px (a 1100 px window); just below it the name falls back to 112 px and its lines wrap. */
 .pw-payees{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(84px,1fr)) minmax(84px,1fr) minmax(84px,1.4fr) 122px}
-.pw-payees--diff{--wk-gap:8px;--wk-cols:28px minmax(112px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(84px,1fr) minmax(84px,3fr) 122px}
+.pw-payees--diff{--wk-gap:4px;--wk-cols:28px minmax(138px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(84px,1fr) minmax(104px,3fr) 122px}
 .pw-payees .wk-th{line-height:1.2;white-space:normal}
 /* Datum · Ontvanger · Omschrijving · Bedrag · In euro · Afrekening · Bewijs · Acties */
 .pw-ledger{--wk-cols:92px 100px minmax(0,1.6fr) minmax(104px,1fr) minmax(100px,1fr) minmax(0,1.1fr) 140px 110px}
@@ -76,8 +79,9 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw .wk-tr:hover .pw-more,.pw .wk-tr:focus-within .pw-more,.pw .wk-tr[aria-selected=true] .pw-more{opacity:1}
 .pw-payee{display:flex;align-items:center;gap:10px;min-width:0}
 .pw-payee__copy{display:grid;min-width:0}.pw-payee__copy b{font-weight:650;white-space:normal}
-/* what the agreement rests on, in two lines at most (the title has it whole): short words, so '… · via leverancier' fits */
+/* what the agreement rests on, in two lines at most (the title has it whole); 'via leverancier' is a line of its own that wraps, never cut */
 .pw-payee__copy>.pw-basis{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;overflow-wrap:normal}
+.pw-payee__copy>.pw-basis-via{white-space:normal;overflow:visible;overflow-wrap:normal}
 .pw-tile{display:grid;flex:none;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--tone,var(--muted-2));color:#fff}
 .pw-chev{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .pw-chev:hover{background:var(--surface-2);color:var(--ink)}
@@ -118,6 +122,11 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-payees :is(.wk-td--wrap,.pw-when-tiny)>.wk-pill{height:auto;min-height:20px;padding-block:2px;border-radius:10px;white-space:normal;overflow-wrap:normal;line-height:1.2;text-align:left}
 .pw-payees .wk-td--wrap .pw-status-sub{overflow-wrap:normal}
 .pw-open-sub{display:block}
+/* the word under a Verschil amount wraps ('koersverschil' / '(bank)') instead of being cut */
+.pw-payees .wk-td__sub.pw-diff-word{white-space:normal;overflow:visible;overflow-wrap:normal}
+/* Te doen: the bank's koersverschil as a neutral note, no button (never a 'nakijken' to-do) */
+.pw-fx-note{display:grid;gap:2px;margin:10px 0 0;padding:8px 10px;border-radius:10px;background:var(--surface-2);font-size:12.5px;line-height:1.4}
+.pw-fx-note b{font-weight:650}.pw-fx-note small{color:var(--muted);font-size:11.5px}
 .pw-proof{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px 6px;overflow:visible}
 .pw-bank{display:inline-flex;align-items:center;gap:4px;color:var(--ok);white-space:nowrap}
 .pw-proof__btn{max-width:100%;color:var(--muted)}
@@ -147,8 +156,11 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
 @container pw-main (max-width:879.98px){
  .pw [data-pw-hide~=mid]{display:none}.pw .pw-when-mid{display:inline-flex}.pw .wk-td__sub.pw-when-mid{display:block}
  .pw-payees{--wk-cols:28px minmax(0,2fr) repeat(3,minmax(96px,1fr)) minmax(84px,1.1fr) 122px}
- .pw-payees--diff{--wk-cols:28px minmax(112px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(84px,3fr) 122px}
+ .pw-payees--diff{--wk-cols:28px minmax(138px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(104px,3fr) 122px}
  .pw-ledger{--wk-cols:92px minmax(0,1fr) 120px 150px 104px}}
+/* the floors above need 782 px: just over the narrow step the name gives its room back and its lines wrap */
+@container pw-main (min-width:760px) and (max-width:781.98px){
+ .pw-payees--diff{--wk-cols:28px minmax(112px,1fr) repeat(2,minmax(84px,1fr)) minmax(78px,.8fr) minmax(84px,1fr) minmax(104px,3fr) 122px}}
 /* narrow: Verschil and the text buttons go; the ⋯ carries every action */
 @container pw-main (max-width:759.98px){
  .pw [data-pw-hide~=narrow]{display:none}.pw .pw-when-narrow{display:inline}.pw .wk-td__sub.pw-when-narrow{display:block}
@@ -179,6 +191,7 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-costs{margin:0 var(--ios-inset) 12px}
 .pp-late{margin-top:10px}
 .pp-payee :is(.ios-cell__title,.ios-cell__sub),.pp-term .ios-cell__sub,.pp-row :is(.ios-cell__title,.ios-cell__sub){overflow-wrap:anywhere;white-space:normal}
+.pp-fx .ios-cell__sub{white-space:normal}
 .pp-payee__trail{min-width:96px}
 .pp-row__date{display:grid;flex:none;justify-items:center;width:34px;line-height:1.1}
 .pp-row__date b{font-size:17px;font-weight:700}.pp-row__date small{color:var(--muted);font-size:11px}

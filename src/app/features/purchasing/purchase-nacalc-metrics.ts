@@ -21,7 +21,7 @@ export type { NacalcKind, NacalcTone } from './purchase-payment-result-metrics';
  * imports types only, so a node test can load it without a harness.
  */
 
-export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' | 'settled-higher' | 'review' | 'additional'
+export type NacalcReason = 'none' | 'open' | 'partly-settled' | 'settled-lower' | 'settled-higher' | 'review' | 'fx' | 'additional'
   | 'unbudgeted' | 'incomplete' | 'legacy' | 'credit' | 'offset';
 
 /**
@@ -267,6 +267,7 @@ export const NACALC_REASON_LABEL: Readonly<Record<NacalcReason, string>> = {
   'settled-lower': 'minder betaald · afgerekend',
   'settled-higher': 'meer betaald · afgerekend',
   review: 'te veel betaald · nakijken',
+  fx: 'koersverschil (bank) · zit al in betaald',
   additional: 'bijkomend · zonder afspraak',
   unbudgeted: 'betaald zonder afspraak',
   incomplete: 'bedragen onvolledig',
@@ -530,7 +531,7 @@ function termRow(term: LedgerTerm): NacalcTermRow {
   // 'none', so the words never stand twice (the ledger's statusNote rule).
   if (offset !== 0 && open === 0) { reason = term.status.label.includes(verrekend) ? 'none' : 'offset'; label = verrekend; }
   else if (term.lowerEur > 0 && open === 0) { reason = 'settled-lower'; label = NACALC_REASON_LABEL['settled-lower']; }
-  else if (term.higherEur > 0) { reason = term.finalized ? 'settled-higher' : 'review'; label = NACALC_REASON_LABEL[reason]; }
+  else if (term.higherEur > 0) { reason = term.finalized ? 'settled-higher' : term.fxEur > 0 ? 'fx' : 'review'; label = NACALC_REASON_LABEL[reason]; }
   else if (open > 0 && term.lowerEur > 0) { reason = 'partly-settled'; label = `deels afgerekend · nog ${eur(term.openEur)} open`; }
   else if (open > 0) {
     reason = 'open';
@@ -565,6 +566,7 @@ export function nacalcReason(
     case 'INCOMPLETE': return word('incomplete');
     case 'UNBUDGETED': return word('unbudgeted');
     case 'OVERPAID': return word('review');
+    case 'FX': return word('fx');
   }
   const legacy = cents(totals.legacyPaidTotalEur);
   if (item.payee === 'SUPPLIER' && (stream?.paymentCount ?? item.paymentCount) === 0 && legacy > 0) {

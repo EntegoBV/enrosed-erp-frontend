@@ -1164,12 +1164,7 @@ export class PurchaseView {
   /** The Nacalculatie in four lines for the Betalingen card, and the whole story for the Kosten stop. */
   readonly nacalcSummary = computed(() => {
     const data = this.view();
-    return data ? purchaseNacalcSummary(data, this.paymentLedger(), this.familyOf()) : null;
-  });
-  /** A product's family, so a container of one family in one unit keeps its per-unit figure (nacalcUnitMix). */
-  private readonly familyOf = computed(() => {
-    const families = new Map(this.products().map(product => [product.id, product.familyId ?? null] as const));
-    return (productId: number): number | null => families.get(productId) ?? null;
+    return data ? purchaseNacalcSummary(data, this.paymentLedger()) : null;
   });
   readonly nacalc = computed(() => {
     const data = this.view();

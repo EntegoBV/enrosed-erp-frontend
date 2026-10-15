@@ -578,7 +578,7 @@ cijfers'.
   payment in parts: its newest transfer's day with 'eerste dd/mm' (ledger,
   sheet, phone rows, Kosten & bank tree). No average over different
   products (`nacalcUnitMix`; the server's `totals.containerAverage` wins,
-  else one product or one family in one unit and set size): the summary
+  else one product only, like ReconciliationUnits.containerAverage): the summary
   card, the desk strip and the phone hero show 'n producten · € min – € max'
   per stuk (per set when every line is a set of one size) with the products
   by value (round 3 removed every remaining average, see below).
@@ -594,7 +594,7 @@ cijfers'.
   (`mixPricingRange`), the Kostbasis the same range, the product table's
   total row the range, the receipt line per product (`mixReceiptLine`); in
   Analyses › Inkoop the container table and the Kostprijs block show the
-  range too. One product or one family in one unit keeps its figure. The
+  range too. Only one product keeps its figure (no family rule). The
   Betalingen table keeps every column on a floor (amounts 84 px for a bold
   total, Status the longest pill word) and lets Status take what is left,
   so a pill never breaks inside a word at 1440 or 1100. 'Transactie
@@ -617,6 +617,27 @@ cijfers'.
   the payee not on the bank yet first ('Bestaande betaling · € 12.000,00
   (30%)', 'Deel koppelen' when larger; `localOpenPayments`) above 'Nieuwe
   betaling'. The proof todo says 'Koppel de banktransactie'.
+- Round 4 (2026-10-15). Analyses › Inkoop speaks in each product's unit
+  (`reconciliationUnit`, `reconciliationLineUnit`): column 'Per eenheid',
+  a set product '€ 30,9600 per set' with '€ 2,5800 per stuk' and '400
+  bestelde sets' under it, the Kostprijs block 'Verwachte externe kost per
+  set' and 'Per set incl. opslag' with their piece prices, Per product
+  per set or per stuk; several products keep their range. Betalingen with
+  a Verschil column: gaps 4 px, the name 138 px and Status 104 px (a whole
+  'Koersverschil' pill) from a 782 px main column, 112 px just below it.
+  Koersverschil: a USD/CNY payment on its bank transaction takes the bank's
+  euro; when the supplier's goods are agreed in that currency (every order
+  line naming it, `ledgerFxRate`) and every term money was booked on or
+  netted with was paid exactly its foreign amount (within 0.01 of that
+  currency plus the Afspraak's euro cent; `paidAsAgreed`), the euro
+  overpayment is 'Koersverschil € 44,80 (bank)': term pill, payee status
+  (kind FX), the Verschil cells ('koersverschil (bank)'), the strip note,
+  a neutral line in Te doen, never a 'nakijken' to-do; `reviewEur` leaves
+  it out and the Nacalculatie stays Voorlopig (not Na te kijken) for it.
+  A real over- or underpayment in the foreign currency, or a term only
+  covered by netting, keeps the old words; the netting is untouched (the
+  server nets a surplus into an unpaid later term, which then reads
+  'verrekend').
 - Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
   everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
   budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in
@@ -626,7 +647,7 @@ cijfers'.
   reads like Bijkomende kosten, which are 'zonder afspraak' by design; such a
   payee never shows 'afspraak € 0,00'. The basis of a payee says Afspraak
   too ('Afspraak inspectie € 300,00 · via leverancier', on Betalingen
-  'Afspraak € 300,00 · via leverancier' in two lines at most; 'Afspraak:
+  'Afspraak € 300,00' with 'via leverancier' on its own line; 'Afspraak:
   vracht, lokale kosten en invoerrechten'); the composition rows are 'Opbouw
   uit Kosten'. Never 'Raming'. Code identifiers (`begrootEur`,
   `UNBUDGETED`, `BUDGET`) keep their names.

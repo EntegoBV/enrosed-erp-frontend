@@ -7,11 +7,11 @@ import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
 import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
 import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
 import {
-  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, paymentOptionParts, payeeComposition, payeeDifferenceState, payeeRowAction, purchaseLandedBridge,
-  purchasePaymentLedger, settleCarriers, sortLedgerRows, type PaymentLedger,
+  PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, differenceWord, ledgerDifferenceNote, ledgerFxRate, paymentOptionParts, payeeComposition, payeeDifferenceState,
+  payeeDifferenceText, payeeRowAction, purchaseLandedBridge, purchasePaymentLedger, settleCarriers, sortLedgerRows, type PaymentLedger,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { reconciliationStatusLabel } from '../src/app/features/purchasing/purchase-reconciliation-metrics.ts';
-import { purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
+import { purchaseNacalcSummary, purchasePaymentResult } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 
 type Status = PurchaseOrderView['order']['status'];
 
@@ -772,4 +772,101 @@ test('a settlement has one carrier per payment paid in parts: the root, with the
   assert.deepEqual(carriers.options.map(option => [option.id, option.transfers, option.amountEur, option.paidOn]), [[102, 2, 21733.63, '2026-09-24']]);
   assert.equal(carriers.defaultId, 102);
   assert.deepEqual(settleCarriers(route1(), 'SUPPLIER', 'GROUP', null).options.map(option => option.id), [102, 101]);
+});
+
+/* ---- koersverschil (Emre, 2026-10-15): a USD payment on its bank transaction takes the bank's euro; paid as agreed in USD it is no overpayment */
+
+/** PO-30: 400 sets at US$ 36 (US$ 14.400 at 0,86 = € 12.384), 30% on order and 70% at departure; the bank charged € 3.760 for US$ 4.320. */
+function usdView(instalments: PurchaseInstalmentReconciliation[], values: { exwCurrency?: 'USD' | 'EUR' | null } = {}): PurchaseOrderView {
+  const planned = instalments.reduce((sum, term) => sum + term.plannedEur, 0);
+  const paid = instalments.reduce((sum, term) => sum + term.paidEur, 0);
+  const remaining = instalments.reduce((sum, term) => sum + term.remainingEur, 0);
+  const overpaid = instalments.reduce((sum, term) => sum + term.overpaidEur, 0);
+  const view = purchase({ status: 'BESTELD', ddp: true, instalments, streams: [
+    stream('SUPPLIER', { plannedEur: planned, paidEur: paid, remainingEur: remaining, overpaidEur: overpaid, status: overpaid > 0 ? 'OVERPAID' : 'PARTIAL',
+      finalized: remaining === 0 && overpaid === 0 }), stream('LOGISTICS'), stream('SEPARATE'), stream('OTHER')] });
+  Object.assign(view.order, { cnyToUsd: 0.14, usdToEurGoods: 0.86,
+    lines: [{ productId: 301, quantity: 400, orderedQuantity: 400, exwPrice: 36, exwCurrency: values.exwCurrency === undefined ? 'USD' : values.exwCurrency }] });
+  return view;
+}
+const usd = (id: number, amount: number, amountEur: number, due: 'ORDERED' | 'SHIPPED') =>
+  payment(id, { orderId: 30, amount, currency: 'USD', amountEur, instalmentDue: due, label: due === 'ORDERED' ? 'Aanbetaling 30%' : 'Saldo 70%' });
+const plainText = (text: string) => text.replace(/[\u00a0\u202f]/g, ' ');
+
+test('the koersverschil: US$ 4.320 paid as agreed at € 3.760 reads Koersverschil € 44,80 (bank), neutral, never a review', () => {
+  // The 70% is still to pay and the server left the € 44,80 on the 30% term (as the mock does).
+  const view = usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 44.8 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8668.8 })]);
+  const book = ledger(view, [usd(301, 4320, 3760, 'ORDERED')]);
+  const supplier = of(book, 'SUPPLIER');
+  const [deposit] = supplier.terms;
+  assert.deepEqual([plainText(deposit.status.label), deposit.status.tone, deposit.fxEur, plainText(differenceWord(deposit))],
+    ['Koersverschil € 44,80 (bank)', 'neutral', 44.8, 'koersverschil (bank)']);
+  assert.deepEqual([supplier.fxEur, supplier.reviewEur, supplier.differenceEur, supplier.status.kind], [44.8, 0, 44.8, 'PARTIAL']);
+  assert.equal(plainText(payeeDifferenceText(supplier)), 'Koersverschil € 44,80 (bank)');
+  assert.equal(payeeDifferenceState(supplier), 'afgerekend', 'nothing to look at');
+  assert.deepEqual([book.summary.fxEur, book.summary.reviewEur, ledgerDifferenceNote(book.summary)], [44.8, 0, 'koersverschil (bank)']);
+  assert.equal(book.todos.some(todo => todo.kind === 'review'), false, 'no nakijken to-do');
+  assert.equal(book.summary.headline.kind, 'later');
+});
+
+test('both terms paid as agreed in USD: the supplier reads Koersverschil, done, no to-do; a real USD overpayment keeps nakijken', () => {
+  // US$ 10.080 at the order rate is € 8.668,80; the bank charged € 8.730,00.
+  const paid = usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 44.8 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, paidEur: 8730, overpaidEur: 61.2 })]);
+  const book = ledger(paid, [usd(301, 4320, 3760, 'ORDERED'), usd(302, 10080, 8730, 'SHIPPED')]);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([supplier.status.kind, plainText(supplier.status.label), supplier.status.tone], ['FX', 'Koersverschil € 106,00 (bank)', 'neutral']);
+  assert.deepEqual(supplier.terms.map(term => plainText(term.status.label)), ['Koersverschil € 44,80 (bank)', 'Koersverschil € 61,20 (bank)']);
+  assert.deepEqual([book.summary.headline.kind, book.todos.filter(todo => todo.kind === 'review').length, supplier.action], ['done', 0, 'settle'],
+    'Afrekenen… still confirms it, but nothing asks to look at it');
+  // US$ 4.400 for a US$ 4.320 term is a real overpayment in dollars: today's words, a review to-do.
+  const over = usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3790, overpaidEur: 74.8 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8668.8 })]);
+  const overBook = ledger(over, [usd(301, 4400, 3790, 'ORDERED')]);
+  assert.deepEqual([of(overBook, 'SUPPLIER').terms[0].status.label, of(overBook, 'SUPPLIER').fxEur, of(overBook, 'SUPPLIER').reviewEur],
+    ['Te veel betaald · nakijken', 0, 74.8]);
+  assert.equal(ledgerDifferenceNote(overBook.summary), 'nog na te kijken');
+  // A euro agreement paid in USD is no koersverschil: the euro is what was agreed.
+  const euroGoods = ledger(usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 44.8 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8668.8 })], { exwCurrency: 'EUR' }), [usd(301, 4320, 3760, 'ORDERED')]);
+  assert.deepEqual([of(euroGoods, 'SUPPLIER').terms[0].status.label, of(euroGoods, 'SUPPLIER').fxEur], ['Te veel betaald · nakijken', 0]);
+});
+
+test('netting stays as it is: a term short in USD that another term covered keeps every word of today', () => {
+  // 30% paid as agreed (+ € 44,80 at the bank), 70% paid US$ 80 short: the server nets € 20 of the surplus into the 70%.
+  const view = usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 24.8, offsetEur: -20 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, paidEur: 8648.8, offsetEur: 20, finalized: true })]);
+  const book = ledger(view, [usd(301, 4320, 3760, 'ORDERED'), usd(302, 10000, 8648.8, 'SHIPPED')]);
+  const supplier = of(book, 'SUPPLIER');
+  assert.deepEqual([plainText(supplier.terms[0].status.label), supplier.fxEur, supplier.reviewEur, supplier.status.kind],
+    ['Betaald · € 24,80 te veel', 0, 24.8, 'OVERPAID'], 'the dollars are not as agreed: no koersverschil');
+  assert.equal(plainText(supplier.terms[0].statusNote ?? ''), '€ 20,00 verrekend met 70% bij vertrek');
+  // The server nets a surplus into an unpaid 70% too: that term was not paid in dollars at all, so the words stay the netting's.
+  const netted = ledger(usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, offsetEur: -44.8, finalized: true }),
+    instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8624, offsetEur: 44.8 })]), [usd(301, 4320, 3760, 'ORDERED')]);
+  assert.deepEqual([of(netted, 'SUPPLIER').terms[0].status.label, of(netted, 'SUPPLIER').fxEur, of(netted, 'SUPPLIER').openEur],
+    ['Betaald · verrekend met 70% bij vertrek', 0, 8624]);
+});
+
+test('the Nacalculatie card follows: a koersverschil is not na te kijken, the state stays provisional until settled', () => {
+  const view = usdView([instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 44.8 }),
+    instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8668.8 })]);
+  Object.assign(view.reconciliation!.totals, { plannedExternalEur: 12384, remainingEur: 8668.8, forecastExternalEur: 12428.8, varianceEur: 44.8,
+    internalMarkupEur: 928.8, finalized: false });
+  const book = ledger(view, [usd(301, 4320, 3760, 'ORDERED')]);
+  const card = purchaseNacalcSummary(view, book)!;
+  assert.deepEqual([card.kind, card.reviewEur], ['provisional', 0]);
+  assert.deepEqual([purchaseNacalcSummary(view)!.kind, purchaseNacalcSummary(view)!.reviewEur], ['review', 44.8], 'without the ledger the server alone decides');
+});
+
+test('the agreement currency comes from the order lines and the order rates', () => {
+  const view = (lines: unknown[], rates: Record<string, number> = { cnyToUsd: 0.14, usdToEurGoods: 0.86 }) =>
+    ({ order: { ...rates, lines } }) as unknown as PurchaseOrderView;
+  assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }, { exwCurrency: null }]), 'USD'), 0.86, 'a line without a currency follows its product');
+  assert.equal(Math.round(ledgerFxRate(view([{ exwCurrency: 'CNY' }]), 'CNY')! * 1e6), Math.round(0.14 * 0.86 * 1e6));
+  assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }, { exwCurrency: 'CNY' }]), 'USD'), null, 'mixed currencies');
+  assert.equal(ledgerFxRate(view([{ exwCurrency: null }]), 'USD'), null, 'no line names it');
+  assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }]), 'EUR'), null);
+  assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }], { cnyToUsd: 0.14, usdToEurGoods: 0 }), 'USD'), null, 'no order rate');
 });

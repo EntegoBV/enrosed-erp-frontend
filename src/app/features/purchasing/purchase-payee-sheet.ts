@@ -40,7 +40,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
               <div><dt>Afspraak</dt><dd>{{ item.agreedEur | eur }}</dd></div>
               <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div>
               @if (item.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ item.lowerEur | eur }}</dd></div> }
-              @if (item.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ item.reviewEur > 0 ? ' · nakijken' : '' }}</dt><dd>{{ item.higherEur | eur }}</dd></div> }
+              @if (item.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ item.reviewEur > 0 ? ' · nakijken' : item.fxEur > 0 ? ' · koersverschil (bank)' : '' }}</dt><dd>{{ item.higherEur | eur }}</dd></div> }
               <div class="is-total"><dt>Open</dt><dd>{{ item.openEur | eur }}</dd></div>
             </dl>
             @if (item.openEur > 0) {
