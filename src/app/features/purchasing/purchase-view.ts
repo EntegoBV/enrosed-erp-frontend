@@ -49,6 +49,10 @@ import { productSalesUnit } from '../products/product-sales-unit';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { containerName } from './container-name';
+import { BankingApi, type BankStatementLine } from '../../core/api/banking-api';
+import { BankAccountsStore } from '../../core/api/bank-accounts';
+import { lineMarkers } from '../finance/bank-markers';
+import { bankTransactionDay } from '../../shared/bank-transaction-options';
 
 type PurchaseWorkspaceSectionId =
   | 'purchase-overview'
@@ -682,8 +686,8 @@ type PurchaseWorkspaceSectionId =
                      id="purchase-payments-section" tabindex="-1"
                      aria-labelledby="purchase-payments-title">
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
-                [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()"
-                (add)="recordPayment($event)" (download)="downloadDocument($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
+                [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()" [bankLineLabel]="bankLineLabel"
+                (add)="recordPayment($event)" (download)="downloadDocument($event)" (invoiceFile)="openDocumentFile($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
                 (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
             </section>
 
@@ -1227,8 +1231,44 @@ export class PurchaseView {
       settled: (payee) => purchaseGroupSettled(data, this.payments(), payee), toleranceEur: PAYMENT_TOLERANCE_EUR,
       totalLabel: totals.separateCostsEur ? separateCostsTotalLabel(totals) : 'Totaal geland',
       planLabel: this.planLabel(),
+      bankedPaymentIds: this.bankedPaymentIds(),
     });
   });
+
+  /* ---- the bank lines, once per order: older lines mark a container payment only by text ('containerbetaling #id') */
+  private readonly banking = inject(BankingApi);
+  private readonly bankAccounts = inject(BankAccountsStore);
+  readonly bankLines = signal<BankStatementLine[]>([]);
+  readonly bankedPaymentIds = computed(() => {
+    const ids = new Set<number>();
+    for (const markers of lineMarkers(this.bankLines()).values()) {
+      for (const marker of markers) if (marker.kind === 'containerbetaling') ids.add(marker.id);
+    }
+    return ids;
+  });
+  /** '{account} · {dd/MM}' of a loaded bank line, for the bank pills of the payments. */
+  readonly bankLineLabel = (lineId: number): string | null => {
+    const line = this.bankLines().find(item => item.id === lineId);
+    if (!line) return null;
+    const account = this.bankAccounts.options().find(option => option.key === line.account)?.label ?? line.account;
+    const day = bankTransactionDay(line);
+    return `${account} · ${day.slice(8, 10)}/${day.slice(5, 7)}`;
+  };
+  private async loadBankLines(): Promise<void> {
+    void this.bankAccounts.load();
+    // A failure is ignored, as in the editor: the markers are a hint.
+    try { this.bankLines.set(await this.banking.list()); } catch { /* without them only hard links count */ }
+  }
+
+  /** Opens a container file by id: an invoice's file or an invoice file without data. */
+  async openDocumentFile(file: { documentId: number; name: string | null }): Promise<void> {
+    const data = this.view();
+    if (!data) return;
+    const known = (this.documents() ?? []).find(doc => doc.id === file.documentId);
+    if (known) { await this.downloadDocument(known); return; }
+    try { saveBlob(await this.sourcing.documentFile(data.order.id, file.documentId), file.name || 'factuur'); }
+    catch { this.ui.toast('Document openen mislukt', 'err'); }
+  }
   readonly paymentState = computed<'loading' | 'error' | 'ready'>(() => this.paymentsError() ? 'error' : this.payments() === null ? 'loading' : 'ready');
   readonly paymentNavLabel = computed(() => paymentsNavLabel(this.paymentLedger(), {
     error: !!this.paymentsError(), loading: this.payments() === null, concept: this.view()?.order.status === 'CONCEPT',
@@ -1353,6 +1393,7 @@ export class PurchaseView {
     this.openLine.set(null);
     this.openProductGroups.set(new Set());
     void this.loadPayments(id);
+    void this.loadBankLines();
     // Unknown until they arrive, so the ledger never warns about proofs of the previous order.
     this.documents.set(null);
     this.documentsFailed.set(false);

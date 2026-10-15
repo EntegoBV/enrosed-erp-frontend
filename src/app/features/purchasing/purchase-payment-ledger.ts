@@ -1,6 +1,6 @@
 import type {
-  Currency, Instalment, Payee, PurchaseCreditOffset, PurchaseDocument, PurchaseInstalmentReconciliation, PurchaseOrderView, PurchasePayment,
-  PurchaseSupplierCredit, SupplierCreditReason, SupplierCreditStatus, SupplierCreditUpdate,
+  Currency, Instalment, Payee, PurchaseCreditOffset, PurchaseDocument, PurchaseInstalmentReconciliation, PurchaseInvoice, PurchaseInvoiceFile,
+  PurchaseOrderView, PurchasePayment, PurchaseSupplierCredit, SupplierCreditReason, SupplierCreditStatus, SupplierCreditUpdate,
 } from '../../core/api/models';
 import type { PurchaseInstalmentState } from './purchase-instalment-state';
 
@@ -10,7 +10,9 @@ import type { PurchaseInstalmentState } from './purchase-instalment-state';
  *
  * Every amount comes from the server's reconciliation; this module only
  * arranges it and adds what the server does not know: whether an open amount
- * is due now or later, and which payments still lack a bank proof. The
+ * is due now or later, and which payments still lack a betaalbewijs (a
+ * payment on the bank is proven: the bank transaction is its proof; a
+ * payment paid in parts is one row with its transfers underneath). The
  * server nets a payee's terms (a surplus on one covers a shortfall on
  * another), so nothing here adds up gross per-term gaps. Templates format the
  * figures with the pipes; only a status that names an amount ('Betaald ·
@@ -122,12 +124,35 @@ export type SupplierCreditAction =
   | { kind: 'add'; reason?: SupplierCreditReason }
   | { kind: 'edit' | 'refund' | 'offset' | 'remove' | 'undo-refund' | 'open-offset'; credit: PurchaseSupplierCredit };
 
-export interface LedgerRow {
+/** One bank transfer of a payment: a never-split payment has one part, a payment paid in parts one per transfer. */
+export interface LedgerPart {
   id: number;
   payment: PurchasePayment;
+  paidOn: string;
+  amount: number;
+  currency: Currency;
+  amountEur: number;
+  bankStatementLineId: number | null;
+  /** The hard link, or the 'containerbetaling #id' marker of an older line. */
+  onBank: boolean;
+  /** Proof files of this part (invoice files excluded); null while the documents load. */
+  proofs: PurchaseDocument[] | null;
+}
+
+export interface LedgerRow {
+  /**
+   * The group id (= the root's id). `payment` is the member whose id equals
+   * the group id, else (old data) the first part by paidOn, id. Group actions
+   * (edit, settle, move, menus) address `row.payment.id`, never `row.id` blindly.
+   */
+  id: number;
+  payment: PurchasePayment;
+  /** ≥ 1, by paidOn then id. */
+  parts: LedgerPart[];
   payee: Payee;
   payeeLabel: string;
   payeeShort: string;
+  /** The newest part's day. */
   paidOn: string;
   /** The description, or the payee when there is none. */
   title: string;
@@ -136,17 +161,31 @@ export interface LedgerRow {
   termLabel: string | null;
   settles: boolean;
   settlesLabel: string | null;
+  /** The sum of the parts (in their currency when they share one). */
   amount: number;
   currency: Currency;
   foreign: boolean;
-  /** As booked; never converted again. Not finite when an old payment lacks its euro value. */
+  /** As booked, the sum of the parts; never converted again. Not finite when an old payment lacks its euro value. */
   amountEur: number;
-  /** Null while the documents are still loading. */
+  /** Proof files of all parts, invoice files excluded; null while the documents are still loading. */
   proofs: PurchaseDocument[] | null;
   proofCount: number;
+  /** Proof files present: decides whether the file button shows, never whether a betaalbewijs is missing (see proven). */
   hasProof: boolean | null;
-  /** Noted on the bank: the line's hard link, or the 'containerbetaling #id' marker of an older line. */
+  /** Every part noted on the bank: the line's hard link, or the 'containerbetaling #id' marker of an older line. */
   onBank: boolean;
+  /** Parts on the bank, all parts, and the other payees of this order on the same bank line(s). */
+  bank: { linked: number; total: number; sharedWith: Payee[] };
+  /**
+   * Has its betaalbewijs: a credit offset, or every part on the bank or with
+   * a proof file. Null while the documents load and a part is neither on the
+   * bank nor an offset. Every 'zonder betaalbewijs' reads proven === false.
+   */
+  proven: boolean | null;
+  /** The invoice the server resolved this payment to; viaSupplier when it is another payee's (the supplier's for the inspection). */
+  invoice: { id: number; number: string; documentId: number | null; viaSupplier: boolean } | null;
+  /** Older invoice files hung on a part ('Factuurbestand openen'); never proof. */
+  invoiceFiles: PurchaseDocument[];
   actor: string | null;
   recordedAt: string;
   /** This payment offsets a credit of another container: its amount belongs to that credit. */
@@ -198,7 +237,7 @@ export interface LedgerTerm {
   finalized: boolean;
   state: PurchaseInstalmentState['state'];
   hasScopedPayment: boolean;
-  /** The supplier payments tied to this term, newest first: 'Betaling aanpassen…' opens the first. */
+  /** The supplier payments tied to this term as ledger rows (group ids), newest first: 'Betaling aanpassen…' opens the first. */
   paymentIds: number[];
   canSettle: boolean;
   /**
@@ -262,7 +301,7 @@ export interface PayeeLedger {
   balanced: boolean;
   paymentCount: number;
   rows: LedgerRow[];
-  /** Null while the documents are still loading. */
+  /** Rows with a betaalbewijs of the rows that need one (credit offsets need none); null while the documents are still loading. */
   proof: { withProof: number; total: number } | null;
   status: PayeeStatus;
   terms: LedgerTerm[];
@@ -281,6 +320,17 @@ export interface PayeeLedger {
   creditEur: number;
   /** The part of creditEur neither refunded nor offset yet. */
   creditOpenEur: number;
+  /** Inspectie & andere kosten with the container's 'Inspectie via leverancier' on. */
+  viaSupplier: boolean;
+  /** SEPARATE with the flag: some payment already counts as paid via the supplier (same transfer, or not on the bank yet). */
+  viaSupplierPaid: boolean;
+  /** The payee's invoices, the primary first, and its invoice files without data. */
+  invoices: PurchaseInvoice[];
+  invoiceFiles: PurchaseInvoiceFile[];
+  /** The inspection's own Afspraak (order.inspectionCostEur): what 'gelijk aan de afspraak + inspectie' compares with (payeeInvoiceComparison). */
+  inspectionAgreedEur: number;
+  /** SEPARATE via the supplier without an invoice of its own: the supplier's primary invoice. */
+  supplierInvoice: PurchaseInvoice | null;
 }
 
 export type LedgerHeadlineKind = 'due' | 'later' | 'review' | 'done' | 'concept' | 'empty';
@@ -338,8 +388,11 @@ export interface LandedBridge {
 }
 
 export interface SettleCarrier {
+  /** The group's root: one option per payment paid in parts. */
   id: number;
   payment: PurchasePayment;
+  /** The bank transfers of the group (1 for a payment never split). */
+  transfers: number;
   payee: Payee;
   paidOn: string;
   amount: number;
@@ -414,8 +467,8 @@ export function purchasePaymentLedger(input: PaymentLedgerInput): PaymentLedger 
   const instalments = view.reconciliation?.supplierInstalments;
   const canonical = Array.isArray(instalments);
   const concept = view.order.status === 'CONCEPT';
-  const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? [], input.bankedPaymentIds);
-  const terms = ledgerTerms(input.terms, instalments, payments, canonical, concept);
+  const rows = ledgerRows(payments, input.documents, instalments, view.creditOffsets ?? [], input.bankedPaymentIds, view.invoices ?? []);
+  const terms = ledgerTerms(input.terms, instalments, payments, rows, canonical, concept);
   const payees = PAYEE_ORDER.map(payee => payeeLedger(payee, input, rows, payee === 'SUPPLIER' ? terms : [], canonical, concept));
   const summary = ledgerSummary(input, payees, rows, concept);
   return {
@@ -514,6 +567,13 @@ function payeeLedger(
 
   const canSettle = !other && known && rows.length >= 1
     && (open > 0 || (higher > 0 && !finalized) || status.kind === 'UNBUDGETED');
+  const invoices = [...(view.invoices ?? [])].filter(invoice => invoice.payee === payee).sort((left, right) => left.id - right.id);
+  const invoiceFiles = (view.invoiceFiles ?? []).filter(file => file.payee === payee);
+  const flag = !!view.order.inspectionViaSupplier;
+  const via = payee === 'SEPARATE' && flag;
+  const orderPayments = input.payments ?? [];
+  const viaPaid = via && orderPayments.some(payment => paidViaSupplier(payment, orderPayments, flag));
+  const supplierPrimary = [...(view.invoices ?? [])].filter(invoice => invoice.payee === 'SUPPLIER').sort((left, right) => left.id - right.id)[0] ?? null;
   return {
     payee,
     label: PAYEE_LABEL[payee],
@@ -538,7 +598,8 @@ function payeeLedger(
     balanced,
     paymentCount: rows.length,
     rows,
-    proof: input.documents === null ? null : { withProof: rows.filter(row => row.hasProof).length, total: rows.length },
+    proof: input.documents === null ? null : {
+      withProof: rows.filter(row => !row.creditOffset && row.proven === true).length, total: rows.filter(row => !row.creditOffset).length },
     status,
     terms,
     composition: composition.lines,
@@ -549,12 +610,19 @@ function payeeLedger(
     settleDefault,
     next,
     action: payeeRowAction({ dueNowEur: euro(dueNow), canSettle, laterEur: euro(later), openEur: euro(open), smallDifference: status.kind === 'SMALL_DIFFERENCE' }),
-    visible: payee === 'SUPPLIER' || rows.length > 0 || (!other && (agreed ?? 0) > 0),
+    visible: payee === 'SUPPLIER' || rows.length > 0 || (!other && (agreed ?? 0) > 0) || invoices.length > 0 || invoiceFiles.length > 0 || via,
     credits,
     creditEur: euro(credit),
     creditOpenEur: euro(creditOpen),
+    viaSupplier: via,
+    viaSupplierPaid: viaPaid,
+    invoices,
+    invoiceFiles,
+    inspectionAgreedEur: view.order.inspectionCostEur ?? 0,
+    supplierInvoice: via && !invoices.length ? supplierPrimary : null,
   };
 }
+
 
 /** The supplier's credits, newest first, each with its reason and where it stands in words. */
 export function ledgerCredits(credits: readonly PurchaseSupplierCredit[]): LedgerCredit[] {
@@ -716,7 +784,7 @@ function payeeBasis(payee: Payee, view: PurchaseOrderView, hasPlan: boolean, pla
     case 'LOGISTICS': return view.payable?.ddp ? 'Inbegrepen in de prijs (DDP)'
       : cif ? 'Raming uit Kosten: invoerrechten en lokale kosten aankomst · zeevracht via de leverancier (CIF)'
       : 'Raming uit Kosten: vracht, lokale kosten en invoerrechten';
-    case 'SEPARATE': return 'Raming uit Kosten: inspectie en andere kosten';
+    case 'SEPARATE': return 'Raming uit Kosten: inspectie en andere kosten' + (view.order.inspectionViaSupplier ? ' · via leverancier' : '');
     default: return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
   }
 }
@@ -732,7 +800,7 @@ function legacyAgreed(payee: Payee, view: PurchaseOrderView): number {
 
 function ledgerTerms(
   states: readonly PurchaseInstalmentState[], instalments: readonly PurchaseInstalmentReconciliation[] | undefined,
-  payments: readonly PurchasePayment[], canonical: boolean, concept: boolean,
+  payments: readonly PurchasePayment[], rows: readonly LedgerRow[], canonical: boolean, concept: boolean,
 ): LedgerTerm[] {
   const supplier = payments.filter(payment => payeeOf(payment) === 'SUPPLIER');
   const offsets = states.map(state => cents(state.offset));
@@ -781,7 +849,8 @@ function ledgerTerms(
       finalized,
       state: state.state,
       hasScopedPayment: scoped.length > 0,
-      paymentIds: scoped.map(payment => payment.id),
+      // One entry per payment paid in parts: the term menu opens the group, not only its newest transfer.
+      paymentIds: rows.filter(row => row.payee === 'SUPPLIER' && row.parts.some(part => part.payment.instalmentDue === state.due)).map(row => row.id),
       canSettle: alone && (state.amount > 0 || (higher > 0 && !finalized)),
       canConfirm: alone && !scoped.some(payment => payment.settles) && state.state === 'paid' && lower === 0 && higher === 0,
       canUndo: scoped.some(payment => payment.settles),
@@ -795,39 +864,102 @@ function ledgerTerms(
 function ledgerRows(
   payments: readonly PurchasePayment[], documents: readonly PurchaseDocument[] | null,
   instalments: readonly PurchaseInstalmentReconciliation[] | undefined, offsets: readonly PurchaseCreditOffset[],
-  banked?: ReadonlySet<number>,
+  banked: ReadonlySet<number> | undefined, invoices: readonly PurchaseInvoice[],
 ): LedgerRow[] {
-  return [...payments].sort(byNewest).map(payment => {
-    const payee = payeeOf(payment);
-    const due = payment.instalmentDue ?? null;
-    const proofs = documents === null ? null : documents.filter(document => document.paymentId === payment.id);
-    const creditOffset = offsets.find(offset => offset.paymentId === payment.id) ?? null;
-    return {
-      id: payment.id,
-      payment,
-      payee,
-      payeeLabel: PAYEE_LABEL[payee],
-      payeeShort: PAYEE_SHORT[payee],
-      paidOn: payment.paidOn,
-      title: payment.label?.trim() || (creditOffset ? ('Verrekend tegoed ' + (creditOffset.sourceOrderNumber ?? '')).trim() : PAYEE_LABEL[payee]),
-      label: payment.label?.trim() || null,
-      due,
-      termLabel: termLabel(due, instalments),
-      settles: !!payment.settles,
-      settlesLabel: payment.settles ? (due ? 'Rekent de termijn af' : 'Rekent alles af') : null,
-      amount: payment.amount,
-      currency: payment.currency,
-      foreign: payment.currency !== 'EUR',
-      amountEur: payment.amountEur,
-      proofs,
-      proofCount: proofs?.length ?? 0,
-      hasProof: proofs === null ? null : proofs.length > 0,
-      onBank: payment.bankStatementLineId != null || (banked?.has(payment.id) ?? false),
-      actor: payment.actor,
-      recordedAt: payment.recordedAt,
-      creditOffset,
-    };
-  });
+  const byDay = (left: PurchasePayment, right: PurchasePayment): number => left.paidOn.localeCompare(right.paidOn) || left.id - right.id;
+  const groups = new Map<number, PurchasePayment[]>();
+  for (const payment of payments) {
+    const key = payment.groupId ?? payment.id;
+    groups.set(key, [...(groups.get(key) ?? []), payment]);
+  }
+  const rows: LedgerRow[] = [];
+  for (const [key, members] of groups) {
+    const sorted = [...members].sort(byDay);
+    const root = sorted.find(payment => payment.id === key) ?? sorted[0];
+    // A part whose payee drifted from its root's (an old cached screen edited one part) is shown as its own row.
+    const own = sorted.filter(payment => payeeOf(payment) === payeeOf(root));
+    rows.push(ledgerRow(key, root, own, payments, documents, instalments, offsets, banked, invoices));
+    for (const drifted of sorted.filter(payment => payeeOf(payment) !== payeeOf(root))) {
+      rows.push(ledgerRow(drifted.id, drifted, [drifted], payments, documents, instalments, offsets, banked, invoices));
+    }
+  }
+  return rows.sort((left, right) => right.paidOn.localeCompare(left.paidOn) || right.id - left.id);
+}
+
+function ledgerRow(
+  id: number, root: PurchasePayment, members: readonly PurchasePayment[], all: readonly PurchasePayment[],
+  documents: readonly PurchaseDocument[] | null, instalments: readonly PurchaseInstalmentReconciliation[] | undefined,
+  offsets: readonly PurchaseCreditOffset[], banked: ReadonlySet<number> | undefined, invoices: readonly PurchaseInvoice[],
+): LedgerRow {
+  const payee = payeeOf(root);
+  const due = root.instalmentDue ?? null;
+  const creditOffset = offsets.find(offset => offset.paymentId === root.id) ?? null;
+  const parts: LedgerPart[] = members.map(payment => ({
+    id: payment.id, payment, paidOn: payment.paidOn, amount: payment.amount, currency: payment.currency, amountEur: payment.amountEur,
+    bankStatementLineId: payment.bankStatementLineId ?? null,
+    onBank: payment.bankStatementLineId != null || (banked?.has(payment.id) ?? false),
+    proofs: documents === null ? null : documents.filter(document => document.paymentId === payment.id && !invoiceFile(document, invoices)),
+  }));
+  const ids = new Set(parts.map(part => part.id));
+  const proofs = documents === null ? null : parts.flatMap(part => part.proofs ?? []);
+  const sameCurrency = parts.every(part => part.currency === root.currency);
+  const finite = parts.every(part => Number.isFinite(part.amountEur));
+  const amountEur = finite ? euro(parts.reduce((sum, part) => sum + cents(part.amountEur), 0)) : Number.NaN;
+  const lines = new Set(parts.map(part => part.bankStatementLineId).filter((line): line is number => line !== null));
+  const sharedWith = PAYEE_ORDER.filter(other => other !== payee
+    && all.some(payment => payeeOf(payment) === other && payment.bankStatementLineId != null && lines.has(payment.bankStatementLineId)));
+  const linked = parts.filter(part => part.onBank).length;
+  const proven = creditOffset ? true
+    : parts.every(part => part.onBank || (part.proofs?.length ?? 0) > 0) ? true
+    : parts.some(part => !part.onBank && part.proofs === null) ? null : false;
+  const invoice = invoices.find(item => item.paymentIds?.some(paymentId => ids.has(paymentId))) ?? null;
+  const newest = parts[parts.length - 1];
+  return {
+    id,
+    payment: root,
+    parts,
+    payee,
+    payeeLabel: PAYEE_LABEL[payee],
+    payeeShort: PAYEE_SHORT[payee],
+    paidOn: newest.paidOn,
+    title: root.label?.trim() || (creditOffset ? ('Verrekend tegoed ' + (creditOffset.sourceOrderNumber ?? '')).trim() : PAYEE_LABEL[payee]),
+    label: root.label?.trim() || null,
+    due,
+    termLabel: termLabel(due, instalments),
+    settles: !!root.settles,
+    settlesLabel: root.settles ? (due ? 'Rekent de termijn af' : 'Rekent alles af') : null,
+    amount: sameCurrency ? parts.reduce((sum, part) => sum + cents(part.amount), 0) / 100 : amountEur,
+    currency: sameCurrency ? root.currency : 'EUR',
+    foreign: sameCurrency && root.currency !== 'EUR',
+    amountEur,
+    proofs,
+    proofCount: proofs?.length ?? 0,
+    hasProof: proofs === null ? null : proofs.length > 0,
+    onBank: linked === parts.length,
+    bank: { linked, total: parts.length, sharedWith },
+    proven,
+    invoice: invoice ? { id: invoice.id, number: invoice.number, documentId: invoice.documentId ?? null, viaSupplier: invoice.payee !== payee } : null,
+    invoiceFiles: documents === null ? [] : documents.filter(document => document.paymentId !== null && ids.has(document.paymentId) && invoiceFile(document, invoices)),
+    actor: root.actor,
+    recordedAt: root.recordedAt,
+    creditOffset,
+  };
+}
+
+/*
+ * Two rules of purchase-invoices.ts (isInvoiceFile, viaSupplier), repeated
+ * here because node-tested modules import types only; the tests of both
+ * modules pin the same cases.
+ */
+const LEGACY_INVOICE_LABELS = ['Factuur', 'Factuur inspectie', 'Factuur transport'];
+function invoiceFile(doc: PurchaseDocument, invoices: readonly PurchaseInvoice[]): boolean {
+  return doc.kind === 'COMMERCIAL_INVOICE' || doc.kind === 'INVOICE' || invoices.some(invoice => invoice.documentId === doc.id)
+    || (doc.kind === 'OTHER' && LEGACY_INVOICE_LABELS.includes((doc.label ?? '').trim()));
+}
+function paidViaSupplier(payment: PurchasePayment, all: readonly PurchasePayment[], flag: boolean): boolean {
+  if (!flag || payeeOf(payment) !== 'SEPARATE') return false;
+  const line = payment.bankStatementLineId ?? null;
+  return line === null || all.some(other => payeeOf(other) === 'SUPPLIER' && other.bankStatementLineId === line);
 }
 
 function termLabel(due: Due | null, instalments: readonly PurchaseInstalmentReconciliation[] | undefined): string | null {
@@ -892,7 +1024,8 @@ function ledgerSummary(input: PaymentLedgerInput, payees: readonly PayeeLedger[]
     balanced: payees.every(payee => payee.balanced),
     known: !!input.view.reconciliation,
     paymentCount: rows.length,
-    missingProofCount: input.documents === null ? null : rows.filter(row => row.hasProof === false).length,
+    // Rows (payments, not their transfers), so the chip, the filter and the list agree.
+    missingProofCount: rows.some(row => row.proven === null) ? null : rows.filter(row => row.proven === false).length,
     headline: {
       kind,
       payee: kind === 'review' ? review : kind === 'due' || kind === 'later'
@@ -1039,12 +1172,24 @@ export function settleCarriers(
   payments: readonly PurchasePayment[], payee: Payee, scope: 'GROUP' | 'TERM', due: Due | null,
   terms: readonly { due: Due; offsetEur?: number | null }[] = [],
 ): { options: SettleCarrier[]; defaultId: number | null } {
-  const own = payments.filter(payment => payeeOf(payment) === payee).sort(byNewest);
-  const pool = scope === 'GROUP' ? own : payee === 'SUPPLIER' && due ? own.filter(payment => payment.instalmentDue === due) : [];
-  const options = pool.map((payment): SettleCarrier => ({
-    id: payment.id, payment, payee, paidOn: payment.paidOn, amount: payment.amount, currency: payment.currency,
-    amountEur: payment.amountEur, instalmentDue: payment.instalmentDue ?? null, label: payment.label ?? null,
-    settles: !!payment.settles, reallocates: scope === 'GROUP' && payee === 'SUPPLIER' && payment.instalmentDue != null,
+  // One option per payment paid in parts: the root carries the flag for the whole group (applyToGroup).
+  const groups = new Map<number, PurchasePayment[]>();
+  for (const payment of payments.filter(item => payeeOf(item) === payee)) {
+    const key = payment.groupId ?? payment.id;
+    groups.set(key, [...(groups.get(key) ?? []), payment]);
+  }
+  const roots = [...groups.entries()].map(([key, members]) => {
+    const sorted = [...members].sort((left, right) => left.paidOn.localeCompare(right.paidOn) || left.id - right.id);
+    return { root: sorted.find(payment => payment.id === key) ?? sorted[0], members: sorted };
+  }).sort((left, right) => byNewest(left.members[left.members.length - 1], right.members[right.members.length - 1]));
+  const pool = scope === 'GROUP' ? roots : payee === 'SUPPLIER' && due ? roots.filter(group => group.root.instalmentDue === due) : [];
+  const options = pool.map(({ root, members }): SettleCarrier => ({
+    id: root.id, payment: root, transfers: members.length, payee, paidOn: members[members.length - 1].paidOn,
+    amount: members.every(member => member.currency === root.currency) ? members.reduce((sum, member) => sum + cents(member.amount), 0) / 100 : root.amount,
+    currency: root.currency,
+    amountEur: members.every(member => Number.isFinite(member.amountEur)) ? euro(members.reduce((sum, member) => sum + cents(member.amountEur), 0)) : Number.NaN,
+    instalmentDue: root.instalmentDue ?? null, label: root.label ?? null,
+    settles: members.some(member => !!member.settles), reallocates: scope === 'GROUP' && payee === 'SUPPLIER' && root.instalmentDue != null,
   }));
   const carrierDue = scope === 'GROUP' && payee === 'SUPPLIER' ? nettedCarrierDue(terms) : null;
   const chosen = scope === 'TERM'

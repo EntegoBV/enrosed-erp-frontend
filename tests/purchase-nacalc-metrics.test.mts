@@ -626,8 +626,8 @@ test('todoCopy keeps the Te doen words of the Betalingen overview for every todo
     { title: 'Betaald zonder afspraak: Douane & transport', detail: '€ 120,00 betaald zonder bedrag in Kosten', action: 'Afrekenen' });
   assert.deepEqual(plain(todoCopy({ kind: 'incomplete', key: 'i', payee: 'SUPPLIER' })),
     { title: 'Betaling zonder eurowaarde bij Leverancier', detail: 'Controleer het bedrag van deze betaling', action: 'Bekijken' });
-  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder bewijs', detail: 'Voeg het bankafschrift toe', action: 'Toon' });
-  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 1 }, 'read')), { title: '1 betaling zonder bewijs', detail: 'Bankafschrift ontbreekt', action: 'Toon' });
+  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 2 })), { title: '2 betalingen zonder betaalbewijs', detail: 'Koppel de banktransactie via Aanpassen', action: 'Toon' });
+  assert.deepEqual(plain(todoCopy({ kind: 'proof', key: 'p', count: 1 }, 'read')), { title: '1 betaling zonder betaalbewijs', detail: 'Banktransactie ontbreekt', action: 'Toon' });
 });
 
 /** PO 35 (PO-2026-002): received, DDP, supplier only; the server netted the 30 % term's + € 61,28 against the 70 % term's − € 60,78. */

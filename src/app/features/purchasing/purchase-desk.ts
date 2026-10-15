@@ -15,6 +15,7 @@ import { PurchasePaymentWorkbench } from './purchase-payment-workbench';
 import { PurchaseNacalcWorkbench } from './purchase-nacalc-workbench';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
+import { PurchaseInvoiceSheet } from './purchase-invoice-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
@@ -66,7 +67,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -190,8 +191,9 @@ type DeskRow =
                 [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
                 [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
-                [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()"
-                (add)="requestPayment($event)" (edit)="requestEdit($event)" (proof)="attachProof($event)" (download)="downloadDocument($event)"
+                [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
+                (add)="requestPayment($event)" (edit)="requestEdit($event)" (download)="downloadDocument($event)"
+                (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)"
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
                 (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
@@ -1077,8 +1079,16 @@ type DeskRow =
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
           [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
+          [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
+          [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
-          (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)" />
+          (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
+          (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
+      }
+      @if (invoicing(); as invoiceAction) {
+        <app-purchase-invoice-sheet [action]="invoiceAction" [invoices]="data.invoices ?? []" [agreed]="agreedByPayee()"
+          [inspectionAgreedEur]="data.order.inspectionCostEur ?? 0" [eurOf]="invoiceEurOf" [busy]="payingBusy()"
+          (submit)="submitInvoice($event)" (remove)="removeInvoice($event)" (openFile)="openDocumentFile({ documentId: $event, name: null })" (cancel)="closeInvoice()" />
       }
       @if (crediting(); as credit) {
         <app-purchase-supplier-credit-sheet [action]="credit" [view]="data" [targets]="creditTargets()" [supplierOpenEur]="creditSupplierOpen()"

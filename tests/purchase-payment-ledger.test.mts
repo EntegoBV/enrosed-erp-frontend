@@ -63,7 +63,7 @@ function payment(id: number, values: Partial<PurchasePayment> = {}): PurchasePay
 }
 
 function proof(id: number, paymentId: number | null): PurchaseDocument {
-  return { id, kind: 'PAYMENT_PROOF', kindLabel: 'Betalingsbewijs', label: null, originalFilename: `bank-${id}.pdf`,
+  return { id, kind: 'PAYMENT_PROOF', kindLabel: 'Betaalbewijs', label: null, originalFilename: `bank-${id}.pdf`,
     contentType: 'application/pdf', sizeBytes: 10, paymentId, actor: null, addedAt: '2026-09-10', orderId: 50 };
 }
 
@@ -659,4 +659,104 @@ test('an overrun confirmed on a term settled alone is not asked again: only the 
   assert.equal(spaced(reconciliationStatusLabel(supplierStream, instalments)), 'Betaald · € 10,00 te veel');
   assert.equal(spaced(reconciliationStatusLabel(supplierStream)), 'Betaald · € 71,28 te veel', 'without the terms, the stream\'s own figure');
   assert.equal(purchasePaymentResult(view)!.unsettledOverrunsEur, 10);
+});
+
+/* ---- the round of 2026-10-15: the bank transaction is the betaalbewijs, a payment paid in parts is one row, invoices */
+
+function invoiceOf(id: number, values: Record<string, unknown> = {}) {
+  return { id, orderId: 50, payee: 'SUPPLIER', payeeLabel: 'Leverancier', number: 'CI-2026-118', invoiceDate: '2026-08-20', amount: 1000, currency: 'EUR',
+    amountEur: 1000, documentId: 88, documentName: 'CI-2026-118.pdf', notes: null, actor: 'emre', recordedAt: '2026-08-21T08:10:00Z',
+    primary: true, coversInspection: false, paymentIds: [] as number[], paidEur: 0, ...values };
+}
+function withInvoices(view: PurchaseOrderView, invoices: ReturnType<typeof invoiceOf>[], files: unknown[] = [], flag = false): PurchaseOrderView {
+  return { ...view, order: { ...view.order, inspectionViaSupplier: flag }, invoices, invoiceFiles: files } as unknown as PurchaseOrderView;
+}
+function routed(view: PurchaseOrderView, payments: PurchasePayment[], documents: PurchaseDocument[] | null = [], banked?: Set<number>): PaymentLedger {
+  return purchasePaymentLedger({
+    view, payments, documents, terms: purchaseInstalmentState(view, instalmentsOf(view.order, PAYMENT_TERMS), payments),
+    settled: payee => purchaseGroupSettled(view, payments, payee), toleranceEur: 10, totalLabel: 'Totaal geland', planLabel: '30% bij bestelling, 70% bij vertrek',
+    bankedPaymentIds: banked,
+  });
+}
+// Example (c): the 70 % term € 21.733,63 paid in two transfers on lines 520 and 534.
+const deposit = () => payment(101, { amount: 9314.41, amountEur: 9314.41, label: 'Aanbetaling 30%', instalmentDue: 'ORDERED', paidOn: '2026-08-02', bankStatementLineId: 501 });
+const route1 = () => [deposit(),
+  payment(102, { amount: 10000, amountEur: 10000, label: 'Saldo 70%', instalmentDue: 'SHIPPED', paidOn: '2026-09-10', groupId: 102, bankStatementLineId: 520 }),
+  payment(103, { amount: 11733.63, amountEur: 11733.63, label: 'Saldo 70%', instalmentDue: 'SHIPPED', paidOn: '2026-09-24', groupId: 102, bankStatementLineId: 534 })];
+const termsView = () => purchase({ status: 'ONDERWEG', streams: [stream('SUPPLIER', { plannedEur: 31048.04, paidEur: 31048.04 })],
+  instalments: [instalment('ORDERED', { plannedEur: 9314.41, paidEur: 9314.41 }), instalment('SHIPPED', { plannedEur: 21733.63, paidEur: 21733.63 })] });
+
+test('a payment paid in two transfers is one row with two parts, on the bank, its term opening the group', () => {
+  const result = routed(termsView(), route1());
+  const row = result.rows.find(item => item.id === 102)!;
+  assert.deepEqual(result.rows.map(item => item.id), [102, 101]);
+  assert.deepEqual([row.payment.id, row.parts.map(part => part.id), row.paidOn, row.amountEur], [102, [102, 103], '2026-09-24', 21733.63]);
+  assert.deepEqual(row.bank, { linked: 2, total: 2, sharedWith: [] });
+  assert.deepEqual([row.onBank, row.proven, row.hasProof], [true, true, false], 'the bank transactions are the proof; no file needed');
+  assert.deepEqual(of(result, 'SUPPLIER').terms.find(term => term.due === 'SHIPPED')!.paymentIds, [102]);
+  assert.equal(result.summary.missingProofCount, 0);
+  assert.deepEqual(of(result, 'SUPPLIER').proof, { withProof: 2, total: 2 });
+});
+
+test('route 2: one transfer on the bank and the rest still open counts the row once as without betaalbewijs', () => {
+  const payments = route1();
+  payments[2] = { ...payments[2], bankStatementLineId: null, paidOn: '2026-09-10' };
+  const result = routed(termsView(), payments);
+  const row = result.rows.find(item => item.id === 102)!;
+  assert.deepEqual(row.bank, { linked: 1, total: 2, sharedWith: [] });
+  assert.deepEqual([row.onBank, row.proven], [false, false]);
+  assert.equal(result.summary.missingProofCount, 1, 'rows, not transfers');
+  assert.deepEqual(result.rows.filter(item => item.proven === false).map(item => item.id), [102], 'the NO_PROOF filter keeps exactly these rows');
+  assert.equal(result.todos.find(todo => todo.kind === 'proof')?.kind === 'proof' && (result.todos.find(todo => todo.kind === 'proof') as { count: number }).count, 1);
+  const loading = routed(termsView(), payments, null);
+  assert.equal(loading.rows.find(item => item.id === 102)!.proven, null, 'unknown while the documents load and a part is not on the bank');
+  assert.equal(loading.rows.find(item => item.id === 101)!.proven, true, 'on the bank is known without documents');
+  assert.equal(loading.summary.missingProofCount, null);
+});
+
+test('an older line\'s marker proves a payment; a credit offset needs no proof; invoice files are never proof', () => {
+  const view = { ...termsView(), creditOffsets: [{ creditId: 1, sourceOrderId: 40, sourceOrderNumber: 'INK-2026-009', paymentId: 3, amountEur: 100 }] } as PurchaseOrderView;
+  const payments = [payment(1), payment(2, { payee: 'SEPARATE' }), payment(3)];
+  const documents: PurchaseDocument[] = [
+    { ...proof(10, 2), kind: 'COMMERCIAL_INVOICE', kindLabel: 'Commercial invoice', originalFilename: 'invoice.pdf' },
+    { ...proof(11, 2), kind: 'OTHER', kindLabel: 'Andere', label: 'Factuur inspectie', originalFilename: 'inspectie.pdf' },
+  ];
+  const result = routed(view, payments, documents, new Set([1]));
+  const row = (id: number) => result.rows.find(item => item.id === id)!;
+  assert.deepEqual([row(1).onBank, row(1).proven], [true, true], 'marked by an older line only');
+  assert.deepEqual([row(3).creditOffset?.creditId, row(3).proven], [1, true]);
+  assert.deepEqual([row(2).proven, row(2).hasProof, row(2).proofs?.length, row(2).invoiceFiles.map(file => file.id)], [false, false, 0, [10, 11]]);
+  assert.equal(result.summary.missingProofCount, 1);
+  assert.deepEqual(of(result, 'SUPPLIER').proof, { withProof: 1, total: 1 }, 'the offset is neither counted nor missing');
+});
+
+test('the invoice of a row comes from the server\'s paymentIds; the payee carries its invoices, files and the inspection via the supplier', () => {
+  const view = withInvoices(termsView(), [invoiceOf(7, { paymentIds: [101, 102, 103] })],
+    [{ documentId: 77, kind: 'COMMERCIAL_INVOICE', label: null, originalFilename: 'invoice.pdf', paymentId: 101, payee: 'SUPPLIER' }], true);
+  const payments = [...route1(), payment(202, { payee: 'SEPARATE', amount: 300, amountEur: 300, paidOn: '2026-09-03', bankStatementLineId: 520 })];
+  const result = routed(view, payments);
+  assert.deepEqual(result.rows.find(item => item.id === 102)!.invoice, { id: 7, number: 'CI-2026-118', documentId: 88, viaSupplier: false });
+  const supplier = of(result, 'SUPPLIER');
+  assert.deepEqual([supplier.invoices.map(item => item.id), supplier.invoiceFiles.map(file => file.documentId)], [[7], [77]]);
+  const separate = of(result, 'SEPARATE');
+  assert.deepEqual([separate.viaSupplier, separate.viaSupplierPaid, separate.supplierInvoice?.number, separate.visible], [true, true, 'CI-2026-118', true]);
+  assert.match(separate.basis, /· via leverancier$/);
+  assert.deepEqual(result.rows.find(item => item.id === 202)!.bank.sharedWith, ['SUPPLIER'], 'the inspection sits on the goods\' transfer');
+  const off = routed(withInvoices(termsView(), []), payments);
+  assert.deepEqual([of(off, 'SEPARATE').viaSupplier, of(off, 'SEPARATE').supplierInvoice], [false, null]);
+});
+
+test('old data: a group whose root was deleted opens on its first part; a part with another payee is its own row', () => {
+  const orphan = [payment(5, { groupId: 4, paidOn: '2026-09-02' }), payment(6, { groupId: 4, paidOn: '2026-09-01' })];
+  const result = routed(termsView(), orphan);
+  assert.deepEqual(result.rows.map(item => [item.id, item.payment.id, item.parts.map(part => part.id)]), [[4, 6, [6, 5]]]);
+  const drifted = routed(termsView(), [payment(102, { groupId: 102 }), payment(103, { groupId: 102, payee: 'LOGISTICS' })]);
+  assert.deepEqual(drifted.rows.map(item => [item.id, item.payee, item.parts.length]).sort(), [[102, 'SUPPLIER', 1], [103, 'LOGISTICS', 1]]);
+});
+
+test('a settlement has one carrier per payment paid in parts: the root, with the group total', () => {
+  const carriers = settleCarriers(route1(), 'SUPPLIER', 'TERM', 'SHIPPED');
+  assert.deepEqual(carriers.options.map(option => [option.id, option.transfers, option.amountEur, option.paidOn]), [[102, 2, 21733.63, '2026-09-24']]);
+  assert.equal(carriers.defaultId, 102);
+  assert.deepEqual(settleCarriers(route1(), 'SUPPLIER', 'GROUP', null).options.map(option => option.id), [102, 101]);
 });

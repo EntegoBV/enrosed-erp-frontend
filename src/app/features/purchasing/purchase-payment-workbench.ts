@@ -1,8 +1,9 @@
 import {
   ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, untracked,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { Router } from '@angular/router';
-import type { Payee, PurchaseDocument, PurchasePayment } from '../../core/api/models';
+import type { Payee, PurchaseDocument, PurchaseInvoice, PurchaseInvoiceFile, PurchasePayment } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -10,15 +11,17 @@ import { keyContext } from '../../shared/key-context';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
+import { Ui } from '../../shared/ui';
 import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, payeeDifferenceState, payeeRowAction, sortLedgerRows, type Due,
   type LedgerCredit, type LedgerRow, type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction,
   type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
-  creditMenuItems, formatEur, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termPayment,
-  todoCopy,
+  creditMenuItems, formatEur, invoiceMenuItems, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems,
+  termPayment, todoCopy,
 } from './purchase-payment-menus';
+import { invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -30,19 +33,25 @@ type MenuState =
   | { kind: 'payee'; point: MenuPoint; payee: PayeeLedger }
   | { kind: 'payment'; point: MenuPoint; row: LedgerRow }
   | { kind: 'credit'; point: MenuPoint; credit: LedgerCredit }
-  | { kind: 'proofs'; point: MenuPoint; row: LedgerRow };
+  | { kind: 'proofs'; point: MenuPoint; row: LedgerRow }
+  | { kind: 'invoice'; point: MenuPoint; payee: PayeeLedger; invoice: PurchaseInvoice };
+
+/** What the invoice rows ask of the host: add one, correct one, or fill in the data of an invoice file. */
+export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?: PurchaseInvoiceFile }
 
 /**
  * Betalingen on the desk: money out of the container as a workbench. The
  * equation strip answers "what do I still pay and what is due now", the
- * payee table shows every agreement closing to the cent, the ledger lists
- * every payment with its proof, and the side cards say what to do and how
- * the payees add up to the landed total. Styles: styles/purchase-payments.scss.
+ * payee table shows every agreement closing to the cent with its invoices,
+ * the ledger lists every payment with its betaalbewijs (the bank transaction;
+ * a payment paid in parts with one sub-row per transfer), and the side cards
+ * say what to do and how the payees add up to the landed total. Files and bank
+ * transactions are added in 'Aanpassen'. Styles: styles/purchase-payments.scss.
  */
 @Component({
   selector: 'app-purchase-payment-workbench',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ContextMenu, Icon, MenuTrigger, Skeleton, PurchaseNacalcSummaryCard, EurPipe, CurPipe, DateNlPipe],
+  imports: [NgTemplateOutlet, ContextMenu, Icon, MenuTrigger, Skeleton, PurchaseNacalcSummaryCard, EurPipe, CurPipe, DateNlPipe],
   host: { '(keydown)': 'onKey($event)' },
   template: `
     <div class="pw">
@@ -136,7 +145,7 @@ type MenuState =
                     </div>
                   }
                   @if (sum.additionalEur > 0 || sum.missingProofCount || !sum.known) {
-                    <p class="pw-foot">@if (sum.additionalEur > 0) { Totaal betaald {{ sum.paidTotalEur | eur }} incl. {{ sum.additionalEur | eur }} bijkomende kosten }@if (sum.missingProofCount) { @if (sum.additionalEur > 0) { · }<button class="wk-link" type="button" (click)="setFilter('NO_PROOF')">{{ sum.missingProofCount }} zonder bewijs ›</button> }@if (!sum.known) { @if (sum.additionalEur > 0 || sum.missingProofCount) { · }Voorlopige cijfers }</p>
+                    <p class="pw-foot">@if (sum.additionalEur > 0) { Totaal betaald {{ sum.paidTotalEur | eur }} incl. {{ sum.additionalEur | eur }} bijkomende kosten }@if (sum.missingProofCount) { @if (sum.additionalEur > 0) { · }<button class="wk-link" type="button" (click)="setFilter('NO_PROOF')">{{ sum.missingProofCount }} zonder betaalbewijs ›</button> }@if (!sum.known) { @if (sum.additionalEur > 0 || sum.missingProofCount) { · }Voorlopige cijfers }</p>
                   }
                   @if (!sum.balanced) { <p class="pw-foot wk-amount--warn" role="status">Bedragen sluiten niet: een betaling mist de eurowaarde. Controleer de betalingen.</p> }
                 </div>
@@ -198,6 +207,7 @@ type MenuState =
                         </span>
                       </div>
                       @if (isExpanded(item.payee)) {
+                        <ng-container *ngTemplateOutlet="invoiceRows; context: { $implicit: item }" />
                         @if (item.payee === 'SUPPLIER') {
                           @for (term of item.terms; track term.due) {
                             <div class="wk-tr wk-tr--sub" role="row" aria-level="2">
@@ -268,6 +278,49 @@ type MenuState =
                         }
                       }
                     }
+                    <ng-template #invoiceRows let-item>
+                      <!-- The payee's invoices: number, date and amount against the Afspraak; the supplier's terms point to its primary one. -->
+                      @for (invoice of item.invoices; track invoice.id; let first = $first) {
+                        <div class="wk-tr wk-tr--sub pw-invoice-row" role="row" aria-level="2">
+                          <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">{{ invoiceText(item, invoice, first) }}</span>
+                            @if (invoice.notes) { <span class="wk-td__sub">{{ invoice.notes }}</span> }</span>
+                          <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
+                            @if (invoice.documentId != null) { <button class="wk-btn wk-btn--sm" type="button" (click)="invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName })">Bestand</button> }
+                            <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor factuur ' + invoice.number" (click)="$event.stopPropagation(); openInvoiceMenu(item, invoice, $event)"><app-icon name="more" [size]="16" /></button>
+                          </span>
+                        </div>
+                        @if (first && item.payee === 'SUPPLIER' && termsLine(item)) {
+                          <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2"><span class="wk-td" role="gridcell">{{ termsLine(item) }}</span></div>
+                        }
+                      } @empty {
+                        @if (item.payee === 'SUPPLIER' && roundOnServer()) {
+                          <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
+                            <span class="wk-td" role="gridcell">Nog geen factuur <button class="wk-link" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee })">Factuur toevoegen…</button></span>
+                          </div>
+                        }
+                      }
+                      @if (item.viaSupplier) {
+                        <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
+                          <span class="wk-td" role="gridcell">{{ item.viaSupplierPaid ? 'Inspectie via leverancier · zelfde transactie als de goederen' : 'Inspectie via leverancier · nog niet betaald' }}
+                            @if (!item.invoices.length) { <span class="wk-td__sub">{{ item.supplierInvoice ? 'Factuur via leverancier · ' + item.supplierInvoice.number : 'Factuur van de leverancier nog niet ingevoerd' }}</span> }</span>
+                        </div>
+                      }
+                      @if (item.invoiceFiles.length > 3 && !filesOpen().has(item.payee)) {
+                        <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--link" role="row" aria-level="2">
+                          <span class="wk-td" role="gridcell"><button class="wk-link" type="button" (click)="$event.stopPropagation(); openFiles(item.payee)">{{ item.invoiceFiles.length }} factuurbestanden zonder gegevens ›</button></span>
+                        </div>
+                      } @else {
+                        @for (file of item.invoiceFiles; track file.documentId) {
+                          <div class="wk-tr wk-tr--sub pw-invoice-row pw-invoice-row--file" role="row" aria-level="2">
+                            <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">Factuurbestand zonder gegevens · {{ file.originalFilename }}</span></span>
+                            <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
+                              <button class="wk-btn wk-btn--sm" type="button" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand</button>
+                              <button class="wk-btn wk-btn--sm" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee, file })">Gegevens invullen</button>
+                            </span>
+                          </div>
+                        }
+                      }
+                    </ng-template>
                     <div class="wk-tr wk-tr--total" role="row">
                       <span class="wk-td" role="gridcell"></span>
                       <span class="wk-td" role="gridcell">Totaal@if (sum.dueNowEur > 0) { <span class="wk-td__sub pw-when-mid">{{ sum.dueNowEur | eur }} nu</span> }</span>
@@ -318,7 +371,7 @@ type MenuState =
                         <p class="wk-empty__text">Betalingen noteer je zodra de container besteld is.</p>
                         <div class="wk-empty__actions"><button class="wk-btn" type="button" [disabled]="!actionable()" (click)="addMain()">Betaling noteren</button></div>
                       } @else {
-                        <p class="wk-empty__text">Noteer de eerste betaling zodra het geld vertrokken is. Voeg het bankafschrift toe als bewijs.</p>
+                        <p class="wk-empty__text">Noteer de eerste betaling zodra het geld vertrokken is en koppel de banktransactie.</p>
                         <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" [disabled]="!actionable()" (click)="addMain()"><app-icon name="plus" [size]="16" />Betaling noteren</button></div>
                       }
                     </div>
@@ -334,7 +387,7 @@ type MenuState =
                         <span class="wk-th wk-th--num" role="columnheader" data-pw-hide="mid">Bedrag</span>
                         <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('amount')"><button class="wk-th__btn" type="button" (click)="sortBy('amount')">In euro@if (sort().key === 'amount') { <app-icon [name]="sortIcon('amount')" [size]="12" /> }</button></span>
                         <span class="wk-th" role="columnheader" data-pw-hide="mid">Afrekening</span>
-                        <span class="wk-th wk-th--num" role="columnheader">Bewijs</span>
+                        <span class="wk-th wk-th--num" role="columnheader">Betaalbewijs</span>
                         <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
                       </div>
                       @for (row of ledgerRows(); track row.id) {
@@ -344,20 +397,26 @@ type MenuState =
                           <span class="wk-td wk-amount" role="gridcell">{{ row.paidOn | dateNl }}</span>
                           <span class="wk-td" role="gridcell" data-pw-hide="narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
                           <span class="wk-td" role="gridcell">
-                            <span class="pw-desc">{{ row.label || '—' }}@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
+                            <span class="pw-desc">{{ row.label || '—' }}@if (row.parts.length > 1) { <span class="wk-pill pw-settles">{{ row.parts.length }} transacties</span> }@if (row.settlesLabel) { <span class="wk-pill pw-settles pw-when-mid">{{ row.settlesLabel }}</span> }</span>
                             <span class="wk-td__sub pw-when-narrow"><span class="wk-pill" [class]="tone(row.payee)">{{ row.payeeShort }}</span></span>
-                            @if (row.termLabel || row.actor) { <span class="wk-td__sub">{{ row.termLabel }}@if (row.termLabel && row.actor) { · }{{ row.actor ? actor(row.actor) : '' }}</span> }
+                            @if (rowSub(row); as sub) { <span class="wk-td__sub">{{ sub }}</span> }
                           </span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (row.foreign) { {{ row.amount | cur: row.currency }} }</span>
                           <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }
                             @if (row.foreign) { <span class="wk-td__sub pw-when-mid">{{ row.amount | cur: row.currency }}</span> }</span>
                           <span class="wk-td wk-td--wrap" role="gridcell" data-pw-hide="mid">{{ row.settlesLabel || '' }}</span>
                           <span class="wk-td pw-proof" role="gridcell">
-                            @if (row.onBank) { <span class="wk-pill pw-bank" title="Als bankbeweging genoteerd"><app-icon name="bank" [size]="12" /> op de bank</span> }
-                            @if (row.hasProof === true) {
-                              <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn" type="button" [title]="proofNames(row)" [attr.aria-label]="row.proofCount === 1 ? 'Bewijs openen: ' + row.proofs![0].originalFilename : row.proofCount + ' bewijzen'" (click)="$event.stopPropagation(); openProof(row, $event)"><app-icon name="clip" [size]="14" /><span class="pw-proof__name">{{ row.proofCount === 1 ? row.proofs![0].originalFilename : row.proofCount + ' bewijzen' }}</span></button>
-                            } @else if (row.hasProof === false) {
-                              <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn pw-proof__btn--missing" type="button" [disabled]="busy()" (click)="$event.stopPropagation(); proof.emit(row.payment)"><app-icon name="clip" [size]="14" />Bewijs toevoegen</button>
+                            @if (row.creditOffset) {
+                              <span class="wk-amount--muted">verrekend tegoed</span>
+                            } @else {
+                              @if (row.bank.linked > 0) {
+                                <span class="wk-pill pw-bank" [class.tone-warn]="row.bank.linked < row.bank.total" [title]="bankTitle(row)"><app-icon name="bank" [size]="12" /> {{ row.parts.length > 1 ? row.bank.linked + '/' + row.bank.total + ' op de bank' : 'op de bank' }}</span>
+                              }
+                              @if (row.hasProof === true) {
+                                <button class="wk-btn wk-btn--sm wk-btn--ghost pw-proof__btn" type="button" [title]="proofNames(row)" [attr.aria-label]="row.proofCount === 1 ? 'Bewijs openen: ' + row.proofs![0].originalFilename : row.proofCount + ' bewijzen'" (click)="$event.stopPropagation(); openProof(row, $event)"><app-icon name="clip" [size]="14" /><span class="pw-proof__name">{{ row.proofCount === 1 ? row.proofs![0].originalFilename : row.proofCount + ' bewijzen' }}</span></button>
+                              } @else if (row.proven === false && row.bank.linked === 0) {
+                                <span class="wk-amount--warn pw-proof__missing">geen betaalbewijs</span>
+                              }
                             }
                           </span>
                           <span class="wk-td wk-td--actions" role="gridcell">
@@ -365,6 +424,11 @@ type MenuState =
                             <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor ' + row.title" (click)="$event.stopPropagation(); openMenu('payment', $event, row)"><app-icon name="more" [size]="16" /></button>
                           </span>
                         </div>
+                        @if (row.parts.length > 1) {
+                          @for (part of row.parts; track part.id) {
+                            <div class="wk-tr wk-tr--sub pw-part-row" role="row"><span class="wk-td" role="gridcell">{{ partLine(part) }}</span></div>
+                          }
+                        }
                       }
                     </div>
                   }
@@ -421,7 +485,7 @@ type MenuState =
               </aside>
             </div>
             <footer class="wk-statusbar pw-status">
-              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder bewijs } · in euro zoals geboekt</span>
+              <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder betaalbewijs } · in euro zoals geboekt</span>
               <span class="wk-statusbar__end pw-keys"><kbd class="wk-kbd">N</kbd> nieuw · <kbd class="wk-kbd">A</kbd> afrekenen · <kbd class="wk-kbd">↩</kbd> aanpassen · <kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> weergave</span>
             </footer>
           }
@@ -437,6 +501,7 @@ type MenuState =
 export class PurchasePaymentWorkbench {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly router = inject(Router);
+  private readonly ui = inject(Ui);
 
   readonly ledger = input<PaymentLedger | null>(null);
   readonly state = input<'loading' | 'refreshing' | 'error' | 'ready'>('ready');
@@ -451,10 +516,20 @@ export class PurchasePaymentWorkbench {
   readonly partnerLinked = input(false);
   /** The Nacalculatie in one glance; null hides the card. */
   readonly nacalc = input<PurchaseNacalcSummary | null>(null);
+  /** The server knows invoices and payments in parts (paymentRoundOnServer); false hides every new action. */
+  readonly roundOnServer = input(false);
+  /** '{account label} · {dd/MM}' of a bank line the host has loaded; null shows plain 'op de bank'. */
+  readonly bankLineLabel = input<(lineId: number) => string | null>(() => null);
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
-  readonly proof = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
+  /** Add an invoice, correct one, or fill in the data of an invoice file ('Gegevens invullen'). */
+  readonly invoice = output<InvoiceRequest>();
+  readonly removeInvoice = output<PurchaseInvoice>();
+  /** Open the file of an invoice or of an invoice file without data. */
+  readonly invoiceFile = output<{ documentId: number; name: string | null }>();
+  /** 'Inspectie via leverancier' on (true) or off. */
+  readonly inspectionVia = output<boolean>();
   readonly settle = output<PurchaseSettleRequest>();
   readonly undoSettle = output<{ payee: Payee; due?: Due | null }>();
   readonly planChange = output<void>();
@@ -475,6 +550,8 @@ export class PurchasePaymentWorkbench {
   readonly selectedRow = signal<number | null>(null);
   readonly sort = signal<{ key: 'date' | 'amount'; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
   readonly menu = signal<MenuState | null>(null);
+  /** Payees whose many invoice files (more than three) were expanded. */
+  readonly filesOpen = signal<ReadonlySet<Payee>>(new Set());
   private seeded = false;
 
   readonly abs = Math.abs;
@@ -510,19 +587,19 @@ export class PurchasePaymentWorkbench {
   readonly settleHintVisible = computed(() => !this.settleTarget() && !!this.ledger()?.payees.some(item => item.canSettle));
   readonly ledgerTitle = computed(() => {
     const filter = this.filter();
-    return filter === 'ALL' ? 'Alle betalingen' : filter === 'NO_PROOF' ? 'Betalingen zonder bewijs' : 'Betalingen aan ' + PAYEE_LABEL[filter];
+    return filter === 'ALL' ? 'Alle betalingen' : filter === 'NO_PROOF' ? 'Betalingen zonder betaalbewijs' : 'Betalingen aan ' + PAYEE_LABEL[filter];
   });
   readonly filterChips = computed(() => {
     const book = this.ledger();
     if (!book?.rows.length) return [];
     const chips: { id: LedgerFilter; label: string }[] = [{ id: 'ALL', label: 'Alle' }];
     for (const item of book.payees) if (item.paymentCount) chips.push({ id: item.payee, label: PAYEE_SHORT[item.payee] });
-    if (book.summary.missingProofCount) chips.push({ id: 'NO_PROOF', label: `Zonder bewijs (${book.summary.missingProofCount})` });
+    if (book.summary.missingProofCount) chips.push({ id: 'NO_PROOF', label: `Zonder betaalbewijs (${book.summary.missingProofCount})` });
     return chips;
   });
   readonly ledgerRows = computed(() => {
     const filter = this.filter();
-    const rows = (this.ledger()?.rows ?? []).filter(row => filter === 'ALL' || (filter === 'NO_PROOF' ? row.hasProof === false : row.payee === filter));
+    const rows = (this.ledger()?.rows ?? []).filter(row => filter === 'ALL' || (filter === 'NO_PROOF' ? row.proven === false : row.payee === filter));
     const sort = this.sort();
     return sort.key === 'date' && sort.dir === 'desc' ? rows : sortLedgerRows(rows, sort.key, sort.dir);
   });
@@ -551,13 +628,48 @@ export class PurchasePaymentWorkbench {
   pct(value: number): number { return Math.round(value); }
   finite(value: number): boolean { return Number.isFinite(value); }
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
-  expandable(item: PayeeLedger): boolean { return item.payee === 'SUPPLIER' || item.composition.length > 0; }
+  /** A payee without composition still opens when it has invoices, invoice files or the inspection is paid via the supplier. */
+  expandable(item: PayeeLedger): boolean {
+    return item.payee === 'SUPPLIER' || item.composition.length > 0 || item.invoices.length > 0 || item.invoiceFiles.length > 0 || item.viaSupplier;
+  }
   isExpanded(payee: Payee): boolean { return this.expanded().has(payee); }
   /** The supplier's plan is spelled out by its term rows once they are open; the basis then keeps only what is paid for (goods, + zeevracht under CIF). */
   basis(item: PayeeLedger): string {
     return item.payee === 'SUPPLIER' && item.terms.length && this.isExpanded('SUPPLIER') ? item.basis.split(' · ')[0] || SUPPLIER_GOODS : item.basis;
   }
   proofNames(row: LedgerRow): string { return (row.proofs ?? []).map(proof => proof.originalFilename).join(', '); }
+
+  /** 'Factuur CI-2026-118 · 20/08/2026 · € 31.048,04 · gelijk aan de afspraak'; a later invoice of the payee is 'extra factuur'. */
+  invoiceText(item: PayeeLedger, invoice: PurchaseInvoice, primary: boolean): string {
+    if (!primary) return invoiceLine(invoice) + ' · extra factuur';
+    const comparison = payeeInvoiceComparison(item);
+    return invoiceLine(invoice) + (comparison ? ' · ' + comparison.text : '');
+  }
+
+  termsLine(item: PayeeLedger): string { return invoiceTermsLine(item.terms); }
+
+  openFiles(payee: Payee): void { this.filesOpen.update(open => new Set([...open, payee])); }
+
+  /** The line under a payment: its term, the invoice it belongs to and who noted it. */
+  rowSub(row: LedgerRow): string {
+    return [row.termLabel, row.invoice ? (row.invoice.viaSupplier ? 'via factuur ' : 'factuur ') + row.invoice.number : null,
+      row.actor ? this.actor(row.actor) : null].filter(Boolean).join(' · ');
+  }
+
+  /** The bank line(s) of a payment, for the pill's tooltip. */
+  bankTitle(row: LedgerRow): string {
+    const labels = row.parts.map(part => part.bankStatementLineId != null ? this.bankLineLabel()(part.bankStatementLineId) : null).filter(Boolean);
+    return labels.length ? 'Op de bank: ' + labels.join(', ') : 'Als bankbeweging genoteerd';
+  }
+
+  /** One transfer of a payment paid in parts: '10/09 · € 10.000,00 · op de bank (KBC)' or '… · niet op de bank'. */
+  partLine(part: LedgerRow['parts'][number]): string {
+    const day = part.paidOn.slice(8, 10) + '/' + part.paidOn.slice(5, 7);
+    const label = part.bankStatementLineId != null ? this.bankLineLabel()(part.bankStatementLineId) : null;
+    const account = label?.split(' · ')[0];
+    const bank = part.onBank ? 'op de bank' + (account ? ` (${account})` : '') : 'niet op de bank';
+    return `${day} · ${Number.isFinite(part.amountEur) ? formatEur(part.amountEur) : '—'} · ${bank}`;
+  }
 
   /** The one text button of a payee row: the ledger's shared rule, the same as the Nacalculatie's. */
   rowAction(item: PayeeLedger): 'add' | 'settle' | null {
@@ -676,6 +788,11 @@ export class PurchasePaymentWorkbench {
 
   creditItems(credit: LedgerCredit): ContextMenuItem[] { return creditMenuItems(credit, !this.actionable()); }
 
+  openInvoiceMenu(payee: PayeeLedger, invoice: PurchaseInvoice, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menu.set({ kind: 'invoice', point: { x: rect.left, y: rect.bottom + 4 }, payee, invoice });
+  }
+
   openTermMenu(term: LedgerTerm, event: MouseEvent): void {
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     this.menu.set({ kind: 'term', point: { x: rect.left, y: rect.bottom + 4 }, term });
@@ -698,6 +815,7 @@ export class PurchasePaymentWorkbench {
       case 'proofs': return 'Bewijzen';
       case 'term': return open.term.label;
       case 'credit': return 'Tegoed · ' + open.credit.reasonLabel;
+      case 'invoice': return 'Factuur ' + open.invoice.number;
     }
   }
 
@@ -712,11 +830,12 @@ export class PurchasePaymentWorkbench {
         { id: 'finance', label: 'Toon in Kosten & bank', iconName: 'bank' },
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', divider: true },
       ];
-      case 'payee': return payeeRowMenuItems(open.payee, busy);
+      case 'payee': return payeeRowMenuItems(open.payee, busy, this.roundOnServer());
       case 'payment': return paymentMenuItems(open.row, { move: true, busy });
       case 'proofs': return (open.row.proofs ?? []).map(proof => ({ id: 'open:' + proof.id, label: proof.originalFilename, iconName: 'document' }));
       case 'term': return termMenuItems(open.term, busy);
       case 'credit': return creditMenuItems(open.credit, busy);
+      case 'invoice': return invoiceMenuItems(open.invoice, busy);
     }
   }
 
@@ -744,9 +863,18 @@ export class PurchasePaymentWorkbench {
       this.credit.emit({ kind: item.id as 'refund' | 'offset' | 'edit' | 'remove' | 'undo-refund' | 'open-offset', credit: open.credit.credit });
       return;
     }
+    if (open.kind === 'invoice') {
+      const invoice = open.invoice;
+      if (item.id === 'edit') this.invoice.emit({ payee: open.payee.payee, invoice });
+      else if (item.id === 'file' && invoice.documentId != null) this.invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName });
+      else if (item.id === 'remove') this.removeInvoice.emit(invoice);
+      return;
+    }
     if (open.kind === 'payee') {
       const payee = open.payee;
       if (item.id === 'credit') { this.credit.emit({ kind: 'add' }); return; }
+      if (item.id === 'invoice') { this.invoice.emit({ payee: payee.payee }); return; }
+      if (item.id === 'inspection-via') { this.inspectionVia.emit(!payee.viaSupplier); return; }
       if (item.id === 'add') this.addFor(payee);
       else if (item.id === 'settle') this.settle.emit(payee.settleDefault);
       else if (item.id === 'undo') this.undoSettle.emit({ payee: payee.payee });
@@ -760,12 +888,17 @@ export class PurchasePaymentWorkbench {
       if (document) this.download.emit(document);
       return;
     }
+    if (item.id.startsWith('invoice-file:')) {
+      const document = row.invoiceFiles.find(file => 'invoice-file:' + file.id === item.id);
+      if (document) this.download.emit(document);
+      return;
+    }
     if (item.id.startsWith('move:')) { this.move.emit({ payment: row.payment, payee: item.id.slice(5) as Payee }); return; }
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
-      case 'proof': this.proof.emit(row.payment); break;
+      case 'invoice-file': if (row.invoice?.documentId != null) this.invoiceFile.emit({ documentId: row.invoice.documentId, name: row.invoice.number }); break;
       case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
-      case 'remove': this.remove.emit(row.payment); break;
+      case 'remove': if (row.parts.length < 2) this.remove.emit(row.payment); break;
     }
   }
 
@@ -834,7 +967,11 @@ export class PurchasePaymentWorkbench {
         return;
       }
       case 'Enter': event.preventDefault(); if (this.actionable()) this.edit.emit(row.payment); return;
-      case 'Delete': case 'Backspace': event.preventDefault(); if (this.actionable()) this.remove.emit(row.payment); return;
+      case 'Delete': case 'Backspace':
+        event.preventDefault();
+        if (row.parts.length > 1) { this.ui.toast('Verwijderen kan per transactie in Aanpassen', 'err'); return; }
+        if (this.actionable()) this.remove.emit(row.payment);
+        return;
       case 'Escape': event.preventDefault(); this.selectedRow.set(null); return;
     }
   }

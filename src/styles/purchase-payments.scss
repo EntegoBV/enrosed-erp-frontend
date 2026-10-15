@@ -87,6 +87,14 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-credit__what{display:grid;min-width:0}.pw-credit__what .wk-td__sub{white-space:normal;overflow-wrap:anywhere}
 .pw-credit-row>.pw-credit__amount{grid-column:-3/-2;color:var(--ok)}
 .pw-credit-row>.pw-credit__actions{grid-column:-2/-1}
+/* an invoice of the payee: its line across the name and money columns, its file and ⋯ last */
+.pw-invoice-row>.pw-invoice__label{grid-column:2/-2;display:grid;min-width:0;padding-left:36px;font-size:12.5px}
+.pw-invoice__text{white-space:normal;overflow-wrap:anywhere}
+.pw-invoice-row--file>.pw-invoice__label{color:var(--muted)}
+.pw-invoice-row>.pw-invoice__actions{grid-column:-2/-1;display:flex;justify-content:flex-end;gap:4px;white-space:nowrap}
+/* one transfer of a payment paid in parts, under its row */
+.pw-part-row>.wk-td{grid-column:1/-1;padding-left:110px;color:var(--muted);font-size:12px}
+.pw-proof__missing{font-size:12px;white-space:nowrap}
 .pw-divider{margin-top:10px;border-top:1px solid var(--line)}
 .pw-status-link{display:block;margin-top:2px;font-size:11.5px;text-align:left}
 .pw-payees .wk-td--wrap .pw-status-sub{white-space:normal;overflow:visible}
@@ -176,6 +184,9 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-detail .ios-cell__value{white-space:normal}
 .payee-sheet__lead{margin:0 16px 14px;color:var(--muted);font-size:14px;text-align:center}
 .payee-sheet__split{margin:10px 0 0;color:var(--muted);font-size:13px}
+/* an invoice file without data: the name opens it, 'Gegevens invullen' sits at the end */
+.payee-sheet__file{display:grid;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.payee-sheet__file .ios-cell__title{overflow-wrap:anywhere;white-space:normal}
 .payee-sheet__links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 20px;padding:0 16px}
 .payee-sheet__links>button{min-height:44px}
 .payee-sheet__term--done .ios-cell__chev{opacity:.35}
@@ -218,6 +229,24 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__account{min-width:0;font-weight:600}
 .pay-sheet__account[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
 .pay-sheet__linked{display:flex;align-items:center;gap:6px;color:var(--ok);font-weight:650}
+/* Banktransacties, proof files and the invoice of a saved payment (2026-10-15) */
+.pay-sheet__bankblock{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.pay-sheet__lines{display:grid;gap:0;margin:0;padding:0;list-style:none}
+.pay-sheet__line{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;padding:8px 0}
+.pay-sheet__line+.pay-sheet__line{border-top:1px solid var(--line)}
+.pay-sheet__linecopy{display:grid;gap:2px;min-width:0;flex:1 1 200px}
+.pay-sheet__linecopy b{font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pay-sheet__linecopy small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.pay-sheet__line--pending .pay-sheet__linecopy small{color:var(--ok);font-weight:600}
+.pay-sheet__line--picker{display:block}
+.pay-sheet__partfields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1 1 100%}
+.pay-sheet__lineactions{display:flex;flex-wrap:wrap;gap:6px}
+.pay-sheet__filename{min-width:0;flex:1 1 auto;text-align:left;overflow-wrap:anywhere}
+.pay-sheet__invoice{display:grid;gap:6px}
+.pay-sheet__invoicelinks{display:flex;flex-wrap:wrap;gap:4px 16px}
+.pay-sheet__newinvoice{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);row-gap:10px}
+.pay-sheet__nonew{justify-self:start}
+.pay-sheet__via{margin-top:6px}
 .pay-sheet__delete,.settle-sheet__undo{justify-self:center;min-height:44px;padding:0 16px;border:0;background:none;color:var(--danger);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 .settle-sheet__receipt{padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .settle-sheet__consequence{margin:0;font-size:13.5px;font-weight:600}

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { invoiceDocument, splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { invoiceDocumentKind } from '../src/app/features/purchasing/purchase-invoices.ts';
 
 const rate = (amount: number, currency: string) => currency === 'USD' ? amount * 0.9 : currency === 'CNY' ? amount * 0.125 : amount;
 const goods = { amount: 1000, currency: 'EUR' as const, paidOn: '2026-10-12', label: 'Saldo', payee: 'SUPPLIER' as const, settles: true, instalmentDue: 'ARRIVED' as const };
@@ -40,9 +41,21 @@ test('parts only count for a supplier transfer', () => {
   assert.equal(bankEur, 1000);
 });
 
-test('the invoice is filed by payee', () => {
-  assert.deepEqual(invoiceDocument('SUPPLIER'), { kind: 'COMMERCIAL_INVOICE', label: null });
-  assert.deepEqual(invoiceDocument('LOGISTICS'), { kind: 'OTHER', label: 'Factuur transport' });
-  assert.deepEqual(invoiceDocument('SEPARATE'), { kind: 'OTHER', label: 'Factuur inspectie' });
-  assert.deepEqual(invoiceDocument('OTHER'), { kind: 'OTHER', label: 'Factuur' });
+test('the invoice file is filed by payee: the supplier\'s commercial invoice, else a plain invoice', () => {
+  assert.equal(invoiceDocumentKind('SUPPLIER'), 'COMMERCIAL_INVOICE');
+  assert.equal(invoiceDocumentKind('LOGISTICS'), 'INVOICE');
+  assert.equal(invoiceDocumentKind('SEPARATE'), 'INVOICE');
+  assert.equal(invoiceDocumentKind('OTHER'), 'INVOICE');
+});
+
+test('the chosen invoice goes on the goods and freight writes; the inspection part goes without one and carries the tick', () => {
+  const { writes } = splitTransfer({ ...goods, freightAmount: 100, separateAmount: 300, invoiceId: 7, inspectionViaSupplier: true }, rate);
+  assert.deepEqual(writes.map((write) => [write.payee, write.instalmentDue, write.invoiceId, write.inspectionViaSupplier ?? null]), [
+    ['SUPPLIER', 'ARRIVED', 7, null], ['SUPPLIER', 'FREIGHT', 7, null], ['SEPARATE', null, null, true],
+  ]);
+  const automatic = splitTransfer({ ...goods, separateAmount: 300, invoiceId: null }, rate).writes;
+  assert.deepEqual(automatic.map((write) => [write.invoiceId, 'inspectionViaSupplier' in write]), [[null, false], [null, false]],
+    'automatic: null on every write; without the tick the inspection part sets no flag');
+  const older = splitTransfer({ ...goods, separateAmount: 300, inspectionViaSupplier: true }, rate).writes;
+  assert.equal(older.some((write) => 'invoiceId' in write), false, 'a server without invoices never gets the field');
 });

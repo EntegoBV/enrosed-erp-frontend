@@ -1,4 +1,4 @@
-import type { Currency, DocumentKind, Instalment, Payee, PurchasePaymentWrite } from '../../core/api/models';
+import type { Currency, Instalment, Payee, PurchasePaymentWrite } from '../../core/api/models';
 
 /*
  * One transfer to the supplier may pay more than the goods: under CIF the
@@ -23,6 +23,15 @@ export interface TransferDraft {
   /** The extra streams of a supplier transfer, in the payment's currency. */
   freightAmount?: number | null;
   separateAmount?: number | null;
+  /**
+   * The invoice chosen in the sheet, on the goods and the freight writes; the
+   * inspection part always goes without one (automatic: the supplier's primary
+   * via §2.2 rule 3 with the tick, its own invoice or none without it).
+   * Undefined against a server without invoices: no invoice field is sent.
+   */
+  invoiceId?: number | null;
+  /** 'Inspectie via leverancier' ticked: the inspection part sets the container's flag. */
+  inspectionViaSupplier?: boolean;
 }
 
 export interface TransferSplit {
@@ -57,21 +66,17 @@ export function splitTransfer(draft: TransferDraft, eurOf: (amount: number, curr
     : weights.map((weight) => Math.round(typed * weight / total));
   if (typed !== null) euros[0] = typed - euros.slice(1).reduce((sum, value) => sum + value, 0);
   const base = draft.label || 'Betaling';
-  const writes = parts.map((part, index): PurchasePaymentWrite => ({
-    paidOn: draft.paidOn, amount: part.amount, currency: draft.currency,
-    label: index === 0 ? draft.label || null : `${base} · ${part.suffix}`,
-    payee: part.payee, settles: index === 0 ? draft.settles : false, instalmentDue: part.due,
-    ...(typed !== null ? { amountEur: euros[index] / 100 } : {}),
-  }));
+  const invoiced = draft.invoiceId !== undefined;
+  const writes = parts.map((part, index): PurchasePaymentWrite => {
+    const separate = index > 0 && part.payee === 'SEPARATE';
+    return {
+      paidOn: draft.paidOn, amount: part.amount, currency: draft.currency,
+      label: index === 0 ? draft.label || null : `${base} · ${part.suffix}`,
+      payee: part.payee, settles: index === 0 ? draft.settles : false, instalmentDue: part.due,
+      ...(typed !== null ? { amountEur: euros[index] / 100 } : {}),
+      ...(invoiced ? { invoiceId: separate ? null : draft.invoiceId ?? null } : {}),
+      ...(separate && draft.inspectionViaSupplier ? { inspectionViaSupplier: true } : {}),
+    };
+  });
   return { writes, bankEur: euros.reduce((sum, value) => sum + value, 0) / 100 };
-}
-
-/** The invoice filed with the goods payment: the supplier's commercial invoice, or a named invoice of the other payees. */
-export function invoiceDocument(payee: Payee): { kind: DocumentKind; label: string | null } {
-  switch (payee) {
-    case 'SUPPLIER': return { kind: 'COMMERCIAL_INVOICE', label: null };
-    case 'LOGISTICS': return { kind: 'OTHER', label: 'Factuur transport' };
-    case 'SEPARATE': return { kind: 'OTHER', label: 'Factuur inspectie' };
-    default: return { kind: 'OTHER', label: 'Factuur' };
-  }
 }

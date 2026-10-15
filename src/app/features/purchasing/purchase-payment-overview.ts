@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import type { PurchaseDocument, PurchasePayment } from '../../core/api/models';
+import type { PurchaseDocument, PurchaseInvoice, PurchasePayment } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -12,8 +12,10 @@ import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
-import { dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, proofLine, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
+import { bankProofLine, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
+import { invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
+import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
 export type { PurchasePaymentAction } from './purchase-payment-ledger';
@@ -150,6 +152,19 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                   @if (item.payee === 'SUPPLIER') {
+                    @if (supplierInvoice(item); as invoice) {
+                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
+                        <span class="ios-cell__lead"></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">Factuur {{ invoice.number }}</span><span class="ios-cell__sub">{{ invoiceSubText(item, invoice) }}</span></span>
+                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                      </button>
+                    } @else if (mode() === 'edit' && roundOnServer()) {
+                      <button class="ios-cell pp-term" type="button" [disabled]="busy()" (click)="invoice.emit({ payee: 'SUPPLIER' })">
+                        <span class="ios-cell__lead"></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">Nog geen factuur</span><span class="ios-cell__sub">Factuur toevoegen</span></span>
+                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                      </button>
+                    }
                     @for (term of item.terms; track term.due) {
                       <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
                         <span class="ios-cell__lead"></span>
@@ -191,13 +206,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                             (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || tapRow(row)">
                       <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                       <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
-                        @if (row.hasProof === true) { <span class="ios-cell__sub pp-row__proof"><app-icon name="clip" [size]="12" /> {{ proofLine(row) }}</span> }
-                        @if (row.onBank) { <span class="ios-cell__sub pp-row__bank"><app-icon name="bank" [size]="12" /> op de bank</span> }</span>
+                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
+                        @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked"><app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> {{ text }}</span> }</span>
                       <span class="ios-cell__trail">
                         <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                         @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
-                        @if (row.hasProof === false) { <span class="ios-cell__meta wk-amount--warn">geen bewijs</span> }
+                        @if (row.proven === false) { <span class="ios-cell__meta wk-amount--warn">geen betaalbewijs</span> }
                       </span>
                     </button>
                   }
@@ -221,9 +235,11 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
     @if (payeeOpen(); as item) {
       <app-purchase-payee-sheet [payee]="item" [mode]="mode()" [busy]="busy()" [dirty]="dirty()" [supplierName]="supplierName()" [planLabel]="planLabel()"
-        (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)" (proof)="afterPayeeSheet(proof, $event)"
+        [roundOnServer]="roundOnServer()" [supplier]="supplierPayee()"
+        (closed)="openPayee.set(null)" (add)="afterPayeeSheet(add, $event)" (edit)="tapAfterPayeeSheet($event)"
         (download)="download.emit($event)" (settle)="afterPayeeSheet(settle, $event)" (undoSettle)="afterPayeeSheet(undoSettle, $event)"
-        (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" (credit)="afterPayeeSheet(credit, $event)" />
+        (planChange)="afterPayeeSheet(planChange, undefined)" (remove)="afterPayeeSheet(remove, $event)" (credit)="afterPayeeSheet(credit, $event)"
+        (invoice)="afterPayeeSheet(invoice, $event)" (invoiceFile)="invoiceFile.emit($event)" (inspectionVia)="afterPayeeSheet(inspectionVia, $event)" />
     }
     @if (detail(); as row) {
       <app-sheet title="Betaling" variant="ios" (closed)="detail.set(null)">
@@ -239,10 +255,21 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
           </div>
           @if (row.actor) { <p class="ios-section__foot">Genoteerd door {{ actor(row.actor) }}</p> }
           <section class="ios-section pp-detail__proofs">
-            <div class="ios-section__head"><h2>Bewijzen</h2></div>
-            @if (row.proofs?.length) {
+            <div class="ios-section__head"><h2>Betaalbewijs</h2></div>
+            @if (row.creditOffset) {
+              <p class="ios-section__foot">Verrekend tegoed: geen bankbetaling, geen betaalbewijs nodig.</p>
+            } @else if (row.bank.linked || row.parts.length > 1 || row.proofs?.length) {
               <div class="ios-group ios-group--icons">
-                @for (document of row.proofs; track document.id) {
+                @for (part of row.parts; track part.id) {
+                  @if (part.onBank || row.parts.length > 1) {
+                    <div class="ios-cell">
+                      <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [class]="part.onBank ? 'tone-ok' : 'tone-grey'"><app-icon name="bank" [size]="17" /></span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title">{{ partTitle(part) }}</span></span>
+                      <span class="ios-cell__trail"><span class="ios-cell__meta" [class.wk-amount--warn]="!part.onBank">{{ partBank(part) }}</span></span>
+                    </div>
+                  }
+                }
+                @for (document of row.proofs ?? []; track document.id) {
                   <button class="ios-cell" type="button" (click)="download.emit(document)">
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="document" [size]="17" /></span></span>
                     <span class="ios-cell__body"><span class="ios-cell__title">{{ document.originalFilename }}</span></span>
@@ -250,8 +277,29 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                   </button>
                 }
               </div>
-            } @else { <p class="ios-section__foot">Geen bewijs toegevoegd</p> }
+            } @else { <p class="ios-section__foot">Nog geen betaalbewijs</p> }
           </section>
+          @if (row.invoice || row.invoiceFiles.length) {
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Factuur</h2></div>
+              <div class="ios-group ios-group--icons">
+                @if (row.invoice; as invoice) {
+                  <button class="ios-cell" type="button" [disabled]="invoice.documentId == null" (click)="invoice.documentId != null && invoiceFile.emit({ documentId: invoice.documentId, name: invoice.number })">
+                    <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="document" [size]="17" /></span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ invoice.number }}</span>@if (invoice.viaSupplier) { <span class="ios-cell__sub">via de leverancier</span> }</span>
+                    @if (invoice.documentId != null) { <app-icon class="ios-cell__chev" name="download" [size]="18" /> }
+                  </button>
+                }
+                @for (document of row.invoiceFiles; track document.id) {
+                  <button class="ios-cell" type="button" (click)="download.emit(document)">
+                    <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="document" [size]="17" /></span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ document.originalFilename }} · zonder gegevens</span></span>
+                    <app-icon class="ios-cell__chev" name="download" [size]="18" />
+                  </button>
+                }
+              </div>
+            </section>
+          }
           @if (mode() === 'read') { <p class="ios-section__foot">Aanpassen of afrekenen kan in Bewerken.</p> }
         </div>
         <div foot style="display:contents">
@@ -282,10 +330,19 @@ export class PurchasePaymentOverview {
   readonly supplierName = input('');
   /** The Nacalculatie in four lines, for the live sub of the closing cell. */
   readonly nacalc = input<PurchaseNacalcSummary | null>(null);
+  /** The server knows invoices and payments in parts (paymentRoundOnServer); false hides every new action. */
+  readonly roundOnServer = input(false);
+  /** '{account label} · {dd/MM}' of a bank line the host has loaded; null shows plain 'op de bank'. */
+  readonly bankLineLabel = input<(lineId: number) => string | null>(() => null);
   readonly add = output<PurchasePaymentAction>();
   readonly edit = output<PurchasePayment>();
-  readonly proof = output<PurchasePayment>();
   readonly download = output<PurchaseDocument>();
+  /** Editor only: add or correct an invoice, or 'Gegevens invullen' on an invoice file. */
+  readonly invoice = output<InvoiceRequest>();
+  /** Open the file of an invoice or of an invoice file without data (read view too). */
+  readonly invoiceFile = output<{ documentId: number; name: string | null }>();
+  /** Editor only: 'Inspectie via leverancier' on (true) or off. */
+  readonly inspectionVia = output<boolean>();
   readonly settle = output<PurchaseSettleRequest>();
   readonly undoSettle = output<{ payee: PayeeLedger['payee']; due?: Due | null }>();
   readonly planChange = output<void>();
@@ -309,11 +366,12 @@ export class PurchasePaymentOverview {
   readonly month = monthOf;
   readonly round = Math.round;
   readonly abs = Math.abs;
-  readonly proofLine = proofLine;
+  readonly proofText = bankProofLine;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
   readonly payeeItems = computed(() => payeeMenuItems(this.ledger()));
+  readonly supplierPayee = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER') ?? null);
   /** The supplier's terms: a payment of a netted term is settled with the whole supplier (settleWith). */
   readonly supplierTerms = computed(() => this.ledger()?.payees.find(item => item.payee === 'SUPPLIER')?.terms ?? []);
   /** What the review headline points at: overpaid, without an agreement or incomplete. */
@@ -336,11 +394,11 @@ export class PurchasePaymentOverview {
     return `${n.label} ${formatEur(n.forecastEur)} · ${n.kind === 'concept' ? 'nog niet besteld' : variance}`;
   });
   readonly filterOptions = computed<SegmentOption[]>(() => [
-    { id: 'ALL', label: 'Alle' }, { id: 'NO_PROOF', label: `Zonder bewijs (${this.ledger()?.summary.missingProofCount ?? 0})` },
+    { id: 'ALL', label: 'Alle' }, { id: 'NO_PROOF', label: `Zonder betaalbewijs (${this.ledger()?.summary.missingProofCount ?? 0})` },
   ]);
   readonly filtered = computed(() => {
     const rows = this.ledger()?.rows ?? [];
-    return this.filter() === 'NO_PROOF' && this.ledger()?.summary.missingProofCount ? rows.filter(row => row.hasProof === false) : rows;
+    return this.filter() === 'NO_PROOF' && this.ledger()?.summary.missingProofCount ? rows.filter(row => row.proven === false) : rows;
   });
   readonly shownRows = computed(() => this.showAll() ? this.filtered() : this.filtered().slice(0, 5));
   /** The card already offers the first payment that is due; read mode only pays and shows proofs. */
@@ -352,6 +410,26 @@ export class PurchasePaymentOverview {
   });
 
   label(payee: PayeeLedger['payee']): string { return PAYEE_LABEL[payee]; }
+
+  /** The supplier's primary invoice, shown under its card. */
+  supplierInvoice(item: PayeeLedger): PurchaseInvoice | null { return primaryInvoice(item.invoices, 'SUPPLIER'); }
+
+  /** '20/08/2026 · € 31.048,04 · gelijk aan de afspraak'. */
+  invoiceSubText(item: PayeeLedger, invoice: PurchaseInvoice): string {
+    return invoiceSub(invoice, payeeInvoiceComparison(item)?.text ?? null);
+  }
+
+  /** '10/09 · € 10.000,00' of one transfer. */
+  partTitle(part: LedgerRow['parts'][number]): string {
+    return `${part.paidOn.slice(8, 10)}/${part.paidOn.slice(5, 7)} · ${Number.isFinite(part.amountEur) ? formatEur(part.amountEur) : '—'}`;
+  }
+
+  /** 'op de bank · KBC' or 'niet op de bank'. */
+  partBank(part: LedgerRow['parts'][number]): string {
+    if (!part.onBank) return 'niet op de bank';
+    const label = part.bankStatementLineId != null ? this.bankLineLabel()(part.bankStatementLineId) : null;
+    return 'op de bank' + (label ? ' · ' + label.split(' · ')[0] : '');
+  }
   finite(value: number): boolean { return Number.isFinite(value); }
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
 
@@ -380,7 +458,7 @@ export class PurchasePaymentOverview {
 
   /** From the payee sheet: edit in the editor, the read-only detail in the view. */
   tapPayment(payment: PurchasePayment): void {
-    const row = this.ledger()?.rows.find(item => item.id === payment.id);
+    const row = this.ledger()?.rows.find(item => item.parts.some(part => part.id === payment.id));
     if (this.mode() === 'edit') this.edit.emit(payment);
     else if (row) this.detail.set(row);
   }
@@ -408,11 +486,16 @@ export class PurchasePaymentOverview {
       if (document) this.download.emit(document);
       return;
     }
+    if (item.id.startsWith('invoice-file:')) {
+      const document = row.invoiceFiles.find(file => 'invoice-file:' + file.id === item.id);
+      if (document) this.download.emit(document);
+      return;
+    }
     switch (item.id) {
       case 'edit': this.edit.emit(row.payment); break;
-      case 'proof': this.proof.emit(row.payment); break;
+      case 'invoice-file': if (row.invoice?.documentId != null) this.invoiceFile.emit({ documentId: row.invoice.documentId, name: row.invoice.number }); break;
       case 'settle': this.settle.emit(settleWith(row, this.supplierTerms())); break;
-      case 'remove': this.remove.emit(row.payment); break;
+      case 'remove': if (row.parts.length < 2) this.remove.emit(row.payment); break;
     }
   }
 

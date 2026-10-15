@@ -14,7 +14,8 @@ export function formatEur(value: number): string {
 /**
  * One 'Te doen' item in words: the title, the detail line and the verb of its
  * button. The Betalingen overview, the workbench and the Nacalculatie's action
- * cell all read the same three strings; the read view only asks for a proof.
+ * cell all read the same three strings; the read view only asks for a
+ * betaalbewijs. The bank transaction is the proof: it is linked in 'Aanpassen'.
  */
 export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { title: string; detail: string; action: string } {
   const action = { pay: 'Noteer', settle: 'Afrekenen', review: 'Nakijken', budget: 'Afrekenen', incomplete: 'Bekijken', credit: 'Bekijken', proof: 'Toon' }[todo.kind];
@@ -27,8 +28,8 @@ export function todoCopy(todo: LedgerTodo, mode: 'read' | 'edit' = 'edit'): { ti
     case 'incomplete': return { title: `Betaling zonder eurowaarde bij ${PAYEE_LABEL[todo.payee]}`, action, detail: 'Controleer het bedrag van deze betaling' };
     case 'credit': return { title: `Tegoed open bij ${PAYEE_LABEL[todo.payee]}`, action,
       detail: `${formatEur(todo.amountEur)} te ontvangen · terugbetaling of verrekening` };
-    case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder bewijs`, action,
-      detail: mode === 'edit' ? 'Voeg het bankafschrift toe' : 'Bankafschrift ontbreekt' };
+    case 'proof': return { title: `${todo.count} ${todo.count === 1 ? 'betaling' : 'betalingen'} zonder betaalbewijs`, action,
+      detail: mode === 'edit' ? 'Koppel de banktransactie via Aanpassen' : 'Banktransactie ontbreekt' };
   }
 }
 
@@ -41,15 +42,31 @@ export function payeeMenuItems(ledger: PaymentLedger | null): ContextMenuItem[] 
   });
 }
 
-/** The row menu of one payee on the desk. */
-export function payeeRowMenuItems(payee: PayeeLedger, busy: boolean): ContextMenuItem[] {
+/**
+ * The row menu of one payee on the desk. 'Factuur toevoegen…' for every payee
+ * (a courier under Andere kosten has an invoice too) and the inspection's
+ * 'Inspectie via leverancier' switch, both only when the server knows invoices.
+ */
+export function payeeRowMenuItems(payee: PayeeLedger, busy: boolean, invoices = false): ContextMenuItem[] {
   return [
     { id: 'add', label: 'Betaling noteren', iconName: 'plus', disabled: busy },
     ...(payee.canSettle ? [{ id: 'settle', label: 'Afrekenen…', iconName: 'tick', disabled: busy }] : []),
     ...(payee.canUndoSettle ? [{ id: 'undo', label: 'Afrekening ongedaan maken', iconName: 'restore', disabled: busy }] : []),
     ...(payee.payee === 'SUPPLIER' ? [{ id: 'plan', label: 'Betaalplan wijzigen', iconName: 'calendar', disabled: busy },
       { id: 'credit', label: 'Tegoed noteren…', iconName: 'receipt', disabled: busy }] : []),
+    ...(invoices ? [{ id: 'invoice', label: 'Factuur toevoegen…', iconName: 'document', disabled: busy }] : []),
+    ...(invoices && payee.payee === 'SEPARATE'
+      ? [{ id: 'inspection-via', label: 'Inspectie via leverancier', hint: payee.viaSupplier ? 'aan' : 'uit', iconName: 'search', disabled: busy }] : []),
     { id: 'show', label: 'Toon betalingen', iconName: 'list', divider: true },
+  ];
+}
+
+/** The menu of one invoice line on the desk: correct it, open its file, remove its data. */
+export function invoiceMenuItems(invoice: { documentId: number | null }, busy: boolean): ContextMenuItem[] {
+  return [
+    { id: 'edit', label: 'Aanpassen…', iconName: 'pencil', disabled: busy },
+    ...(invoice.documentId != null ? [{ id: 'file', label: 'Bestand openen', iconName: 'document' }] : []),
+    { id: 'remove', label: 'Verwijderen', iconName: 'trash', danger: true, divider: true, disabled: busy },
   ];
 }
 
@@ -78,7 +95,7 @@ export function termMenuItems(term: LedgerTerm, busy: boolean): ContextMenuItem[
   ];
 }
 
-/** The payment 'Betaling aanpassen…' opens from a term: the newest one tied to it. */
+/** The payment 'Betaling aanpassen…' opens from a term: the newest one tied to it (a payment paid in parts as one row). */
 export function termPayment(term: LedgerTerm, rows: readonly LedgerRow[]): LedgerRow | null {
   const id = term.paymentIds[0];
   return id === undefined ? null : rows.find(row => row.id === id) ?? null;
@@ -110,15 +127,22 @@ export function creditMenuItems(credit: LedgerCredit, busy: boolean): ContextMen
     ? [{ id: 'open-offset', label: `Naar ${credit.credit.offsetOrderNumber ?? 'de andere container'} ›`, iconName: 'purchase' }] : [];
 }
 
-/** The menu of one payment. Only the desk moves a payment to another payee from here; the phone does it in the sheet. */
+/**
+ * The menu of one payment. Only the desk moves a payment to another payee from
+ * here; the phone does it in the sheet. Files and bank transactions are added
+ * in 'Aanpassen'; a payment paid in parts is removed per transaction there.
+ */
 export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy: boolean }): ContextMenuItem[] {
   const busy = options.busy;
   const proofs = row.proofs ?? [];
+  const files = row.invoiceFiles ?? [];
   const items: ContextMenuItem[] = [
     { id: 'edit', label: 'Aanpassen', iconName: 'pencil', disabled: busy },
-    { id: 'proof', label: 'Bewijs toevoegen', iconName: 'clip', disabled: busy },
     ...proofs.map(proof => ({ id: 'open:' + proof.id, iconName: 'document',
       label: proofs.length === 1 ? 'Bewijs openen' : 'Bewijs openen · ' + proof.originalFilename })),
+    ...(row.invoice?.documentId != null ? [{ id: 'invoice-file', label: 'Factuur openen', iconName: 'document' }] : []),
+    ...files.map(file => ({ id: 'invoice-file:' + file.id, iconName: 'document',
+      label: files.length === 1 ? 'Factuurbestand openen' : 'Factuurbestand openen · ' + file.originalFilename })),
   ];
   // A verrekend tegoed stays with the supplier: its amount and payee belong to the credit on the other container.
   if (options.move && !row.creditOffset) {
@@ -127,7 +151,9 @@ export function paymentMenuItems(row: LedgerRow, options: { move: boolean; busy:
     }));
   }
   if (row.payee !== 'OTHER') items.push({ id: 'settle', label: 'Afrekenen met deze betaling', iconName: 'tick', disabled: busy });
-  items.push({ id: 'remove', label: options.move ? 'Verwijderen…' : 'Verwijderen', iconName: 'trash', danger: true, divider: true, disabled: busy });
+  items.push((row.parts?.length ?? 1) > 1
+    ? { id: 'remove', label: 'Verwijderen kan per transactie in Aanpassen', iconName: 'trash', divider: true, disabled: true }
+    : { id: 'remove', label: options.move ? 'Verwijderen…' : 'Verwijderen', iconName: 'trash', danger: true, divider: true, disabled: busy });
   return items;
 }
 
@@ -144,14 +170,27 @@ export function settleWith(row: LedgerRow, terms: readonly Pick<LedgerTerm, 'due
   const netted = terms.some(term => term.due === row.due && term.offsetEur !== 0);
   const term = row.payee === 'SUPPLIER' && !!row.due && !netted;
   const carries = !netted || row.due === nettedCarrierDue(terms);
-  return { payee: row.payee, scope: term ? 'TERM' : 'GROUP', due: term ? row.due : null, ...(carries ? { paymentId: row.id } : {}) };
+  return { payee: row.payee, scope: term ? 'TERM' : 'GROUP', due: term ? row.due : null, ...(carries ? { paymentId: row.payment.id } : {}) };
 }
 
-/** The proof of one payment in words: unknown while the documents load, the file name, or how many there are. */
-export function proofLine(row: LedgerRow): string | null {
-  if (row.hasProof === null) return null;
-  if (!row.hasProof) return 'geen bewijs';
-  return row.proofCount === 1 ? row.proofs![0].originalFilename : `${row.proofCount} bewijzen`;
+/**
+ * The betaalbewijs of one payment in words. The bank transaction is the proof:
+ * 'op de bank', '2 transacties op de bank', '1 van 2 op de bank'; without it
+ * the file name or how many files; else 'geen betaalbewijs'. A credit offset
+ * needs none. An inspection on the same bank line as a goods payment says so.
+ * Null while the documents load and nothing is on the bank.
+ */
+export function bankProofLine(row: LedgerRow): string | null {
+  if (row.creditOffset) return 'verrekend tegoed';
+  const parts = row.bank?.total ?? 1;
+  const linked = row.bank?.linked ?? (row.onBank ? 1 : 0);
+  let text: string | null;
+  if (linked > 0) text = linked === parts ? (parts === 1 ? 'op de bank' : `${parts} transacties op de bank`) : `${linked} van ${parts} op de bank`;
+  else if (row.hasProof === null) text = null;
+  else if (row.hasProof) text = row.proofCount === 1 ? row.proofs![0].originalFilename : `${row.proofCount} bewijzen`;
+  else text = 'geen betaalbewijs';
+  if (text && row.payee === 'SEPARATE' && row.bank?.sharedWith.includes('SUPPLIER')) text += ' · zelfde transactie als de goederen';
+  return text;
 }
 
 /** Status text colour through the kit's amount classes: warn, ok (green) or muted. */

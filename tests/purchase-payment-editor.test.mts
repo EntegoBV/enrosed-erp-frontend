@@ -1,4 +1,4 @@
-import { bankAmountsMatch, bankAmountDifference } from '../src/app/shared/bank-transaction-options.ts';
+import { bankAmountsMatch, bankAmountDifference, bankTransactionDay } from '../src/app/shared/bank-transaction-options.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -7,7 +7,9 @@ import ts from 'typescript';
 import { signal, computed } from '@angular/core';
 import { parsePurchasePaymentAmount, purchasePaymentOverage } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { paymentPlanError } from '../src/app/features/purchasing/payment-plan.ts';
-import { invoiceDocument, splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { invoiceDocumentKind, paymentRoundOnServer, primaryInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { inspectionSplitEur, pendingLinkPlan } from '../src/app/features/purchasing/purchase-payment-links.ts';
 import { bankMarker, lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
 import { preservePurchaseDraft } from '../src/app/features/purchasing/purchase-payment-refresh.ts';
@@ -43,7 +45,9 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
   'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount',
   'setPaymentPart', 'paymentTransfer', 'paymentTransferEur', 'writeEur', 'paymentGoodsEur', 'bankLines', 'bankedPaymentIds', 'paymentOnBank',
-  'paymentBankAccount', 'transferLine', 'bankToday', 'paymentInstalmentOptions']);
+  'paymentBankAccount', 'transferLine', 'bankToday', 'paymentInstalmentOptions',
+  // the round of 2026-10-15: credit offsets, invoices, payments in parts, bank transactions as proof, the inspection split
+  'payingCreditOffset', 'roundOnServer', 'payingRow', 'payingParts', 'saveGroup', 'reloadBankLines', 'groupOf', 'preselectedInvoice']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -65,7 +69,8 @@ function deferred<T>() {
 function setup() {
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(javascript, { exports, signal, computed, bankAmountsMatch, parsePurchasePaymentAmount, purchasePaymentOverage,
-    paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocument, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
+    paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocumentKind, paymentRoundOnServer, primaryInvoice, inspectionSplitEur, pendingLinkPlan,
+    bankTransactionDay, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
     PAYEE_LABEL, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
@@ -78,7 +83,8 @@ function setup() {
     createLine: async (body: any) => ({ id: 500 + lines.length, ...body }),
   };
   Object.assign(editor, {
-    view: signal({ order: order(), reconciliation: { supplierInstalments: [] } }), savedOrder: signal(JSON.stringify(order())),
+    view: signal({ order: order(), reconciliation: { supplierInstalments: [] }, creditOffsets: [] }), savedOrder: signal(JSON.stringify(order())),
+    paymentLedger: signal(null), loadBankLines: async () => {},
     saving: signal(false), dirty: signal(false), paymentStateLoading: signal(false), paymentStateError: signal(null),
     documents: signal([]), previewVersion: 0, supplier: signal({ name: 'Yiwu Trading' }),
     ui: { toast: (...args: any[]) => toasts.push(args) }, eurOf: (amount: number, currency: string) => currency === 'USD' ? amount * 0.9 : amount,
@@ -412,4 +418,118 @@ test('PO 35: a payment never closes a netted term on its own, while the whole su
   // An older response without offsetEur nets nothing: the term can be closed as before.
   editor.view.update((view: any) => ({ ...view, reconciliation: { supplierInstalments: view.reconciliation.supplierInstalments.map(({ offsetEur, ...term }: any) => term) } }));
   assert.equal(editor.paymentInstalmentOptions().some((option: { netted: boolean }) => option.netted), false);
+});
+
+/* ---- the round of 2026-10-15: bank transactions on a saved payment, payments in parts, the inspection split, the invoice */
+
+/** A server with this round: its view carries `invoices`; link calls answer with the group and the touched lines. */
+function roundSetup(stored: any = payment()) {
+  const harness = setup();
+  const { editor } = harness;
+  const splits: any[] = [];
+  editor.view.set({ order: order(), reconciliation: { supplierInstalments: [] }, creditOffsets: [], invoices: [] });
+  editor.payments.set([stored]);
+  Object.assign(editor.sourcing, {
+    linkPaymentPart: async (paymentId: number, bankStatementLineId: number) => { splits.push({ type: 'bank-part', paymentId, bankStatementLineId }); return { payments: [], lines: [{ id: bankStatementLineId }] }; },
+    linkPaymentLines: async (paymentId: number, lines: any[]) => { splits.push({ type: 'bank-lines', paymentId, lines: clone(lines) }); return { payments: [], lines: lines.map(line => ({ id: line.bankStatementLineId })) }; },
+    splitInspection: async (paymentId: number, body: any) => { splits.push({ type: 'inspection', paymentId, body: clone(body) }); return { payments: [], lines: [] }; },
+  });
+  editor.banking.linkPayments = async (id: number, body: any) => { splits.push({ type: 'links', id, body: clone(body) }); return { id }; };
+  return { ...harness, splits };
+}
+const bankLine = (id: number, amountEur: number, bookedAt = '2026-09-24T09:00:00Z') => ({ id, amountEur, bookedAt, timeZone: 'Europe/Brussels', account: 'KBC', reference: 'Saldo' });
+
+test('a saved payment and one matching transaction: the payment is written, then the transaction linked whole through bank-part', async () => {
+  const { editor, writes, splits, toasts } = roundSetup();
+  editor.editPayment(payment());
+  editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(520, -1046.95)] }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes.map(row => [row.type, row.paymentId]), [['PUT payment', 80]]);
+  assert.equal('invoiceId' in writes[0].body, false, 'an unchanged invoice choice is never sent');
+  assert.deepEqual(splits, [{ type: 'bank-part', paymentId: 80, bankStatementLineId: 520 }]);
+  assert.deepEqual(toasts.at(-1), ['Banktransactie gekoppeld', 'ok']);
+  assert.equal(editor.paying(), null);
+});
+
+test('a smaller transaction carves its part out of the payment; two that make the amount split it over both', async () => {
+  const smaller = roundSetup();
+  smaller.editor.editPayment(payment());
+  smaller.editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(520, -500)] }));
+  await smaller.editor.confirmPayment();
+  assert.deepEqual(smaller.splits, [{ type: 'bank-part', paymentId: 80, bankStatementLineId: 520 }]);
+  assert.deepEqual(smaller.toasts.at(-1), ['Deel van de betaling gekoppeld', 'ok']);
+  const two = roundSetup();
+  two.editor.editPayment(payment());
+  two.editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(520, -500), bankLine(534, -546.97)] }));
+  await two.editor.confirmPayment();
+  assert.deepEqual(two.splits, [{ type: 'bank-lines', paymentId: 80, lines: [{ bankStatementLineId: 520 }, { bankStatementLineId: 534 }] }],
+    'the sum is two cents off: still within the bank rule');
+  assert.deepEqual(two.toasts.at(-1), ['Betaling verdeeld over 2 transacties', 'ok']);
+  const wrong = roundSetup();
+  wrong.editor.editPayment(payment());
+  wrong.editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(520, -500), bankLine(534, -500)] }));
+  await wrong.editor.confirmPayment();
+  assert.deepEqual([wrong.writes.length, wrong.splits.length], [0, 0], 'nothing is written when the transactions do not make the amount');
+  assert.deepEqual(wrong.toasts.at(-1), ['Kies transacties die samen het bedrag maken, of één transactie voor een deel van het bedrag.', 'err']);
+});
+
+test('the inspection is split off after the link, with the goods payment\'s euro as the server must still have it', async () => {
+  const goods = { ...payment(), payee: 'SUPPLIER', label: 'Aanbetaling 30%', amount: 10300, amountEur: 10300, instalmentDue: 'ORDERED' };
+  const { editor, writes, splits, toasts } = roundSetup(goods);
+  editor.editPayment(goods);
+  editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(610, -10300)], inspectionSplitInput: '300', inspectionSplit: 300 }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes.map(row => row.type), ['PUT payment']);
+  assert.deepEqual(splits, [{ type: 'bank-part', paymentId: 80, bankStatementLineId: 610 },
+    { type: 'inspection', paymentId: 80, body: { amountEur: 300, expectedAmountEur: 10300 } }]);
+  assert.deepEqual(toasts.at(-1), ['Banktransactie gekoppeld · Inspectie afgesplitst', 'ok']);
+  // A lost answer of the split: the retry writes no payment again and sends the same body.
+  const retry = roundSetup(goods);
+  let fail = true;
+  const split = retry.editor.sourcing.splitInspection;
+  retry.editor.sourcing.splitInspection = async (id: number, body: any) => { if (fail) { fail = false; retry.splits.push({ type: 'lost', body: clone(body) }); throw new Error('Geen verbinding'); } return split(id, body); };
+  retry.editor.editPayment(goods);
+  retry.editor.paying.update((draft: any) => ({ ...draft, inspectionSplitInput: '300', inspectionSplit: 300 }));
+  await retry.editor.confirmPayment();
+  assert.equal(retry.editor.paying().bankLinkPending, true, 'the sheet stays, the form is held');
+  retry.writes.length = 0;
+  await retry.editor.confirmPayment();
+  assert.equal(retry.writes.length, 0, 'the payment is not written twice');
+  assert.deepEqual(retry.splits.map(row => row.body), [{ amountEur: 300, expectedAmountEur: 10300 }, { amountEur: 300, expectedAmountEur: 10300 }]);
+  assert.equal(retry.editor.paying(), null);
+});
+
+test('a payment in parts: a corrected unlinked transfer gets its own PUT first, then one PUT on the root for the whole group', async () => {
+  const root = { ...payment(), id: 102, payee: 'SUPPLIER', label: 'Saldo 70%', amount: 10000, amountEur: 10000, paidOn: '2026-09-10',
+    instalmentDue: 'SHIPPED', groupId: 102, bankStatementLineId: 520 };
+  const open = { ...root, id: 103, amount: 11733.63, amountEur: 11733.63, bankStatementLineId: null };
+  const { editor, writes } = roundSetup(root);
+  editor.payments.set([root, open]);
+  const part = (item: any) => ({ id: item.id, payment: item, paidOn: item.paidOn, amount: item.amount, currency: item.currency, amountEur: item.amountEur,
+    bankStatementLineId: item.bankStatementLineId, onBank: item.bankStatementLineId != null, proofs: [] });
+  editor.paymentLedger.set({ rows: [{ id: 102, payment: root, parts: [part(root), part(open)], proofs: [] }] });
+  editor.editPayment(root);
+  assert.deepEqual(clone(editor.paying().groupIds), [102, 103]);
+  editor.paying.update((draft: any) => ({ ...draft, label: 'Saldo', partEdits: { 103: { amountInput: '11733,65', amount: 11733.65 } } }));
+  await editor.confirmPayment();
+  assert.deepEqual(writes.map(row => [row.paymentId, row.body.amount, row.body.label, row.body.applyToGroup ?? false]),
+    [[103, 11733.65, 'Saldo 70%', false], [102, 10000, 'Saldo', true]]);
+  assert.equal('amountEur' in writes[1].body, false, 'the root\'s money goes as stored, without a euro');
+  assert.deepEqual([writes[1].body.paidOn, writes[1].body.instalmentDue], ['2026-09-10', 'SHIPPED']);
+});
+
+test('the invoice choice travels only when it changed; a server without this round links one matching line the old way, on the bank\'s day', async () => {
+  const { editor, writes } = roundSetup();
+  editor.editPayment(payment());
+  editor.paying.update((draft: any) => ({ ...draft, invoiceId: null, invoiceIdChanged: true }));
+  await editor.confirmPayment();
+  assert.equal(writes[0].body.invoiceId, null, 'back to automatic is sent explicitly');
+  const older = roundSetup();
+  older.editor.view.set({ order: order(), reconciliation: { supplierInstalments: [] }, creditOffsets: [] });
+  older.editor.editPayment(payment());
+  older.editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 80, pendingLines: [bankLine(520, -1046.95, '2026-09-24T09:00:00Z')] }));
+  await older.editor.confirmPayment();
+  assert.equal(older.writes[0].body.paidOn, '2026-09-24', 'the payment takes the bank\'s day before /links');
+  assert.equal('invoiceId' in older.writes[0].body, false);
+  assert.deepEqual(older.splits, [{ type: 'links', id: 520, body: { purchasePaymentIds: [80] } }]);
 });

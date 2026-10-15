@@ -5,6 +5,8 @@
  * here. The frontend shows, the server calculates.
  */
 
+import type { BankStatementLine } from './banking-api';
+
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 /** How a container-level cost is shared out; MANUAL is the buyer's own split per line, for the Enrosed kost only. */
@@ -1269,6 +1271,10 @@ export interface PurchasePayment {
   instalmentDue?: Instalment['due'] | null;
   /** The bank line that carried this payment, once it was noted on the bank. */
   bankStatementLineId?: number | null;
+  /** Root id when this payment is one transfer of a payment paid in parts; null when never split. */
+  groupId?: number | null;
+  /** Explicit invoice; null = automatic (the payee's only invoice). */
+  invoiceId?: number | null;
 }
 
 /** What the editor sends for a container payment (POST and PUT …/payments). */
@@ -1286,6 +1292,12 @@ export interface PurchasePaymentWrite {
    * settle/undo never revalues a bank amount). Never sent for EUR payments.
    */
   amountEur?: number | null;
+  /** PUT: sent only when the select changed (null included); omitted keeps the stored value; null = automatisch. */
+  invoiceId?: number | null;
+  /** SEPARATE only; true sets the container flag 'Inspectie via leverancier'. */
+  inspectionViaSupplier?: boolean;
+  /** PUT only: apply label, payee, settles, term and invoice to every transfer of the group. */
+  applyToGroup?: boolean;
 }
 
 /** Why the supplier owes us money back: short delivery, damage, a price difference or something else. */
@@ -1363,9 +1375,74 @@ export interface PurchasePaymentRow {
   label: string | null;
   payee?: Payee | null;
   bankStatementLineId?: number | null;
+  /** Missing on a server without the invoice round (2026-10-15). */
+  amount?: number;
+  currency?: Currency;
+  instalmentDue?: Instalment['due'] | null;
+  settles?: boolean;
+  /** Root id of the payment paid in parts this row belongs to; null when never split. */
+  groupId?: number | null;
+  /** The invoice this payment resolves to (explicit or automatic); never written back. */
+  resolvedInvoiceId?: number | null;
+  invoiceNumber?: string | null;
+  /** A credit of another container offset on this one: no bank transfer, never needs proof. */
+  creditOffset?: boolean;
 }
 
-export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
+export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
+
+/** An invoice of a container: number, date and amount; the terms and payments of its payee point to it. */
+export interface PurchaseInvoice {
+  id: number;
+  orderId: number;
+  payee: Payee;
+  payeeLabel: string;
+  number: string;
+  invoiceDate: string;
+  amount: number;
+  currency: Currency;
+  amountEur: number;
+  documentId: number | null;
+  documentName: string | null;
+  notes: string | null;
+  actor: string | null;
+  recordedAt: string;
+  /** The payee's first registered invoice (lowest id). */
+  primary: boolean;
+  /** The supplier's primary invoice also covers the inspection paid via the supplier. */
+  coversInspection: boolean;
+  /** Payments resolving to this invoice, ascending. */
+  paymentIds: number[];
+  paidEur: number;
+}
+
+/** A legacy invoice file of the container without invoice data ('Gegevens invullen'). */
+export interface PurchaseInvoiceFile {
+  documentId: number;
+  kind: DocumentKind;
+  label: string | null;
+  originalFilename: string;
+  paymentId: number | null;
+  payee: Payee;
+}
+
+/** What a split of a payment over bank transactions answers: every member of the group (or goods + inspection) and the touched lines. */
+export interface PaymentSplitResult {
+  payments: PurchasePayment[];
+  lines: BankStatementLine[];
+}
+
+/** POST / PUT …/invoices. */
+export interface PurchaseInvoiceWrite {
+  payee: Payee;
+  number: string;
+  invoiceDate: string;
+  amount: number;
+  currency: Currency;
+  amountEur?: number | null;
+  documentId?: number | null;
+  notes?: string | null;
+}
 
 /** A file that belongs to a container. */
 export interface PurchaseDocument {
@@ -1475,6 +1552,8 @@ export interface PurchaseOrder {
   trackingReference?: string | null;
   /** CIF: the supplier arranges and invoices the sea freight (and origin costs); null = no. Ignored when every line is DDP. */
   freightViaSupplier?: boolean | null;
+  /** Inspection paid through the supplier (same transfer as the goods); server-owned, set by its own endpoint. */
+  inspectionViaSupplier?: boolean | null;
   notes: string;
   lines: PurchaseOrderLine[];
 }
@@ -1564,6 +1643,10 @@ export interface PurchaseOrderView {
   supplierCredits?: PurchaseSupplierCredit[];
   /** Payments on this container that offset a credit of another container. */
   creditOffsets?: PurchaseCreditOffset[];
+  /** Invoices of the container; missing on a server without the invoice round (see paymentRoundOnServer). */
+  invoices?: PurchaseInvoice[];
+  /** Invoice files of the container that have no invoice data yet. */
+  invoiceFiles?: PurchaseInvoiceFile[];
 }
 
 export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';
@@ -1610,6 +1693,20 @@ export interface PurchaseReconciliationTotals {
   /** Credits of the supplier: all of them, and the part still open (neither refunded nor offset). */
   supplierCreditEur?: number;
   supplierCreditOpenEur?: number;
+  /**
+   * Per set / per stuk (2026-10-15; missing = PIECE). DISPLAY when every line is a set of the same size and noun,
+   * MIXED when sets and pieces (or sets of different sizes) share the container.
+   */
+  setBasis?: 'PIECE' | 'DISPLAY' | 'MIXED';
+  /** The pieces per set shared by every set line, else null. */
+  setPieces?: number | null;
+  /** The plural noun shared by every set line (e.g. 'rozen'), else null. */
+  setUnitOther?: string | null;
+  orderedPieceQuantity?: number;
+  usablePieceQuantity?: number;
+  unitCostPieceQuantity?: number;
+  forecastExternalPieceEur?: number | null;
+  forecastPricingPieceEur?: number | null;
 }
 
 export interface PurchaseReconciliationLine {
@@ -1633,6 +1730,15 @@ export interface PurchaseReconciliationLine {
   allocationBasis: string;
   /** The supplier credit allocated to this line (missing value, damaged value or goods value). */
   creditEur?: number;
+  /** Per set / per stuk (2026-10-15; missing = PIECE, 1 piece per unit). Quantities and unit figures stay per sales unit. */
+  salesUnit?: 'PIECE' | 'DISPLAY';
+  piecesPerUnit?: number;
+  unitKey?: string;
+  unitOne?: string;
+  unitOther?: string;
+  pieceQuantity?: number;
+  forecastExternalPieceEur?: number | null;
+  forecastPricingPieceEur?: number | null;
 }
 
 export interface PurchaseReconciliation {

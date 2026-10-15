@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { BankingApi, type BankStatementLine } from '../core/api/banking-api';
 import { messageOf } from '../core/api/errors';
 import { bankTransactionAllocated, bankTransactionDay, bankTransactionOptions, type BankDirection } from './bank-transaction-options';
@@ -51,12 +51,16 @@ import { Skeleton } from './skeleton';
     @media(max-width:480px){.bank-picker{padding:12px}header{align-items:start;flex-wrap:wrap}.bank-picker__filters{gap:8px}.bank-picker__selected{align-items:start;flex-wrap:wrap}}
   `],
 })
-export class BankTransactionPicker {
+export class BankTransactionPicker implements OnInit {
   private readonly api = inject(BankingApi);
   readonly direction = input<BankDirection>('ANY');
   readonly amount = input<number | null>(null);
   readonly selected = input<BankStatementLine | null>(null);
   readonly disabled = input(false);
+  /** Lines not offered: those already linked to a part of this payment and those already picked. */
+  readonly exclude = input<readonly number[]>([]);
+  /** Open the list at once (the sheet's 'Koppelen' already asked for it). */
+  readonly startOpen = input(false);
   readonly selectedChange = output<BankStatementLine | null>();
   readonly expanded = signal(false);
   readonly rows = signal<BankStatementLine[]>([]);
@@ -65,7 +69,11 @@ export class BankTransactionPicker {
   readonly query = signal('');
   readonly exact = signal(false);
   readonly filterDirection = signal<BankDirection>('ANY');
-  readonly matches = computed(() => bankTransactionOptions(this.rows(), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact()));
+  readonly matches = computed(() => {
+    const excluded = new Set(this.exclude());
+    return bankTransactionOptions(this.rows().filter(row => !excluded.has(row.id)), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact());
+  });
+  ngOnInit(): void { if (this.startOpen()) { this.expanded.set(true); void this.load(); } }
   readonly allocated = bankTransactionAllocated;
   difference(row: BankStatementLine): number | null { const amount = this.amount(); return amount != null && amount > 0 ? bankAmountDifference(row.amountEur, Math.sign(row.amountEur) * amount) : null; }
   day(row: BankStatementLine): string { return bankTransactionDay(row).split('-').reverse().join('/'); }

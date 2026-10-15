@@ -47,7 +47,7 @@ export interface FirstInstalmentDraft {
             <app-date-field fieldId="first-date" [value]="first.paidOn" (valueChange)="patch.emit({ paidOn: $event })" />
           </div>
           <div class="field span-2">
-            <app-payment-proof-picker title="Bewijs (bankafschrift)" [files]="first.files" [disabled]="busy()" (filesChange)="patch.emit({ files: $event })" />
+            <app-payment-proof-picker title="Bankafschrift (optioneel)" [files]="first.files" [disabled]="busy()" (filesChange)="patch.emit({ files: $event })" />
           </div>
         </div>
       </div>

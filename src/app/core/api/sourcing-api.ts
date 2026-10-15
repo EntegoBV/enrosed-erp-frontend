@@ -8,6 +8,7 @@ import {
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
   PartnerCreditProposal, PurchasePaymentWrite, SupplierCreditOffsetWrite, SupplierCreditUpdate, SupplierCreditWrite,
+  PurchaseInvoice, PurchaseInvoiceWrite, PaymentSplitResult,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -214,6 +215,48 @@ export class SourcingApi {
   /** Offsets an open credit as a supplier payment on another container of the same supplier. */
   offsetSupplierCredit(orderId: number, creditId: number, offset: SupplierCreditOffsetWrite): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/supplier-credits/${creditId}/offset`), offset));
+  }
+
+  /** The invoices of a container (number, date, amount), with the payments that resolve to each. */
+  invoices(orderId: number): Promise<PurchaseInvoice[]> {
+    return firstValueFrom(this.http.get<PurchaseInvoice[]>(api(`/api/purchase-orders/${orderId}/invoices`)));
+  }
+
+  addInvoice(orderId: number, body: PurchaseInvoiceWrite): Promise<PurchaseInvoice> {
+    return firstValueFrom(this.http.post<PurchaseInvoice>(api(`/api/purchase-orders/${orderId}/invoices`), body));
+  }
+
+  updateInvoice(orderId: number, invoiceId: number, body: PurchaseInvoiceWrite): Promise<PurchaseInvoice> {
+    return firstValueFrom(this.http.put<PurchaseInvoice>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}`), body));
+  }
+
+  /** Removes the invoice data; its file stays with the container and the payments stay. */
+  deleteInvoice(orderId: number, invoiceId: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(api(`/api/purchase-orders/${orderId}/invoices/${invoiceId}`)));
+  }
+
+  /** 'Inspectie via leverancier' on or off. Callers refresh the payment state; they never set the view from this answer. */
+  setInspectionViaSupplier(orderId: number, value: boolean): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.put<PurchaseOrderView>(
+      api(`/api/purchase-orders/${orderId}/inspection-via-supplier`), { value }));
+  }
+
+  /** Splits a payment over two to ten free bank transactions (one part per line), or links one matching line. */
+  linkPaymentLines(paymentId: number, lines: { bankStatementLineId: number; amount?: number | null }[]): Promise<PaymentSplitResult> {
+    return firstValueFrom(this.http.post<PaymentSplitResult>(
+      api(`/api/purchase-payment-splits/${paymentId}/bank-lines`), { lines }));
+  }
+
+  /** Links one bank transaction to the payment: whole when it matches, else carves the line's part out of it. */
+  linkPaymentPart(paymentId: number, bankStatementLineId: number, amount: number | null = null): Promise<PaymentSplitResult> {
+    return firstValueFrom(this.http.post<PaymentSplitResult>(
+      api(`/api/purchase-payment-splits/${paymentId}/bank-part`), { bankStatementLineId, amount }));
+  }
+
+  /** Splits the inspection paid via the supplier off a goods payment, on the same bank transaction. */
+  splitInspection(paymentId: number, body: { amountEur: number; amount?: number | null; label?: string | null; expectedAmountEur: number }): Promise<PaymentSplitResult> {
+    return firstValueFrom(this.http.post<PaymentSplitResult>(
+      api(`/api/purchase-payment-splits/${paymentId}/inspection`), body));
   }
 
   /** Every payment on every container from a day on: what left the bank for purchasing. */

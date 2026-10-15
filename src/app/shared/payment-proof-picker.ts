@@ -44,7 +44,7 @@ export class PaymentProofPicker {
   readonly files = input<readonly File[]>([]);
   readonly disabled = input(false);
   readonly maxFiles = input(5);
-  readonly title = input('Betalingsbewijs');
+  readonly title = input('Betaalbewijs');
   readonly filesChange = output<File[]>();
   readonly errors = signal<string[]>([]);
   readonly dragging = signal(false);
