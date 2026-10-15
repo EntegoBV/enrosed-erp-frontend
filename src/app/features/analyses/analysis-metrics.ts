@@ -315,7 +315,7 @@ export function salesAnalysis(
   const issuedClaims = [...issuedInvoices, ...creditNotes];
   const paidInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) === 0 && invoiceClaim(row) > 0);
   const outstandingInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) > 0);
-  const overdueInvoices = outstandingInvoices.filter((row) => isOverdue(row, today));
+  const overdueInvoices = overdueInvoiceRows(invoices, today);
   const invoiceGoods = issuedClaims.reduce(
     (sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0);
   const invoiceMargin = issuedClaims.reduce(
@@ -357,7 +357,7 @@ export function salesAnalysis(
       issuedValueEur: issuedValue,
       paidValueEur: round2(issuedInvoices.reduce((sum, row) => sum + invoiceReceived(row), 0)),
       outstandingValueEur: round2(outstandingInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
-      overdueValueEur: round2(overdueInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
+      overdueValueEur: round2(overdueInvoices.reduce((sum, row) => sum + row.outstandingEur, 0)),
       averageClaimEur: issuedInvoices.length ? sumInvoiceClaims(issuedInvoices) / issuedInvoices.length : null,
       avgDaysToPaid: paymentDays.length
         ? Math.round(paymentDays.reduce((sum, days) => sum + days, 0) / paymentDays.length) : null,
@@ -1161,6 +1161,16 @@ function sumInvoiceClaims(rows: readonly SalesOrderView[]): number {
 function missingCostLines(rows: readonly SalesOrderView[]): number {
   return rows.reduce((sum, row) =>
     sum + (row.priced.validation.productsWithoutCost?.length ?? 0), 0);
+}
+
+/**
+ * Issued invoices past their due day with something still open: Verkoop's
+ * "Te laat" and the home's overdue-invoice rows read this one list, so their
+ * sums always agree (spec-home amendment J).
+ */
+export function overdueInvoiceRows(sales: readonly SalesOrderView[], today: string): { view: SalesOrderView; outstandingEur: number; dueDate: string }[] {
+  return sales.filter((row) => isOverdue(row, today))
+    .map((view) => ({ view, outstandingEur: invoiceOutstanding(view), dueDate: isoDayOrNull(view.order.invoiceDueDate)! }));
 }
 
 function isOverdue(row: SalesOrderView, today: string): boolean {
