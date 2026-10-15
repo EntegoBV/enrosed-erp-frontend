@@ -333,7 +333,8 @@
     .bank-unbanked, .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
     .bank-totals-line { margin: 0 var(--ios-inset) 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; span { color: var(--muted); } }
     .fin-txd--phone { padding: 0 2px; .wk-section { padding: 12px 16px; } }
-    .fin-txd__foot--phone { display: flex; flex-wrap: wrap; gap: 8px; .btn { flex: 1; } }
+    /* Each button starts from its own words ("Registreren en koppelen" is 180 px) and the two share what is left; a pair that does not fit takes two lines. */
+    .fin-txd__foot--phone { display: flex; flex-wrap: wrap; gap: 8px; .btn { flex: 1 1 auto; } }
     .fin-split__row.is-on { grid-template-columns: minmax(0, 1fr) 120px; .fin-split__term { grid-column: 1 / -1; } .fin-split__amount { grid-column: 2; } }
     .fin-split__term, .fin-split__amount { height: 44px; font-size: 16px; }
   }

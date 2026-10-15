@@ -37,7 +37,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
           @if (p.allocationStep() === 'documents' || only() === 'preview') {
             @if (!p.localDocument() && only() !== 'preview') {
             <p class="fin-hint">Kies een factuur, uitgave of inkooptermijn die al in ENROSED staat. De bankbetaling wordt daarop afgepunt.</p>
-            <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Leverancier, klant, factuurnummer, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
+            <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Naam, factuur, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
             <div class="fin-choice" role="group" aria-label="Documentsoort">
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'all'" (click)="p.localKind.set('all')">Alles</button>
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'cost'" (click)="p.localKind.set('cost')">{{ row.amountEur < 0 ? 'Uitgaven' : 'Creditnota leverancier' }}</button>
@@ -139,7 +139,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             }
             <h3 class="fin-alloc__label">Zelf een ontvangen {{ row.amountEur < 0 ? 'factuur' : 'creditnota' }} kiezen</h3>
             <p class="fin-hint">Kies een document uit Odoo. We controleren eerst de bedragen en bestaande registraties. Het document blijft bij de kost bewaard.</p>
-            <input class="input" type="search" placeholder="Zoek factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
+            <input class="input" type="search" placeholder="Factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
             @if (p.receivedError()) { <p class="fin-error" role="alert">{{ p.receivedError() }} <button class="fin-inline-btn" type="button" [disabled]="p.busy() || p.receivedLoading()" (click)="p.loadReceivedInvoices()">Opnieuw laden</button></p> }
             <div class="fin-alloc__cards fin-received-list" role="group" aria-label="Ontvangen documenten">
               @for (document of p.visibleReceivedInvoices(); track document.id) {
@@ -188,7 +188,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             }
           } @else {
             <p class="fin-hint">Deze betalingen zijn al geboekt. Hergebruik ze om de banktransactie te koppelen zonder een extra betaling aan te maken. Meerdere containerdelen kunnen samen één bankbetaling vormen.</p>
-            <label class="bank-alloc-search"><span>Zoek bestaande betalingen</span><input class="input" type="search" placeholder="Factuur, tegenpartij, container, datum of bedrag" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" /></label>
+            <label class="bank-alloc-search"><span>Zoek bestaande betalingen</span><input class="input" type="search" placeholder="Naam, factuur, container of bedrag" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" /></label>
             <div class="bank-alloc-list" role="group" aria-label="Bestaande betalingen">
               @for (payment of p.visibleExistingSales(); track payment.existingPaymentId) {
                 <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales' && p.isChosen(payment)" (click)="p.reuseLocalSales(payment)"><span class="bank-alloc-document__identity"><small>{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Ontvangst klant' }}</small><b>{{ payment.number }}</b><span>{{ payment.reference }}</span><small>{{ p.matchStamp(payment) }}</small></span><span class="bank-alloc-document__amount"><b>{{ p.existingSalesAmount(payment) | eur }}</b><small>hergebruiken</small></span></button>
