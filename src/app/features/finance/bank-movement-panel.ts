@@ -715,7 +715,7 @@ export class BankMovementPanel {
     const companionsEur = this.chosenOutgoing().filter(row => part.withIds.includes(row.id)).reduce((sum, row) => sum + cents(row.amountEur), 0) / 100;
     if (part.refused) return [];
     return linkChange({ amount: payment?.amount ?? part.row.amountEur, currency: payment?.currency ?? 'EUR', amountEur: part.row.amountEur, paidOn: part.row.paidOn, proof: 'geen' },
-      { amountEur: line.amountEur, day, text: `${day.split('-').reverse().join('/')} · ${line.account} · ${euro.format(Math.abs(line.amountEur))}` },
+      { amountEur: line.amountEur, day, text: `${day.split('-').reverse().join('/')} · ${this.accountName(line.account)} · ${euro.format(Math.abs(line.amountEur))}` },
       { kind: 'part', lineId: line.id, whole: !part.carve, ...(part.amount != null ? { amount: part.amount } : {}),
         ...(part.higher ? { surplus: this.outgoingSurplus()! } : {}), ...(part.withIds.length ? { withPaymentIds: part.withIds } : {}) },
       companionsEur);
@@ -735,6 +735,8 @@ export class BankMovementPanel {
       : [...(row.kind === 'cost' ? keys.filter(key => !key.startsWith('cost:')) : keys), row.key]);
   }
   chooseOutgoingSurplus(choice: SurplusChoice | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
+  /** The transaction detail shows the spec's "Wat verandert" for the chosen payment itself (§3.6); the panel's own then steps aside. */
+  ownsChange(): boolean { return false; }
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();

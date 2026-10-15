@@ -157,7 +157,8 @@ export function changePreview(
     mode, differenceEur: difference / 100, rows,
     followText: followText(target, effectiveFollow ? afterEur : nowEur),
     keepAllowed: purchase && mode === 'higher',
-    restText: purchase && mode === 'lower' ? `Rest ${eur((base - lineCents) / 100)} blijft open als tweede transactie.` : null,
+    // A USD/CNY payment is compared in its own currency (round 2): the transaction is the whole payment, nothing stays open.
+    restText: purchase && mode === 'lower' && target.currency === 'EUR' ? `Rest ${eur((base - lineCents) / 100)} blijft open als tweede transactie.` : null,
     blockedText,
     primaryLabel: keep ? 'Koppelen en verschil boeken' : effectiveFollow && changed ? 'Koppelen en aanpassen' : 'Koppelen',
     notice,

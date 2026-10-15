@@ -199,7 +199,12 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
               @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
             </div>
             @if (p.allocationMode() === 'expense' && p.outgoingPart(); as part) {
-              <!-- One container payment: it follows the transaction. A larger transaction first asks what the surplus is. -->
+              <!--
+                One container payment: it follows the transaction. A larger transaction first asks what the surplus is.
+                In the transaction detail one payment alone shows the spec's "Wat verandert" below (ownsChange): only
+                the USD/CNY part field stays here, and the rest of this section steps aside.
+              -->
+              @if (!p.ownsChange() || part.foreign) {
               <section class="bank-alloc-preview"><h3>{{ part.carve ? 'Deel van een bestaande betaling' : part.withIds.length ? 'Goederen + inspectie op deze transactie' : 'Bestaande betaling' }}</h3>
                 @if (part.foreign; as foreign) {
                   <!-- USD/CNY: the transaction is the whole payment (its euro and day follow) unless the part it paid is named in the payment's currency. -->
@@ -209,10 +214,10 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   @if (p.outgoingForeignWarning(); as warning) { <p class="fin-hint fin-hint--warn">{{ warning }}</p> }
                   @else if (!part.carve && !p.outgoingForeignInput().trim()) { <p class="fin-hint">Leeg: de hele betaling neemt het eurobedrag van de transactie over; de koers volgt.</p> }
                 }
-                @if (part.carve) {
+                @if (part.carve && !p.ownsChange()) {
                   <p class="fin-hint">{{ p.outgoingCarveText() }}</p>
                 }
-                @if (part.higher) {
+                @if (part.higher && !p.ownsChange()) {
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
                   <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
                     <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
@@ -224,7 +229,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                     <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Niet koppelen</b><span>Een andere betaling kiezen</span></button>
                   </div>
                 }
-                @if (p.outgoingChange().length) {
+                @if (p.outgoingChange().length && !p.ownsChange()) {
                   <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
                     <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader">Wat verandert</span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
                     @for (change of p.outgoingChange(); track change.label) {
@@ -233,6 +238,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   </div>
                 }
               </section>
+              }
             } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
               <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.outgoingDifference() | eur }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {

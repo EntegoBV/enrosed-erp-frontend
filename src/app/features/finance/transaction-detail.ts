@@ -9,7 +9,7 @@ import { Sheet } from '../../shared/ui';
 import { invoiceCoverage, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
 import { BankAllocationSteps } from './bank-allocation-steps';
 import { KEEP_LABEL, changePreview } from './bank-change-preview';
-import type { KeepAs, LinkTarget } from './bank-change-preview';
+import type { ChangePreview, KeepAs, LinkTarget } from './bank-change-preview';
 import { BankMovementPanel } from './bank-movement-panel';
 import { legDistance, lineStatus, vatPeriodLabel } from './bank-suggestions';
 import type { LineSuggestion } from './bank-suggestions';
@@ -142,32 +142,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
                   </dl>
                   @if (reasons().length) { <div class="fin-txd__reasons">@for (reason of reasons(); track reason) { <span class="wk-pill wk-pill--outline">{{ reason }}</span> }</div> }
                 </div>
-                @if (preview(); as change) {
-                  <div class="fin-txd__change">
-                    <h4>Wat verandert</h4>
-                    <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
-                      <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
-                      @for (change of change.rows; track change.label) {
-                        <div class="bank-alloc-change__row" role="row" [class.is-changed]="change.changed"><span role="rowheader">{{ change.label }}</span><span role="cell">{{ change.now }}</span><span role="cell">{{ change.after }}</span></div>
-                      }
-                    </div>
-                    @if (followable()) {
-                      <label class="fin-switch-row"><input [class.fin-switch]="state.desk()" [class.ios-switch]="!state.desk()" type="checkbox" [checked]="follow()" [disabled]="change.mode === 'lower' && match.kind === 'purchase-existing'" (change)="follow.set($any($event.target).checked)" />
-                        <span><b>Betaling volgt de bank</b><small>{{ change.followText }}</small></span></label>
-                    }
-                    @if (change.restText) { <p class="fin-hint">{{ change.restText }}</p> }
-                    @if (change.mode === 'higher' && match.kind === 'purchase-existing' && follow()) {
-                      <div class="fin-txd__radios" role="radiogroup" aria-label="Transactie is hoger">
-                        <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" />Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</label>
-                        @if (inspectionOffered()) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" />Rest als inspectie via leverancier</label> }
-                      </div>
-                    }
-                    @if (!follow() && change.keepAllowed && state.cashRound()) {
-                      <label class="fin-txd__keep">Betaling houden, verschil {{ eur(change.differenceEur) }} als
-                        <select class="select" [value]="keepAs()" (change)="keepAs.set($any($event.target).value)"><option value="BANKKOSTEN">Bankkosten</option><option value="KOERSVERSCHIL">Koersverschil</option></select></label>
-                    } @else if (change.blockedText || (!follow() && change.keepAllowed)) { <p class="fin-hint fin-hint--warn">{{ change.blockedText || keepOnlyEqual }}</p> }
-                  </div>
-                }
+                @if (preview(); as change) { <ng-container *ngTemplateOutlet="whatChanges; context: { $implicit: change, target: match, row: row }" /> }
                 @if (isNewTarget(match)) {
                   <details class="fin-txd__details"><summary>Details</summary><app-bank-allocation-steps [panel]="this" only="preview" /></details>
                 }
@@ -188,20 +163,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
                 }
                 <app-bank-allocation-steps [panel]="this" />
                 @if (engineTarget(); as target) {
-                  @if (enginePreview(); as change) {
-                    <div class="fin-txd__change">
-                      <h4>Wat verandert</h4>
-                      <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
-                        <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
-                        @for (change of change.rows; track change.label) {
-                          <div class="bank-alloc-change__row" role="row" [class.is-changed]="change.changed"><span role="rowheader">{{ change.label }}</span><span role="cell">{{ change.now }}</span><span role="cell">{{ change.after }}</span></div>
-                        }
-                      </div>
-                      @if (state.cashRound()) {
-                        <label class="fin-switch-row"><input [class.fin-switch]="state.desk()" [class.ios-switch]="!state.desk()" type="checkbox" [checked]="follow()" (change)="follow.set($any($event.target).checked)" /><span><b>Betaling volgt de bank</b><small>{{ change.followText }}</small></span></label>
-                      }
-                    </div>
-                  }
+                  @if (enginePreview(); as change) { <ng-container *ngTemplateOutlet="whatChanges; context: { $implicit: change, target: target, row: row }" /> }
                 }
               </section>
             }
@@ -226,6 +188,38 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
       }
     </ng-template>
 
+    <!--
+      "Wat verandert" (spec §3.6) of one target: the best match, or the one existing payment picked under
+      "Bestaande betaling". Rows, the switch "Betaling volgt de bank", the rest of a smaller purchase payment, the
+      choice for a larger one, and "Betaling houden" when the switch is off.
+    -->
+    <ng-template #whatChanges let-change let-target="target" let-row="row">
+      <div class="fin-txd__change">
+        <h4>Wat verandert</h4>
+        <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
+          <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
+          @for (item of change.rows; track item.label) {
+            <div class="bank-alloc-change__row" role="row" [class.is-changed]="item.changed"><span role="rowheader">{{ item.label }}</span><span role="cell">{{ item.now }}</span><span role="cell">{{ item.after }}</span></div>
+          }
+        </div>
+        @if (followableFor(target)) {
+          <label class="fin-switch-row"><input [class.fin-switch]="state.desk()" [class.ios-switch]="!state.desk()" type="checkbox" [checked]="follow()" [disabled]="change.mode === 'lower' && target.kind === 'purchase-existing'" (change)="follow.set($any($event.target).checked)" />
+            <span><b>Betaling volgt de bank</b><small>{{ change.followText }}</small></span></label>
+        }
+        @if (change.restText) { <p class="fin-hint">{{ change.restText }}</p> }
+        @if (change.mode === 'higher' && target.kind === 'purchase-existing' && target.currency === 'EUR' && follow()) {
+          <div class="fin-txd__radios" role="radiogroup" aria-label="Transactie is hoger">
+            <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" />Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</label>
+            @if (target.hasInspectionAfspraak) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" />Rest als inspectie via leverancier</label> }
+          </div>
+        }
+        @if (!follow() && change.keepAllowed && state.cashRound()) {
+          <label class="fin-txd__keep">Betaling houden, verschil {{ eur(change.differenceEur) }} als
+            <select class="select" [value]="keepAs()" (change)="keepAs.set($any($event.target).value)"><option value="BANKKOSTEN">Bankkosten</option><option value="KOERSVERSCHIL">Koersverschil</option></select></label>
+        } @else if (change.blockedText || (!follow() && change.keepAllowed)) { <p class="fin-hint fin-hint--warn">{{ change.blockedText || keepOnlyEqual }}</p> }
+      </div>
+    </ng-template>
+
     <ng-template #foot>
       @if (line(); as row) {
         @switch (status()) {
@@ -246,7 +240,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
               <button class="wk-btn btn" type="button" (click)="next()">Volgende</button>
             } @else {
               @if (!engineTarget() && allocationBlockedReason(); as reason) { <p class="fin-txd__reason" role="status">{{ reason }}</p> }
-              <button class="wk-btn wk-btn--primary btn btn--primary" type="button" [disabled]="engineTarget() ? state.linking() !== null : !allocationReady()" (click)="submitEngine(row)">{{ engineTarget() ? (enginePreview()?.primaryLabel ?? 'Koppelen') : allocationActionLabel() }}</button>
+              <button class="wk-btn wk-btn--primary btn btn--primary" type="button" [disabled]="engineTarget() ? !canLinkEngine() : !allocationReady()" (click)="submitEngine(row)">{{ engineTarget() ? (state.linking() === row.id ? 'Koppelen…' : enginePreview()?.primaryLabel ?? 'Koppelen') : allocationActionLabel() }}</button>
               <button class="wk-btn btn" type="button" (click)="next()">Volgende</button>
             }
           }
@@ -307,17 +301,20 @@ export class TransactionDetail extends BankMovementPanel {
     return this.follow() && (target.kind === 'purchase-existing' || this.state.cashRound());
   }
   /** Follow the bank can be switched for an existing payment (cost and receipt only when the server knows it). */
-  readonly followable = computed(() => {
-    const target = this.best();
+  followableFor(target: LinkTarget | null): boolean {
     return !!target && (target.kind === 'purchase-existing' || ((target.kind === 'cost-existing' || target.kind === 'sales-existing') && this.state.cashRound()));
-  });
+  }
   readonly primaryLabel = computed(() => this.preview()?.primaryLabel ?? 'Koppelen');
-  readonly canLinkBest = computed(() => {
-    const target = this.best(), preview = this.preview(), row = this.line();
-    if (!target || !preview || !row || this.state.linking() !== null) return false;
-    if (preview.blockedText) return false;
+  /** What may be linked as the preview stands (the best match and "Bestaande betaling" alike). */
+  private linkAllowed(target: LinkTarget, preview: ChangePreview): boolean {
+    if (this.state.linking() !== null || preview.blockedText) return false;
     if (!this.state.cashRound() && (target.kind === 'cost-existing' || target.kind === 'sales-existing') && preview.mode !== 'equal') return false;
     if (!this.state.cashRound() && target.kind === 'purchase-existing' && !this.follow() && preview.mode !== 'equal') return false;
+    return true;
+  }
+  readonly canLinkBest = computed(() => {
+    const target = this.best(), preview = this.preview(), row = this.line();
+    if (!target || !preview || !row || !this.linkAllowed(target, preview)) return false;
     if (this.isNewTarget(target)) return this.localDocument()?.key === this.targetKey(target) && this.canLinkLocal();
     return true;
   });
@@ -343,10 +340,11 @@ export class TransactionDetail extends BankMovementPanel {
     rows.push({ label: 'Verschil', value: euro.format(difference) + (Math.abs(cents(difference)) <= 2 ? ' ✓' : ''), ok: Math.abs(cents(difference)) <= 2 });
     return rows;
   });
-  /** The rest of a larger transaction may be the inspection via the supplier (round 2's rule, inspectionRestOffered). */
-  readonly inspectionOffered = computed(() => { const target = this.best(); return target?.kind === 'purchase-existing' && target.hasInspectionAfspraak; });
-
-  /** A single existing payment chosen in "Bestaande betaling" (Te koppelen): it follows the bank too. */
+  /**
+   * A single existing payment chosen in "Bestaande betaling" (Te koppelen): it follows the bank too, through the best
+   * match's "Wat verandert" and call (§3.6). A purchase payment goes this way as one payment alone; round 2's own
+   * table stays for what §3.6 does not cover: a USD/CNY part named in its own currency, the goods with their inspection.
+   */
   readonly engineTarget = computed<LinkTarget | null>(() => {
     if (this.allocationStep() !== 'payments') return null;
     if (this.allocationMode() === 'sales') {
@@ -357,7 +355,8 @@ export class TransactionDetail extends BankMovementPanel {
         receivedOn: payment.receivedAt.slice(0, 10), account: payment.bankAccount ? this.accountName(payment.bankAccount) : null } : null;
     }
     const chosen = this.chosenOutgoing();
-    if (chosen.length !== 1 || chosen[0].kind !== 'cost') return null;
+    if (chosen.length !== 1) return null;
+    if (chosen[0].kind === 'purchase') return this.purchaseEngineTarget(chosen[0].id);
     const cost = this.state.costs().find((row) => row.id === chosen[0].ownerId);
     const payment = cost?.payments?.find((row) => row.id === chosen[0].id);
     return cost && payment ? { kind: 'cost-existing', costId: cost.id!, costPaymentId: payment.id!, title: `Kost · ${cost.description}`, amountEur: Math.abs(payment.amountEur),
@@ -366,8 +365,33 @@ export class TransactionDetail extends BankMovementPanel {
   readonly enginePreview = computed(() => {
     const row = this.line(), target = this.engineTarget();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.follow() && this.state.cashRound(), this.keepAs(), 'ADJUST') : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus()) : null;
   });
+  readonly canLinkEngine = computed(() => {
+    const target = this.engineTarget(), preview = this.enginePreview();
+    return !!target && !!preview && this.linkAllowed(target, preview);
+  });
+  /** Which existing payment the engine shows: another one starts again from "Betaling volgt de bank" (as choose() does). */
+  private readonly engineKey = computed(() => {
+    const target = this.engineTarget();
+    if (!target) return '';
+    return target.kind === 'purchase-existing' || target.kind === 'sales-existing' ? `${target.kind}:${target.paymentId}`
+      : target.kind === 'cost-existing' ? `${target.kind}:${target.costPaymentId}` : target.kind;
+  });
+  /** Round 2's own surplus choices and table step aside while the detail shows §3.6 for the chosen payment. */
+  override ownsChange(): boolean { return this.engineTarget()?.kind === 'purchase-existing'; }
+  /** One purchase payment as the best match would have it (bank-suggestions' target, enriched the same way). */
+  private purchaseEngineTarget(paymentId: number): LinkTarget | null {
+    const part = this.outgoingPart();
+    if (!part || part.row.id !== paymentId || part.withIds.length || part.refused || (part.foreign && this.outgoingForeignInput().trim())) return null;
+    const payment = this.state.payments().find((row) => row.id === paymentId);
+    if (!payment) return null;
+    const order = payment.orderNumber || payment.orderAlias || `#${payment.orderId}`;
+    const groupSize = payment.groupId != null ? this.state.payments().filter((row) => row.groupId === payment.groupId).length : 1;
+    return this.enriched({ kind: 'purchase-existing', orderId: payment.orderId, paymentId: payment.id, title: `Inkoop · ${order}${payment.label ? ' · ' + payment.label : ''}`,
+      amountEur: payment.amountEur, paidOn: payment.paidOn, currency: payment.currency ?? 'EUR', amount: payment.amount ?? payment.amountEur, account: null, proofCount: 0,
+      hasInspectionAfspraak: false, groupSize });
+  }
 
   /* ---- linked */
   readonly linkedPurchases = computed(() => { const row = this.line(); return row ? this.state.payments().filter((payment) => payment.bankStatementLineId === row.id) : []; });
@@ -473,6 +497,11 @@ export class TransactionDetail extends BankMovementPanel {
         if (document) { this.allocationStep.set('documents'); this.chooseLocalDocument(document); }
       });
     });
+    /* Another payment picked under "Bestaande betaling": the switch on, "Bedrag aanpassen", Bankkosten (as for a best match). */
+    effect(() => {
+      if (!this.engineKey()) return;
+      untracked(() => { this.follow.set(true); this.surplus.set('ADJUST'); this.keepAs.set('BANKKOSTEN'); });
+    });
     /* The proof files of the linked purchase payments (round 2's list). */
     effect(() => {
       const ids = this.linkedPurchases().map((payment) => payment.id);
@@ -552,7 +581,8 @@ export class TransactionDetail extends BankMovementPanel {
   async submitEngine(row: BankStatementLine): Promise<void> {
     const target = this.engineTarget();
     if (!target) { await this.submitAllocation(); return; }
-    const failure = await this.state.linkLine(row, target, { follow: this.follow() && this.state.cashRound() });
+    if (!this.canLinkEngine()) return;
+    const failure = await this.state.linkLine(row, target, { follow: this.effectiveFollow(target), keepAs: this.keepAs(), surplus: this.surplus() });
     if (!failure) this.afterLink();
   }
   /** On a phone the sheet moves on to the next transaction still to link. */

@@ -61,6 +61,15 @@ test('a smaller transaction carves the line out of a purchase payment; follow ca
   }
 });
 
+test('a smaller transaction on a USD purchase payment is the whole payment: its euro follows, nothing stays open', () => {
+  const preview = changePreview(purchase, { ...line, amountEur: -12400 }, true, 'BANKKOSTEN');
+  assert.equal(preview.mode, 'lower');
+  assert.equal(preview.restText, null);
+  assert.deepEqual(rows(preview).slice(0, 1), [['Bedrag', '€ 12.480,00', '€ 12.400,00', true]]);
+  assert.deepEqual(rows(preview).slice(3, 5), [['In USD', '$ 14.560,00', '$ 14.560,00', false], ['Koers', '1,1667', '1,1742', true]]);
+  assert.equal(preview.primaryLabel, 'Koppelen en aanpassen');
+});
+
 test('an equal cost payment whose day differs: only the date changes, still "Koppelen en aanpassen"', () => {
   const cost: LinkTarget = { kind: 'cost-existing', costId: 11, costPaymentId: 5, title: 'Kost · Boekhouder Q3', amountEur: 665.5, paidOn: '2026-10-08', account: 'KBC-zichtrekening', proofCount: 2 };
   const preview = changePreview(cost, { amountEur: -665.51, day: '2026-10-09', accountLabel: 'KBC-zichtrekening' }, true, 'BANKKOSTEN');
