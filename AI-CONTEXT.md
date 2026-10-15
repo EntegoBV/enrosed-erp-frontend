@@ -662,16 +662,51 @@ cijfers'.
 
 ## Screens and their scenarios
 
-### Dashboard
-Stat tiles (open sales, gross margin - internal only, incoming
-containers, catalogue size), open-work chips (proposals, delivery terms,
-freight to fill), recent orders with status badges, and a **Markt**
-section: ECB exchange rates (EUR↔USD, EUR↔CNY; tap flips the pair) with
-half-year sparkline, month tick labels showing the rate at each month
-start, and a plain-language hint about EXW buying power (freight is USD
-too); container freight log per route (Ningbo/Guangzhou/Shenzhen manual
-forwarder quotes with dated history sheets and backfill, Shanghai row fed
-weekly by the backend's Drewry scrape).
+### Dashboard (home, `features/dashboard/`)
+- `/dashboard` is a shell (`dashboard-home.ts`): `app-home-desk` from 680 px
+  (DesktopViewport), else `app-home-phone`; `/dashboard/agenda` and
+  `/dashboard/open` (Open punten) are pushed phone pages. Every home route
+  calls `enterHome()`: the day is checked every 60 s and on window focus, a
+  new day loads again, page data older than 20 s is fetched again.
+- **`HomeData`** (root, `home-data.ts`) loads and derives everything once:
+  sales, purchases, products, families, suppliers, website (7 d), costs,
+  incoming payments, partner financing, customers, planner and the bell;
+  each source fails on its own (`stateOf`/`combined`: loading, ready,
+  failed - the last good data stays). It shares the root `CashData` with
+  Analyses and builds the 6-month forecast with `cashOptionsOf(
+  DEFAULT_CASH_LOCATION, …)` at idle (the same lowest point as Analyses),
+  the Kas headline (`home-cash.ts`), the Vooruitblik, the ranked tasks and
+  the agenda model. Actions: `klaar`, `morgen`, `later`, `makeTask`.
+- **What counts as important**: `home-priority.ts` (pure, node-tested) ranks
+  every source into Nu / Vandaag / Ook nog; ALL thresholds sit in its §4.1
+  block. At most 7 Nu + Vandaag rows; one "Klanten wachten · n" row with the
+  bell's count (the server feed is the one customer-waiting set, incl.
+  "opnieuw versturen"). Later is per browser (`home-later.ts`,
+  `enrosed.home.later.v1`). "Taak van maken" puts `[home:<key>#<hash>]` on
+  the task note's last line; shown notes strip it (`visibleNote`).
+  `home-sources.ts` adapts the API data (containerPayables,
+  partnerFinancingAnalysis, `overdueInvoiceRows` - the same list as Verkoop
+  "Te laat" -, financeAttention's sentences and targets, the forecast's
+  BASE items) and names every container through `containerName()`.
+- **Agenda**: `agenda-days.ts` (UTC day math, no DST double days) and
+  `agenda-entries.ts` (entries per day, markers, Komend from tomorrow, pin
+  countdown, Daarna). The planner sheets stay in `planner-cards.ts`
+  (`section` 'all' | 'tasks' | 'none').
+- **Figure blocks** (`widgets/home-*.ts`, variant 'desk' | 'phone', fixed
+  order, no edit mode): Kas, Verkoop, Inkoop & containers, Resultaat,
+  Ontvangen, Voorraad, Partners, Website, (Search Console), Markt. One tap
+  target each; a failed source reads "— · Opnieuw", never 0. Styles live in
+  the global partials `styles/home-*.scss` (no component styles).
+- `home-figures.ts` (pure): month windows that follow the day, Δ%, bars,
+  next container events, the desk briefing, greeting, week number, the
+  Markt quote (own forwarder routes only, never an index in points).
+- The full market page is Analyses › Markt (`/analyses/market`,
+  `analyses/market-analysis.ts`): ECB exchange rates (EUR↔USD, EUR↔CNY; tap
+  flips the pair) with a half-year sparkline, month tick labels showing the
+  rate at each month start, and a plain-language hint about EXW buying power
+  (freight is USD too); the container freight log per route
+  (Ningbo/Guangzhou/Shenzhen manual forwarder quotes with dated history
+  sheets and backfill, Shanghai fed weekly by the backend's Drewry scrape).
 
 ### Sales editor (the heart)
 - Card sections: status/history (newest first, latest event on the bar),
@@ -1154,8 +1189,8 @@ and on copies. Without the blocks (older backend) every screen is as before.
   the customer can still change: one swipe would take the order and mail
   the customer. The list endpoint leaves `orderedTotalExclVat` null and
   `differences` empty; only the document itself has them.
-- **Dashboard.** 'Nieuwe websiteaanvragen en -bestellingen' uses the same
-  `countsAsNewWebsiteItem`, so an order in processing is no longer "nieuw".
+- **Home.** The home counts customers from the notification feed only
+  ("Klanten wachten", the bell's number); it no longer has a rule of its own.
 - Members of `SalesDesk`, `SalesEditor`, `SalesView` and `SalesList.todo`
   are run in isolation by node tests with a fixed set of globals; a new free
   function on such a path breaks them, so those members read `view.webOrder`
