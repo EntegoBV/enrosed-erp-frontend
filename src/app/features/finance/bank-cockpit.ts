@@ -185,7 +185,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
             <button class="ios-cell ios-cell--tall" type="button" [disabled]="item.action === 'book' && state.booking()" (click)="act(item)">
               <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft ' + toneClass(item)"><app-icon [name]="item.tone === 'info' ? 'info' : 'alert'" [size]="18" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ item.title }}</span><span class="ios-cell__sub fin-wrap">{{ item.detail }}</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ item.action ? phoneLabel(item) : item.amountEur !== null ? (item.amountEur | eur) : item.count }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">{{ phoneVerb(item) ?? (item.amountEur !== null ? (item.amountEur | eur) : item.count) }}</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
           } @empty {
@@ -364,6 +364,13 @@ export class BankCockpit {
   }
   phoneLabel(item: AttentionItem): string {
     return item.action === 'book' ? 'Nu boeken' : item.action === 'link' ? 'Koppel' : item.action === 'check' ? 'Controleer' : item.actionLabel;
+  }
+  /**
+   * The phone row's trail: the verb of a row that does something (book, link, check, fill); null for a row that only
+   * opens its list (no action, or 'unbanked'), which shows its figure there as before (the whole row stays the button).
+   */
+  phoneVerb(item: AttentionItem): string | null {
+    return item.action === null || item.action === 'unbanked' ? null : this.phoneLabel(item);
   }
   toneClass(item: AttentionItem): string {
     return item.tone === 'danger' ? 'tone-danger' : item.tone === 'warn' ? 'tone-warn' : 'tone-blue';

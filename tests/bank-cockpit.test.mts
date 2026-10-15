@@ -23,6 +23,7 @@ async function selectedClass(file: string, name: string, members: string[]) {
 }
 const Cockpit = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['bankKnown', 'bankStale', 'accountCount', 'bankSub', 'computedSub', 'moves', 'outlookComplete']);
 const Kaslijn = await selectedClass('kaslijn-card.ts', 'KaslijnCard', ['tightText', 'largest', 'banner', 'setWeeks', 'others', 'bannerRest', 'bannerText', 'eurOf', 'mon', 'certainty']);
+const AttentionRows = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['phoneLabel', 'phoneVerb']);
 
 function cockpit(accounts: any[], movements: any[] = [], extra: Record<string, unknown> = {}) {
   const panel = new Cockpit();
@@ -87,4 +88,13 @@ test('the double-count banner names the transaction and the open item; "+ n ande
   card.setWeeks('4'); assert.equal(location().weeks, 4);
   card.others();
   assert.deepEqual([location().tab, location().link, location().account, location().q], ['movements', 'unlinked', '', '']);
+});
+
+test('phone "Vraagt aandacht": a row that only opens its list keeps its figure as on main ("3 betalingen nog niet op de bank … € 15.860,40"); a row that does something shows its verb', () => {
+  const rows = new AttentionRows();
+  const item = (action: string | null, actionLabel = 'Bekijken') => ({ action, actionLabel });
+  assert.equal(rows.phoneVerb(item('unbanked')), null, 'the unbanked row opens Transacties: its amount stays in the trail');
+  assert.equal(rows.phoneVerb(item(null)), null);
+  assert.deepEqual(['book', 'link', 'check'].map((action) => rows.phoneVerb(item(action))), ['Nu boeken', 'Koppel', 'Controleer']);
+  assert.equal(rows.phoneVerb(item('fill', 'Saldo invullen')), 'Saldo invullen');
 });
