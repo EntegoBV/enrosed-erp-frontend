@@ -52,7 +52,6 @@ export function productSalesUnit(product: ProductWithPackaging) {
   const plural = isDisplay ? 'displays' : piece.other;
   return {
     isDisplay,
-    hasSet: piecesPerDisplay !== null,
     piece,
     singular: isDisplay ? 'display' : piece.one,
     plural,
@@ -60,34 +59,48 @@ export function productSalesUnit(product: ProductWithPackaging) {
     pluralLabel: capitalize(plural),
     short: isDisplay ? 'display' : piece.short,
     priceLabel: isDisplay ? 'Displayprijs' : piece.key === DEFAULT_UNIT_KEY ? 'Stukprijs' : `Prijs per ${piece.one}`,
-    setPriceLabel: 'Setprijs',
     piecesPerDisplay,
   };
 }
 
-/** The customer-facing price basis: a confirmed display/set is the primary figure. */
-export function primarySalesPrice(product: ProductWithPackaging, unitPrice: number | null | undefined) {
-  const unit = productSalesUnit(product);
-  if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
-  if (!unit.piecesPerDisplay) return { price: unitPrice, label: unit.priceLabel, singular: unit.singular };
-  return {
-    price: unit.isDisplay ? unitPrice : unitPrice * unit.piecesPerDisplay,
-    label: unit.setPriceLabel,
-    singular: 'set',
-  };
+/** The price on the other side of a display, next to a price in its own unit. */
+export interface OtherBasisPrice {
+  /** "=" when the figure is exact to the cent, "≈" when it is rounded. */
+  sign: '=' | '≈';
+  price: number;
+  /** What the figure is for, in the words after "per": "display" or "roos". */
+  unit: string;
+  /** "per display van 12" for a price per piece, "per roos" for a price per display. */
+  per: string;
+  /** The whole line: "= € 35,40 per display van 12", "≈ € 4,16 per roos". */
+  text: string;
 }
 
-/** Equivalent at the same discount/tax basis as the supplied unit price. */
-export function secondarySalesPrice(product: ProductWithPackaging, unitPrice: number | null | undefined) {
+/**
+ * The rule of every ERP price label: the word under a price names what that
+ * price is for (productSalesUnit().singular: "per diamant", "per display"),
+ * and the other side of a display goes on the line below it. A price per
+ * diamant in a display of 12 gives "= € 35,40 per display van 12"; a price
+ * per display of 12 roses gives "≈ € 4,16 per roos". Null without a display
+ * of two or more pieces, or without a price. Same discount basis as the
+ * price handed in; never converts anything that is stored.
+ */
+export function otherBasisPrice(product: ProductWithPackaging, unitPrice: number | null | undefined): OtherBasisPrice | null {
   const unit = productSalesUnit(product);
-  if (!unit.piecesPerDisplay || unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
-  return {
-    price: unit.isDisplay ? unitPrice / unit.piecesPerDisplay : unitPrice,
-    label: unit.piece.per,
-    piecesPerDisplay: unit.piecesPerDisplay,
-    /** "8 bowls/display", the compact contents next to the equivalent. */
-    perDisplay: `${unit.piecesPerDisplay.toLocaleString('nl-BE')} ${unit.piece.other}/display`,
-  };
+  const pieces = unit.piecesPerDisplay;
+  if (!pieces || unitPrice == null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
+  const price = unit.isDisplay ? unitPrice / pieces : unitPrice * pieces;
+  /* 31,60 over 8 bowls is exactly 3,95; 49,95 over 12 roses is not. */
+  const cents = price * 100;
+  const sign = Math.abs(cents - Math.round(cents)) < 1e-6 ? '=' : '≈';
+  const word = unit.isDisplay ? unit.piece.one : 'display';
+  const per = unit.isDisplay ? unit.piece.per : `per display van ${pieces.toLocaleString('nl-BE')}`;
+  return { sign, price, unit: word, per, text: `${sign} ${euro(price)} ${per}` };
+}
+
+/** "€ 35,40", as the eur pipe writes it. */
+function euro(value: number): string {
+  return new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
 export function salesQuantityDetail(product: ProductWithPackaging, quantity: number): string | null {

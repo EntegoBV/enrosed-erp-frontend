@@ -1,4 +1,4 @@
-import { capitalize, primarySalesPrice, productSalesUnit, secondarySalesPrice, salesQuantityDetail } from './product-sales-unit';
+import { capitalize, otherBasisPrice, productSalesUnit, salesQuantityDetail } from './product-sales-unit';
 import { orderStepLabel, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
@@ -187,11 +187,11 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               </div>
               <div class="pd-fact pd-fact--price">
                 <small>Catalogusprijs</small>
-                @if (primaryPrice(product, displayPrice()); as primary) { <strong class="num">{{ primary.price | eur: 2 }}</strong> } @else { <strong>—</strong> }
-                @if (primaryPrice(product, displayPrice()); as primary) { <span>per {{ primary.singular }} · excl. btw</span> }
-                @if (secondaryPrice(product, displayPrice()); as equivalent) {
-                  <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span>
-                }
+                @if (displayPrice(); as price) {
+                  <strong class="num">{{ price | eur: 2 }}</strong>
+                  <span>per {{ salesUnit(product).singular }} · excl. btw</span>
+                  @if (otherPrice(product, price); as other) { <span>{{ other.text }}</span> }
+                } @else { <strong>—</strong> }
               </div>
             </div>
             @if (expected(); as exp) {
@@ -930,8 +930,8 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 })
 export class ProductView {
   readonly salesUnit = productSalesUnit;
-  readonly primaryPrice = primarySalesPrice;
-  readonly secondaryPrice = secondarySalesPrice;
+  /** "= € 35,40 per display van 12" under a price per diamant; "≈ € 4,16 per roos" under a price per display. */
+  readonly otherPrice = otherBasisPrice;
   readonly quantityDetail = salesQuantityDetail;
   readonly capitalize = capitalize;
 
@@ -1211,10 +1211,11 @@ export class ProductView {
       const margin = this.margin();
       if (margin) rows.push({ label: `Marge per ${productSalesUnit(product).singular} · ${margin.pct} %`, eur: margin.eur, note: true });
     }
-    const costEquivalent = secondarySalesPrice(product, product.landedCostEur);
-    if (costEquivalent) rows.push({ label: `Kostprijs ${costEquivalent.label} · ${costEquivalent.perDisplay}`, eur: costEquivalent.price, aside: true });
-    const priceEquivalent = secondarySalesPrice(product, price);
-    if (priceEquivalent) rows.push({ label: `Catalogusprijs ${priceEquivalent.label} · ${priceEquivalent.perDisplay}`, eur: priceEquivalent.price, aside: true });
+    /* The other side of a display, after the figures in their own unit. */
+    const costOther = otherBasisPrice(product, product.landedCostEur);
+    if (costOther) rows.push({ label: `${costOther.sign} Kostprijs ${costOther.per}`, eur: costOther.price, aside: true });
+    const priceOther = otherBasisPrice(product, price);
+    if (priceOther) rows.push({ label: `${priceOther.sign} Catalogusprijs ${priceOther.per}`, eur: priceOther.price, aside: true });
     this.priceBuild.set({ rows, source, sourceFound: line !== null });
   }
 

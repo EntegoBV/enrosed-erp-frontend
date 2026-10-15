@@ -7,8 +7,8 @@ import type { Packaging, Product, UnitName } from '../src/app/core/api/models.ts
 import * as units from '../src/app/features/products/product-sales-unit.ts';
 
 const {
-  customerUnitPreview, primarySalesPrice, productSalesUnit, rememberUnitNames, salesQuantityDetail,
-  salesQuantityLabel, secondarySalesPrice, unitCount, unitName,
+  customerUnitPreview, otherBasisPrice, productSalesUnit, rememberUnitNames, salesQuantityDetail,
+  salesQuantityLabel, unitCount, unitName,
 } = units;
 
 // The Dutch answer of GET /api/products/unit-names (backend unit-names.csv).
@@ -16,6 +16,8 @@ const NAMES: UnitName[] = [
   { key: 'stuk', one: 'stuk', other: 'stuks', per: 'per stuk', short: 'st.' },
   { key: 'bowl', one: 'bowl', other: 'bowls', per: 'per bowl', short: 'bowls' },
   { key: 'stolp', one: 'stolp', other: 'stolpen', per: 'per stolp', short: 'stolpen' },
+  { key: 'diamant', one: 'diamant', other: 'diamanten', per: 'per diamant', short: 'diamanten' },
+  { key: 'roos', one: 'roos', other: 'rozen', per: 'per roos', short: 'rozen' },
 ];
 
 function product(packaging: Partial<Packaging> = {}, piecesPerCarton: number | null = null): Product {
@@ -50,7 +52,7 @@ test('a piece-basis product speaks its own unit once the names are known', () =>
     ['bowl', 'bowls', 'bowls', 'Prijs per bowl', 'Bowls'],
   );
   assert.equal(unit.isDisplay, false);
-  assert.deepEqual(primarySalesPrice(bowl(), 3.95), { price: 3.95, label: 'Prijs per bowl', singular: 'bowl' });
+  assert.equal(otherBasisPrice(bowl(), 3.95), null, 'no display, no other side');
   // Stuk keeps the exact labels of before.
   assert.equal(productSalesUnit(product()).priceLabel, 'Stukprijs');
   assert.equal(productSalesUnit(product({ unitKey: 'stuk' })).plural, 'stuks');
@@ -79,15 +81,55 @@ test('a display basis keeps display wording and names the pieces inside with the
   assert.equal(salesQuantityDetail(bowl(), 12), null);
 });
 
-test('the per-piece equivalent uses the unit phrase', () => {
+// Intl puts a no-break space after the euro sign.
+const plain = (text: string) => text.replace(/\u00a0/g, ' ');
+const diamonds = (salesUnit: 'PIECE' | 'DISPLAY' = 'PIECE') =>
+  product({ kind: 'DISPLAY', piecesPerUnit: 12, salesUnit, unitKey: 'diamant' });
+const stemRoses = () => product({ kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'roos' });
+
+test('the word under a price names what it is for; the display side goes below it', () => {
   rememberUnitNames(NAMES);
-  assert.deepEqual(secondarySalesPrice(bowlDisplay('DISPLAY'), 31.6),
-    { price: 3.95, label: 'per bowl', piecesPerDisplay: 8, perDisplay: '8 bowls/display' });
-  assert.deepEqual(secondarySalesPrice(bowlDisplay('PIECE'), 3.95),
-    { price: 3.95, label: 'per bowl', piecesPerDisplay: 8, perDisplay: '8 bowls/display' });
-  assert.equal(secondarySalesPrice(bowl(), 3.95), null);
-  // A set stays the primary figure for display-packaged products.
-  assert.deepEqual(primarySalesPrice(bowlDisplay('PIECE'), 3.95), { price: 31.6, label: 'Setprijs', singular: 'set' });
+  // DIAM-D-RD: € 2,95 per diamant in a display of 12 (the "2.95 per set" bug of 2026-10-15).
+  assert.equal(productSalesUnit(diamonds()).singular, 'diamant');
+  const diam = otherBasisPrice(diamonds(), 2.95)!;
+  assert.deepEqual({ ...diam, price: Math.round(diam.price * 100) / 100, text: plain(diam.text) },
+    { sign: '=', price: 35.4, unit: 'display', per: 'per display van 12', text: '= € 35,40 per display van 12' });
+  // 12 Steelrozen: € 49,95 per display of 12 roses does not split to the cent.
+  assert.equal(productSalesUnit(stemRoses()).singular, 'display');
+  const roses = otherBasisPrice(stemRoses(), 49.95)!;
+  assert.deepEqual({ ...roses, text: plain(roses.text) },
+    { sign: '≈', price: 49.95 / 12, unit: 'roos', per: 'per roos', text: '≈ € 4,16 per roos' });
+  // "≈" only when the split is not exact: € 31,60 over 8 bowls is € 3,95.
+  assert.equal(plain(otherBasisPrice(bowlDisplay('DISPLAY'), 31.6)!.text), '= € 3,95 per bowl');
+  assert.equal(plain(otherBasisPrice(bowlDisplay('PIECE'), 3.95)!.text), '= € 31,60 per display van 8');
+  // A landed cost of four decimals times 12 is a rounded figure.
+  assert.equal(plain(otherBasisPrice(diamonds(), 0.5634)!.text), '≈ € 6,76 per display van 12');
+});
+
+test('no other side without a display of two or more, or without a price', () => {
+  rememberUnitNames(NAMES);
+  assert.equal(otherBasisPrice(bowl(), 3.95), null);
+  assert.equal(otherBasisPrice(product({ kind: 'GIFT_BOX', piecesPerUnit: 1, unitKey: 'bowl' }), 3.95), null);
+  assert.equal(otherBasisPrice(bowl({ kind: 'DISPLAY', piecesPerUnit: 1 }), 3.95), null);
+  assert.equal(otherBasisPrice(bowl({ kind: 'DISPLAY', piecesPerUnit: null }), 3.95), null);
+  for (const price of [0, -1, null, undefined, Number.NaN]) assert.equal(otherBasisPrice(diamonds(), price), null, String(price));
+  assert.equal(otherBasisPrice(null, 2.95), null);
+});
+
+test('no sales or product price helper speaks of a "set" any more', () => {
+  rememberUnitNames(NAMES);
+  for (const item of [diamonds(), diamonds('DISPLAY'), stemRoses(), bowlDisplay('PIECE'), bowlDisplay('DISPLAY'), bowl(), product()]) {
+    const unit = productSalesUnit(item);
+    const words = [
+      ...Object.values(unit).filter((value) => typeof value === 'string'),
+      JSON.stringify(otherBasisPrice(item, 2.95)),
+      salesQuantityDetail(item, 24) ?? '',
+      customerUnitPreview(item, 2.95, 12),
+    ].join(' | ');
+    assert.doesNotMatch(words, /\bsets?\b|setprijs/i, words);
+  }
+  assert.equal('primarySalesPrice' in units, false);
+  assert.equal('secondarySalesPrice' in units, false);
 });
 
 test('summed quantities name the shared unit, "stuks" for a mix and neutral units with displays', () => {
@@ -109,7 +151,6 @@ test('counts pick the singular only for one', () => {
 
 test('previews what the customer reads next to the price', () => {
   rememberUnitNames(NAMES);
-  // Intl puts a no-break space after the euro sign.
   const preview = (...args: Parameters<typeof customerUnitPreview>) => customerUnitPreview(...args).replace(/\u00a0/g, ' ');
   assert.equal(preview(product({ unitKey: 'stolp' }), 8.95, 10),
     'Klant leest: € 8,95 per stolp · 10 stolpen per doos');

@@ -15,6 +15,7 @@ import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { Icon } from '../../shared/icon';
 import { describePublicationIssues } from './publication-issues';
 import { salesPhotoUrl } from '../../shared/sales-photo';
+import { productSalesUnit } from './product-sales-unit';
 import { PhotoExportSheet } from './photo-export-sheet';
 
 /**
@@ -317,6 +318,7 @@ interface ProductSwipe {
                       <span>Catalogusprijs</span>
                       @if (salesPrice(group.lead); as price) {
                         <strong class="num">{{ price | eur }}@if (group.priceVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
+                        <small>per {{ salesUnit(group.lead).singular }}</small>
                       } @else {
                         <strong class="muted">—</strong>
                       }
@@ -419,6 +421,7 @@ interface ProductSwipe {
             <span>Catalogusprijs</span>
             @if (salesPrice(product); as price) {
               <strong class="num">{{ price | eur }}</strong>
+              <small>per {{ salesUnit(product).singular }}</small>
             } @else {
               <strong class="muted">—</strong>
             }
@@ -597,6 +600,7 @@ interface ProductSwipe {
     .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
       letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
     .product-row__prices strong { font-size: 11.5px; line-height: 1.3; }
+    .product-row__prices small { overflow: hidden; color: var(--muted); font-size: 9.5px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
     .swipe--dragging { user-select: none; }
     .swipe--dragging .swipe__row {
       transform: translateX(var(--swipe-offset, 0px)); transition: none; cursor: grabbing;
@@ -674,6 +678,8 @@ export class ProductList {
   private readonly ui = inject(Ui);
   /** Thumbnails follow the Hoofdfoto rule, the same photo quotes and invoices print. */
   readonly salesPhotoUrl = salesPhotoUrl;
+  /** What each price is for: "per diamant", "per display". */
+  readonly salesUnit = productSalesUnit;
 
   readonly query = signal('');
   readonly categoryFilter = signal<number | null>(null);
@@ -723,6 +729,8 @@ export class ProductList {
       .map((family) => [family.id!, family])));
 
   constructor() {
+    /* Names the unit under each price ("per diamant"); "per stuk" until it arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
     void this.load();
   }
 

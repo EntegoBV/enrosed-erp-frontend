@@ -1,4 +1,4 @@
-import { capitalize, customerUnitPreview, DEFAULT_UNIT_KEY, productSalesUnit, secondarySalesPrice, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
+import { capitalize, customerUnitPreview, DEFAULT_UNIT_KEY, otherBasisPrice, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -199,7 +199,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           }
         }
         <div class="product-mobile-metrics">
-          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
           <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></span><span aria-hidden="true">›</span></button>
         </div>
       </section>
@@ -268,7 +268,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <small class="erp-workspace__fact-note">{{ isNew() ? 'na aanmaken' : 'over alle locaties' }}</small>
             </button>
             <button class="erp-workspace__fact" type="button" (click)="showTab('sales')">
-              <span class="erp-workspace__fact-label">Verkoopprijs</span>
+              <span class="erp-workspace__fact-label">Verkoopprijs per {{ salesUnit(draft()).singular }}</span>
               <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
               <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
             </button>
@@ -975,9 +975,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <span class="price-preview__label">Catalogusprijs per {{ salesUnit(draft()).singular }}</span>
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
-              @if (secondaryPrice(draft(), salesPrice()); as equivalent) {
-                <small>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</small>
-              }
+              @if (otherPrice(draft(), salesPrice()); as other) { <small>{{ other.text }}</small> }
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
@@ -1371,7 +1369,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per {{ salesUnit(draft()).singular }} }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
             <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
             <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
-            <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
+            <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs per {{ salesUnit(draft()).singular }} <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
           </div>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('sales')">Prijs aanpassen ›</button>
         </section>
@@ -1898,7 +1896,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 })
 export class ProductEditor implements OnDestroy {
   readonly salesUnit = productSalesUnit;
-  readonly secondaryPrice = secondarySalesPrice;
+  readonly otherPrice = otherBasisPrice;
   readonly quantityDetail = salesQuantityDetail;
   readonly capitalize = capitalize;
   /** The selected editor section, shared by desktop navigation and the mobile picker. */

@@ -543,13 +543,15 @@ interface JourneyStep {
                             }
                             @if (creditPriceHint(line.productId); as hint) { <div class="desk-line-cap danger-text" role="alert">{{ hint }}</div> }
                           } @else {
-                            @if (linePrimaryPrice(line); as primary) { <b>{{ primary.price | eur: 2 }}</b> } @else { <b>{{ line.unitPrice | eur: 2 }}</b> }
+                            <b>{{ line.unitPrice | eur: 2 }}</b>
                             @if (line.discountPct) { <small class="desk-price__disc">−{{ line.discountPct | pct: 1 }} korting</small> }
                           }
                           @if (line.tierPercent) { <small>staffel −{{ line.tierPercent | pct: 1 }}</small> }
-                          @if (linePrimaryPrice(line); as primary) { <small>per {{ primary.singular }}</small> } @else { <small>per {{ lineUnit(line.productId).singular }}</small> }
-                          @if (lineSecondaryPrice(line); as equivalent) {
-                            <small class="desk-unit-equivalent">{{ equivalent.price | eur: 2 }} {{ equivalent.label }}<br />vóór korting</small>
+                          <!-- The word under a price names what that price is for; the
+                               display side of it goes on the line below. -->
+                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          @if (lineOtherPrice(line); as other) {
+                            <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
                           }
                         </td>
                         <td class="c-disc num">
@@ -1349,7 +1351,7 @@ interface JourneyStep {
     .desk-table td.c-act{padding-left:0;padding-right:8px;text-align:right}
     .c-money--total b{color:var(--rose-dark);font-weight:750}
     .c-money small,.c-price small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
-    .c-qty small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}.c-price .desk-unit-equivalent{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+    .c-qty small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px}.c-price .desk-unit-equivalent{white-space:normal;overflow-wrap:anywhere;line-height:1.4;color:var(--rose-dark);font-weight:650}
     .c-qty b,.c-price>b,.c-disc>b{display:block;font-size:13.5px;font-variant-numeric:tabular-nums}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}

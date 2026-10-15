@@ -129,7 +129,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               @if (displayPrice(); as price) {
                 <strong>{{ price | eur: 2 }}</strong>
                 <span>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs' : '+ ' + (product.markupPct | num) + ' % op de kostprijs' }}</span>
-                @if (secondaryPrice(product, price); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }}</span> }
+                @if (otherPrice(product, price); as other) { <span>{{ other.text }}</span> }
               } @else {
                 <strong>—</strong>
                 <span>nog geen prijs</span>
@@ -305,7 +305,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>{{ displayPrice() ? 'wat de klant betaalt' : 'nog geen prijs' }}</span>
               <span class="pd-flow__note">{{ orderStepSentence(product) }}</span>
-              @if (secondaryPrice(product, displayPrice()); as equivalent) { <span>{{ equivalent.price | eur: 2 }} {{ equivalent.label }} · {{ equivalent.perDisplay }}</span> }
+              @if (otherPrice(product, displayPrice()); as other) { <span>{{ other.text }}</span> }
             </div>
             <i aria-hidden="true">=</i>
             <div class="pd-flow__step pd-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
