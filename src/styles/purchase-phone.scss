@@ -20,7 +20,7 @@
 .mpo-pane[hidden]{display:none!important}
 /* scrollIntoView lands under the nav and the tabs */
 :is(app-purchase-view,app-purchase-editor) [id^="purchase-"]{scroll-margin-top:calc(var(--safe-t) + var(--ios-nav-h) + var(--mpo-tabs-h))}
-:is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;text-overflow:clip;white-space:normal}
+:is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
 
 /* ---- summary card ([hero] of app-ios-nav) */
 .mpo-summary{margin:2px 16px 12px;padding:16px;border-radius:var(--ios-radius);background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}
@@ -67,7 +67,7 @@
 .mpo-head__copy p{margin:1px 0 0;color:var(--muted);font-size:13px;line-height:1.35}
 .mpo-head>.wk-pill,.mpo-head>.ios-capsule{flex:none}
 .mpo-attention{align-items:flex-start}
-.mpo-attention__count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:12px;font-weight:800;line-height:1}
+.mpo-attention>.mpo-attention__count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:12px;font-weight:800;line-height:1}
 .mpo-attention__body{display:grid;gap:2px}
 .mpo-attention__body b{color:var(--warn);font-size:12px;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
 .mpo-fill__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -80,7 +80,7 @@
 .mpo-fill__state{font-weight:650}.mpo-fill__state--ok{color:var(--ok)}.mpo-fill__state--tight{color:var(--warn)}.mpo-fill__state--danger{color:var(--danger)}
 .mpo-rate{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px;margin:0 16px 14px;color:var(--muted);font-size:13px}
 .mpo-rate>span{min-width:0;font-variant-numeric:tabular-nums}
-.mpo-rate app-segmented{flex:none;width:180px;margin-left:auto}
+.mpo-rate app-segmented{flex:none;width:164px;margin-left:auto}
 
 /* ---- rows with a field on the right */
 .mpo-field-row{gap:10px}
@@ -113,6 +113,46 @@
 :is(app-purchase-view,app-purchase-editor) .mpo-host+.mpo-host{margin-top:16px}
 :is(app-purchase-view,app-purchase-editor) .mpo-partner .po-partner,
 :is(app-purchase-view,app-purchase-editor) .mpo-partner .po-partner--on{margin:0 16px 22px;border:0;border-radius:var(--ios-radius);background:var(--surface)}
+
+/* ---- list values: money never wraps, names and long values wrap instead of being cut */
+.mpo-amount{color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mpo-accent{color:var(--rose-dark)}
+.mpo-value{color:var(--ink);overflow-wrap:anywhere;text-align:right;white-space:normal}
+.mpo-link{color:var(--rose-dark)}
+.mpo-thumb--empty{display:grid;place-items:center;color:var(--muted);font-size:18px}
+.mpo-loading{display:grid;gap:12px;padding:8px 16px}
+
+/* ---- read view: Overzicht */
+.mpo-next h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.mpo-next p{margin:4px 0 0;color:var(--muted);font-size:14px;line-height:1.4}
+.mpo-next{margin-bottom:10px}
+.mpo-receipt__figures{margin:10px 16px 0}
+/* Lading and Volume side by side, the third figure (Vulling, Prijsbasis or Productregels) across: three columns cut a volume at 390px. */
+.mpo-figures>:nth-child(3){grid-column:1/-1}
+
+/* ---- read view: Producten as models with their variants */
+.mpo-model .ios-cell__trail,.mpo-variant .ios-cell__trail{max-width:42%}
+.mpo-model__kind{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;white-space:normal}
+.mpo-swatches{display:inline-flex;flex-wrap:wrap;align-items:center;gap:3px}
+.mpo-swatches small{color:var(--muted);font-size:11px}
+.mpo-variants{background:var(--surface)}
+.mpo-variant{padding-left:30px}
+.mpo-variants>.mpo-variant+.mpo-variant::before{content:'';position:absolute;top:0;right:0;left:76px;height:.5px;background:var(--ios-sep)}
+.mpo-variant .ios-cell__meta{white-space:normal}
+
+/* ---- read view: Dossier */
+.mpo-diary{padding:14px 16px}
+.mpo-report .ios-cell__title .wk-pill{margin-left:4px}
+.mpo-report__note{color:var(--ink-2)}
+
+/* ---- sheets: grouped rows on the kit's sheet background */
+.mpo-sheet{display:grid;gap:14px;min-width:0}
+.mpo-sheet>.ios-section,.mpo-sheet>.ios-section__foot{margin-bottom:0}
+.mpo-sheet>.ios-section__foot{margin-top:-6px}
+.mpo-sheet__seg{margin:0 16px 10px}
+
+/* ---- read view: the dock above the ERP tab bar */
+.mpo-dock .mpo-dock__edit{display:inline-flex;flex:none;align-items:center;gap:6px;padding-inline:16px}
 
 /* ---- toasts clear the dock and the save bar */
 body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 96px)}

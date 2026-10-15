@@ -128,6 +128,8 @@ test('the payment tile speaks the Betalingen headline, case by case', () => {
   assert.deepEqual(tile(summary('due')), { label: 'Nu te betalen', valueEur: 29_889.3, sub: '70% bij vertrek · Leverancier', tone: 'warn' });
   assert.deepEqual(tile(summary('due'), 'refreshing').label, 'Nu te betalen');
   assert.equal(tile(summary('due', { next: null })).sub, '');
+  assert.equal(tile(summary('due', { next: { payee: 'SEPARATE', due: null, label: 'Inspectie & andere kosten', amountEur: 300, now: true, when: 'nu' } })).sub,
+    'Inspectie & andere kosten', 'a payee without terms is named once');
   assert.deepEqual(tile(summary('later', { next: { payee: 'LOGISTICS', due: null, label: 'Douane & transport', amountEur: 4_000, now: false, when: 'bij aankomst' } })),
     { label: 'Niets nu te betalen', valueEur: 36_323.7, sub: 'Volgende: Douane & transport · bij aankomst', tone: 'neutral' });
   assert.equal(tile(summary('later', { next: null })).sub, '');

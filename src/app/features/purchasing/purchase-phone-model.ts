@@ -142,7 +142,8 @@ export function paymentTile(summary: LedgerSummary | null | undefined, state: Ph
   const next = summary.next;
   switch (summary.headline.kind) {
     case 'due':
-      return { label: 'Nu te betalen', valueEur: summary.dueNowEur, sub: next ? `${next.label} · ${payeeLabel[next.payee]}` : '', tone: 'warn' };
+      // The payee only beside a supplier term, as the headline has it: other payees are their own label.
+      return { label: 'Nu te betalen', valueEur: summary.dueNowEur, sub: next ? next.label + (next.due ? ` · ${payeeLabel[next.payee]}` : '') : '', tone: 'warn' };
     case 'later':
       return { label: 'Niets nu te betalen', valueEur: summary.openEur, sub: next ? `Volgende: ${next.label} · ${next.when}` : '', tone: 'neutral' };
     case 'review': {

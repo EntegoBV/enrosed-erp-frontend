@@ -34,6 +34,44 @@ test('the step confirmation and the Nacalculatie glance parse and only take inpu
   assert.doesNotMatch(glance, /begroot/i);
 });
 
+test('the read view: one card over five panes, every section once, the Nacalculatie whole on Kosten', async () => {
+  const source = await read('app/features/purchasing/purchase-view.ts');
+  const template = templateOf(source);
+  assert.equal(parseTemplate(template, 'purchase-view.html').errors, null);
+  for (const id of ['purchase-overview', 'purchase-receipt-section', 'purchase-actions-section', 'purchase-products-section', 'purchase-capacity-section',
+    'purchase-costs-section', 'purchase-result-section', 'purchase-payments-section', 'purchase-partner-section', 'purchase-files-section',
+    'purchase-reports-section']) {
+    assert.ok(template.includes(`id="${id}"`), id);
+  }
+  for (const tag of ['<app-purchase-nacalc-overview mode="read"', '<app-purchase-payment-overview mode="read"', '<app-purchase-partner-payments',
+    '<app-purchase-partner-panel', '<app-purchase-nacalc-glance', '<app-purchase-step-confirm-sheet']) {
+    assert.equal(count(template, tag), 1, tag);
+  }
+  const at = (marker: string) => { const index = template.indexOf(marker); assert.ok(index >= 0, marker); return index; };
+  const kosten = at('id="mpo-pane-kosten"');
+  const nacalc = at('<app-purchase-nacalc-overview mode="read"');
+  assert.ok(kosten < nacalc && nacalc < at('id="mpo-pane-betalingen"'), 'the Nacalculatie sits in the Kosten pane');
+  assert.doesNotMatch(template.slice(kosten, nacalc), /<details/, 'never collapsed');
+  const glance = at('<app-purchase-nacalc-glance');
+  assert.ok(at('id="mpo-pane-overzicht"') < glance && glance < at('id="mpo-pane-producten"'), 'the headline sits on Overzicht');
+  assert.ok(at('<app-purchase-payment-overview mode="read"') > at('id="mpo-pane-betalingen"') && at('<app-purchase-payment-overview mode="read"') < at('id="mpo-pane-dossier"'));
+  assert.match(template, /semantics="tabs"/);
+  assert.match(template, /class="ios-seg--stacked"/);
+  assert.match(template, /\[customLarge\]="true"/);
+  assert.match(template, /erp-workspace__mobile-actions[\s\S]*openStep\(/);
+  for (const pane of ['overzicht', 'producten', 'kosten', 'betalingen', 'dossier']) {
+    assert.match(template, new RegExp(`id="mpo-pane-${pane}" role="tabpanel" aria-label="[A-Z][a-z]+" \\[hidden\\]="activeTab\\(\\) !== '${pane}'"`), pane);
+  }
+  assert.doesNotMatch(source, /journey-hero|jhero-|#27211f|#151210|#ffd57a|workflow-nav|trackWorkspaceSection/);
+  assert.doesNotMatch(source, /begroot/i);
+  assert.doesNotMatch(template, /desktop\.active\(\)/, 'phone only: the desk is PurchaseDesk');
+  // Sheets and menus render at host level: after the phone frame, never in the nav, the tabs or a pane.
+  const frameEnd = at('<!-- Sheets and menus at host level');
+  for (const sheet of ['<app-context-menu', '<app-purchase-step-confirm-sheet', '<app-sheet title="Productregel"', '<app-purchase-quote-sheet', '<app-purchase-pdf-sheet']) {
+    assert.ok(at(sheet) > frameEnd, sheet);
+  }
+});
+
 test('the kit gains the stacked segments and the nav its [hero] slot', async () => {
   assert.match(await read('styles/workspace-kit.scss'), /\.ios-seg\.ios-seg--stacked\{/);
   const nav = await read('app/shared/ios-nav.ts');
