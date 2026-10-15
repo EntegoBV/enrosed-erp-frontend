@@ -28,9 +28,10 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
         <ul class="ac-rows">
           @for (row of p.rows; track row.productId) {
             <li class="ac-row" [attr.data-state]="row.state">
-              <b class="ac-row__name">{{ row.name }}</b>
+              <b class="ac-row__name">{{ row.name }}@if (row.variant) {<span class="ac-row__variant"> · {{ row.variant }}</span>}</b>
               @if (row.product) {
-                <button class="linklike ac-row__history" type="button" (click)="historyFor.set(row)">Historiek ›</button>
+                <button class="linklike ac-row__history" type="button" [attr.aria-label]="'Kostprijshistoriek van ' + row.label"
+                        (click)="historyFor.set(row)">Historiek ›</button>
               }
               <small class="ac-row__basis">{{ row.quantity }} · kostprijs {{ row.per }}</small>
               @if (row.state === 'skipped') {
@@ -94,6 +95,7 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     .ac-row[data-state='unchanged'], .ac-row[data-state='skipped'] { background: var(--surface-2); }
     .ac-row[data-state='skipped'] .ac-row__name { color: var(--muted); }
     .ac-row__name { grid-area: name; min-width: 0; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+    .ac-row__variant { color: var(--rose-dark); font-weight: 650; }
     .ac-row__history { grid-area: link; white-space: nowrap; }
     .ac-row__basis { grid-area: basis; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
     .ac-row__skip { grid-area: figs; margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-style: italic; }

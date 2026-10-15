@@ -1,5 +1,6 @@
 import { costQuantity, costWords, otherSideCost, productCostBasis, type OtherSideCost } from '../products/product-cost-basis';
 import { containerName } from './container-name';
+import { stripColour, variantOf } from './purchase-desk-format';
 import type { LandedCostLine, Product, PurchaseOrder } from '../../core/api/models';
 
 /*
@@ -27,7 +28,12 @@ export type ApplyCostState =
 
 export interface ApplyCostRow {
   productId: number;
+  /** The series name, without its colour. */
   name: string;
+  /** "Rood · 30 cm": what tells this variant from the others of its series, which often get the same cost. */
+  variant: string | null;
+  /** Name and variant in one, for a button's accessible name. */
+  label: string;
   /** "500 displays", "2.000 diamanten". */
   quantity: string;
   /** "per display van 12", "per diamant", "per stuk". */
@@ -96,9 +102,14 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
       state = deltaEur > 0 ? 'up' : 'down';
     }
   }
+  /* The catalogue name is the series' name; the line's name carries the colour, but not the size. */
+  const base = product?.name?.trim();
+  const name = base ? stripColour(base, product?.colour) : line.productName;
+  const variant = product ? variantOf(product) : null;
   return {
     productId: line.productId,
-    name: product?.name?.trim() || line.productName,
+    name, variant,
+    label: variant ? `${name} · ${variant}` : name,
     quantity: costQuantity(basis, Math.max(0, line.quantity)),
     per: costWords(basis).per,
     currentEur, currentSource, newEur,

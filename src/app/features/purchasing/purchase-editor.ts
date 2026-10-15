@@ -4539,7 +4539,11 @@ export class PurchaseEditor {
     ++this.previewVersion;
     ++this.documentLoadVersion;
     this.documents.set(null);
-    if (this.view()?.order.id !== orderId) this.view.set(null);
+    if (this.view()?.order.id !== orderId) {
+      this.view.set(null);
+      /* The Kostprijzen toepassen sheet was for the order being left. */
+      this.applyFor.set(null);
+    }
     this.paymentStateError.set(null);
     this.paymentStateLoading.set(false);
     this.payments.set(null);
@@ -5124,12 +5128,17 @@ export class PurchaseEditor {
   });
 
   /* ---- Kostprijzen toepassen: the sheet shows every product's cost now and next first */
-  readonly applyOpen = signal(false);
+  /**
+   * The order the sheet was opened for. The desk keeps this screen when it
+   * moves to another order (a container link in the history, Back), so the
+   * sheet belongs to that one order and never comes back for another.
+   */
+  readonly applyFor = signal<number | null>(null);
   readonly applyBusy = signal(false);
   /** The rows of the saved calculation against the products as they stand; live while the sheet is open. */
   readonly applyPlan = computed(() => {
     const data = this.view();
-    return this.applyOpen() && data ? applyCostsPlan(data.order, data.costing.lines, this.products()) : null;
+    return data && data.order.id === this.applyFor() ? applyCostsPlan(data.order, data.costing.lines, this.products()) : null;
   });
 
   /**
@@ -5139,20 +5148,21 @@ export class PurchaseEditor {
    */
   async apply(): Promise<void> {
     const data = this.view();
-    if (!data || this.applyOpen() || this.applyBusy() || this.saving()) return;
+    if (!data || this.applyFor() === data.order.id || this.applyBusy() || this.saving()) return;
     if (this.dirty()) {
       const saved = await this.save();
-      if (!saved) return;
+      if (!saved || this.view()?.order.id !== data.order.id) return;
     }
     void this.catalog.unitNames().catch(() => undefined);
-    this.applyOpen.set(true);
+    this.applyFor.set(data.order.id);
     try {
-      this.products.set(await this.catalog.products(data.order.supplierId));
+      const products = await this.catalog.products(data.order.supplierId);
+      if (this.view()?.order.id === data.order.id) this.products.set(products);
     } catch { /* the list from opening the order still names every product */ }
   }
 
   closeApply(): void {
-    if (!this.applyBusy()) this.applyOpen.set(false);
+    if (!this.applyBusy()) this.applyFor.set(null);
   }
 
   async confirmApply(): Promise<void> {
@@ -5168,10 +5178,11 @@ export class PurchaseEditor {
     } finally {
       this.applyBusy.set(false);
     }
-    this.applyOpen.set(false);
+    this.applyFor.set(null);
     this.ui.toast(applyCostsToast(plan));
     try {
-      this.products.set(await this.catalog.products(data.order.supplierId));
+      const products = await this.catalog.products(data.order.supplierId);
+      if (this.view()?.order.id === data.order.id) this.products.set(products);
     } catch { /* the costs are applied; the list catches up on the next load */ }
     await this.reloadOrderQuietly();
   }

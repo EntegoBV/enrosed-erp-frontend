@@ -58,7 +58,7 @@ function setup() {
     paymentRefreshVersion: 0, previewVersion: 0,
     paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
     families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
-    stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''),
+    stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''), applyFor: signal(null),
     loadPayments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
     sourcing: {
       documents: (id: number) => { calls.push(`GET documents ${id}`); return api.documents(id); },

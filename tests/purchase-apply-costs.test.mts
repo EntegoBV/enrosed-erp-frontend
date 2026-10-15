@@ -8,6 +8,7 @@ import { parseTemplate } from '@angular/compiler';
 import type { LandedCostLine, Product, PurchaseOrder, PurchaseOrderView, UnitName } from '../src/app/core/api/models.ts';
 import * as units from '../src/app/features/products/product-sales-unit.ts';
 import * as containers from '../src/app/features/purchasing/container-name.ts';
+import * as geo from '../src/app/core/api/geo.ts';
 
 // purchase-apply-costs and product-cost-basis import their siblings without an
 // extension, which node cannot resolve; run them through the TypeScript
@@ -21,8 +22,9 @@ async function load(path: string, modules: Record<string, unknown>): Promise<Rec
   return loaded.exports;
 }
 const basisModule = await load('../src/app/features/products/product-cost-basis.ts', { './product-sales-unit': units });
+const deskFormat = await load('../src/app/features/purchasing/purchase-desk-format.ts', { '../../core/api/geo': geo });
 const applyModule = await load('../src/app/features/purchasing/purchase-apply-costs.ts', {
-  '../products/product-cost-basis': basisModule, './container-name': containers,
+  '../products/product-cost-basis': basisModule, './container-name': containers, './purchase-desk-format': deskFormat,
 });
 const apply: typeof import('../src/app/features/purchasing/purchase-apply-costs.ts') = applyModule as any;
 /** The modules run in their own realm; compare their objects as plain data. */
@@ -124,6 +126,28 @@ test('equality holds at 4 decimals; a cost of 0 before has no percentage; an unk
   assert.equal(own.currentSource, 'PO-2026-014');
 });
 
+test('colour variants of one series read apart: the series name, then colour and size', () => {
+  const rood = { ...product(311, 'Diamantroos met display en geur', 0.56, 'PO-2026-002'), colour: 'Rood', variantSize: null };
+  const wit = { ...product(312, 'Diamantroos met display en geur', 0.56, 'PO-2026-002'), colour: 'Wit', variantSize: '30 cm' };
+  /* A name that still carries its colour says it once. */
+  const roze = { ...product(313, 'Diamantroos met display en geur - Roze', 0.56, 'PO-2026-002'), colour: 'Roze', variantSize: null };
+  const plan = apply.applyCostsPlan(ORDER, [
+    line(311, 100, 0.6, 'Diamantroos met display en geur - Rood'), line(312, 100, 0.6, 'Diamantroos met display en geur - Wit'),
+    line(313, 100, 0.6, 'Diamantroos met display en geur - Roze'), line(999, 10, 1.5, 'Ander product - Blauw'),
+  ], [rood, wit, roze]);
+  assert.deepEqual(plain(plan.rows.map((row) => [row.name, row.variant])), [
+    ['Diamantroos met display en geur', 'Rood'],
+    ['Diamantroos met display en geur', 'Wit · 30 cm'],
+    ['Diamantroos met display en geur', 'Roze'],
+    ['Ander product - Blauw', null],
+  ]);
+  assert.deepEqual(plain(plan.rows.map((row) => row.label)), [
+    'Diamantroos met display en geur · Rood', 'Diamantroos met display en geur · Wit · 30 cm',
+    'Diamantroos met display en geur · Roze', 'Ander product - Blauw',
+  ]);
+  assert.equal(new Set(plan.rows.map((row) => row.label)).size, plan.rows.length, 'no two rows read alike');
+});
+
 /* ---- the editor: the real members, transport and toasts mocked -------- */
 
 /** The class as plain JavaScript, decorator and imports dropped; `names` keeps only those members. */
@@ -141,9 +165,9 @@ function isolatedClass(text: string, file: string, className: string, names: Rea
 }
 
 const editorSource = await readFile(new URL('../src/app/features/purchasing/purchase-editor.ts', import.meta.url), 'utf8');
-const editorJavascript = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['applyOpen', 'applyBusy',
+const editorJavascript = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['applyFor', 'applyBusy',
   'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save', 'savedOrder', 'saving', 'deletingOrder',
-  'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products']));
+  'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products', 'load']));
 
 function view(order: Partial<PurchaseOrder> = {}): PurchaseOrderView {
   return { order: { id: 14, number: 'PO-2026-014', alias: 'container/2026/014', supplierId: 7, status: 'ONTVANGEN', notes: '', ...order },
@@ -157,6 +181,7 @@ function setup(start = view()) {
   let failSave = false;
   let catalogue = PRODUCTS;
   let releaseApply: (() => void) | null = null;
+  let routeId = start.order.id;
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(editorJavascript, { exports, signal, computed, clearTimeout, applyCostsPlan: apply.applyCostsPlan,
     applyCostsToast: apply.applyCostsToast,
@@ -164,6 +189,11 @@ function setup(start = view()) {
   const editor = new exports['PurchaseEditor']();
   Object.assign(editor, {
     view: signal(start),
+    /* What load() touches besides the order: the route id and the side panels, all quiet here. */
+    id: () => String(routeId),
+    documents: signal(null), paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
+    families: signal([]), categories: signal([]), freightRates: signal([]), stockLocations: signal([]), supplier: signal(null),
+    loadPayments: async () => {}, loadDocuments: async () => {}, loadBankLines: async () => {}, loadPartnerDocs: async () => {},
     negativeExtra: () => false,
     ui: { toast: (text: string, kind?: string) => toasts.push([text, kind]) },
     sourcing: {
@@ -179,17 +209,26 @@ function setup(start = view()) {
         catalogue = PRODUCTS.map((p) => ({ ...p, landedCostSource: 'PO-2026-014' }));
         return { lines: [] };
       },
-      purchaseOrder: async () => { calls.push('reload'); return view(); },
+      purchaseOrder: async (id: number) => {
+        calls.push('reload');
+        return view(id === 14 ? {} : { id, number: `PO-2026-0${id}`, alias: null });
+      },
+      suppliers: async () => [],
+      freightRates: async () => [],
     },
     catalog: {
       products: async () => { calls.push('products'); return catalogue; },
       unitNames: async () => { calls.push('unit-names'); return []; },
+      productFamilies: async () => [],
+      categories: async () => [],
+      stockLocations: async () => [],
     },
   });
   editor.savedOrder.set(JSON.stringify(start.order));
   return { editor, calls, toasts,
     failNextApply: (error: Error) => { failApply = error; },
     failNextSave: () => { failSave = true; },
+    routeTo: (id: number) => { routeId = id; },
     release: () => { const go = releaseApply; releaseApply = () => {}; go?.(); } };
 }
 
@@ -240,6 +279,30 @@ test('a failed apply keeps the sheet open and says so; closing waits while busy'
   assert.equal(editor.applyPlan(), null);
 });
 
+test('the sheet belongs to the order it was opened for: moving to another order never reopens it there', async () => {
+  const { editor, routeTo } = setup();
+  await editor.apply();
+  assert.ok(editor.applyPlan(), 'the sheet is open');
+  /* The desk keeps the screen and loads the other order: a container link in the history, or Back. */
+  routeTo(15);
+  await editor.load(15);
+  assert.equal(editor.view().order.id, 15);
+  assert.equal(editor.applyPlan(), null, 'no sheet for a container nobody chose to apply');
+  routeTo(14);
+  await editor.load(14);
+  assert.equal(editor.applyPlan(), null, 'nor on the way back');
+  /* Another order in view without a load: still no sheet for it. */
+  await editor.apply();
+  assert.ok(editor.applyPlan());
+  editor.view.set(view({ id: 16, number: 'PO-2026-016', alias: null }));
+  assert.equal(editor.applyPlan(), null);
+  /* Reloading the same order keeps the sheet. */
+  editor.view.set(view());
+  assert.ok(editor.applyPlan());
+  await editor.load(14);
+  assert.ok(editor.applyPlan(), 'a reload of the same order keeps it open');
+});
+
 /* ---- the templates: one host each, the sheet parses ------------------ */
 
 test('desk and phone open the sheet from their apply buttons and host it once', async () => {
@@ -261,6 +324,9 @@ test('the sheet parses, keeps the old sentence and the wording rules', async () 
   assert.match(template.replace(/\s+/g, ' '), /De berekende kostprijs \(per display of per stuk, zoals het product verkocht wordt\) wordt op de producten in de catalogus gezet en overschrijft wat daar staat\. Alle marges op verkooporders rekenen vanaf dan met deze cijfers\./);
   assert.match(template, />Annuleren</);
   assert.match(template, /Historiek ›/);
+  /* Every Historiek button says whose history it opens, with the variant. */
+  assert.match(template, /\[attr\.aria-label\]="'Kostprijshistoriek van ' \+ row\.label"/);
+  assert.match(template, /\{\{ row\.name \}\}@if \(row\.variant\) \{<span class="ac-row__variant"> · \{\{ row\.variant \}\}<\/span>\}/);
   assert.match(template, /geen wijziging/);
   assert.match(template, /niets ontvangen · blijft/);
   assert.match(template, /<app-product-cost-history-sheet \[product\]="product" \[currentOrderId\]="orderId\(\)"/);
