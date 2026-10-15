@@ -3,7 +3,6 @@ import { Router } from '@angular/router';
 import { CashChart } from '../../shared/cash-chart';
 import type { CashChartMarker, CashChartSeries } from '../../shared/cash-chart';
 import { Icon } from '../../shared/icon';
-import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { CERTAINTY_LABEL } from './cash-forecast';
 import type { ForecastItem, LikelyPaidMatch } from './cash-forecast';
@@ -22,7 +21,7 @@ import { FinanceState } from './finance-state';
 @Component({
   selector: 'app-kaslijn-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CashChart, Icon, EurPipe, Segmented],
+  imports: [CashChart, Icon, Segmented],
   template: `
     @let k = state.kaslijn();
     @if (state.desk()) {
@@ -73,7 +72,7 @@ import { FinanceState } from './finance-state';
           @if (hasReading()) {
             <div><dt>Na wat nu betaald moet worden</dt><dd>{{ eurOf(state.outlook().afterPayablesEur) }}</dd></div>
             <div><dt>Als alles betaald en ontvangen is</dt><dd>{{ eurOf(state.outlook().expectedEur) }}</dd></div>
-          } @else { <div><dt>Netto open positie</dt><dd>{{ state.outlook().netOpenEur | eur }}</dd></div> }
+          } @else { <div><dt>Netto open positie</dt><dd>{{ eurOf(state.outlook().netOpenEur) }}</dd></div> }
         </dl>
       </section>
     }

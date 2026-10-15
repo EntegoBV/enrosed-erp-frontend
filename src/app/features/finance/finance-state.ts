@@ -868,15 +868,23 @@ export class FinanceState {
   readonly outlookOpen = signal(false);
 
   constructor() {
-    /* ?line=<id> opens that bank transaction (it wins over ?cost=<id>), ?cost=<id> inspects that cost; leaving the section closes the inspector. */
+    /*
+     * ?line=<id> opens that bank transaction (it wins over ?cost=<id>), ?cost=<id> inspects that cost, and an arriving
+     * ?container=<id> (Containers on that container) inspects that container too, once: closing it leaves the filter;
+     * leaving the section closes the inspector.
+     */
     let section = '';
+    let container: number | null = null;
     effect(() => {
       const location = this.location();
       untracked(() => {
         const here = `${location.view}/${location.tab}/${location.view === 'bank' ? location.account : ''}`;
         const open = this.inspect();
+        const arriving = location.container !== null && location.container !== container;
+        container = location.container;
         if (location.line) { if (open?.kind !== 'line' || open.id !== location.line) this.inspect.set({ kind: 'line', id: location.line }); }
         else if (location.cost) this.inspect.set({ kind: 'cost', id: location.cost });
+        else if (arriving && location.container !== null) this.inspectItem({ kind: 'container', id: location.container });
         else if (here !== section || open?.kind === 'line' || (open?.kind === 'cost' && location.view === 'costs' && location.tab === 'company')) this.clearInspector();
         if (location.view !== 'analysis') this.analysisPushed = false;
         /* "Gezocht vanuit" belongs to the search it describes: gone once Transacties is left or searches something else. */

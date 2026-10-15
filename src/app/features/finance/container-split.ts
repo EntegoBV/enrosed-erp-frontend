@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import type { BankPurchasePaymentPart, BankStatementLine } from '../../core/api/banking-api';
 import { EurPipe } from '../../shared/pipes';
 import { FinanceState } from './finance-state';
@@ -56,6 +56,7 @@ interface Row { orderId: number; key: string; amountInput: string; }
 })
 export class ContainerSplit {
   readonly state = inject(FinanceState);
+  private readonly destroyRef = inject(DestroyRef);
   readonly line = input.required<BankStatementLine>();
   /** Where the split starts: the container of the best match, else the counterparty's name. */
   readonly hint = input<{ orderId: number | null; counterparty: string }>({ orderId: null, counterparty: '' });
@@ -140,6 +141,8 @@ export class ContainerSplit {
     const numbers = this.rows().map((row) => this.containers().find((container) => container.orderId === row.orderId)?.number ?? '#' + row.orderId);
     this.error.set('');
     const failure = await this.state.linkContainers(line, parts, numbers);
+    /* A successful link usually closes the split itself (the line is linked, the detail shows "Gekoppeld aan"): no emit then (NG0953). */
+    if (this.destroyRef.destroyed) return;
     if (failure) this.error.set(failure);
     else { this.rows.set([]); this.done.emit(); }
   }
