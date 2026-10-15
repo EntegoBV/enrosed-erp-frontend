@@ -1,4 +1,152 @@
 /* ==========================================================================
    Desk home (spec-home §3): the header, Vandaag te doen, the layout grid and
-   the Agenda card. Filled by W5; the figure blocks live in home-widgets.
+   the Agenda card. The figure blocks live in home-widgets.
+
+   Media queries only: no container query may sit above the planner sheets,
+   the bell or a menu (the kit's trap rule). Row 1 from 1280 px is Te doen
+   beside a 432 px column of Kas, Verkoop + Resultaat and Inkoop; below it
+   Te doen runs full width over a 2-column grid. The Agenda's seven days are
+   columns from 1000 px and stacked rows below. Titles and contexts of the
+   task rows and the agenda chips may cut by design (their full text is in
+   title); amounts, counts and chips never do. Kept small: the four home
+   partials share one ~30 kB budget in the initial styles.
    ========================================================================== */
+
+app-home-desk-agenda { display: block; }
+
+/* ---- page and header */
+.content.home-desk { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; max-width: 1292px; }
+.home-desk .wk-card + .wk-card { margin-top: 0; }
+.home-desk__card-title { margin: 0; font-size: 16px; font-weight: 720; }
+.home-desk__head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; }
+.home-desk__lead { flex: 1 1 440px; min-width: 0; }
+.home-desk__over { margin: 0; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.home-desk__title { margin: 2px 0 0; font-size: 30px; font-weight: 780; letter-spacing: -.03em; line-height: 1.15; }
+.home-desk__brief { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; }
+.home-desk__brief b { color: var(--ink); font-weight: 650; }
+.home-desk__krap { color: #8a4a0c; font-weight: 650; text-decoration: underline dotted; text-underline-offset: 3px; }
+.home-desk__tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.wk-pill.home-desk__status { height: auto; min-height: 24px; padding: 3px 10px; font-size: 12px; white-space: normal; }
+.home-desk__status button { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 750; text-decoration: underline; cursor: pointer; }
+
+/* ---- layout */
+.home-desk__top { display: grid; align-items: start; gap: 16px; }
+.home-desk__figs, .home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-desk__figs .home-w--kas, .home-desk__figs .home-w--inkoop { grid-column: 1 / -1; }
+.home-desk__more > app-dashboard-search-console { grid-column: auto; }
+.home-desk__more .search-summary { height: 100%; border-radius: 16px; }
+.home-desk__placeholder { min-height: 180px; }
+@media (min-width: 1280px) {
+  .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; }
+  .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ---- Vandaag te doen */
+.home-todo__head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; }
+.wk-pill.home-todo__count { background: var(--ink); color: #fff; font-size: 12px; }
+.home-todo__why { margin-left: auto; white-space: nowrap; }
+.wk-popover.home-why { width: min(440px, calc(100vw - 48px)); max-width: none; }
+.home-why__lines { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; line-height: 1.45; white-space: normal; }
+.home-todo__group { margin: 0; padding: 10px 18px 6px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.home-todo__group b { color: var(--ink-2); font-size: 11px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
+.home-todo__group b[class]::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--muted-2); }
+.home-todo__group b.is-nu::before { background: var(--danger); }
+.home-todo__group b.is-vandaag::before { background: var(--warn); }
+.home-todo__loading { padding: 4px 18px 10px; }
+.home-todo__clear { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 12px; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
+.home-todo__clear > span:last-child { grid-column: 2; color: var(--muted); font-size: 13px; }
+.home-todo__tick { display: grid; grid-row: span 2; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  background: color-mix(in srgb, var(--tone) 14%, var(--surface)); color: var(--tone); font-weight: 800; --tone: var(--ok); }
+.is-open > .home-todo__tick { --tone: var(--warn); }
+.home-todo__note { margin: 0; padding: 9px 18px; border-top: 1px solid var(--line); color: var(--warn); font-size: 12.5px; font-weight: 600; }
+.home-todo__foot { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px;
+  background: var(--surface-2); font-size: 13px; }
+.home-todo__foot > b { flex: none; font-weight: 650; }
+.home-todo__foot > span { flex: 1; min-width: 0; color: var(--muted); }
+.home-todo__all { flex: none; margin-left: auto; white-space: nowrap; }
+
+/* ---- a task row (card and the Alle sheet) */
+.home-tasks { margin: 0; padding: 0; list-style: none; }
+.home-task { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px;
+  min-height: 58px; padding: 8px 12px 8px 18px; border-top: 1px solid var(--line); }
+.home-todo__group + .home-tasks > :first-child { border-top: 0; }
+.home-task:hover { background: var(--surface-2); }
+.home-task__tile { width: 32px; height: 32px; border-radius: 9px; }
+.home-task__tick { position: relative; z-index: 1; justify-self: center; padding: 0; background: var(--surface); cursor: pointer; }
+.home-task__tick:hover { border-color: var(--ok); color: var(--ok); }
+.home-task__body { display: grid; gap: 3px; min-width: 0; }
+.home-task__go { display: block; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 650; line-height: 1.3;
+  text-align: left; text-decoration: none; cursor: pointer; }
+.home-task__go::after { content: ''; position: absolute; inset: 0; }
+.home-task__go:focus-visible { outline: 0; }
+.home-task__go:focus-visible::after { outline: 2px solid var(--rose); outline-offset: -2px; }
+.home-task__sub { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12.5px; }
+.home-task__sub > .wk-pill { flex: none; }
+.home-task__go, .home-task__context, .home-todo__foot > span, .home-ag__pin-text, .home-ag__chip small > span:not(.home-ag__amt) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-task__value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-task__value.is-none { color: var(--muted-2); font-weight: 500; }
+.home-task__verb, .home-task__menu { position: relative; z-index: 1; }
+.home-task--more { grid-template-columns: 32px minmax(0, 1fr) auto; }
+.home-task__chev { padding-right: 8px; color: var(--muted-2); font-size: 18px; }
+.home-all > .home-todo__group:first-child { border-top: 0; }
+.home-all__empty { margin: 0 0 8px; color: var(--muted); }
+.home-all__why .home-why__lines { padding: 4px 18px 6px 36px; }
+
+/* ---- Agenda */
+.home-ag__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 18px 12px; }
+.home-ag__nav { display: inline-flex; gap: 4px; }
+.home-ag__legend { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.home-ag__legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.home-ag__legend, .home-ag__nav + .home-ag__add, app-segmented + .home-ag__add { margin-left: auto; }
+.home-ag__key { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 3px; background: var(--c); }
+.home-ag .is-afspraak { --c: var(--rose); }
+.home-ag .is-container { --c: #3b76b3; }
+.home-ag .is-geld { --c: #c7851d; }
+.home-ag .is-taak { --c: var(--muted); }
+.home-ag__key.is-taak { border: 1.5px solid var(--c); border-radius: 50%; background: none; }
+.home-ag__banner { margin: 0 18px 12px; }
+.home-ag__pin { display: flex; align-items: center; gap: 10px; width: calc(100% - 36px); margin: 0 18px 12px; padding: 9px 12px; border: 1px solid var(--rose-line);
+  border-radius: 12px; background: var(--rose-soft); color: var(--rose-dark); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.home-ag__pin-text { flex: 1; color: var(--ink-2); }
+.home-ag__pin-more { color: var(--muted); font-size: 12px; }
+.home-ag__pin > :not(.home-ag__pin-text) { flex: none; white-space: nowrap; }
+.home-ag__pin-when { font-weight: 650; }
+.home-ag__week { display: grid; border-top: 1px solid var(--line); }
+.home-ag__day { min-width: 0; padding: 10px 10px 12px; border-top: 1px solid var(--line); }
+.home-ag__day:first-child { border: 0; }
+.home-ag__day.is-today { background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); }
+.home-ag__day.is-weekend { background: var(--surface-2); }
+.home-ag__dh { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.home-ag__dh b { color: var(--ink); font-size: 18px; font-weight: 750; }
+.is-today .home-ag__dh b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--rose); color: #fff; font-size: 15px; }
+.home-ag__dh em { margin-left: auto; color: var(--rose-dark); font-size: 11.5px; font-style: normal; }
+.home-ag__entries { display: grid; align-content: start; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.home-ag__chip { position: relative; display: grid; gap: 1px; width: 100%; min-width: 0; padding: 5px 8px 5px 11px; border: 0; border-radius: 8px;
+  background: color-mix(in srgb, var(--c) 9%, var(--surface)); color: var(--ink); font: inherit; font-size: 12.5px; line-height: 1.3; text-align: left; cursor: pointer; }
+.home-ag__chip::before { content: ''; position: absolute; top: 5px; bottom: 5px; left: 0; width: 3px; border-radius: 2px; background: var(--c); }
+.home-ag__chip:hover { background: color-mix(in srgb, var(--c) 16%, var(--surface)); }
+.home-ag__chip.is-taak { padding-left: 26px; border: 1px dashed var(--line-strong); background: var(--surface); }
+.home-ag__chip.is-taak::before { top: 8px; bottom: auto; left: 8px; width: 11px; height: 11px; border: 1.5px solid var(--c); border-radius: 50%; background: none; }
+.home-ag .home-ag__chip.is-late { --c: var(--danger); }
+.home-ag__chip.is-done b { color: var(--muted); text-decoration: line-through; }
+.home-ag__chip.is-past { opacity: .55; }
+.home-ag__chip b { display: -webkit-box; overflow: hidden; font-weight: 650; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.home-ag__chip small { display: flex; gap: 4px; min-width: 0; color: var(--muted); font-size: 11.5px; }
+.home-ag__amt { flex: none; color: var(--ink-2); font-weight: 650; white-space: nowrap; }
+.home-ag__empty { margin: 0; color: var(--muted-2); font-size: 12px; }
+.home-ag__after { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 11px 18px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.home-ag__after > b { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.home-ag__more { padding: 2px 0; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.home-ag__after > button { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
+.home-ag__after > button:hover { color: var(--rose-dark); }
+.home-ag__month { padding: 0 18px 16px; }
+.home-ag .tasks-card { border: 0; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; box-shadow: none; }
+@media (min-width: 1000px) {
+  .home-ag__week { grid-template-columns: var(--ag-cols); }
+  .home-ag__day { min-height: 190px; border: 0; border-left: 1px solid var(--line); }
+}
+@media (max-width: 999.98px) {
+  .home-ag__day { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: start; gap: 10px; }
+  .home-ag__entries { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+}
