@@ -28,12 +28,10 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
         <ul class="ac-rows">
           @for (row of p.rows; track row.productId) {
             <li class="ac-row" [attr.data-state]="row.state">
-              <div class="ac-row__head">
-                <b class="ac-row__name">{{ row.name }}</b>
-                @if (row.product) {
-                  <button class="linklike ac-row__history" type="button" (click)="historyFor.set(row)">Historiek ›</button>
-                }
-              </div>
+              <b class="ac-row__name">{{ row.name }}</b>
+              @if (row.product) {
+                <button class="linklike ac-row__history" type="button" (click)="historyFor.set(row)">Historiek ›</button>
+              }
               <small class="ac-row__basis">{{ row.quantity }} · kostprijs {{ row.per }}</small>
               @if (row.state === 'skipped') {
                 <p class="ac-row__skip">
@@ -91,15 +89,15 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     .ac-sheet__intro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .ac-sheet__empty, .ac-sheet__note { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
     .ac-rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-    .ac-row { display: grid; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .ac-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name link' 'basis basis' 'figs figs';
+      align-items: baseline; gap: 4px 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .ac-row[data-state='unchanged'], .ac-row[data-state='skipped'] { background: var(--surface-2); }
     .ac-row[data-state='skipped'] .ac-row__name { color: var(--muted); }
-    .ac-row__head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
-    .ac-row__name { min-width: 0; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
-    .ac-row__history { flex: none; white-space: nowrap; }
-    .ac-row__basis { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
-    .ac-row__skip { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-style: italic; }
-    .ac-row__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+    .ac-row__name { grid-area: name; min-width: 0; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+    .ac-row__history { grid-area: link; white-space: nowrap; }
+    .ac-row__basis { grid-area: basis; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+    .ac-row__skip { grid-area: figs; margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-style: italic; }
+    .ac-row__figures { grid-area: figs; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
     .ac-fig { display: grid; align-content: start; gap: 1px; min-width: 0; }
     .ac-fig small { color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
     .ac-fig b { font-size: 14px; font-variant-numeric: tabular-nums; line-height: 1.3; overflow-wrap: anywhere; }
@@ -109,6 +107,12 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     .ac-fig--delta[data-state='down'] b { color: var(--ok); }
     .ac-fig--delta[data-state='unchanged'] b, .ac-fig--delta[data-state='same'] b { color: var(--muted); }
     .ac-foot { display: contents; }
+    /* Desk: one line per product, the figures beside the name. */
+    @media (min-width: 680px) {
+      .ac-row { grid-template-columns: minmax(0, 1.15fr) minmax(0, 2.4fr) auto; grid-template-areas: 'name figs link' 'basis figs link'; align-items: start; gap: 2px 18px; }
+      .ac-row__figures, .ac-row__skip { margin-top: 0; }
+      .ac-row__skip { align-self: center; }
+    }
     @media (max-width: 679.98px) {
       .ac-sheet { padding: 0 16px; }
       .ac-foot { display: flex; flex-direction: column-reverse; gap: 8px; width: 100%; }
