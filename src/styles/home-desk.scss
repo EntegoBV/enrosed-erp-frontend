@@ -41,57 +41,61 @@ app-home-desk-agenda { display: block; }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* ---- Vandaag te doen */
-.home-todo__head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; }
-.wk-pill.home-todo__count { background: var(--ink); color: #fff; font-size: 12px; }
-.home-todo__why { margin-left: auto; white-space: nowrap; }
-.wk-popover.home-why { width: min(440px, calc(100vw - 48px)); max-width: none; }
-.home-why__lines { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; line-height: 1.45; white-space: normal; }
-.home-todo__group { margin: 0; padding: 10px 18px 6px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; font-weight: 600; }
-.home-todo__group b { color: var(--ink-2); font-size: 11px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
-.home-todo__group b[class]::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--muted-2); }
-.home-todo__group b.is-nu::before { background: var(--danger); }
-.home-todo__group b.is-vandaag::before { background: var(--warn); }
-.home-todo__loading { padding: 4px 18px 10px; }
-.home-todo__clear { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 12px; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
-.home-todo__clear > span:last-child { grid-column: 2; color: var(--muted); font-size: 13px; }
-.home-todo__tick { display: grid; grid-row: span 2; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  background: color-mix(in srgb, var(--tone) 14%, var(--surface)); color: var(--tone); font-weight: 800; --tone: var(--ok); }
-.is-open > .home-todo__tick { --tone: var(--warn); }
-.home-todo__note { margin: 0; padding: 9px 18px; border-top: 1px solid var(--line); color: var(--warn); font-size: 12.5px; font-weight: 600; }
-.home-todo__foot { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px;
-  background: var(--surface-2); font-size: 13px; }
-.home-todo__foot > b { flex: none; font-weight: 650; }
-.home-todo__foot > span { flex: 1; min-width: 0; color: var(--muted); }
-.home-todo__all { flex: none; margin-left: auto; white-space: nowrap; }
+/* ---- Vandaag te doen and its rows (the card and the Alle sheet). Scoped to the desk page: the phone's task
+   cells (home-phone.scss) use the same class names, and neither may restyle the other's rows. :where() keeps
+   the specificity of the bare classes. */
+:where(app-home-desk) {
+  .home-todo__head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; }
+  .wk-pill.home-todo__count { background: var(--ink); color: #fff; font-size: 12px; }
+  .home-todo__why { margin-left: auto; white-space: nowrap; }
+  .wk-popover.home-why { width: min(440px, calc(100vw - 48px)); max-width: none; }
+  .home-why__lines { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; line-height: 1.45; white-space: normal; }
+  .home-todo__group { margin: 0; padding: 10px 18px 6px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; font-weight: 600; }
+  .home-todo__group b { color: var(--ink-2); font-size: 11px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
+  .home-todo__group b[class]::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--muted-2); }
+  .home-todo__group b.is-nu::before { background: var(--danger); }
+  .home-todo__group b.is-vandaag::before { background: var(--warn); }
+  .home-todo__loading { padding: 4px 18px 10px; }
+  .home-todo__clear { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 12px; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
+  .home-todo__clear > span:last-child { grid-column: 2; color: var(--muted); font-size: 13px; }
+  .home-todo__tick { display: grid; grid-row: span 2; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+    background: color-mix(in srgb, var(--tone) 14%, var(--surface)); color: var(--tone); font-weight: 800; --tone: var(--ok); }
+  .is-open > .home-todo__tick { --tone: var(--warn); }
+  .home-todo__note { margin: 0; padding: 9px 18px; border-top: 1px solid var(--line); color: var(--warn); font-size: 12.5px; font-weight: 600; }
+  .home-todo__foot { display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px;
+    background: var(--surface-2); font-size: 13px; }
+  .home-todo__foot > b { flex: none; font-weight: 650; }
+  .home-todo__foot > span { flex: 1; min-width: 0; color: var(--muted); }
+  .home-todo__all { flex: none; margin-left: auto; white-space: nowrap; }
 
-/* ---- a task row (card and the Alle sheet) */
-.home-tasks { margin: 0; padding: 0; list-style: none; }
-.home-task { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px;
-  min-height: 58px; padding: 8px 12px 8px 18px; border-top: 1px solid var(--line); }
-.home-todo__group + .home-tasks > :first-child { border-top: 0; }
-.home-task:hover { background: var(--surface-2); }
-.home-task__tile { width: 32px; height: 32px; border-radius: 9px; }
-.home-task__tick { position: relative; z-index: 1; justify-self: center; padding: 0; background: var(--surface); cursor: pointer; }
-.home-task__tick:hover { border-color: var(--ok); color: var(--ok); }
-.home-task__body { display: grid; gap: 3px; min-width: 0; }
-.home-task__go { display: block; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 650; line-height: 1.3;
-  text-align: left; text-decoration: none; cursor: pointer; }
-.home-task__go::after { content: ''; position: absolute; inset: 0; }
-.home-task__go:focus-visible { outline: 0; }
-.home-task__go:focus-visible::after { outline: 2px solid var(--rose); outline-offset: -2px; }
-.home-task__sub { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12.5px; }
-.home-task__sub > .wk-pill { flex: none; }
-.home-task__go, .home-task__context, .home-todo__foot > span, .home-ag__pin-text, .home-ag__chip small > span:not(.home-ag__amt) {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-task__value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.home-task__value.is-none { color: var(--muted-2); font-weight: 500; }
-.home-task__verb, .home-task__menu { position: relative; z-index: 1; }
-.home-task--more { grid-template-columns: 32px minmax(0, 1fr) auto; }
-.home-task__chev { padding-right: 8px; color: var(--muted-2); font-size: 18px; }
-.home-all > .home-todo__group:first-child { border-top: 0; }
-.home-all__empty { margin: 0 0 8px; color: var(--muted); }
-.home-all__why .home-why__lines { padding: 4px 18px 6px 36px; }
+  /* ---- a task row (card and the Alle sheet) */
+  .home-tasks { margin: 0; padding: 0; list-style: none; }
+  .home-task { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px;
+    min-height: 58px; padding: 8px 12px 8px 18px; border-top: 1px solid var(--line); }
+  .home-todo__group + .home-tasks > :first-child { border-top: 0; }
+  .home-task:hover { background: var(--surface-2); }
+  .home-task__tile { width: 32px; height: 32px; border-radius: 9px; }
+  .home-task__tick { position: relative; z-index: 1; justify-self: center; padding: 0; background: var(--surface); cursor: pointer; }
+  .home-task__tick:hover { border-color: var(--ok); color: var(--ok); }
+  .home-task__body { display: grid; gap: 3px; min-width: 0; }
+  .home-task__go { display: block; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 14.5px; font-weight: 650; line-height: 1.3;
+    text-align: left; text-decoration: none; cursor: pointer; }
+  .home-task__go::after { content: ''; position: absolute; inset: 0; }
+  .home-task__go:focus-visible { outline: 0; }
+  .home-task__go:focus-visible::after { outline: 2px solid var(--rose); outline-offset: -2px; }
+  .home-task__sub { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12.5px; }
+  .home-task__sub > .wk-pill { flex: none; }
+  .home-task__go, .home-task__context, .home-todo__foot > span, .home-ag__pin-text, .home-ag__chip small > span:not(.home-ag__amt) {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .home-task__value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .home-task__value.is-none { color: var(--muted-2); font-weight: 500; }
+  .home-task__verb, .home-task__menu { position: relative; z-index: 1; }
+  .home-task--more { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .home-task__chev { padding-right: 8px; color: var(--muted-2); font-size: 18px; }
+  .home-all > .home-todo__group:first-child { border-top: 0; }
+  .home-all__empty { margin: 0 0 8px; color: var(--muted); }
+  .home-all__why .home-why__lines { padding: 4px 18px 6px 36px; }
+}
 
 /* ---- Agenda */
 .home-ag__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 18px 12px; }

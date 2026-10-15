@@ -29,33 +29,37 @@ app-home-add-sheet { display: contents; }
 .home-phone__status.is-warn { color: var(--warn); font-weight: 600; }
 .home-phone__retry { margin: -14px -6px; padding: 14px 6px; border: 0; background: none; color: var(--rose); font: inherit; font-weight: 650; cursor: pointer; }
 
-/* ---- Te doen */
-.home-tier { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0 calc(var(--ios-inset) + 16px) 7px; color: var(--muted);
-  font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-app-home-task-cells + .home-tier { margin-top: 16px; }
-.home-todo__skeleton { padding: 4px 16px; }
-.home-todo__clear { align-items: center; }
-.home-todo__note { color: var(--muted); font-size: 13px; line-height: 1.35; }
-.home-todo__more { min-height: 48px; }
-.home-todo__more-text { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
-.home-todo__all { flex: none; white-space: nowrap; }
+/* ---- Te doen and its rows (the home and Open punten). Scoped to the phone pages: the desk's task rows
+   (home-desk.scss) use the same class names, and neither may restyle the other's rows. :where() keeps the
+   specificity of the bare classes. */
+:where(.home-phone, .home-open) {
+  .home-tier { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0 calc(var(--ios-inset) + 16px) 7px; color: var(--muted);
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  app-home-task-cells + .home-tier { margin-top: 16px; }
+  .home-todo__skeleton { padding: 4px 16px; }
+  .home-todo__clear { align-items: center; }
+  .home-todo__note { color: var(--muted); font-size: 13px; line-height: 1.35; }
+  .home-todo__more { min-height: 48px; }
+  .home-todo__more-text { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .home-todo__all { flex: none; white-space: nowrap; }
 
-/* ---- a task row (home-task-cells.ts) */
-.home-task__check { display: grid; flex: none; place-items: center; width: 44px; height: 44px; margin: 0 -7px; padding: 0; border: 0; background: none; cursor: pointer;
-  -webkit-tap-highlight-color: transparent; }
-.home-task__check:active .ios-check { border-color: var(--rose); }
-.home-task__check:focus-visible, .home-task__go:focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: -3px; border-radius: 12px; }
-.home-task__go { display: flex; flex: 1; align-items: center; align-self: stretch; gap: 12px; min-width: 0; margin-right: -6px; padding: 0; border: 0;
-  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-/* The chevron's own -6px moves to the button, so it lines up with the other rows without sticking out of it. */
-.home-task__go > .ios-cell__chev { margin-right: 0; }
-.home-task__cell:has(.home-task__go:active) { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
-.home-task__sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
-.home-task__sub .wk-pill { flex: none; }
-.home-task__context { min-width: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.home-task .ios-cell__value.is-neg { color: var(--danger); }
-.home-task__count { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 12px;
-  background: color-mix(in srgb, var(--warn) 15%, var(--surface)); color: #8a4d0c; font-size: 13.5px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  /* ---- a task row (home-task-cells.ts) */
+  .home-task__check { display: grid; flex: none; place-items: center; width: 44px; height: 44px; margin: 0 -7px; padding: 0; border: 0; background: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; }
+  .home-task__check:active .ios-check { border-color: var(--rose); }
+  .home-task__check:focus-visible, .home-task__go:focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: -3px; border-radius: 12px; }
+  .home-task__go { display: flex; flex: 1; align-items: center; align-self: stretch; gap: 12px; min-width: 0; margin-right: -6px; padding: 0; border: 0;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  /* The chevron's own -6px moves to the button, so it lines up with the other rows without sticking out of it. */
+  .home-task__go > .ios-cell__chev { margin-right: 0; }
+  .home-task__cell:has(.home-task__go:active) { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
+  .home-task__sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
+  .home-task__sub .wk-pill { flex: none; }
+  .home-task__context { min-width: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+  .home-task .ios-cell__value.is-neg { color: var(--danger); }
+  .home-task__count { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 12px;
+    background: color-mix(in srgb, var(--warn) 15%, var(--surface)); color: #8a4d0c; font-size: 13.5px; font-weight: 750; font-variant-numeric: tabular-nums; }
+}
 
 /* ---- Agenda: W7's strip is a card of its own (home-agenda.scss); this keeps the section rhythm around it */
 .home-phone__agenda { margin-bottom: 6px; }
