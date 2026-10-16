@@ -266,6 +266,13 @@ test("'Betaald op' on a phone says 'Andere' (its four segments cut 'Andere datum
   state.paySheet.set({ costs: [{ id: 21, date: '2026-10-01' }, { id: 22, date: '2026-10-02' }] });
   assert.deepEqual(clone(new Pay().choices()).map((option: any) => option.id), ['today', 'yesterday', 'other'], 'Kostdatum only for one shared date');
 });
+test("'Betaald op' at phone 360: below 380 px the four segments (72 px each) keep 'Kostdatum' whole", async () => {
+  const scss = (await readFile(new URL('../src/styles/finance-phone.scss', import.meta.url), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const phone = scss.slice(scss.indexOf('@media (max-width: 679.98px)'));
+  assert.match(phone, /\.fin-paid-seg \.ios-seg__opt \{ padding: 0 4px; font-size: 12\.5px; \}/, '390 keeps its padding and size');
+  // At 360 'Kostdatum' is 67 px and a segment 72.5: 4 px padding cut it to 65.
+  assert.match(phone, /@media \(max-width: 379\.98px\) \{ \.fin-paid-seg \.ios-seg__opt \{ padding-inline: 2px; letter-spacing: -\.01em; \} \}/);
+});
 test('the pay sheet opens for a selection; only a link pending for its one cost starts on that transaction', () => {
   const state = { paySheet: signal<any>({ costs: [{ id: 21 }, { id: 11 }] }), bankCostLinkPending: signal<any>(null) };
   Pay.prototype.state = state;
