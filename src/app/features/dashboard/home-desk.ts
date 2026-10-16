@@ -108,8 +108,8 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
 
       <div class="home-desk__top">
         <!-- Two columns from 1280 px that each stack their own cards, so a short Te doen leaves no hole under it
-             (Emre, 2026-10-16: "gigantische white space"): Te doen with Resultaat and Inkoop under it, the bank and
-             Verkoop beside it. Below 1280 px the wrappers step aside (display: contents) and the grid orders the cards. -->
+             (Emre, 2026-10-16: "gigantische white space"): Te doen with Inkoop under it, the bank, Verkoop and Resultaat
+             beside it. Below 1280 px the wrappers step aside (display: contents) and the grid orders the cards. -->
         <div class="home-desk__main">
           <section class="wk-card home-todo" aria-labelledby="home-todo-title" [attr.aria-busy]="data.loading() || null">
             <header class="home-todo__head">
@@ -176,15 +176,13 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
               </footer>
             }
           </section>
-          <div class="home-desk__under">
-            <app-home-resultaat variant="desk" />
-            <app-home-inkoop variant="desk" />
-          </div>
+          <app-home-inkoop variant="desk" />
         </div>
 
         <div class="home-desk__figs">
           <app-home-kas variant="desk" />
           <app-home-verkoop variant="desk" />
+          <app-home-resultaat variant="desk" />
         </div>
       </div>
 

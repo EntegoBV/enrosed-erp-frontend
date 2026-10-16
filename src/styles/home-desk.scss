@@ -4,10 +4,11 @@
 
    Media queries only: no container query may sit above the planner sheets,
    the bell or a menu (the kit's trap rule). From 1280 px the top is two
-   columns that each stack their own cards: Te doen with Resultaat and Inkoop
-   under it (side by side when they fit), and a 432 px column of Kas and
-   Verkoop - so a short Te doen leaves no hole beside a long column (it did
-   with all four figure blocks on the right). Below 1280 px the wrappers are
+   columns that each stack their own cards: Te doen with Inkoop under it, and
+   a 432 px column of Kas, Verkoop and Resultaat - so a short Te doen leaves
+   no hole beside a long column (it did with all four figure blocks on the
+   right; with 3 and with 7 tasks the columns now end within ~150 px of each
+   other). Below 1280 px the wrappers are
    display: contents and one grid orders the cards: Te doen and Kas full
    width, Verkoop beside Resultaat, Inkoop full width. The
    Agenda's seven days are columns from 1000 px and stacked rows below.
@@ -40,7 +41,7 @@ app-home-desk-agenda { display: block; }
 /* ---- layout */
 .home-desk__top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'todo todo' 'kas kas' 'verkoop resultaat' 'inkoop inkoop';
   align-items: start; gap: 16px; }
-.home-desk__main, .home-desk__under, .home-desk__figs { display: contents; }
+.home-desk__main, .home-desk__figs { display: contents; }
 .home-desk__top .home-todo { grid-area: todo; }
 .home-desk__top .home-w--kas { grid-area: kas; }
 .home-desk__top .home-w--verkoop { grid-area: verkoop; }
@@ -58,7 +59,6 @@ app-home-desk-agenda { display: block; }
   .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; grid-template-areas: none; }
   .home-desk__top :is(.home-todo, .home-w--kas, .home-w--verkoop, .home-w--resultaat, .home-w--inkoop) { grid-area: auto; }
   .home-desk__main, .home-desk__figs { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; min-width: 0; }
-  .home-desk__under { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; gap: 16px; }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
