@@ -18,6 +18,8 @@ import { WorkspaceReturn } from './core/platform/workspace-return';
 import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
+import { installReducedMotionScroll } from './core/platform/reduced-motion';
+import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 
 /**
  * App shell.
@@ -326,7 +328,11 @@ export class App {
      even when nobody opened Instellingen this session. */
   private readonly pushSetup = inject(PushSetup);
 
-  constructor() { void this.pushSetup.init(); }
+  constructor() {
+    void this.pushSetup.init();
+    /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
+    installReducedMotionScroll(window as unknown as ReducedMotionWindow);
+  }
 
   readonly auth = inject(Auth);
   /* Instantiated here so the palette is on <html> before the first screen paints. */

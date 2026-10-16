@@ -820,7 +820,6 @@ a { color: var(--rose); }
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
-.btn:active { transform: translateY(0.5px); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn--primary {
@@ -1153,28 +1152,10 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  animation: fade 0.15s ease;
+  animation: mo-fade-in var(--dur-2) var(--ease-out);
 }
-@keyframes fade { from { opacity: 0; } }
-
-/* Pages ease in rather than pop: a 4px rise over 180ms is enough to feel
-   deliberate without ever making anyone wait for it. */
-.content { animation: page-enter 0.18s ease; }
-@keyframes page-enter {
-  from { opacity: 0; transform: translateY(4px); }
-}
-
-/* Pressed feedback on every button; transform is GPU-cheap. */
-.btn { transition: transform 0.08s ease, background 0.15s ease; }
-.btn:active { transform: scale(0.98); }
-
-/* Anyone who asked their OS for less motion gets exactly that. */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* The page fade, button press feedback and reduced motion live in
+   styles/motion.scss. */
 
 .sheet {
   background: var(--surface);
@@ -1183,10 +1164,9 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   display: flex;
   flex-direction: column;
-  animation: slide-up 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: mo-sheet-in var(--dur-3) var(--ease-spring);
   padding-bottom: var(--safe-b);
 }
-@keyframes slide-up { from { transform: translateY(100%); } }
 
 .sheet__grab {
   width: 38px;
@@ -1233,12 +1213,11 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
     max-width: 620px;
     border-radius: var(--r-lg);
     max-height: 88dvh;
-    animation: pop 0.16s ease;
+    animation: mo-lift-in var(--dur-2) var(--ease-out);
     padding-bottom: 0;
   }
   .sheet--wide { max-width: 940px; }
   .sheet__grab { display: none; }
-  @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
   .sheet__foot { justify-content: flex-end; }
   .sheet__foot .btn { flex: none; }
   .sheet__foot .spacer { flex: 1; }
@@ -1353,7 +1332,7 @@ table.data tfoot td {
   display: flex;
   gap: 10px;
   align-items: center;
-  animation: slide-up 0.18s ease;
+  animation: mo-lift-in var(--dur-2) var(--ease-out);
 }
 .toast__dot { width: 7px; height: 7px; border-radius: 50%; background: #57c089; flex: none; }
 .toast--err .toast__dot { background: #e0796c; }
@@ -1845,17 +1824,16 @@ table.data tfoot td {
 }
 
 /* ------------------------------------------------------ motion language */
-/* One entrance curve for the whole app: content rises softly into place.
-   Route changes recreate .content, so every page gets it for free. */
+/* The rise for opt-in blocks (.anim-rise, .anim-stagger, inline editors).
+   Page changes fade instead (styles/motion.scss). */
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   /* Ends on transform:none - a kept translate(0) is still a containing
      block, which pinned fixed sheets inside the animated child. */
   to { opacity: 1; transform: none; }
 }
-.content { animation: rise 0.3s ease backwards; }
-.anim-rise { animation: rise 0.35s ease backwards; }
-.anim-stagger > * { animation: rise 0.4s ease backwards; }
+.anim-rise { animation: rise var(--dur-3) var(--ease-out) backwards; }
+.anim-stagger > * { animation: rise var(--dur-3) var(--ease-out) backwards; }
 .anim-stagger > *:nth-child(1) { animation-delay: 0.03s; }
 .anim-stagger > *:nth-child(2) { animation-delay: 0.08s; }
 .anim-stagger > *:nth-child(3) { animation-delay: 0.13s; }
@@ -1863,9 +1841,7 @@ table.data tfoot td {
 .anim-stagger > *:nth-child(5) { animation-delay: 0.23s; }
 .anim-stagger > *:nth-child(6) { animation-delay: 0.28s; }
 
-.btn { transition: transform 0.12s ease, filter 0.12s ease; }
-.btn:active { transform: scale(0.96); }
-.kpi { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.kpi { transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out); }
 .kpi:active { transform: scale(0.97); }
 @media (hover: hover) {
   .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(26 22 20 / 8%); }
@@ -1873,8 +1849,8 @@ table.data tfoot td {
   .list-item:hover { background: var(--surface-2); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .content, .anim-rise, .anim-stagger > * { animation: none; }
-  .btn, .kpi { transition: none; }
+  .anim-rise, .anim-stagger > * { animation: none; }
+  .kpi { transition: none; }
 }
 
 /* Decorative rose watermark on the hero tile: drawn, not loaded. */
@@ -3949,6 +3925,7 @@ a.desk-kpi{text-decoration:none}
    Loaded last so they win ties with the legacy rules above. Each area
    partial scopes every rule under its own host. */
 @include meta.load-css('styles/workspace-kit');
+@include meta.load-css('styles/motion');
 @include meta.load-css('styles/finance-phone');
 @include meta.load-css('styles/files-phone');
 @include meta.load-css('styles/purchase-payments');
