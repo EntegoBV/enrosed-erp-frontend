@@ -127,6 +127,24 @@ test('review round 1: figures and their words reach a screen reader, a keyboard 
   assert.match(await read('styles/purchase-phone.scss'), /\.mpo-tile__label\{display:-webkit-box;[^}]*-webkit-line-clamp:2\}/);
 });
 
+test('review round 2: a custom port stacks under its label, and a focused field clears the bars', async () => {
+  const editor = templateOf(await read('app/features/purchasing/purchase-editor.ts'));
+  // 'Andere aankomsthaven', a long port and 'Typ de aankomsthaven' do not fit beside each other at 360 or 390.
+  for (const id of ['po-custom-departure-port', 'po-custom-destination-port']) {
+    assert.match(editor, new RegExp(`<label class="ios-cell mpo-field-row mpo-field-row--stack" for="${id}">`), id);
+  }
+  // Focus and scrollIntoView keep a field out from under the sticky nav plus tabs and the dock or the save bar:
+  // on the root, which scrolls, once; a section's own scroll-margin (partner-advance-schedule's :host) would add to it.
+  const scss = await read('styles/purchase-phone.scss');
+  const top = 'calc\\(var\\(--safe-t\\) \\+ var\\(--ios-nav-h\\) \\+ 74px\\)';
+  assert.match(scss, new RegExp(`:root:has\\(app-purchase-view \\.mpo-phone\\)\\{scroll-padding:${top} 0 calc\\(var\\(--safe-b\\) \\+ var\\(--tabbar-h\\) \\+ 90px\\)\\}`));
+  assert.match(scss, new RegExp(`:root:has\\(app-purchase-editor \\.mpo-phone\\)\\{scroll-padding:${top} 0 calc\\(var\\(--safe-b\\) \\+ 110px\\)\\}`));
+  assert.match(scss, /--mpo-tabs-h:74px/, 'the padding\'s 74px is the tabs\' height');
+  assert.match(scss, /:is\(app-purchase-view,app-purchase-editor\) \[id\^="purchase-"\]\{scroll-margin-top:0\}/);
+  assert.deepEqual(scss.match(/scroll-margin[a-z-]*:[^;}]*/g), ['scroll-margin-top:0']);
+  assert.match(await read('app/features/purchasing/partner-advance-schedule.ts'), /host: \{ id: 'purchase-advance-invoices'/);
+});
+
 test('the kit gains the stacked segments and the nav its [hero] slot', async () => {
   assert.match(await read('styles/workspace-kit.scss'), /\.ios-seg\.ios-seg--stacked\{/);
   const nav = await read('app/shared/ios-nav.ts');
@@ -142,7 +160,7 @@ test('the phone styles load once and every rule stays scoped to the purchase hos
   assert.equal(count(styles, "@include meta.load-css('styles/purchase-phone');"), 1);
   assert.match(styles, /@include meta\.load-css\('styles\/purchase-nacalc'\);\n@include meta\.load-css\('styles\/purchase-phone'\);/);
   const scss = (await read('styles/purchase-phone.scss')).replace(/\/\*[\s\S]*?\*\//g, '');
-  const scope = /^(@media|\s*(app-purchase-view|app-purchase-editor|:is\(app-purchase-view, ?app-purchase-editor\)|\.mpo-|body:has\(app-purchase-))/;
+  const scope = /^(@media|\s*(app-purchase-view|app-purchase-editor|:is\(app-purchase-view, ?app-purchase-editor\)|\.mpo-|(:root|body):has\(app-purchase-))/;
   const selectors: string[] = [];
   let depth = 0;
   let buffer = '';

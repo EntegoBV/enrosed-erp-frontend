@@ -5,7 +5,7 @@
    Betalingen · Dossier), grouped inset lists and sheets. Built on the
    workspace kit: the wk- and ios- kit classes are used bare, never restyled
    here; only their custom properties are set. Every rule is scoped under a
-   purchase host, the mpo- prefix or body:has(app-purchase-…). The page keeps
+   purchase host, the mpo- prefix or :root/body:has(app-purchase-…). The page keeps
    its beige --bg; cards and lists are --surface white.
    ========================================================================== */
 
@@ -18,8 +18,12 @@
 .mpo-panes{min-height:calc(100dvh - var(--safe-t) - var(--ios-nav-h) - var(--mpo-tabs-h))}
 .mpo-pane{display:block;min-width:0;padding-top:10px}
 .mpo-pane[hidden]{display:none!important}
-/* scrollIntoView lands under the nav and the tabs */
-:is(app-purchase-view,app-purchase-editor) [id^="purchase-"]{scroll-margin-top:calc(var(--safe-t) + var(--ios-nav-h) + var(--mpo-tabs-h))}
+/* A focused field and scrollIntoView land clear of the sticky nav plus tabs and of the dock (above the tab bar) or the
+   save bar with its fill label. On the root, which scrolls; the editor hides the tab bar on body, so its own figure.
+   A section (or a re-hosted component's :host) keeps no top margin of its own on top of it. */
+:root:has(app-purchase-view .mpo-phone){scroll-padding:calc(var(--safe-t) + var(--ios-nav-h) + 74px) 0 calc(var(--safe-b) + var(--tabbar-h) + 90px)}
+:root:has(app-purchase-editor .mpo-phone){scroll-padding:calc(var(--safe-t) + var(--ios-nav-h) + 74px) 0 calc(var(--safe-b) + 110px)}
+:is(app-purchase-view,app-purchase-editor) [id^="purchase-"]{scroll-margin-top:0}
 :is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
 
 /* ---- summary card ([hero] of app-ios-nav) */

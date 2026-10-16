@@ -1237,7 +1237,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   → Betalingen; files/notes/reports → Dossier), so `?section=` deep links,
   `jumpToSection` and `scrollToCard` switch the tab first. A switch with the
   bar stuck starts the new pane at its top under it; tapping the open tab
-  goes back to its top (`purchase-phone-scroll.ts`). Warn dots: Producten
+  goes back to its top (`purchase-phone-scroll.ts`; the stick point puts
+  the nav's 1px sentinel wholly above the nav, so the nav has condensed on
+  arrival). The root's scroll-padding (nav + tabs above, dock or save bar
+  below) keeps a focused field and scrollIntoView clear of the bars; the
+  purchase-* sections keep no scroll-margin of their own. Warn dots: Producten
   after damage/shortage/reports on a received order, Betalingen when
   something is due now; the dot is aria-hidden, so the tab's aria-label
   says it. A `?tab=` change never reloads the read view (`load` runs

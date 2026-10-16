@@ -307,7 +307,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </select><app-icon name="chevron-down" [size]="14" /></span>
                   </label>
                   @if (usesCustomDeparturePort(data.order.departurePort)) {
-                    <label class="ios-cell mpo-field-row" for="po-custom-departure-port">
+                    <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-custom-departure-port">
                       <span class="ios-cell__body"><span class="ios-cell__title">Andere vertrekhaven</span></span>
                       <input class="mpo-input mpo-input--wide" id="po-custom-departure-port" autocomplete="off" placeholder="Typ de vertrekhaven"
                              [value]="customPortInput(data.order.departurePort, departurePorts, customDeparturePort())"
@@ -323,7 +323,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     </select><app-icon name="chevron-down" [size]="14" /></span>
                   </label>
                   @if (usesCustomDestinationPort(data.order.destinationPort)) {
-                    <label class="ios-cell mpo-field-row" for="po-custom-destination-port">
+                    <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-custom-destination-port">
                       <span class="ios-cell__body"><span class="ios-cell__title">Andere aankomsthaven</span></span>
                       <input class="mpo-input mpo-input--wide" id="po-custom-destination-port" autocomplete="off" placeholder="Typ de aankomsthaven"
                              [value]="customPortInput(data.order.destinationPort, destinationPorts, customDestinationPort())"
