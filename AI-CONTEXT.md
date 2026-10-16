@@ -1343,15 +1343,17 @@ and on copies. Without the blocks (older backend) every screen is as before.
   phone and in the desk's Afronden tab only, never on the read view.
 - The Nacalculatie's 'Kostprijzen toepassen ›' (the phone has no Afronden
   tab) opens the apply sheet like the dock: the read view hands the step to
-  the editor, the editor calls `apply()`. Focusing a tab never moves the
-  page, also just before the bar sticks (where the tabs sit in the root's
-  scroll padding without the stuck rule): `keepPhoneTabFocusInPlace`
+  the editor, the editor calls `apply()`. Its 'Hoe is dit berekend?' names
+  just 'Kostprijzen toepassen' too (`nacalcPhoneNotes`); the desk's note
+  keeps '(Afronden)'. Focusing a tab never moves the page, also just before
+  the bar sticks (where the tabs sit in the root's scroll padding without
+  the stuck rule): `keepPhoneTabFocusInPlace`
   (`purchase-phone-scroll.ts`, a field of the view and the editor) sets each tab's
   lift (`liftPhoneTabs`: its scroll area moves down by as much as it sits
   inside that padding, and as much at the bottom) on every Tab/arrow/Home/
   End keydown and a frame after every scroll; lower down the lift is 0.
   Tests: purchase-phone-model, purchase-phone-step, purchase-phone-templates,
-  purchase-phone-scroll.
+  purchase-phone-scroll, purchase-nacalc-metrics.
 
 ### Kostprijshistoriek and Kostprijzen toepassen (2026-10-16)
 - Backend `product_cost_history` (migration 2026-10-16/product-cost-history-basis:

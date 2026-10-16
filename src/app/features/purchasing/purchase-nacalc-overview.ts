@@ -9,7 +9,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  nacalcPartnerLine, nacalcPartnerShortage, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
+  nacalcPartnerLine, nacalcPartnerShortage, nacalcPhoneNotes, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
   type NacalcPayeeRow, type NacalcSetBasis, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
@@ -267,7 +267,7 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
           <div class="ios-group">
             <details class="ios-disclosure np-disclosure">
               <summary>Hoe is dit berekend?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
-              <ul class="np-notes">@for (note of n.notes; track $index) { <li>{{ note }}</li> }</ul>
+              <ul class="np-notes">@for (note of notes(); track $index) { <li>{{ note }}</li> }</ul>
             </details>
           </div>
         </section>
@@ -314,6 +314,8 @@ export class PurchaseNacalcOverview {
   readonly pdfBusy = signal(false);
   readonly round = Math.round;
   readonly eur = formatEur;
+  /** Hoe is dit berekend?: the notes without the desk's Afronden tab, which the phone does not have. */
+  readonly notes = computed(() => nacalcPhoneNotes(this.nacalc()?.notes ?? []));
   readonly partnerState = computed(() => { const partner = this.partner(); return partner === 'loading' || partner === 'error' ? partner : 'ready'; });
   /** The one action cell: the first ledger todo that is about money or a review, never a proof. */
   readonly todo = computed<LedgerTodo | null>(() => {

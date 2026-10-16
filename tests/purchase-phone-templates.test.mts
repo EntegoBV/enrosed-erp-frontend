@@ -223,6 +223,11 @@ test('the Nacalculatie\'s Kostprijzen toepassen says what it does on the phone: 
   assert.equal(parseTemplate(template, 'purchase-nacalc-overview.html').errors, null);
   assert.match(template, /\(click\)="applyCosts\.emit\(\)">Kostprijzen toepassen ›<\/button>/);
   assert.doesNotMatch(template, /bij Afronden/, 'the phone has no Afronden tab');
+  // Hoe is dit berekend? neither: the phone lists the notes without the desk's tab, the desk keeps them as they are.
+  assert.match(template, /<ul class="np-notes">@for \(note of notes\(\); track \$index\)/);
+  assert.doesNotMatch(template, /n\.notes/);
+  assert.match(overview, /readonly notes = computed\(\(\) => nacalcPhoneNotes\(this\.nacalc\(\)\?\.notes \?\? \[\]\)\);/);
+  assert.match(await read('app/features/purchasing/purchase-nacalc-workbench.ts'), /<ul class="nc-notes">@for \(note of n\.notes; track \$index\)/);
   // The read view: the button and the dock both open the step, and the step skips the view's question for the editor's sheet.
   const view = await read('app/features/purchasing/purchase-view.ts');
   assert.match(view, /\(applyCosts\)="openStep\('KOSTPRIJZEN'\)"/);

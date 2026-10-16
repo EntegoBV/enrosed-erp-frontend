@@ -764,6 +764,9 @@ function partnerBlock(
   };
 }
 
+/** Where the desk applies the costs: its Afronden tab. The phone has none (nacalcPhoneNotes). */
+const APPLY_ON_DESK = 'Kostprijzen toepassen (Afronden)';
+
 /** The server's notes verbatim, then what the client adds and the server does not say yet. */
 function clientNotes(
   view: PurchaseOrderView, receipt: NacalcReceipt | null, financing: PartnerFinancing | null, server: readonly string[], creditCents = 0,
@@ -780,11 +783,21 @@ function clientNotes(
     : 'verloren stuks is de goederenprijs per stuk';
   const usable = basis === 'DISPLAY' ? 'de bruikbare displays' : basis === 'MIXED' ? 'de bruikbare displays en stuks' : 'de bruikbare stuks';
   if (receipt) notes.push(`De inkoopwaarde van ${lost} tegen de orderkoers; transport en rechten zijn verdeeld over ${usable}.`);
-  notes.push(`De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen (Afronden) gebruikt de calculatie ${basis === 'DISPLAY' ? 'per display' : basis === 'MIXED' ? 'per display of per stuk' : 'per stuk'}.`);
+  notes.push(`De nacalculatie wijzigt geen productkostprijzen; ${APPLY_ON_DESK} gebruikt de calculatie ${basis === 'DISPLAY' ? 'per display' : basis === 'MIXED' ? 'per display of per stuk' : 'per stuk'}.`);
   if (view.order.partnerCustomerId != null && financing?.settlementInvoiceNumber) {
     notes.push('Uitgereikte afrekeningen zijn bevroren; latere kostwijzigingen wijzigen ze niet.');
   }
   return notes;
+}
+
+/**
+ * The notes as the phone's Nacalculatie shows them. The phone has no Afronden
+ * tab: its apply sheet opens from the dock, Acties or the Nacalculatie's
+ * 'Kostprijzen toepassen ›', so the note names just Kostprijzen toepassen.
+ * The desk shows the notes as they are.
+ */
+export function nacalcPhoneNotes(notes: readonly string[]): string[] {
+  return notes.map(note => note.replace(APPLY_ON_DESK, 'Kostprijzen toepassen'));
 }
 
 /* ---- per display / per stuk: the words every nacalculatie screen shares ---------------------------- */

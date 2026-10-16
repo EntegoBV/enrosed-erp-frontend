@@ -15,7 +15,7 @@ import {
 import { NACALC_LABEL, NACALC_PILL, purchaseNacalcSummary } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 import {
   NACALC_REASON_LABEL, nacalcActionLabel, nacalcAgreedSub, nacalcBridge, nacalcPartnerLine, nacalcProductCount, nacalcProductSub, nacalcProductUnit,
-  nacalcReason, nacalcReceiptUnitLine, nacalcUnitBasis, paymentFxEur, purchaseNacalc, type PurchaseNacalc,
+  nacalcPhoneNotes, nacalcReason, nacalcReceiptUnitLine, nacalcUnitBasis, paymentFxEur, purchaseNacalc, type PurchaseNacalc,
 } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 
 type Stream = PurchaseReconciliationStream;
@@ -594,6 +594,21 @@ test('the client notes join the server notes without repeating them', () => {
   assert.ok(receivedNotes.some(note => note.startsWith('Betalingen in USD of CNY tellen tegen hun geboekte eurobedrag')));
   assert.ok(receivedNotes.some(note => note.startsWith('De inkoopwaarde van verloren stuks')));
   assert.equal(receivedNotes[0], received.view.reconciliation!.notes[0], 'server notes come first, verbatim');
+});
+
+test('the phone\'s notes name Kostprijzen toepassen without the desk\'s Afronden tab; every other note stays as it is', () => {
+  for (const { view, payments } of [transit(), legacy()]) {
+    const desk = story(view, payments).notes;
+    const phone = nacalcPhoneNotes(desk);
+    assert.equal(phone.length, desk.length, 'no note disappears on the phone');
+    assert.equal(desk.at(-1), 'De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen (Afronden) gebruikt de calculatie per stuk.', 'the desk keeps its tab');
+    assert.equal(phone.at(-1), 'De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen gebruikt de calculatie per stuk.');
+    assert.ok(phone.every(note => !/Afronden/.test(note)), 'the phone has no Afronden tab');
+    assert.deepEqual(phone.slice(0, -1), desk.slice(0, -1));
+  }
+  const displays = nacalcPhoneNotes(story(roses(true), null).notes);
+  assert.equal(displays.at(-1), 'De nacalculatie wijzigt geen productkostprijzen; Kostprijzen toepassen gebruikt de calculatie per display.');
+  assert.deepEqual(nacalcPhoneNotes([]), []);
 });
 
 test('the payee vocabulary of the rows is the ledger\'s, in its order', () => {
