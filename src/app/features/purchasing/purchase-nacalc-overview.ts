@@ -203,7 +203,8 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
                 }
               </div>
             </details>
-            @if (n.receipt && head.kind === 'final') { <button class="ios-cell ios-cell--action" type="button" (click)="applyCosts.emit()">Kostprijzen toepassen bij Afronden ›</button> }
+            <!-- The phone has no Afronden tab: the read view hands the step to the editor, which opens the apply sheet as the dock does. -->
+            @if (n.receipt && head.kind === 'final') { <button class="ios-cell ios-cell--action" type="button" (click)="applyCosts.emit()">Kostprijzen toepassen ›</button> }
           </div>
         </section>
 

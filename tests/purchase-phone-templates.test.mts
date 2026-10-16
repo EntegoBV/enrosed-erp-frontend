@@ -216,3 +216,18 @@ function splitTopLevel(list: string): string[] {
   parts.push(current.trim());
   return parts.filter(Boolean);
 }
+
+test('the Nacalculatie\'s Kostprijzen toepassen says what it does on the phone: it opens the apply sheet, as the dock does', async () => {
+  const overview = await read('app/features/purchasing/purchase-nacalc-overview.ts');
+  const template = /template:\s*`([\s\S]*?)`,\n\}\)/.exec(overview)?.[1] ?? '';
+  assert.equal(parseTemplate(template, 'purchase-nacalc-overview.html').errors, null);
+  assert.match(template, /\(click\)="applyCosts\.emit\(\)">Kostprijzen toepassen ›<\/button>/);
+  assert.doesNotMatch(template, /bij Afronden/, 'the phone has no Afronden tab');
+  // The read view: the button and the dock both open the step, and the step skips the view's question for the editor's sheet.
+  const view = await read('app/features/purchasing/purchase-view.ts');
+  assert.match(view, /\(applyCosts\)="openStep\('KOSTPRIJZEN'\)"/);
+  assert.match(view, /\(click\)="openStep\(step\)">\{\{ STEP_BUTTON\[step\] \}\}<\/button>/);
+  assert.match(view, /if \(step === 'KOSTPRIJZEN'\) this\.handOff\(step, null\);/);
+  // The editor: its Nacalculatie opens the same sheet.
+  assert.match(await read('app/features/purchasing/purchase-editor.ts'), /\(applyCosts\)="apply\(\)"/);
+});
