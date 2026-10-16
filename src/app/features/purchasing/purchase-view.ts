@@ -1,5 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -61,7 +61,7 @@ import {
   STEP_BUTTON, costsAppliedFor, costsSupersededFor, landedTile, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
-import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
+import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
 
 /**
  * Read-only control room for one incoming container, on a phone (the desk
@@ -727,6 +727,8 @@ export class PurchaseView {
   private readonly location = inject(Location);
   private readonly routerNav = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** Focusing a tab never moves the page, also just before the bar sticks. */
+  private readonly tabFocusKept = inject(DestroyRef).onDestroy(keepPhoneTabFocusInPlace(this.host.nativeElement));
   private readonly stepHandoff = inject(PurchaseStepHandoff);
 
   goBack(): void {

@@ -45,3 +45,61 @@ export function tappedSelectedTab(event: Event): boolean {
   const target = event.target instanceof Element ? event.target.closest('[role="tab"]') : null;
   return target?.getAttribute('aria-selected') === 'true';
 }
+
+/** The keys that move keyboard focus onto a tab: Tab and Shift+Tab, and the tabs' own arrow, Home and End keys. */
+const TAB_FOCUS_KEYS = new Set(['Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+
+/** How far a tab's scroll area moves down: the part of the root's top scroll padding the tab sits in; 0 below it. */
+export function tabLift(scrollPaddingTop: number, tabTop: number): number {
+  return Math.max(0, Math.ceil(scrollPaddingTop - tabTop));
+}
+
+/** The lift each tab carries now, so a scroll frame only writes a style that changes. */
+const lifted = new WeakMap<HTMLElement, number>();
+
+/**
+ * Moves each tab's scroll area down past the part of the root's scroll
+ * padding (nav + tabs) the tab sits in, and as much at the bottom, so it
+ * keeps its height. Just before the bar sticks the tabs sit in that padding
+ * without the stuck rule's margin, and a focus on one scrolled the page up
+ * by up to 322 px; with the lift it lands where it is, stuck or not. Lower
+ * down the lift is 0: the tab is plain content and the stylesheet decides.
+ */
+export function liftPhoneTabs(host: HTMLElement): void {
+  const tabs = host.querySelectorAll<HTMLElement>('.mpo-tabs [role="tab"]');
+  if (!tabs.length) return;
+  const padding = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+  for (const tab of tabs) {
+    const lift = tabLift(padding, tab.getBoundingClientRect().top);
+    if (lifted.get(tab) === lift) continue;
+    lifted.set(tab, lift);
+    tab.style.scrollMargin = lift > 0 ? `${-lift}px 0 ${lift}px` : '';
+  }
+}
+
+/**
+ * Keeps the tabs' lifts current, so focusing a tab never moves the page: on
+ * a key that can move focus, before it does (Tab, Shift+Tab, the tabs' arrow
+ * keys), and a frame after every scroll, for a focus by script (a sheet that
+ * hands focus back). Returns the cleanup for the screen's DestroyRef.
+ */
+export function keepPhoneTabFocusInPlace(host: HTMLElement): () => void {
+  let frame: number | null = null;
+  const lift = (): void => {
+    frame = null;
+    liftPhoneTabs(host);
+  };
+  const onScroll = (): void => {
+    frame ??= requestAnimationFrame(lift);
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (TAB_FOCUS_KEYS.has(event.key)) lift();
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  document.addEventListener('keydown', onKey);
+  return () => {
+    window.removeEventListener('scroll', onScroll);
+    document.removeEventListener('keydown', onKey);
+    if (frame !== null) cancelAnimationFrame(frame);
+  };
+}

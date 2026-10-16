@@ -1,7 +1,7 @@
 import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -111,7 +111,7 @@ import {
   STEP_BUTTON, actionsMenu, editNextStep, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
-import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
+import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
 import { IosNav } from '../../shared/ios-nav';
 import { Icon } from '../../shared/icon';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
@@ -1390,6 +1390,8 @@ export class PurchaseEditor {
   });
   readonly location = inject(Location);
   private readonly phoneHost = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** Focusing a phone tab never moves the page, also just before the bar sticks (the desk has no tabs: nothing to do). */
+  private readonly tabFocusKept = inject(DestroyRef).onDestroy(keepPhoneTabFocusInPlace(this.phoneHost.nativeElement));
 
   /** Switches the tab in place: the URL follows without a history entry, a stuck bar stays stuck over the new pane's top. */
   setPhoneTab(tab: PhoneTab, { scroll = true }: { scroll?: boolean } = {}): void {
