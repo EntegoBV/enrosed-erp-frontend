@@ -1241,7 +1241,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   the nav's 1px sentinel wholly above the nav, so the nav has condensed on
   arrival). The root's scroll-padding (nav + tabs above, dock or save bar
   below) keeps a focused field and scrollIntoView clear of the bars; the
-  purchase-* sections keep no scroll-margin of their own. Warn dots: Producten
+  purchase-* sections keep no scroll-margin of their own. The nav's buttons
+  and the tabs once stuck (nav condensed) move their scroll area down past
+  that padding (negative top, equal positive bottom scroll-margin), so focus
+  on them, by keyboard or a sheet handing it back, never scrolls the page
+  or unsticks the bar. Warn dots: Producten
   after damage/shortage/reports on a received order, Betalingen when
   something is due now; the dot is aria-hidden, so the tab's aria-label
   says it. A `?tab=` change never reloads the read view (`load` runs

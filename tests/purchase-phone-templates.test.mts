@@ -141,8 +141,32 @@ test('review round 2: a custom port stacks under its label, and a focused field 
   assert.match(scss, new RegExp(`:root:has\\(app-purchase-editor \\.mpo-phone\\)\\{scroll-padding:${top} 0 calc\\(var\\(--safe-b\\) \\+ 110px\\)\\}`));
   assert.match(scss, /--mpo-tabs-h:74px/, 'the padding\'s 74px is the tabs\' height');
   assert.match(scss, /:is\(app-purchase-view,app-purchase-editor\) \[id\^="purchase-"\]\{scroll-margin-top:0\}/);
-  assert.deepEqual(scss.match(/scroll-margin[a-z-]*:[^;}]*/g), ['scroll-margin-top:0']);
+  // Besides the bars' own controls (review round 3), nothing keeps a scroll-margin.
+  assert.deepEqual(scss.match(/scroll-margin[a-z-]*:[^;}]*/g)?.filter((rule) => !/^scroll-margin:calc\(-1 \* /.test(rule)), ['scroll-margin-top:0']);
   assert.match(await read('app/features/purchasing/partner-advance-schedule.ts'), /host: \{ id: 'purchase-advance-invoices'/);
+});
+
+test('review round 3: focus on a nav button or a stuck tab leaves the page and the bar where they are', async () => {
+  // The root's top padding (nav + tabs) covers the bars themselves: a Tab, Shift+Tab or a sheet handing focus back
+  // onto a nav button or a stuck tab scrolled the page to centre it, unsticking the bar (635 -> 309 on PO-21).
+  // Their scroll area moves down past the part of the padding they sit in, by as much at the bottom as at the top,
+  // so it keeps its height: an inverted area would count as hidden and scroll all the same.
+  const scss = await read('styles/purchase-phone.scss');
+  const nav = 'calc\\(var\\(--ios-nav-h\\) \\+ var\\(--mpo-tabs-h\\)\\)';
+  assert.match(scss, new RegExp(`\\.mpo-phone \\.ios-nav :is\\(a,button\\)\\{scroll-margin:calc\\(-1 \\* \\(var\\(--ios-nav-h\\) \\+ var\\(--mpo-tabs-h\\)\\)\\) 0 ${nav}\\}`));
+  // Tabs only once stuck, which is when the nav has condensed (the stick point): lower down they are plain content,
+  // and a moved area near the dock would scroll a tab that is in plain view at the top of a short screen.
+  assert.match(scss, /\.mpo-phone \.ios-nav--condensed~\.mpo-tabs \[role="tab"\]\{scroll-margin:calc\(-1 \* var\(--mpo-tabs-h\)\) 0 var\(--mpo-tabs-h\)\}/);
+  // '~' needs the tabs to follow the bar as siblings: IosNav is display:contents and projects [below] after its header.
+  const navSource = await read('app/shared/ios-nav.ts');
+  const navTemplate = /template: `([\s\S]*?)`,/.exec(navSource)?.[1] ?? '';
+  assert.ok(navTemplate.indexOf('<header #bar class="ios-nav"') >= 0);
+  assert.ok(navTemplate.indexOf('</header>') < navTemplate.indexOf('<ng-content select="[below]" />'));
+  assert.match(navTemplate, /\[class\.ios-nav--condensed\]="condensed\(\) \|\| !large"/);
+  for (const file of ['purchase-view.ts', 'purchase-editor.ts']) {
+    assert.match(templateOf(await read(`app/features/purchasing/${file}`)), /<div below class="ios-subbar mpo-tabs">\s*<app-segmented [^>]*semantics="tabs"/, file);
+  }
+  assert.match(await read('app/shared/segmented.ts'), /\[attr\.role\]="tabs\(\) \? 'tab' : 'radio'"/);
 });
 
 test('the kit gains the stacked segments and the nav its [hero] slot', async () => {
