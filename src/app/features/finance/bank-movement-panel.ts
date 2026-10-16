@@ -1191,9 +1191,11 @@ export class BankMovementPanel {
     if (documents.length) return { text: 'Eerdere registratie', sub: null, reasons: [], open: true };
     return { text: 'Geen factuur gevonden', sub: null, reasons: [], open: false };
   }
-  /** "{account} · {reference}"; a manual line starts with its time. */
+  /** "{account} · {reference}"; a manual line starts with its time. With one active account its name is left out (it is every line's). */
   subOf(row: BankStatementLine): string {
-    return [this.imported(row) ? '' : this.clock(row), this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
+    const active = this.state.accountsView();
+    const only = active.length === 1 && active[0].account === this.state.canonicalAccount(row.account);
+    return [this.imported(row) ? '' : this.clock(row), only ? '' : this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
   }
   /** The saldo after the line: over the active accounts, or the chosen account's own. */
   saldoText(row: BankStatementLine): string {
