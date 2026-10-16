@@ -21,11 +21,14 @@ app-home-desk-agenda { display: block; }
 .content.home-desk { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; max-width: 1292px; }
 .home-desk .wk-card + .wk-card { margin-top: 0; }
 .home-desk__card-title { margin: 0; font-size: 16px; font-weight: 720; }
+/* The header never moves the page once painted: the brief keeps two lines ("Nog niet alles geladen." is one, the
+   full sentence often two), and below 1280 px the tools take their own row from the first paint - beside the
+   lead they fit there only while the status reads "Bijwerken…", so "Alles bijgewerkt om 08:40" pushed them down. */
 .home-desk__head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; }
-.home-desk__lead { flex: 1 1 440px; min-width: 0; }
+.home-desk__lead { flex: 1 1 100%; min-width: 0; }
 .home-desk__over { margin: 0; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .home-desk__title { margin: 2px 0 0; font-size: 30px; font-weight: 780; letter-spacing: -.03em; line-height: 1.15; }
-.home-desk__brief { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; }
+.home-desk__brief { min-height: 2.9em; margin: 6px 0 0; color: var(--ink-2); font-size: 15px; line-height: 1.45; }
 .home-desk__brief b { color: var(--ink); font-weight: 650; }
 .home-desk__krap { color: #8a4a0c; font-weight: 650; text-decoration: underline dotted; text-underline-offset: 3px; }
 .home-desk__tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
@@ -40,6 +43,7 @@ app-home-desk-agenda { display: block; }
 .home-desk__more .search-summary { height: 100%; border-radius: 16px; }
 .home-desk__placeholder { min-height: 180px; }
 @media (min-width: 1280px) {
+  .home-desk__lead { flex-basis: 440px; }
   .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; }
   .home-desk__figs { grid-template-columns: minmax(0, 1fr); }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
