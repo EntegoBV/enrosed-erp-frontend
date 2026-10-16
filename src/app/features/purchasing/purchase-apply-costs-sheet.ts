@@ -32,8 +32,10 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
               @if (row.product) {
                 <button class="linklike ac-row__history" type="button" [attr.aria-label]="'Kostprijshistoriek van ' + row.label"
                         (click)="historyFor.set(row)">Historiek ›</button>
+              } @else {
+                <span class="linklike ac-row__history ac-row__history--none" aria-hidden="true">Historiek ›</span>
               }
-              <small class="ac-row__basis">{{ row.quantity }} · kostprijs {{ row.per }}</small>
+              <small class="ac-row__basis">{{ row.quantity }}@if (row.per) { · kostprijs {{ row.per }}}</small>
               @if (row.state === 'skipped') {
                 <p class="ac-row__skip">
                   niets ontvangen · blijft {{ row.currentEur !== null ? (row.currentEur | eur: 4) : 'zonder kostprijs' }}
@@ -97,6 +99,8 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     .ac-row__name { grid-area: name; min-width: 0; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
     .ac-row__variant { color: var(--rose-dark); font-weight: 650; }
     .ac-row__history { grid-area: link; white-space: nowrap; }
+    /* A product the screen could not load has no history to open; the hidden link keeps its width, so the figures line up. */
+    .ac-row__history--none { visibility: hidden; }
     .ac-row__basis { grid-area: basis; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
     .ac-row__skip { grid-area: figs; margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-style: italic; }
     .ac-row__figures { grid-area: figs; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
@@ -117,6 +121,7 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     }
     @media (max-width: 679.98px) {
       .ac-sheet { padding: 0 16px; }
+      .ac-row__history--none { display: none; }
       .ac-foot { display: flex; flex-direction: column-reverse; gap: 8px; width: 100%; }
       .ac-foot .btn { flex: none; width: 100%; }
     }

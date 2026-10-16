@@ -119,6 +119,9 @@ test('equality holds at 4 decimals; a cost of 0 before has no percentage; an unk
   const unknown = apply.applyCostRow(ORDER, line(999, 10, 1.5, 'Ander product'), null);
   assert.equal(unknown.state, 'unknown');
   assert.equal(unknown.name, 'Ander product');
+  /* Its unit is not known either: no "per stuk" for what may be a display. */
+  assert.deepEqual([unknown.quantity, unknown.per, unknown.other], ['Aantal 10', null, null]);
+  assert.equal(apply.applyCostRow(ORDER, line(999, 1200, 1.5), null).quantity, 'Aantal 1.200');
   const plan = apply.applyCostsPlan(ORDER, [line(999, 10, 1.5)], PRODUCTS);
   assert.deepEqual([plan.written, plan.changed], [1, 1]);
   /* Without a Herkenbare naam the PO number names the container. */
@@ -148,6 +151,12 @@ test('colour variants of one series read apart: the series name, then colour and
   assert.equal(new Set(plan.rows.map((row) => row.label)).size, plan.rows.length, 'no two rows read alike');
 });
 
+test('a line the supplier list lacks is named for fetching, each product once', () => {
+  assert.deepEqual(plain(apply.missingProductIds([line(301, 1, 1), line(309, 100, 31), line(310, 0, 0), line(309, 5, 31)], PRODUCTS)), [309, 310]);
+  assert.deepEqual(plain(apply.missingProductIds(LINES, PRODUCTS)), []);
+  assert.deepEqual(plain(apply.missingProductIds([], [])), []);
+});
+
 /* ---- the editor: the real members, transport and toasts mocked -------- */
 
 /** The class as plain JavaScript, decorator and imports dropped; `names` keeps only those members. */
@@ -166,7 +175,7 @@ function isolatedClass(text: string, file: string, className: string, names: Rea
 
 const editorSource = await readFile(new URL('../src/app/features/purchasing/purchase-editor.ts', import.meta.url), 'utf8');
 const editorJavascript = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['applyFor', 'applyBusy',
-  'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save', 'savedOrder', 'saving', 'deletingOrder',
+  'applyOtherProducts', 'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save', 'savedOrder', 'saving', 'deletingOrder',
   'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products', 'load']));
 
 function view(order: Partial<PurchaseOrder> = {}): PurchaseOrderView {
@@ -180,11 +189,13 @@ function setup(start = view()) {
   let failApply: Error | null = null;
   let failSave = false;
   let catalogue = PRODUCTS;
+  /* Products of other suppliers, only reachable by id. */
+  const elsewhere = new Map<number, Product>();
   let releaseApply: (() => void) | null = null;
   let routeId = start.order.id;
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(editorJavascript, { exports, signal, computed, clearTimeout, applyCostsPlan: apply.applyCostsPlan,
-    applyCostsToast: apply.applyCostsToast,
+    applyCostsToast: apply.applyCostsToast, missingProductIds: apply.missingProductIds,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   Object.assign(editor, {
@@ -218,6 +229,12 @@ function setup(start = view()) {
     },
     catalog: {
       products: async () => { calls.push('products'); return catalogue; },
+      product: async (id: number) => {
+        calls.push(`product ${id}`);
+        const found = elsewhere.get(id);
+        if (!found) throw new Error('Niet gevonden');
+        return found;
+      },
       unitNames: async () => { calls.push('unit-names'); return []; },
       productFamilies: async () => [],
       categories: async () => [],
@@ -225,7 +242,7 @@ function setup(start = view()) {
     },
   });
   editor.savedOrder.set(JSON.stringify(start.order));
-  return { editor, calls, toasts,
+  return { editor, calls, toasts, elsewhere,
     failNextApply: (error: Error) => { failApply = error; },
     failNextSave: () => { failSave = true; },
     routeTo: (id: number) => { routeId = id; },
@@ -247,6 +264,45 @@ test('the button opens the sheet first; confirming applies once and toasts the c
   assert.equal(editor.applyPlan(), null, 'the sheet closes');
   assert.deepEqual(toasts, [['Kostprijs van 3 producten gewijzigd, 2 ongewijzigd · 1 overgeslagen (niets ontvangen)', undefined]]);
   assert.deepEqual(calls.slice(-2), ['products', 'reload']);
+});
+
+test('a line kept from another supplier gets its product by id: its cost now, its unit and its history', async () => {
+  /* Product 309 of the screen check: a display of 12 roses sold per display, supplier 8, on PO-2026-014 of supplier 7. */
+  const display = product(309, 'Long stem rose box display', 31.2, 'PO-2026-014',
+    { kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'roos' });
+  const lines = [...LINES, line(309, 100, 31)];
+  const withLine = () => ({ ...view(), costing: { lines } } as unknown as PurchaseOrderView);
+  const { editor, calls, toasts, elsewhere, release } = setup(withLine());
+  elsewhere.set(309, display);
+  await editor.apply();
+  assert.deepEqual(calls, ['unit-names', 'products', 'product 309'], 'only the product the supplier list lacks is fetched');
+  const row = editor.applyPlan().rows.at(-1);
+  assert.equal(row.state, 'down');
+  assert.deepEqual([row.quantity, row.per, row.currentEur, row.currentSource], ['100 displays', 'per display van 12', 31.2, 'container/2026/014']);
+  assert.equal(row.product.id, 309, 'its history opens from the sheet');
+  const confirming = editor.confirmApply();
+  release();
+  await confirming;
+  assert.deepEqual(toasts, [['Kostprijs van 4 producten gewijzigd, 2 ongewijzigd · 1 overgeslagen (niets ontvangen)', undefined]]);
+  /* Opening again fetches it again, never keeps a stale copy. */
+  editor.view.set(withLine());
+  await editor.apply();
+  assert.equal(calls.filter((call) => call === 'product 309').length, 2);
+});
+
+test('a product that cannot be fetched stays unknown, without basis words', async () => {
+  const lines = [...LINES, line(309, 100, 31, 'Long stem rose box display - Wit')];
+  const { editor, calls } = setup({ ...view(), costing: { lines } } as unknown as PurchaseOrderView);
+  await editor.apply();
+  assert.equal(calls.at(-1), 'product 309');
+  const row = editor.applyPlan().rows.at(-1);
+  assert.deepEqual([row.state, row.quantity, row.per, row.product], ['unknown', 'Aantal 100', null, null]);
+  /* Nothing missing, nothing fetched. */
+  const other = setup();
+  other.elsewhere.set(309, product(309, 'Long stem rose box display', 31.2, null));
+  await other.editor.apply();
+  assert.deepEqual(other.calls, ['unit-names', 'products']);
+  assert.deepEqual(plain(other.editor.applyOtherProducts()), []);
 });
 
 test('unsaved edits are saved before the sheet opens; a failed save opens nothing', async () => {
@@ -324,6 +380,10 @@ test('the sheet parses, keeps the old sentence and the wording rules', async () 
   assert.match(template.replace(/\s+/g, ' '), /De berekende kostprijs \(per display of per stuk, zoals het product verkocht wordt\) wordt op de producten in de catalogus gezet en overschrijft wat daar staat\. Alle marges op verkooporders rekenen vanaf dan met deze cijfers\./);
   assert.match(template, />Annuleren</);
   assert.match(template, /Historiek ›/);
+  /* A product the screen could not load: no history button, its width kept, and no basis words. */
+  assert.match(template, /\} @else \{\s*<span class="linklike ac-row__history ac-row__history--none" aria-hidden="true">Historiek ›<\/span>/);
+  assert.match(template, /\{\{ row\.quantity \}\}@if \(row\.per\) \{ · kostprijs \{\{ row\.per \}\}\}/);
+  assert.match(sheet, /\.ac-row__history--none \{ visibility: hidden; \}/);
   /* Every Historiek button says whose history it opens, with the variant. */
   assert.match(template, /\[attr\.aria-label\]="'Kostprijshistoriek van ' \+ row\.label"/);
   assert.match(template, /\{\{ row\.name \}\}@if \(row\.variant\) \{<span class="ac-row__variant"> · \{\{ row\.variant \}\}<\/span>\}/);

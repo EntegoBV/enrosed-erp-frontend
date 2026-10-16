@@ -95,7 +95,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
-import { applyCostsPlan, applyCostsToast } from './purchase-apply-costs';
+import { applyCostsPlan, applyCostsToast, missingProductIds } from './purchase-apply-costs';
 import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -5135,10 +5135,17 @@ export class PurchaseEditor {
    */
   readonly applyFor = signal<number | null>(null);
   readonly applyBusy = signal(false);
+  /**
+   * Products of lines the supplier's list lacks: a placed order keeps a line
+   * of another supplier. Fetched by id when the sheet opens, so that row too
+   * shows its cost now, its unit and its history.
+   */
+  readonly applyOtherProducts = signal<Product[]>([]);
   /** The rows of the saved calculation against the products as they stand; live while the sheet is open. */
   readonly applyPlan = computed(() => {
     const data = this.view();
-    return data && data.order.id === this.applyFor() ? applyCostsPlan(data.order, data.costing.lines, this.products()) : null;
+    return data && data.order.id === this.applyFor()
+      ? applyCostsPlan(data.order, data.costing.lines, [...this.products(), ...this.applyOtherProducts()]) : null;
   });
 
   /**
@@ -5154,11 +5161,20 @@ export class PurchaseEditor {
       if (!saved || this.view()?.order.id !== data.order.id) return;
     }
     void this.catalog.unitNames().catch(() => undefined);
+    this.applyOtherProducts.set([]);
     this.applyFor.set(data.order.id);
+    let products = this.products();
     try {
-      const products = await this.catalog.products(data.order.supplierId);
+      products = await this.catalog.products(data.order.supplierId);
       if (this.view()?.order.id === data.order.id) this.products.set(products);
     } catch { /* the list from opening the order still names every product */ }
+    const current = this.view();
+    if (current?.order.id !== data.order.id) return;
+    const missing = missingProductIds(current.costing.lines, products);
+    if (!missing.length) return;
+    /* A product that cannot be fetched stays unknown: its row says so and names no unit. */
+    const found = await Promise.all(missing.map((id) => this.catalog.product(id).catch(() => null)));
+    if (this.applyFor() === data.order.id) this.applyOtherProducts.set(found.filter((product): product is Product => product !== null));
   }
 
   closeApply(): void {

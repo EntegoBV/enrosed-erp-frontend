@@ -23,7 +23,7 @@ export type ApplyCostState =
   | 'unchanged'
   /** The line received nothing; the server leaves the product alone. */
   | 'skipped'
-  /** The product is not in the supplier's list on this screen, so its cost now is not known here. */
+  /** The screen could not load the product, so its cost now and its unit are not known here. */
   | 'unknown';
 
 export interface ApplyCostRow {
@@ -34,10 +34,10 @@ export interface ApplyCostRow {
   variant: string | null;
   /** Name and variant in one, for a button's accessible name. */
   label: string;
-  /** "500 displays", "2.000 diamanten". */
+  /** "500 displays", "2.000 diamanten"; "Aantal 100" for a product the screen could not load. */
   quantity: string;
-  /** "per display van 12", "per diamant", "per stuk". */
-  per: string;
+  /** "per display van 12", "per diamant", "per stuk"; null when the product, so its unit, is not known. */
+  per: string | null;
   currentEur: number | null;
   /** This container's name when the cost came from it, else the source the product kept, "handmatig" without one. */
   currentSource: string | null;
@@ -78,7 +78,8 @@ export function costsAppliedBefore(order: Pick<PurchaseOrder, 'number'>, lines: 
 }
 
 export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: Product | null): ApplyCostRow {
-  const basis = productCostBasis(product);
+  /* Without the product its unit is not known: no basis words rather than "per stuk" for what may be a display. */
+  const basis = product ? productCostBasis(product) : null;
   const currentEur = product?.landedCostEur ?? null;
   const fromHere = product?.landedCostSource != null && product.landedCostSource === order.number;
   const currentSource = !product ? null
@@ -110,12 +111,22 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
     productId: line.productId,
     name, variant,
     label: variant ? `${name} · ${variant}` : name,
-    quantity: costQuantity(basis, Math.max(0, line.quantity)),
-    per: costWords(basis).per,
+    quantity: basis ? costQuantity(basis, Math.max(0, line.quantity)) : `Aantal ${Math.max(0, line.quantity).toLocaleString('nl-BE')}`,
+    per: basis ? costWords(basis).per : null,
     currentEur, currentSource, newEur,
-    other: otherSideCost(basis, newEur),
+    other: basis ? otherSideCost(basis, newEur) : null,
     deltaEur, deltaPct, state, product,
   };
+}
+
+/**
+ * The products of these lines that are not among `products`: a placed order
+ * keeps a line of another supplier, whose product the supplier's list lacks.
+ * Each id once, in line order.
+ */
+export function missingProductIds(lines: readonly Pick<LandedCostLine, 'productId'>[], products: readonly Pick<Product, 'id'>[]): number[] {
+  const known = new Set(products.map((product) => product.id));
+  return [...new Set(lines.map((line) => line.productId).filter((id) => !known.has(id)))];
 }
 
 /** The rows of the saved calculation against the products as they stand. */
