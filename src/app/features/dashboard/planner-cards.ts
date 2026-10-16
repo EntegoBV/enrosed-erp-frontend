@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { PlannerApi, PlannerItem, PlannerStore } from '../../core/api/planner-api';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { plannedBusinessDay } from '../../shared/business-days';
@@ -19,6 +20,9 @@ export interface PlannerMilestone {
   sub: string | null;
   orderId: number;
 }
+
+/** The phone's quick-add hint (212 px at 16 px): the desk's "Nieuwe taak… (dag kiezen kan erna)" needs 262, a 360 phone has 226. */
+const PHONE_TASK_PLACEHOLDER = 'Nieuwe taak, dag kies je erna';
 
 interface CompactAgendaEntry {
   id: string;
@@ -224,7 +228,7 @@ interface CompactAgendaEntry {
         </div>
         <div class="card__body">
           <form class="task-add" (submit)="addTask(); $event.preventDefault()">
-            <input class="input input--sm" placeholder="Nieuwe taak… (dag kiezen kan erna)" enterkeyhint="done"
+            <input class="input input--sm" [placeholder]="taskPlaceholder()" enterkeyhint="done"
                    [ngModel]="newTask()" (ngModelChange)="newTask.set($event)" name="task" autocomplete="off" />
             <button class="btn btn--primary btn--sm" type="submit" [disabled]="!newTask().trim()">+</button>
           </form>
@@ -643,6 +647,9 @@ export class PlannerCards {
 
   readonly compact = input(false);
   readonly section = input<'all' | 'tasks' | 'none'>('all');
+  private readonly desk = inject(DesktopViewport).active;
+  /** The quick add's hint: the desk has room for the long one, a phone's field (226 px at 360) for the short one. */
+  readonly taskPlaceholder = computed(() => (this.desk() ? 'Nieuwe taak… (dag kiezen kan erna)' : PHONE_TASK_PLACEHOLDER));
   readonly expanded = signal(false);
 
   readonly items = this.store.items;
