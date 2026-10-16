@@ -36,7 +36,8 @@ test('splitCents: the transaction to the cent, rounding rest on the largest part
 const view = (id: number, plannedEur: number, paidEur: number, extra: Record<string, unknown> = {}) => ({
   order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null, ...extra },
   reconciliation: { streams: [{ payee: 'SUPPLIER', plannedEur: plannedEur * 3, paidEur, finalized: false }],
-    supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur, paidEur, remainingEur: Math.max(0, plannedEur - paidEur), finalized: false },
+    // An exactly paid term is finalized on the server: it still says where a larger share puts it.
+    supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur, paidEur, remainingEur: Math.max(0, plannedEur - paidEur), finalized: paidEur === plannedEur },
       { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: plannedEur * 7 / 3, paidEur: 0, remainingEur: plannedEur * 7 / 3, finalized: false }] },
 }) as any;
 const term = (orderId: number, due: string, remainingEur: number, plannedEur = remainingEur) => ({

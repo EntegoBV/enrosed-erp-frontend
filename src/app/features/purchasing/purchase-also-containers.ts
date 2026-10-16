@@ -33,7 +33,7 @@ export interface AlsoContainerOption {
   terms: { due: TermDue | null; label: string; openEur: number; plannedEur?: number; paidEur?: number }[];
   /** With the payments loaded: the container's open payments of the payee, oldest first. */
   openPayments?: AlsoOpenPayment[];
-  /** With the payments loaded: every term that is not finalized (the payee's stream for a payee without terms). */
+  /** With the payments loaded: where every term stands (the payee's stream for a payee without terms). */
   standings?: AlsoStanding[];
 }
 /** One other container's part of the transfer, in euro (the transaction's). */
@@ -64,16 +64,18 @@ const daysApart = (left: string, right: string): number =>
 const nameOf = (part: { orderId: number; number: string; alias?: string | null }): string =>
   (part.alias ?? '').trim() || (part.number ?? '').trim() || `Inkoop #${part.orderId}`;
 
-/** The standings of one container for a payee: every term that is not finalized, else the payee's stream. */
+/**
+ * The standings of one container for a payee: every term, else the payee's
+ * stream. A term exactly paid counts as finalized on the server, and that is
+ * just the one a larger share puts above its Afspraak: it stays.
+ */
 function standingsOf(view: PurchaseOrderView | undefined, payee: Payee): AlsoStanding[] {
   const report = view?.reconciliation;
   if (!report) return [];
   const terms = payee === 'SUPPLIER' ? report.supplierInstalments ?? [] : [];
-  if (terms.length) {
-    return terms.filter((term) => !term.finalized).map((term) => ({ due: term.due, label: term.label, term: true, plannedEur: term.plannedEur, paidEur: term.paidEur }));
-  }
+  if (terms.length) return terms.map((term) => ({ due: term.due, label: term.label, term: true, plannedEur: term.plannedEur, paidEur: term.paidEur }));
   const stream = report.streams.find((item) => item.payee === payee);
-  return stream && !stream.finalized ? [{ due: null, label: PAYEE_WORD[payee], term: false, plannedEur: stream.plannedEur, paidEur: stream.paidEur }] : [];
+  return stream ? [{ due: null, label: PAYEE_WORD[payee], term: false, plannedEur: stream.plannedEur, paidEur: stream.paidEur }] : [];
 }
 
 /**

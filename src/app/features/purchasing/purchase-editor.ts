@@ -47,7 +47,8 @@ import { lineMarkers } from '../finance/bank-markers';
 import { clearanceSuggestion } from '../finance/vat-return';
 import { containerPayables } from '../finance/payables';
 import { CashForecastApi } from '../../core/api/cash-forecast-api';
-import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, type AlsoContainerOption } from './purchase-also-containers';
+import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, proposeShare, type AlsoContainerOption } from './purchase-also-containers';
+import { applyShare, shareBody, shareNewPart, sharePartsOf, shareStatus, shareToast } from './purchase-payment-share';
 import { receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
@@ -64,7 +65,7 @@ import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Clearance, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseInvoice, PurchaseOrder,
-  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
+  PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentRow, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
@@ -1511,7 +1512,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
           [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
           [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()" [termStanding]="payingTermStanding()"
-          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" (alsoLoad)="loadAlso(data.order.id, data.order.supplierId ?? null)"
+          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" [orderName]="containerName(data.order)" [lineShares]="payingLineShares()"
+          (alsoLoad)="loadAlso(data.order.id, data.order.supplierId ?? null, pay.payee)"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
@@ -2295,25 +2297,90 @@ export class PurchaseEditor {
   /* ---- "Deze transactie dekt ook andere containers" (owner addition 2026-10-15): the other containers of the transfer */
   private readonly cashApi = inject(CashForecastApi);
   readonly alsoState = signal<{ loading: boolean; supported: boolean; options: AlsoContainerOption[] }>({ loading: false, supported: true, options: [] });
-  private alsoFor: number | null = null;
-  /** Once per order screen: the containers with an open supplier amount (the supplier's first); a server without parts per order says so. */
-  async loadAlso(orderId: number, supplierId: number | null): Promise<void> {
-    if (this.alsoFor === orderId) return;
-    this.alsoFor = orderId;
+  private alsoFor: string | null = null;
+  /**
+   * Once per order screen and payee: the containers with an open amount or an
+   * open payment of that payee (the supplier's first, those with an open
+   * payment before them); a server without parts per order says so. With
+   * 'Verdelen over containers' chosen the first rows are proposed.
+   */
+  async loadAlso(orderId: number, supplierId: number | null, payee: Payee = 'SUPPLIER'): Promise<void> {
+    const key = `${orderId}:${payee}`;
+    if (this.alsoFor === key) { this.proposeShareRows(); return; }
+    this.alsoFor = key;
     this.alsoState.set({ loading: true, supported: true, options: [] });
     try {
-      const [settings, views, suppliers] = await Promise.all([this.cashApi.settings(), this.sourcing.purchaseOrders(), this.sourcing.suppliers()]);
-      if (this.alsoFor !== orderId) return;
+      // The payments are what links an open one instead of a second; an older server without the list still offers the open terms.
+      const [settings, views, suppliers, rows] = await Promise.all([this.cashApi.settings(), this.sourcing.purchaseOrders(), this.sourcing.suppliers(),
+        this.sourcing.purchasePayments().catch(() => [] as PurchasePaymentRow[])]);
+      if (this.alsoFor !== key) return;
+      this.paymentRows.set({ orderId, rows });
       const names = new Map(suppliers.filter(row => row.id != null).map(row => [row.id!, row.name]));
       this.alsoState.set({ loading: false, supported: settings !== null,
-        options: alsoContainerOptions(containerPayables(views), views.map(view => ({ id: view.order.id, supplierId: view.order.supplierId ?? null })), names, orderId, supplierId) });
+        options: alsoContainerOptions(containerPayables(views), views.map(view => ({ id: view.order.id, supplierId: view.order.supplierId ?? null })), names, orderId, supplierId,
+          { payments: rows, views, payee }) });
+      this.proposeShareRows();
     } catch (failure: unknown) {
-      if (this.alsoFor !== orderId) return;
+      if (this.alsoFor !== key) return;
       this.alsoFor = null;
       this.alsoState.set({ loading: false, supported: true, options: [] });
       this.ui.toast(messageOf(failure, 'Containers laden mislukt'), 'err');
     }
   }
+  /**
+   * 'Verdelen over containers' just chosen, no row yet: the same supplier's
+   * open payments on this payment's term noted within a week, split 'Volgens
+   * afspraak' (once; the owner adds, removes and types from there).
+   */
+  private proposeShareRows(): void {
+    const pay = this.paying(), data = this.view();
+    if (!pay || !data || pay.surplus !== 'SHARE' || (pay.alsoParts ?? []).length || pay.shareProposed || this.alsoState().loading) return;
+    const part = this.payingParts().find(item => item.id === pay.pendingPartId);
+    const line = pay.pendingLines?.length === 1 ? pay.pendingLines[0] : null;
+    if (!part || !line) return;
+    const rows = proposeShare(this.alsoState().options, { orderId: data.order.id, due: part.payment.instalmentDue ?? null,
+      label: part.payment.label ?? (pay.label || null), paidOn: part.paidOn }, data.order.supplierId ?? null);
+    const applied = rows.length ? applyShare('AFSPRAAK', line.amountEur, pendingPartEur(part, pay.partEdits?.[part.id], null), rows) : null;
+    this.paying.set({ ...pay, shareProposed: true, ...(applied
+      ? { alsoParts: applied.parts, shareOwn: applied.own, shareOwnInput: amountInputText(applied.own), shareMode: 'AFSPRAAK' as const } : { alsoParts: rows }) });
+  }
+  /**
+   * After a refused share or transfer: the containers as the server has them
+   * now. A row keeps its part and takes its open payment's euro again; a row
+   * whose payment is gone or on the bank is dropped (the refusal says why).
+   */
+  private async refreshAlsoRows(orderId: number, supplierId: number | null, payee: Payee): Promise<void> {
+    this.alsoFor = null;
+    await this.loadAlso(orderId, supplierId, payee);
+    const pay = this.paying();
+    if (!pay || this.view()?.order.id !== orderId) return;
+    const options = this.alsoState().options;
+    const rows = (pay.alsoParts ?? []).flatMap(part => {
+      if (part.paymentId == null) return [part];
+      const payment = options.find(option => option.orderId === part.orderId)?.openPayments?.find(item => item.id === part.paymentId);
+      return payment ? [{ ...part, paymentEur: payment.amountEur, paymentAmount: payment.amount, paymentCurrency: payment.currency, paidOn: payment.paidOn }] : [];
+    });
+    this.paying.set({ ...pay, alsoParts: rows });
+  }
+
+  /** Every container payment as GET /purchase-payments lists them (once per order screen): which other containers a bank line of this one carries. */
+  readonly paymentRows = signal<{ orderId: number; rows: PurchasePaymentRow[] } | null>(null);
+  private async loadPaymentRows(orderId: number, force = false): Promise<void> {
+    if (!force && this.paymentRows()?.orderId === orderId) return;
+    try {
+      const rows = await this.sourcing.purchasePayments();
+      if (this.view()?.order.id === orderId) this.paymentRows.set({ orderId, rows });
+    } catch { /* a hint only: the sheet then names this container's own payments on the line */ }
+  }
+  /** 'Deze transactie draagt ook: PO-2026-039 € 3.801,13, …': the other containers' payments on the lines of the payment in the sheet. */
+  readonly payingLineShares = computed(() => {
+    const data = this.view(), loaded = this.paymentRows();
+    if (!data || !loaded || loaded.orderId !== data.order.id) return [];
+    const lines = new Set(this.payingParts().map(part => part.bankStatementLineId).filter((id): id is number => id != null));
+    return loaded.rows.filter(row => row.bankStatementLineId != null && lines.has(row.bankStatementLineId) && row.orderId !== data.order.id)
+      .map(row => ({ lineId: row.bankStatementLineId!, name: containerName({ id: row.orderId, number: row.orderNumber, alias: row.orderAlias }), amountEur: row.amountEur }))
+      .sort((left, right) => left.name.localeCompare(right.name, 'nl', { numeric: true }));
+  });
   /** The other containers' parts this save sends: a new EUR supplier payment on a picked transaction only. */
   private alsoPartsOf(pay: PurchasePaymentDraft) {
     return !pay.id && pay.bankTransaction && pay.alsoOpen && pay.payee === 'SUPPLIER' && pay.currency === 'EUR' ? pay.alsoParts ?? [] : [];
@@ -2353,6 +2420,8 @@ export class PurchaseEditor {
       instalmentDue: root.instalmentDue ?? null,
       invoiceId: main ?? root.invoiceId ?? null, invoiceIdChanged: main !== null });
     void this.loadBankLines();
+    // A transaction shared with other containers names them under Betaalbewijs.
+    if (members.some(member => member.bankStatementLineId != null)) void this.loadPaymentRows(root.orderId);
   }
 
   /** The money, the day and the transfers of a saved payment as the sheet starts from them; a foreign payment brings its booked euro value. */
@@ -2959,6 +3028,12 @@ export class PurchaseEditor {
       : pendingLinkPlan(pendingEur, pendingLines, round, pay.surplus ?? null, companions, foreign);
     if (plan.kind === 'invalid') { this.ui.toast(plan.message, 'err'); return; }
     if (plan.kind === 'higher') { this.ui.toast(`${surplusQuestion(plan.extraEur)}: kies eerst wat er met het verschil gebeurt.`, 'err'); return; }
+    // 'Verdelen over containers': the parts must make the transaction before anything is written.
+    const shareParts = plan.kind === 'share' ? pay.alsoParts ?? [] : [];
+    if (plan.kind === 'share' && (!shareParts.length || shareParts.some(part => !((part.amount ?? 0) > 0)) || !((pay.shareOwn ?? 0) > 0)
+      || !shareStatus(pay.shareOwn ?? null, shareParts, pendingLines[0].amountEur).matches)) {
+      this.ui.toast(`Verdeel eerst de transactie: samen moeten de delen ${formatEur(Math.abs(pendingLines[0].amountEur))} zijn.`, 'err'); return;
+    }
     const also = this.alsoPartsOf(pay);
     if (also.some(part => part.amount === null)) { this.ui.toast('Vul bij elke andere container een positief bedrag in.', 'err'); return; }
     if (pay.bankTransaction && !bankAmountsMatch(this.paymentTransferEur() + alsoTotalEur(also), Math.abs(pay.bankTransaction.amountEur))) {
@@ -3042,13 +3117,29 @@ export class PurchaseEditor {
       let saved: PurchasePayment;
       // Whether this save writes the payment; a link alone (untouched) or a retry (retained) writes nothing first.
       let wrote = true;
-      if (pay.bankTransaction && !pay.id) {
+      if (pay.bankTransaction && !pay.id && also.some(part => part.paymentId != null)) {
+        // Another container's instalment is already noted (Emre, 2026-10-16): that payment is linked, never a second one. This payment and
+        // its parts are new; one purchase-share call, its answer in request order. A lost answer: the same body again gets the same rows.
+        try {
+          const result = await this.banking.sharePurchasePayment(pay.bankTransaction.id,
+            [shareNewPart(data.order.id, goods), ...fresh.map(write => shareNewPart(data.order.id, write)), ...sharePartsOf(also)]);
+          saved = result.payments[0];
+          atomicLine = result.line;
+          atomicIds = result.payments.slice(0, 1 + fresh.length).map(payment => payment.id);
+          this.alsoFor = null;
+          void this.loadPaymentRows(data.order.id, true);
+        } catch (failure: unknown) {
+          if (this.shareRefused(failure)) void this.refreshAlsoRows(data.order.id, data.order.supplierId ?? null, pay.payee);
+          throw this.shareMissing(failure) ? new Error(SHARE_SERVER_PENDING) : failure;
+        }
+      } else if (pay.bankTransaction && !pay.id) {
         // One transfer for several containers: the other containers' parts name their own order, in the same atomic call.
         const result = await this.banking.addPurchasePayment(pay.bankTransaction.id, data.order.id, [goods, ...fresh, ...alsoWrites(also, goods.paidOn)]);
         const own = result.payments.filter(payment => payment.orderId == null || payment.orderId === data.order.id);
         saved = own[0];
         atomicLine = result.line;
         atomicIds = own.map(payment => payment.id);
+        if (also.length) this.alsoFor = null;
       } else {
         const retained = (pay.bankLinkPending || pay.bankLinkComplete) ? pay.bankSavedPayment ?? (this.payments() ?? []).find(payment => payment.id === pay.id) : null;
         // A saved payment whose words, payee, term, money and invoice stayed as stored is not written again: a link carries the money
@@ -3137,6 +3228,21 @@ export class PurchaseEditor {
               const result = await this.sourcing.linkPaymentLines(pendingPart.id, plan.lineIds.map(bankStatementLineId => ({ bankStatementLineId })));
               await this.reloadBankLines(result.lines);
               done.push(`Betaling verdeeld over ${plan.lineIds.length} transacties`);
+            } else if (plan.kind === 'share') {
+              // 'Verdelen over containers': this payment and every other container's part in one call; the server checks the euro the sheet saw
+              // (not after this save wrote the payment) and answers an identical retry with the same rows.
+              const result = await this.banking.sharePurchasePayment(plan.lineId, shareBody({ paymentId: pendingPart.id, partEur: pay.shareOwn!,
+                expectedEur: wrote ? null : pendingPart.amountEur }, shareParts, pendingPart.payment.payee ?? 'SUPPLIER'));
+              await this.reloadBankLines([result.line]);
+              this.alsoFor = null;
+              void this.loadPaymentRows(data.order.id, true);
+              const own = result.parts[0];
+              after = result.payments[0] ?? null;
+              if (own?.outcome === 'CARVED' && own.wasEur != null) notice = carveText(own.wasEur, own.amountEur);
+              else if (own && after && own.wasEur != null && own.wasPaidOn) notice = linkNotice({ amountEur: own.wasEur, paidOn: own.wasPaidOn }, after);
+              done.push(shareToast([{ name: containerName(data.order), amountEur: own?.amountEur ?? pay.shareOwn! },
+                ...shareParts.map((part, index) => ({ name: containerName({ id: part.orderId, number: part.number, alias: part.alias }),
+                  amountEur: result.parts[index + 1]?.amountEur ?? part.amount! }))]));
             } else if (plan.kind === 'grow') {
               // The payment grows by a new transfer of this line (the server's addTransfer); the linked transfers stay as they are.
               const result = await this.sourcing.linkPaymentPart(pendingPart.id, plan.lineId, null, { higher: 'ADJUST' });
@@ -3149,24 +3255,27 @@ export class PurchaseEditor {
               await this.reloadBankLines([line]);
               done.push('Banktransactie gekoppeld');
             }
-            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false } : current);
+            this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false, ...NO_SHARE } : current);
           } catch (failure: unknown) {
             await this.refreshPaymentState(data.order.id);
             if (this.view()?.order.id !== data.order.id) return;
             // A lost answer: the server did link, the refreshed payment carries every picked transaction. Clear the pick and go on.
             if (round && pendingAlreadyLinked(pendingLines, this.payingParts())) {
-              this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false, bankLinkError: '' } : current);
+              this.paying.update(current => current?.id === saved.id ? { ...current, pendingLines: [], pendingPartId: null, surplus: null, addTransfer: false, ...NO_SHARE, bankLinkError: '' } : current);
+              if (plan.kind === 'share') { this.alsoFor = null; void this.loadPaymentRows(data.order.id, true); }
               // The answer and its notice were lost: the payment before this save against the refreshed one says what changed.
               done.push(alreadyLinkedText(pendingLines.length, paymentFigure(parts), paymentFigure(this.payingParts())));
             } else {
-              const reason = messageOf(failure, 'De koppeling is nog niet gelukt.');
+              const reason = plan.kind === 'share' && this.shareMissing(failure) ? SHARE_SERVER_PENDING : messageOf(failure, 'De koppeling is nog niet gelukt.');
+              // A refused share: the containers as the server has them now (a row whose payment went is dropped; the refusal says why).
+              if (plan.kind === 'share' && this.shareRefused(failure)) void this.refreshAlsoRows(data.order.id, data.order.supplierId ?? null, pendingPart.payment.payee ?? 'SUPPLIER');
               // A refusal when this sheet wrote nothing (the link alone carries the payment): nothing to protect, so the choice is
               // open again (another 'Bedrag aanpassen', no transaction) and the words do not claim a saved payment.
               const written = !!this.paying()?.paymentWritten;
               this.paying.update(current => current?.id === saved.id ? { ...current, ...(written
                 ? { bankLinkError: `Betaling bewaard. ${reason} Opnieuw proberen maakt geen extra betaling.` }
-                : { bankLinkPending: false, bankSavedPayment: undefined, surplus: null, bankLinkError: reason }) } : current);
-              this.ui.toast(messageOf(failure, 'Koppelen mislukt'), 'err');
+                : { bankLinkPending: false, bankSavedPayment: undefined, ...(plan.kind === 'share' ? {} : { surplus: null }), bankLinkError: reason }) } : current);
+              this.ui.toast(plan.kind === 'share' ? reason : messageOf(failure, 'Koppelen mislukt'), 'err');
               return;
             }
           }
@@ -3213,6 +3322,17 @@ export class PurchaseEditor {
     } finally {
       this.payingBusy.set(false);
     }
+  }
+
+  /** The server refused the share (a 4xx with its reason): nothing was linked, the rows are refreshed. */
+  private shareRefused(failure: unknown): boolean {
+    const status = (failure as { status?: number } | null)?.status;
+    return status === 400 || status === 409 || status === 422 || (status === 404 && !this.shareMissing(failure));
+  }
+  /** A server without POST …/purchase-share: 404/405 without a reason of its own. */
+  private shareMissing(failure: unknown): boolean {
+    const response = failure as { status?: number; error?: { message?: unknown } | null } | null;
+    return (response?.status === 404 || response?.status === 405) && !(typeof response.error?.message === 'string' && response.error.message.trim());
   }
 
   /**
@@ -5144,6 +5264,10 @@ export class PurchaseEditor {
 
 /** Container payments are booked on the bank as Belgian local time, like the costs. */
 const BANK_ZONE = 'Europe/Brussels';
+/** A server before 'Verdelen over containers' (2026-10-16). */
+const SHARE_SERVER_PENDING = 'Verdelen over containers kan zodra de server bijgewerkt is.';
+/** The share's fields go with the pick they belong to. */
+const NO_SHARE: Partial<PurchasePaymentDraft> = { alsoParts: [], shareOwn: null, shareOwnInput: '', shareMode: undefined, shareProposed: false };
 /** The product lines of the container as a quote would carry them: product and pieces. */
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
