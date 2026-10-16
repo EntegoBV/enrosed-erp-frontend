@@ -57,6 +57,11 @@ export interface CostHistoryRow {
   name: string;
   /** The PO number beside a Herkenbare naam. */
   numberHint: string | null;
+  /**
+   * The container the row belongs to: its own order, else the order another
+   * row or the product page knows by the same number. Rows count by it.
+   */
+  orderId: number | null;
   /** The container to link to: not gone and not the one the sheet was opened from. */
   linkId: number | null;
   gone: boolean;
@@ -74,7 +79,7 @@ export interface CostHistoryView {
   rows: CostHistoryRow[];
   /** Over the rows on the newest row's basis, one per container: its newest. */
   stats: { min: number; max: number; avg: number };
-  /** Distinct containers: purchase orders, else the source text. */
+  /** Distinct containers: the order a row belongs to, else its source text. */
   containers: number;
   /** Rows left out of the sums and the chart because they hold on another basis. */
   excluded: number;
@@ -148,35 +153,53 @@ export function costParts(entry: ProductCostHistoryEntry, basis: CostBasis): Cos
 /**
  * The history as the screen reads it. `current` is the product's basis today
  * (also for rows that kept none); `currentOrderId` is the container the sheet
- * was opened from, which gets no link to itself. `sourceLink` is the order of
- * the product's cost source: a row that kept no order but names that source
- * (a copy of a copy keeps only the number) links to it.
+ * was opened from, which gets no link to itself. A row that kept no order but
+ * names one by its number (a copy of a copy keeps only the number) belongs to
+ * that order: the one another row of this history kept with that number, else
+ * `sourceLink`, the order the product page found behind the cost's source.
+ * It links to it, carries its name and counts as that container.
  */
 export function costHistoryView(entries: readonly ProductCostHistoryEntry[], current: CostBasis, currentOrderId: number | null = null,
   sourceLink: CostSourceLink | null = null): CostHistoryView {
-  const rows: CostHistoryRow[] = [];
+  /* The orders this history knows by their number; the newest row of each comes first. */
+  const known = new Map<string, { id: number; name: string | null; gone: boolean }>();
+  for (const entry of entries) {
+    const number = entry.source?.trim();
+    if (entry.purchaseOrderId == null || !number || known.has(number)) continue;
+    known.set(number, { id: entry.purchaseOrderId, name: entry.containerName?.trim() || null, gone: entry.containerGone === true });
+  }
   const sourceText = sourceLink?.text.trim() || null;
+  if (sourceText !== null && !known.has(sourceText)) known.set(sourceText, { id: sourceLink!.id, name: null, gone: false });
+
+  const rows: CostHistoryRow[] = [];
   /* Oldest first, so every row can compare with the one before it. */
   for (const entry of [...entries].reverse()) {
     const basis = entryCostBasis(entry, current);
     const kind = costKind(entry);
-    const name = entry.containerName?.trim() || entry.source?.trim()
+    const order = entry.purchaseOrderId != null
+      ? { id: entry.purchaseOrderId, name: entry.containerName?.trim() || null, gone: entry.containerGone === true }
+      : known.get(entry.source?.trim() ?? '') ?? null;
+    const name = order?.name || entry.source?.trim()
       || (entry.purchaseOrderId != null ? `Inkoop #${entry.purchaseOrderId}` : 'Handmatig');
-    const gone = entry.purchaseOrderId != null && entry.containerGone === true;
-    const orderId = entry.purchaseOrderId ?? (sourceText !== null && entry.source?.trim() === sourceText ? sourceLink!.id : null);
+    const gone = order?.gone === true;
+    const older = rows[0] ?? null;
+    /* A re-apply compares with this very container's earlier cost, never with another container; so does an apply
+       whose cost before came from this same container (the copy's first apply from its source's container). */
+    const sameContainer = kind === 'REAPPLY' || (order !== null && older?.orderId === order.id && entry.previousLandedUnitEur != null
+      && Math.round(entry.previousLandedUnitEur * 10000) === Math.round(older.entry.landedUnitEur * 10000));
     rows.unshift({
       entry, kind, kindLabel: COST_KIND_LABEL[kind], basis,
       per: costWords(basis).per,
       other: otherSideCost(basis, entry.landedUnitEur),
       quantity: entry.quantity ? costQuantity(basis, entry.quantity) : null,
       name,
-      numberHint: entry.containerName ? containerNumberHint(entry.containerName, entry.source) : null,
-      linkId: orderId != null && !gone && orderId !== currentOrderId ? orderId : null,
+      numberHint: order?.name ? containerNumberHint(order.name, entry.source) : null,
+      orderId: order?.id ?? null,
+      linkId: order !== null && !gone && order.id !== currentOrderId ? order.id : null,
       gone,
       by: entry.appliedBy && !SYSTEM_ACTORS.has(entry.appliedBy.trim().toLowerCase()) ? entry.appliedBy : null,
-      delta: delta(entry, basis, rows[0] ?? null),
-      /* A re-apply compares with this very container's earlier cost, never with another container. */
-      against: kind === 'REAPPLY' ? 'eerder bij deze container' : 'de vorige container',
+      delta: delta(entry, basis, older),
+      against: sameContainer ? 'eerder bij deze container' : 'de vorige container',
       parts: costParts(entry, basis),
     });
   }
@@ -186,7 +209,7 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
      Rows without a container stay as they are. Every row stays in the list. */
   const seen = new Set<number>();
   const counted = rows.filter((row) => {
-    const id = row.entry.purchaseOrderId;
+    const id = row.orderId;
     if (id == null) return true;
     if (seen.has(id)) return false;
     seen.add(id);
@@ -198,7 +221,7 @@ export function costHistoryView(entries: readonly ProductCostHistoryEntry[], cur
     ? { min: Math.min(...values), max: Math.max(...values), avg: round4(values.reduce((sum, value) => sum + value, 0) / values.length) }
     : { min: 0, max: 0, avg: 0 };
   const containers = new Set(rows
-    .map((row) => row.entry.purchaseOrderId != null ? `po:${row.entry.purchaseOrderId}` : row.entry.source?.trim() ? `src:${row.entry.source.trim()}` : null)
+    .map((row) => row.orderId != null ? `po:${row.orderId}` : row.entry.source?.trim() ? `src:${row.entry.source.trim()}` : null)
     .filter((key): key is string => key !== null)).size;
 
   /* Two rows on one day would draw a vertical stroke: the day's last cost stands for it. */

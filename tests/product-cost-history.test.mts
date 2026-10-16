@@ -324,6 +324,47 @@ test('a copy row that kept only the source number links to the order the product
   assert.equal(live.rows[0].linkId, 9);
 });
 
+test('a copy row that kept only the number and a later apply of that container are one container', () => {
+  const current = basis.productCostBasis(ROSES_DISPLAY);
+  /* Product 309 after applying PO-2026-014 ("Najaar 2026"): its COPY row kept the number, not the order id. */
+  const entries = [
+    row({ appliedAt: '2026-10-16T09:00:00Z', landedUnitEur: 31, previousLandedUnitEur: 31.2, kind: 'APPLY', purchaseOrderId: 14,
+      source: 'PO-2026-014', containerName: 'Najaar 2026', salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }),
+    row({ appliedAt: '2026-10-15T09:00:00Z', landedUnitEur: 31.2, previousLandedUnitEur: null, kind: 'COPY', purchaseOrderId: null,
+      source: 'PO-2026-014', quantity: null, salesUnit: 'DISPLAY', piecesPerUnit: 12, unitKey: 'roos' }),
+  ];
+  for (const link of [{ id: 14, text: 'PO-2026-014' }, null]) {
+    /* With the product page's source order, and without it (the Kostprijzen toepassen sheet): the APPLY row names the order. */
+    const view = history.costHistoryView(entries, current, null, link);
+    assert.equal(view.containers, 1, 'one container, not two');
+    assert.deepEqual(plain(view.rows.map((r) => r.orderId)), [14, 14]);
+    assert.deepEqual(plain(view.rows.map((r) => r.linkId)), [14, 14]);
+    /* The copy row reads the container's Herkenbare naam too, with the number beside it. */
+    assert.deepEqual(plain(view.rows.map((r) => [r.name, r.numberHint])), [['Najaar 2026', 'PO-2026-014'], ['Najaar 2026', 'PO-2026-014']]);
+    /* Like a re-apply, the container counts with its newest cost; the copied one stays in the list. */
+    assert.deepEqual(plain(view.stats), { min: 31, max: 31, avg: 31 });
+    assert.equal(view.replaced, 1);
+    assert.deepEqual(plain(view.chart), { dates: ['2026-10-16'], values: [31] });
+    /* The cost before came from this same container. */
+    assert.equal(view.rows[0].delta.tone, 'down');
+    assert.equal(view.rows[0].against, 'eerder bij deze container');
+  }
+  /* Opened from that container: neither row links back to it. */
+  assert.deepEqual(plain(history.costHistoryView(entries, current, 14).rows.map((r) => r.linkId)), [null, null]);
+  /* A trashed container: the copy row is gone with it. */
+  const trashed = history.costHistoryView([{ ...entries[0], containerGone: true }, entries[1]], current);
+  assert.deepEqual(plain(trashed.rows.map((r) => [r.linkId, r.gone])), [[null, true], [null, true]]);
+  assert.equal(trashed.containers, 1);
+  /* A cost changed by hand in between: the cost before is not this container's, so it reads "de vorige container". */
+  const edited = history.costHistoryView([{ ...entries[0], previousLandedUnitEur: 33, deltaEur: -2, deltaPct: -6.1 }, entries[1]], current);
+  assert.equal(edited.rows[0].against, 'de vorige container');
+  /* Another number is another container. */
+  const other = history.costHistoryView([entries[0], { ...entries[1], source: 'PO-2026-011' }], current);
+  assert.equal(other.containers, 2);
+  assert.deepEqual(plain(other.rows.map((r) => r.orderId)), [14, null]);
+  assert.equal(other.rows[0].against, 'de vorige container');
+});
+
 test('an empty history of a product with a cost never says it has no cost from a container', () => {
   const link = { id: 14, text: 'PO-2026-014' };
   /* Product 310: a cost from PO-2026-014, no rows yet. */
