@@ -290,6 +290,10 @@
   .fin-split__term, .fin-split__amount { min-width: 0; width: 100%; height: 34px; padding-block: 0; font-size: 13px; }
   .fin-split__row.is-on .fin-split__term { grid-column: 1 / span 2; }
   .fin-split__amount { text-align: right; font-variant-numeric: tabular-nums; }
+  /* what the part does to the row (the sheet's words), the whole width under the select and the amount */
+  .fin-split__effect { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; line-height: 1.4; overflow-wrap: anywhere; }
+  .fin-split__modes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    .wk-btn[aria-pressed=true] { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); } }
   .fin-split__total { margin: 8px 0; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; &.is-ok { color: var(--ok); } }
   .fin-split__search { margin-top: 4px; }
 
