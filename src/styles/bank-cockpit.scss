@@ -22,6 +22,11 @@
     .fin-side-account__ok { color: rgb(255 255 255 / 45%); font-size: 12px; }
   }
   .wk-side .wk-side__item.is-open:not(.active) { color: #fff; }
+  /* one account: its balance under Transacties instead of a second row */
+  .wk-side .fin-side-single { display: block; overflow: hidden; color: rgb(255 255 255 / 48%); font-size: 11px; font-weight: 500; line-height: 1.3;
+    font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap;
+    &.is-warn { color: #e8b56a; } }
+  .wk-side .wk-side__item.active .fin-side-single:not(.is-warn) { color: inherit; opacity: .72; }
 }
 
 #finance-workspace {

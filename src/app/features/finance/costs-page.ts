@@ -255,7 +255,11 @@ export class CostsPage {
   readonly pageTitle = computed(() => financeNavOf(this.state.location()).label);
   readonly phoneSubtitle = computed(() => {
     const location = this.state.location();
-    if (location.view === 'bank' && location.tab === 'movements') return location.account ? this.state.accountLabel(location.account) : 'Alle rekeningen';
+    if (location.view === 'bank' && location.tab === 'movements') {
+      if (location.account) return this.state.accountLabel(location.account);
+      const active = this.state.accountsView();
+      return active.length === 1 ? active[0].label : 'Alle rekeningen';
+    }
     if (location.view === 'bank') return this.bankSub();
     return ({ open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
       costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;

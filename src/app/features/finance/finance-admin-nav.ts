@@ -19,7 +19,9 @@ const ACCOUNT_TONES = ['tone-blue', 'tone-teal', 'tone-amber', 'tone-plum', 'ton
  * rendered by the app shell outside the page's FinanceState: it reads the
  * place from the address and the counts and accounts from FinanceShell.
  * Bank · Transacties (one row per active account, with its balance and how
- * old it is) · Te betalen · Te ontvangen · Inkoop & kosten · Rapportage.
+ * old it is; with a single account Transacties IS that account, so its
+ * balance sits under Transacties and there is no second row) · Te betalen ·
+ * Te ontvangen · Inkoop & kosten · Rapportage.
  * Places are places, not history: the links replace the entry.
  */
 @Component({
@@ -36,15 +38,18 @@ const ACCOUNT_TONES = ['tone-blue', 'tone-teal', 'tone-amber', 'tone-plum', 'ton
           @for (item of itemsOf(group); track item.id) {
             <a class="wk-side__item" routerLink="/costs" [queryParams]="queryOf(item)" [replaceUrl]="true" [title]="item.hint"
                [class.active]="active() === item.id" [class.is-open]="item.id === 'transactions' && !!account()" [attr.aria-current]="active() === item.id ? 'page' : null"
-               [attr.aria-label]="countOf(item.id) ? item.label + ', ' + countOf(item.id) + ' open' : null">
+               [attr.aria-label]="ariaOf(item)">
               <app-icon [name]="item.icon" [size]="18" />
-              <span class="wk-side__text">{{ item.label }}</span><span class="wk-side__short">{{ item.short }}</span>
+              <span class="wk-side__text">{{ item.label }}
+                @if (item.id === 'transactions' && singleAccount(); as row) {
+                  <small class="fin-side-single" [class.is-warn]="(row.ageDays ?? 0) > 14" [title]="row.label">{{ balanceLine(row) }}</small>
+                }</span><span class="wk-side__short">{{ item.short }}</span>
               @if (countOf(item.id); as count) {
                 <span class="wk-side__count" [class.wk-side__count--warn]="warnOf(item.id)">{{ count }}</span>
                 <i class="wk-side__dot" [class.wk-side__dot--warn]="warnOf(item.id)" aria-hidden="true"></i>
               }
             </a>
-            @if (item.id === 'transactions') {
+            @if (item.id === 'transactions' && shell.accounts().length > 1) {
               @for (row of shell.accounts(); track row.key; let index = $index) {
                 <a class="wk-side__item fin-side-account" routerLink="/costs" [queryParams]="accountQuery(row.key)" [replaceUrl]="true"
                    [class.active]="account() === row.key" [attr.aria-current]="account() === row.key ? 'page' : null"
@@ -83,7 +88,12 @@ export class FinanceAdminNav {
     const location = this.location();
     return location.view === 'bank' && location.tab === 'movements' ? location.account : '';
   });
-  readonly active = computed<FinanceNavId | null>(() => (this.account() ? null : financeNavOf(this.location()).id));
+  /** The one active account when there is exactly one: Transacties then is that account, without a row of its own. */
+  readonly singleAccount = computed<FinanceShellAccount | null>(() => {
+    const accounts = this.shell.accounts();
+    return accounts.length === 1 ? accounts[0] : null;
+  });
+  readonly active = computed<FinanceNavId | null>(() => (this.account() && !this.singleAccount() ? null : financeNavOf(this.location()).id));
 
   itemsOf(group: string): FinanceNavItem[] {
     return FINANCE_NAV.filter((item) => item.group === group);
@@ -107,6 +117,13 @@ export class FinanceAdminNav {
   warnOf(id: FinanceNavId): boolean {
     const counts = this.shell.counts();
     return id === 'open' ? !!counts?.openWarn : id === 'bank' ? !!counts?.bankWarn : id === 'transactions' ? (counts?.transactions ?? 0) > 0 : false;
+  }
+
+  ariaOf(item: FinanceNavItem): string | null {
+    const count = this.countOf(item.id);
+    const single = item.id === 'transactions' ? this.singleAccount() : null;
+    const parts = [item.label, ...(single ? [single.label + ' ' + this.balanceLine(single)] : []), ...(count ? [count + ' open'] : [])];
+    return parts.length > 1 ? parts.join(', ') : null;
   }
 
   /** '€ 32.365,27 · 5 d oud', or 'Nog geen saldo'. */

@@ -68,10 +68,14 @@ export class BankPanel implements FinanceSectionApi {
   private readonly banking = inject(BankingApi);
   private readonly ui = inject(Ui);
   readonly restoring = signal(false);
-  /** The account of Transacties with `account=`: an active one, or an archived one for its history. */
+  /**
+   * The account of Transacties with `account=`: an active one, or an archived one for its history. With a single
+   * active account, Transacties without `account=` is that account too, so its card shows on top.
+   */
   readonly selectedAccount = computed<AccountView | null>(() => {
     const location = this.state.location();
-    if (location.tab !== 'movements' || !location.account) return null;
+    if (location.tab !== 'movements') return null;
+    if (!location.account) { const active = this.state.accountsView(); return active.length === 1 ? active[0] : null; }
     const key = this.state.canonicalAccount(location.account);
     return this.state.accountsView().find(account => account.account === key)
       ?? this.state.archivedAccounts().map(account => ({ ...account, ageDays: null, countsInCash: false })).find(account => account.account === key) ?? null;
