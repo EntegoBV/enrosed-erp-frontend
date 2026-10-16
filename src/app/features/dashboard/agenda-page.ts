@@ -120,7 +120,7 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
               @if (!loading() && !dayEntries().length && soon().length) {
                 <section class="ios-section">
                   <div class="ios-section__head"><h2>Komend</h2></div>
-                  <app-agenda-rows variant="phone" [entries]="soon()" [dated]="true" [cards]="cards() ?? null" />
+                  <app-agenda-rows variant="phone" [entries]="soon()" [dated]="true" [month]="selected().slice(0, 7)" [cards]="cards() ?? null" />
                 </section>
               }
             }

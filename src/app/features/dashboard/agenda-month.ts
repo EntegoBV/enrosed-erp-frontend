@@ -12,7 +12,7 @@ import { addDaysIso, isoWeek, monthCells, shiftMonthIso, weekdayMon0 } from './a
 import { PIN_MIN_EUR } from './agenda-entries';
 import type { AgendaEntry, AgendaType, DayMarkers } from './agenda-entries';
 import { HomeData } from './home-data';
-import { longDate } from './home-figures';
+import { agendaDay, longDate } from './home-figures';
 import { PlannerCards } from './planner-cards';
 import { amount } from './widgets/home-w';
 
@@ -33,11 +33,6 @@ export type AgendaSheets = Pick<PlannerCards, 'openView' | 'openEdit'>;
 /** "oktober" of a day or month. */
 export function monthName(iso: string): string {
   return MONTHS_LONG[Number(iso.slice(5, 7)) - 1] ?? '';
-}
-
-/** "vr 16". */
-export function weekdayDay(iso: string): string {
-  return `${WEEKDAYS_SHORT[weekdayMon0(iso)]} ${Number(iso.slice(8, 10))}`;
 }
 
 /** "+ € 2.180" in, "− € 21.350" out; amounts never break across lines. */
@@ -127,7 +122,8 @@ export class AgendaActions {
 }
 
 /**
- * Agenda rows: the time (or "dag", or the day on a dated list), a type bar,
+ * Agenda rows: the time (or "dag", or the day on a dated list - with its
+ * month under it when it lies outside the month the list sits beside), a type bar,
  * the title with its sub and the signed amount. A task carries a tick;
  * past appointments are muted, container history is grey, done tasks are
  * struck through. Phone rows sit in an ios-group, desk rows in a plain list.
@@ -166,6 +162,7 @@ export class AgendaActions {
       @if (showWhen(entry)) {
         <span class="home-arow__when" aria-hidden="true">
           <b>{{ whenOf(entry) }}</b>
+          @if (monthOf(entry); as month) { <small class="home-arow__month">{{ month }}</small> }
           @if (dated() && entry.atTime) { <small>{{ entry.atTime.slice(0, 5) }}</small> }
         </span>
       }
@@ -186,6 +183,8 @@ export class AgendaRows {
   readonly entries = input.required<readonly AgendaEntry[]>();
   /** The rows of several days: the day leads, with the time under it. */
   readonly dated = input(false);
+  /** On a dated list, the month it sits beside ('YYYY-MM'): a day outside it shows its month under it ("di 1" over "dec"). */
+  readonly month = input<string | null>(null);
   readonly cards = input<AgendaSheets | null>(null);
   /** False inside a card that is one link itself (the home strip): the rows are text then. */
   readonly interactive = input(true);
@@ -199,8 +198,13 @@ export class AgendaRows {
   }
 
   whenOf(entry: AgendaEntry): string {
-    if (this.dated()) return weekdayDay(entry.date);
+    if (this.dated()) return agendaDay(entry.date, null).day;
     return entry.atTime ? entry.atTime.slice(0, 5) : 'dag';
+  }
+
+  /** On a dated list, the month under the day when it lies outside the month the list sits beside. */
+  monthOf(entry: AgendaEntry): string | null {
+    return this.dated() ? agendaDay(entry.date, this.month()).month : null;
   }
 
   subOf(entry: AgendaEntry): string | null {
@@ -297,7 +301,7 @@ interface MonthCell { key: string; date: string; label: number; inMonth: boolean
           }
           <h4 class="home-month__label">Komend</h4>
           @if (komend().length) {
-            <app-agenda-rows variant="desk" [entries]="komend()" [dated]="true" [cards]="sheets()" />
+            <app-agenda-rows variant="desk" [entries]="komend()" [dated]="true" [month]="day().slice(0, 7)" [cards]="sheets()" />
           } @else {
             <p class="home-month__empty">Niets gepland de komende 30 dagen</p>
           }

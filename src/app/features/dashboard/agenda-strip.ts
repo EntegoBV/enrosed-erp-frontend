@@ -76,7 +76,7 @@ const TODAY_ROWS = 4;
         }
         <h3 class="home-strip__label">Komend</h3>
         @if (komend().length) {
-          <app-agenda-rows [variant]="variant()" [entries]="komend()" [dated]="true" [interactive]="false" [flat]="true" />
+          <app-agenda-rows [variant]="variant()" [entries]="komend()" [dated]="true" [month]="data.today().slice(0, 7)" [interactive]="false" [flat]="true" />
         } @else {
           <p class="home-strip__empty">Niets gepland de komende 30 dagen</p>
         }

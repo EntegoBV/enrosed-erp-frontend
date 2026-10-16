@@ -46,6 +46,17 @@ export function shortDate(iso: string): string {
   return `${WEEKDAYS_SHORT[weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS_SHORT[Number(iso.slice(5, 7)) - 1]}`;
 }
 
+/**
+ * The day of a row on a dated agenda list, "di 1", with its month ("dec")
+ * when it lies outside `month` (the month the list sits beside, 'YYYY-MM'), so
+ * a row beside an October grid never reads as an October day. Null names no
+ * month. The row stacks them, "di 1" over "dec", in the day column's width.
+ */
+export function agendaDay(iso: string, month: string | null): { day: string; month: string | null } {
+  return { day: `${WEEKDAYS_SHORT[weekdayOf(iso)]} ${Number(iso.slice(8, 10))}`,
+    month: month === null || iso.slice(0, 7) === month ? null : MONTHS_SHORT[Number(iso.slice(5, 7)) - 1] };
+}
+
 /** ISO 8601 week number (copy of agenda-days.ts isoWeek). */
 export function weekNumber(iso: string): number {
   const thursday = addDays(iso, 3 - ((weekdayOf(iso) + 6) % 7));

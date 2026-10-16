@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
-  ageText, bars, briefing, countryWithFlag, deltaPct, deltaText, firstName, fromToLong, greeting, latestOwnQuote, longDate, monthBars,
+  agendaDay, ageText, bars, briefing, countryWithFlag, deltaPct, deltaText, firstName, fromToLong, greeting, latestOwnQuote, longDate, monthBars,
   monthWindows, nextContainerEvents, overline, weekNumber,
 } from '../src/app/features/dashboard/home-figures.ts';
 import type { BriefingPart } from '../src/app/features/dashboard/home-figures.ts';
@@ -132,6 +133,35 @@ test('greeting by the hour, the long date, the week number and the overline', ()
   assert.equal(firstName('  '), null);
   assert.equal(firstName(null), null);
   assert.deepEqual([0, 1, 3, null].map(ageText), ['vandaag', 'gisteren', '3 d geleden', null]);
+});
+
+test('a dated agenda row names its month when it lies outside the month the list sits beside', () => {
+  /* Komend beside an October grid on Thu 29 Oct: 2 November and 1 December are not October days. */
+  assert.deepEqual(agendaDay('2026-10-30', '2026-10'), { day: 'vr 30', month: null });
+  assert.deepEqual(agendaDay('2026-11-02', '2026-10'), { day: 'ma 2', month: 'nov' });
+  assert.deepEqual(agendaDay('2026-12-01', '2026-10'), { day: 'di 1', month: 'dec' });
+  assert.deepEqual(agendaDay('2027-01-25', '2026-10'), { day: 'ma 25', month: 'jan' });
+  assert.deepEqual(agendaDay('2026-11-02', '2026-11'), { day: 'ma 2', month: null });
+  assert.deepEqual(agendaDay('2026-12-01', null), { day: 'di 1', month: null });
+});
+
+test('every dated agenda list says which month it sits beside', async () => {
+  const dir = new URL('../src/app/features/dashboard/', import.meta.url);
+  const rows = (await readFile(new URL('agenda-month.ts', dir), 'utf8'));
+  /* The month sits under the day, in the day column's own width: no title gets cut for it. */
+  assert.match(rows, /<b>\{\{ whenOf\(entry\) \}\}<\/b>\s*@if \(monthOf\(entry\); as month\) \{ <small class="home-arow__month">\{\{ month \}\}<\/small> \}/);
+  assert.match(rows, /return this\.dated\(\) \? agendaDay\(entry\.date, this\.month\(\)\)\.month : null;/);
+  const expected: Record<string, string> = {
+    'agenda-month.ts': 'day().slice(0, 7)',          // the desk Maand: the grid's month
+    'agenda-strip.ts': 'data.today().slice(0, 7)',   // the home's strip: this month
+    'agenda-page.ts': 'selected().slice(0, 7)',      // the phone Agenda: the grid's month above
+  };
+  for (const [file, month] of Object.entries(expected)) {
+    const source = await readFile(new URL(file, dir), 'utf8');
+    const dated = source.match(/<app-agenda-rows [^>]*\[dated\]="true"[^>]*>/g) ?? [];
+    assert.ok(dated.length > 0, file);
+    for (const tag of dated) assert.ok(tag.includes(`[month]="${month}"`), `${file}: ${tag}`);
+  }
 });
 
 test('Markt reads our own forwarder quotes only, never an index in points', () => {
