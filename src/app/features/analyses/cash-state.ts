@@ -7,17 +7,16 @@ import { messageOf } from '../../core/api/errors';
 import type { PurchaseOrderForecast, PurchaseOrderForecastWrite } from '../../core/api/models';
 import { Ui } from '../../shared/ui';
 import { addDismissed, readDismissed } from '../finance/cash-dismissed';
-import { buildCashForecast, horizonEndOf, poSheet, suggestOrderDate } from '../finance/cash-forecast';
+import { buildCashForecast, poSheet, suggestOrderDate } from '../finance/cash-forecast';
 import type { CashForecast, CashForecastInput, ForecastOptions, ForecastRule, OrderDateSuggestion, PoSheet } from '../finance/cash-forecast';
 import { cashForecastInput } from '../finance/cash-forecast-input';
 import { dayMon, eur } from '../finance/cash-format';
+import { cashOptionsOf } from './cash-options';
 import { CashPageData, CashSources } from './cash-sources';
-import { cashLink, cashQueryParams, parseCashLocation, toScenarioDefaults, withoutScenarioDefaults } from './cash-url';
+import { cashLink, cashQueryParams, parseCashLocation, withoutScenarioDefaults } from './cash-url';
 import type { CashLocation } from './cash-url';
 import { CHOICE_FIELDS, adjusted, forecastWrite } from './cash-view';
 
-/** Desk past (6 weeks); the phone chart shows the last two of them. */
-const PAST_DAYS = 42;
 const SAVE_DELAY_MS = 600;
 /** The choices a link can carry for every container (the rest only exists per order). */
 const LINK_FIELDS = ['priceMode', 'markupPct', 'markupEurPerUnit', 'costBasis', 'sellWeeks', 'paymentDays', 'seasonal'] as const;
@@ -99,13 +98,7 @@ export class CashState {
     return this.pending().size ? { ...core, stored: this.stored() } : core;
   });
 
-  readonly options = computed<ForecastOptions>(() => {
-    const location = this.location();
-    return {
-      horizonEnd: horizonEndOf(this.todayValue, location.horizon), scenario: true, includeStock: location.includeStock, rulesOff: location.rulesOff,
-      openQuotesOn: location.openQuotesOn, defaults: toScenarioDefaults(location), dismissed: this.dismissed(), pastDays: PAST_DAYS,
-    };
-  });
+  readonly options = computed<ForecastOptions>(() => cashOptionsOf(this.location(), this.todayValue, this.dismissed()));
 
   readonly forecast = computed<CashForecast | null>(() => {
     const input = this.input();

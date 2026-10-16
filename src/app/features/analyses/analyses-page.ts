@@ -107,7 +107,7 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
 @Component({
   selector: 'app-analyses-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [CashSources, CashState],
+  providers: [CashState],
   imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone,
     FormsModule,
     RouterLink,

@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import type { PlannerItem } from '../src/app/core/api/planner-api.ts';
 import type { PlannerMilestone } from '../src/app/features/dashboard/planner-cards.ts';
-import { localPlannerDate, purchasePlannerMilestones, todayAgendaEntries } from '../src/app/features/dashboard/dashboard-today-state.ts';
+import { activePins, localPlannerDate, purchasePlannerMilestones, todayAgendaEntries } from '../src/app/features/dashboard/dashboard-today-state.ts';
 
 const today = '2026-09-14';
 const item = (id: number, changes: Partial<PlannerItem> = {}): PlannerItem => ({
@@ -62,6 +62,41 @@ test('expected arrivals lead, then actual clock times, then untimed entries and 
   ]);
   assert.equal(entries.find(entry => entry.kind === 'RECEIVED')?.actionLabel, 'Container bekijken');
   assert.equal(JSON.stringify({ source, milestones }), before);
+});
+
+test('open tasks from earlier days join today, oldest first and ahead of arrivals', () => {
+  const entries = todayAgendaEntries([
+    item(1, { atTime: '09:00' }),
+    item(2, { kind: 'TASK', title: 'Douanedocumenten', onDate: '2026-09-11' }),
+    item(3, { kind: 'TASK', title: 'Btw voorbereiden', onDate: '2026-09-04' }),
+    item(4, { kind: 'TASK', title: 'Al gedaan', onDate: '2026-09-10', done: true }),
+    item(5, { kind: 'TASK', title: 'Los', onDate: null }),
+    item(6, { kind: 'TASK', title: 'Morgen', onDate: '2026-09-15' }),
+    item(7, { kind: 'TASK', title: 'Vandaag' }),
+    item(8, { title: 'Afspraak van gisteren', onDate: '2026-09-13' }),
+  ], [stone(20)], today);
+  assert.deepEqual(entries.map(entry => entry.id), [
+    'planner-TASK-3', 'planner-TASK-2', 'container-EXPECTED_ARRIVAL-20-2026-09-14', 'planner-EVENT-1', 'planner-TASK-7',
+  ]);
+  assert.deepEqual(entries.map(entry => entry.daysLate), [10, 3, 0, 0, 0]);
+});
+
+test('the days late are calendar days across the October clock change', () => {
+  const entries = todayAgendaEntries([item(1, { kind: 'TASK', onDate: '2026-10-24' })], [], '2026-10-26');
+  assert.equal(entries[0].daysLate, 2);
+});
+
+test('pins: appointments from today on, open tasks whatever their day, nearest first', () => {
+  const pins = activePins([
+    item(1, { pinned: true, title: 'Beurs', onDate: '2026-09-24' }),
+    item(2, { pinned: true, title: 'Voorbij', onDate: '2026-09-13' }),
+    item(3, { pinned: true, kind: 'TASK', title: 'Te laat', onDate: '2026-09-01' }),
+    item(4, { pinned: true, kind: 'TASK', title: 'Gedaan', done: true }),
+    item(5, { pinned: true, title: 'Zonder dag', onDate: null }),
+    item(6, { title: 'Niet vastgepind', onDate: '2026-09-15' }),
+    item(7, { pinned: true, title: 'Vandaag', atTime: '10:00' }),
+  ], today);
+  assert.deepEqual(pins.map(pin => pin.id), [3, 7, 1, 5]);
 });
 
 test('same-name containers and same-day milestone kinds keep distinct order targets', () => {

@@ -1,0 +1,92 @@
+/* ==========================================================================
+   Phone home (spec-home §2): nav, Kas hero placement, Te doen cells, Cijfers,
+   Meer cijfers, the Toevoegen sheet, Open punten and the tab bar narrowing.
+   The figure blocks live in home-widgets, the Agenda in home-agenda.
+
+   The ERP tab bar stays on the phone home; app.ts sets .shell--home on
+   /dashboard and the bar makes room for the '+' (.ios-accessory) beside it.
+   The page sizes the accessory and its own bottom padding through the kit
+   property --ios-tabbar-h, set to the ERP bar's height (amendment G12).
+   Hosts are display:block or contents; nothing here restyles a bare kit
+   class - every rule is scoped under a home class.
+   ========================================================================== */
+
+app-home-task-cells, app-open-page { display: block; }
+app-home-add-sheet { display: contents; }
+
+/* ---- shell: the tab bar beside the '+' */
+@media (max-width: 679.98px) {
+  .shell--home > .tabbar { right: calc(var(--safe-r) + 12px + var(--tabbar-h)); }
+}
+.home-phone { --ios-tabbar-h: var(--tabbar-h); }
+/* The bell lives at page-host level; the nav shows a proxy button (G14). */
+.home-bell-host .bell { display: none; }
+
+/* ---- nav: the bell's badge, the status caption */
+.home-phone__badge { position: absolute; top: 3px; right: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+  border: 2px solid var(--surface); border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 750;
+  font-variant-numeric: tabular-nums; line-height: 1; pointer-events: none; }
+.home-phone__status.is-warn { color: var(--warn); font-weight: 600; }
+.home-phone__retry { margin: -14px -6px; padding: 14px 6px; border: 0; background: none; color: var(--rose); font: inherit; font-weight: 650; cursor: pointer; }
+
+/* ---- Te doen and its rows (the home and Open punten). Scoped to the phone pages: the desk's task rows
+   (home-desk.scss) use the same class names, and neither may restyle the other's rows. :where() keeps the
+   specificity of the bare classes. */
+:where(.home-phone, .home-open) {
+  .home-tier { display: flex; align-items: center; gap: 7px; margin: 0; padding: 0 calc(var(--ios-inset) + 16px) 7px; color: var(--muted);
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  app-home-task-cells + .home-tier { margin-top: 16px; }
+  .home-todo__skeleton { padding: 4px 16px; }
+  .home-todo__clear { align-items: center; }
+  .home-todo__note { color: var(--muted); font-size: 13px; line-height: 1.35; }
+  .home-todo__more { min-height: 48px; }
+  .home-todo__more-text { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .home-todo__all { flex: none; white-space: nowrap; }
+
+  /* ---- a task row (home-task-cells.ts) */
+  .home-task__check { display: grid; flex: none; place-items: center; width: 44px; height: 44px; margin: 0 -7px; padding: 0; border: 0; background: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; }
+  .home-task__check:active .ios-check { border-color: var(--rose); }
+  .home-task__check:focus-visible, .home-task__go:focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: -3px; border-radius: 12px; }
+  .home-task__go { display: flex; flex: 1; align-items: center; align-self: stretch; gap: 12px; min-width: 0; margin-right: -6px; padding: 0; border: 0;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  /* The chevron's own -6px moves to the button, so it lines up with the other rows without sticking out of it. */
+  .home-task__go > .ios-cell__chev { margin-right: 0; }
+  .home-task__cell:has(.home-task__go:active) { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
+  .home-task__sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; }
+  .home-task__sub .wk-pill { flex: none; }
+  .home-task__context { min-width: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+  .home-task .ios-cell__value.is-neg { color: var(--danger); }
+  .home-task__count { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 12px;
+    background: color-mix(in srgb, var(--warn) 15%, var(--surface)); color: #8a4d0c; font-size: 13.5px; font-weight: 750; font-variant-numeric: tabular-nums; }
+}
+
+/* ---- Agenda: W7's strip is a card of its own (home-agenda.scss); this keeps the section rhythm around it */
+.home-phone__agenda { margin-bottom: 6px; }
+
+/* ---- Meer cijfers */
+.home-phone__search { margin: 0 var(--ios-inset) 12px; }
+.home-phone__search--wait { min-height: 132px; border-radius: var(--ios-radius); background: var(--surface); }
+
+/* ---- Toevoegen (home-add-sheet.ts) */
+.home-add__quick { display: flex; align-items: center; gap: 10px; min-height: 52px; margin: 2px var(--ios-inset) 6px; padding: 0 6px 0 14px;
+  border-radius: 16px; background: var(--surface); }
+.home-add__quick:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 28%, transparent); }
+.home-add__quick-icon { flex: none; color: var(--rose); }
+.home-add__field { flex: 1; min-width: 0; height: 48px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 16px; outline: none; }
+.home-add__field::placeholder { color: var(--muted); }
+.home-add__days { padding-bottom: 12px; }
+.home-add__tile { gap: 2px; min-height: 0; padding: 13px 14px 12px; border-radius: 18px; box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
+.home-add__tile .ios-tile { margin-bottom: 8px; }
+.home-add__tile b { font-size: 15px; font-weight: 650; line-height: 1.25; }
+.home-add__tile small { color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+.home-add__tile.is-main { background: var(--rose); color: #fff; }
+.home-add__tile.is-main small { color: rgb(255 255 255 / 82%); }
+.home-add__tile.is-main .ios-tile { background: rgb(255 255 255 / 20%); color: #fff; }
+
+/* ---- Open punten (open-page.ts) */
+.home-open .ios-section__head h2 { display: flex; align-items: center; gap: 7px; }
+.home-open__why-list { margin: 0 var(--ios-inset) 16px; padding: 14px 18px 14px 34px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.home-open__why-list li + li { margin-top: 6px; }
+.home-open__clear { padding-top: 24px; }
+.home-open .ios-banner b { font-weight: 700; }

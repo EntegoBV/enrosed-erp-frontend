@@ -43,14 +43,29 @@ export function statementsFromOf(today: string, accounts: readonly BankAccount[]
   return from;
 }
 
+/** How old a round may be before ensure() fetches again (spec-home amendment B). */
+export const CASH_DATA_MAX_AGE_MS = 120_000;
+
 /**
- * The bank and forecast data of Analyses › Kasprognose (and of the
- * Overzicht card), loaded lazily the first time either is shown. Each source
- * fails on its own and keeps its last good data; the failures read as one
- * warning. Scoped to AnalysesPage.
+ * ensure()'s rule: fetch again when nothing loaded yet, when the last round was for another day or older than
+ * `maxAgeMs`, or when it left something out (a warning, the bank missing). A failed round is never "fresh".
  */
-@Injectable()
-export class CashSources {
+export function cashDataStale(round: { state: 'idle' | 'loading' | 'ready'; loadedAt: number | null; loadedFor: string | null;
+  warnings: readonly string[]; bankMissing: boolean }, today: string, nowMs: number, maxAgeMs = CASH_DATA_MAX_AGE_MS): boolean {
+  return round.state === 'idle' || round.loadedFor !== today || round.loadedAt === null || nowMs - round.loadedAt > maxAgeMs
+    || round.warnings.length > 0 || round.bankMissing;
+}
+
+/**
+ * The bank and forecast data of Analyses › Kasprognose, the Overzicht card
+ * and the home's Kas card, loaded lazily the first time one of them is shown.
+ * Each source fails on its own and keeps its last good data; the failures
+ * read as one warning. One copy for the app (root), so the home and Analyses
+ * share a fetch; ensure() fetches again once a round is two minutes old or
+ * from another day, reload() ("Opnieuw", "Vernieuwen") always.
+ */
+@Injectable({ providedIn: 'root' })
+export class CashData {
   private readonly banking = inject(BankingApi);
   private readonly finance = inject(FinanceApi);
   private readonly sourcing = inject(SourcingApi);
@@ -65,6 +80,9 @@ export class CashSources {
   readonly warnings = signal<string[]>([]);
   /** Bumped by every new round; the page loads the advance schedules once per round. */
   readonly generation = signal(0);
+  /** When the last round finished (epoch ms), and for which day it loaded; null before the first. */
+  readonly loadedAt = signal<number | null>(null);
+  readonly loadedFor = signal<string | null>(null);
 
   readonly bankAccounts = signal<BankAccount[]>([]);
   readonly balances = signal<BankBalance[]>([]);
@@ -91,14 +109,25 @@ export class CashSources {
   /** The server knows this round and what it stores is loaded: stored choices and the buffer can be saved. */
   readonly cashRound = computed(() => this.choicesKnown() && this.settings() !== null);
 
-  private bankLoaded = false;
+  /*
+   * The bank answered once (accounts, balances and statements). A signal, so a round in which the bank comes
+   * back wakes what reads sourcesWith(): `state` stays 'ready' through a later round, and the statements
+   * arrive after the other calls, when the home's own page load may long have finished.
+   */
+  private readonly bankLoaded = signal(false);
   private schedulesRound = -1;
   private readonly failed = signal<Record<string, true>>({});
 
-  /** Starts the first load; later calls do nothing until reload(). */
-  ensure(today: string): void {
-    if (this.state() !== 'idle') return;
-    void this.reload(today);
+  /**
+   * Loads when nothing is loaded yet, when the last round was for another day,
+   * is older than `maxAgeMs` or left something out (a warning: the bank or
+   * another source failed, so the next screen asks again rather than showing
+   * the failure for two minutes); otherwise (or while a round runs) nothing.
+   */
+  ensure(today: string, maxAgeMs = CASH_DATA_MAX_AGE_MS): void {
+    if (this.refreshing()) return;
+    if (cashDataStale({ state: this.state(), loadedAt: this.loadedAt(), loadedFor: this.loadedFor(), warnings: this.warnings(),
+      bankMissing: this.bankMissing() }, today, Date.now(), maxAgeMs)) void this.reload(today);
   }
 
   async reload(today: string): Promise<void> {
@@ -124,7 +153,7 @@ export class CashSources {
         try {
           this.statements.set(await this.banking.list(from));
           this.statementsFrom.set(from);
-          this.bankLoaded = true;
+          this.bankLoaded.set(true);
         } catch {
           failed['bank'] = true;
         }
@@ -132,7 +161,9 @@ export class CashSources {
     } finally {
       this.failed.update((current) => ({ ...Object.fromEntries(Object.entries(current).filter(([word]) => word === 'partners')), ...failed }));
       this.warnings.set(this.warningWords());
-      this.bankMissing.set(!this.bankLoaded);
+      this.bankMissing.set(!this.bankLoaded());
+      this.loadedAt.set(Date.now());
+      this.loadedFor.set(today);
       this.state.set('ready');
       this.refreshing.set(false);
     }
@@ -172,7 +203,7 @@ export class CashSources {
 
   /** Everything cashForecastInput needs, or null while the bank is not there yet. */
   sourcesWith(page: CashPageData, today: string): CashForecastSources | null {
-    if (this.state() === 'idle' || (this.state() === 'loading' && !this.bankLoaded) || !this.bankLoaded) return null;
+    if (this.state() === 'idle' || !this.bankLoaded()) return null;
     return {
       today, bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.statements(), incomingPayments: page.incomingPayments,
       costs: page.costs, recurring: this.recurring(), purchaseViews: page.purchases, purchasePayments: this.purchasePayments(), suppliers: page.suppliers,
@@ -187,3 +218,6 @@ export class CashSources {
     return order.filter((word) => failed[word]);
   }
 }
+
+/** The former name, kept for one release. */
+export { CashData as CashSources };

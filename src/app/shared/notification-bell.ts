@@ -9,7 +9,8 @@ import { Icon } from './icon';
  * The bell top right: what is waiting on us.
  *
  * The number only counts what we must do — fill in a delivery term, set a
- * freight amount, review a proposal. That a customer opened their quote is
+ * freight amount, review a proposal, send a quote again after adopting the
+ * customer's change. That a customer opened their quote is
  * useful to know but no task, and would inflate the number until it means
  * nothing. Those notifications do appear in the list, under their own
  * heading.
@@ -221,6 +222,7 @@ export class NotificationBell {
       case 'LEVERTERMIJN': return '◷';
       case 'VRACHT': return '▤';
       case 'VOORSTEL': return '⇄';
+      case 'OPNIEUW_VERSTUREN': return '↻';
       case 'GETEKEND': return '✓';
       case 'AFGEWEZEN': return '✕';
       default: return '◉';

@@ -27,6 +27,16 @@ export const routes: Routes = [
     loadComponent: () => import('./features/dashboard/dashboard-home').then((m) => m.DashboardHome),
   },
   {
+    path: 'dashboard/agenda',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/dashboard/agenda-page').then((m) => m.AgendaPage),
+  },
+  {
+    path: 'dashboard/open',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/dashboard/open-page').then((m) => m.OpenPage),
+  },
+  {
     path: 'analyses',
     pathMatch: 'full',
     redirectTo: 'analyses/cash',

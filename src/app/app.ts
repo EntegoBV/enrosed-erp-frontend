@@ -32,7 +32,7 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
   imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
   template: `
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
-         [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()">
+         [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()" [class.shell--home]="homeRoute()">
       @if (websiteWorkspace()) {
         <app-website-admin-nav />
       } @else if (filesWorkspace()) {
@@ -438,6 +438,12 @@ export class App {
   });
   readonly deskWorkspace = computed(() => this.filesWorkspace() || this.financeWorkspace());
   readonly phoneWorkspace = computed(() => this.workspaceRoute() !== null && !this.desktopViewport.active());
+  /**
+   * The phone home keeps the ERP tab bar, narrowed so the home's '+' (the
+   * kit's .ios-accessory) sits beside it (styles/home-phone.scss). Only
+   * /dashboard itself: its Agenda and Open punten pages have no '+'.
+   */
+  readonly homeRoute = computed(() => this.url().split('?')[0] === '/dashboard' && !this.desktopViewport.active());
 
   /* Every ERP screen is noted, so a workspace knows the way back ("Terug naar inkooporder"). */
   private readonly workspaceReturn = inject(WorkspaceReturn);
