@@ -287,7 +287,7 @@ let nextSheetId = 0;
                           <div class="pay-sheet__sharehead"><b>Verdelen over containers</b><small>Per container zijn deel van {{ pendingLineEur() | eur }}</small></div>
                           <ul class="pay-sheet__lines pay-sheet__alsorows">
                             <li class="pay-sheet__line pay-sheet__alsorow">
-                              <span class="pay-sheet__linecopy"><b>{{ orderName() || 'Deze container' }}@if (ownNumberHint(); as number) { <small class="pay-sheet__alsonumber">{{ number }}</small> } <span class="pay-sheet__alsothis">(deze container)</span></b><small>{{ ownShareText() }}</small></span>
+                              <span class="pay-sheet__linecopy"><b>{{ orderName() || 'Deze container' }}@if (ownNumberHint(); as number) { <small class="pay-sheet__alsonumber">{{ number }}</small> }<span class="pay-sheet__alsothis"> (deze container)</span></b><small>{{ ownShareText() }}</small></span>
                               <span class="pay-sheet__alsofields">
                                 <div class="input-affix pay-sheet__alsoamount">
                                   <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + (orderName() || 'deze container')" [disabled]="busy()"

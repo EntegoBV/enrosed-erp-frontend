@@ -444,6 +444,7 @@ test("with 'Verdelen over containers' the Bedrag hint says this container's part
   const ownRow = template.slice(template.indexOf('<section class="pay-sheet__share"'), template.indexOf('<ng-container *ngTemplateOutlet="alsoRows; context: { $implicit: false }" />'));
   assert.match(ownRow, /@if \(ownNumberHint\(\); as number\) \{ <small class="pay-sheet__alsonumber">\{\{ number \}\}<\/small> \}/);
   assert.match(ownRow, /<span class="btn btn--sm pay-sheet__alsospacer" aria-hidden="true">Weghalen<\/span>/);
+  assert.match(ownRow, /<span class="pay-sheet__alsothis"> \(deze container\)<\/span>/, 'its own space: a whitespace-only node after the @if block is dropped');
 });
 
 test('containers that did not load are said so, with a way to load them again; never an empty list that hides an open payment', () => {
