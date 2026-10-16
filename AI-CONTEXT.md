@@ -1374,7 +1374,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
 - POST /api/purchase-orders/{id}/apply (no body) skips a line that received
   nothing (quantity 0): no cost change, no history row - its piece price of
   € 0 would wipe the cost and understate the stock value. The diary counts
-  only the written products, '· k overgeslagen (niets ontvangen)'.
+  only the written products: 'Kostprijzen toegepast <dag>: N product(en)
+  bijgewerkt in de catalogus, k overgeslagen (niets ontvangen).' (a comma;
+  the activity log 'Kostprijzen op N product(en) toegepast, k overgeslagen
+  (niets ontvangen)'; only the ERP toast writes '· k overgeslagen …').
 - `product-cost-basis.ts`: the basis and its words ('per display van 12',
   'per diamant', never set); `sameCostBasis` compares only per piece / per
   display and the pieces in a display, never the unit name; `otherSideCost`
