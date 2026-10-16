@@ -41,20 +41,24 @@ digital signing, change proposals) served by the same app.
   prices, margins and purchase figures are always visible to staff; only
   PDF choices (internal vs supplier/customer) differ. Rebuilding a
   customer-safe mode is an owner decision.
-- Floating pill chrome: tabbar and action bars share 20 px radius; the
-  appbar blurs through `.appbar::before` (blur on the bar itself creates
-  a containing block that breaks `position:fixed` children - learned the
-  hard way with the notification sheet).
+- Floating pill chrome: tabbar and action bars share 20 px radius. The
+  page bar (`app-page-header`, styles/shell.scss) is the 52 px desk toolbar
+  and the iOS 26 phone bar; on the phone its glass sits on
+  `.appbar::before` (blur on the bar itself creates a containing block
+  that breaks `position:fixed` children - learned the hard way with the
+  notification sheet). See "Shell and motion".
 - Hand-drawn SVG icon set in `shared/icon.ts` (24-grid, round caps).
-- Skeleton loaders (`shared/skeleton.ts`: list/card/lines/stats) instead
-  of "Laden…" - the layout never jumps.
+- Skeleton loaders (`shared/skeleton.ts`: list/card/lines/stats, and
+  table/group since 2026-10-16) instead of "Laden…" - the layout never
+  jumps. A failed load shows `app-load-error`.
 - Cost breakdowns read as "the journey of the goods": `.cost-section`
   micro-headers + `.cost-hero` framed total (shared by sales totals,
   purchase totals and purchase view).
 - Product view uses bento `spec`-tiles for identity facts; money stays in
   stat rows (tiles everywhere proved less scannable).
-- Entrance animation `.anim-rise`, reveal-on-scroll patterns, subtle
-  transitions; respect `prefers-reduced-motion`.
+- Motion: the tokens and mo-* utilities of styles/motion.scss (see "Shell
+  and motion"); `.anim-rise` stays for opt-in blocks. Everything is
+  instant under `prefers-reduced-motion`. `--muted` is #736a64 (AA).
 
 ## Workspace kit (2026-09)
 
@@ -104,6 +108,106 @@ the workspaces. All CSS lives in one global partial,
   `--ios-sep-inset`). Area partials: finance-workspace / finance-phone /
   finance-legacy, files-workspace / files-phone, purchase-payments,
   purchase-phone.
+
+## Shell and motion (redesign foundation, 2026-10-16)
+
+The foundation of the 2026-10-16 redesign (contract:
+scratchpad redesign/foundation/design.md + critique.md; the critique wins).
+Areas build on these pieces and never restyle `.sidebar*`, `.appbar*`,
+`.tabbar*`, `.fab` or bare kit classes. Built so far: F0, F1, F2a, the desk
+toolbar (F5a-1), the phone header (F4a), the sidebar from NAV_GROUPS
+(F5a-2, light skin) and the AA contrast colours. Still to come from the
+foundation: sheet/toast leave and drag to dismiss (F2b), the dark sidebar
+skin, rail count chips, Meldingen foot item and skip link (F5a rest, F5b),
+the tab bar geometry and the '+' accessory (F4b), Meer on the kit (F6),
+phone push/pop (F3), 404 + aliases + route titles + badge refresh (F7a),
+login extras, Sneltoetsen, route progress, preloading (F7b).
+
+**Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
+- Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
+  drawers, accordions, list insert/remove), `--dur-3` 320 ms (phone push,
+  sheets), `--dur-out` 220 ms, `--ease-out/-in/-spring/-snap`, `--mo-shift`
+  28 px, `--mo-lift` 8 px. Use them with a fallback in area partials:
+  `var(--dur-2, 200ms)`.
+- Keyframes (enter ones end on `transform:none`, trap rule): `mo-fade-in`,
+  `mo-fade-out`, `mo-push-in`, `mo-pop-in`, `mo-lift-in`, `mo-sheet-in`,
+  `mo-sheet-out`, `mo-dialog-out`, `mo-toast-out`, `mo-row-in`,
+  `mo-row-out`, `mo-hold`.
+- Utilities: `.mo-enter` / `.mo-leave` for rows the user adds or removes
+  (`animate.enter="mo-enter"`, `animate.leave="mo-leave"`; never on data
+  loads), `.mo-fade`. Page changes fade `.content` over `--dur-1`.
+- Press: `scale(.97)` on touch only; desk buttons never shrink.
+- Reduced motion: tokens 0, one 0.01 ms cycle for anything left (loops
+  stop), `scroll-behavior:auto`; `installReducedMotionScroll` (App) turns
+  `behavior:'smooth'` from code into `'auto'`. New code may use
+  `scrollBehavior()` / `prefersReducedMotion()`.
+
+**Page header** (`shared/page-header.ts`, styles in `styles/shell.scss`; the
+host stays inline):
+- Inputs: `title`, `subtitle`, `showBell`, `titleEditable` /
+  `(titleChange)`, `backTo`, and new `[parent]` (`{label, url,
+  phoneLabel?}`; undefined = `parentOf(url)`, null = no crumb) and
+  `[large]` (undefined = a phone large title on root screens, i.e.
+  `parentOf(url) === null`). `showBack` no longer changes what renders.
+- Desk: 52 px toolbar (`--appbar-h: calc(52px + safe-t)` from 680), title
+  18/720, crumb "Inkoop ›" on detail screens (a real link; a click goes up
+  through NavHistory), the subtitle stacked under the title when a crumb
+  shows, inline otherwise; projected `.btn` (direct children) at 32 px, a
+  divider and the 32 px bell. A title that would be cut folds the crumb to
+  a chevron, then away.
+- Phone: 44 px bar (`--appbar-h: calc(44px + safe-t)`), large title 34/800
+  with the subtitle as caption on root screens (condenses into the glass
+  bar, `observeLargeTitle` in `shared/large-title.ts`, shared with
+  app-ios-nav), the glass bar with title over subtitle on detail screens.
+  Back control: none on the five tab roots, else the screen below in the
+  history ("‹ Verkoop", history back), without history the parent's label,
+  backTo's screen label, or "Meer"; over ten characters, or when the title
+  would be cut, a chevron circle. Projected `.btn` become glass capsules
+  (primary: accent), `.btn--icon-mobile` glass circles, the bell a glass
+  circle with the red badge. `.content` right after a large title gets
+  padding-top 4 px.
+
+**Navigation helpers** (core/platform, pure and node-tested unless noted):
+- `nav-items.ts`: `NAV_HOME`, `NAV_GROUPS` (five groups, items with label,
+  short, meerLabel, icon, link, query, exact, countKey, groupCount, hint,
+  railMain, wide, newUntil, tabRoot, tone), `NAV_WORKSPACES`,
+  `NAV_DEVICE`, `NAV_MORE`, `navItemActive`, `navItemUrl`, `navItemIsNew`,
+  `groupCountKeys`, `meerItems`. The desk sidebar renders from it (Meer will
+  too). `NavCountKey` names WorkQueue signals; extend it with the signal.
+- `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
+  `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
+- `page-parent.ts`: `parentOf(url)` → `{label, url, phoneLabel}` or null.
+- `nav-history.ts` (stack keyed by navigation id) and the injectable
+  `NavHistory` (`nav-history-service.ts`, created by App): `below()`,
+  `belowLabel()`, `lastUrlFor(path)`, `upHref(parentUrl)`, `up(parentUrl)`
+  (history back when the parent is below, else its last URL), `back(fallback)`.
+- `nav-direction.ts`: `navDirection(prev, next, trigger, info, PHONE_TABS)`
+  → push / pop / tab / none; a navigation may name itself with
+  `info: { nav: 'push' }` (used by the coming phone push/pop).
+- `app-shortcuts.ts`: `GLOBAL_SHORTCUTS`, `PAGE_SHORTCUTS` (areas append
+  rows for their routes), `pageShortcutsFor`, `shortcutCommand` ('/' and
+  '?'), `PAGE_SEARCH_SELECTOR` (`[data-page-search]` marks a page's main
+  search).
+- `return-label.ts`: `screenLabel(url)` ("Verkoop", "Order", "Inkooporder",
+  "Vandaag", "Meer"…) and `capsuleLabel(label)` (≤ 10 characters, else '').
+- `sidebarGroupForUrl`: `/settings`, `/settings/deleted-items`,
+  `/voorwaarden`, `/activity` and sectie=company → Bedrijf; `/categories` →
+  Producten & voorraad. No automatic sidebar rail any more.
+
+**Kit pieces** (workspace-kit.scss unless noted): `.wk-subbar` (+
+`__end`; sticky under the toolbar, tables after it stick under it),
+`.wk-search > .wk-kbd` ('/' hint), `.ios-count`, `.ios-cell__sub--2`,
+`.ios-tile--sm`, `.ios-disclosure__body` (indented child cells, animated
+open where `::details-content` exists), `.content--narrow` (shell.scss,
+960 px), `app-skeleton kind="table" | "group"`, `app-load-error`
+(`[message]`, `[title]`, `[busy]`, `(retry)`; "Dit scherm kon niet worden
+geladen" / "Opnieuw proberen"), `confirmLeave(ui, save?, {message?})` in
+shared/ui.ts ("Niet-opgeslagen wijzigingen", Opslaan / Niet opslaan /
+Annuleren) for `canDeactivate(): boolean | Promise<boolean>`.
+
+**Load speed**: production builds no longer inline critical CSS (one
+render-blocking stylesheet, no unstyled first frame); vercel.json marks the
+hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache.
 
 ## Workspaces
 
