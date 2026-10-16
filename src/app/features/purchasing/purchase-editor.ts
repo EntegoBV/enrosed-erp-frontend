@@ -2350,6 +2350,10 @@ export class PurchaseEditor {
    * After a refused share or transfer: the containers as the server has them
    * now. A row keeps its part and takes its open payment's euro again; a row
    * whose payment is gone or on the bank is dropped (the refusal says why).
+   * A share 'Volgens afspraak' or 'Gelijk verdelen' splits again over what
+   * the server has now (a changed payment weighs its new euro), so the
+   * pressed button and the amounts agree; a row without a weight makes the
+   * amounts typed (MANUAL).
    */
   private async refreshAlsoRows(orderId: number, supplierId: number | null, payee: Payee): Promise<void> {
     this.alsoFor = null;
@@ -2363,7 +2367,15 @@ export class PurchaseEditor {
       const payment = options.find(option => option.orderId === part.orderId)?.openPayments?.find(item => item.id === part.paymentId);
       return payment ? [{ ...part, paymentEur: payment.amountEur, paymentAmount: payment.amount, paymentCurrency: payment.currency, paidOn: payment.paidOn }] : [];
     });
-    this.paying.set({ ...pay, alsoParts: rows });
+    const mode = pay.id && pay.surplus === 'SHARE' ? pay.shareMode : undefined;
+    if (mode !== 'AFSPRAAK' && mode !== 'EQUAL') { this.paying.set({ ...pay, alsoParts: rows }); return; }
+    const part = this.payingParts().find(item => item.id === pay.pendingPartId);
+    const line = pay.pendingLines?.length === 1 ? pay.pendingLines[0] : null;
+    const applied = part && line && rows.length ? applyShare(mode, line.amountEur, pendingPartEur(part, pay.partEdits?.[part.id], null), rows) : null;
+    // No row left: nothing to split yet, the mode stays for the next container added.
+    this.paying.set({ ...pay, ...(applied
+      ? { alsoParts: applied.parts, shareOwn: applied.own, shareOwnInput: amountInputText(applied.own) }
+      : { alsoParts: rows, ...(rows.length ? { shareMode: 'MANUAL' as const } : {}) }) });
   }
 
   /** Every container payment as GET /purchase-payments lists them (once per order screen): which other containers a bank line of this one carries. */

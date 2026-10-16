@@ -1123,6 +1123,43 @@ test('a server without purchase-share says so; a refusal keeps the share open an
   assert.deepEqual(refused.toasts.at(-1), [reason, 'err']);
 });
 
+test("a share refused because another payment changed splits again by the mode it shows: 'Volgens afspraak' and the amounts agree", async () => {
+  const reason = 'De betaling van Kerst 2026 is intussen gewijzigd; vernieuw en probeer opnieuw';
+  // PO-039's open payment went from € 3.070,20 to € 3.100,00 between loading and saving.
+  const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: id === 39 ? 'Kerst 2026' : null, supplierId: 8, status: 'BESTELD', archivedAt: null },
+    reconciliation: { streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: 'OPEN', plannedEur: 10234, paidEur: 0, remainingEur: 10234, finalized: false }],
+      supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 3070.2, paidEur: id === 39 ? 3100 : 0, remainingEur: id === 39 ? 0 : 3070.2, finalized: false }] } }));
+  const changed = [{ id: 392, orderId: 39, orderNumber: 'PO-2026-039', orderAlias: 'Kerst 2026', paidOn: '2026-09-25', amountEur: 3100, amount: 3100, currency: 'EUR',
+    payee: 'SUPPLIER', bankStatementLineId: null, instalmentDue: 'ORDERED', creditOffset: false, label: '30% bij bestelling' }];
+  const refuse = (mode: string, values: any = {}) => {
+    const harness = shareSetup();
+    harness.editor.banking.sharePurchasePayment = async () => { throw Object.assign(new Error(reason), { status: 409, error: { message: reason } }); };
+    Object.assign(harness.editor, { cashApi: { settings: async () => ({}) } });
+    Object.assign(harness.editor.sourcing, { purchaseOrders: async () => views, suppliers: async () => [], purchasePayments: async () => changed });
+    harness.share({ shareMode: mode, ...values });
+    return harness;
+  };
+  const afspraak = refuse('AFSPRAAK');
+  await afspraak.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  let draft = afspraak.editor.paying();
+  assert.deepEqual([draft.bankLinkError, draft.surplus, draft.shareMode, draft.alsoParts[0].paymentEur], [reason, 'SHARE', 'AFSPRAAK', 3100]);
+  assert.deepEqual([draft.shareOwn, draft.shareOwnInput, ...draft.alsoParts.map((part: any) => [part.amount, part.amountInput])],
+    [3788.87, '3.788,87', [3825.64, '3.825,64'], [3788.87, '3.788,87']], 'weights 3.070,20 / 3.100,00 / 3.070,20, not the old thirds');
+  // 'Gelijk verdelen' stays 1/3; amounts typed by hand stay as typed.
+  const equal = refuse('EQUAL');
+  await equal.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  draft = equal.editor.paying();
+  assert.deepEqual([draft.shareMode, draft.shareOwn, ...draft.alsoParts.map((part: any) => part.amount)], ['EQUAL', 3801.13, 3801.13, 3801.12]);
+  const manual = refuse('MANUAL', { shareOwn: 3500, shareOwnInput: '3.500,00', alsoParts: equal.others.map((part: any, index: number) => ({ ...part, amount: index ? 3903.38 : 4000,
+    amountInput: index ? '3.903,38' : '4.000,00' })) });
+  await manual.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  draft = manual.editor.paying();
+  assert.deepEqual([draft.shareMode, draft.shareOwn, ...draft.alsoParts.map((part: any) => part.amount), draft.alsoParts[0].paymentEur], ['MANUAL', 3500, 4000, 3903.38, 3100]);
+});
+
 test('the containers load with their payments or not at all: a failed payment list never hides an open payment behind a new one', async () => {
   const { editor, toasts } = shareSetup();
   const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null },
