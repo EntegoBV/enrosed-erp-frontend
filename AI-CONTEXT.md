@@ -687,7 +687,9 @@ cijfers'.
   `home-sources.ts` adapts the API data (containerPayables,
   partnerFinancingAnalysis, `overdueInvoiceRows` - the same list as Verkoop
   "Te laat" -, financeAttention's sentences and targets, the forecast's
-  BASE items) and names every container through `containerName()`.
+  BASE items) and names every container through `containerName()`, also in
+  the forecast's money titles (`containerTitleOf`: the forecast itself says
+  the PO number).
 - **Agenda**: `agenda-days.ts` (UTC day math, no DST double days) and
   `agenda-entries.ts` (entries per day, markers, Komend from tomorrow, pin
   countdown, Daarna). The planner sheets stay in `planner-cards.ts`
@@ -1763,8 +1765,9 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
 - `CashData` (cash-sources.ts, root; `CashSources` is its old name, kept
   for one release) is shared by Analyses and the home's Kas card. It loads
   lazily: `ensure(today)` fetches when nothing is loaded, when the last
-  round was for another day or is older than 2 minutes
-  (`CASH_DATA_MAX_AGE_MS`), else does nothing; `reload(today)` ("Opnieuw",
+  round was for another day, is older than 2 minutes
+  (`CASH_DATA_MAX_AGE_MS`) or left something out (a warning, the bank
+  missing: `cashDataStale`), else does nothing; `reload(today)` ("Opnieuw",
   "Vernieuwen") always fetches, and returns at once while a round runs
   (read `state()`, `refreshing()`, `generation()`, `loadedAt()`). It
   fetches the bank first, then statements from `statementsFromOf` = the
