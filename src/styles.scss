@@ -279,7 +279,6 @@ a { color: var(--rose); }
   text-decoration: none;
 }
 .sidebar__text--rail { display: none; }
-.sidebar__expand { display: none; }
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -305,8 +304,7 @@ a { color: var(--rose); }
 }
 
 /* The narrow rail: icon over a short label, no group headers, the long
-   tail behind Meer. Tablets get it by width; a desktop gets it on request
-   (see .sidebar--rail) when a workspace wants the room. */
+   tail behind Meer. Tablets get it by width (680-1023 px). */
 @mixin sidebar-rail {
   width: 84px;
   flex: 0 0 84px;
@@ -517,57 +515,6 @@ a { color: var(--rose); }
   }
   .sidebar__theme button.active { border-color: var(--ink); }
 
-  /* Documenten & media asks for the room: the sidebar folds to the rail until
-     the next click in it. The double chevron is the way back without leaving. */
-  .sidebar { transition: width .2s ease, flex-basis .2s ease; }
-  .sidebar.sidebar--rail {
-    @include sidebar-rail;
-    /* On a desk the rail shows the five sections as icons, not every page
-       of every section: one click on a section unfolds the sidebar there. */
-    .sidebar__group {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      width: 100%;
-      min-height: 0;
-      margin: 0 0 2px;
-      padding: 9px 2px 8px;
-      border: 0;
-      border-radius: 10px;
-      background: transparent;
-      color: var(--ink-2);
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0;
-      line-height: 1.1;
-      text-align: center;
-    }
-    .sidebar__group:hover { background: var(--surface-2); color: var(--ink); }
-    .sidebar__group--current { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
-    .sidebar__group-icon { width: 20px; flex: none; opacity: 1; }
-    .sidebar__group-label { flex: none; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sidebar__group-chev { display: none; }
-    .sidebar__group-count { position: absolute; top: 4px; right: 8px; }
-    .sidebar__sub { display: none; }
-    .sidebar__link.sidebar__link--rail { display: none; }
-  }
-  .sidebar--rail .sidebar__expand {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin: 2px 0 6px;
-    padding: 7px 0;
-    border: 1px dashed var(--line-strong);
-    border-radius: 10px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-  }
-  .sidebar--rail .sidebar__expand:hover { background: var(--surface-2); color: var(--ink); }
 
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }

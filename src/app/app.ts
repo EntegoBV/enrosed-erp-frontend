@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { PushSetup } from './core/platform/push';
-import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map, startWith } from 'rxjs';
 import { Auth } from './core/api/auth';
@@ -15,7 +16,11 @@ import { FinanceAdminNav } from './features/finance/finance-admin-nav';
 import { FilesAdminNav } from './features/files/files-admin-nav';
 import { DesktopViewport } from './core/platform/desktop-viewport';
 import { WorkspaceReturn } from './core/platform/workspace-return';
-import { sidebarGroupForUrl, sidebarRailForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
+import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
+import {
+  NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew,
+} from './core/platform/nav-items';
+import type { NavCountKey, NavGroup, NavItem } from './core/platform/nav-items';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
 import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 import { installReducedMotionScroll } from './core/platform/reduced-motion';
@@ -33,7 +38,7 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
+  imports: [RouterOutlet, RouterLink, NgTemplateOutlet, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
   template: `
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
          [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()" [class.shell--home]="homeRoute()">
@@ -44,222 +49,70 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
       } @else if (financeWorkspace()) {
         <app-finance-admin-nav />
       } @else if (!bare()) {
-        <aside class="sidebar" [class.sidebar--rail]="railed()">
+        <aside class="sidebar">
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
           </a>
-          <nav class="sidebar__nav" (click)="sidebarClicked($event)">
-            @if (railed()) {
-              <button class="sidebar__expand" type="button" title="Menu uitklappen"
-                      aria-label="Menu uitklappen" data-expand>»</button>
+          <!-- Rendered from NAV_GROUPS (core/platform/nav-items.ts), the table Meer shares. -->
+          <nav class="sidebar__nav">
+            <ng-template #navLink let-item>
+              <a class="sidebar__link" [routerLink]="item.link" [queryParams]="item.query ?? null"
+                 [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null"
+                 [class.sidebar__link--wide]="item.wide" [attr.data-rail-main]="item.railMain ? '' : null">
+                <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
+                @if (item.short) {
+                  <span class="sidebar__text sidebar__text--full">{{ item.label }}</span>
+                  <span class="sidebar__text sidebar__text--rail">{{ item.short }}</span>
+                } @else {
+                  <span class="sidebar__text">{{ item.label }}</span>
+                }
+                @if (countOf(item.countKey); as n) { <span class="sidebar__count">{{ n }}</span> }
+                @if (itemNew(item)) { <span class="sidebar__new">nieuw</span> }
+              </a>
+            </ng-template>
+
+            <ng-container [ngTemplateOutlet]="navLink" [ngTemplateOutletContext]="{ $implicit: navHome }" />
+            @for (group of navGroups; track group.id) {
+              <button class="sidebar__group" type="button" (click)="toggleGroup(group.id)"
+                      [attr.aria-controls]="'sidebar-' + group.id" [attr.aria-expanded]="groupOpen(group.id)"
+                      [attr.aria-current]="groupCurrent(group.id) ? 'location' : null"
+                      [class.sidebar__group--open]="groupOpen(group.id)"
+                      [class.sidebar__group--current]="groupCurrent(group.id)">
+                <app-icon class="sidebar__group-icon" [name]="group.icon" [size]="16" />
+                <span class="sidebar__group-label">
+                  @if (group.short) {
+                    <span class="sidebar__text sidebar__text--full">{{ group.label }}</span><span class="sidebar__text sidebar__text--rail">{{ group.short }}</span>
+                  } @else { {{ group.label }} }
+                </span>
+                @if (!groupOpen(group.id) && groupCount(group); as n) {
+                  <span class="sidebar__group-count">{{ n }}</span>
+                }
+                <span class="sidebar__group-chev" aria-hidden="true"
+                      [class.sidebar__group-chev--open]="groupOpen(group.id)">›</span>
+              </button>
+              <div class="sidebar__sub" [id]="'sidebar-' + group.id"
+                   [class.sidebar__sub--closed]="!groupOpen(group.id)">
+                @for (item of group.items; track item.id) {
+                  <ng-container [ngTemplateOutlet]="navLink" [ngTemplateOutletContext]="{ $implicit: item }" />
+                }
+              </div>
             }
-            <a class="sidebar__link" routerLink="/dashboard" routerLinkActive="active" data-rail-main>
-              <app-icon class="sidebar__icon" name="home" [size]="18" /> Dashboard
-            </a>
-            <button class="sidebar__group" type="button" (click)="toggleGroup('verkoop')"
-                    aria-controls="sidebar-verkoop" [attr.aria-expanded]="groupOpen('verkoop')"
-                    [attr.aria-current]="groupCurrent('verkoop') ? 'location' : null"
-                    [class.sidebar__group--open]="groupOpen('verkoop')"
-                    [class.sidebar__group--current]="groupCurrent('verkoop')">
-              <app-icon class="sidebar__group-icon" name="sales" [size]="16" />
-              <span class="sidebar__group-label">Verkoop</span>
-              @if (!groupOpen('verkoop') && openWork() + openLoginRequests(); as n) {
-                <span class="sidebar__group-count">{{ n }}</span>
-              }
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('verkoop')">›</span>
-            </button>
-            <div class="sidebar__sub" id="sidebar-verkoop"
-                 [class.sidebar__sub--closed]="!groupOpen('verkoop')">
-              <a class="sidebar__link" routerLink="/sales" routerLinkActive="active" data-rail-main>
-                <app-icon class="sidebar__icon" name="sales" [size]="18" />
-                <span class="sidebar__text sidebar__text--full">Verkooporders</span>
-                <span class="sidebar__text sidebar__text--rail">Verkoop</span>
-                @if (openWork(); as n) { <span class="sidebar__count">{{ n }}</span> }
-              </a>
-              <a class="sidebar__link" routerLink="/revisions" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Wijzigingen
-                @if (openRevisions(); as n) { <span class="sidebar__count">{{ n }}</span> }
-              </a>
-              <a class="sidebar__link" routerLink="/customers" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Klanten
-              </a>
-              <a class="sidebar__link" routerLink="/klantlogins" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="customers" [size]="18" />
-                <span class="sidebar__text">Login-aanvragen</span>
-                @if (openLoginRequests(); as n) { <span class="sidebar__count">{{ n }}</span> }
-              </a>
-              <a class="sidebar__link" routerLink="/prospects" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Prospects
-              </a>
-              <a class="sidebar__link" routerLink="/contactaanvragen" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="customers" [size]="18" /> Contactaanvragen
-              </a>
-              <a class="sidebar__link" routerLink="/countries" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="countries" [size]="18" /> Landen &amp; vracht
-              </a>
-              <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
-                 [queryParams]="{ sectie: 'discounts' }" [class.active]="settingsActive('discounts')">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Kortingen
-              </a>
-            </div>
-
-            <button class="sidebar__group" type="button" (click)="toggleGroup('inkoop')"
-                    aria-controls="sidebar-inkoop" [attr.aria-expanded]="groupOpen('inkoop')"
-                    [attr.aria-current]="groupCurrent('inkoop') ? 'location' : null"
-                    [class.sidebar__group--open]="groupOpen('inkoop')"
-                    [class.sidebar__group--current]="groupCurrent('inkoop')">
-              <app-icon class="sidebar__group-icon" name="purchase" [size]="16" />
-              <span class="sidebar__group-label">Inkoop</span>
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('inkoop')">›</span>
-            </button>
-            <div class="sidebar__sub" id="sidebar-inkoop"
-                 [class.sidebar__sub--closed]="!groupOpen('inkoop')">
-              <a class="sidebar__link" routerLink="/purchasing" routerLinkActive="active" data-rail-main>
-                <app-icon class="sidebar__icon" name="purchase" [size]="18" />
-                <span class="sidebar__text sidebar__text--full">Inkooporders</span>
-                <span class="sidebar__text sidebar__text--rail">Inkoop</span>
-              </a>
-              <a class="sidebar__link" routerLink="/suppliers" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="suppliers" [size]="18" /> Leveranciers
-              </a>
-              <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
-                 [queryParams]="{ sectie: 'duties' }" [class.active]="settingsActive('duties')">
-                <app-icon class="sidebar__icon" name="truck" [size]="18" /> Douane
-              </a>
-            </div>
-
-            <button class="sidebar__group" type="button" (click)="toggleGroup('producten')"
-                    aria-controls="sidebar-producten" [attr.aria-expanded]="groupOpen('producten')"
-                    [attr.aria-current]="groupCurrent('producten') ? 'location' : null"
-                    [class.sidebar__group--open]="groupOpen('producten')"
-                    [class.sidebar__group--current]="groupCurrent('producten')">
-              <app-icon class="sidebar__group-icon" name="products" [size]="16" />
-              <span class="sidebar__group-label"><span class="sidebar__text sidebar__text--full">Producten &amp; voorraad</span><span class="sidebar__text sidebar__text--rail">Producten</span></span>
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('producten')">›</span>
-            </button>
-            <div class="sidebar__sub" id="sidebar-producten"
-                 [class.sidebar__sub--closed]="!groupOpen('producten')">
-              <a class="sidebar__link" routerLink="/products" routerLinkActive="active" data-rail-main>
-                <app-icon class="sidebar__icon" name="products" [size]="18" /> Producten
-              </a>
-              <a class="sidebar__link" routerLink="/stock" routerLinkActive="active"
-                 [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' }">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
-              </a>
-              <a class="sidebar__link" routerLink="/stock/inventaris" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" />
-                <span class="sidebar__text sidebar__text--full">Jaarinventaris</span>
-                <span class="sidebar__text sidebar__text--rail">Inventaris</span>
-              </a>
-              <a class="sidebar__link" routerLink="/stock-locations" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" />
-                <span class="sidebar__text sidebar__text--full">Voorraadlocaties</span>
-                <span class="sidebar__text sidebar__text--rail">Locaties</span>
-              </a>
-              <a class="sidebar__link" routerLink="/barcodes" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="barcode" [size]="18" /> EAN-codes
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/categories" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="products" [size]="18" /> Categorieën
-              </a>
-              <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
-                 [queryParams]="{ sectie: 'catalog-data' }" [class.active]="settingsActive('catalog-data')">
-                <app-icon class="sidebar__icon" name="products" [size]="18" /> Catalogusdata
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/catalog-export" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="pdf" [size]="18" /> Catalogus PDF
-              </a>
-            </div>
-
-            <button class="sidebar__group" type="button" (click)="toggleGroup('analyses')"
-                    aria-controls="sidebar-analyses" [attr.aria-expanded]="groupOpen('analyses')"
-                    [attr.aria-current]="groupCurrent('analyses') ? 'location' : null"
-                    [class.sidebar__group--open]="groupOpen('analyses')"
-                    [class.sidebar__group--current]="groupCurrent('analyses')">
-              <app-icon class="sidebar__group-icon" name="analytics" [size]="16" />
-              <span class="sidebar__group-label">Analyses</span>
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('analyses')">›</span>
-            </button>
-            <div class="sidebar__sub" id="sidebar-analyses"
-                 [class.sidebar__sub--closed]="!groupOpen('analyses')">
-              <a class="sidebar__link" routerLink="/analyses/cash" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="bank" [size]="18" /> Kasprognose
-                @if (cashForecastNew) { <span class="sidebar__new">nieuw</span> }
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/overview" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Overzicht
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/sales" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Verkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/inventory" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="stock" [size]="18" /> Voorraad
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/purchasing" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="purchase" [size]="18" /> Inkoop
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/result" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="analytics" [size]="18" /> Resultaat
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/market" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="exchange" [size]="18" /> Markt &amp; container
-              </a>
-              <a class="sidebar__link" routerLink="/analyses/website" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="countries" [size]="18" /> Bezoekers
-              </a>
-            </div>
-
-            <button class="sidebar__group" type="button" (click)="toggleGroup('bedrijf')"
-                    aria-controls="sidebar-bedrijf" [attr.aria-expanded]="groupOpen('bedrijf')"
-                    [attr.aria-current]="groupCurrent('bedrijf') ? 'location' : null"
-                    [class.sidebar__group--open]="groupOpen('bedrijf')"
-                    [class.sidebar__group--current]="groupCurrent('bedrijf')">
-              <app-icon class="sidebar__group-icon" name="settings" [size]="16" />
-              <span class="sidebar__group-label">Bedrijf</span>
-              <span class="sidebar__group-chev" aria-hidden="true"
-                    [class.sidebar__group-chev--open]="groupOpen('bedrijf')">›</span>
-            </button>
-            <div class="sidebar__sub" id="sidebar-bedrijf"
-                 [class.sidebar__sub--closed]="!groupOpen('bedrijf')">
-              <a class="sidebar__link sidebar__link--wide" routerLink="/activity" routerLinkActive="active">
-                <app-icon class="sidebar__icon" name="activity" [size]="18" /> Logboek
-              </a>
-              <a class="sidebar__link sidebar__link--wide" [routerLink]="['/settings']"
-                 [queryParams]="{ sectie: 'company' }" [class.active]="settingsActive('company')">
-                <app-icon class="sidebar__icon" name="settings" [size]="18" /> Bedrijfsgegevens
-              </a>
-              <a class="sidebar__link sidebar__link--wide" routerLink="/voorwaarden">
-                <app-icon class="sidebar__icon" name="sales" [size]="18" /> Voorwaarden &amp; privacy
-              </a>
-            </div>
 
             <!-- The workspaces everyone opens daily stand on their own, above
                  the company group: the library, the money, the website. -->
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/files" routerLinkActive="active" data-rail>
-              <app-icon class="sidebar__icon" name="media" [size]="18" />
-              <span class="sidebar__text sidebar__text--full">Documenten &amp; media</span>
-              <span class="sidebar__text sidebar__text--rail">Media</span>
-            </a>
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/costs" routerLinkActive="active" data-rail>
-              <app-icon class="sidebar__icon" name="exchange" [size]="18" />
-              <span class="sidebar__text sidebar__text--full">Kosten &amp; bank</span>
-              <span class="sidebar__text sidebar__text--rail">Kosten</span>
-            </a>
-            <a class="sidebar__link sidebar__link--workspace" routerLink="/website" routerLinkActive="active">
-              <app-icon class="sidebar__icon" name="countries" [size]="18" />
-              <span class="sidebar__text sidebar__text--full">Website beheren</span>
-              <span class="sidebar__text sidebar__text--rail">Website</span>
-              <i aria-hidden="true">↗</i>
-            </a>
+            @for (item of navWorkspaces; track item.id) {
+              <a class="sidebar__link sidebar__link--workspace" [routerLink]="item.link"
+                 [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null">
+                <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">{{ item.label }}</span>
+                <span class="sidebar__text sidebar__text--rail">{{ item.short ?? item.label }}</span>
+              </a>
+            }
 
             <!-- The narrow rail has no room for group headers; the Meer page
                  carries the long tail there. -->
-            <a class="sidebar__link sidebar__link--rail" routerLink="/more" routerLinkActive="active">
-              <app-icon class="sidebar__icon" name="more" [size]="18" /> Meer
+            <a class="sidebar__link sidebar__link--rail" [routerLink]="navMore.link" [class.active]="itemActive(navMore)">
+              <app-icon class="sidebar__icon" [name]="navMore.icon" [size]="18" /> {{ navMore.label }}
             </a>
           </nav>
 
@@ -363,28 +216,28 @@ export class App {
     this.openGroup.set(this.currentGroup());
   });
 
-  /**
-   * Documenten & media wants the room: on a desktop the sidebar folds to the
-   * rail while the library is open, and unfolds at the next click in the
-   * sidebar or when the route leaves the library by any other way.
-   */
-  readonly railed = signal(sidebarRailForUrl(this.router.url));
-  private readonly syncRailWithRoute = effect(() => {
-    this.railed.set(sidebarRailForUrl(this.url()));
-  });
+  /* The navigation table, shared with Meer. */
+  readonly navHome = NAV_HOME;
+  readonly navGroups = NAV_GROUPS;
+  readonly navWorkspaces = NAV_WORKSPACES;
+  readonly navMore = NAV_MORE;
 
-  /** One listener for the whole navigation: the library folds it, anything else unfolds it. */
-  sidebarClicked(event: Event): void {
-    const target = event.target as HTMLElement | null;
-    const control = target?.closest<HTMLElement>('a, button');
-    if (!control) return;
-    if (control.hasAttribute('data-rail')) {
-      this.railed.set(true);
-      this.openGroup.set(null);
-      return;
-    }
-    this.railed.set(false);
-    if (control.hasAttribute('data-expand')) this.openGroup.set(this.currentGroup());
+  itemActive(item: NavItem): boolean {
+    return navItemActive(item, this.url());
+  }
+
+  itemNew(item: NavItem): boolean {
+    return navItemIsNew(item);
+  }
+
+  /** A WorkQueue count by name; 0 hides the chip. */
+  countOf(key: NavCountKey | undefined): number {
+    return key ? this.work[key]() : 0;
+  }
+
+  /** The folded header's count: its items' counts, as NAV_GROUPS says. */
+  groupCount(group: NavGroup): number {
+    return groupCountKeys(group, 'sidebar').reduce((sum, key) => sum + this.countOf(key), 0);
   }
 
   groupOpen(group: SidebarGroup): boolean {
@@ -399,9 +252,6 @@ export class App {
     this.openGroup.update((open) => toggleSidebarGroup(open, group));
   }
 
-  settingsActive(section: string): boolean {
-    return this.url().startsWith('/settings') && this.url().includes('sectie=' + section);
-  }
   /**
    * How many quotes wait on us; the dot on the Verkoop tab.
    *
@@ -409,7 +259,6 @@ export class App {
    * apart.
    */
   readonly openWork = this.work.actionCount;
-  readonly openRevisions = this.work.revisionCount;
   readonly openLoginRequests = this.work.loginRequestCount;
 
   /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
@@ -440,8 +289,6 @@ export class App {
    * renders .wk-page, the phone shell only hides the ERP tab bar once the
    * page renders .ios-page.
    */
-  /** The Kasprognose link wears a 'nieuw' pill until the end of 2026 (a date check, nothing stored). */
-  readonly cashForecastNew = new Date() < new Date(2027, 0, 1);
   readonly workspaceRoute = computed(() => {
     const url = this.url();
     return url.startsWith('/costs') ? 'finance' : url.startsWith('/files') ? 'files' : null;

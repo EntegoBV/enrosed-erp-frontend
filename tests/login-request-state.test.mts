@@ -329,6 +329,7 @@ test('the page route keeps the ERP shell: it starts with none of the bare or wor
   /* The constant only guards something when the real route is that path. */
   const routes = readFileSync(new URL('../src/app/app.routes.ts', import.meta.url), 'utf8');
   assert.equal(routes.includes("path: '" + LOGIN_REQUESTS_PATH.slice(1) + "'"), true, 'route in app.routes.ts');
-  const shell = readFileSync(new URL('../src/app/app.ts', import.meta.url), 'utf8');
-  assert.equal(shell.includes('routerLink="' + LOGIN_REQUESTS_PATH + '"'), true, 'sidebar link in app.ts');
+  /* The sidebar and Meer render from NAV_GROUPS. */
+  const nav = readFileSync(new URL('../src/app/core/platform/nav-items.ts', import.meta.url), 'utf8');
+  assert.equal(nav.includes("link: '" + LOGIN_REQUESTS_PATH + "'"), true, 'navigation entry in nav-items.ts');
 });
