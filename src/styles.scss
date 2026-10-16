@@ -33,7 +33,8 @@ app-product-editor :is(.product-editor-dock__save, .product-editor-dock__view) {
 :root {
   --ink: #1a1614;
   --ink-2: #4a423e;
-  --muted: #8a807a;
+  /* 5.3:1 on white, 4.8:1 on --bg, 4.6:1 on the phone's #f2efeb: AA for the 11-13 px meta lines. */
+  --muted: #736a64;
   --muted-2: #a9a099;
   --line: #e9e3de;
   --line-strong: #d8d0c9;
@@ -145,8 +146,9 @@ input, select, textarea { font: inherit; color: inherit; }
 .theme-plum {
   --rose: #6f3c8f; --rose-dark: #532a6d; --rose-mid: #9a6cb7; --rose-soft: #f3ebf8; --rose-line: #ddcbe8;
 }
+/* Terracotta at AA: 5.0:1 as link text on --bg, 5.5:1 under white button text. */
 .theme-terracotta {
-  --rose: #b8552e; --rose-dark: #8f3f20; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
+  --rose: #a8502b; --rose-dark: #8a3d1f; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
 }
 .theme-brown {
   --rose: #5d4037; --rose-dark: #3e2b25; --rose-mid: #8d6e63; --rose-soft: #f3edea; --rose-line: #e0d3ce;
