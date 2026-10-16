@@ -697,7 +697,15 @@ cijfers'.
 - **Agenda**: `agenda-days.ts` (UTC day math, no DST double days) and
   `agenda-entries.ts` (entries per day, markers, Komend from tomorrow, pin
   countdown, Daarna). The planner sheets stay in `planner-cards.ts`
-  (`section` 'all' | 'tasks' | 'none').
+  (`section` 'all' | 'tasks' | 'none'). A dated list (Komend under the desk
+  Maand's day, the home strip, the phone Dag of an empty day) gets `[month]`,
+  the month it sits beside (the grid's; this month for the strip): a day
+  outside it shows its month under it, "di 1" over "dec" (`agendaDay`), in
+  the day column's own width.
+- When not every source answered and nothing is open, Te doen reads 'Nog
+  niet alles nagekeken' with 'Niet geladen: …' and Opnieuw (it wraps at
+  360, never cut). The desk ends with 'Meer cijfers' and 'Alle analyses ›'
+  (/analyses/overview) over the second grid, like the phone's Meer cijfers.
 - **Figure blocks** (`widgets/home-*.ts`, variant 'desk' | 'phone', fixed
   order, no edit mode): Kas, Verkoop, Inkoop & containers, Resultaat,
   Ontvangen, Voorraad, Partners, Website, (Search Console), Markt. One tap
@@ -1333,10 +1341,70 @@ and on copies. Without the blocks (older backend) every screen is as before.
   the card's currency, never the converted, levelled goods figure), sheets
   Regel bewerken and Verdeelsleutels. Status terugzetten lives under Acties on the
   phone and in the desk's Afronden tab only, never on the read view.
-- Known limit: the Nacalculatie component still says 'Kostprijzen toepassen
-  bij Afronden ›' (the desk keeps its Afronden tab); on the phone it opens
-  the apply sheet. Tests: purchase-phone-model, purchase-phone-step,
-  purchase-phone-templates.
+- The Nacalculatie's 'Kostprijzen toepassen ›' (the phone has no Afronden
+  tab) opens the apply sheet like the dock: the read view hands the step to
+  the editor, the editor calls `apply()`. Focusing a tab never moves the
+  page, also just before the bar sticks (where the tabs sit in the root's
+  scroll padding without the stuck rule): `keepPhoneTabFocusInPlace`
+  (`purchase-phone-scroll.ts`, a field of the view and the editor) sets each tab's
+  lift (`liftPhoneTabs`: its scroll area moves down by as much as it sits
+  inside that padding, and as much at the bottom) on every Tab/arrow/Home/
+  End keydown and a frame after every scroll; lower down the lift is 0.
+  Tests: purchase-phone-model, purchase-phone-step, purchase-phone-templates,
+  purchase-phone-scroll.
+
+### Kostprijshistoriek and Kostprijzen toepassen (2026-10-16)
+- Backend `product_cost_history` (migration 2026-10-16/product-cost-history-basis:
+  twelve nullable columns, a guarded one-time backfill): every row keeps the
+  basis the cost was applied on (`salesUnit` PIECE|DISPLAY, `piecesPerUnit`,
+  `unitKey`, as `ProductCostBasis.of` stores it), its `kind` and what one unit
+  was made of (`goodsEur`, `originEur`, `freightEur`, `dutyEur`,
+  `destinationEur`, `enrosedEur`, `separateEur`: the line's part / its
+  quantity at 4 decimals; `extraUnitCost` in the EXW currency). Kinds: APPLY;
+  REAPPLY (the same container at another cost - at the same cost no row is
+  written); SEED (the first-start seed's 'system' rows); COPY (a copied
+  product's taken-over cost, with the source's container and parts while
+  they still match; the copy's first real apply from that container is an
+  APPLY). GET /api/products/{id}/cost-history adds `containerName`
+  (Herkenbare naam, else number) and `containerGone` (trash or purged). An
+  older server sends none of it: `costKind` reads 'system' as SEED, else
+  APPLY, and a row without a basis reads on the product's basis today.
+- POST /api/purchase-orders/{id}/apply (no body) skips a line that received
+  nothing (quantity 0): no cost change, no history row - its piece price of
+  € 0 would wipe the cost and understate the stock value. The diary counts
+  only the written products, '· k overgeslagen (niets ontvangen)'.
+- `product-cost-basis.ts`: the basis and its words ('per display van 12',
+  'per diamant', never set); `sameCostBasis` compares only per piece / per
+  display and the pieces in a display, never the unit name; `otherSideCost`
+  is the price on the other side of a display. `product-cost-history-model.ts`
+  (pure, node-tested through the transpiler): rows newest first in their own
+  basis with the kind chip Toegepast / Opnieuw / Start / Kopie, the change
+  against the container before (a re-apply against this same container
+  before), the parts (Opbouw, with Afronding); the sums and the chart cover
+  the rows on the newest row's basis, one per container ('andere basis' rows
+  and a re-applied container's earlier rows stay listed with a note);
+  `emptyCostHistory` names the source of a cost set before the history.
+- `app-product-cost-history-sheet` is the one way into the history: the desk
+  Kostprijs KPI and Prijs & marge 'Kostprijshistoriek ›', the phone Kostprijs
+  and Bron tiles, the editor's Inkoop row (only with a cost) and every row of
+  the apply sheet (stacked on top; Escape closes only the top). A row links
+  to its container unless it is the one the sheet came from or it is gone
+  ('PO-… verwijderd', no link). The Opbouw (Catalogusprijs KPI, Opbouw tonen,
+  phone Marge tile) keeps its own Historiek tab.
+- Kostprijzen toepassen (`purchase-apply-costs.ts`, pure, +
+  `app-purchase-apply-costs-sheet`, hosted once by PurchaseEditor and
+  PurchaseDesk, which extends it): `apply()` saves a dirty draft first,
+  fetches the supplier's products again (plus GET /api/products/{id} for a
+  line of another supplier; one that cannot be loaded stays 'unknown': 'niet
+  geladen', no unit words) and opens the sheet: per product Nu (cost and its
+  source), Nieuw and Verschil (up, down, new, same 'zelfde kostprijs · nieuwe
+  bron', unchanged, skipped 'niets ontvangen · blijft …', unknown). The button
+  'Toepassen (n producten)' / 'Opnieuw toepassen (n …)' counts every row but
+  the skipped; Annuleren writes nothing; `confirmApply` posts once and toasts
+  the sheet's counts (`applyCostsToast`: gewijzigd only for new/up/down,
+  ongewijzigd, an unknown row 'niet vergeleken'); a failed apply keeps the
+  sheet with the server's message. Tests: product-cost-history,
+  purchase-apply-costs.
 
 ### Products
 - List (search, skeletons) → view first: price and margin (intern) in
