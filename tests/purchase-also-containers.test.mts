@@ -152,3 +152,9 @@ test("a new transfer's row switched to another choice brings that choice's own a
   assert.deepEqual([alsoPartAs(po39, 't:ORDERED', back, true)!.amount, alsoPartAs(po39, 't:ORDERED', back, true)!.paymentId], [3070.2, null], 'its term is covered: the typed amount stays');
   assert.equal(alsoPartAs(po39, 'p:392', fresh)!.amount, 7163.8, 'a share keeps the typed amount');
 });
+
+test('a toast keeps a short alias whole with its amount; a long one may wrap at its spaces', () => {
+  const part = (alias: string) => ({ orderId: 39, number: 'PO-2026-039', alias, supplierId: 8, due: 'ORDERED', label: '30%', amountInput: '1,00', amount: 1 }) as any;
+  assert.equal(alsoNotice([part('Moederdag Rood')]), 'Ook op Moederdag Rood');
+  assert.equal(alsoNotice([part('Moederdag Rood grote container 2026')]), 'Ook op Moederdag Rood grote container 2026');
+});

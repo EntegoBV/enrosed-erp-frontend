@@ -273,8 +273,10 @@ export function alsoWrites(parts: readonly AlsoContainerPart[] | null | undefine
 
 /** "Ook op PO-2026-044 en PO-2026-045" after the save, each container by its name. */
 export function alsoNotice(parts: readonly AlsoContainerPart[] | null | undefined): string | null {
-  // A word joiner after each hyphen: a toast never breaks 'PO-2026-' / '038' (purchase-payment-share's unbrokenName).
-  const names = (parts ?? []).filter((part) => (part.amount ?? 0) > 0).map((part) => nameOf(part).replace(/-/g, '-\u2060'));
+  // A toast never breaks inside a name: a word joiner after each hyphen ('PO-2026-' / '038'), no-break spaces in a name of up to
+  // 22 characters ('Moederdag' / 'Rood'); a longer one may wrap at its spaces (purchase-payment-share's unbrokenName: keep in step).
+  const names = (parts ?? []).filter((part) => (part.amount ?? 0) > 0).map((part) => nameOf(part))
+    .map((name) => { const joined = name.replace(/-/g, '-\u2060'); return name.length <= 22 ? joined.replace(/ /g, '\u00a0') : joined; });
   if (!names.length) return null;
   return `Ook op ${names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' en ' + names.at(-1)}`;
 }

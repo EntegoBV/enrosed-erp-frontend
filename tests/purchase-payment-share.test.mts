@@ -132,7 +132,9 @@ test('shareToast names every container, its alias first', () => {
   // A toast never breaks inside a name or between a name and its amount (the desk toast read 'PO-2026-' / '038 € 3.801,13').
   const raw = shareToast([{ name: 'PO-2026-038', amountEur: 3801.13 }, { name: 'Kerst 2026', amountEur: 3801.13 }]);
   assert.ok(raw.includes('PO-\u20602026-\u2060038\u00a0€'), 'a word joiner after each hyphen, a no-break space before the euro');
-  assert.ok(raw.includes('Kerst 2026\u00a0€'), 'an alias keeps its own spaces; only the euro sticks to it');
+  assert.ok(raw.includes('Kerst\u00a02026\u00a0€'), "a short alias stays whole with its amount (desk and phone read 'Moederdag' / 'Rood € 3.801,13')");
+  const long = shareToast([{ name: 'Moederdag Rood grote container', amountEur: 3801.13 }]);
+  assert.ok(long.includes('Moederdag Rood grote container\u00a0€'), 'a long alias may wrap at its spaces rather than run out of the toast');
 });
 
 /** What 'Verdelen over containers' starts with, plus PO-040 added on this payment's term. */

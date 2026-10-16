@@ -106,16 +106,24 @@ export function shareNewPart(orderId: number, write: PurchasePaymentWrite): Bank
     label: write.label ?? null, settles: !!write.settles, invoiceId: write.invoiceId ?? null, inspectionViaSupplier: write.inspectionViaSupplier ?? null };
 }
 
+/** A name up to this long stays whole with its amount; a longer one may wrap at its spaces rather than run out of the 320 px desk toast. */
+const WHOLE_NAME = 22;
+
 /**
- * A container name that never breaks at its hyphens (a word joiner after
- * each: 'PO-2026-' / '038' read as two things in a toast). Invisible; the
- * same rule as alsoNotice's (purchase-also-containers): keep the two in step.
+ * A container name that never breaks inside: a word joiner after each
+ * hyphen ('PO-2026-' / '038' read as two things in a toast) and, for a name
+ * of up to 22 characters, a no-break space for each space ('Moederdag' /
+ * 'Rood € 3.801,13' read as two containers). Invisible; the same rule as
+ * alsoNotice's (purchase-also-containers): keep the two in step.
  */
-export const unbrokenName = (name: string): string => name.replace(/-/g, '-\u2060');
+export const unbrokenName = (name: string): string => {
+  const joined = name.replace(/-/g, '-\u2060');
+  return name.length <= WHOLE_NAME ? joined.replace(/ /g, '\u00a0') : joined;
+};
 
 /**
  * 'Verdeeld over 3 containers: PO-2026-038 € 3.801,13 · PO-2026-039 € 3.801,13 · PO-2026-040 € 3.801,12'.
- * Each name keeps its amount on its line (no break inside the name, a no-break space before the euro).
+ * Each name keeps its amount on its line (unbrokenName; a no-break space before the euro).
  */
 export function shareToast(rows: readonly { name: string; amountEur: number }[]): string {
   return `Verdeeld over ${rows.length} ${rows.length === 1 ? 'container' : 'containers'}: ${rows.map((row) => `${unbrokenName(row.name)}\u00a0${eur(cents(row.amountEur) / 100)}`).join(' · ')}`;
