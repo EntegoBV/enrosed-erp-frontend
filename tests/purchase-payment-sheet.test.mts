@@ -353,6 +353,7 @@ test("a larger transaction offers 'Verdelen over containers' first; the share fo
   assert.deepEqual([sheet.pendingPlan().kind, sheet.shareOffered(), plain(sheet.surplusText())], ['higher', true, 'Transactie is € 8.333,18 hoger dan deze betaling']);
   sheet.chooseSurplus('SHARE');
   assert.deepEqual(clone(sheet.pendingPlan()), { kind: 'share', lineId: 700 });
+  assert.equal(sheet.pickingClosed(), true, 'a shared transaction stands alone: no second picker beside it');
   assert.deepEqual([sheet.draft().shareOwn, sheet.draft().shareOwnInput, sheet.draft().shareMode, outputs.alsoLoad.length], [3070.2, '3.070,20', 'AFSPRAAK', 1]);
   assert.equal(sheet.saveBlocked(), true, 'no other container yet');
   // The host loaded the containers (it may also have proposed PO-039); here the owner adds them.

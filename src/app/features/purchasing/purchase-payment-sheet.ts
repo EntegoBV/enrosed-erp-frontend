@@ -926,8 +926,8 @@ export class PurchasePaymentSheet {
     return linkChange({ amount: part.amount, currency: part.currency, amountEur: part.amountEur, paidOn: part.paidOn, proof },
       { amountEur: line.amountEur, day: bankTransactionDay(line), text: this.lineText(line) }, this.pendingPlan(), companionsEur);
   });
-  /** A larger transaction is picked: it stands alone (its question is open), no second one is offered beside it. */
-  readonly pickingClosed = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'higher' || (plan.kind === 'part' && !!plan.surplus); });
+  /** A larger transaction is picked: it stands alone (its question is open, or it is shared over containers), no second one is offered beside it. */
+  readonly pickingClosed = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'higher' || plan.kind === 'share' || (plan.kind === 'part' && !!plan.surplus); });
   /** One more transaction can be picked: ten at most, one against an older server. */
   readonly pickMore = computed(() => { const count = (this.draft().pendingLines ?? []).length; return this.roundOnServer() ? count < 10 : count < 1; });
   readonly excluded = computed(() => [
