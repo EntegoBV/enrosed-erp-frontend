@@ -442,7 +442,11 @@ test("with 'Verdelen over containers' the Bedrag hint says this container's part
   sheet.orderName.set('PO-2026-038');
   assert.equal(sheet.ownNumberHint(), null, 'never the number twice');
   const ownRow = template.slice(template.indexOf('<section class="pay-sheet__share"'), template.indexOf('<ng-container *ngTemplateOutlet="alsoRows; context: { $implicit: false }" />'));
-  assert.match(ownRow, /@if \(ownNumberHint\(\); as number\) \{ <small class="pay-sheet__alsonumber">\{\{ number \}\}<\/small> \}/);
+  // The number's own leading space: Angular drops a whitespace-only node, so the text read 'Moederdag RoodPO-2026-039'.
+  assert.match(ownRow, /@if \(ownNumberHint\(\); as number\) \{ <small class="pay-sheet__alsonumber"> \{\{ number \}\}<\/small> \}/);
+  const otherRows = template.slice(template.indexOf('<ng-template #alsoRows'), template.indexOf('<ng-template #alsoFailed>'));
+  assert.match(otherRows, /<b>\{\{ name \}\}@if \(numberHint\(part\); as number\) \{ <small class="pay-sheet__alsonumber"> \{\{ number \}\}<\/small> \}<\/b>/);
+  assert.doesNotMatch(template, /<small class="pay-sheet__alsonumber">\{\{/, 'no number hint without its space');
   assert.match(ownRow, /<span class="btn btn--sm pay-sheet__alsospacer" aria-hidden="true">Weghalen<\/span>/);
   assert.match(ownRow, /<span class="pay-sheet__alsothis"> \(deze container\)<\/span>/, 'its own space: a whitespace-only node after the @if block is dropped');
 });
