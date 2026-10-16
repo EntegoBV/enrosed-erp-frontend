@@ -26,7 +26,7 @@ import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnSer
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
 import {
   adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
-  type ForeignLink, type LinkChangeRow, type SurplusChoice,
+  type BankPartSurplus, type ForeignLink, type LinkChangeRow,
 } from '../purchasing/purchase-payment-links';
 
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
@@ -668,7 +668,7 @@ export class BankMovementPanel {
     return part?.foreign && !part.carve && !part.refused && line ? foreignLinkWarning({ amountEur: part.row.amountEur, currency: part.foreign.currency }, line.amountEur) : null;
   });
   /** A transaction larger than the one chosen payment: 'Bedrag aanpassen' or 'Rest als inspectie via leverancier'. */
-  readonly outgoingSurplus = signal<SurplusChoice | null>(null);
+  readonly outgoingSurplus = signal<BankPartSurplus | null>(null);
   readonly outgoingSurplusText = computed(() => {
     const part = this.outgoingPart(), line = this.selected();
     return part?.higher && line ? surplusQuestion((cents(Math.abs(line.amountEur)) - cents(part.row.amountEur)) / 100) : '';
@@ -734,7 +734,7 @@ export class BankMovementPanel {
     this.outgoingSelected.update(keys => keys.includes(row.key) ? keys.filter(key => key !== row.key)
       : [...(row.kind === 'cost' ? keys.filter(key => !key.startsWith('cost:')) : keys), row.key]);
   }
-  chooseOutgoingSurplus(choice: SurplusChoice | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
+  chooseOutgoingSurplus(choice: BankPartSurplus | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
   /** The transaction detail shows the spec's "Wat verandert" for the chosen payment itself (§3.6); the panel's own then steps aside. */
   ownsChange(): boolean { return false; }
   async linkOutgoing(): Promise<void> {

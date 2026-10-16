@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { alsoContainerOptions, alsoNotice, alsoPartFor, alsoTotalEur, alsoWrites, rebalancedGoods } from '../src/app/features/purchasing/purchase-also-containers.ts';
+import {
+  alsoContainerOptions, alsoNotice, alsoPartAs, alsoPartChoices, alsoPartFor, alsoPartKey, alsoTotalEur, alsoWrites, rebalancedGoods,
+} from '../src/app/features/purchasing/purchase-also-containers.ts';
 
 /* "Deze transactie dekt ook andere containers" (owner addition 2026-10-15): Yunnan Pubei's PO-43/44/45, 30 % of all three in one transfer. */
 const term = (orderId: number, due: string | null, remainingEur: number, extra: Record<string, unknown> = {}) => ({
@@ -59,4 +61,63 @@ test('the writes name their own order, in euro on the transaction\'s day; the no
   assert.equal(alsoNotice(parts.slice(0, 1)), 'Ook op PO-2026-044');
   assert.equal(alsoNotice([...parts, { ...parts[0], orderId: 30, number: 'PO-2026-030' }]), 'Ook op PO-2026-044, PO-2026-045 en PO-2026-030');
   assert.equal(alsoNotice([]), null);
+});
+
+/* ---- Emre, 2026-10-16: a container whose instalment was already noted gets that payment linked, never a second one */
+
+const plain = (text: string | null | undefined) => text?.replace(/[\u00a0\u202f]/g, ' ');
+const view = (id: number, terms: [string, number, number][], extra: Record<string, unknown> = {}) => ({
+  order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null, ...extra },
+  reconciliation: { streams: [{ payee: 'SUPPLIER', plannedEur: 0, paidEur: 0, finalized: false }, { payee: 'LOGISTICS', plannedEur: 1300, paidEur: 1046.95, finalized: false }],
+    supplierInstalments: terms.map(([due, plannedEur, paidEur]) => ({ due, label: due === 'ORDERED' ? '30% bij bestelling' : '70% bij vertrek', plannedEur, paidEur,
+      remainingEur: Math.max(0, plannedEur - paidEur), finalized: false })) },
+}) as any;
+const paid = (id: number, orderId: number, amountEur: number, extra: Record<string, unknown> = {}) => ({ id, orderId, orderNumber: `PO-2026-0${orderId}`, orderAlias: null,
+  paidOn: '2026-10-12', amountEur, amount: amountEur, currency: 'EUR', label: '30% bij bestelling', payee: 'SUPPLIER', bankStatementLineId: null,
+  instalmentDue: 'ORDERED', creditOffset: false, ...extra }) as any;
+
+test('with the payments loaded, a container whose term an open payment covers is listed with it; linked, offset, other-payee and archived ones are not', () => {
+  const views = [view(44, [['ORDERED', 3000, 3000], ['SHIPPED', 7000, 0]], { alias: 'Lente' }), view(45, [['ORDERED', 4500, 0]]), view(48, [['ORDERED', 2000, 2000]]),
+    view(49, [['ORDERED', 1000, 1000]], { archivedAt: '2026-10-01T00:00:00Z' }), view(30, [['ORDERED', 3700, 0]], { supplierId: 7 })];
+  const open = [{ ...term(44, 'SHIPPED', 7000), alias: 'Lente' }, term(45, 'ORDERED', 4500), term(30, 'ORDERED', 3700)];
+  const payments = [paid(441, 44, 3000, { orderAlias: 'Lente' }), paid(442, 44, 120, { creditOffset: true }), paid(443, 44, 500, { payee: 'LOGISTICS', instalmentDue: null }),
+    paid(481, 48, 2000, { bankStatementLineId: 90 }), paid(491, 49, 1000), paid(431, 43, 900)];
+  const options = alsoContainerOptions(open, views.map((item: any) => ({ id: item.order.id, supplierId: item.order.supplierId })), names, 43, 8, { payments, views });
+  assert.deepEqual(options.map(option => option.number), ['PO-2026-044', 'PO-2026-045', 'PO-2026-030'], 'the same supplier with an open payment first; PO-048 is on the bank, PO-049 archived');
+  assert.deepEqual(options[0].openPayments!.map(payment => [payment.id, payment.due, payment.amountEur]), [[441, 'ORDERED', 3000]]);
+  assert.deepEqual(options[0].standings!.map(item => [item.due, item.plannedEur, item.paidEur]), [['ORDERED', 3000, 3000], ['SHIPPED', 7000, 0]]);
+  assert.deepEqual(options[0].terms.map(item => [item.due, item.openEur, item.plannedEur]), [['SHIPPED', 7000, 7000]]);
+  // On this payment's term the open payment wins: linked, at its own euro, with where its term stands.
+  const part = alsoPartFor(options[0], 'ORDERED', '30% bij bestelling');
+  assert.deepEqual([part.paymentId, part.amount, part.amountInput, part.due, part.alias, part.paymentEur, part.paidOn], [441, 3000, '3.000,00', 'ORDERED', 'Lente', 3000, '2026-10-12']);
+  assert.deepEqual(part.standing, { label: '30% bij bestelling', term: true, plannedEur: 3000, paidEur: 3000 });
+  assert.equal(alsoPartKey(part), 'p:441');
+  assert.equal(alsoPartFor(options[0], 'SHIPPED').paymentId, null, 'another term: a new payment on that open term');
+  assert.deepEqual([alsoPartFor(options[1], 'ORDERED').paymentId, alsoPartFor(options[1], 'ORDERED').openEur], [null, 4500]);
+  // The row can switch: the open payment, or a new payment on an open term or on the open payment's own term; the typed amount stays.
+  assert.deepEqual(alsoPartChoices(options[0]).map(choice => [choice.key, plain(choice.text)]),
+    [['p:441', 'Bestaand: € 3.000,00'], ['t:SHIPPED', 'Nieuw: 70% bij vertrek'], ['t:ORDERED', 'Nieuw: 30% bij bestelling']]);
+  assert.equal(alsoPartChoices(options[0]).every(choice => plain(choice.text)!.length <= 25), true, 'short enough for a phone');
+  const typed = { ...part, amount: 3801.13, amountInput: '3.801,13' };
+  const fresh = alsoPartAs(options[0], 't:ORDERED', typed)!;
+  assert.deepEqual([fresh.paymentId, fresh.due, fresh.label, fresh.amount, fresh.openEur, fresh.plannedEur], [null, 'ORDERED', '30% bij bestelling', 3801.13, 0, 3000]);
+  assert.equal(alsoPartKey(fresh), 't:ORDERED');
+  assert.equal(alsoPartAs(options[0], 'p:441', fresh)!.paymentId, 441);
+  assert.equal(alsoPartAs(options[0], 'p:999', fresh), null);
+  // Logistics: its own payments and its stream.
+  const logistics = alsoContainerOptions([], views.map((item: any) => ({ id: item.order.id, supplierId: item.order.supplierId })), names, 43, 8, { payments, views, payee: 'LOGISTICS' });
+  assert.deepEqual(logistics.map(option => [option.number, option.openPayments!.map(payment => payment.id)]), [['PO-2026-044', [443]]]);
+  assert.deepEqual(logistics[0].standings, [{ due: null, label: 'Douane & transport', term: false, plannedEur: 1300, paidEur: 1046.95 }]);
+  assert.equal(alsoNotice([part, alsoPartFor(options[1], 'ORDERED')]), 'Ook op Lente en PO-2026-045', 'containers by their name');
+});
+
+test('several open payments: the same label wins, the choices tell them apart', () => {
+  const views = [view(44, [['ORDERED', 6000, 6000]])];
+  const payments = [paid(441, 44, 3000, { label: 'Aanbetaling', paidOn: '2026-10-01' }), paid(442, 44, 3000, { label: '30% bij bestelling' })];
+  const [option] = alsoContainerOptions([], [{ id: 44, supplierId: 8 }], names, 43, 8, { payments, views });
+  assert.equal(alsoPartFor(option, 'ORDERED', '30% bij bestelling').paymentId, 442);
+  assert.equal(alsoPartFor(option, 'ORDERED', null).paymentId, 441, 'without a label: the oldest');
+  assert.deepEqual(alsoPartChoices(option).map(choice => plain(choice.text)), ['Aanbetaling: € 3.000,00', '30% bij bestelling: € 3.000,00', 'Nieuw: 30% bij bestelling']);
+  const same = alsoContainerOptions([], [{ id: 44, supplierId: 8 }], names, 43, 8, { payments: payments.map(item => ({ ...item, label: 'Saldo' })), views })[0];
+  assert.deepEqual(alsoPartChoices(same).slice(0, 2).map(choice => plain(choice.text)), ['Bestaand 01/10: € 3.000,00', 'Bestaand 12/10: € 3.000,00']);
 });

@@ -38,9 +38,14 @@ const day = (iso: string): string => iso.slice(0, 10).split('-').reverse().join(
 /**
  * What happens with a transaction larger than the payment: the payment takes
  * its amount, or the rest becomes the inspection paid via the supplier on the
- * same transaction (round 1 D). Sent as bank-part's `surplus`.
+ * same transaction (round 1 D), both sent as bank-part's `surplus`; or the
+ * transaction also paid other containers and is shared over them ('SHARE',
+ * Emre 2026-10-16: one transfer for the 30 % of three containers), one
+ * POST …/purchase-share.
  */
-export type SurplusChoice = 'ADJUST' | 'INSPECTION';
+export type SurplusChoice = 'ADJUST' | 'INSPECTION' | 'SHARE';
+/** The choices bank-part itself takes (`higher`): every one but the share. */
+export type BankPartSurplus = Exclude<SurplusChoice, 'SHARE'>;
 
 /** What the sheet does with the transactions picked for one part. */
 export type PendingLinkPlan =
@@ -51,11 +56,13 @@ export type PendingLinkPlan =
    * /bank-part). A larger one is whole once the owner chose what the surplus
    * is (`surplus`).
    */
-  | { kind: 'part'; lineId: number; whole: boolean; surplus?: SurplusChoice; withPaymentIds?: number[];
+  | { kind: 'part'; lineId: number; whole: boolean; surplus?: BankPartSurplus; withPaymentIds?: number[];
       /** A USD/CNY carve: the part in the payment's own currency, sent as bank-part's `amount`. */
       amount?: number }
   /** One transaction larger than the part, no choice yet: the sheet asks (extraEur = how much larger). */
   | { kind: 'higher'; lineId: number; extraEur: number }
+  /** 'Verdelen over containers': the one transaction is shared between this part and other containers (POST …/purchase-share). */
+  | { kind: 'share'; lineId: number }
   /** Two to ten transactions that together make the part (C1, /bank-lines). */
   | { kind: 'lines'; lineIds: number[] }
   /** A server without this round: one matching transaction through the old /links call. */
@@ -103,6 +110,8 @@ export function pendingLinkPlan(
   const outgoing = lines.map(line => -cents(line.amountEur));
   if (outgoing.some(value => value <= 0) || !(part > 0)) return { kind: 'invalid', message: PENDING_LINES_MESSAGE };
   if (lines.length === 1 && roundOnServer && foreign && foreign.currency !== 'EUR') {
+    // The transaction also paid other containers: the payment goes whole on it, its euro becomes its share.
+    if (surplus === 'SHARE') return { kind: 'share', lineId: lines[0].id };
     // USD/CNY: the server compares in the payment's own currency. A named part is carved out; else the transaction is the whole payment.
     const named = foreign.part ?? null;
     if (named !== null) {
@@ -124,6 +133,7 @@ export function pendingLinkPlan(
     const whole = Math.abs(outgoing[0] - part) <= TOLERANCE_CENTS;
     if (!roundOnServer) return whole ? { kind: 'links', lineId: lines[0].id } : { kind: 'invalid', message: PENDING_LINES_MESSAGE };
     if (whole || outgoing[0] < part) return { kind: 'part', lineId: lines[0].id, whole };
+    if (surplus === 'SHARE') return { kind: 'share', lineId: lines[0].id };
     return surplus ? { kind: 'part', lineId: lines[0].id, whole: true, surplus }
       : { kind: 'higher', lineId: lines[0].id, extraEur: (outgoing[0] - part) / 100 };
   }
@@ -165,6 +175,49 @@ export function termAfterAdding(term: TermStanding | null, addEur: number): { ov
   return { overEur: 0, subject, text: `${subject} is dan precies betaald` };
 }
 
+/** One row of the share as the effect is worded: an open payment (its euro, money and day) or a new payment (paymentEur null). */
+export interface ShareEffectRow {
+  paymentEur: number | null;
+  currency?: Currency;
+  amount?: number | null;
+  partEur: number | null;
+  standing?: TermStanding | null;
+  /** The transaction's day: every part takes it. */
+  day: string;
+  /** A new payment's term, and what is still open on it. */
+  label?: string | null;
+  openEur?: number | null;
+}
+
+/**
+ * 'Verdelen over containers' (Emre, 2026-10-16): what the share does to one
+ * row, said before it is saved (the server's rules in POST …/purchase-share):
+ * 'wordt gekoppeld · betaald op 28/09/2026';
+ * '€ 2.000,00 op de bank; € 1.070,20 blijft open als tweede transactie';
+ * 'betaling wordt € 3.801,13 (was € 3.070,20); de termijn komt € 789,48 boven de afspraak';
+ * 'betaling in USD: gaat helemaal op deze transactie; de euro wordt € 3.700,00 (was € 3.680,00)';
+ * 'nieuwe betaling · 30% bij bestelling; de termijn komt € 730,92 boven de afspraak'.
+ */
+export function shareEffect(row: ShareEffectRow): string {
+  const part = cents(row.partEur ?? 0);
+  if (row.paymentEur == null) {
+    const open = (row.openEur ?? 0) > 0 ? ` · open ${eur(row.openEur!)}` : '';
+    const after = termAfterAdding(row.standing ?? null, part / 100);
+    return `nieuwe betaling · ${row.label || 'Leverancier'}${open}${after && after.overEur > 0 ? '; ' + after.text : ''}`;
+  }
+  const booked = cents(row.paymentEur);
+  if (row.currency && row.currency !== 'EUR') {
+    // The server links a USD/CNY payment whole: its euro becomes the part, its own amount stays.
+    const text = `betaling in ${row.currency}: gaat helemaal op deze transactie; de euro wordt ${eur(part / 100)} (was ${eur(booked / 100)})`;
+    return foreignLinkWarning({ amountEur: booked / 100, currency: row.currency }, part / 100) ? `${text} · wijkt sterk af, controleer het deel` : text;
+  }
+  const difference = part - booked;
+  if (Math.abs(difference) <= TOLERANCE_CENTS) return `wordt gekoppeld · betaald op ${day(row.day)}`;
+  if (difference < 0) return `${eur(part / 100)} op de bank; ${eur(-difference / 100)} blijft open als tweede transactie`;
+  const after = termAfterAdding(row.standing ?? null, difference / 100);
+  return `betaling wordt ${eur(part / 100)} (was ${eur(booked / 100)})${after ? '; ' + after.text : ''}`;
+}
+
 /** 'De betaling wordt € 12.500,00 (was € 12.000,00); de termijn komt € 500,00 boven de afspraak.' before a transaction is added. */
 export function growPreview(paymentEur: number, addEur: number, term: TermStanding | null): string {
   const after = termAfterAdding(term, addEur);
@@ -203,11 +256,11 @@ export function pendingPartEur(
 
 /**
  * The inspection split must wait while two or more transactions, one smaller
- * one or one larger one (whatever its surplus becomes) are about to be linked:
- * each changes the goods payment first.
+ * one or one larger one (whatever its surplus becomes, a share included) are
+ * about to be linked: each changes the goods payment first.
  */
 export function inspectionSplitBlocked(plan: PendingLinkPlan): boolean {
-  return plan.kind === 'lines' || plan.kind === 'higher' || plan.kind === 'grow' || (plan.kind === 'part' && (!plan.whole || !!plan.surplus));
+  return plan.kind === 'lines' || plan.kind === 'higher' || plan.kind === 'grow' || plan.kind === 'share' || (plan.kind === 'part' && (!plan.whole || !!plan.surplus));
 }
 
 /**

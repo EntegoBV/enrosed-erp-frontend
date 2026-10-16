@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
-import type { PurchasePayment, PurchasePaymentWrite } from './models';
+import type { Instalment, Payee, PurchasePayment, PurchasePaymentWrite } from './models';
 import type { OdooDocument } from './odoo-api';
 
 export interface ReceivedOdooInvoice extends OdooDocument {
@@ -51,6 +51,25 @@ export interface BankClassificationRequest { classification: BankClassification;
  * without it belongs to the request's purchaseOrderId.
  */
 export interface BankPurchasePaymentPart extends PurchasePaymentWrite { purchaseOrderId?: number | null; }
+/**
+ * One part of POST …/{id}/purchase-share ("Verdelen over containers", Emre
+ * 2026-10-16): exactly one of `paymentId` (an open payment, linked with this
+ * part; `expectedAmountEur` is its euro as the screen saw it) or
+ * `purchaseOrderId` (a new euro payment on that container, described by the
+ * other fields). Every part takes the line's day.
+ */
+export interface BankPurchaseSharePart {
+  paymentId?: number; purchaseOrderId?: number; amountEur: number; expectedAmountEur?: number | null;
+  payee?: Payee; instalmentDue?: Instalment['due'] | null; label?: string | null; settles?: boolean; invoiceId?: number | null;
+  inspectionViaSupplier?: boolean | null;
+}
+/** What happened to one part: linked as it was (its day follows), grown to the part, carved out (the rest stays open), or new. */
+export interface BankPurchaseShareOutcome {
+  paymentId: number; orderId: number; amountEur: number; outcome: 'LINKED' | 'GREW' | 'CARVED' | 'CREATED';
+  wasEur: number | null; wasPaidOn: string | null; restPaymentId: number | null;
+}
+/** The line as described now, the payment on the line per part (request order) and what happened per part. */
+export interface BankPurchaseShareResult { line: BankStatementLine; payments: PurchasePayment[]; parts: BankPurchaseShareOutcome[]; }
 export type BankAccountWrite = Pick<BankAccount, 'label' | 'source' | 'aliases' | 'odooJournalId'>;
 export interface BankStatementLine {
   id: number; account: string; fingerprint: string; amountEur: number; bookedAt: string; timeZone: string;
@@ -84,6 +103,8 @@ export class BankingApi {
   linkPayments(id: number, body: BankPaymentLinks): Promise<BankStatementLine> { return firstValueFrom(this.http.post<BankStatementLine>(api(`/api/bank-statements/${id}/links`), body)); }
   /** One transfer, one or more payments: each part on the request's order unless it names its own purchaseOrderId (one transfer for several containers). */
   addPurchasePayment(id: number, purchaseOrderId: number, payments: BankPurchasePaymentPart[]): Promise<{ line: BankStatementLine; payments: PurchasePayment[] }> { return firstValueFrom(this.http.post<{ line: BankStatementLine; payments: PurchasePayment[] }>(api(`/api/bank-statements/${id}/purchase-payment`), { purchaseOrderId, payments })); }
+  /** "Verdelen over containers": one transaction over open payments and new ones, in one call; an identical retry answers the same rows. */
+  sharePurchasePayment(id: number, parts: BankPurchaseSharePart[]): Promise<BankPurchaseShareResult> { return firstValueFrom(this.http.post<BankPurchaseShareResult>(api(`/api/bank-statements/${id}/purchase-share`), { parts })); }
   addCostPayment(id: number, companyCostId: number, confirmNewPayment = false): Promise<BankStatementLine> { return firstValueFrom(this.http.post<BankStatementLine>(api(`/api/bank-statements/${id}/cost-payment`), { companyCostId, ...(confirmNewPayment ? { confirmNewPayment } : {}) })); }
   unlinkPayments(id: number): Promise<void> { return firstValueFrom(this.http.delete<void>(api(`/api/bank-statements/${id}/links`))); }
   receivedOdooInvoices(id: number, afterId = 0): Promise<ReceivedOdooInvoicePage> { return firstValueFrom(this.http.get<ReceivedOdooInvoicePage>(api(`/api/bank-statements/${id}/odoo-purchase-invoices`), { params: { afterId, limit: 50 } })); }
