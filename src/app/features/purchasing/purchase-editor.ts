@@ -1,7 +1,8 @@
 import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
+import { Location } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -52,7 +53,8 @@ import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, type AlsoCo
 import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
-import { ContextMenu } from '../../shared/context-menu';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import { SwipeActions } from '../../shared/swipe-actions';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
 import { PaymentProofPicker } from '../../shared/payment-proof-picker';
 import { amountInputText, parsePurchasePaymentAmount, purchasePaymentOverage } from './purchase-payment-amount';
@@ -61,13 +63,12 @@ import {
   type LedgerPart, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { PurchaseSupplierCreditSheet, type SupplierCreditSheetAction, type SupplierCreditSubmit } from './purchase-supplier-credit-sheet';
-import { formatEur, payeeMenuItems, paymentsNavLabel } from './purchase-payment-menus';
+import { formatEur, payeeMenuItems } from './purchase-payment-menus';
 import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import {
   Allocation, Category, Clearance, Currency, DocumentKind, FreightRate, OtherCost, PAYMENT_TERMS, PartnerFinancing, Payee, Product, ProductFamily, PurchaseDocument, PurchaseInvoice, PurchaseOrder,
   PurchaseOrderLine, PurchaseOrderView, PurchasePayment, PurchasePaymentWrite, PurchaseSupplierCredit, ReceivedLine, Supplier, StockLocation, SalesOrderView, Customer,
 } from '../../core/api/models';
-import { PageHeader } from '../../shared/page-header';
 import { PurchaseQuoteSheet, PurchaseQuoteLine } from './purchase-quote-sheet';
 import { FilePicker } from '../../shared/file-picker';
 import { MediaApi } from '../../core/api/media-api';
@@ -106,6 +107,16 @@ import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from '
 import { purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
+import {
+  STEP_BUTTON, actionsMenu, editNextStep, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type PhoneStep, type PhoneTab,
+} from './purchase-phone-model';
+import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
+import { IosNav } from '../../shared/ios-nav';
+import { Icon } from '../../shared/icon';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
+import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 
 /**
  * Landed-cost calculation of a container.
@@ -149,1057 +160,585 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
+            IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
   template: `
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number"
-                       [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
-                       [showBack]="true" [showBell]="false"
-                       [titleEditable]="true"
-                       (titleChange)="patch({ number: $event })">
-        <button class="btn btn--sm pdf-header-button" type="button" (click)="pdfOpen.set(true)"
-                [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-          PDF
-        </button>
-        @if (dirty()) {
-          <button class="btn btn--primary btn--sm" type="button"
-                  [disabled]="saving() || negativeExtra()" (click)="save()">
-            {{ saving() ? 'Bezig…' : 'Opslaan' }}
-          </button>
-        } @else if (nextStep(); as step) {
-          <button class="btn btn--primary btn--sm" type="button" (click)="advanceStatus()">
-            {{ step.action }}
-          </button>
-        } @else {
-          <button class="btn btn--primary btn--sm" type="button" disabled>Opgeslagen</button>
-        }
-      </app-page-header>
-
-      <div class="content po-page erp-workspace erp-workspace--purchase erp-workspace--edit">
-
-        @if (isReceived()) {
-          <div class="alert alert--info po-notice">
-            <span class="alert__icon" aria-hidden="true">✓</span>
-            <div>
-              <b>Ontvangst gesloten.</b> De voorraad is bijgeboekt. Producten en aantallen
-              staan vast; notities en kostengegevens kun je nog corrigeren.
+      <div class="mpo-phone mpo-phone--edit">
+        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()">
+          <button trail class="ios-capsule ios-capsule--sm mpo-actions" type="button" aria-haspopup="dialog" [attr.aria-expanded]="actionsOpen()"
+                  (click)="actionsOpen.set(true)">Acties <app-icon name="chevron-down" [size]="14" /></button>
+          <!-- As the product editor: what is being edited, its status, and two figures that open their tab. -->
+          <section hero class="mpo-summary mpo-summary--edit" id="purchase-overview" tabindex="-1" aria-labelledby="mpo-edit-title">
+            <div class="mpo-summary__top">
+              <span class="mpo-summary__eyebrow">Container bewerken</span>
+              <span class="wk-pill" [class]="statusTone(data.order.status)"><span class="wk-pill__dot" aria-hidden="true"></span>{{ statusText(data.order.status) }}</span>
             </div>
-          </div>
-        }
-
-        <section class="po-overview erp-workspace__hero" id="purchase-overview"
-                 aria-labelledby="po-overview-title" tabindex="-1">
-          <div class="po-overview__top">
-            <div class="po-overview__copy">
-              <span class="po-eyebrow">Inkoopcontainer</span>
-              <h1 id="po-overview-title">{{ supplierName() }}</h1>
-              <p>
-                {{ data.order.orderDate | dateNl }}
-                @if (data.order.alias) { <span aria-hidden="true"> · </span>{{ data.order.alias }} }
-                <span aria-hidden="true"> · </span>gemaakt door {{ creatorName(data) }}
-                @if (!data.order.clearance) { <span aria-hidden="true"> · </span>inklaring te bevestigen }
-              </p>
-            </div>
-            <span class="po-status"
-                  [class.po-status--done]="isReceived()">
-              <span class="po-status__dot" aria-hidden="true"></span>
-              {{ data.order.status === 'CONCEPT' ? 'Concept' : data.order.status === 'BESTELD' ? 'Besteld'
-                : data.order.status === 'ONDERWEG' ? 'Vertrokken' : 'Ontvangen' }}
-            </span>
-          </div>
-
-          <div class="stepper overview-stepper" aria-label="Voortgang van de inkooporder">
-            @for (step of statusSteps; track step.value; let last = $last) {
-              <div class="stepper__step"
-                   [class.stepper__step--done]="stepIndex(data.order.status) >= $index"
-                   [class.stepper__step--arrived]="step.value === 'ONTVANGEN' && data.order.status === 'ONTVANGEN'"
-                   [class.stepper__step--now]="stepIndex(data.order.status) === $index">
-                <span class="stepper__dot" aria-hidden="true">
-                  @if (stepIndex(data.order.status) >= $index) { ✓ } @else { {{ $index + 1 }} }
-                </span>
-                <span class="stepper__label">{{ step.label }}</span>
-              </div>
-              @if (!last) {
-                <span class="stepper__line"
-                      [class.stepper__line--done]="stepIndex(data.order.status) > $index"
-                      [class.stepper__line--half]="stepIndex(data.order.status) === $index"></span>
-              }
-            }
-          </div>
-
-          @if (data.attention?.length) {
-            <div class="po-attention" role="status">
-              <span class="attention-dot">{{ data.attention!.length }}</span>
-              <div class="po-attention__body">
-                <b>Actie vereist</b>
-                @for (item of data.attention; track item) { <span>{{ item }}</span> }
-              </div>
-            </div>
-          }
-
-          <div class="po-facts">
-            <div class="po-fact">
-              <span class="po-fact__label">Vertrekhaven</span>
-              <strong>{{ costLabels().loadingPort }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Container</span>
-              <strong>{{ containerLabel(data.order.containerType) }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Aankomsthaven</span>
-              <strong>{{ data.order.destinationPort || 'Rotterdam' }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Lossen op</span>
-              <strong>{{ receivingLocationName(data.order.receivingLocationId) }}</strong>
-            </div>
-            <div class="po-fact">
-              <span class="po-fact__label">Lading</span>
-              @if (!isDdp() && data.costing.containerFill; as fill) {
-                <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                        [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                        [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}% · {{ data.costing.totals.pieces | num }} st</strong>
-              } @else {
-                <strong>{{ data.costing.totals.pieces | num }} st</strong>
-              }
-            </div>
-            <!-- Six facts fill the grid on every width; the landed total is
-                 the one figure a buyer wants at the top anyway. Shown as a
-                 dash when purchase figures are hidden. -->
-            <div class="po-fact po-fact--total">
-              <span class="po-fact__label">Totaal geland</span>
-              <strong>{{ data.costing.totals.totalEur | eur }}</strong>
-            </div>
-          </div>
-        </section>
-
-        <nav class="erp-workspace__nav purchase-editor__mobile-nav workflow-nav workflow-nav--wide" aria-label="Onderdelen van deze inkooporder">
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-order-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-order-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-order-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-order-section', 'order')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">1</span>
-            <span class="workflow-nav__copy"><b>Order</b><small>{{ containerLabel(data.order.containerType) }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-products-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-products-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-products-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-products-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">2</span>
-            <span class="workflow-nav__copy"><b>Producten</b><small>{{ data.costing.lines.length }} regels</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-costs-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-costs-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-costs-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-costs-section', 'costs')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">3</span>
-            <span class="workflow-nav__copy"><b>Kosten</b><small>{{ data.costing.totals.totalEur | eur }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-payments-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-payments-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-payments-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-payments-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">4</span>
-            <span class="workflow-nav__copy"><b>Betalingen</b><small>{{ paymentNavLabel() }}</small></span>
-          </button>
-          <button class="erp-workspace__nav-item workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-files-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-files-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-files-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-files-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">5</span>
-            <span class="workflow-nav__copy"><b>Dossier</b><small>{{ (documents() ?? []).length }} bestanden</small></span>
-          </button>
-          <button class="erp-workspace__nav-item erp-workspace__nav-item--action workflow-nav__item" type="button"
-                  [class.erp-workspace__nav-item--active]="workspaceSection() === 'purchase-actions-section'"
-                  [class.workflow-nav__active]="workspaceSection() === 'purchase-actions-section'"
-                  [attr.aria-current]="workspaceSection() === 'purchase-actions-section' ? 'location' : null"
-                  (click)="jumpToSection('purchase-actions-section')">
-            <span class="workflow-nav__mark erp-workspace__nav-index" aria-hidden="true">6</span>
-            <span class="workflow-nav__copy"><b>Volgende stap</b><small>{{ nextStep()?.action || 'Afgerond' }}</small></span>
-          </button>
-        </nav>
-
-        <div class="purchase-grid erp-workspace__layout"
-             [attr.data-phone-step]="phoneStep()">
-          <main class="purchase-main erp-workspace__main">
-            <section class="card flow-card erp-workspace__section" id="purchase-order-section"
-                     tabindex="-1">
-              <button class="section-toggle" type="button"
-                      [attr.aria-expanded]="sectionOpen('order')"
-                      aria-controls="purchase-order-fields"
-                      (click)="toggleSection('order')">
-                <span class="section-step" aria-hidden="true">1</span>
-                <span class="section-title-block">
-                  <span class="section-kicker">Voorbereiding</span>
-                  <span class="section-name">Ordergegevens</span>
-                  @if (!sectionOpen('order')) {
-                    <span class="section-summary">{{ orderSummary() }}</span>
-                  }
-                </span>
-                <svg class="section-chevron" [class.section-chevron--open]="sectionOpen('order')"
-                     viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-                  <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
-                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+            <h1 id="mpo-edit-title" class="mpo-summary__title" [title]="containerName(data.order)">{{ containerName(data.order) }}</h1>
+            <p class="mpo-summary__sub" [title]="data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName()">{{ data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName() }}</p>
+            <div class="mpo-tiles">
+              <!-- The fill as the value, the pieces below it: an overfull container's '103% · 12.400 st' never runs past the tile. -->
+              @let ladingFill = isDdp() ? null : data.costing.containerFill;
+              @let ladingPieces = (data.costing.totals.pieces | num) + ' st';
+              @let lading = ladingFill ? (ladingFill.fillPercent | num: 0) + '%' : ladingPieces;
+              <button class="mpo-tile mpo-tile--neutral" type="button" [attr.aria-label]="'Lading ' + lading + (ladingFill ? ', ' + ladingPieces : '') + ', naar Producten'"
+                      (click)="jumpToSection('purchase-products-section')">
+                <span class="mpo-tile__label">Lading</span>
+                <span class="mpo-tile__value" [class.mpo-tile__value--long]="lading.length > 10"
+                      [class.fill-pct--full]="!!ladingFill && ladingFill.overflowCbm <= 0 && ladingFill.fillPercent >= 97"
+                      [class.fill-pct--over]="!!ladingFill && ladingFill.fillPercent > 100 && ladingFill.fillPercent <= 105"
+                      [class.fill-pct--danger]="!!ladingFill && ladingFill.fillPercent > 105">{{ lading }}</span>
+                @if (ladingFill) { <span class="mpo-tile__sub">{{ ladingPieces }}</span> }
+                <app-icon class="mpo-tile__chev" name="chevron-right" [size]="14" />
               </button>
+              @let landed = data.costing.totals.totalEur | eur;
+              <button class="mpo-tile mpo-tile--landed" type="button" [attr.aria-label]="'Totaal geland ' + landed + ', naar Kosten'" (click)="jumpToSection('purchase-costs-section')">
+                <span class="mpo-tile__label">Totaal geland</span>
+                <span class="mpo-tile__value" [class.mpo-tile__value--long]="landed.length > 10">{{ landed }}</span>
+                <app-icon class="mpo-tile__chev" name="chevron-right" [size]="14" />
+              </button>
+            </div>
+          </section>
+          <div below class="ios-subbar mpo-tabs">
+            <app-segmented class="ios-seg--stacked" variant="ios" semantics="tabs" label="Onderdelen van deze container" controls="mpo-panes"
+                           [options]="tabOptions()" [value]="phoneTab()" (changed)="setPhoneTab($any($event))" (click)="tabsClicked($event)" />
+          </div>
+        </app-ios-nav>
 
-              @if (sectionOpen('order')) {
-                <div class="section-body" id="purchase-order-fields">
-                  <div class="supplier-context">
-                    <span class="supplier-context__mark" aria-hidden="true">
-                      {{ supplierName().charAt(0) }}
-                    </span>
-                    <span class="supplier-context__copy">
-                      <span>Leverancier</span>
-                      <strong>{{ supplierName() }}</strong>
-                      <app-supplier-address [supplier]="supplier()" [inline]="true"
-                                            [showEmpty]="true" />
-                    </span>
-                    <span class="supplier-context__country">{{ supplier()?.currency }}</span>
-                  </div>
-
-                  <div class="form-grid order-fields">
-                    <div class="order-fields__group"><span>Order</span></div>
-                    <div class="field">
-                      <label for="po-alias">Herkenbare naam <span class="opt"></span></label>
-                      <input class="input" id="po-alias" [ngModel]="data.order.alias"
-                             (ngModelChange)="patch({ alias: $event })"
-                             placeholder="Bijv. voorjaar, kleurvariant…" />
-                      <span class="hint">Handig om calculatievarianten uit elkaar te houden.</span>
-                    </div>
-                    <div class="field">
-                      <label for="po-date">Orderdatum</label>
-                      <app-date-field fieldId="po-date" [value]="data.order.orderDate"
-                                      (valueChange)="patch({ orderDate: $event })" />
-                    </div>
-                    @if (!isReceived()) {
-                      <div class="field">
-                        <label for="po-expected">Verwacht op <span class="opt"></span></label>
-                        <app-date-field fieldId="po-expected" [value]="data.order.expectedArrival ?? ''"
-                                        (valueChange)="patch({ expectedArrival: $event || null })" />
-                        <span class="hint">De producten tonen dit als "te verwachten" tot de container binnen is.</span>
-                      </div>
-                    } @else {
-                      <div class="field">
-                        <label for="po-received">Ontvangen op</label>
-                        <app-date-field fieldId="po-received" [value]="data.order.receivedOn ?? ''"
-                                        (valueChange)="$event && patch({ receivedOn: $event })" />
-                        <span class="hint">Corrigeer als de container op een andere dag binnenkwam.</span>
-                      </div>
-                    }
-                    <div class="field">
-                      <label for="po-terms">Betaalplan</label>
-                      <button class="btn purchase-payment-plan-trigger" id="po-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">{{ planLabel(data.order) }} <span>Wijzigen</span></button>
-                      <span class="hint">Bij Betalingen (stap 4) zie je per termijn wat open staat.</span>
-                    </div>
-
-                    @if (data.order.status !== 'CONCEPT') {
-                      <div class="field">
-                        <label for="po-tracking">Track &amp; trace <span class="opt"></span></label>
-                        <input class="input" id="po-tracking" placeholder="Containernummer, B/L of link van de rederij"
-                               [ngModel]="data.order.trackingReference ?? ''"
-                               (ngModelChange)="patch({ trackingReference: $event || null })" />
-                        @if (data.order.shippedOn) {
-                          <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}.</span>
-                        }
-                      </div>
-                    }
-                    <div class="order-fields__group"><span>Route</span>
-                      <small>{{ costLabels().loadingPort }} → {{ costLabels().destinationPort }} · {{ containerLabel(data.order.containerType) }} · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</small></div>
-                    <div class="field order-route-field">
-                      <label for="po-container">Type container</label>
-                      <select class="select" id="po-container"
-                              [ngModel]="data.order.containerType"
-                              (ngModelChange)="patch({ containerType: $event })">
-                        @for (type of containerTypes; track type.value) {
-                          <option [value]="type.value">{{ type.label }}</option>
-                        }
-                      </select>
-                    </div>
-                    <div class="field port-field order-route-field">
-                      <label for="po-departure-port">Vertrekhaven</label>
-                      <select class="select" id="po-departure-port"
-                              [ngModel]="portSelection(
-                                data.order.departurePort, departurePorts, customDeparturePort())"
-                              (ngModelChange)="selectDeparturePort($event)">
-                        @for (port of departurePorts; track port.value) {
-                          <option [value]="port.value">{{ port.label }}</option>
-                        }
-                        <option [value]="otherPortValue">Andere haven…</option>
-                      </select>
-                      @if (usesCustomDeparturePort(data.order.departurePort)) {
-                        <input class="input port-field__custom" id="po-custom-departure-port"
-                               aria-label="Andere vertrekhaven"
-                               autocomplete="off" placeholder="Typ de vertrekhaven"
-                               [value]="customPortInput(
-                                 data.order.departurePort, departurePorts, customDeparturePort())"
-                               (blur)="setCustomDeparturePort($any($event.target).value)" />
-                      }
-                    </div>
-                    <div class="field port-field order-route-field">
-                      <label for="po-destination-port">Aankomsthaven</label>
-                      <select class="select" id="po-destination-port"
-                              [ngModel]="portSelection(
-                                data.order.destinationPort, destinationPorts,
-                                customDestinationPort(), 'Rotterdam')"
-                              (ngModelChange)="selectDestinationPort($event)">
-                        @for (port of destinationPorts; track port.value) {
-                          <option [value]="port.value">{{ port.label }}</option>
-                        }
-                        <option [value]="otherPortValue">Andere haven…</option>
-                      </select>
-                      @if (usesCustomDestinationPort(data.order.destinationPort)) {
-                        <input class="input port-field__custom" id="po-custom-destination-port"
-                               aria-label="Andere aankomsthaven"
-                               autocomplete="off" placeholder="Typ de aankomsthaven"
-                               [value]="customPortInput(
-                                 data.order.destinationPort, destinationPorts,
-                                 customDestinationPort())"
-                               (blur)="setCustomDestinationPort($any($event.target).value)" />
-                      }
-                    </div>
-                    <!-- What the container means for the VAT return (vat-return.ts): the
-                         purchase alone, an acquisition or import VAT. A suggestion follows
-                         the port until it is confirmed here. -->
-                    <div class="field">
-                      <label for="po-clearance">Inklaring</label>
-                      <select class="select" id="po-clearance"
-                              [ngModel]="data.order.clearance ?? ''"
-                              (ngModelChange)="patch({ clearance: $event || null })">
-                        <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }}</option>
-                        @for (option of clearanceOptions; track option.value) {
-                          <option [value]="option.value">{{ option.label }}</option>
-                        }
-                      </select>
-                      <span class="hint">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Via Nederland naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</span>
-                    </div>
-                    <!-- Where the container is unloaded: the stock of every
-                         line lands there on Ontvangen. -->
-                    <div class="field">
-                      <label for="po-receiving">Lossen op</label>
-                      <select class="select" id="po-receiving"
-                              [ngModel]="data.order.receivingLocationId ?? mainLocationId()"
-                              (ngModelChange)="patch({ receivingLocationId: +$event })">
-                        @for (location of stockLocations(); track location.id) {
-                          <option [value]="location.id">{{ location.name }}</option>
-                        }
-                      </select>
-                    </div>
-                    <div class="field">
-                      <span class="label">Prijsbasis en munt van de leverancier</span>
-                      <div class="fin-chips po-basis" role="group" aria-label="Prijsbasis en munt">
-                        <button type="button" class="fin-chip" [class.on]="!isDdp() && !isCif()" (click)="setOrderBasis('EXW')">EXW</button>
-                        <button type="button" class="fin-chip" [class.on]="isCif()" (click)="setOrderBasis('CIF')">CIF</button>
-                        <button type="button" class="fin-chip" [class.on]="isDdp()" (click)="setOrderBasis('DDP')">DDP</button>
-                        <span class="po-basis__sep" aria-hidden="true"></span>
-                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'USD'" (click)="setOrderCurrency('USD')">$ USD</button>
-                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'CNY'" (click)="setOrderCurrency('CNY')">¥ CNY</button>
-                        <button type="button" class="fin-chip" [class.on]="orderCurrency() === 'EUR'" (click)="setOrderCurrency('EUR')">€ EUR</button>
-                      </div>
-                      <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
-                    </div>
-                  </div>
-                </div>
-              }
-              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-partner-section')" (unlink)="unlinkPartnerDoc($event)" />
-            </section>
-
-            <section class="card flow-card products-card erp-workspace__section"
-                     id="purchase-products-section" tabindex="-1"
-                     aria-labelledby="purchase-products-title">
-              <div class="section-heading">
-                <span class="section-step" aria-hidden="true">2</span>
-                <span class="section-title-block">
-                  <span class="section-kicker">Samenstellen</span>
-                  <h2 class="section-name" id="purchase-products-title">Producten</h2>
-                  <span class="section-summary">
-                    {{ data.costing.lines.length }} regels · {{ data.costing.totals.cartons | num }} dozen
-                  </span>
-                </span>
-                <button class="btn btn--sm add-product" type="button"
-                        [disabled]="isReceived()" (click)="openPicker()">
-                  <span aria-hidden="true">+</span> Product
-                </button>
-              </div>
-
-              <div class="product-lines">
-                <div class="po-lines">
-                @if (data.costing.lines.length) {
-                  @for (section of lineSections(); track section.key) {
-                    <section class="po-line-section"
-                             [attr.aria-labelledby]="'purchase-line-category-' + section.key">
-                      <header class="po-line-section__head">
-                        <h3 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h3>
-                        <span>{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span>
-                      </header>
-                  @for (familyGroup of section.families; track familyGroup.key) {
-                  <section class="po-family"
-                           [attr.aria-labelledby]="'purchase-line-family-' + familyGroup.key">
-                    <header class="po-family__head">
-                      <span class="po-family__identity">
-                        <small>{{ familyGroup.familyId === null ? 'Los product' : 'Productreeks' }}</small>
-                        <strong [id]="'purchase-line-family-' + familyGroup.key">{{ familyGroup.label }}</strong>
-                        @if (familyGroup.swatches.length) {
-                          <span class="po-family__swatches"
-                                [attr.aria-label]="'Kleuren in ' + familyGroup.label">
-                            @for (swatch of familyGroup.swatches; track swatch.key) {
-                              <i class="line-colour-dot"
-                                 [class.line-colour-dot--empty]="!colourHex(swatch.hex, swatch.label)"
-                                 [style.background]="colourHex(swatch.hex, swatch.label) || 'transparent'"
-                                 [title]="swatch.label"></i>
-                            }
-                          </span>
-                        }
-                      </span>
-                      <span class="po-family__totals">
-                        <strong>{{ familyGroup.lines.length }}
-                          {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</strong>
-                        <small>{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen ·
-                          {{ familyGroup.cbm | cbm }}</small>
-                        <small class="po-family__cost-label">
-                          {{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}
-                        </small>
-                        <b>{{ perPiece()
-                          ? (familyGroup.averageUnitEur | eurUp: 3)
-                          : (familyGroup.totalEur | eur) }}</b>
-                      </span>
-                    </header>
-                    <div class="po-family__variants">
-                  @for (line of familyGroup.lines; track line.productId) {
-                  <article class="po-line">
-                    <header class="po-line__head">
-                      <!-- The photo says which product faster than a number; the number
-                           stays for a product without one. Photo and name walk
-                           through to the product itself. -->
-                      <a class="po-line__link" [routerLink]="['/products', line.productId]"
-                         [title]="line.productName + ' openen'">
-                        @if (photoOf(line.productId); as photo) {
-                          <img class="po-line__photo" [appAuthSrc]="photo" alt="" draggable="false" />
-                        } @else {
-                          <span class="po-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span>
-                        }
-                        <span class="po-line__identity">
-                          <strong>{{ line.productName }}</strong>
-                          @if (productVariantLabel(line.productId); as variant) {
-                            <span class="po-line__variant">
-                              @if (productColour(line.productId)) {
-                                <i class="line-colour-dot"
-                                   [class.line-colour-dot--empty]="!productColourHex(line.productId)"
-                                   [style.background]="productColourHex(line.productId) || 'transparent'"
-                                   aria-hidden="true"></i>
-                              }
-                              {{ variant }}
-                            </span>
-                          }
-                          <span>{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
-                        </span>
-                      </a>
-                      <button class="line-remove" type="button" [disabled]="isReceived()"
-                              [attr.aria-label]="'Verwijder ' + line.productName"
-                              (click)="removeLine(line.productId)">
-                        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-                          <path d="M6.5 6.5v8m3.5-8v8m3.5-8v8M4 4.5h12m-9.5 0 .7-2h5.6l.7 2m1 0-.7 12H5.7L5 4.5"
-                                fill="none" stroke="currentColor" stroke-width="1.45"
-                                stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                      </button>
-                    </header>
-
-                    <div class="form-grid po-line__inputs">
-                      <div class="field">
-                        <label [attr.for]="'qty-' + line.productId">Aantal stuks</label>
-                        <input class="input num right" [id]="'qty-' + line.productId"
-                               type="number" min="0" step="1" inputmode="numeric"
-                               [disabled]="isReceived()" [ngModel]="quantityValue(line.productId, line.quantity)"
-                               (ngModelChange)="typeQuantity(line.productId, $event)"
-                               (blur)="leaveQuantity(line.productId)" />
-                        @if (!isReceived()) {
-                          @if (cartonNotice(draftQuantity(line.productId, line.quantity), line.productId); as cartonNote) {
-                            <span class="hint carton-quantity-note" role="status">{{ cartonNote }}</span>
-                          }
-                        }
-                        @if (shortShipped(line.productId); as ordered) {
-                          <span class="hint warn-text">
-                            Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}
-                          </span>
-                        }
-                        @if (isReceived()) {
-                          <!-- A box opened weeks later can still hold broken
-                               glass or come up short: a quiet line under the
-                               count it corrects, the details in a sheet. -->
-                          <button class="line-issue" type="button" (click)="openIssue(line.productId)">
-                            Schade of tekort melden ›
-                          </button>
-                        }
-                      </div>
-
-
-                      <div class="field">
-                        <label [attr.for]="'exw-' + line.productId">Afgesproken prijs per stuk <span class="opt">{{ isDdp() ? 'DDP' : 'EXW' }}</span></label>
-                        <div class="input-affix input-affix--prefixed">
-                          <span class="input-affix__prefix" aria-hidden="true">{{ currencySymbol(effectiveExwCurrency(line.productId)) }}</span>
-                          <input class="input num right" [id]="'exw-' + line.productId"
-                                 type="number" min="0" step="0.01" inputmode="decimal"
-                                 [attr.aria-label]="'Prijs per stuk in ' + effectiveExwCurrency(line.productId)"
-                                 [ngModel]="orderLine(line.productId)?.exwPrice"
-                                 [placeholder]="line.quantity
-                                   ? (line.goodsUsd / line.quantity | numUp: 3) : ''"
-                                 (ngModelChange)="setExwPrice(line.productId, $event)" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <details class="line-breakdown">
-                      <summary>
-                        <span class="line-breakdown__label">
-                          <span>Kostopbouw</span>
-                          <small>{{ perPiece() ? 'geland per stuk' : 'geland totaal' }}</small>
-                        </span>
-                        <span class="line-breakdown__value">
-                          <strong class="line-breakdown__total">
-                            {{ perPiece() ? (line.landedUnitEur | eurUp: 3)
-                              : (line.totalEur | eur) }}
-                          </strong>
-                          <svg class="line-breakdown__chevron" viewBox="0 0 20 20"
-                               width="18" height="18" aria-hidden="true">
-                            <path d="m6.5 8 3.5 3.5L13.5 8" fill="none"
-                                  stroke="currentColor" stroke-width="1.8"
-                                  stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </span>
-                      </summary>
-                      <div class="line-breakdown__body">
-                        <div class="line-breakdown__mode">
-                          <span class="per-toggle line-breakdown__toggle" role="group" aria-label="Kostopbouw tonen als">
-                            <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
-                            <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
-                          </span>
-                        </div>
-                        <div class="stat-row stat-row--muted">
-                          <span>Goederen</span>
-                          <span class="num">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</span>
-                        </div>
-                        @if (line.originEur) {
-                          <div class="stat-row stat-row--muted">
-                            <span>{{ costLabels().originCostsLabel }}
-                              <small>{{ costLabels().originRoute }}</small>
-                            </span>
-                            <span class="num">{{ amt(line.originEur, line) | eurUp: decimals() }}</span>
-                          </div>
-                        }
-                        <div class="stat-row stat-row--muted">
-                          <span>{{ costLabels().seaFreightLabel }}
-                            <small>{{ costLabels().seaFreightRoute }}</small>
-                          </span>
-                          <span class="num">{{ amt(line.freightEur, line) | eurUp: decimals() }}</span>
-                        </div>
-                        <div class="stat-row stat-row--muted line-divider">
-                          <span>Douanewaarde</span>
-                          <span class="num">{{ amt(line.customsValueEur, line) | eurUp: decimals() }}</span>
-                        </div>
-                        <div class="stat-row stat-row--muted">
-                          <span>Invoerrecht {{ line.dutyRatePct | pct: 1 }}
-                            <span class="tiny">({{ line.dutySource }})</span>
-                          </span>
-                          <span class="num">{{ amt(line.dutyEur, line) | eurUp: decimals() }}</span>
-                        </div>
-                        <div class="stat-row stat-row--muted">
-                          <span>{{ costLabels().destinationCostsLabel }}</span>
-                          <span class="num">{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span>
-                        </div>
-                        @if (line.extraRevenueEur) {
-                          <div class="stat-row stat-row--muted">
-                            <span>
-                              Enrosed kost
-                              <small>{{ perPiece() ? 'per stuk' : 'hele regel' }}</small>
-                            </span>
-                            <span class="num">
-                              {{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}
-                            </span>
-                          </div>
-                        }
-                      </div>
-                    </details>
-                  </article>
-                  }
-                    </div>
-                  </section>
-                  }
-                    </section>
-                  }
+        <div id="mpo-panes" class="mpo-panes">
+          <!-- ===== Overzicht ===== -->
+          <section class="mpo-pane" id="mpo-pane-overzicht" role="tabpanel" aria-label="Overzicht" [hidden]="phoneTab() !== 'overzicht'">
+            @if (isReceived()) {
+              <div class="ios-banner ios-banner--info mpo-received" role="status">
+                @if (data.order.stockBooked === false) {
+                  <span><b>Ontvangst gesloten.</b> Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.</span>
+                  <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="booking()" (click)="stepOpen.set('BIJBOEKEN')">Bijboeken</button>
                 } @else {
-                  <div class="empty product-empty">
-                    <div class="empty__icon" aria-hidden="true">◈</div>
-                    <div class="empty__title">Bouw je container op</div>
-                    <p class="empty__text">
-                      Voeg producten toe. Aantallen, dozen en containervulling
-                      worden direct doorgerekend.
-                    </p>
-                    <button class="btn btn--primary" type="button"
-                            [disabled]="isReceived()" (click)="openPicker()">
-                      Eerste product toevoegen
-                    </button>
-                  </div>
+                  <span><b>Ontvangst gesloten.</b> De voorraad is bijgeboekt. Producten en aantallen staan vast; notities en kostengegevens kun je nog corrigeren.</span>
                 }
-                </div>
               </div>
-            </section>
+            }
+            @if (data.attention?.length) {
+              <div class="ios-banner mpo-attention" role="status">
+                <span class="mpo-attention__count" aria-hidden="true">{{ data.attention!.length }}</span>
+                <span class="mpo-attention__body"><b>Actie vereist</b>@for (item of data.attention; track item) { <span>{{ item }}</span> }</span>
+              </div>
+            }
+            <app-purchase-nacalc-glance [nacalc]="nacalc()" [state]="paymentState()" (open)="jumpToSection('purchase-result-section')" />
 
-            <section class="card flow-card erp-workspace__section" id="purchase-costs-section"
-                     tabindex="-1">
-              <button class="section-toggle" type="button"
-                      [attr.aria-expanded]="sectionOpen('costs')"
-                      aria-controls="purchase-cost-fields"
-                      (click)="toggleSection('costs')">
-                <span class="section-step" aria-hidden="true">3</span>
-                <span class="section-title-block">
-                  <span class="section-kicker">Doorrekenen</span>
-                  <span class="section-name">{{ isDdp() ? 'DDP & koers' : 'Transport, invoer & koers' }}</span>
-                  @if (!sectionOpen('costs')) {
-                    <span class="section-summary">{{ costsSummary() }}</span>
+            <div id="purchase-order-section" tabindex="-1">
+              <section class="ios-section" aria-labelledby="mpo-supplier-title">
+                <div class="ios-section__head"><h2 id="mpo-supplier-title">Leverancier</h2></div>
+                <div class="ios-group ios-group--icons">
+                  <div class="ios-cell ios-cell--tall">
+                    <span class="ios-cell__lead"><span class="ios-tile tone-accent" aria-hidden="true">{{ supplierName().charAt(0) }}</span></span>
+                    <span class="ios-cell__body">
+                      <span class="ios-cell__title ios-cell__title--strong mpo-wrap">{{ supplierName() }}</span>
+                      <span class="ios-cell__sub"><app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" /></span>
+                    </span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value">{{ supplier()?.currency }}</span></span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ios-section" aria-labelledby="mpo-order-title">
+                <div class="ios-section__head"><h2 id="mpo-order-title">Order</h2></div>
+                <div class="ios-group">
+                  <label class="ios-cell mpo-field-row" for="po-number">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Ordernummer</span></span>
+                    <input #numberInput class="mpo-input mpo-input--wide" id="po-number" type="text" autocomplete="off" enterkeyhint="done"
+                           [value]="data.order.number" (change)="setNumber(numberInput)" />
+                  </label>
+                  <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-alias">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Herkenbare naam</span>
+                      <span class="ios-cell__sub mpo-wrap">Om calculatievarianten uit elkaar te houden</span></span>
+                    <input class="mpo-input mpo-input--wide" id="po-alias" type="text" autocomplete="off" [ngModel]="data.order.alias"
+                           (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
+                  </label>
+                  <div class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><label class="ios-cell__title" for="po-date">Orderdatum</label></span>
+                    <span class="mpo-date"><app-date-field fieldId="po-date" [value]="data.order.orderDate" (valueChange)="patch({ orderDate: $event })" /></span>
+                  </div>
+                  @if (!isReceived()) {
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title" for="po-expected">Verwacht op</label>
+                        <span class="ios-cell__sub mpo-wrap">Producten tonen dit als ‘te verwachten’</span></span>
+                      <span class="mpo-date"><app-date-field fieldId="po-expected" [value]="data.order.expectedArrival ?? ''" (valueChange)="patch({ expectedArrival: $event || null })" /></span>
+                    </div>
+                  } @else {
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title" for="po-received">Ontvangen op</label>
+                        <span class="ios-cell__sub mpo-wrap">Corrigeer als de container op een andere dag binnenkwam</span></span>
+                      <span class="mpo-date"><app-date-field fieldId="po-received" [value]="data.order.receivedOn ?? ''" (valueChange)="$event && patch({ receivedOn: $event })" /></span>
+                    </div>
                   }
-                </span>
-                <svg class="section-chevron" [class.section-chevron--open]="sectionOpen('costs')"
-                     viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
-                  <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
-                        stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
+                  <button class="ios-cell" id="po-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Betaalplan</span>
+                      <span class="ios-cell__sub mpo-wrap">Bij Betalingen zie je per termijn wat open staat.</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-value">{{ planLabel(data.order) }}</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                  @if (data.order.status !== 'CONCEPT') {
+                    <label class="ios-cell mpo-field-row mpo-field-row--stack" for="mpo-tracking">
+                      <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span>
+                        @if (data.order.shippedOn) { <span class="ios-cell__sub">Vertrokken op {{ data.order.shippedOn | dateNl }}</span> }</span>
+                      <input class="mpo-input mpo-input--wide" id="mpo-tracking" type="text" autocomplete="off" placeholder="Containernummer, B/L of link van de rederij"
+                             [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
+                    </label>
+                  }
+                </div>
+              </section>
 
-              @if (sectionOpen('costs')) {
-                <div class="section-body cost-fields" id="purchase-cost-fields">
-                  <section class="cost-group" aria-labelledby="exchange-title">
-                    <div class="cost-group__intro">
-                      <div>
-                        <span class="cost-group__step">A</span>
-                        <h3 id="exchange-title">Wisselkoersen</h3>
-                      </div>
-                      <p>Eén USD-koers houdt goederen en transport consequent gelijk.</p>
-                    </div>
-                    <div class="rate-grid">
-                      <div class="field">
-                        <label for="r-cny">RMB naar USD</label>
-                        <input class="input num right" id="r-cny" type="number"
-                               step="0.0001" inputmode="decimal"
-                               [ngModel]="data.order.cnyToUsd"
-                               (ngModelChange)="patch({ cnyToUsd: +$event })" />
-                        @if (marketRates(); as market) {
-                          <span class="hint hint--market">ECB {{ marketReference()!.cnyToUsd | num: 4 }} · met {{ market.marginPct }} % marge {{ market.cnyToUsd | num: 4 }}@if (data.order.cnyToUsd !== market.cnyToUsd) { · <button class="linklike" type="button" (click)="patch({ cnyToUsd: market.cnyToUsd })">overnemen</button> }</span>
-                        }
-                      </div>
-                      <div class="field">
-                        <label for="r-usd">USD naar EUR</label>
-                        <input class="input num right" id="r-usd" type="number"
-                               step="0.0001" inputmode="decimal"
-                               [ngModel]="usdToEurRate()"
-                               (ngModelChange)="setUsdToEur(+$event)" />
-                        @if (marketRates(); as market) {
-                          <span class="hint hint--market">ECB {{ marketReference()!.usdToEur | num: 4 }} · met {{ market.marginPct }} % marge {{ market.usdToEur | num: 4 }}@if (usdToEurRate() !== market.usdToEur) { · <button class="linklike" type="button" (click)="setUsdToEur(market.usdToEur)">overnemen</button> }</span>
-                        }
-                        <span class="hint">Geldt voor goederen én transport.</span>
-                      </div>
-                    </div>
-                  </section>
+              <section class="ios-section" aria-labelledby="mpo-route-title">
+                <div class="ios-section__head"><h2 id="mpo-route-title">Route en container</h2></div>
+                <div class="ios-group">
+                  <label class="ios-cell mpo-field-row mpo-field-row--pick" for="po-container">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Type container</span></span>
+                    <span class="mpo-pick"><select class="mpo-select" id="po-container" [ngModel]="data.order.containerType" (ngModelChange)="patch({ containerType: $event })">
+                      @for (type of containerTypes; track type.value) { <option [value]="type.value">{{ type.label }}</option> }
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
+                  </label>
+                  <label class="ios-cell mpo-field-row mpo-field-row--pick" for="po-departure-port">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Vertrekhaven</span></span>
+                    <span class="mpo-pick"><select class="mpo-select" id="po-departure-port"
+                            [ngModel]="portSelection(data.order.departurePort, departurePorts, customDeparturePort())" (ngModelChange)="selectDeparturePort($event)">
+                      @for (port of departurePorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
+                      <option [value]="otherPortValue">Andere haven…</option>
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
+                  </label>
+                  @if (usesCustomDeparturePort(data.order.departurePort)) {
+                    <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-custom-departure-port">
+                      <span class="ios-cell__body"><span class="ios-cell__title">Andere vertrekhaven</span></span>
+                      <input class="mpo-input mpo-input--wide" id="po-custom-departure-port" autocomplete="off" placeholder="Typ de vertrekhaven"
+                             [value]="customPortInput(data.order.departurePort, departurePorts, customDeparturePort())"
+                             (blur)="setCustomDeparturePort($any($event.target).value)" />
+                    </label>
+                  }
+                  <label class="ios-cell mpo-field-row mpo-field-row--pick" for="po-destination-port">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Aankomsthaven</span></span>
+                    <span class="mpo-pick"><select class="mpo-select" id="po-destination-port"
+                            [ngModel]="portSelection(data.order.destinationPort, destinationPorts, customDestinationPort(), 'Rotterdam')" (ngModelChange)="selectDestinationPort($event)">
+                      @for (port of destinationPorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
+                      <option [value]="otherPortValue">Andere haven…</option>
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
+                  </label>
+                  @if (usesCustomDestinationPort(data.order.destinationPort)) {
+                    <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-custom-destination-port">
+                      <span class="ios-cell__body"><span class="ios-cell__title">Andere aankomsthaven</span></span>
+                      <input class="mpo-input mpo-input--wide" id="po-custom-destination-port" autocomplete="off" placeholder="Typ de aankomsthaven"
+                             [value]="customPortInput(data.order.destinationPort, destinationPorts, customDestinationPort())"
+                             (blur)="setCustomDestinationPort($any($event.target).value)" />
+                    </label>
+                  }
+                  <!-- What the container means for the VAT return (vat-return.ts): the purchase alone, an acquisition
+                       or import VAT. A suggestion follows the port until it is confirmed here. -->
+                  <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-clearance">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Inklaring</span>
+                      <span class="ios-cell__sub mpo-wrap">bepaalt de btw-aangifte@if (!data.order.clearance) {<span class="warn-text"> · te bevestigen</span>}</span></span>
+                    <span class="mpo-pick mpo-pick--wide"><select class="mpo-select" id="po-clearance" [ngModel]="data.order.clearance ?? ''" (ngModelChange)="patch({ clearance: $event || null })">
+                      <option value="">Voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }}</option>
+                      @for (option of clearanceOptions; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
+                  </label>
+                  <!-- Where the container is unloaded: the stock of every line lands there on Ontvangen. -->
+                  <label class="ios-cell mpo-field-row mpo-field-row--pick" for="po-receiving">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Lossen op</span></span>
+                    <span class="mpo-pick"><select class="mpo-select" id="po-receiving" [ngModel]="data.order.receivingLocationId ?? mainLocationId()" (ngModelChange)="patch({ receivingLocationId: +$event })">
+                      @for (location of stockLocations(); track location.id) { <option [value]="location.id">{{ location.name }}</option> }
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
+                  </label>
+                </div>
+                <p class="ios-section__foot">Bepaalt de btw-aangifte. In Nederland klaart de fiscaal vertegenwoordiger in. Blijft daar en wordt daar verkocht (btw verlegd naar de klant): alleen de aankoop, rooster 81. Via Nederland naar ons in België: ook 86/55/59. Inklaring in België: 81 en de invoer-btw.</p>
+              </section>
 
-                  <section class="cost-group" aria-labelledby="route-costs-title">
-                    <div class="cost-group__intro">
-                      <div>
-                        <span class="cost-group__step">B</span>
-                        <h3 id="route-costs-title">{{ isDdp() ? 'Geleverd incl. rechten' : 'Van fabriek tot magazijn' }}</h3>
-                      </div>
-                      <p>{{ isDdp() ? 'De afgesproken prijzen zijn DDP: transport, lokale kosten en invoerrechten zitten erin en worden niet bijgerekend.' : 'Kosten vóór de EU-grens tellen mee in de douanewaarde.' }}</p>
-                    </div>
-                    <div class="form-grid">
-                      @if (!isDdp()) {
-                      <div class="field">
-                        <label class="req" for="c-freight">{{ costLabels().seaFreightLabel }}</label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-freight" type="number"
-                                 step="50" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.freightUsd"
-                                 (ngModelChange)="patch({ freightUsd: +$event })" />
-                          <span class="input-affix__suffix">USD</span>
+              <section class="ios-section" aria-labelledby="mpo-basis-title">
+                <div class="ios-section__head"><h2 id="mpo-basis-title">Prijsbasis en munt</h2></div>
+                <div class="ios-group">
+                  <div class="ios-cell mpo-seg-row"><app-segmented variant="ios" label="Prijsbasis" [options]="basisOptions" [value]="isDdp() ? 'DDP' : isCif() ? 'CIF' : 'EXW'" (changed)="setOrderBasis($any($event))" /></div>
+                  <div class="ios-cell mpo-seg-row"><app-segmented variant="ios" label="Munt van de leverancier" [options]="currencyOptions" [value]="orderCurrency()" (changed)="setOrderCurrency($any($event))" /></div>
+                </div>
+                <p class="ios-section__foot">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</p>
+              </section>
+            </div>
+
+            <div class="mpo-partner">
+              <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="jumpToSection('purchase-partner-section')" (unlink)="unlinkPartnerDoc($event)" />
+            </div>
+          </section>
+
+          <!-- ===== Producten ===== -->
+          <section class="mpo-pane" id="mpo-pane-producten" role="tabpanel" aria-label="Producten" [hidden]="phoneTab() !== 'producten'">
+            <div id="purchase-products-section" tabindex="-1" aria-labelledby="mpo-edit-products-title">
+              <div class="mpo-head">
+                <span class="ios-tile ios-tile--lg ios-tile--soft tone-accent" aria-hidden="true"><app-icon name="products" [size]="19" /></span>
+                <div class="mpo-head__copy"><h2 id="mpo-edit-products-title">Producten</h2>
+                  <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.cartons | num }} dozen</p></div>
+                <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="isReceived()" (click)="openPicker()">＋ Product</button>
+              </div>
+
+              @if (isDdp()) {
+                <section class="ios-card mpo-fill" id="purchase-capacity-section" tabindex="-1" aria-label="Lading">
+                  <div class="mpo-fill__top">
+                    <div class="mpo-fill__copy"><h3 class="mpo-fill__title">Geleverd DDP</h3>
+                      <p class="mpo-fill__sub">{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen · transport en rechten in de prijs</p></div>
+                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} st</strong>
+                  </div>
+                </section>
+              } @else if (data.costing.containerFill; as fill) {
+                <section class="ios-card mpo-fill" id="purchase-capacity-section" tabindex="-1" aria-labelledby="mpo-edit-fill-title">
+                  <div class="mpo-fill__top">
+                    <div class="mpo-fill__copy"><h3 class="mpo-fill__title" id="mpo-edit-fill-title">Containervulling</h3>
+                      <p class="mpo-fill__sub">{{ fill.containerCode }} · {{ fill.usedCbm | cbm }} van {{ fill.capacityCbm | cbm }}</p></div>
+                    <strong class="mpo-fill__pct" [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105" [class.fill-pct--danger]="fill.fillPercent > 105"
+                            [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | pct: 0 }}</strong>
+                  </div>
+                  <div class="wk-meter" role="meter" aria-label="Containervulling" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="fill.fillPercent">
+                    <i [class.tone-ok]="fill.fillPercent <= 100" [class.tone-warn]="fill.fillPercent > 100 && fill.fillPercent <= 105" [class.tone-danger]="fill.fillPercent > 105"
+                       [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i>
+                  </div>
+                  <div class="mpo-fill__foot">
+                    @if (fill.fillPercent > 105) {
+                      <span class="mpo-fill__state mpo-fill__state--danger"><span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} te veel · minimaal {{ containerCountForFill(fill) }} containers nodig</span>
+                    } @else if (fill.fillPercent > 100) {
+                      <span class="mpo-fill__state mpo-fill__state--tight"><span aria-hidden="true">!</span> {{ fill.overflowCbm | cbm }} boven de container - past vaak nog net</span>
+                    } @else {
+                      <span class="mpo-fill__state mpo-fill__state--ok"><span aria-hidden="true">✓</span> {{ fill.freeCbm | cbm }} vrije ruimte</span>
+                    }
+                    <span>{{ data.costing.totals.cartons | num }} dozen geladen</span>
+                  </div>
+                </section>
+              }
+
+              @if (data.costing.lines.length) {
+                <div class="mpo-rate"><span>Geland</span>
+                  <app-segmented variant="ios" label="Bedragen tonen als" [options]="amountModes" [value]="perPiece() ? 'piece' : 'total'" (changed)="perPiece.set($event === 'piece')" />
+                </div>
+                @for (section of lineSections(); track section.key) {
+                  <section class="ios-section" [attr.aria-labelledby]="'purchase-line-category-' + section.key">
+                    <div class="ios-section__head"><h2 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h2>
+                      <span class="ios-section__trail">{{ section.lines.length }} product{{ section.lines.length === 1 ? '' : 'en' }}</span></div>
+                    @for (familyGroup of section.families; track familyGroup.key) {
+                      <div class="ios-group ios-group--thumbs mpo-family" role="group" [attr.aria-labelledby]="'purchase-line-family-' + familyGroup.key">
+                        <div class="ios-cell mpo-family__head">
+                          <span class="ios-cell__body">
+                            <span class="ios-cell__title ios-cell__title--strong mpo-wrap" [id]="'purchase-line-family-' + familyGroup.key">{{ familyGroup.label }}
+                              @if (familyGroup.swatches.length) {
+                                <span class="mpo-swatches" [attr.aria-label]="'Kleuren in ' + familyGroup.label">
+                                  @for (swatch of familyGroup.swatches; track swatch.key) {
+                                    <i class="line-colour-dot" [class.line-colour-dot--empty]="!colourHex(swatch.hex, swatch.label)"
+                                       [style.background]="colourHex(swatch.hex, swatch.label) || 'transparent'" [title]="swatch.label"></i>
+                                  }
+                                </span>
+                              }
+                            </span>
+                            <span class="ios-cell__sub">{{ familyGroup.familyId === null ? 'Los product' : 'Productreeks' }} · {{ familyGroup.lines.length }} {{ familyGroup.lines.length === 1 ? 'variant' : 'varianten' }}</span>
+                            <span class="ios-cell__sub mpo-wrap">{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</span>
+                          </span>
+                          <span class="ios-cell__trail">
+                            <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? (familyGroup.averageUnitEur | eurUp: 3) : (familyGroup.totalEur | eur) }}</span>
+                            <span class="ios-cell__meta">{{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}</span>
+                          </span>
                         </div>
-                        <span class="hint">
-                          {{ costLabels().seaFreightRoute }}
+                        @for (line of familyGroup.lines; track line.productId) {
+                          @let display = setPiecesOf(line.productId);
+                          @let ordered = shortShipped(line.productId);
+                          @let cartonNote = isReceived() ? null : cartonNotice(draftQuantity(line.productId, line.quantity), line.productId);
+                          <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeEnd]="1" swipeFull="none" [swipeDisabled]="isReceived()">
+                            <div class="ios-swipe__actions ios-swipe__actions--end">
+                              <button class="ios-swipe__btn tone-danger" type="button" [attr.aria-label]="'Verwijder ' + line.productName" [disabled]="isReceived()" (click)="removeLine(line.productId); sw.close()">
+                                <app-icon name="trash" [size]="18" />Verwijder</button>
+                            </div>
+                            <div class="ios-swipe__row">
+                              <div class="ios-cell mpo-line">
+                                <span class="ios-cell__lead">
+                                  @if (photoOf(line.productId); as photo) { <img class="ios-thumb" [appAuthSrc]="photo" alt="" draggable="false" /> }
+                                  @else { <span class="ios-tile tone-grey mpo-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span> }
+                                </span>
+                                <span class="ios-cell__body mpo-line__body" role="button" tabindex="0" [attr.aria-label]="'Regel ' + line.productName + ' bewerken'"
+                                      (click)="lineSheet.set(line.productId)" (keydown.enter)="lineSheet.set(line.productId)"
+                                      (keydown.space)="$event.preventDefault(); lineSheet.set(line.productId)">
+                                  <span class="ios-cell__title mpo-wrap">{{ line.productName }}</span>
+                                  @if (productVariantLabel(line.productId); as variant) {
+                                    <span class="ios-cell__sub mpo-wrap">@if (productColour(line.productId)) { <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                                      [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i> }{{ variant }}</span>
+                                  }
+                                  <span class="ios-cell__sub mpo-wrap">{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
+                                  <span class="ios-cell__sub mpo-wrap">@if (rowPriceText(line.productId); as price) {<span class="mpo-nowrap">{{ price }}</span> · }<span class="mpo-nowrap">{{ line.landedUnitEur | eurUp: 3 }}{{ display ? ' /display' : '' }} geland</span></span>
+                                </span>
+                                <span class="mpo-line__qty">
+                                  <input class="mpo-input mpo-qty" [id]="'qty-' + line.productId" type="number" min="0" step="1" inputmode="numeric"
+                                         [attr.aria-label]="'Aantal stuks ' + line.productName" [disabled]="isReceived()"
+                                         [ngModel]="quantityValue(line.productId, line.quantity)" (ngModelChange)="typeQuantity(line.productId, $event)"
+                                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">st</span>
+                                </span>
+                              </div>
+                              @if (cartonNote || ordered) {
+                                <div class="mpo-line__notes">
+                                  @if (cartonNote) { <span role="status">{{ cartonNote }}</span> }
+                                  @if (ordered) { <span class="warn-text">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span> }
+                                </div>
+                              }
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </section>
+                }
+              } @else {
+                <div class="ios-empty">
+                  <span class="ios-empty__icon" aria-hidden="true"><app-icon name="products" [size]="26" /></span>
+                  <h3 class="ios-empty__title">Bouw je container op</h3>
+                  <p class="ios-empty__text">Voeg producten toe. Aantallen, dozen en containervulling worden direct doorgerekend.</p>
+                  <button class="ios-capsule ios-capsule--accent" type="button" [disabled]="isReceived()" (click)="openPicker()">Eerste product toevoegen</button>
+                </div>
+              }
+            </div>
+          </section>
+
+          <!-- ===== Kosten ===== -->
+          <section class="mpo-pane" id="mpo-pane-kosten" role="tabpanel" aria-label="Kosten" [hidden]="phoneTab() !== 'kosten'">
+            <div id="purchase-costs-section" tabindex="-1" aria-labelledby="mpo-edit-costs-title">
+              <div class="mpo-head">
+                <span class="ios-tile ios-tile--lg ios-tile--soft tone-teal" aria-hidden="true"><app-icon name="tag" [size]="19" /></span>
+                <div class="mpo-head__copy"><h2 id="mpo-edit-costs-title">Kosten</h2><p>{{ isDdp() ? 'DDP & koers' : 'Transport, invoer & koers' }}</p></div>
+              </div>
+
+              <section class="ios-section" aria-labelledby="exchange-title">
+                <div class="ios-section__head"><h2 id="exchange-title">Wisselkoersen</h2></div>
+                <div class="ios-group">
+                  <div class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><label class="ios-cell__title" for="r-cny">RMB naar USD</label>
+                      @if (marketRates(); as market) {
+                        <span class="ios-cell__sub mpo-wrap">ECB {{ marketReference()!.cnyToUsd | num: 4 }} · met {{ market.marginPct }} % marge {{ market.cnyToUsd | num: 4 }}@if (data.order.cnyToUsd !== market.cnyToUsd) { · <button class="linklike" type="button" (click)="patch({ cnyToUsd: market.cnyToUsd })">overnemen</button> }</span>
+                      }</span>
+                    <input class="mpo-input" id="r-cny" type="number" step="0.0001" inputmode="decimal" [ngModel]="data.order.cnyToUsd" (ngModelChange)="patch({ cnyToUsd: +$event })" />
+                  </div>
+                  <div class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><label class="ios-cell__title" for="r-usd">USD naar EUR</label>
+                      @if (marketRates(); as market) {
+                        <span class="ios-cell__sub mpo-wrap">ECB {{ marketReference()!.usdToEur | num: 4 }} · met {{ market.marginPct }} % marge {{ market.usdToEur | num: 4 }}@if (usdToEurRate() !== market.usdToEur) { · <button class="linklike" type="button" (click)="setUsdToEur(market.usdToEur)">overnemen</button> }</span>
+                      }
+                      <span class="ios-cell__sub mpo-wrap">Geldt voor goederen én transport.</span></span>
+                    <input class="mpo-input" id="r-usd" type="number" step="0.0001" inputmode="decimal" [ngModel]="usdToEurRate()" (ngModelChange)="setUsdToEur(+$event)" />
+                  </div>
+                </div>
+                <p class="ios-section__foot">Eén USD-koers houdt goederen en transport consequent gelijk.</p>
+              </section>
+
+              <section class="ios-section" aria-labelledby="route-costs-title">
+                <div class="ios-section__head"><h2 id="route-costs-title">{{ isDdp() ? 'Geleverd incl. rechten' : 'Van fabriek tot magazijn' }}</h2></div>
+                <div class="ios-group">
+                  @if (!isDdp()) {
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" for="c-freight">{{ costLabels().seaFreightLabel }}</label>
+                        <span class="ios-cell__sub mpo-wrap">{{ costLabels().seaFreightRoute }}
                           @if (isCif()) {
                             · betaald aan de leverancier (CIF)
                           } @else if (latestFreightReference(); as reference) {
-                            · laatste eigen notering:
-                            <b>{{ reference.usdPerContainer | cur: 'USD' }}</b>
-                            · {{ reference.quotedOn | dateNl }}
+                            · laatste eigen notering: <b>{{ reference.usdPerContainer | cur: 'USD' }}</b> · {{ reference.quotedOn | dateNl }}
                           } @else if (data.order.containerType === 'TWENTY_GP') {
                             · vul een eigen 20 ft-offerte in; een 40 ft-notering wordt niet hergebruikt
-                          }
+                          }</span></span>
+                      <span class="mpo-affix"><input class="mpo-input" id="c-freight" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.freightUsd" (ngModelChange)="patch({ freightUsd: +$event })" /><span class="mpo-affix__unit">USD</span></span>
+                    </div>
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" for="c-origin">{{ costLabels().originCostsLabel }}</label>
+                        <span class="ios-cell__sub mpo-wrap">{{ costLabels().originRoute }} · voortransport en exportdocumenten.</span></span>
+                      <span class="mpo-affix"><input class="mpo-input" id="c-origin" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.originCosts" (ngModelChange)="patch({ originCosts: +$event })" />
+                        <select class="mpo-select mpo-affix__unit" aria-label="Munt lokale oorsprongskosten" [ngModel]="data.order.originCurrency" (ngModelChange)="patch({ originCurrency: $event })">
+                          <option value="USD">USD</option><option value="CNY">CNY</option><option value="EUR">EUR</option>
+                        </select></span>
+                    </div>
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" for="c-dest">{{ costLabels().destinationCostsLabel }}</label>
+                        <span class="ios-cell__sub mpo-wrap">Trucking en afhandeling na invoer.</span></span>
+                      <span class="mpo-affix"><input class="mpo-input" id="c-dest" type="number" step="25" min="0" inputmode="decimal" [ngModel]="data.order.destinationCostsEur" (ngModelChange)="patch({ destinationCostsEur: +$event })" /><span class="mpo-affix__unit">EUR</span></span>
+                    </div>
+                    <div class="ios-cell mpo-field-row">
+                      <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" for="c-duty">Invoerrecht zonder HS-code</label></span>
+                      <span class="mpo-affix"><input class="mpo-input" id="c-duty" type="number" step="0.5" min="0" inputmode="decimal" [ngModel]="data.order.defaultDutyRatePct" (ngModelChange)="patch({ defaultDutyRatePct: +$event })" /><span class="mpo-affix__unit">%</span></span>
+                    </div>
+                  }
+                  <!-- Our own costs side by side: the Enrosed kost goes into the piece price, the inspection stays a line of its own. -->
+                  <div class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><label class="ios-cell__title" for="c-extra">Enrosed kost</label>
+                      <span class="ios-cell__sub mpo-wrap">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="openManualSplit()">zelf verdelen per product</button> }</span></span>
+                    <span class="mpo-affix"><input class="mpo-input" id="c-extra" type="number" step="100" min="0" inputmode="decimal" [ngModel]="data.order.extraRevenueEur" (ngModelChange)="patch({ extraRevenueEur: +$event })" /><span class="mpo-affix__unit">EUR</span></span>
+                  </div>
+                  <div class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><label class="ios-cell__title" for="c-inspection">Inspectiekost</label>
+                      <span class="ios-cell__sub mpo-wrap">{{ separateCaption() }}</span></span>
+                    <span class="mpo-affix"><input class="mpo-input" id="c-inspection" type="number" step="50" min="0" inputmode="decimal" [ngModel]="data.order.inspectionCostEur"
+                           (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" /><span class="mpo-affix__unit">EUR</span></span>
+                  </div>
+                  @if (manualExtra()) {
+                    <div class="ios-cell mpo-block">
+                      <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
+                        <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }} verdeeld
+                          @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
+                          @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
+                          @else { <em>· alles verdeeld</em> }</p>
+                        @if (negativeExtra()) { <p class="po-split__warn">Totaal onder nul: eerst rechtzetten, dan bewaren.</p> }
+                        <span class="po-split__actions">
+                          <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
+                          <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
                         </span>
                       </div>
-                      <div class="field">
-                        <label for="c-origin">{{ costLabels().originCostsLabel }}</label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-origin" type="number"
-                                 step="50" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.originCosts"
-                                 (ngModelChange)="patch({ originCosts: +$event })" />
-                          <select class="input-affix__suffix cost-currency"
-                                  aria-label="Munt lokale oorsprongskosten"
-                                  [ngModel]="data.order.originCurrency"
-                                  (ngModelChange)="patch({ originCurrency: $event })">
-                            <option value="USD">USD</option>
-                            <option value="CNY">CNY</option>
-                            <option value="EUR">EUR</option>
-                          </select>
-                        </div>
-                        <span class="hint">{{ costLabels().originRoute }} · voortransport en exportdocumenten.</span>
-                      </div>
-                      <div class="field">
-                        <label for="c-dest">
-                          {{ costLabels().destinationCostsLabel }}
-                        </label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-dest" type="number"
-                                 step="25" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.destinationCostsEur"
-                                 (ngModelChange)="patch({ destinationCostsEur: +$event })" />
-                          <span class="input-affix__suffix">EUR</span>
-                        </div>
-                        <span class="hint">Trucking en afhandeling na invoer.</span>
-                      </div>
-                      <div class="field">
-                        <label for="c-duty">Invoerrecht zonder HS-code</label>
-                        <div class="input-affix">
-                          <input class="input num right" id="c-duty" type="number"
-                                 step="0.5" min="0" inputmode="decimal"
-                                 [ngModel]="data.order.defaultDutyRatePct"
-                                 (ngModelChange)="patch({ defaultDutyRatePct: +$event })" />
-                          <span class="input-affix__suffix">%</span>
-                        </div>
-                      </div>
-                      }
-                      <!-- Our own costs side by side: the Enrosed kost goes into the piece
-                           price, the inspection stays a line of its own. -->
-                      <div class="field-duo span-2">
-                        <div class="field">
-                          <label for="c-extra">Enrosed kost <span class="opt"></span></label>
-                          <div class="input-affix">
-                            <input class="input num right" id="c-extra" type="number"
-                                   step="100" min="0" inputmode="decimal"
-                                   [ngModel]="data.order.extraRevenueEur"
-                                   (ngModelChange)="patch({ extraRevenueEur: +$event })" />
-                            <span class="input-affix__suffix">EUR</span>
-                          </div>
-                          <span class="hint">In de stukprijs · {{ manualExtra() ? 'zelf verdeeld per product' : 'verdeeld ' + allocationLabel(data.order.allocExtra) }}@if (!manualExtra()) { · <button class="linklike" type="button" (click)="openManualSplit()">zelf verdelen per product</button> }</span>
-
-                        </div>
-                        <div class="field">
-                          <label for="c-inspection">Inspectiekost <span class="opt"></span></label>
-                          <div class="input-affix">
-                            <input class="input num right" id="c-inspection" type="number"
-                                   step="50" min="0" inputmode="decimal"
-                                   [ngModel]="data.order.inspectionCostEur"
-                                   (ngModelChange)="patch({ inspectionCostEur: $event === '' || $event === null ? null : +$event })" />
-                            <span class="input-affix__suffix">EUR</span>
-                          </div>
-                          <span class="hint">{{ separateCaption() }}</span>
-                        </div>
-                        @if (manualExtra()) {
-                          <div class="po-split po-split--line" [class.po-split--over]="extraSplitRemainder() < -0.004" [class.po-split--done]="extraSplitRemainder() >= -0.004 && extraSplitRemainder() <= 0.004">
-                            <p class="po-split__sum"><b>{{ extraSplitSpread() | eur: 0 }}</b> van {{ data.order.extraRevenueEur | eur: 0 }} verdeeld
-                              @if (extraSplitRemainder() > 0.004) { <em>· nog {{ extraSplitRemainder() | eur: 0 }}</em> }
-                              @else if (extraSplitRemainder() < -0.004) { <em>· {{ -extraSplitRemainder() | eur: 0 }} erboven</em> }
-                              @else { <em>· alles verdeeld</em> }</p>
-                            @if (negativeExtra()) { <p class="po-split__warn">Totaal onder nul: eerst rechtzetten, dan bewaren.</p> }
-                            <span class="po-split__actions">
-                              <button class="linklike" type="button" (click)="extraSplitOpen.set(true)">Verdeling aanpassen ›</button>
-                              <button class="linklike" type="button" (click)="endManualSplit()">weer automatisch</button>
-                            </span>
-                          </div>
-                        }
-                      </div>
-                      <div class="other-costs span-2" aria-label="Andere kosten">
-                        @for (cost of data.order.otherCosts ?? []; track $index; let i = $index) {
-                          <div class="other-cost">
-                            <input class="input" type="text" maxlength="60"
-                                   placeholder="Naam, bv. certificaat"
-                                   [attr.aria-label]="'Naam andere kost ' + (i + 1)"
-                                   [ngModel]="cost.label"
-                                   (ngModelChange)="setOtherCost(i, { label: $event })" />
-                            <div class="input-affix">
-                              <input class="input num right" type="number"
-                                     step="50" min="0" inputmode="decimal"
-                                     [attr.aria-label]="'Bedrag andere kost ' + (i + 1)"
-                                     [ngModel]="cost.amountEur"
-                                     (ngModelChange)="setOtherCost(i, { amountEur: $event === '' || $event === null ? null : +$event })" />
-                              <span class="input-affix__suffix">EUR</span>
-                            </div>
-                            <button class="other-cost__remove" type="button"
-                                    [attr.aria-label]="'Verwijder ' + (cost.label || 'andere kost')"
-                                    (click)="removeOtherCost(i)">×</button>
-                          </div>
-                        }
-                        <button class="other-costs__add" type="button" (click)="addOtherCost()">
-                          <span aria-hidden="true">+</span>
-                          <b>Andere kost</b>
-                          <small>certificaat, labo, staal … {{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart, achteraf' }}</small>
-                        </button>
-                      </div>
                     </div>
-                  </section>
-
-                  <details class="allocation-settings">
-                    <summary>
-                      <span>
-                        <strong>Geavanceerd: verdeelsleutels</strong>
-                        <small>Bepaal hoe containerkosten over producten worden verdeeld.</small>
-                      </span>
-                    </summary>
-                    <div class="form-grid allocation-settings__body">
-                      <!-- A series is one product to the buyer: its colours and
-                           sizes land at one and the same unit cost. -->
-                      <label class="switch-row span-2">
-                        <span><b>Varianten als één product</b>
-                          <small>Kleuren en maten van dezelfde reeks krijgen samen één kostprijs per stuk; de aantallen worden opgeteld.</small></span>
-                        <input type="checkbox" [ngModel]="data.order.groupVariants ?? true"
-                               (ngModelChange)="patch({ groupVariants: $event })" />
-                      </label>
-                      @for (key of allocationKeys(); track key.field) {
-                        <div class="field">
-                          <label [attr.for]="'a-' + key.field">{{ key.label }}</label>
-                          <select class="select" [id]="'a-' + key.field"
-                                  [ngModel]="allocationOf(data.order, key.field)"
-                                  (ngModelChange)="setAllocation(key.field, $event)">
-                            @if (key.field === 'allocSeparate') { <option value="SEPARATE">Achteraf, apart van de stukprijs</option> }
-                            <option value="CBM">Naar volume (m³)</option>
-                            <option value="VALUE">Naar goederenwaarde</option>
-                            <option value="PIECES">Naar aantal stuks</option>
-                            @if (key.field === 'allocExtra') { <option value="MANUAL">Zelf per product</option> }
-                          </select>
-                          @if (key.route) {
-                            <span class="hint">{{ key.route }}</span>
-                          }
-                        </div>
-                      }
+                  }
+                  @for (cost of data.order.otherCosts ?? []; track $index; let i = $index) {
+                    <div class="ios-cell mpo-other">
+                      <input class="mpo-input mpo-input--wide mpo-other__name" type="text" maxlength="60" placeholder="Naam, bv. certificaat"
+                             [attr.aria-label]="'Naam andere kost ' + (i + 1)" [ngModel]="cost.label" (ngModelChange)="setOtherCost(i, { label: $event })" />
+                      <span class="mpo-affix"><input class="mpo-input" type="number" step="50" min="0" inputmode="decimal" [attr.aria-label]="'Bedrag andere kost ' + (i + 1)"
+                             [ngModel]="cost.amountEur" (ngModelChange)="setOtherCost(i, { amountEur: $event === '' || $event === null ? null : +$event })" /><span class="mpo-affix__unit">EUR</span></span>
+                      <button class="ios-circle mpo-other__remove" type="button" [attr.aria-label]="'Verwijder ' + (cost.label || 'andere kost')" (click)="removeOtherCost(i)"><app-icon name="close" [size]="16" /></button>
                     </div>
-                  </details>
+                  }
+                  <button class="ios-cell ios-cell--action" type="button" (click)="addOtherCost()">
+                    <span class="ios-cell__body"><span class="ios-cell__title mpo-link">+ Andere kost</span>
+                      <span class="ios-cell__sub mpo-wrap">certificaat, labo, staal … {{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart, achteraf' }}</span></span>
+                  </button>
                 </div>
-              }
-            </section>
-          </main>
+                <p class="ios-section__foot">{{ isDdp() ? 'De afgesproken prijzen zijn DDP: transport, lokale kosten en invoerrechten zitten erin en worden niet bijgerekend.' : 'Kosten vóór de EU-grens tellen mee in de douanewaarde.' }}</p>
+              </section>
 
-          <aside class="purchase-summary erp-workspace__sidebar" aria-label="Containersamenvatting">
-            <section class="card summary-card erp-workspace__section" id="purchase-summary-section"
-                     tabindex="-1">
-              <div class="section-heading summary-heading">
-                <span class="section-step" aria-hidden="true">
-                  4
-                </span>
-                <span class="section-title-block">
-                  <span class="section-kicker">Controleren</span>
-                  <h2 class="section-name">
-                    Totale kostprijs
-                  </h2>
-                  <span class="section-summary">
-                    {{ data.costing.totals.pieces | num }} st ·
-                    {{ data.costing.totals.cartons | num }} dozen
-                  </span>
-                </span>
-              </div>
+              <section class="ios-section">
+                <div class="ios-group">
+                  <button class="ios-cell mpo-keys" type="button" aria-haspopup="dialog" (click)="keysOpen.set(true)">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Verdeelsleutels</span>
+                      <span class="ios-cell__sub mpo-wrap">Geavanceerd · hoe containerkosten over producten worden verdeeld</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                </div>
+              </section>
+            </div>
 
-              <div class="summary-body">
-                @if (isDdp()) {
-                  <!-- DDP: the supplier's container, not ours - how full it is
-                       is their concern; what we get is the volume and the count. -->
-                  <div class="fill-overview">
-                    <div>
-                      <span class="fill-overview__label">Geleverd DDP</span>
-                      <strong>{{ data.costing.totals.pieces | num }} st</strong>
-                    </div>
-                    <span>{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen</span>
+            <section class="ios-section" id="purchase-summary-section" tabindex="-1" aria-labelledby="mpo-summary-title">
+              <div class="ios-section__head"><h2 id="mpo-summary-title">Totale kostprijs</h2>
+                <span class="ios-section__trail">{{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</span></div>
+              @if (isDdp()) {
+                <!-- DDP: the supplier's container, not ours - what we get is the volume and the count. -->
+                <div class="ios-card mpo-fill">
+                  <div class="mpo-fill__top">
+                    <div class="mpo-fill__copy"><h3 class="mpo-fill__title">Geleverd DDP</h3>
+                      <p class="mpo-fill__sub">{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen</p></div>
+                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} st</strong>
                   </div>
-                } @else if (data.costing.containerFill; as fill) {
-                  <div class="fill-overview">
-                    <div>
-                      <span class="fill-overview__label">
-                        {{ containerLabel(data.order.containerType) }}
-                      </span>
-                      <strong [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                              [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                              [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}%</strong>
-                    </div>
-                    <span>{{ fill.usedCbm | cbm }} van {{ fill.capacityCbm }} m³</span>
+                </div>
+              } @else if (data.costing.containerFill; as fill) {
+                <div class="ios-card mpo-fill">
+                  <div class="mpo-fill__top">
+                    <div class="mpo-fill__copy"><h3 class="mpo-fill__title">{{ containerLabel(data.order.containerType) }}</h3>
+                      <p class="mpo-fill__sub">{{ fill.usedCbm | cbm }} van {{ fill.capacityCbm }} m³</p></div>
+                    <strong class="mpo-fill__pct" [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
+                            [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105" [class.fill-pct--danger]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}%</strong>
                   </div>
-                  <div class="meter__track fill-meter"
-                       role="meter" aria-label="Containervulling"
-                       aria-valuemin="0" aria-valuemax="100"
-                       [attr.aria-valuenow]="fill.fillPercent">
-                    <div class="meter__fill"
-                         [class.meter__fill--warn]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                         [class.meter__fill--danger]="fill.fillPercent > 105"
-                         [class.meter__fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                         [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></div>
+                  <div class="wk-meter" role="meter" aria-label="Containervulling" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="fill.fillPercent">
+                    <i [class.tone-ok]="fill.fillPercent <= 100" [class.tone-warn]="fill.fillPercent > 100 && fill.fillPercent <= 105" [class.tone-danger]="fill.fillPercent > 105"
+                       [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i>
                   </div>
                   @if (fill.fillPercent > 105) {
-                    <div class="alert alert--danger capacity-alert">
-                      <span class="alert__icon" aria-hidden="true">!</span>
-                      <div>
-                        <b>{{ fill.fillPercent | num: 0 }}%</b> · te vol voor één {{ containerLabel(data.order.containerType) }}:
-                        <b>{{ fill.overflowCbm | cbm }} te veel</b>.
-                        Op basis van volume zijn minimaal <b>{{ containerCountForFill(fill) }} containers</b> nodig;
-                        splits de order of kies een groter type.
-                      </div>
-                    </div>
+                    <p class="mpo-fill__alert mpo-fill__alert--danger"><b>{{ fill.fillPercent | num: 0 }}%</b> · te vol voor één {{ containerLabel(data.order.containerType) }}:
+                      <b>{{ fill.overflowCbm | cbm }} te veel</b>. Op basis van volume zijn minimaal <b>{{ containerCountForFill(fill) }} containers</b> nodig;
+                      splits de order of kies een groter type.</p>
                   } @else if (fill.fillPercent > 100) {
                     <!-- Just over the line: often still loadable with clever stacking. -->
-                    <div class="alert capacity-alert capacity-alert--tight">
-                      <span class="alert__icon" aria-hidden="true">!</span>
-                      <div>
-                        <b>{{ fill.fillPercent | num: 0 }}%</b> · {{ fill.overflowCbm | cbm }} boven de {{ containerLabel(data.order.containerType) }}.
-                        Vaak past dit nog net; reken niet op meer.
-                      </div>
-                    </div>
+                    <p class="mpo-fill__alert"><b>{{ fill.fillPercent | num: 0 }}%</b> · {{ fill.overflowCbm | cbm }} boven de {{ containerLabel(data.order.containerType) }}.
+                      Vaak past dit nog net; reken niet op meer.</p>
                   }
-                }
-
-                <!-- DDP: the sum below already ends on the landed total; this box
-                     would only repeat it. -->
+                </div>
+              }
+              @if (!isDdp()) {
+                <div class="ios-figures">
+                  <div><small>Bovenop de goederen</small><strong>+ {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}</strong>
+                    <small>@if (data.costing.totals.goodsEur > 0) { {{ overheadPct(data.costing.totals) | num }} % van de inkoop } @else { nog geen goederen geladen }</small></div>
+                  <div><small>Totaal geland</small><strong class="mpo-accent">{{ data.costing.totals.totalEur | eur }}</strong></div>
+                </div>
+              }
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</h2></div>
+              <div class="ios-group">
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}</span>
+                  <span class="ios-cell__sub mpo-wrap">{{ data.costing.totals.goodsUsd | cur: 'USD' }}{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.goodsEur | eur }}</span></span></div>
                 @if (!isDdp()) {
-                <div class="cost-hero">
-                  <!-- What the road adds on top of the goods - the figure a
-                       buyer negotiates on; an average per piece over mixed
-                       products said nothing. Quiet, the total is the star. -->
-                  @if (!isDdp()) {
-                  <div class="cost-hero__aside">
-                    <div class="cost-hero__label">Bovenop de goederen</div>
-                    <div class="cost-hero__value cost-hero__value--quiet">
-                      + {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}
-                    </div>
-                    <div class="cost-hero__sub">
-                      @if (data.costing.totals.goodsEur > 0) {
-                        {{ overheadPct(data.costing.totals) | num }} % van de inkoop
-                      } @else {
-                        nog geen goederen geladen
-                      }
-                    </div>
-                  </div>
+                  @if (data.costing.totals.originEur) {
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().originCostsLabel }}</span>
+                      <span class="ios-cell__sub mpo-wrap">{{ costLabels().originRoute }}</span></span>
+                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.originEur | eur }}</span></span></div>
                   }
-                  <div class="cost-hero__unit">
-                    <div class="cost-hero__label">Totaal geland</div>
-                    <div class="cost-hero__value cost-hero__value--rose">{{ data.costing.totals.totalEur | eur }}</div>
-                  </div>
-                </div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().seaFreightLabel }}</span>
+                    <span class="ios-cell__sub mpo-wrap">{{ costLabels().seaFreightRoute }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.freightEur | eur }}</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Douanewaarde</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.customsValueEur | eur }}</span></span></div>
                 }
-
-                <div class="cost-summary">
-                  <div class="cost-summary__group">
-                    <span class="cost-section">{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</span>
-                    <div class="stat-row">
-                      <span>{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}
-                        <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</small>
-                      </span>
-                      <span class="num">{{ data.costing.totals.goodsEur | eur }}</span>
-                    </div>
-                    @if (!isDdp()) {
-                    @if (data.costing.totals.originEur) {
-                      <div class="stat-row">
-                        <span>{{ costLabels().originCostsLabel }}
-                          <small>{{ costLabels().originRoute }}</small>
-                        </span>
-                        <span class="num">{{ data.costing.totals.originEur | eur }}</span>
-                      </div>
-                    }
-                    <div class="stat-row">
-                      <span>{{ costLabels().seaFreightLabel }}
-                        <small>{{ costLabels().seaFreightRoute }}</small>
-                      </span>
-                      <span class="num">{{ data.costing.totals.freightEur | eur }}</span>
-                    </div>
-                    <div class="stat-row cost-summary__subtotal">
-                      <span>Douanewaarde</span>
-                      <span class="num">{{ data.costing.totals.customsValueEur | eur }}</span>
-                    </div>
-                    }
-                  </div>
-
-                  <div class="cost-summary__group">
-                    <span class="cost-section">{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</span>
-                    @if (!isDdp()) {
-                    <div class="stat-row">
-                      <span>Invoerrechten
-                        <small>gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</small>
-                      </span>
-                      <span class="num">{{ data.costing.totals.dutyEur | eur }}</span>
-                    </div>
-                    <div class="stat-row">
-                      <span>{{ costLabels().destinationCostsLabel }}</span>
-                      <span class="num">{{ data.costing.totals.destinationEur | eur }}</span>
-                    </div>
-                    }
-                    @if (data.costing.totals.extraRevenueEur) {
-                      <div class="stat-row">
-                        <span>Enrosed kost</span>
-                        <span class="num">{{ data.costing.totals.extraRevenueEur | eur }}</span>
-                      </div>
-                    }
-                  </div>
-                  @if (data.costing.totals.separateCostsEur) {
-                    <div class="cost-summary__group">
-                      <span class="cost-section">In de stukprijs verdeeld</span>
-                      @if (data.costing.totals.inspectionEur) {
-                        <div class="stat-row">
-                          <span>Inspectie</span>
-                          <span class="num">{{ data.costing.totals.inspectionEur | eur }}</span>
-                        </div>
-                      }
-                      @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                        <div class="stat-row">
-                          <span>{{ cost.label }}</span>
-                          <span class="num">{{ cost.amountEur | eur }}</span>
-                        </div>
-                      }
-                      <div class="stat-row cost-summary__subtotal">
-                        <span>{{ separateCostsTotalLabel(data.costing.totals) }}</span>
-                        <span class="num">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span>
-                      </div>
-                    </div>
-                  }
-
-                  <div class="cost-summary__group">
-                    <span class="cost-section">3 · Totaal</span>
-                    <div class="stat-row cost-summary__subtotal">
-                      <span>Totaal geland</span>
-                      <strong class="num">{{ data.costing.totals.totalEur | eur }}</strong>
-                    </div>
-                  </div>
-                </div>
               </div>
             </section>
-
-            <!-- Nacalculatie: what the container really cost, under Kosten. Every action goes through the editor's sheets. -->
-            <section class="card erp-workspace__section purchase-result-card" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-              <span class="section-kicker">Nacalculatie</span>
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</h2></div>
+              <div class="ios-group">
+                @if (!isDdp()) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Invoerrechten</span>
+                    <span class="ios-cell__sub">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.dutyEur | eur }}</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.destinationEur | eur }}</span></span></div>
+                }
+                @if (data.costing.totals.extraRevenueEur) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.extraRevenueEur | eur }}</span></span></div>
+                }
+              </div>
+            </section>
+            @if (data.costing.totals.separateCostsEur) {
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>In de stukprijs verdeeld</h2></div>
+                <div class="ios-group">
+                  @if (data.costing.totals.inspectionEur) {
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Inspectie</span></span>
+                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.inspectionEur | eur }}</span></span></div>
+                  }
+                  @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ cost.label }}</span></span>
+                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ cost.amountEur | eur }}</span></span></div>
+                  }
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong mpo-wrap">{{ separateCostsTotalLabel(data.costing.totals) }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span></span></div>
+                </div>
+              </section>
+            }
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>3 · Totaal</h2></div>
+              <div class="ios-group">
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Totaal geland</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ data.costing.totals.totalEur | eur }}</span></span></div>
+              </div>
+            </section>
+            </section>
+            <!-- Nacalculatie: what the container really cost, complete and never collapsed. Every action goes through the editor's sheets. -->
+            <section class="mpo-result mpo-host" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
               <app-purchase-nacalc-overview mode="edit" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
                 [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null"
                 [orderId]="data.order.id"
                 (openPayee)="openPayee($event)" (pay)="requestPayment($event)" (settle)="requestSettle($event)"
                 (openPayments)="jumpToSection('purchase-payments-section')" (openPartner)="jumpToSection('purchase-partner-section')"
-                (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="jumpToSection('purchase-actions-section')"
+                (openReports)="jumpToSection('purchase-files-section')" (applyCosts)="apply()"
                 (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()" (credit)="requestCredit($event)" />
             </section>
+          </section>
 
+          <!-- ===== Betalingen ===== -->
+          <section class="mpo-pane" id="mpo-pane-betalingen" role="tabpanel" aria-label="Betalingen" [hidden]="phoneTab() !== 'betalingen'">
             <!-- Money out, per payee: the supplier for the goods in its planned
                  terms, the forwarder and customs, the inspection and other named
                  costs, and the bijkomende kosten of paying. The Enrosed kost is
                  ours and nobody's invoice. -->
-            <section class="card erp-workspace__section purchase-payments-plain"
-                     id="purchase-payments-section" tabindex="-1"
-                     aria-labelledby="purchase-payments-title">
+            <section class="mpo-host purchase-payments-plain" id="purchase-payments-section" tabindex="-1" aria-label="Betalingen">
               <app-purchase-payment-overview mode="edit" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
                 [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [nacalc]="nacalcSummary()"
                 [planLabel]="planLabel(data.order)" [supplierName]="supplierName()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
@@ -1213,164 +752,75 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <!-- Money in: a partner who co-finances the container. -->
             @if (data.order.partnerCustomerId != null) {
-              <section class="erp-workspace__section purchase-partner-card" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
+              <section class="mpo-host" id="purchase-partner-section" tabindex="-1" aria-label="Partnerfinanciering">
                 <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
               </section>
             }
+          </section>
 
-            <!-- The container's diary: agreements, then the receipt, the
-                 booking and every payment write themselves in here. -->
-            <section class="card note-card erp-workspace__section erp-workspace__support-card"
-                     id="purchase-notes-section" tabindex="-1"
-                     aria-labelledby="purchase-note-title">
-              <div class="action-card__head note-card__head">
-                <div>
-                  <span class="po-eyebrow">Notitie</span>
-                  <h2 id="purchase-note-title">Dagboek van de container</h2>
-                </div>
-                <button class="linklike" type="button" (click)="noteEditing.set(!noteEditing())">
-                  {{ noteEditing() ? 'Klaar' : 'Bewerken' }}
-                </button>
+          <!-- ===== Dossier ===== -->
+          <section class="mpo-pane" id="mpo-pane-dossier" role="tabpanel" aria-label="Dossier" [hidden]="phoneTab() !== 'dossier'">
+            <!-- The container's diary: agreements, then the receipt, the booking and every payment write themselves in here. -->
+            <section class="ios-section" id="purchase-notes-section" tabindex="-1" aria-labelledby="purchase-note-title">
+              <div class="ios-section__head"><h2 id="purchase-note-title">Dagboek</h2>
+                <button class="ios-section__link" type="button" (click)="noteEditing.set(!noteEditing())">{{ noteEditing() ? 'Klaar' : 'Bewerken' }}</button></div>
+              <div class="ios-card mpo-diary">
+                @if (noteEditing()) {
+                  <textarea class="mpo-notes" rows="8" aria-label="Dagboek van de container" [ngModel]="data.order.notes" (ngModelChange)="patch({ notes: $event })"
+                            placeholder="Afspraken, laadinstructies of aandachtspunten - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij"></textarea>
+                } @else if (data.order.notes) {
+                  <app-diary [notes]="data.order.notes" />
+                } @else {
+                  <p class="ios-caption mpo-diary__empty">Nog leeg - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij. Tik Bewerken voor eigen afspraken.</p>
+                }
               </div>
-              @if (noteEditing()) {
-                <textarea class="note-card__field" rows="8" [ngModel]="data.order.notes"
-                          (ngModelChange)="patch({ notes: $event })"
-                          placeholder="Afspraken, laadinstructies of aandachtspunten - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij"></textarea>
-              } @else if (data.order.notes) {
-                <div class="note-card__diary"><app-diary [notes]="data.order.notes" /></div>
-              } @else {
-                <p class="note-card__empty">Nog leeg - ontvangst, bijboeken en betalingen schrijven zich hier vanzelf bij. Tik Bewerken voor eigen afspraken.</p>
-              }
             </section>
 
             <!-- The paper trail of a container: only what was actually added. -->
-            <section class="card files-card erp-workspace__section erp-workspace__support-card"
-                     id="purchase-files-section" tabindex="-1"
-                     aria-labelledby="purchase-files-title">
-              <div class="action-card__head">
-                <span class="po-eyebrow">Bestanden</span>
-                <h2 id="purchase-files-title">Documenten</h2>
-                <p>{{ (documents() ?? []).length ? (documents()!.length + ' bestand' + (documents()!.length === 1 ? '' : 'en')) : 'Nog geen bestanden bij deze container.' }}</p>
-              </div>
-              @if (documents(); as docs) {
-                @if (docs.length) {
-                  <ul class="files-list">
-                    @for (doc of docs; track doc.id) {
-                      <li>
-                        @if (renamingDoc()?.id === doc.id) {
-                          <input class="input input--sm files-list__rename" type="text" enterkeyhint="done"
-                                 placeholder="Titel, bijv. KBC mei" [ngModel]="renamingDoc()!.label"
-                                 (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
-                                 (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)"
-                                 (blur)="commitDocRename(doc)" />
-                        } @else {
-                          <span class="files-list__name">
-                            <b>{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</b>
-                            <small>{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</small>
-                          </span>
-                        }
-                        <span class="files-list__actions">
-                          <!-- The title stays editable after the upload. -->
-                          <button class="files-list__pencil" type="button" title="Titel aanpassen"
-                                  [attr.aria-label]="'Titel aanpassen van ' + doc.originalFilename"
-                                  (click)="renamingDoc.set({ id: doc.id, label: doc.label ?? '' })">
-                            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-                              <path d="M4 20h4l10-10-4-4L4 16v4z" /><path d="m13 7 4 4" />
-                            </svg>
-                          </button>
-                          <button class="btn btn--sm" type="button" (click)="downloadDocument(doc)">Openen</button>
-                          <button class="pay-line__remove" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)">×</button>
-                        </span>
-                      </li>
-                    }
-                  </ul>
-                }
-              }
-              <div class="action-card__buttons">
-                <button class="btn btn--block" type="button" (click)="openDocument()">Document toevoegen</button>
-              </div>
-              <div class="files-card__links"><app-purchase-sales-links [documents]="relatedSalesDocs()" [excludePartner]="data.order.partnerCustomerId != null" /></div>
-            </section>
-
-            <app-purchase-activity class="purchase-activity-step"
-                                   [orderId]="data.order.id" [collapsible]="true" />
-
-            <section class="card action-card erp-workspace__section erp-workspace__priority-card"
-                     id="purchase-actions-section" tabindex="-1"
-                     aria-labelledby="purchase-actions-title">
-              <div class="action-card__head">
-                <span class="po-eyebrow">Afronden</span>
-                <h2 id="purchase-actions-title">
-                  {{ nextStep() ? 'Klaar voor de volgende stap?' : 'Container afgerond' }}
-                </h2>
-                <p>
-                  @if (data.order.status === 'CONCEPT') {
-                    Controleer de producten en kosten voordat je de bestelling vastlegt.
-                  } @else if (!isReceived()) {
-                    Bij ontvangst tel je wat er echt in de container zat; bijboeken kan meteen of later.
-                  } @else if (!(data.order.stockBooked ?? true)) {
-                    Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.
-                  } @else {
-                    De voorraad is bijgeboekt. Je kunt nog een variant maken of kostprijzen toepassen.
-                  }
-                </p>
-              </div>
-
-              <div class="action-card__buttons">
-                @if (nextStep(); as step) {
-                  <button class="btn btn--primary btn--block" type="button"
-                          (click)="advanceStatus()">
-                    {{ step.action }}
-                  </button>
-                }
-                @if (isReceived() && !(data.order.stockBooked ?? true)) {
-                  <!-- Received but not on the shelf yet: the one action left. -->
-                  <button class="btn btn--primary btn--block" type="button" [disabled]="booking()"
-                          (click)="bookStock()">
-                    {{ booking() ? 'Bezig…' : 'Voorraad bijboeken' }}
-                  </button>
-                }
-                <button class="btn btn--block" type="button" (click)="apply()">
-                  {{ costsApplied() ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen' }}
-                </button>
-                <button class="btn btn--block" type="button" (click)="duplicate()">
-                  Deze container kopiëren
-                </button>
-                <button class="btn btn--block" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)">
-                  {{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}
-                </button>
-              </div>
-
-              @if (!isReceived()) {
-                <details class="danger-zone">
-                  <summary>Meer acties</summary>
-                  <div>
-                    @if (data.order.status === 'BESTELD' || data.order.status === 'ONDERWEG') {
-                      <!-- A status set by mistake goes back here; the sheet names what changes. -->
-                      <button class="btn btn--block mb-8" type="button" [disabled]="stepBackBusy()" (click)="openStepBack()">
-                        Status terugzetten…
-                      </button>
-                    }
-                    <p>Tijdelijk verwijderen. Herstellen kan via Instellingen → Beheer → Verwijderde items.</p>
-                    <button class="btn btn--danger btn--block" type="button"
-                            [disabled]="deletingOrder() || saving()" (click)="remove()">
-                      {{ deletingOrder() ? 'Verwijderen…' : 'Calculatie verwijderen' }}
-                    </button>
+            <section class="ios-section" id="purchase-files-section" tabindex="-1" aria-labelledby="purchase-files-title">
+              @let docs = documents() ?? [];
+              <div class="ios-section__head"><h2 id="purchase-files-title">Documenten</h2>
+                <span class="ios-section__trail">{{ docs.length }} {{ docs.length === 1 ? 'bestand' : 'bestanden' }}</span></div>
+              <div class="ios-group">
+                @for (doc of docs; track doc.id) {
+                  <div class="ios-cell mpo-doc">
+                    <span class="ios-cell__body">
+                      @if (renamingDoc()?.id === doc.id) {
+                        <input class="mpo-input mpo-input--wide mpo-doc__rename" type="text" enterkeyhint="done" [attr.aria-label]="'Titel van ' + doc.originalFilename"
+                               placeholder="Titel, bijv. KBC mei" [ngModel]="renamingDoc()!.label"
+                               (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
+                               (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)"
+                               (blur)="commitDocRename(doc)" />
+                      } @else {
+                        <span class="ios-cell__title mpo-wrap">{{ doc.kindLabel }}{{ doc.label ? ' · ' + doc.label : '' }}</span>
+                      }
+                      <span class="ios-cell__sub mpo-wrap">{{ doc.originalFilename }} · {{ sizeLabel(doc.sizeBytes) }} · {{ doc.addedAt | dateNl }}@if (doc.actor) { · {{ actorLabel(doc.actor) }} }</span>
+                    </span>
+                    <span class="mpo-doc__actions">
+                      <!-- The title stays editable after the upload. -->
+                      <button class="ios-circle" type="button" title="Titel aanpassen" [attr.aria-label]="'Titel aanpassen van ' + doc.originalFilename"
+                              (click)="renamingDoc.set({ id: doc.id, label: doc.label ?? '' })"><app-icon name="pencil" [size]="16" /></button>
+                      <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="downloadDocument(doc)">Openen</button>
+                      <button class="ios-circle" type="button" title="Verwijderen" aria-label="Document verwijderen" (click)="removeDocument(doc)"><app-icon name="close" [size]="16" /></button>
+                    </span>
                   </div>
-                </details>
-              }
+                } @empty {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub mpo-wrap">Nog geen bestanden bij deze container.</span></span></div>
+                }
+                <button class="ios-cell ios-cell--action" type="button" (click)="openDocument()">Document toevoegen</button>
+              </div>
             </section>
-          </aside>
+            <div class="mpo-host">
+              <app-purchase-sales-links [documents]="relatedSalesDocs()" [excludePartner]="data.order.partnerCustomerId != null" />
+              <app-purchase-activity [orderId]="data.order.id" [collapsible]="true" />
+            </div>
+          </section>
         </div>
-      </div>
 
-      @if (!desktop.active()) {
-        <nav class="purchase-mobile-dock erp-workspace__mobile-dock"
-             aria-label="Inkooporder navigatie en acties">
-          <!-- A hairline along the top edge: how full the container is while
-               you are composing it, without stealing room from the buttons. -->
-          @if (phoneStep() === 1 && !isDdp() && data.costing.containerFill; as fill) {
-            <div class="dock-fill" role="meter" aria-label="Containervulling"
+        <nav class="erp-workspace__mobile-actions mpo-savebar" [class.is-dirty]="dirty()" aria-label="Opslaan">
+          <!-- A hairline along the top edge on Producten: how full the container is while you compose it. -->
+          @if (phoneTab() === 'producten' && !isDdp() && data.costing.containerFill; as fill) {
+            <div class="dock-fill mpo-savebar__fill" role="meter" aria-label="Containervulling"
                  aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="fill.fillPercent"
                  [class.dock-fill--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
                  [class.dock-fill--over]="fill.fillPercent > 100 && fill.fillPercent <= 105"
@@ -1379,41 +829,148 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <span class="dock-fill__track"><i [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></span>
             </div>
           }
-          @if (phoneStep() > 0) {
-            <button class="purchase-mobile-dock__back" type="button"
-                    (click)="previousPhoneStep()"
-                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
-          }
-          <span class="purchase-mobile-dock__context">
-            <small>Stap {{ phoneStep() + 1 }} van {{ phoneStepLabels.length }}</small>
-            <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
+          <span class="mpo-savebar__state" role="status">
+            @if (saving()) {
+              <strong>Opslaan…</strong><small>Even geduld</small>
+            } @else if (dirty()) {
+              @let what = negativeExtra() ? 'Enrosed kost onder nul: eerst rechtzetten' : unsavedText();
+              <strong>Niet opgeslagen</strong><small [title]="what">{{ what }}</small>
+            } @else {
+              <strong>Alles opgeslagen</strong><small>Je kunt verder bewerken</small>
+            }
           </span>
-          @if (phoneStep() === 3) {
-            <button class="btn purchase-mobile-dock__pdf" type="button" aria-label="Betaling noteren"
-                    [disabled]="payingBusy() || paymentStateLoading() || payments() === null" (click)="payeeMenuOpen.set(true)">＋ Betaling</button>
-          } @else {
-            <button class="btn purchase-mobile-dock__pdf" type="button"
-                    (click)="pdfOpen.set(true)"
-                    [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">
-              PDF
-            </button>
-          }
-          <button class="btn purchase-mobile-dock__save" type="button"
-                  [class.btn--primary]="dirty()"
-                  [disabled]="saving() || !dirty() || negativeExtra()" (click)="save()">
-            {{ saving() ? 'Opslaan…' : 'Opslaan' }}
-          </button>
-          @if (phoneStep() < phoneStepLabels.length - 1) {
-            <button class="purchase-mobile-dock__next" type="button"
-                    (click)="nextPhoneStep()"
-                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">›</button>
-          } @else if (!dirty() && nextStep(); as step) {
-            <button class="btn btn--primary purchase-mobile-dock__primary" type="button"
-                    (click)="advanceStatus()">
-              {{ step.action }}
-            </button>
+          @if (dirty()) {
+            <button class="btn btn--primary mpo-savebar__btn" type="button" [disabled]="saving() || negativeExtra()" (click)="save()"><span aria-hidden="true">✓</span> Opslaan</button>
+          } @else if (editStep(); as step) {
+            <button class="btn btn--primary mpo-savebar__btn" type="button" (click)="runEditStep(step)">{{ editStepLabel(step) }}</button>
           }
         </nav>
+      </div>
+
+      <!-- The phone's own sheets, at host level: never inside the sticky nav, the tabs or a pane. -->
+      @if (actionsOpen()) {
+        <app-context-menu title="Acties" variant="ios" cancelLabel="Annuleren" [items]="actionsMenuItems()" (pick)="pickAction($event)" (closed)="actionsOpen.set(false)" />
+      }
+      @if (stepOpen(); as step) {
+        <app-purchase-step-confirm-sheet [text]="stepText(step)" [tracking]="data.order.trackingReference ?? ''" [busy]="saving()"
+                                         (cancel)="stepOpen.set(null)" (confirmed)="confirmPhoneStep($event)" />
+      }
+      @if (lineSheetLine(); as line) {
+        @let display = setPiecesOf(line.productId);
+        @let ordered = shortShipped(line.productId);
+        @let cartonNote = isReceived() ? null : cartonNotice(draftQuantity(line.productId, line.quantity), line.productId);
+        <!-- One line at a time: the edits land in the draft at once, as the inline fields do; the save bar shows them. -->
+        <app-sheet title="Regel bewerken" variant="ios" (closed)="lineSheet.set(null)">
+          <div body class="mpo-sheet">
+            <div class="ios-group ios-group--thumbs">
+              <div class="ios-cell ios-cell--tall">
+                <span class="ios-cell__lead">
+                  @if (photoOf(line.productId); as photo) { <img class="ios-thumb" [appAuthSrc]="photo" alt="" draggable="false" /> }
+                  @else { <span class="ios-tile tone-grey mpo-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span> }
+                </span>
+                <span class="ios-cell__body">
+                  <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ line.productName }}</span>
+                  <span class="ios-cell__sub mpo-wrap">Regel {{ purchaseLineNumber(line.productId) }}@if (productSku(line.productId); as sku) { · <span class="mono">{{ sku }}</span> } · {{ piecesPerCarton(line.productId) }}/doos</span>
+                  @if (productVariantLabel(line.productId); as variant) {
+                    <span class="ios-cell__sub mpo-wrap">@if (productColour(line.productId)) { <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
+                      [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i> }{{ variant }}</span>
+                  }
+                </span>
+              </div>
+            </div>
+            <div class="mpo-sheet__block">
+              <div class="ios-group">
+                <label class="ios-cell mpo-field-row" [attr.for]="'qty-sheet-' + line.productId">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Aantal stuks</span></span>
+                  <span class="mpo-line__qty"><input class="mpo-input mpo-qty" [id]="'qty-sheet-' + line.productId" type="number" min="0" step="1" inputmode="numeric"
+                         [disabled]="isReceived()" [ngModel]="quantityValue(line.productId, line.quantity)" (ngModelChange)="typeQuantity(line.productId, $event)"
+                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">st</span></span>
+                </label>
+                <div class="ios-cell mpo-field-row">
+                  <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" [attr.for]="'exw-sheet-' + line.productId">Afgesproken prijs per stuk</label>
+                    <span class="ios-cell__sub">{{ isDdp() ? 'DDP' : 'EXW' }}</span></span>
+                  <span class="mpo-affix"><span class="mpo-affix__unit mpo-affix__unit--lead" aria-hidden="true">{{ currencySymbol(effectiveExwCurrency(line.productId)) }}</span>
+                    <input class="mpo-input" [id]="'exw-sheet-' + line.productId" type="number" min="0" step="0.01" inputmode="decimal"
+                           [attr.aria-label]="'Prijs per stuk in ' + effectiveExwCurrency(line.productId)" [ngModel]="orderLine(line.productId)?.exwPrice"
+                           [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | numUp: 3) : ''" (ngModelChange)="setExwPrice(line.productId, $event)" /></span>
+                </div>
+              </div>
+              @if (cartonNote || ordered) {
+                <p class="ios-section__foot">@if (cartonNote) { <span role="status">{{ cartonNote }}</span> }@if (cartonNote && ordered) { · }@if (ordered) { <span class="warn-text">Besteld {{ ordered | num }} → ontvangen {{ line.quantity | num }}</span> }</p>
+              }
+            </div>
+            @if (isReceived()) {
+              <div class="ios-group">
+                <button class="ios-cell ios-cell--action" type="button" (click)="lineSheet.set(null); openIssue(line.productId)">Schade of tekort melden</button>
+              </div>
+            }
+            <section class="ios-section mpo-sheet__section">
+              <div class="ios-section__head"><h2>Kostopbouw</h2></div>
+              <div class="mpo-sheet__seg"><app-segmented variant="ios" label="Kostopbouw tonen als" [options]="lineModes" [value]="perPiece() ? 'piece' : 'total'" (changed)="perPiece.set($event === 'piece')" /></div>
+              <div class="ios-group">
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Goederen</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</span></span></div>
+                @if (line.originEur) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().originCostsLabel }}</span><span class="ios-cell__sub mpo-wrap">{{ costLabels().originRoute }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.originEur, line) | eurUp: decimals() }}</span></span></div>
+                }
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().seaFreightLabel }}</span><span class="ios-cell__sub mpo-wrap">{{ costLabels().seaFreightRoute }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.freightEur, line) | eurUp: decimals() }}</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Douanewaarde</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ amt(line.customsValueEur, line) | eurUp: decimals() }}</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Invoerrecht {{ line.dutyRatePct | pct: 1 }}</span><span class="ios-cell__sub mpo-wrap">({{ line.dutySource }})</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.dutyEur, line) | eurUp: decimals() }}</span></span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span></span></div>
+                @if (line.extraRevenueEur) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? 'per stuk' : 'hele regel' }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></span></div>
+                }
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span>
+                    @if (perPiece() && display) { <span class="ios-cell__meta">{{ line.landedUnitEur / display | eurUp: 3 }} /stuk</span> }</span></div>
+              </div>
+            </section>
+            <div class="ios-group">
+              <a class="ios-cell" [routerLink]="['/products', line.productId]" [title]="line.productName + ' openen'">
+                <span class="ios-cell__body"><span class="ios-cell__title mpo-link">Product openen</span></span>
+                <app-icon class="ios-cell__chev" name="external" [size]="16" />
+              </a>
+            </div>
+            <div class="ios-group">
+              <button class="ios-cell ios-cell--danger" type="button" [disabled]="isReceived()" (click)="removeLine(line.productId); lineSheet.set(null)">Regel verwijderen</button>
+            </div>
+          </div>
+          <div foot style="display:contents"><button class="btn btn--primary" type="button" (click)="lineSheet.set(null)">Klaar</button></div>
+        </app-sheet>
+      }
+      @if (keysOpen()) {
+        <app-sheet title="Verdeelsleutels" variant="ios" (closed)="keysOpen.set(false)">
+          <div body class="mpo-sheet">
+            <div class="ios-group">
+              <!-- A series is one product to the buyer: its colours and sizes land at one and the same unit cost. -->
+              <label class="ios-cell mpo-field-row">
+                <span class="ios-cell__body"><span class="ios-cell__title">Varianten als één product</span>
+                  <span class="ios-cell__sub mpo-wrap">Kleuren en maten van dezelfde reeks krijgen samen één kostprijs per stuk; de aantallen worden opgeteld.</span></span>
+                <input class="ios-switch" type="checkbox" [ngModel]="data.order.groupVariants ?? true" (ngModelChange)="patch({ groupVariants: $event })" />
+              </label>
+              @for (key of allocationKeys(); track key.field) {
+                <label class="ios-cell mpo-field-row mpo-field-row--stack" [attr.for]="'a-' + key.field">
+                  <span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ key.label }}</span>
+                    @if (key.route) { <span class="ios-cell__sub mpo-wrap">{{ key.route }}</span> }</span>
+                  <span class="mpo-pick mpo-pick--wide"><select class="mpo-select" [id]="'a-' + key.field" [ngModel]="allocationOf(data.order, key.field)" (ngModelChange)="setAllocation(key.field, $event)">
+                    @if (key.field === 'allocSeparate') { <option value="SEPARATE">Achteraf, apart van de stukprijs</option> }
+                    <option value="CBM">Naar volume (m³)</option>
+                    <option value="VALUE">Naar goederenwaarde</option>
+                    <option value="PIECES">Naar aantal stuks</option>
+                    @if (key.field === 'allocExtra') { <option value="MANUAL">Zelf per product</option> }
+                  </select><app-icon name="chevron-down" [size]="14" /></span>
+                </label>
+              }
+            </div>
+          </div>
+          <div foot style="display:contents"><button class="btn btn--primary" type="button" (click)="keysOpen.set(false)">Klaar</button></div>
+        </app-sheet>
       }
 
       @if (quoteOpen()) {
@@ -1700,7 +1257,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (orderPlaced()) {
-        <app-purchase-ordered-success [orderNumber]="data.order.number"
+        <app-purchase-ordered-success [orderNumber]="data.order.number" [overviewAvailable]="!handedFromView()"
                                       (closed)="closeOrderPlaced()"
                                       (overview)="openOrderView()" />
       }
@@ -1726,116 +1283,26 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
       }
     } @else {
-      <app-page-header title="Inkoop" subtitle="Inkooporder laden…"
-                       [showBack]="true" [showBell]="false" />
-      <div class="content po-page" role="status" aria-live="polite" aria-label="Inkooporder laden">
-        <app-skeleton kind="card" [rows]="1" />
-        <app-skeleton kind="stats" [rows]="3" />
-        <app-skeleton kind="list" [rows]="4" />
+      <div class="mpo-phone mpo-phone--edit">
+        <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()" />
+        <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
+          <app-skeleton kind="card" [rows]="3" />
+          <app-skeleton kind="lines" [rows]="4" />
+        </div>
       </div>
     }
   `,
   styles: [`
-
+    /* The phone layout lives in styles/purchase-phone.scss; these are the receive, issue and document sheets. */
+    :host{display:block;min-width:0}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
-    :host{display:block;min-width:0}.po-page{max-width:1180px}.po-notice{margin-bottom:12px}
-    .po-overview{position:relative;margin-bottom:14px;padding:16px;border:1px solid var(--rose-line);border-radius:22px;background:linear-gradient(145deg,var(--surface),var(--rose-soft));box-shadow:var(--sh-1);overflow:hidden}
-    .po-overview:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--rose)}
-    .po-overview__top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.po-overview__copy{min-width:0}
-    :is(.po-eyebrow,.section-kicker){display:block;color:var(--rose);font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
-    .po-overview h1{margin-top:3px;overflow:hidden;font-size:22px;text-overflow:ellipsis;white-space:nowrap}.po-overview__copy p{color:var(--muted);font-size:12px}
-    .po-status{display:flex;flex:none;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--rose-line);border-radius:99px;background:var(--surface);color:var(--rose-dark);font-size:11.5px;font-weight:700}
-    .po-status__dot{width:7px;height:7px;border-radius:50%;background:currentColor}.po-status--done{color:var(--ok);border-color:#c6e5d5;background:var(--ok-soft)}.overview-stepper{margin:16px 0}
-    .po-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}
-    .po-fact--total strong{color:var(--rose-dark)}
-    .fill-overview strong.fill-pct--full,.po-fact strong.fill-pct--full{color:var(--ok)}.fill-overview strong.fill-pct--over,.po-fact strong.fill-pct--over{color:var(--warn)}.fill-overview strong.fill-pct--danger,.po-fact strong.fill-pct--danger{color:var(--danger)}.meter__fill--danger{background:var(--danger)}.capacity-alert--tight{border:1px solid #eddcb9;background:var(--warn-soft);color:var(--ink-2)}.capacity-alert--tight .alert__icon{background:var(--warn);color:#fff}
-    .po-fact{min-width:0;padding:9px 10px;background:var(--surface)}.po-fact__label{display:block;color:var(--muted);font-size:9.5px;text-transform:uppercase}.po-fact strong{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-    .purchase-mobile-dock{display:flex;align-items:center;gap:7px}.dock-fill{position:absolute;top:0;right:14px;left:14px;height:3px;pointer-events:none}.dock-fill__track{display:block;height:3px;overflow:hidden;border-radius:0 0 3px 3px;background:var(--line)}.dock-fill__track i{display:block;height:100%;border-radius:inherit;background:var(--rose);transition:width .2s ease}.dock-fill__label{position:absolute;top:-22px;right:0;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:rgb(255 255 255 / 90%);color:var(--muted);font-size:9.5px;font-weight:650;line-height:1.4;white-space:nowrap;box-shadow:0 2px 8px rgb(26 22 20 / 8%);backdrop-filter:blur(8px)}.dock-fill__label b{color:var(--rose-dark);font-weight:800}.dock-fill--full .dock-fill__track i{background:var(--ok)}.dock-fill--full .dock-fill__label b{color:var(--ok)}.dock-fill--over .dock-fill__track i{background:var(--warn)}.dock-fill--over .dock-fill__label b{color:var(--warn)}.dock-fill--danger .dock-fill__track i{background:var(--danger)}.dock-fill--danger .dock-fill__label b{color:var(--danger)}
-    .purchase-mobile-dock__back,.purchase-mobile-dock__next{width:42px;height:42px;display:grid;flex:none;place-items:center;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:23px;cursor:pointer}
-    .purchase-mobile-dock__next{background:var(--ink);color:#fff}
-    .purchase-mobile-dock__context{min-width:48px;display:grid;flex:1;line-height:1.15}
-    .purchase-mobile-dock__context small{color:var(--muted);font-size:8.5px;font-weight:650;text-transform:uppercase}
-    .purchase-mobile-dock__context strong{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
-    .purchase-mobile-dock .btn{min-height:42px;margin:0;padding-inline:10px}
-    .purchase-mobile-dock__pdf{flex:none}
-    .purchase-mobile-dock__save:disabled{opacity:.58}
-    .purchase-mobile-dock__primary{flex:none}
-    @media(max-width:390px){.purchase-mobile-dock__context{display:none}.purchase-mobile-dock__save,.purchase-mobile-dock__pdf{padding-inline:9px!important}.purchase-mobile-dock__save,.purchase-mobile-dock__primary{flex:1}}
-    @media(max-width:679px){
-      .pdf-header-button{display:none}
-      .po-page{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 128px)}
-      .purchase-grid .erp-workspace__section,.purchase-grid .purchase-activity-step{display:none}
-      .purchase-grid[data-phone-step="0"] #purchase-order-section,
-      .purchase-grid[data-phone-step="1"] #purchase-products-section,
-      .purchase-grid[data-phone-step="2"] #purchase-costs-section,
-      .purchase-grid[data-phone-step="2"] #purchase-summary-section,
-      .purchase-grid[data-phone-step="3"] #purchase-payments-section,
-      .purchase-grid[data-phone-step="3"] #purchase-partner-section,
-      .purchase-grid[data-phone-step="2"] #purchase-result-section,
-      .purchase-grid[data-phone-step="4"] #purchase-notes-section,
-      .purchase-grid[data-phone-step="4"] #purchase-files-section,
-      .purchase-grid[data-phone-step="4"] .purchase-activity-step,
-      .purchase-grid[data-phone-step="5"] #purchase-actions-section{display:block}
-      .purchase-grid[data-phone-step="0"] .purchase-summary,
-      .purchase-grid[data-phone-step="1"] .purchase-summary{display:none}
-      .purchase-grid[data-phone-step="3"] .purchase-main,
-      .purchase-grid[data-phone-step="4"] .purchase-main,
-      .purchase-grid[data-phone-step="5"] .purchase-main{display:none}
-    }
-
-    :is(.purchase-main,.purchase-summary){min-width:0}:is(.purchase-main,.purchase-summary)>.card+.card{margin-top:12px}:is(.flow-card,.summary-card,.action-card){overflow:hidden}
-    .erp-workspace__main>.card+.card,.erp-workspace__sidebar>.card+.card{margin-top:0}.purchase-summary.erp-workspace__sidebar{margin-top:0}
-    :is(.section-toggle,.section-heading){display:flex;width:100%;min-height:72px;align-items:center;gap:10px;padding:12px 14px;border:0;background:var(--surface);text-align:left}
-    .section-toggle{cursor:pointer}.section-step{display:grid;width:34px;height:34px;flex:0 0 34px;place-items:center;border:1px solid var(--rose-line);border-radius:11px;background:var(--rose-soft);color:var(--rose-dark);font-weight:750}
-    .section-title-block{display:block;min-width:0;flex:1}.section-name{display:block;font-size:15px;font-weight:700}.section-summary{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
-    .section-chevron{flex:none;color:var(--muted)}.section-chevron--open{transform:rotate(180deg)}.section-body{padding:14px 14px 0;border-top:1px solid var(--line);background:var(--surface-2)}
-
-    .supplier-context{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-    .supplier-context__mark{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--rose);color:#fff}.supplier-context__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-context__copy>span,.supplier-context__country{color:var(--muted);font-size:10px}.supplier-context__copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-context__copy app-supplier-address{margin-top:1px}
-    :is(.order-fields,.po-line__inputs) .field{min-width:0}.order-fields__group{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin-top:6px;padding-top:12px;border-top:1px solid var(--line)}.order-fields__group:first-child{margin-top:0;padding-top:0;border-top:0}.order-fields__group span{color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}.order-fields__group small{color:var(--muted);font-size:11.5px}.port-field__custom{margin-top:7px}
-
-  `, `
-
-    .products-card{overflow:visible}:is(.products-card .section-heading,.summary-heading){border-bottom:1px solid var(--line)}.add-product{flex:none;min-height:40px;padding-inline:11px}
-    .po-line{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 1px 2px rgb(31 25 22 / 4%)}.po-line+.po-line{margin-top:10px}.po-line__head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
-    .po-lines{padding:12px;border-radius:16px;background:var(--surface-2)}
-    .po-line__index{display:grid;width:36px;height:36px;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}.po-line__photo{width:36px;height:36px;flex:none;border:1px solid var(--line);border-radius:10px;object-fit:cover;background:#fff}.po-line__identity{display:flex;min-width:0;flex:1;flex-direction:column}.po-line__identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.po-line__identity span{color:var(--muted);font-size:12px}
-    .purchase-summary .cost-hero{grid-template-columns:1fr;gap:8px}.purchase-summary .cost-hero__unit{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line);text-align:left;align-self:auto}
-    .po-line__link{display:flex;flex:1;min-width:0;align-items:center;gap:inherit;color:inherit;text-decoration:none}.po-line__link:hover strong{color:var(--rose-dark);text-decoration:underline}
-    .line-issue{display:block;padding:4px 0 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:650;text-align:left;cursor:pointer}.line-issue:hover{color:var(--rose-dark)}.issue-kind{margin-top:2px}
-    .files-card .action-card__head,.note-card .action-card__head{padding:14px 18px 10px}.note-card__field{display:block;width:100%;padding:0 18px 14px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none;box-sizing:border-box}.note-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.note-card__head .linklike{flex:none;margin-top:2px}.note-card__diary{padding:0 18px 12px}.note-card__empty{margin:0;padding:0 18px 14px;color:var(--muted);font-size:12px}.po-attention{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.po-attention__body{display:grid;gap:2px;min-width:0;font-size:12.5px;color:var(--ink-2)}.po-attention__body b{color:var(--warn);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.attention-dot{display:inline-grid;place-items:center;flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--warn);color:#fff;font-size:11px;font-weight:800;line-height:1}.files-card .action-card__buttons{padding:0 18px 14px;margin-top:0}.files-card__links{padding:0 18px 6px}
-    .pay-line__remove{width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;cursor:pointer}.pay-line__remove:hover{background:var(--danger-soft);color:var(--danger)}
-    .files-list__actions{display:flex;align-items:center;gap:6px}
-    .files-list{list-style:none;margin:0 18px 4px;padding:0;border-top:1px solid var(--line)}.files-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.files-list__name{display:grid;min-width:0}.files-list__name b{font-size:12.5px;font-weight:650}.files-list__name small{color:var(--muted);font-size:11px}.files-card__hint{padding:6px 18px 14px}.files-list__rename{flex:1;min-width:0}.files-list__pencil{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);cursor:pointer}.files-list__pencil:hover{background:var(--surface-2);color:var(--ink)}.files-list__pencil svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+    .issue-kind{margin-top:2px}
     .receive-balance{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-balance b{font-size:13px}.receive-balance small{display:block;color:var(--muted);font-size:11.5px}.receive-balance__final{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.receive-balance__final input{width:18px;height:18px;accent-color:var(--rose)}
     .receive-preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}.receive-preview>span{display:grid;padding:9px 10px;background:var(--surface)}.receive-preview small{color:var(--muted);font-size:9px;text-transform:uppercase}.receive-preview b{font-size:12.5px}.receive-preview>p{grid-column:1/-1;padding:8px 10px;background:var(--warn-soft);color:var(--ink-2);font-size:10.5px}
     .receive-lines{display:grid;gap:8px}.receive-line{display:grid;grid-template-columns:minmax(0,1fr) 110px 110px;gap:8px 10px;align-items:end;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.receive-line--short{border-color:#eddcb9;background:var(--warn-soft)}.receive-line--damaged{border-color:#f1c8c4}.receive-line__name{display:grid;min-width:0}.receive-line__name b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.receive-line__name small{color:var(--muted);font-size:11px}.receive-line__field{display:grid;gap:3px}.receive-line__field span{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.receive-line__note{grid-column:1/-1;color:var(--warn);font-size:11.5px;font-weight:650}
     @media(max-width:559px){.receive-line{grid-template-columns:1fr 1fr}.receive-line__name{grid-column:1/-1}}
     @media(min-width:560px){.receive-preview{grid-template-columns:repeat(4,minmax(0,1fr))}}
     .switch-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:4px 0 10px;cursor:pointer;border-bottom:1px solid var(--line);margin-bottom:4px}.switch-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}.switch-row b{font-size:13px}.switch-row small{color:var(--muted);font-size:11.5px;line-height:1.35}.switch-row input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
-    .line-remove{display:grid;width:42px;height:42px;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}.line-remove:active{background:var(--danger-soft);color:var(--danger)}:is(.line-currency,.cost-currency){min-width:74px;border-radius:0}.line-basis{min-width:72px;border-radius:0 var(--r-sm) var(--r-sm) 0;border-left:0}
-
-    :is(.line-breakdown,.allocation-settings){overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-    :is(.line-breakdown,.allocation-settings) summary{display:flex;min-height:50px;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;list-style:none}
-    .line-breakdown summary::-webkit-details-marker{display:none}
-    .line-breakdown summary{display:grid;grid-template-columns:minmax(0,1fr) auto}.line-breakdown__label{display:flex;min-width:0;flex:1;flex-direction:column;font-size:12px}.line-breakdown__toggle{flex:none}.line-breakdown__toggle button{min-height:28px;padding:3px 7px;font-size:10px}.line-breakdown__total{color:var(--rose)}
-    .line-breakdown__value{display:flex;align-items:center;gap:5px}.line-breakdown__chevron{flex:none;color:var(--muted);transition:transform .18s ease}.line-breakdown[open] .line-breakdown__chevron{transform:rotate(180deg)}
-    .line-breakdown__value{grid-column:1/-1;justify-content:flex-end;padding-top:2px}
-    .line-breakdown__body{padding:3px 10px 8px;border-top:1px solid var(--line)}.line-divider{border-top:1px solid var(--line)}.line-breakdown__body .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}.product-empty{padding-block:34px}
-
-    .cost-fields{padding-bottom:14px}.cost-group{padding:11px 10px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.cost-group+.cost-group{margin-top:10px}
-    .cost-group__intro{margin-bottom:10px}.cost-group__intro>div{display:flex;gap:7px}.cost-group__step{color:var(--rose);font-size:11px}.cost-group h3{font-size:13px}.cost-group__intro p{color:var(--muted);font-size:11px}.rate-grid{display:grid}
-    .allocation-settings{margin-top:10px}.allocation-settings summary{display:block}.allocation-settings summary span{display:flex;flex-direction:column}.allocation-settings summary small{color:var(--muted);font-size:10px}.allocation-settings__body{padding:10px 10px 0;border-top:1px solid var(--line)}
-
-    .purchase-summary{margin-top:12px}.summary-body{padding:14px}.fill-overview{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:7px;color:var(--muted);font-size:11px}.fill-overview>div{display:flex;align-items:baseline;gap:6px}.fill-overview strong{color:var(--ink);font-size:21px}.fill-meter{height:11px}.capacity-alert{margin-top:10px}
-    .cost-summary__group+.cost-summary__group{border-top:1px solid var(--line)}.cost-summary .stat-row{padding:4px 0;font-size:12px}.safe-summary{display:flex;gap:8px;margin-top:14px;padding:10px;border-radius:12px;background:var(--ok-soft);color:var(--ok);font-size:12px}
-    .action-card{padding:14px}.action-card__head h2{font-size:16px}.action-card__head p{color:var(--muted);font-size:11.5px}.action-card__buttons{display:grid;gap:7px;margin-top:12px}.danger-zone{margin-top:7px;border-top:1px solid var(--line)}.danger-zone summary{padding:11px;color:var(--muted);font-size:11px;text-align:center}.danger-zone p{color:var(--muted);font-size:10px;text-align:center}
-    .line-breakdown summary{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:6px 10px}.line-breakdown__label{display:flex;flex:1;min-width:0;flex-direction:row;align-items:baseline;gap:6px;font-size:12px}.line-breakdown__label small{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}.line-breakdown__value{display:inline-flex;flex:none;align-items:center;gap:6px;white-space:nowrap}.line-breakdown__mode{display:flex;justify-content:flex-end;padding:8px 0 2px}
-    .loading-card{display:flex;min-height:160px;align-items:center;justify-content:center;color:var(--muted)}.loading-card__mark{display:none}
-
-    @media(min-width:560px){.rate-grid{grid-template-columns:repeat(2,1fr)}.po-facts{grid-template-columns:repeat(3,1fr)}.line-breakdown summary{display:flex}.line-breakdown__value{padding-top:0}}
-    @media(min-width: 680px){:is(.section-toggle,.section-heading){padding-inline:18px}:is(.section-body,.summary-body,.action-card){padding:18px}.po-line{padding:16px}.order-fields{grid-template-columns:repeat(6,minmax(0,1fr))}.order-fields>.field{grid-column:span 3}.order-fields>.order-route-field{grid-column:span 2}.order-fields>.span-2{grid-column:1/-1}}
-    @media(min-width:680px){.purchase-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(330px,.85fr);gap:16px;align-items:start}.purchase-summary{margin-top:0}}
   `]
 })
 export class PurchaseEditor {
@@ -1846,12 +1313,63 @@ export class PurchaseEditor {
   /** The container as an offer: the sheet that picks the customer and opens the new quote. */
   readonly quoteOpen = signal(false);
   readonly quoteLines = computed<PurchaseQuoteLine[]>(() => quoteLinesOf(this.view()));
-  readonly phoneStep = signal(0);
-  readonly phoneStepLabels = ['Order', 'Producten', 'Kosten', 'Betalingen', 'Dossier', 'Afronden'] as const;
-  private readonly phoneStepIds = [
-    'purchase-order-section', 'purchase-products-section', 'purchase-costs-section',
-    'purchase-payments-section', 'purchase-files-section', 'purchase-actions-section',
-  ] as const;
+
+  /* ---- the phone's confirmed next step: the read view's handoff, the save bar or Acties. The desk never calls these. */
+  /** 'Track & trace invullen' after a departure: the screen stays in the editor instead of returning to the view. */
+  readonly keepAfterStep = signal(false);
+  /** The step was confirmed on the read view: back leads there, not one history entry back. */
+  readonly handedFromView = signal(false);
+  readonly applyingCosts = signal(false);
+  /** A step is still running or waiting on a sheet: a save, the count, a celebration, a payment. */
+  readonly stepFlowBusy = computed(() => this.saving() || this.booking() || this.applyingCosts() || this.receiving() !== null
+    || this.orderPlaced() || this.statusCelebration() !== null || this.firstInstalmentPrompt() !== null
+    || this.paying() !== null || this.payingBusy());
+
+  /**
+   * A confirmed phone step (read-view handoff, save bar or Acties). False only
+   * when the step no longer applies to the container; a save that is refused
+   * says so itself. A departure writes a changed track & trace first, the way
+   * the desk's confirmAdvance does.
+   */
+  runStep(step: PhoneStep, tracking: string | null): boolean {
+    const data = this.view();
+    if (!data) return false;
+    if (step === 'BESTELLEN' || step === 'VERTROKKEN' || step === 'ONTVANGEN') {
+      if (this.nextStep()?.to !== stepTarget(step)) return false;
+      if (step === 'VERTROKKEN' && tracking !== null && tracking.trim() !== (data.order.trackingReference ?? '')) {
+        this.patch({ trackingReference: tracking.trim() || null });
+      }
+      this.advanceStatus();
+      return true;
+    }
+    if (data.order.status !== 'ONTVANGEN') return false;
+    if (step === 'BIJBOEKEN') {
+      if (data.order.stockBooked !== false) return false;
+      // Booking replaces the draft with the server's order: unsaved notes or costs are saved first.
+      if (this.dirty()) void this.save().then((saved) => { if (saved) void this.bookStock(); });
+      else void this.bookStock();
+      return true;
+    }
+    void this.applyCostsNow();
+    return true;
+  }
+
+  /** apply()'s confirmed work without its question: the phone asked already. */
+  async applyCostsNow(): Promise<void> {
+    const data = this.view();
+    if (!data || this.applyingCosts()) return;
+    this.applyingCosts.set(true);
+    try {
+      await this.sourcing.applyLandedCosts(data.order.id);
+      this.products.set(await this.catalog.products(data.order.supplierId));
+      await this.reloadOrderQuietly();
+      this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Kostprijzen toepassen mislukt'), 'err');
+    } finally {
+      this.applyingCosts.set(false);
+    }
+  }
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
   /* Per piece is what the buying conversation is about; totals are the
      exception you toggle to. */
@@ -1870,40 +1388,159 @@ export class PurchaseEditor {
   /** Mirrors the shared record-workspace navigation without changing order data. */
   readonly workspaceSection = signal('purchase-order-section');
 
-  toggleSection(name: string): void {
-    const next = new Set(this.openSections());
-    if (next.has(name)) { next.delete(name); } else { next.add(name); }
-    this.openSections.set(next);
-    if (next.has(name)) {
-      this.workspaceSection.set(name === 'order' ? 'purchase-order-section' : 'purchase-costs-section');
-    }
-  }
-
   sectionOpen(name: string): boolean {
     return this.openSections().has(name);
   }
 
-  nextPhoneStep(): void {
-    this.movePhoneStep(1);
+  /* ---- the phone: five tabs, the save bar and Acties (the desk has its own shell) ---- */
+
+  /** ?tab= from the route; Overzicht when absent. A field, not load(): the order may reload under it. */
+  readonly tab = input<string>();
+  readonly phoneTab = linkedSignal<PhoneTab>(() => parseTab(this.tab()));
+  readonly tabOptions = computed<SegmentOption[]>(() => {
+    const data = this.view();
+    return tabSegments({
+      producten: !!data && productsDot(data),
+      betalingen: paymentsDot(this.paymentLedger()?.summary, this.paymentState()),
+    });
+  });
+  readonly location = inject(Location);
+  private readonly phoneHost = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** Switches the tab in place: the URL follows without a history entry, a stuck bar stays stuck over the new pane's top. */
+  setPhoneTab(tab: PhoneTab, { scroll = true }: { scroll?: boolean } = {}): void {
+    const stick = phoneStickPoint(this.phoneHost.nativeElement);
+    const stuck = phoneTabsStuck(stick);
+    this.phoneTab.set(tab);
+    replaceTabInUrl(this.location, tab);
+    if (scroll) keepPhoneTabsStuck(stick, stuck);
   }
 
-  previousPhoneStep(): void {
-    this.movePhoneStep(-1);
+  /** Tapping the tab that is already open, with the bar stuck, goes back to its top. */
+  tabsClicked(event: Event): void {
+    if (!tappedSelectedTab(event)) return;
+    const stick = phoneStickPoint(this.phoneHost.nativeElement);
+    if (phoneTabsStuck(stick)) scrollPhoneTabsTop(stick);
   }
 
-  private movePhoneStep(direction: -1 | 1): void {
-    const next = Math.max(0, Math.min(this.phoneStepLabels.length - 1, this.phoneStep() + direction));
-    const disclosure = next === 0 ? 'order' : next === 2 ? 'costs' : undefined;
-    this.jumpToSection(this.phoneStepIds[next], disclosure);
+  /**
+   * Back: to the read view when it handed a step over (history is then
+   * [list, edit]), else one entry back; the unsaved-changes guard asks first.
+   */
+  goBack(): void {
+    const id = this.view()?.order.id ?? (Number(this.id()) || null);
+    if (this.handedFromView() && id != null) {
+      void this.router.navigate(['/purchasing', id], { replaceUrl: true, queryParams: { tab: tabParam(this.phoneTab()) } });
+    } else if (window.history.length > 1) {
+      this.location.back();
+    } else if (id != null) {
+      void this.router.navigate(['/purchasing', id]);
+    }
   }
 
-  /** The phone step that shows a section: a step of its own, or a card living on one. */
-  private phoneStepFor(sectionId: string): number {
-    const index = (this.phoneStepIds as readonly string[]).indexOf(sectionId);
-    if (index >= 0) return index;
-    if (sectionId === 'purchase-result-section') return 2;
-    if (sectionId === 'purchase-partner-section') return 3;
-    return -1;
+  readonly statusTone = statusTone;
+  readonly statusText = statusLabel;
+  readonly STEP_BUTTON = STEP_BUTTON;
+
+  /** The save bar's step when nothing is unsaved: an empty concept asks for products first. */
+  readonly editStep = computed(() => {
+    const data = this.view();
+    return data ? editNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked }) : null;
+  });
+
+  editStepLabel(step: PhoneStep | 'PRODUCTEN'): string {
+    return step === 'PRODUCTEN' ? 'Producten toevoegen' : STEP_BUTTON[step];
+  }
+
+  runEditStep(step: PhoneStep | 'PRODUCTEN'): void {
+    if (step === 'PRODUCTEN') {
+      this.setPhoneTab('producten');
+      this.openPicker();
+    } else {
+      this.stepOpen.set(step);
+    }
+  }
+
+  /** What the save bar says is not saved yet. */
+  readonly unsavedText = computed(() => {
+    const data = this.view();
+    const saved = this.savedOrder();
+    if (!data || !saved) return '';
+    const labels = this.costLabels();
+    return unsavedSummary(JSON.parse(saved) as PurchaseOrder, data.order,
+      { seaFreight: labels.seaFreightLabel, origin: labels.originCostsLabel, destination: labels.destinationCostsLabel });
+  });
+
+  /** The step the confirmation sheet asks about; the save bar, Acties and the received banner open it. */
+  readonly stepOpen = signal<PhoneStep | null>(null);
+
+  stepText(step: PhoneStep) {
+    const order = this.view()!.order;
+    return stepConfirm(step, { number: order.number, planLabel: this.planLabel(order), location: this.receivingLocationName(order.receivingLocationId),
+      dirty: this.dirty(), again: this.costsApplied() });
+  }
+
+  confirmPhoneStep(event: { tracking: string | null }): void {
+    const step = this.stepOpen();
+    this.stepOpen.set(null);
+    if (step && !this.runStep(step, event.tracking)) this.ui.toast('De container staat al verder; er is niets gewijzigd.');
+  }
+
+  /** The line in the Regel bewerken sheet; it goes when the line leaves the draft. */
+  readonly lineSheet = signal<number | null>(null);
+  readonly lineSheetLine = computed(() => {
+    const productId = this.lineSheet();
+    return productId === null ? null : this.view()?.costing.lines.find((line) => line.productId === productId) ?? null;
+  });
+  /** The Verdeelsleutels sheet. */
+  readonly keysOpen = signal(false);
+  readonly basisOptions: SegmentOption[] = [{ id: 'EXW', label: 'EXW' }, { id: 'CIF', label: 'CIF' }, { id: 'DDP', label: 'DDP' }];
+  readonly currencyOptions: SegmentOption[] = [{ id: 'USD', label: '$ USD' }, { id: 'CNY', label: '¥ CNY' }, { id: 'EUR', label: '€ EUR' }];
+  readonly amountModes: SegmentOption[] = [{ id: 'total', label: 'Totaal' }, { id: 'piece', label: 'Per stuk' }];
+  readonly lineModes: SegmentOption[] = [{ id: 'piece', label: 'Per stuk' }, { id: 'total', label: 'Totaal' }];
+
+  /** Ordernummer, written when the field is left; an emptied field keeps the number it had. */
+  setNumber(field: HTMLInputElement): void {
+    const value = field.value.trim();
+    if (value && value !== this.view()?.order.number) this.patch({ number: value });
+    else if (!value) field.value = this.view()?.order.number ?? '';
+  }
+
+  /** The price a line row states: the order's own 'afgesproken', else the product card's 'kaartprijs' in its own currency. */
+  rowPriceText(productId: number): string | null {
+    const pipe = new NumUpPipe();
+    return linePriceText({ price: this.orderLine(productId)?.exwPrice, currency: this.effectiveExwCurrency(productId) },
+      this.productCardPrice(productId), (value) => pipe.transform(value, 3));
+  }
+
+  productSku(productId: number): string | null {
+    return this.productById().get(productId)?.sku || null;
+  }
+
+  /** Acties: what the old Afronden step and its Meer acties held. */
+  readonly actionsOpen = signal(false);
+  readonly actionsMenuItems = computed<ContextMenuItem[]>(() => {
+    const data = this.view();
+    if (!data) return [];
+    return actionsMenu({
+      status: data.order.status, step: this.nextStep()?.to ?? null, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
+      costsApplied: this.costsApplied(), partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
+      dirty: this.dirty(), saving: this.saving(), booking: this.booking(), deleting: this.deletingOrder(), stepBackBusy: this.stepBackBusy(),
+    });
+  });
+
+  pickAction(item: ContextMenuItem): void {
+    this.actionsOpen.set(false);
+    switch (item.id) {
+      case 'next': { const step = stepToward(this.nextStep()?.to); if (step) this.stepOpen.set(step); break; }
+      case 'book': this.stepOpen.set('BIJBOEKEN'); break;
+      case 'apply': this.apply(); break;
+      case 'quote': this.quoteOpen.set(true); break;
+      case 'copy': void this.duplicate(); break;
+      case 'pdf': this.pdfOpen.set(true); break;
+      case 'step-back': this.openStepBack(); break;
+      case 'delete': this.remove(); break;
+    }
   }
 
   private readonly paymentOverview = viewChild(PurchasePaymentOverview);
@@ -1914,26 +1551,28 @@ export class PurchaseEditor {
     this.paymentOverview()?.openPayee.set(payee);
   }
 
-  /** Opens a collapsed editor section first, then lands it below the sticky workspace rail. */
+  /**
+   * Phone: the tab the section lives on, then its top under the stuck bar
+   * (a tab's root or the card) or the card itself. Desk: opens a collapsed
+   * section first, then lands it below the sticky workspace rail.
+   */
   jumpToSection(sectionId: string, disclosure?: 'order' | 'costs', scroll = true): void {
+    if (!this.desktop.active()) {
+      const tab = tabOfSection(sectionId);
+      this.setPhoneTab(tab, { scroll: false });
+      if (!scroll) return;
+      requestAnimationFrame(() => {
+        const target = document.getElementById(sectionId);
+        if (sectionId === rootSectionOf(tab) || sectionId === 'purchase-overview') scrollPhoneTabsTop(phoneStickPoint(this.phoneHost.nativeElement));
+        else target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target?.focus({ preventScroll: true });
+      });
+      return;
+    }
     if (disclosure && !this.sectionOpen(disclosure)) {
       const next = new Set(this.openSections());
       next.add(disclosure);
       this.openSections.set(next);
-    }
-    if (!this.desktop.active()) {
-      const phoneStep = this.phoneStepFor(sectionId);
-      if (phoneStep >= 0) this.phoneStep.set(phoneStep);
-      this.workspaceSection.set(phoneStep >= 0 ? this.phoneStepIds[phoneStep] : sectionId);
-      if (!scroll) return;
-      /* A step starts at the top; a card further down a step is scrolled to. */
-      if (this.phoneStepIds[phoneStep] === sectionId) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-      requestAnimationFrame(() => {
-        const target = document.getElementById(sectionId);
-        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        target?.focus({ preventScroll: true });
-      });
-      return;
     }
     this.workspaceSection.set(sectionId);
     if (!scroll) return;
@@ -1942,21 +1581,6 @@ export class PurchaseEditor {
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       target?.focus({ preventScroll: true });
     });
-  }
-
-  orderSummary(): string {
-    const data = this.view();
-    if (!data) return '';
-    return [this.supplierName(), containerLabel(data.order.containerType),
-        `${this.costLabels().loadingPort} → ${this.costLabels().destinationPort}`]
-      .filter(Boolean).join(' · ');
-  }
-
-  costsSummary(): string {
-    const data = this.view();
-    if (!data) return '';
-    if (this.isDdp()) return `1 USD = ${effectiveUsdToEur(data.order)} EUR · DDP, transport en rechten inbegrepen`;
-    return `1 USD = ${effectiveUsdToEur(data.order)} EUR · vracht $${data.order.freightUsd}`;
   }
 
   readonly containerTypes = CONTAINER_TYPES;
@@ -3383,10 +3007,6 @@ export class PurchaseEditor {
   });
   readonly paymentState = computed<'loading' | 'refreshing' | 'error' | 'ready'>(() => this.paymentStateError() ? 'error'
     : this.payments() === null ? 'loading' : this.paymentStateLoading() ? 'refreshing' : 'ready');
-  readonly paymentNavLabel = computed(() => paymentsNavLabel(this.paymentLedger(), {
-    error: !!this.paymentStateError(), loading: this.paymentStateLoading() || this.payments() === null,
-    concept: this.view()?.order.status === 'CONCEPT',
-  }));
 
   /** What is still open for the term or payee the payment sheet is filled in for. */
   readonly payingOpenHint = computed(() => {
@@ -4521,7 +4141,10 @@ export class PurchaseEditor {
   celebrationAction(kind: 'SHIPPED' | 'RECEIVED'): void {
     this.statusCelebration.set(null);
     if (kind === 'SHIPPED') {
-      if (!this.sectionOpen('order')) this.toggleSection('order');
+      // Track & trace invullen: the field on Overzicht, and the screen stays here instead of returning to the view.
+      this.keepAfterStep.set(true);
+      this.setPhoneTab('overzicht');
+      setTimeout(() => document.getElementById('mpo-tracking')?.focus(), 150);
     } else {
       void this.bookStock();
     }
@@ -4618,7 +4241,7 @@ export class PurchaseEditor {
   /* The order on screen is a draft: every edit lands here at once and the
      figures are recalculated by the server without saving. Only Opslaan
      (or a status step, which is an action) writes the order. */
-  private readonly savedOrder = signal<string>('');
+  protected readonly savedOrder = signal<string>('');
   readonly saving = signal(false);
   readonly deletingOrder = signal(false);
   readonly dirty = computed(() => {

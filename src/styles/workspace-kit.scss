@@ -390,3 +390,8 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 :is(.wk-btn,.wk-seg__opt,.wk-chip,.wk-th__btn,.wk-link,.wk-side__item,.wk-side__back,.wk-crumbs>a,.wk-crumbs>button):focus-visible{outline:2px solid var(--rose);outline-offset:2px}
 :is(.ios-capsule,.ios-circle,.ios-tab,.ios-accessory,.ios-chip,.ios-seg__opt,.ios-toolbar__btn,.ios-swipe__btn,.ios-hero,.ios-widget):focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
 .ios-cell:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:-3px}
+/* Stacked segments: an icon over an 11px label, so five view tabs fit a 360px phone (purchase order). */
+.ios-seg.ios-seg--stacked{height:54px;border-radius:18px}
+.ios-seg--stacked::before{border-radius:15px}
+.ios-seg--stacked .ios-seg__opt{position:relative;flex-direction:column;gap:3px;padding:0 2px;border-radius:15px;font-size:11px;letter-spacing:-.01em}
+.ios-seg--stacked .ios-seg__dot{position:absolute;top:7px;left:calc(50% + 8px)}

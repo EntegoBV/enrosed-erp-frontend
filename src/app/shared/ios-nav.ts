@@ -22,6 +22,8 @@ import { Icon } from './icon';
  * right, [caption] under the large title, [below] for a sticky control such
  * as a segmented filter (wrap it in <div class="ios-subbar">). The host is
  * display:contents, so the bar and the subbar stick against the page.
+ * With customLarge, [hero] replaces the large title with the screen's own
+ * block; the bar condenses once it has scrolled away.
  *
  * backLabel null shows no back button, '' a glass circle with a chevron,
  * any text a glass capsule. With backUrl the button navigates there;
@@ -50,11 +52,13 @@ import { Icon } from './icon';
       <div class="ios-nav__trail"><ng-content select="[trail]" /></div>
     </header>
     @if (large) {
-      <div class="ios-large">
-        <h1 class="ios-large__title">{{ title() }}</h1>
-        @if (subtitle()) { <p class="ios-large__sub">{{ subtitle() }}</p> }
-        <ng-content select="[caption]" />
-      </div>
+      @if (custom) { <ng-content select="[hero]" /> } @else {
+        <div class="ios-large">
+          <h1 class="ios-large__title">{{ title() }}</h1>
+          @if (subtitle()) { <p class="ios-large__sub">{{ subtitle() }}</p> }
+          <ng-content select="[caption]" />
+        </div>
+      }
       <div #sentinel class="ios-large__sentinel" aria-hidden="true"></div>
     }
     <ng-content select="[below]" />
@@ -67,6 +71,8 @@ export class IosNav {
   readonly subtitle = input<string | null>(null);
   /** Read once, at the first render: a screen does not switch styles while open. */
   readonly largeTitle = input(true);
+  /** Read once like largeTitle: the screen projects its own [hero] block in place of the large title. */
+  readonly customLarge = input(false);
   readonly backLabel = input<string | null>(null);
   readonly backUrl = input<string | null>(null);
   readonly backAriaLabel = input('Terug');
@@ -80,6 +86,7 @@ export class IosNav {
   private readonly bar = viewChild.required<ElementRef<HTMLElement>>('bar');
   private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
   private largeRead: boolean | null = null;
+  private customRead: boolean | null = null;
 
   constructor() {
     const destroyRef = inject(DestroyRef);
@@ -102,6 +109,12 @@ export class IosNav {
   get large(): boolean {
     this.largeRead ??= this.largeTitle();
     return this.largeRead;
+  }
+
+  /** customLarge() at the first render, kept from then on. */
+  get custom(): boolean {
+    this.customRead ??= this.customLarge();
+    return this.customRead;
   }
 
   goBack(): void {
