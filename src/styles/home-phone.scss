@@ -38,6 +38,8 @@ app-home-add-sheet { display: contents; }
   app-home-task-cells + .home-tier { margin-top: 16px; }
   .home-todo__skeleton { padding: 4px 16px; }
   .home-todo__clear { align-items: center; }
+  /* "Nog niet alles nagekeken" beside the Opnieuw capsule takes a second line at 360 rather than being cut. */
+  .home-todo__unsure { overflow: visible; text-overflow: clip; white-space: normal; }
   .home-todo__note { color: var(--muted); font-size: 13px; line-height: 1.35; }
   .home-todo__more { min-height: 48px; }
   .home-todo__more-text { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }

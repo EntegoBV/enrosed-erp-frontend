@@ -104,7 +104,7 @@ const MENU: ContextMenuItem[] = [
             } @else {
               <div class="ios-cell ios-cell--tall home-todo__clear">
                 <span class="ios-tile ios-tile--soft tone-warn ios-cell__lead" aria-hidden="true"><app-icon name="alert" [size]="17" /></span>
-                <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Nog geen volledige all-clear</span>
+                <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong home-todo__unsure">Nog niet alles nagekeken</span>
                   <span class="home-todo__note">Niet geladen: {{ t.missing.join(', ') }}</span></span>
                 <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button>
               </div>

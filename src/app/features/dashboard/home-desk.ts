@@ -140,7 +140,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
             } @else {
               <div class="home-todo__clear is-open">
                 <span class="home-todo__tick" aria-hidden="true">!</span>
-                <b>Nog geen volledige all-clear</b>
+                <b>Nog niet alles nagekeken</b>
                 <span>Niet geladen: {{ t.missing.join(', ') }} ·
                   <button class="wk-link" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
               </div>
@@ -214,7 +214,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
       <app-sheet title="Alle open punten" [wide]="true" (closed)="closeAll()">
         <div body class="home-all">
           @if (t.total === 0) {
-            <p class="home-all__empty">{{ t.allClear ? 'Niets open.' : 'Nog geen volledige all-clear: niet geladen ' + t.missing.join(', ') + '.' }}</p>
+            <p class="home-all__empty">{{ t.allClear ? 'Niets open.' : 'Nog niet alles nagekeken: niet geladen ' + t.missing.join(', ') + '.' }}</p>
           }
           @if (allNu().length) {
             <h3 class="home-todo__group"><b class="is-nu">Nu</b> · geld of een termijn loopt vandaag uit</h3>

@@ -54,7 +54,7 @@ function whyLine(line: string): { lead: string; rest: string } {
             </div>
           } @else {
             <div class="ios-banner" role="status">
-              <span><b>Nog geen volledige all-clear</b><br />Niet geladen: {{ t.missing.join(', ') }}</span>
+              <span><b>Nog niet alles nagekeken</b><br />Niet geladen: {{ t.missing.join(', ') }}</span>
               <button class="ios-capsule ios-capsule--sm" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button>
             </div>
           }
