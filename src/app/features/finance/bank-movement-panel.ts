@@ -737,6 +737,10 @@ export class BankMovementPanel {
   chooseOutgoingSurplus(choice: BankPartSurplus | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
   /** The transaction detail shows the spec's "Wat verandert" for the chosen payment itself (§3.6); the panel's own then steps aside. */
   ownsChange(): boolean { return false; }
+  /** 'Verdelen over containers' as the first answer to a larger transaction: only where the host opens the split (the transaction detail). */
+  containerSplitOffered(): boolean { return false; }
+  /** Opens the split with this payment's container ticked on this payment (the transaction detail overrides it). */
+  openContainerSplit(_payment: { id: number; ownerId: number }): void { /* no split here */ }
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();

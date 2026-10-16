@@ -10,7 +10,8 @@ import type { ContainerPayable } from '../src/app/features/finance/payables.ts';
  * Kosten & bank "Verdelen over containers" (Emre, 2026-10-16): a ticked
  * container starts on what the transfer paid there, an open payment of the
  * transfer's payee before a new one, never another payee's payment; the
- * select shows the row's own choice.
+ * select shows the row's own choice; the larger-transaction question offers
+ * the split first and chooses nothing beforehand.
  */
 
 const plain = (text: string) => text.replace(/[  ]/g, ' ');
@@ -99,4 +100,20 @@ test("the split's select shows the row its own choice; the modes and each part's
   assert.match(split, /Volgens afspraak<\/button>/);
   assert.match(split, /Gelijk verdelen<\/button>/);
   assert.match(split, /effectOf\(container, row\)/);
+});
+
+test("Kosten & bank's larger-transaction question offers 'Verdelen over containers' first and chooses nothing beforehand", async () => {
+  const detail = await readFile(new URL('../src/app/features/finance/transaction-detail.ts', import.meta.url), 'utf8');
+  const radios = detail.slice(detail.indexOf('class="fin-txd__radios"'), detail.indexOf('</div>', detail.indexOf('class="fin-txd__radios"')));
+  assert.ok(radios.indexOf('Verdelen over containers<small>Deze transactie betaalde ook andere containers</small>') > 0);
+  assert.ok(radios.indexOf('Verdelen over containers') < radios.indexOf('Bedrag aanpassen naar'), 'Verdelen first');
+  assert.match(radios, /\(change\)="openSplit\(target\)"/);
+  assert.match(detail, /readonly surplus = signal<'ADJUST' \| 'INSPECTION' \| null>\(null\);/, "no 'Bedrag aanpassen' beforehand");
+  assert.equal(/this\.surplus\.set\('ADJUST'\)/.test(detail), false, 'never reset to it either');
+  assert.match(detail, /preview\.blockedText \|\| this\.surplusAsked\(preview, target\)/, 'the link waits for the answer');
+
+  const steps = await readFile(new URL('../src/app/features/finance/bank-allocation-steps.ts', import.meta.url), 'utf8');
+  const choices = steps.slice(steps.indexOf('class="bank-alloc-choices"'), steps.indexOf('Niet koppelen'));
+  assert.ok(choices.indexOf('<b>Verdelen over containers</b><span>Deze transactie betaalde ook andere containers</span>') > 0);
+  assert.ok(choices.indexOf('Verdelen over containers') < choices.indexOf('Bedrag aanpassen naar'));
 });
