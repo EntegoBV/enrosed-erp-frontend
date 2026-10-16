@@ -95,7 +95,7 @@ test('each product shows its cost now with the source, the new cost and the diff
 test('the counts: written leaves out what received nothing; equal costs count as unchanged', () => {
   const plan = apply.applyCostsPlan(ORDER, LINES, PRODUCTS);
   assert.equal(plan.again, true, 'Rozenschaal carries this container already');
-  assert.deepEqual([plan.written, plan.changed, plan.unchanged, plan.skipped], [5, 3, 2, 1]);
+  assert.deepEqual([plan.written, plan.changed, plan.unchanged, plan.unknown, plan.skipped], [5, 3, 2, 0, 1]);
   assert.equal(apply.applyCostsButton(plan), 'Opnieuw toepassen (5 producten)');
   assert.equal(apply.applyCostsToast(plan), 'Kostprijs van 3 producten gewijzigd, 2 ongewijzigd · 1 overgeslagen (niets ontvangen)');
   const first = apply.applyCostsPlan(ORDER, [line(301, 500, 31.5)], PRODUCTS);
@@ -104,9 +104,26 @@ test('the counts: written leaves out what received nothing; equal costs count as
   assert.equal(apply.applyCostsToast(first), 'Kostprijs van 1 product gewijzigd');
   const nothing = apply.applyCostsPlan(ORDER, [line(302, 2000, 8.87)], PRODUCTS);
   assert.equal(apply.applyCostsToast(nothing), 'Geen kostprijs gewijzigd');
-  assert.equal(apply.applyCostsToast({ changed: 0, unchanged: 0, skipped: 2 }), 'Geen kostprijs gewijzigd · 2 overgeslagen (niets ontvangen)');
+  assert.equal(apply.applyCostsToast({ changed: 0, unchanged: 0, unknown: 0, skipped: 2 }), 'Geen kostprijs gewijzigd · 2 overgeslagen (niets ontvangen)');
   assert.equal(apply.productCount(1), '1 product');
   assert.equal(apply.productCount(1200), '1.200 producten');
+});
+
+test('a product the sheet could not load counts as niet vergeleken, never as gewijzigd', () => {
+  /* The verifier's re-apply: six products unchanged, one not loadable, one received nothing. */
+  const again = PRODUCTS.map((p) => ({ ...p, landedCostSource: 'PO-2026-014', landedCostEur: p.id === 305 ? 4.1 : ({ 301: 31.5, 302: 8.87, 303: 0.56, 304: 6.25, 306: 2.95 } as Record<number, number>)[p.id] }));
+  const lines = [...LINES, line(309, 100, 31, 'Long stem rose box display Wit')];
+  const plan = apply.applyCostsPlan(ORDER, lines, again);
+  assert.deepEqual(plain(plan.rows.map((row) => row.state)), ['unchanged', 'unchanged', 'unchanged', 'unchanged', 'skipped', 'unchanged', 'unknown']);
+  assert.deepEqual([plan.written, plan.changed, plan.unchanged, plan.unknown, plan.skipped], [6, 0, 5, 1, 1]);
+  assert.equal(apply.applyCostsButton(plan), 'Opnieuw toepassen (6 producten)');
+  assert.equal(apply.applyCostsToast(plan), 'Kostprijs toegepast op 6 producten: 5 ongewijzigd, 1 niet vergeleken · 1 overgeslagen (niets ontvangen)');
+  /* With real changes beside it. */
+  const mixed = apply.applyCostsPlan(ORDER, [...LINES, line(309, 100, 31)], PRODUCTS);
+  assert.deepEqual([mixed.written, mixed.changed, mixed.unchanged, mixed.unknown, mixed.skipped], [6, 3, 2, 1, 1]);
+  assert.equal(apply.applyCostsToast(mixed), 'Kostprijs van 3 producten gewijzigd, 2 ongewijzigd, 1 niet vergeleken · 1 overgeslagen (niets ontvangen)');
+  /* The counts always add up to the button's. */
+  for (const p of [plan, mixed]) assert.equal(p.changed + p.unchanged + p.unknown, p.written);
 });
 
 test('equality holds at 4 decimals; a cost of 0 before has no percentage; an unknown product is not called new', () => {
@@ -122,8 +139,10 @@ test('equality holds at 4 decimals; a cost of 0 before has no percentage; an unk
   /* Its unit is not known either: no "per stuk" for what may be a display. */
   assert.deepEqual([unknown.quantity, unknown.per, unknown.other], ['Aantal 10', null, null]);
   assert.equal(apply.applyCostRow(ORDER, line(999, 1200, 1.5), null).quantity, 'Aantal 1.200');
+  /* Written, but not known to change: never counted as gewijzigd. */
   const plan = apply.applyCostsPlan(ORDER, [line(999, 10, 1.5)], PRODUCTS);
-  assert.deepEqual([plan.written, plan.changed], [1, 1]);
+  assert.deepEqual([plan.written, plan.changed, plan.unchanged, plan.unknown], [1, 0, 0, 1]);
+  assert.equal(apply.applyCostsToast(plan), 'Kostprijs toegepast op 1 product: 1 niet vergeleken');
   /* Without a Herkenbare naam the PO number names the container. */
   const own = apply.applyCostRow({ ...ORDER, alias: null }, line(302, 10, 9), PRODUCTS[1]);
   assert.equal(own.currentSource, 'PO-2026-014');

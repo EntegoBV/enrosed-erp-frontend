@@ -58,10 +58,12 @@ export interface ApplyCostsPlan {
   rows: ApplyCostRow[];
   /** Products that get this container's cost: every row but the skipped ones. */
   written: number;
-  /** Of those, the ones whose cost changes (or that get their first one). */
+  /** Of those, the ones whose cost is known to change (or that get their first one). */
   changed: number;
   /** Of those, the ones that keep the same cost. */
   unchanged: number;
+  /** Of those, the ones the screen could not load: their cost now is not known, so neither is whether it changes. */
+  unknown: number;
   /** Lines that received nothing. */
   skipped: number;
 }
@@ -133,10 +135,10 @@ export function missingProductIds(lines: readonly Pick<LandedCostLine, 'productI
 export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLine[], products: readonly Product[]): ApplyCostsPlan {
   const byId = new Map(products.map((product) => [product.id, product]));
   const rows = lines.map((line) => applyCostRow(order, line, byId.get(line.productId) ?? null));
-  const skipped = rows.filter((row) => row.state === 'skipped').length;
-  const unchanged = rows.filter((row) => row.state === 'same' || row.state === 'unchanged').length;
-  const written = rows.length - skipped;
-  return { again: costsAppliedBefore(order, lines, products), rows, written, changed: written - unchanged, unchanged, skipped };
+  const count = (...states: ApplyCostState[]): number => rows.filter((row) => states.includes(row.state)).length;
+  const skipped = count('skipped');
+  return { again: costsAppliedBefore(order, lines, products), rows, written: rows.length - skipped,
+    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped };
 }
 
 /** "1 product", "12 producten". */
@@ -149,10 +151,18 @@ export function applyCostsButton(plan: Pick<ApplyCostsPlan, 'again' | 'written'>
   return `${plan.again ? 'Opnieuw toepassen' : 'Toepassen'} (${productCount(plan.written)})`;
 }
 
-/** The toast after applying, with the counts the sheet showed. */
-export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchanged' | 'skipped'>): string {
-  const text = plan.changed > 0
-    ? `Kostprijs van ${productCount(plan.changed)} gewijzigd${plan.unchanged > 0 ? `, ${plan.unchanged.toLocaleString('nl-BE')} ongewijzigd` : ''}`
-    : 'Geen kostprijs gewijzigd';
-  return plan.skipped > 0 ? `${text} · ${plan.skipped.toLocaleString('nl-BE')} overgeslagen (niets ontvangen)` : text;
+/**
+ * The toast after applying, with the counts the sheet showed. Only a row known to change counts as
+ * gewijzigd: a product the sheet could not load got the cost too, but whether it changed is not known
+ * ("niet vergeleken", as its row said "huidige kostprijs onbekend").
+ */
+export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchanged' | 'unknown' | 'skipped'>): string {
+  const number = (count: number): string => count.toLocaleString('nl-BE');
+  const unknown = plan.unknown;
+  const rest = [plan.unchanged > 0 ? `${number(plan.unchanged)} ongewijzigd` : null, unknown > 0 ? `${number(unknown)} niet vergeleken` : null]
+    .filter((part): part is string => part !== null).join(', ');
+  const text = plan.changed > 0 ? `Kostprijs van ${productCount(plan.changed)} gewijzigd${rest ? `, ${rest}` : ''}`
+    : unknown > 0 ? `Kostprijs toegepast op ${productCount(plan.unchanged + unknown)}: ${rest}`
+      : 'Geen kostprijs gewijzigd';
+  return plan.skipped > 0 ? `${text} · ${number(plan.skipped)} overgeslagen (niets ontvangen)` : text;
 }
