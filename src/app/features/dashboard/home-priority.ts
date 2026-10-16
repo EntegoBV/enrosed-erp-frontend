@@ -56,6 +56,34 @@ export interface HomeTask {
 export const COVERAGE_ORDER = ['agenda', 'meldingen', 'verkoop', 'inkoop', 'partnerfinanciering', 'inkomende betalingen',
   'kosten', 'bank', 'kasprognose'] as const;
 export type CoverageSource = typeof COVERAGE_ORDER[number];
+/** A coverage source on the last load: not answered yet, answered, or failed. */
+export type CoverageAnswer = 'loading' | 'ready' | 'failed';
+
+/**
+ * The Kasprognose's answer from the Kas headline's state (home-cash.ts). A bank that could not load is named
+ * 'bank' only (amendment B: bankMissing → coverage bank); the forecast fails with it only when another of its
+ * sources failed too (`otherFailures`), as it does in 'partial'.
+ */
+export function forecastAnswer(state: 'loading' | 'computing' | 'ready' | 'partial' | 'no-bank' | 'no-reading', otherFailures: boolean): CoverageAnswer {
+  switch (state) {
+    case 'ready': case 'no-reading': return 'ready';
+    case 'partial': return 'failed';
+    case 'no-bank': return otherFailures ? 'failed' : 'ready';
+    default: return 'loading';
+  }
+}
+
+/**
+ * Coverage (§4.4) and the failed sources in COVERAGE_ORDER, from one answer per source: the Te doen note
+ * ("Niet volledig: …", the list's `missing` once everything answered) and the status in the header name the
+ * same sources in the same order.
+ */
+export function coverageOf(answers: Readonly<Record<CoverageSource, CoverageAnswer>>): { covered: Record<CoverageSource, boolean>; failed: CoverageSource[] } {
+  return {
+    covered: Object.fromEntries(COVERAGE_ORDER.map((source) => [source, answers[source] === 'ready'])) as Record<CoverageSource, boolean>,
+    failed: COVERAGE_ORDER.filter((source) => answers[source] === 'failed'),
+  };
+}
 
 export interface LaterEntry { until: string; detail: string; count: number; }
 export type LaterState = Readonly<Record<string, LaterEntry>>;

@@ -6,9 +6,9 @@ import { OVERDUE_COST_DAYS } from '../src/app/features/finance/finance-attention
 import {
   ADVANCE_SOON_DAYS, COVERAGE_ORDER, CUSTOMER_WAIT_NU_WORKDAYS, HOME_TASK_CAP, KRAP_WITHIN_DAYS, LATER_ESCALATE_COUNT,
   OVERDUE_COST_DAYS_COPY, OVERDUE_INVOICE_MIN_EUR, OVERDUE_INVOICE_NU_DAYS, VAT_LATE_SHOW_DAYS, VAT_NU_DAYS, VAT_SHOW_DAYS,
-  filingDeadlineOf, fnv1a8, homeMarker, homeMarkersOf, homeTasks, laterNext, laterPruned, nextWorkday, stripHomeMarkers,
-  vatCashByDeadline, whyOrderLines, workdaysBetween,
-  type CoverageSource, type HomeTask, type HomeTaskInput, type HomeTaskList,
+  coverageOf, filingDeadlineOf, fnv1a8, forecastAnswer, homeMarker, homeMarkersOf, homeTasks, laterNext, laterPruned, nextWorkday,
+  stripHomeMarkers, vatCashByDeadline, whyOrderLines, workdaysBetween,
+  type CoverageAnswer, type CoverageSource, type HomeTask, type HomeTaskInput, type HomeTaskList,
 } from '../src/app/features/dashboard/home-priority.ts';
 
 const TODAY = '2026-10-15';   // Thursday
@@ -344,6 +344,28 @@ test('no all-clear unless every source answered', () => {
   const clear = homeTasks(input());
   assert.deepEqual([clear.complete, clear.allClear, clear.total], [true, true, 0]);
   assert.equal(homeTasks(input({ loginRequests: 1 })).allClear, false);
+});
+
+test('the Te doen note and the status name the same failed sources: a missing bank is "bank", not also "kasprognose"', () => {
+  const answers = (changes: Partial<Record<CoverageSource, CoverageAnswer>> = {}): Record<CoverageSource, CoverageAnswer> =>
+    ({ ...Object.fromEntries(COVERAGE_ORDER.map((source) => [source, 'ready'])), ...changes }) as Record<CoverageSource, CoverageAnswer>;
+  const missingOf = (parts: ReturnType<typeof coverageOf>) => homeTasks(input({ sources: parts.covered })).missing;
+  /* 500 on /api/bank-balances: the headline is 'no-bank' and no other forecast source failed */
+  const bank = coverageOf(answers({ bank: 'failed', kasprognose: forecastAnswer('no-bank', false) }));
+  assert.deepEqual([bank.failed, missingOf(bank)], [['bank'], ['bank']]);
+  /* a missing bank and failed costs: both lists read "kosten, bank, kasprognose" */
+  const both = coverageOf(answers({ bank: 'failed', kosten: 'failed', kasprognose: forecastAnswer('no-bank', true) }));
+  assert.deepEqual([both.failed, missingOf(both)], [['kosten', 'bank', 'kasprognose'], ['kosten', 'bank', 'kasprognose']]);
+  /* partner financing: the forecast is partial */
+  const partners = coverageOf(answers({ partnerfinanciering: 'failed', kasprognose: forecastAnswer('partial', true) }));
+  assert.deepEqual([partners.failed, missingOf(partners)], [['partnerfinanciering', 'kasprognose'], ['partnerfinanciering', 'kasprognose']]);
+  /* still loading: not covered, not failed */
+  const loading = coverageOf(answers({ agenda: 'loading', kasprognose: forecastAnswer('computing', false) }));
+  assert.deepEqual([loading.failed, missingOf(loading)], [[], ['agenda', 'kasprognose']]);
+  assert.deepEqual(['loading', 'computing', 'ready', 'no-reading', 'partial'].map((state) => forecastAnswer(state as Parameters<typeof forecastAnswer>[0], false)),
+    ['loading', 'loading', 'ready', 'ready', 'failed']);
+  const clear = coverageOf(answers());
+  assert.deepEqual([clear.failed, homeTasks(input({ sources: clear.covered })).allClear], [[], true]);
 });
 
 /* -------------------------------------------------------- 12. B fixture */

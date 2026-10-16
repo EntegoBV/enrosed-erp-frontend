@@ -30,8 +30,8 @@ import { localPlannerDate, purchasePlannerMilestones } from './dashboard-today-s
 import { cashHeadline, outlookFigures } from './home-cash';
 import { monthWindows } from './home-figures';
 import { readLater, writeLater } from './home-later';
-import { COVERAGE_ORDER, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
-import type { CoverageSource, HomeTask, LaterState } from './home-priority';
+import { coverageOf, forecastAnswer, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
+import type { CoverageAnswer, CoverageSource, HomeTask, LaterState } from './home-priority';
 import { agendaInputOf, attentionOf, homeTaskInputOf, vatOf } from './home-sources';
 import type { HomeCashSources } from './home-sources';
 
@@ -226,19 +226,24 @@ export class HomeData {
   /** The Later state (home-later.ts); hidden rows come back the next workday or when their detail changes. */
   readonly laterState = signal<LaterState>(readLater(localPlannerDate(new Date())));
 
-  /** Which sources answered on the last load (CoverageSource, §4.4); a source still loading counts as not covered. */
-  readonly coverage = computed<Record<CoverageSource, boolean>>(() => {
+  /** How each coverage source (§4.4) answered on the last load. A bank that could not load is 'bank', not also 'kasprognose' (forecastAnswer). */
+  private readonly answers = computed<Record<CoverageSource, CoverageAnswer>>(() => {
     const states = this.states();
-    const cash = this.cash();
+    const answered = (ready: boolean, failed: boolean): CoverageAnswer => (failed ? 'failed' : ready ? 'ready' : 'loading');
+    const cashReady = this.cashData.state() === 'ready';
     return {
-      agenda: this.planner.loaded() && !this.planner.error(),
-      meldingen: this.bellAnswered() && !this.work.error(),
-      verkoop: states.verkoop === 'ready', inkoop: states.inkoop === 'ready', partnerfinanciering: states.partnerfinanciering === 'ready',
-      'inkomende betalingen': states['inkomende betalingen'] === 'ready', kosten: states.kosten === 'ready',
-      bank: this.cashData.state() === 'ready' && !this.cashData.bankMissing(),
-      kasprognose: cash.state === 'ready' || cash.state === 'no-reading',
+      agenda: answered(this.planner.loaded(), !!this.planner.error()),
+      meldingen: answered(this.bellAnswered(), !!this.work.error()),
+      verkoop: states.verkoop, inkoop: states.inkoop, partnerfinanciering: states.partnerfinanciering,
+      'inkomende betalingen': states['inkomende betalingen'], kosten: states.kosten,
+      bank: answered(cashReady, cashReady && this.cashData.bankMissing()),
+      kasprognose: forecastAnswer(this.cash().state, this.cashWarnings().some((word) => word !== 'bank')),
     };
   });
+  private readonly coverageParts = computed(() => coverageOf(this.answers()));
+
+  /** Which sources answered on the last load (CoverageSource, §4.4); a source still loading counts as not covered. */
+  readonly coverage = computed(() => this.coverageParts().covered);
 
   /** Every source has answered (or failed): from here "Niet volledig" names real failures, before it the page says "Bijwerken…". */
   readonly settled = computed(() => !this.loading() && this.bellAnswered()
@@ -264,20 +269,13 @@ export class HomeData {
   /** Nu / Vandaag / Ook nog, the cap, counts and coverage (home-priority.ts). */
   readonly tasks = computed(() => homeTasks({ ...this.taskBase(), nowMs: this.now(), later: this.laterState() }));
 
-  /** The status words: the failed coverage sources in their order, then the other failed calls. Empty when all is well. */
+  /**
+   * The status words: the failed coverage sources in their order (the same words as the Te doen note, from the
+   * same answers), then the other failed calls. Empty when all is well.
+   */
   readonly warnings = computed(() => {
     const states = this.states();
-    const cash = this.cash();
-    const failed: string[] = [];
-    for (const source of COVERAGE_ORDER) {
-      if (source === 'agenda' && this.planner.error()) failed.push(source);
-      else if (source === 'meldingen' && this.work.error()) failed.push(source);
-      else if (source === 'bank' && cash.state === 'no-bank') failed.push(source);
-      else if (source === 'kasprognose' && cash.state === 'partial') failed.push(source);
-      else if (states[source as HomeSource] === 'failed') failed.push(source);
-    }
-    for (const source of OTHER_SOURCES) if (states[source] === 'failed') failed.push(source);
-    return [...new Set(failed)];
+    return [...new Set<string>([...this.coverageParts().failed, ...OTHER_SOURCES.filter((source) => states[source] === 'failed')])];
   });
 
   /* -------------------------------------------------------------- agenda */
