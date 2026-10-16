@@ -50,7 +50,7 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
  * the planner's sheets are the page's (`hosts`), never inside a row - a
  * swipe row is transformed and would trap them.
  *
- * Swipes: a planner task has Klaar to the right and Morgen to the left; a
+ * Swipes: a planner task has Klaar to the right and, when it is due, Morgen to the left; a
  * system item has Later and "Taak van maken" to the left (a full swipe runs
  * Later). Every action toasts with "Ongedaan maken" (HomeData).
  *
@@ -66,16 +66,19 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
     <div class="ios-group ios-group--icons home-tasks" role="group" [attr.aria-label]="label()">
       @for (task of tasks(); track task.key) {
         @let planner = task.plannerId !== null;
+        @let morgen = task.actions.includes('morgen');
         @let link = linkOf(task);
-        <div class="ios-swipe home-task" appSwipeActions #sw="swipeActions" [swipeStart]="planner ? 1 : 0" [swipeEnd]="planner ? 1 : 2"
-             [swipeFull]="planner ? 'both' : 'end'" (swipeCommit)="commit($event, task)">
+        <div class="ios-swipe home-task" appSwipeActions #sw="swipeActions" [swipeStart]="planner ? 1 : 0" [swipeEnd]="planner ? (morgen ? 1 : 0) : 2"
+             [swipeFull]="planner ? (morgen ? 'both' : 'start') : 'end'" (swipeCommit)="commit($event, task)">
           @if (planner) {
             <div class="ios-swipe__actions ios-swipe__actions--start">
               <button class="ios-swipe__btn tone-ok" type="button" (click)="sw.close(); data.klaar(task)"><app-icon name="tick" [size]="18" />Klaar</button>
             </div>
-            <div class="ios-swipe__actions ios-swipe__actions--end">
-              <button class="ios-swipe__btn tone-amber" type="button" (click)="sw.close(); data.morgen(task)"><app-icon name="calendar" [size]="18" />Morgen</button>
-            </div>
+            @if (morgen) {
+              <div class="ios-swipe__actions ios-swipe__actions--end">
+                <button class="ios-swipe__btn tone-amber" type="button" (click)="sw.close(); data.morgen(task)"><app-icon name="calendar" [size]="18" />Morgen</button>
+              </div>
+            }
           } @else {
             <div class="ios-swipe__actions ios-swipe__actions--end">
               <button class="ios-swipe__btn tone-grey" type="button" (click)="sw.close(); data.later(task)"><app-icon name="recent" [size]="18" />Later</button>
@@ -169,11 +172,11 @@ export class HomeTaskCells {
     if (cards) this.data.makeTask(task, cards);
   }
 
-  /** A full swipe: to the right ticks a planner task; to the left moves it a workday, or hides a system item until then. */
+  /** A full swipe: to the right ticks a planner task; to the left moves a due one a workday, or hides a system item until then. */
   commit(side: RowSwipeSide, task: HomeTask): void {
     if (task.plannerId !== null) {
       if (side === 'start') void this.data.klaar(task);
-      else void this.data.morgen(task);
+      else if (task.actions.includes('morgen')) void this.data.morgen(task);
     } else if (side === 'end') {
       this.data.later(task);
     }

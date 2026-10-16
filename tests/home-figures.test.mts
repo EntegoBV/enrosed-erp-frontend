@@ -81,22 +81,42 @@ test('next container events: expected arrivals of open orders only, nearest firs
 test('the briefing sentence and its variants', () => {
   const events = [{ atTime: '10:00' }, { atTime: '14:30:00' }];
   const tight = { from: '2026-11-03', to: '2026-11-11' };
-  const full = briefing({ count: 7, complete: true, events, nowTime: '08:40', tight });
+  const full = briefing({ settled: true, agenda: 'ok', count: 7, complete: true, events, nowTime: '08:40', tight });
   assert.equal(text(full), '7 dingen te doen en 2 afspraken vandaag. Eerste afspraak om 10:00. De bank wordt krap van 3 tot 11 november.');
   assert.deepEqual(strong(full), ['7 dingen', '2 afspraken', '10:00', '3 tot 11 november']);
   assert.deepEqual(full.filter((part) => part.krap).map((part) => part.text), ['3 tot 11 november']);
-  assert.equal(text(briefing({ count: 1, complete: true, events: [{ atTime: null }], nowTime: '11:00', tight: null })),
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 1, complete: true, events: [{ atTime: null }], nowTime: '11:00', tight: null })),
     '1 ding te doen en 1 afspraak vandaag.');
-  assert.equal(text(briefing({ count: 3, complete: true, events, nowTime: '12:00', tight: null })),
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 3, complete: true, events, nowTime: '12:00', tight: null })),
     '3 dingen te doen en 2 afspraken vandaag. Volgende afspraak om 14:30.');
-  assert.equal(text(briefing({ count: 3, complete: true, events, nowTime: '16:00', tight: null })), '3 dingen te doen en 2 afspraken vandaag.');
-  assert.equal(text(briefing({ count: 2, complete: true, events: [], nowTime: '08:00', tight: null })), '2 dingen te doen. Geen afspraken vandaag.');
-  assert.equal(text(briefing({ count: 0, complete: true, events: [], nowTime: '08:00', tight: null })), 'Niets dringends en geen afspraken vandaag.');
-  assert.equal(text(briefing({ count: 0, complete: true, events, nowTime: '08:00', tight: null })),
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 3, complete: true, events, nowTime: '16:00', tight: null })), '3 dingen te doen en 2 afspraken vandaag.');
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 2, complete: true, events: [], nowTime: '08:00', tight: null })), '2 dingen te doen. Geen afspraken vandaag.');
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 0, complete: true, events: [], nowTime: '08:00', tight: null })), 'Niets dringends en geen afspraken vandaag.');
+  assert.equal(text(briefing({ settled: true, agenda: 'ok', count: 0, complete: true, events, nowTime: '08:00', tight: null })),
     'Niets dringends vandaag, wel 2 afspraken. Eerste afspraak om 10:00.');
-  assert.equal(text(briefing({ count: 4, complete: false, events: [], nowTime: '08:00', tight })),
+  assert.equal(text(briefing({ settled: false, agenda: 'ok', count: 4, complete: false, events: [], nowTime: '08:00', tight })),
     'Nog niet alles geladen. Geen afspraken vandaag. De bank wordt krap van 3 tot 11 november.');
   assert.equal(fromToLong('2026-10-28', '2026-11-03'), '28 oktober tot 3 november');
+});
+
+test('the briefing never claims no appointments when the agenda did not load, and keeps the count once all answered', () => {
+  const events = [{ atTime: '10:00' }];
+  const tight = { from: '2026-11-03', to: '2026-11-11' };
+  /* The planner failed (its items are []): no "Geen afspraken vandaag", no first appointment. */
+  assert.equal(text(briefing({ count: 4, complete: false, settled: false, agenda: 'failed', events: [], nowTime: '08:00', tight: null })),
+    'Nog niet alles geladen. Agenda niet bijgewerkt.');
+  assert.equal(text(briefing({ count: 4, complete: false, settled: false, agenda: 'loading', events: [], nowTime: '08:00', tight: null })),
+    'Nog niet alles geladen.');
+  assert.equal(text(briefing({ count: 4, complete: false, settled: false, agenda: 'ok', events, nowTime: '08:00', tight: null })),
+    'Nog niet alles geladen. 1 afspraak vandaag. Eerste afspraak om 10:00.');
+  /* Settled with a failure: the count stays, with what could not load. */
+  const failed = briefing({ count: 5, complete: false, settled: true, agenda: 'failed', events: [], nowTime: '08:00', tight });
+  assert.equal(text(failed), '5 dingen te doen; niet alles kon laden. Agenda niet bijgewerkt. De bank wordt krap van 3 tot 11 november.');
+  assert.deepEqual(strong(failed), ['5 dingen', '3 tot 11 november']);
+  assert.equal(text(briefing({ count: 5, complete: false, settled: true, agenda: 'ok', events, nowTime: '08:00', tight: null })),
+    '5 dingen te doen; niet alles kon laden. 1 afspraak vandaag. Eerste afspraak om 10:00.');
+  assert.equal(text(briefing({ count: 0, complete: false, settled: true, agenda: 'ok', events: [], nowTime: '08:00', tight: null })),
+    'Niet alles kon laden. Geen afspraken vandaag.');
 });
 
 test('greeting by the hour, the long date, the week number and the overline', () => {

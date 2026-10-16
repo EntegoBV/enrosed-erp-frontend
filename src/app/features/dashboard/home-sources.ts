@@ -7,7 +7,7 @@ import { overdueInvoiceRows } from '../analyses/analysis-metrics';
 import type { PartnerFinancingAnalysis } from '../analyses/analysis-metrics';
 import { itemLink } from '../analyses/cash-view';
 import { canonicalBankAccount, reconciledBank } from '../finance/bank-reconciliation';
-import type { CashForecast, ForecastItem } from '../finance/cash-forecast';
+import type { CashForecast, ForecastItem, ForecastVatQuarter } from '../finance/cash-forecast';
 import { OVERDUE_COST_DAYS, financeAttention } from '../finance/finance-attention';
 import type { AttentionItem, AttentionKind } from '../finance/finance-attention';
 import { openOf, upcomingRecurring } from '../finance/finance-metrics';
@@ -16,9 +16,10 @@ import type { FinanceLocation } from '../finance/finance-url';
 import { openInvoiceRows, receivableTotals } from '../finance/incoming-money';
 import { containerPayables } from '../finance/payables';
 import { containerName } from '../purchasing/container-name';
+import { agendaForecastMoney } from './agenda-entries';
 import type { AgendaInput, AgendaLink, PlannerItemLite } from './agenda-entries';
 import type { CashHeadline } from './home-cash';
-import { filingDeadlineOf, homeMarkersOf } from './home-priority';
+import { filingDeadlineOf, homeMarkersOf, vatCashByDeadline } from './home-priority';
 import type { CoverageSource, HomeTarget, HomeTaskInput, LaterState } from './home-priority';
 import type { PlannerMilestone } from './planner-cards';
 
@@ -168,18 +169,16 @@ export function overdueCostsOf(items: readonly AttentionItem[], costs: readonly 
     location: locationRecord(item.target) };
 }
 
-/** Paid VAT periods from the bank ('2026-Q3'; null without bank data) and the forecast's BASE VAT cash per filing deadline. */
-export function vatOf(cash: HomeCashSources, forecast: CashForecast | null): HomeTaskInput['vat'] {
+/**
+ * Paid VAT periods from the bank ('2026-Q3'; null without bank data) and the VAT cash per filing deadline:
+ * the forecast's BASE items, and after its deadline the closed quarter's known net (vatCashByDeadline), both
+ * from the same forecast build.
+ */
+export function vatOf(cash: HomeCashSources, forecast: CashForecast | null, quarters: readonly ForecastVatQuarter[], today: string): HomeTaskInput['vat'] {
   const paidPeriods = cash.bankLoaded
     ? [...new Set(cash.statements.flatMap((line) => (line.classification === 'VAT' && line.vatPeriod ? [line.vatPeriod] : [])))]
     : null;
-  const eurByDeadline: Record<string, number> = {};
-  for (const item of forecast?.items ?? []) {
-    if (item.layer !== 'BASE' || item.source.type !== 'vat') continue;
-    const deadline = filingDeadlineOf(item.source.year, item.source.quarter);
-    eurByDeadline[deadline] = (cents(eurByDeadline[deadline] ?? 0) + cents(item.amountEur)) / 100;
-  }
-  return { paidPeriods, eurByDeadline };
+  return { paidPeriods, eurByDeadline: forecast ? vatCashByDeadline(forecast.items, quarters, today) : {} };
 }
 
 /** The first krap period, only from a complete forecast ('ready'). */
@@ -222,6 +221,8 @@ export interface HomeTaskSources {
   attention: readonly AttentionItem[];
   cash: HomeCashSources;
   forecast: CashForecast | null;
+  /** The VAT quarters the forecast was built from (cashForecastInput). */
+  vatQuarters: readonly ForecastVatQuarter[];
   headline: CashHeadline;
   milestones: readonly PlannerMilestone[];
   catalog: number;
@@ -240,7 +241,7 @@ export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
     settlements: s.financing.awaitingSettlement,
     invoicesOverdue: invoicesOverdueOf(s.sales, s.customers, s.today),
     overdueCosts: overdueCostsOf(s.attention, s.costs, s.today),
-    vat: vatOf(s.cash, s.forecast),
+    vat: vatOf(s.cash, s.forecast, s.vatQuarters, s.today),
     tight: tightOf(s.headline, s.forecast),
     arrivals: arrivalsOf(s.milestones, s.purchases),
     purchaseCheck: s.purchases.filter((row) => (row.attention?.length ?? 0) > 0).length,
@@ -285,9 +286,10 @@ export interface HomeAgendaSources {
 
 /**
  * The agenda's input: money from the forecast's BASE items when it is
- * there (scenario sales are estimates and stay out), else open invoices on
- * their due day and the recurring costs on their next day; the next VAT
- * filing deadline unless that quarter is paid; the first krap period.
+ * there (agendaForecastMoney: no scenario, nothing overdue), else open
+ * invoices on their due day and the recurring costs on their next day,
+ * neither once that day has passed; the next VAT filing deadline unless
+ * that quarter is paid; the first krap period.
  */
 export function agendaInputOf(s: HomeAgendaSources): AgendaInput {
   const vatPeriod = nextVatPeriod(s.today);
@@ -300,9 +302,7 @@ export function agendaInputOf(s: HomeAgendaSources): AgendaInput {
   let moneySource: AgendaInput['moneySource'] = null;
   if (forecastUsable) {
     moneySource = 'prognose';
-    money = s.forecast!.items
-      .filter((item) => item.layer === 'BASE'
-        && !(item.source.type === 'vat' && filingDeadlineOf(item.source.year, item.source.quarter) === vatPeriod.deadline))
+    money = agendaForecastMoney(s.forecast!.items, vatPeriod.deadline)
       .map((item) => ({ date: item.date, eur: item.amountEur, title: item.title, party: item.party, orderId: item.orderId, link: linkOf(item) }));
   } else if (s.salesOk) {
     moneySource = 'facturen';

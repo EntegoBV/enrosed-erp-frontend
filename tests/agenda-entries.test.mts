@@ -81,16 +81,31 @@ test('pin: the nearest qualifying pin; a past appointment drops off, an overdue 
   assert.equal(agendaModel(input({ items: [item(12, '2026-10-10', { pinned: true })] })).pin, null);
 });
 
-test('the rest of today: all-day first, then what is still to come', () => {
+test('the rest of today: what is still to come, appointments first (all-day, then by time)', () => {
   const model = agendaModel(input({ nowTime: '12:00', items: [
     item(1, TODAY, { atTime: '10:00', title: 'Bezoek' }), item(2, TODAY, { atTime: '14:30', title: 'Call' }),
     item(3, TODAY, { kind: 'TASK', title: 'Prijslijst' }), item(4, TODAY, { kind: 'TASK', done: true }),
     item(5, TODAY, { title: 'Beursdag' }),
   ], milestones: [stone(47, 'EXPECTED_ARRIVAL', TODAY)] }));
-  assert.deepEqual(model.restOfToday.map((entry) => entry.key), ['afspraak:5', 'taak:3', `container:EXPECTED_ARRIVAL:47:${TODAY}`, 'afspraak:2']);
+  assert.deepEqual(model.restOfToday.map((entry) => entry.key), ['afspraak:5', 'afspraak:2', 'taak:3', `container:EXPECTED_ARRIVAL:47:${TODAY}`]);
   const morning = agendaModel(input({ nowTime: '08:40', items: [item(1, TODAY, { atTime: '10:00' })] }));
   assert.equal(morning.restOfToday.length, 1);
   assert.equal(model.byDay.get(TODAY)!.find((entry) => entry.key === 'afspraak:1')?.past, true);
+});
+
+test('the rest of today: money never pushes an appointment out of the card\'s first four rows; small money stays in Agenda › Dag', () => {
+  const money = (eur: number, title: string) => ({ date: TODAY, eur, title, party: null, orderId: null, link: null });
+  const model = agendaModel(input({ nowTime: '08:40',
+    items: [item(1, TODAY, { atTime: '14:00', title: 'Klant Peeters' }), item(2, TODAY, { atTime: '10:00', title: 'Bezoek Bloemenhuis Lier' })],
+    money: [money(-665.5, 'Boekhouder Q3'), money(2000, 'Factuur F2026-0300'), money(-640, 'Tegoeden klanten'), money(7475, 'Factuur F2026-0138'),
+      money(-6000, 'Huur'), money(5000, 'Factuur F2026-0401')],
+    vatDeadline: { date: TODAY, label: 'Btw-aangifte Q3', eur: -3918.4 } }));
+  assert.deepEqual(model.restOfToday.slice(0, 4).map((entry) => entry.title),
+    ['Bezoek Bloemenhuis Lier', 'Klant Peeters', 'Btw-aangifte Q3', 'Factuur F2026-0138']);
+  /* Only money that earns a marker (a deadline or ≥ PIN_MIN_EUR) is in the card; the day itself keeps every amount. */
+  assert.deepEqual(model.restOfToday.filter((entry) => entry.type === 'geld').map((entry) => entry.title).sort(),
+    ['Btw-aangifte Q3', 'Factuur F2026-0138', 'Factuur F2026-0401', 'Huur']);
+  assert.equal(model.byDay.get(TODAY)!.filter((entry) => entry.type === 'geld').length, 7);
 });
 
 test('after the window: at most 5 pins, deadlines, arrivals, big money or the krap start', () => {

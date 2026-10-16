@@ -55,6 +55,7 @@ export interface DayMarkers {
 export interface AgendaModel {
   byDay: Map<string, AgendaEntry[]>;
   markers(date: string): DayMarkers;
+  /** What is still to come today for the home's Agenda card, in the day's order (appointments first); money only when it earns a marker. */
   restOfToday: AgendaEntry[];
   komend(from?: string, limit?: number, to?: string): AgendaEntry[];
   pin: (AgendaEntry & { inDays: number }) | null;
@@ -76,6 +77,23 @@ const TYPE_ORDER: readonly AgendaType[] = ['afspraak', 'taak', 'container', 'gel
 function noteLine(note: string | null | undefined): string | null {
   const line = (note ?? '').split('\n').map((part) => part.trim()).find((part) => part && !MARKER_LINE.test(part));
   return line || null;
+}
+
+/** The 25th that closes a quarter (a local copy of finance-metrics filingDeadline). */
+const filingDeadline = (year: number, quarter: number): string =>
+  (quarter === 4 ? `${year + 1}-01-25` : `${year}-${String(quarter * 3 + 1).padStart(2, '0')}-25`);
+
+/**
+ * The forecast items the agenda shows as money moments: the BASE layer only (scenario sales are estimates),
+ * never an overdue item - the forecast dates those today, and they are the home's task rows (overdue
+ * invoices and costs, container terms), as the invoice fallback leaves out what is past its due day - and
+ * not the VAT return of `vatDeadline`, which the agenda shows as its deadline entry.
+ */
+export function agendaForecastMoney<T extends { layer: string; overdue: boolean; source: { type: string; year?: number; quarter?: number } }>(
+  items: readonly T[], vatDeadline: string): T[] {
+  return items.filter((item) => item.layer === 'BASE' && !item.overdue
+    && !(item.source.type === 'vat' && item.source.year !== undefined && item.source.quarter !== undefined
+      && filingDeadline(item.source.year, item.source.quarter) === vatDeadline));
 }
 
 const big = (entry: AgendaEntry): boolean => entry.type === 'geld' && (entry.deadline || Math.abs(entry.eur ?? 0) >= PIN_MIN_EUR);
@@ -161,9 +179,10 @@ export function agendaModel(input: AgendaInput): AgendaModel {
     };
   };
 
+  /* The card shows four rows: appointments (all-day, then by time) before tasks, containers and money, so an
+     appointment never hides behind invoices; small money stays in Agenda › Dag, as in Komend and the markers. */
   const restOfToday = (byDay.get(today) ?? [])
-    .filter((entry) => !entry.done && (!entry.atTime || entry.atTime.slice(0, 5) >= nowTime))
-    .sort((left, right) => Number(!!left.atTime) - Number(!!right.atTime) || compareInDay(left, right));
+    .filter((entry) => !entry.done && (!entry.atTime || entry.atTime.slice(0, 5) >= nowTime) && (entry.type !== 'geld' || big(entry)));
 
   /* Komend: open things from a day on; small money stays in the day lists, history never comes back. */
   const komend = (from = addDays(today, 1), limit = 3, to?: string): AgendaEntry[] => entries

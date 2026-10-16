@@ -21,7 +21,7 @@ import type { CashPageData } from '../analyses/cash-sources';
 import { DEFAULT_CASH_LOCATION } from '../analyses/cash-url';
 import { readDismissed } from '../finance/cash-dismissed';
 import { buildCashForecast } from '../finance/cash-forecast';
-import type { CashForecast } from '../finance/cash-forecast';
+import type { CashForecast, ForecastVatQuarter } from '../finance/cash-forecast';
 import { cashForecastInput, vooruitblikOf } from '../finance/cash-forecast-input';
 import { weekdayDayMonth } from '../finance/cash-format';
 import { receivableTotals } from '../finance/incoming-money';
@@ -129,6 +129,10 @@ export class HomeData {
   private readonly loadedOnce = signal(false);
   private readonly bellAnswered = signal(false);
   private busy = false;
+  /** Home routes on screen (enterHome): the forecast and the advance schedules follow CashData only while one is. */
+  private readonly active = signal(0);
+  /** The CashData round the partner financings answered in: the advance schedules load with those, never with an older visit's. */
+  private readonly partnersRound = signal(0);
 
   /** One source's state. */
   stateOf(source: HomeSource): SourceState {
@@ -159,6 +163,8 @@ export class HomeData {
   private readonly dismissed = signal<string[]>(readDismissed());
   /** The 6-month forecast with Analyses' defaults: both show the same lowest point. Null until built. */
   readonly forecast = signal<CashForecast | null>(null);
+  /** The VAT quarters that forecast was built from: the closed quarter's net after its deadline (vatOf). */
+  private readonly forecastVat = signal<ForecastVatQuarter[]>([]);
   /** The forecast is being (re)built at idle. */
   readonly computing = signal(false);
   /** How long the last build took (ms), for the timing note; also a performance measure 'home-forecast'. */
@@ -240,7 +246,8 @@ export class HomeData {
     return homeTaskInputOf({
       today: this.today(), nowMs: 0, planner: this.planner.items(), actions: this.work.actions(), loginRequests: this.work.loginRequestCount(),
       purchases: this.purchases(), financing: this.financing(), sales, customers: this.customers(), costs, attention,
-      cash: this.homeCash(), forecast: this.forecast(), headline: this.cash(), milestones: this.milestones(), catalog: this.catalogAttention(),
+      cash: this.homeCash(), forecast: this.forecast(), vatQuarters: this.forecastVat(), headline: this.cash(), milestones: this.milestones(),
+      catalog: this.catalogAttention(),
       later: {}, sources: this.coverage(),
     });
   });
@@ -269,45 +276,66 @@ export class HomeData {
   readonly agenda = computed(() => agendaModel(agendaInputOf({
     today: this.today(), nowTime: this.nowTime(), planner: this.planner.items(), milestones: this.milestones(),
     forecast: this.forecast(), headline: this.cash(), sales: this.salesOrders(), salesOk: this.states().verkoop === 'ready',
-    customers: this.customers(), cash: this.homeCash(), vat: vatOf(this.homeCash(), this.forecast()),
+    customers: this.customers(), cash: this.homeCash(), vat: vatOf(this.homeCash(), this.forecast(), this.forecastVat(), this.today()),
   })));
 
   constructor() {
-    /* The forecast at idle, after first paint; a newer input cancels the pending build. */
+    /*
+     * The forecast at idle, after first paint; a newer input cancels the pending build. Only while a home
+     * route is on screen (Analyses changing CashData does not rebuild it in the background), and not again
+     * for the input it was last built from.
+     */
+    let built: { sources: unknown; options: unknown } | null = null;
     effect((onCleanup) => {
       const sources = this.forecastSources();
       const options = this.cashOptions();
-      if (!sources) return;
+      if (!sources || !this.active() || (built?.sources === sources && built.options === options)) return;
       this.computing.set(true);
       const cancel = whenIdle(() => {
         const started = performance.now();
-        const forecast = buildCashForecast(cashForecastInput(sources), options);
+        const input = cashForecastInput(sources);
+        const forecast = buildCashForecast(input, options);
         const took = performance.now() - started;
         try { performance.measure('home-forecast', { start: started, duration: took }); } catch { /* older browsers */ }
+        built = { sources, options };
         this.forecastMs.set(Math.round(took));
+        this.forecastVat.set(input.vatQuarters);
         this.forecast.set(forecast);
         this.computing.set(false);
       });
-      onCleanup(cancel);
+      onCleanup(() => {
+        cancel();
+        this.computing.set(false);
+      });
     });
-    /* The advance schedules, once per CashData round, only with partner financings that answered on this load. */
+    /*
+     * The advance schedules: once per CashData round, while a home route is on screen, and only with the
+     * partner financings that answered in this round (amendment B). loadSchedules claims a round for whoever
+     * calls first, so an older visit's financings must never claim Analyses' round.
+     */
     effect(() => {
       const round = this.cashData.generation();
-      const ready = this.states().partnerfinanciering === 'ready';
+      if (round === 0 || !this.active() || this.partnersRound() !== round) return;
       const financings = this.partnerSummaries();
-      if (round === 0 || !ready) return;
       untracked(() => void this.cashData.loadSchedules(financings, round));
     });
   }
 
   /* ---------------------------------------------------------------- load */
 
-  /** A home route was entered: the day is checked, CashData ensured, and the page data fetched when it is older than 20 s. */
-  enter(): void {
+  /**
+   * A home route was entered: the day is checked, CashData ensured, and the page data fetched when it is
+   * older than 20 s or CashData started a new round (its advance schedules need this round's financings).
+   * Returns the leave function for the route's onDestroy.
+   */
+  enter(): () => void {
+    this.active.update((count) => count + 1);
     this.checkDay();
+    const round = this.cashData.generation();
     this.cashData.ensure(this.today());
     const at = this.loadedAt();
-    if (at === null || Date.now() - at > PAGE_MAX_AGE_MS) void this.fetchPage();
+    if (at === null || Date.now() - at > PAGE_MAX_AGE_MS || this.cashData.generation() !== round) void this.fetchPage();
+    return () => this.active.update((count) => Math.max(0, count - 1));
   }
 
   /** The clock moves; on a new day everything loads again (a home left open overnight). */
@@ -348,7 +376,10 @@ export class HomeData {
       take(website, 'websitebezoek', (value) => this.website.set(value));
       take(costs, 'kosten', (value) => this.costs.set(value));
       take(incoming, 'inkomende betalingen', (value) => this.incomingPayments.set(value));
-      take(partners, 'partnerfinanciering', (value) => this.partnerSummaries.set(value));
+      take(partners, 'partnerfinanciering', (value) => {
+        this.partnerSummaries.set(value);
+        this.partnersRound.set(this.cashData.generation());
+      });
       take(customers, 'klanten', (value) => this.customers.set(value));
       take(families, 'websiteproducten', (value) => this.catalogAttention.set(value
         .filter((family) => family.active && family.publicationIssues.length > 0).length));
@@ -390,10 +421,10 @@ export class HomeData {
     this.ui.toast('Taak afgevinkt', 'ok', { label: 'Ongedaan maken', run: () => void this.savePlanner(item, 'Terugzetten mislukt') });
   }
 
-  /** Morgen: the task moves to the next workday (the planner's own rule), with "Ongedaan maken". */
+  /** Morgen: a due task moves to the next workday (the planner's own rule), with "Ongedaan maken"; a later or undated one never moves. */
   async morgen(task: HomeTask): Promise<void> {
     const item = this.plannerItem(task);
-    if (!item) return;
+    if (!item || !task.actions.includes('morgen')) return;
     const day = localPlannerDate(plannedBusinessDay(new Date(), 1));
     if (!await this.savePlanner({ ...item, onDate: day }, 'Verplaatsen mislukt')) return;
     this.ui.toast(`Verplaatst naar ${weekdayDayMonth(day)}`, 'ok', { label: 'Ongedaan maken', run: () => void this.savePlanner(item, 'Terugzetten mislukt') });
@@ -429,10 +460,11 @@ export function enterHome(): HomeData {
   const tick = (): void => data.checkDay();
   const timer = window.setInterval(tick, 60_000);
   window.addEventListener('focus', tick);
+  const leave = data.enter();
   inject(DestroyRef).onDestroy(() => {
     window.clearInterval(timer);
     window.removeEventListener('focus', tick);
+    leave();
   });
-  data.enter();
   return data;
 }

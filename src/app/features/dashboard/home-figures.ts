@@ -194,6 +194,10 @@ export interface BriefingInput {
   count: number;
   /** Every source answered (HomeTaskList.complete). */
   complete: boolean;
+  /** Every source has answered or failed (HomeData.settled): an incomplete list is then final, no longer loading. */
+  settled: boolean;
+  /** The planner: loaded ('ok'), not answered yet, or failed - then `events` says nothing about today. */
+  agenda: 'ok' | 'loading' | 'failed';
   /** Today's appointments. */
   events: readonly { atTime: string | null }[];
   /** "HH:mm". */
@@ -212,15 +216,29 @@ export function fromToLong(from: string, to: string): string {
 /**
  * The desk's one-line briefing (§3 D1a): "7 dingen te doen en 2 afspraken
  * vandaag. Eerste afspraak om 10:00. De bank wordt krap van 3 tot 11
- * november." Parts that would be empty are left out.
+ * november." Parts that would be empty are left out. While sources load it
+ * says "Nog niet alles geladen."; once a source failed, the count with
+ * "niet alles kon laden". The appointments are only named from a planner
+ * that answered: after a failure, no "Geen afspraken" but "Agenda niet
+ * bijgewerkt." (the Agenda card's words).
  */
 export function briefing(input: BriefingInput): BriefingPart[] {
   const parts: BriefingPart[] = [];
-  const m = input.events.length;
+  const known = input.agenda === 'ok';
+  const m = known ? input.events.length : 0;
   const events: BriefingPart = { text: `${m} ${plural(m, 'afspraak', 'afspraken')}`, strong: true };
-  if (!input.complete) {
-    parts.push({ text: 'Nog niet alles geladen. ' });
-    if (m) parts.push(events, { text: ' vandaag.' }); else parts.push({ text: 'Geen afspraken vandaag.' });
+  /* The appointments as a sentence of their own, after an incomplete start. */
+  const agendaSentence = (): BriefingPart[] => {
+    if (input.agenda === 'failed') return [{ text: ' Agenda niet bijgewerkt.' }];
+    if (!known) return [];
+    return m ? [{ text: ' ' }, events, { text: ' vandaag.' }] : [{ text: ' Geen afspraken vandaag.' }];
+  };
+  if (!input.complete && !input.settled) {
+    parts.push({ text: 'Nog niet alles geladen.' }, ...agendaSentence());
+  } else if (!input.complete) {
+    if (input.count > 0) parts.push({ text: `${input.count} ${plural(input.count, 'ding', 'dingen')}`, strong: true }, { text: ' te doen; niet alles kon laden.' });
+    else parts.push({ text: 'Niet alles kon laden.' });
+    parts.push(...agendaSentence());
   } else if (input.count > 0) {
     parts.push({ text: `${input.count} ${plural(input.count, 'ding', 'dingen')}`, strong: true });
     if (m) parts.push({ text: ' te doen en ' }, events, { text: ' vandaag.' });
@@ -230,7 +248,7 @@ export function briefing(input: BriefingInput): BriefingPart[] {
   } else {
     parts.push({ text: 'Niets dringends en geen afspraken vandaag.' });
   }
-  const times = input.events.map((event) => event.atTime?.slice(0, 5) ?? '').filter(Boolean).sort();
+  const times = known ? input.events.map((event) => event.atTime?.slice(0, 5) ?? '').filter(Boolean).sort() : [];
   const coming = times.filter((time) => time >= input.nowTime);
   if (coming.length) {
     parts.push({ text: coming.length === times.length ? ' Eerste afspraak om ' : ' Volgende afspraak om ' }, { text: coming[0], strong: true }, { text: '.' });

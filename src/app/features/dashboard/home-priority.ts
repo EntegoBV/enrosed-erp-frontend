@@ -136,6 +136,32 @@ export function filingDeadlineOf(year: number, quarter: number): string {
   return quarter === 4 ? `${year + 1}-01-25` : `${year}-${String(quarter * 3 + 1).padStart(2, '0')}-25`;
 }
 
+/**
+ * HomeTaskInput.vat.eurByDeadline: the signed cash of the forecast's BASE VAT items per filing deadline
+ * (negative = to pay). From the day after its deadline the forecast lets the closed quarter go, while an
+ * unpaid return still is "n d te laat" here (amendment G2): then the quarter's known net as of today
+ * (cashForecastInput's vatQuarters) stands in, when it is something to pay.
+ */
+export function vatCashByDeadline(
+  items: readonly { layer: string; amountEur: number; source: { type: string; year?: number; quarter?: number } }[],
+  quarters: readonly { year: number; quarter: number; knownNetEur: number }[], today: string,
+): Record<string, number> {
+  const cash: Record<string, number> = {};
+  const cents = (value: number): number => Math.round((Number.isFinite(value) ? value : 0) * 100);
+  for (const item of items) {
+    if (item.layer !== 'BASE' || item.source.type !== 'vat' || item.source.year === undefined || item.source.quarter === undefined) continue;
+    const deadline = filingDeadlineOf(item.source.year, item.source.quarter);
+    cash[deadline] = (cents(cash[deadline] ?? 0) + cents(item.amountEur)) / 100;
+  }
+  const year = Number(today.slice(0, 4));
+  const quarter = Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1;
+  const closed = quarter === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: quarter - 1 };
+  const deadline = filingDeadlineOf(closed.year, closed.quarter);
+  const known = quarters.find((row) => row.year === closed.year && row.quarter === closed.quarter)?.knownNetEur;
+  if (deadline < today && cash[deadline] === undefined && known !== undefined && cents(known) < 0) cash[deadline] = cents(known) / 100;
+  return cash;
+}
+
 /** The day of an instant in Brussels (the customer's `at` is UTC). */
 function brusselsDay(instant: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Brussels' }).format(new Date(instant));
@@ -228,12 +254,14 @@ function plannerTasks(input: HomeTaskInput): Candidate[] {
     }
     if (!tier) continue;
     const noteLine = stripHomeMarkers(item.note)?.split('\n')[0]?.trim();
+    /* Morgen only moves a task that is due: a pinned task planned later (or without a day) is never pulled forward or given a day. */
+    const due = !!onDate && onDate <= today;
     out.push({
       key: `planner:${item.id}`, source: 'planner', tier, title: item.title,
       context: ['Taak', onDate ? `gepland ${dayText(onDate)}` : 'zonder dag', noteLine].filter(Boolean).join(' · '),
       chip, eur: null, count: null, daysLate, due: onDate,
-      verb: 'Morgen', target: { kind: 'planner', id: item.id }, plannerId: item.id,
-      actions: ['klaar', 'morgen'], detail: `${onDate ?? ''}|${item.title}`,
+      verb: due ? 'Morgen' : 'Openen', target: { kind: 'planner', id: item.id }, plannerId: item.id,
+      actions: due ? ['klaar', 'morgen'] : ['klaar'], detail: `${onDate ?? ''}|${item.title}`,
     });
   }
   return out;

@@ -7,7 +7,7 @@ import {
   ADVANCE_SOON_DAYS, COVERAGE_ORDER, CUSTOMER_WAIT_NU_WORKDAYS, HOME_TASK_CAP, KRAP_WITHIN_DAYS, LATER_ESCALATE_COUNT,
   OVERDUE_COST_DAYS_COPY, OVERDUE_INVOICE_MIN_EUR, OVERDUE_INVOICE_NU_DAYS, VAT_LATE_SHOW_DAYS, VAT_NU_DAYS, VAT_SHOW_DAYS,
   filingDeadlineOf, fnv1a8, homeMarker, homeMarkersOf, homeTasks, laterNext, laterPruned, nextWorkday, stripHomeMarkers,
-  whyOrderLines, workdaysBetween,
+  vatCashByDeadline, whyOrderLines, workdaysBetween,
   type CoverageSource, type HomeTask, type HomeTaskInput, type HomeTaskList,
 } from '../src/app/features/dashboard/home-priority.ts';
 
@@ -59,6 +59,21 @@ test('VAT: a paid quarter never shows; a refund or zero quarter drops off after 
   assert.equal(vatOn('2026-10-26', { paidPeriods: [], eurByDeadline: { '2026-10-25': 512 } }), undefined);
   assert.equal(vatOn('2026-10-26', { paidPeriods: [], eurByDeadline: {} }), undefined);
   assert.equal(vatOn('2026-10-26', { paidPeriods: [], eurByDeadline: { '2026-10-25': 0 } }), undefined);
+});
+
+test('VAT cash per deadline: the BASE items; after the 25th the known net of the closed quarter when it is to pay', () => {
+  const vat = (year: number, quarter: number, amountEur: number, layer = 'BASE') => ({ layer, amountEur, source: { type: 'vat', year, quarter } });
+  const items = [vat(2026, 3, -7412), vat(2026, 4, -4851.3), vat(2026, 4, -100.1, 'SCENARIO'), { layer: 'BASE', amountEur: -5, source: { type: 'cost' } }];
+  const quarters = [{ year: 2026, quarter: 3, knownNetEur: -7412 }, { year: 2026, quarter: 4, knownNetEur: -2184.3 }];
+  assert.deepEqual(vatCashByDeadline(items, quarters, '2026-10-15'), { '2026-10-25': -7412, '2027-01-25': -4851.3 });
+  /* From the 26th the forecast drops Q3; its known net stands in. */
+  assert.deepEqual(vatCashByDeadline(items.slice(1), quarters, '2026-10-26'), { '2026-10-25': -7412, '2027-01-25': -4851.3 });
+  /* A refund or a zero quarter stays out, so the row drops off as before. */
+  assert.deepEqual(vatCashByDeadline([], [{ year: 2026, quarter: 3, knownNetEur: 512 }], '2026-10-26'), {});
+  assert.deepEqual(vatCashByDeadline([], [{ year: 2026, quarter: 3, knownNetEur: 0 }], '2026-10-26'), {});
+  assert.deepEqual(vatCashByDeadline([], [], '2026-10-26'), {});
+  /* Q4 closes on 25 January of the next year. */
+  assert.deepEqual(vatCashByDeadline([], [{ year: 2026, quarter: 4, knownNetEur: -900 }], '2027-01-27'), { '2027-01-25': -900 });
 });
 
 test('VAT Q4 files by 25 January of the next year', () => {
@@ -216,6 +231,18 @@ test('planner tasks: late → Nu, today → Vandaag, pinned within 7 days or und
   assert.equal(late.context, 'Taak · gepland di 13 okt · Boekhouder wacht');
   assert.deepEqual([late.verb, late.actions, late.target], ['Morgen', ['klaar', 'morgen'], { kind: 'planner', id: 1 }]);
   assert.equal(all(list).find((row) => row.plannerId === 8)?.context, 'Taak · zonder dag');
+  const today = all(list).find((row) => row.plannerId === 2)!;
+  assert.deepEqual([today.verb, today.actions], ['Morgen', ['klaar', 'morgen']]);
+});
+
+test('planner tasks: Morgen never pulls a pinned task forward, nor gives an undated one a day', () => {
+  const list = homeTasks(input({ planner: [task(6, days(TODAY, 7), { pinned: true }), task(8, null, { pinned: true }),
+    task(10, TODAY, { pinned: true })] }));
+  const row = (id: number) => all(list).find((item) => item.plannerId === id)!;
+  /* Pinned for Thu 22 Oct on Thu 15 Oct: Morgen would move it to Fri 16 Oct, six days earlier. */
+  assert.deepEqual([row(6).verb, row(6).actions, row(6).target], ['Openen', ['klaar'], { kind: 'planner', id: 6 }]);
+  assert.deepEqual([row(8).verb, row(8).actions], ['Openen', ['klaar']]);
+  assert.deepEqual([row(10).verb, row(10).actions], ['Morgen', ['klaar', 'morgen']]);
 });
 
 /* --------------------------------------------------------------- 7. cap */

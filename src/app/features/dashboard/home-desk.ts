@@ -234,7 +234,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
             <li class="home-task home-task--more">
               <span class="home-task__tile ios-tile ios-tile--soft tone-grey" aria-hidden="true"><app-icon name="bank" [size]="16" /></span>
               <span class="home-task__body">
-                <a class="home-task__go" routerLink="/costs">Meer in Kosten &amp; bank</a>
+                <a class="home-task__go" routerLink="/costs" title="Meer in Kosten &amp; bank — Vraagt aandacht: bonnen, betalingen en documenten die nog ontbreken">Meer in Kosten &amp; bank</a>
                 <span class="home-task__sub"><span class="home-task__context">Vraagt aandacht: bonnen, betalingen en documenten die nog ontbreken</span></span>
               </span>
               <span class="home-task__chev" aria-hidden="true">›</span>
@@ -252,7 +252,8 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
     }
 
     <!-- One task row: the tick (planner) or the source tile, the title as the row's one link, the chip and
-         context, the amount or count, the verb and the "⋯" menu. Title and context may cut (full text in title). -->
+         context, the amount or count, the verb and the "⋯" menu. Title and context may cut: the title button is
+         stretched over the row, so it carries the full title and context in its title (the hover anywhere). -->
     <ng-template #row let-task let-sheet="sheet">
       <li class="home-task" [class.is-escalated]="task.escalated">
         @if (task.plannerId !== null) {
@@ -263,7 +264,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
             <app-icon [name]="iconOf(task)" [size]="16" /></span>
         }
         <span class="home-task__body">
-          <button class="home-task__go" type="button" [title]="task.title" (click)="open(task)">{{ task.title }}</button>
+          <button class="home-task__go" type="button" [title]="task.context ? task.title + ' — ' + task.context : task.title" (click)="open(task)">{{ task.title }}</button>
           <span class="home-task__sub">
             <span class="wk-pill home-task__chip" [class]="'tone-' + task.chip.tone">{{ task.chip.label }}</span>
             <span class="home-task__context" [title]="task.context">{{ task.context }}</span>
@@ -330,9 +331,11 @@ export class HomeDesk {
     const t = this.data.tasks();
     const cash = this.data.cash();
     const today = this.data.today();
+    const planner = this.data.planner;
     return briefing({
-      count: t.count, complete: t.complete, nowTime: this.data.nowTime(),
-      events: this.data.planner.items().filter((item) => item.kind === 'EVENT' && item.onDate === today),
+      count: t.count, complete: t.complete, settled: this.data.settled(), nowTime: this.data.nowTime(),
+      agenda: planner.loaded() && !planner.error() ? 'ok' : planner.error() ? 'failed' : 'loading',
+      events: planner.items().filter((item) => item.kind === 'EVENT' && item.onDate === today),
       tight: cash.state === 'ready' ? cash.tight : null,
     });
   });
@@ -408,7 +411,7 @@ export class HomeDesk {
     if (link) void this.router.navigate(link.commands, { queryParams: link.queryParams });
   }
 
-  /** The verb button: "Morgen" moves a planner task to the next workday; every other verb opens the target. */
+  /** The verb button: "Morgen" moves a due planner task to the next workday; every other verb (a later pinned task's "Openen" too) opens the target. */
   verb(task: HomeTask): void {
     if (task.plannerId !== null && task.actions.includes('morgen')) void this.data.morgen(task);
     else this.open(task);
@@ -419,13 +422,13 @@ export class HomeDesk {
     this.rowMenu.set({ task, inSheet, point: { x: Math.max(8, rect.right - 240), y: rect.bottom + 4 } });
   }
 
-  /** "⋯": Klaar / Morgen on a planner task, Later / Taak van maken on everything else. */
+  /** "⋯": Klaar / Morgen on a planner task (Morgen only on a due one), Later / Taak van maken on everything else. */
   rowItems(task: HomeTask): ContextMenuItem[] {
     if (task.plannerId !== null) {
       const next = weekdayDayMonth(localPlannerDate(plannedBusinessDay(new Date(), 1)));
       return [
         { id: 'klaar', label: 'Klaar', hint: 'Afvinken', iconName: 'tick' },
-        { id: 'morgen', label: 'Morgen', hint: `Naar ${next}`, iconName: 'calendar' },
+        ...(task.actions.includes('morgen') ? [{ id: 'morgen', label: 'Morgen', hint: `Naar ${next}`, iconName: 'calendar' }] : []),
       ];
     }
     return [
