@@ -1,0 +1,9 @@
+/* ==========================================================================
+   App shell (foundation, redesign 2026-10-16): the page toolbar, the phone
+   header and shell utilities. Loaded from styles.scss right after motion.
+   Areas never restyle .sidebar*, .appbar*, .tabbar* or .fab here or
+   elsewhere; they use the inputs of app-page-header and the kit.
+   ========================================================================== */
+
+/* A narrower page for forms and settings (opt-in): <div class="content content--narrow">. */
+.content.content--narrow { max-width: 960px; }

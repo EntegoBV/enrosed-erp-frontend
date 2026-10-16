@@ -274,6 +274,66 @@ export class Ui {
   }
 }
 
+/* ---------------------------------------------------------- leave confirm */
+
+/** The words of the leave question; the app's own verb is "Opslaan" (every save button says it). */
+export const LEAVE_CONFIRM_TEXT = {
+  title: 'Niet-opgeslagen wijzigingen',
+  saveMessage: 'Je hebt wijzigingen die nog niet zijn opgeslagen. Opslaan voor je verdergaat?',
+  dropMessage: 'Als je dit scherm verlaat, gaan je wijzigingen verloren.',
+  save: 'Opslaan',
+  drop: 'Niet opslaan',
+} as const;
+
+/**
+ * Asks before leaving a screen with unsaved changes; for canDeactivate.
+ *
+ *   canDeactivate(): boolean | Promise<boolean> {
+ *     return this.dirty() ? confirmLeave(this.ui, () => this.save()) : true;
+ *   }
+ *
+ * With a save function: Opslaan (primary) · Niet opslaan · Annuleren.
+ * Opslaan resolves true once save() succeeds (it returns true or nothing),
+ * false when it returns false or throws, so the screen stays. Without one:
+ * Niet opslaan (danger) · Annuleren. Annuleren, closing the sheet, or
+ * another question taking its place resolve false.
+ */
+export function confirmLeave(
+  ui: Ui,
+  save?: () => boolean | void | Promise<boolean | void>,
+  options: { message?: string } = {},
+): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (save) {
+      ui.confirm(
+        {
+          title: LEAVE_CONFIRM_TEXT.title,
+          message: options.message ?? LEAVE_CONFIRM_TEXT.saveMessage,
+          confirmLabel: LEAVE_CONFIRM_TEXT.save,
+          secondaryLabel: LEAVE_CONFIRM_TEXT.drop,
+        },
+        async () => {
+          try { resolve((await save()) !== false); } catch { resolve(false); }
+        },
+        () => resolve(true),
+        () => resolve(false),
+      );
+    } else {
+      ui.confirm(
+        {
+          title: LEAVE_CONFIRM_TEXT.title,
+          message: options.message ?? LEAVE_CONFIRM_TEXT.dropMessage,
+          confirmLabel: LEAVE_CONFIRM_TEXT.drop,
+          danger: true,
+        },
+        () => resolve(true),
+        undefined,
+        () => resolve(false),
+      );
+    }
+  });
+}
+
 /* ---------------------------------------------------------------- ui host */
 
 /** Rendert toasts en de bevestigingsdialoog. Staat één keer in de app-shell. */

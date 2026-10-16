@@ -43,12 +43,40 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
           }
         </div>
       }
+      @case ('table') {
+        <div class="skel-table">
+          @for (row of items(); track $index) {
+            <div class="skel-table__row">
+              <div class="skel skel--line" [style.width.%]="40 - (($index * 7) % 12)"></div>
+              <div class="skel skel--line" style="width:18%"></div>
+              <div class="skel skel--line skel-table__end" style="width:12%"></div>
+            </div>
+          }
+        </div>
+      }
+      @case ('group') {
+        <div class="ios-group skel-group">
+          @for (row of items(); track $index) {
+            <div class="skel-group__cell">
+              <div class="skel skel-group__tile"></div>
+              <div class="skel-group__body">
+                <div class="skel skel--line" [style.width.%]="62 - (($index * 13) % 24)"></div>
+                <div class="skel skel--line skel--thin" [style.width.%]="38 - (($index * 11) % 16)"></div>
+              </div>
+            </div>
+          }
+        </div>
+      }
     }
   `,
 })
 export class Skeleton {
-  /** Shape of what is loading: list rows, cards, text lines or stat tiles. */
-  readonly kind = input<'list' | 'card' | 'lines' | 'stats'>('list');
+  /**
+   * Shape of what is loading: list rows, cards, text lines, stat tiles, a
+   * desk kit table (40 px rows of three bars, the last right-aligned) or a
+   * phone inset group (52 px cells with a tile and two bars).
+   */
+  readonly kind = input<'list' | 'card' | 'lines' | 'stats' | 'table' | 'group'>('list');
   readonly rows = input(3);
   readonly items = computed(() => Array.from({ length: this.rows() }));
 }

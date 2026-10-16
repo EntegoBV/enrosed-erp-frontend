@@ -1740,6 +1740,26 @@ table.data tfoot td {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+/* kind="table": rows of a desk kit table; kind="group": cells of a phone inset group. */
+.skel-table__row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--wk-row-h, 40px);
+  padding: 0 var(--wk-pad-x, 16px);
+  border-bottom: 1px solid var(--line);
+}
+.skel-table__row:last-child { border-bottom: 0; }
+.skel-table__end { margin-left: auto; }
+.skel-group__cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--ios-row, 52px);
+  padding: 8px 16px;
+}
+.skel-group__tile { width: 30px; height: 30px; flex: none; border-radius: 8px; }
+.skel-group__body { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   .skel::after { animation: none; }
 }
@@ -3926,6 +3946,7 @@ a.desk-kpi{text-decoration:none}
    partial scopes every rule under its own host. */
 @include meta.load-css('styles/workspace-kit');
 @include meta.load-css('styles/motion');
+@include meta.load-css('styles/shell');
 @include meta.load-css('styles/finance-phone');
 @include meta.load-css('styles/files-phone');
 @include meta.load-css('styles/purchase-payments');

@@ -1,7 +1,8 @@
 import { CanDeactivateFn } from '@angular/router';
 
 export interface HasUnsavedChanges {
-  canDeactivate(): boolean;
+  /** True to leave; a Promise lets the screen ask first (see confirmLeave in shared/ui.ts). */
+  canDeactivate(): boolean | Promise<boolean>;
 }
 
 /** Lets an editor own the precise decision for pending local work. */
