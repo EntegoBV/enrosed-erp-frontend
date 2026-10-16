@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import type { BankPurchasePaymentPart, BankStatementLine } from '../../core/api/banking-api';
+import type { BankPurchasePaymentPart, BankPurchaseSharePart, BankStatementLine } from '../../core/api/banking-api';
 import { EurPipe } from '../../shared/pipes';
+import { containerName } from '../purchasing/container-name';
 import { FinanceState } from './finance-state';
 import type { ContainerPayable } from './payables';
 
@@ -13,7 +14,10 @@ const parse = (text: string): number | null => {
 };
 const amountText = (value: number): string => value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-interface Container { orderId: number; number: string; alias: string | null; supplier: string; supplierId: number | null; terms: ContainerPayable[]; }
+/** A payment of the container noted but not on the bank yet (no credit offset): linked with its part, never a second one (2026-10-16). */
+interface OpenPayment { id: number; due: ContainerPayable['due']; label: string | null; amountEur: number; payee: ContainerPayable['payee']; }
+interface Container { orderId: number; number: string; alias: string | null; supplier: string; supplierId: number | null; terms: ContainerPayable[]; open: OpenPayment[]; }
+/** key: a term's key, or 'p:{id}' for an open payment. */
 interface Row { orderId: number; key: string; amountInput: string; }
 
 /**
@@ -23,7 +27,9 @@ interface Row { orderId: number; key: string; amountInput: string; }
  * at that container's open amount of the chosen term (the earliest open
  * term, or the term of the first row), the amounts stay editable, and one
  * "Koppelen" books every part on its own container, all on this transaction
- * (one atomic call).
+ * (one atomic call). Emre, 2026-10-16: a container whose instalment is
+ * already noted (not on the bank) starts on that payment ('Bestaand') and it
+ * is linked with its part through POST …/purchase-share, never a second one.
  */
 @Component({
   selector: 'app-container-split',
@@ -40,6 +46,7 @@ interface Row { orderId: number; key: string; amountInput: string; }
               @if (row && otherSupplier(container)) { <span class="fin-split__warn"> · andere leverancier dan {{ supplierName() }}</span> }</small></span></label>
           @if (row) {
             <select class="select fin-split__term" [value]="row.key" aria-label="Termijn (open bedrag)" (change)="setTerm(container, $any($event.target).value)">
+              @for (payment of container.open; track payment.id) { <option [value]="'p:' + payment.id">Bestaand: {{ payment.amountEur | eur }}{{ payment.label ? ' · ' + payment.label : '' }}</option> }
               @for (term of container.terms; track term.key) { <option [value]="term.key">{{ termLabel(term) }} · {{ term.remainingEur | eur }}</option> }
             </select>
             <input class="input fin-split__amount" inputmode="decimal" aria-label="Bedrag" [value]="row.amountInput" (input)="setAmount(container.orderId, $any($event.target).value)" />
@@ -67,17 +74,22 @@ export class ContainerSplit {
   readonly error = signal('');
 
   private readonly suppliers = computed(() => new Map(this.state.suppliers().filter((row) => row.id != null).map((row) => [row.id!, row.name])));
-  /** Every container with an open term or stream, as the bank targets know them. */
+  /** Every container with an open term or stream, as the bank targets know them, or with a payment noted but not on the bank yet. */
   readonly containers = computed<Container[]>(() => {
     const byOrder = new Map<number, Container>();
-    for (const term of this.state.containerPayables()) {
-      if (term.archived) continue;
-      const view = this.state.purchaseViews().find((row) => row.order.id === term.orderId);
+    const of = (orderId: number, number: string, alias: string | null): Container => {
+      const view = this.state.purchaseViews().find((row) => row.order.id === orderId);
       const supplierId = view?.order.supplierId ?? null;
-      const container = byOrder.get(term.orderId) ?? { orderId: term.orderId, number: term.orderNumber, alias: term.alias, supplierId,
-        supplier: this.suppliers().get(supplierId ?? -1) ?? '', terms: [] };
-      container.terms.push(term);
-      byOrder.set(term.orderId, container);
+      const container = byOrder.get(orderId) ?? { orderId, number, alias, supplierId, supplier: this.suppliers().get(supplierId ?? -1) ?? '', terms: [], open: [] };
+      byOrder.set(orderId, container);
+      return container;
+    };
+    for (const term of this.state.containerPayables()) if (!term.archived) of(term.orderId, term.orderNumber, term.alias).terms.push(term);
+    for (const row of this.state.payments()) {
+      const view = this.state.purchaseViews().find((item) => item.order.id === row.orderId);
+      if (row.bankStatementLineId != null || row.creditOffset || !(cents(row.amountEur) > 0) || !view || view.order.archivedAt) continue;
+      of(row.orderId, row.orderNumber ?? view.order.number, row.orderAlias ?? view.order.alias ?? null).open.push({ id: row.id,
+        due: row.instalmentDue ?? null, label: row.label, amountEur: row.amountEur, payee: row.payee ?? 'SUPPLIER' });
     }
     return [...byOrder.values()];
   });
@@ -119,14 +131,25 @@ export class ContainerSplit {
 
   toggle(container: Container): void {
     if (this.rowOf(container.orderId)) { this.rows.update((rows) => rows.filter((row) => row.orderId !== container.orderId)); return; }
-    // The term of the first row when this container has it (30% of all three), else its earliest open term.
-    const firstDue = this.rows().length ? this.containers().flatMap((item) => item.terms).find((term) => term.key === this.rows()[0].key)?.due ?? null : null;
+    // The term of the first row when this container has it (30% of all three): its open payment on it first, else that open term; else its earliest.
+    const first = this.rows()[0];
+    const firstDue = first ? this.dueOf(first.key) : null;
+    const payment = container.open.find((item) => first ? item.due === firstDue : true) ?? (container.terms.length ? undefined : container.open[0]);
     const term = container.terms.find((item) => firstDue && item.due === firstDue) ?? container.terms[0];
-    this.rows.update((rows) => [...rows, { orderId: container.orderId, key: term.key, amountInput: amountText(term.remainingEur) }]);
+    const row = payment ? { key: 'p:' + payment.id, amountInput: amountText(payment.amountEur) } : { key: term.key, amountInput: amountText(term.remainingEur) };
+    this.rows.update((rows) => [...rows, { orderId: container.orderId, ...row }]);
   }
   setTerm(container: Container, key: string): void {
+    const payment = container.open.find((item) => 'p:' + item.id === key);
     const term = container.terms.find((item) => item.key === key);
-    if (term) this.rows.update((rows) => rows.map((row) => row.orderId === container.orderId ? { ...row, key, amountInput: amountText(term.remainingEur) } : row));
+    const amount = payment?.amountEur ?? term?.remainingEur;
+    if (amount != null) this.rows.update((rows) => rows.map((row) => row.orderId === container.orderId ? { ...row, key, amountInput: amountText(amount) } : row));
+  }
+  /** The term a row stands on: its open payment's or its term's. */
+  private dueOf(key: string): ContainerPayable['due'] {
+    const containers = this.containers();
+    return key.startsWith('p:') ? containers.flatMap((item) => item.open).find((item) => 'p:' + item.id === key)?.due ?? null
+      : containers.flatMap((item) => item.terms).find((term) => term.key === key)?.due ?? null;
   }
   setAmount(orderId: number, text: string): void { this.rows.update((rows) => rows.map((row) => row.orderId === orderId ? { ...row, amountInput: text } : row)); }
 
@@ -134,13 +157,28 @@ export class ContainerSplit {
     if (!this.ready()) return;
     const line = this.line();
     const terms = this.containers().flatMap((container) => container.terms);
-    const parts: BankPurchasePaymentPart[] = this.rows().map((row) => {
-      const term = terms.find((item) => item.key === row.key)!;
-      return { ...this.state.termPart(line, { kind: 'term-new', orderId: term.orderId, payable: term, title: term.orderNumber }), amount: parse(row.amountInput)!, purchaseOrderId: term.orderId };
-    });
     const numbers = this.rows().map((row) => this.containers().find((container) => container.orderId === row.orderId)?.number ?? '#' + row.orderId);
     this.error.set('');
-    const failure = await this.state.linkContainers(line, parts, numbers);
+    let failure: string;
+    if (this.rows().some((row) => row.key.startsWith('p:'))) {
+      // An open payment is linked with its part (it follows the line), the others are new: one purchase-share call.
+      const open = this.containers().flatMap((container) => container.open);
+      const parts: BankPurchaseSharePart[] = this.rows().map((row) => {
+        const payment = open.find((item) => 'p:' + item.id === row.key);
+        if (payment) return { paymentId: payment.id, amountEur: parse(row.amountInput)!, expectedAmountEur: payment.amountEur };
+        const term = terms.find((item) => item.key === row.key)!;
+        return { purchaseOrderId: term.orderId, amountEur: parse(row.amountInput)!, payee: term.payee, instalmentDue: term.due, label: term.termLabel || 'Bankbetaling', settles: false };
+      });
+      const names = this.rows().map((row) => { const container = this.containers().find((item) => item.orderId === row.orderId);
+        return containerName({ id: row.orderId, number: container?.number, alias: container?.alias }); });
+      failure = await this.state.shareContainers(line, parts, this.rows().map((row, index) => ({ name: names[index], amountEur: parse(row.amountInput)! })));
+    } else {
+      const parts: BankPurchasePaymentPart[] = this.rows().map((row) => {
+        const term = terms.find((item) => item.key === row.key)!;
+        return { ...this.state.termPart(line, { kind: 'term-new', orderId: term.orderId, payable: term, title: term.orderNumber }), amount: parse(row.amountInput)!, purchaseOrderId: term.orderId };
+      });
+      failure = await this.state.linkContainers(line, parts, numbers);
+    }
     /* A successful link usually closes the split itself (the line is linked, the detail shows "Gekoppeld aan"): no emit then (NG0953). */
     if (this.destroyRef.destroyed) return;
     if (failure) this.error.set(failure);

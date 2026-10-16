@@ -4,7 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
-import { BankingApi, BankAccount, BankMovementRequest, BankPurchasePaymentPart, BankStatementLine } from '../../core/api/banking-api';
+import { BankingApi, BankAccount, BankMovementRequest, BankPurchasePaymentPart, BankPurchaseSharePart, BankStatementLine } from '../../core/api/banking-api';
 import { CashForecastApi } from '../../core/api/cash-forecast-api';
 import { FinanceApi } from '../../core/api/finance-api';
 import { MediaApi } from '../../core/api/media-api';
@@ -59,6 +59,7 @@ import type { PartyCandidate } from './party-suggestions';
 import { containerPayables, daysBetween, payableTotals, payablesFor } from './payables';
 import { containerPaymentTree, type PayeeBranch } from './container-payment-tree';
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
+import { shareToast } from '../purchasing/purchase-payment-share';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -2264,6 +2265,32 @@ export class FinanceState {
       return '';
     } catch (failure: unknown) {
       return messageOf(failure, 'Koppelen mislukt');
+    } finally {
+      this.linking.set(null);
+    }
+  }
+
+  /**
+   * "Verdelen over containers" with an open payment among the parts (Emre,
+   * 2026-10-16): one POST …/purchase-share links it with its part (it
+   * follows the line) and adds the new ones. No "Ongedaan maken": undoing
+   * would delete the open payments it linked; "Koppeling losmaken" on the
+   * line stays.
+   */
+  async shareContainers(line: BankStatementLine, parts: BankPurchaseSharePart[], rows: readonly { name: string; amountEur: number }[]): Promise<string> {
+    if (!this.cashRound()) return SERVER_PENDING;
+    if (this.linking() !== null || !parts.length) return 'Er loopt al een koppeling.';
+    this.linking.set(line.id);
+    try {
+      const result = await this.banking.sharePurchasePayment(line.id, parts);
+      this.bankStatements.update((items) => items.map((row) => (row.id === result.line.id ? result.line : row)));
+      await Promise.all([this.refreshBank(), this.reload(['payments', 'containers'])]);
+      this.ui.toast(shareToast(rows.map((row, index) => ({ name: row.name, amountEur: result.parts[index]?.amountEur ?? row.amountEur }))), 'ok');
+      return '';
+    } catch (failure: unknown) {
+      const response = failure as { status?: number; error?: { message?: unknown } | null } | null;
+      const reason = typeof response?.error?.message === 'string' && response.error.message.trim();
+      return (response?.status === 404 || response?.status === 405) && !reason ? 'Verdelen over containers kan zodra de server bijgewerkt is.' : messageOf(failure, 'Koppelen mislukt');
     } finally {
       this.linking.set(null);
     }
