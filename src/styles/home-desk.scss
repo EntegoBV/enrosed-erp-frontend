@@ -42,6 +42,9 @@ app-home-desk-agenda { display: block; }
 .home-desk__more > app-dashboard-search-console { grid-column: auto; }
 .home-desk__more .search-summary { height: 100%; border-radius: 16px; }
 .home-desk__placeholder { min-height: 180px; }
+/* Meer cijfers: a plain line over the second grid; the link is the way to every analysis (the old home's "Alle analyses ›"). */
+.home-desk__more-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 2px -6px; }
+.home-desk__more-head .wk-link { font-size: 13px; white-space: nowrap; }
 @media (min-width: 1280px) {
   .home-desk__lead { flex-basis: 440px; }
   .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; }

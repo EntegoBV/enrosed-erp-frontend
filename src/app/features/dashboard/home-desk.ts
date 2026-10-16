@@ -183,6 +183,11 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
 
       <app-home-desk-agenda />
 
+      <!-- Meer cijfers, as on the phone: the other figure blocks, with the way to every analysis. -->
+      <header class="home-desk__more-head">
+        <h2 class="home-desk__card-title">Meer cijfers</h2>
+        <a class="wk-link" routerLink="/analyses/overview">Alle analyses <span aria-hidden="true">›</span></a>
+      </header>
       <div class="home-desk__more">
         <app-home-ontvangen variant="desk" />
         <app-home-voorraad variant="desk" />
