@@ -21,6 +21,7 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 import { installReducedMotionScroll } from './core/platform/reduced-motion';
 import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
+import { phoneTabForUrl } from './core/platform/phone-tabs';
 
 /**
  * App shell.
@@ -287,12 +288,12 @@ import { NavHistory } from './core/platform/nav-history-service';
 
       @if (!bare() && !websiteWorkspace()) {
         <nav class="tabbar">
-          <a class="tabbar__item" routerLink="/dashboard" routerLinkActive="active"
-             [attr.aria-current]="url().startsWith('/dashboard') ? 'page' : null">
+          <a class="tabbar__item" routerLink="/dashboard"
+             [class.active]="phoneTab() === 'home'" [attr.aria-current]="phoneTab() === 'home' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="home" /></span> Home
           </a>
-          <a class="tabbar__item" routerLink="/sales" routerLinkActive="active"
-             [class.active]="salesRoute()" [attr.aria-current]="salesRoute() ? 'page' : null">
+          <a class="tabbar__item" routerLink="/sales"
+             [class.active]="phoneTab() === 'sales'" [attr.aria-current]="phoneTab() === 'sales' ? 'page' : null">
             <span class="tabbar__icon">
               <app-icon name="sales" />
               @if (openWork(); as n) {
@@ -300,16 +301,16 @@ import { NavHistory } from './core/platform/nav-history-service';
               }
             </span> Verkoop
           </a>
-          <a class="tabbar__item" routerLink="/purchasing" routerLinkActive="active"
-             [attr.aria-current]="url().startsWith('/purchasing') ? 'page' : null">
+          <a class="tabbar__item" routerLink="/purchasing"
+             [class.active]="phoneTab() === 'purchasing'" [attr.aria-current]="phoneTab() === 'purchasing' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="purchase" /></span> Inkoop
           </a>
-          <a class="tabbar__item" routerLink="/products" routerLinkActive="active"
-             [class.active]="catalogRoute()" [attr.aria-current]="catalogRoute() ? 'page' : null">
+          <a class="tabbar__item" routerLink="/products"
+             [class.active]="phoneTab() === 'products'" [attr.aria-current]="phoneTab() === 'products' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="products" /></span> Producten
           </a>
           <a class="tabbar__item" routerLink="/more"
-             [class.active]="moreRoute()" [attr.aria-current]="moreRoute() ? 'page' : null">
+             [class.active]="phoneTab() === 'more'" [attr.aria-current]="phoneTab() === 'more' ? 'page' : null">
             <span class="tabbar__icon">
               <app-icon name="more" />
               @if (openLoginRequests(); as n) {
@@ -458,23 +459,12 @@ export class App {
   private readonly workspaceReturn = inject(WorkspaceReturn);
   private readonly noteReturn = effect(() => this.workspaceReturn.note(this.url()));
 
-  readonly salesRoute = computed(() => {
-    const url = this.url();
-    return url.startsWith('/sales') || url.startsWith('/revisions');
-  });
-
-  readonly catalogRoute = computed(() => {
-    const url = this.url();
-    return url.startsWith('/products') || url.startsWith('/stock')
-      || url.startsWith('/barcodes') || url.startsWith('/catalog')
-      || url.startsWith('/website');
-  });
-
-  readonly moreRoute = computed(() => {
-    const url = this.url();
-    return ['/more', '/analyses', '/customers', '/klantlogins', '/contactaanvragen', '/suppliers', '/countries', '/settings', '/activity', '/voorwaarden']
-      .some((path) => url.startsWith(path));
-  });
+  /**
+   * The lit phone tab follows where a screen is listed on the phone
+   * (phone-tabs.ts): screens reached from Meer light Meer, in agreement with
+   * their "‹ Meer" back control.
+   */
+  readonly phoneTab = computed(() => phoneTabForUrl(this.url()));
 
   logout(): void {
     this.auth.logout();

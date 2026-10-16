@@ -17,12 +17,14 @@ import { NavigationEnd, Router } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
-import { BrandMark } from './brand-mark';
 import { Icon } from './icon';
 import { NotificationBell } from './notification-bell';
+import { observeLargeTitle } from './large-title';
 import { DesktopViewport } from '../core/platform/desktop-viewport';
 import { NavHistory } from '../core/platform/nav-history-service';
 import { parentOf } from '../core/platform/page-parent';
+import { isPhoneTabRoot } from '../core/platform/phone-tabs';
+import { capsuleLabel, screenLabel } from '../core/platform/return-label';
 
 /** The screen above this one, as a page names it: label and URL. */
 export interface PageHeaderParent {
@@ -46,7 +48,17 @@ export interface PageHeaderParent {
  * name is never cut for a crumb. Projected actions get the compact kit
  * metrics; the bell sits after a divider.
  *
- * Phone: a back button on detail views and the brand mark elsewhere.
+ * Phone (iOS 26): root screens get a large title (34/800, the subtitle as
+ * its caption) that condenses into the glass bar on scroll, exactly like
+ * app-ios-nav; detail screens get the glass bar with the title over the
+ * subtitle. [large] overrides the default (a root screen: parentOf(url) is
+ * null). The back control: none on the five tab roots, always elsewhere.
+ * It reads the screen below in the history ("‹ Verkoop", history back);
+ * without one, the parent's label (detail screens) or backTo's, else
+ * "Meer", and it navigates there. Labels over ten characters, or a title
+ * that would be cut, make it a chevron circle. Projected .btn become glass
+ * capsules (primary: accent), .btn--icon-mobile glass circles; the bell is
+ * a glass circle too.
  *
  * The title can be editable — order screens use this so the document number
  * is changed right where it is displayed, instead of in a form field that
@@ -61,17 +73,19 @@ export interface PageHeaderParent {
 @Component({
   selector: 'app-page-header',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [BrandMark, Icon, NotificationBell],
+  imports: [Icon, NotificationBell],
   template: `
-    <header class="appbar" [class.appbar--crumb]="!!crumb()">
-      @if (!desktop.active()) {
-        @if (showBack()) {
-          <button class="appbar__back" type="button" aria-label="Terug" (click)="back()">‹</button>
+    <header class="appbar" #bar [class.appbar--crumb]="!!crumb()" [class.appbar--large]="largeShown()"
+            [class.appbar--condensed]="condensed()" [class.appbar--two]="!largeShown() && !!subtitle()">
+      @if (backControl(); as control) {
+        @if (control.text) {
+          <button class="appbar__back ios-capsule ios-back" type="button" [attr.aria-label]="control.aria" (click)="back()">
+            <app-icon name="chevron-left" [size]="22" />{{ control.text }}
+          </button>
         } @else {
-          <!-- On phones the brand mark sits here. -->
-          <div class="appbar__brand">
-            <app-brand-mark [small]="true" />
-          </div>
+          <button class="appbar__back ios-circle" type="button" [attr.aria-label]="control.aria" (click)="back()">
+            <app-icon name="chevron-left" [size]="22" />
+          </button>
         }
       }
       <div class="appbar__lead" #lead>
@@ -102,6 +116,9 @@ export interface PageHeaderParent {
                 #titleField
               />
             </h1>
+          } @else if (largeShown()) {
+            <!-- The page heading is the large title below; this one takes over once it has scrolled away. -->
+            <div class="appbar__title" [attr.aria-hidden]="condensed() ? null : 'true'"><span class="appbar__title-text" #titleText>{{ title() }}</span></div>
           } @else if (titleEditable()) {
             <h1 class="appbar__title">
               <button class="appbar__title-button" type="button" [attr.title]="title()"
@@ -113,7 +130,7 @@ export interface PageHeaderParent {
           } @else {
             <h1 class="appbar__title" [attr.title]="title()"><span class="appbar__title-text" #titleText>{{ title() }}</span></h1>
           }
-          @if (subtitle()) {
+          @if (subtitle() && !largeShown()) {
             <div class="appbar__sub" [attr.title]="subtitle()">{{ subtitle() }}</div>
           }
         </div>
@@ -126,6 +143,13 @@ export interface PageHeaderParent {
         }
       </div>
     </header>
+    @if (largeShown()) {
+      <div class="appbar__large">
+        <h1 class="appbar__large-title">{{ title() }}</h1>
+        @if (subtitle()) { <p class="appbar__large-sub">{{ subtitle() }}</p> }
+      </div>
+      <div class="appbar__sentinel" #sentinel aria-hidden="true"></div>
+    }
   `,
 })
 export class PageHeader {
@@ -137,9 +161,19 @@ export class PageHeader {
 
   readonly title = input.required<string>();
   readonly subtitle = input('');
+  /**
+   * Kept for the call sites: the phone decides its back control itself
+   * (critique B10) and the desk has the crumb, so this no longer changes
+   * what renders.
+   */
   readonly showBack = input(false);
-  /** Where back goes when the page was opened directly (no history to return to). */
+  /** Where the phone back control goes when there is no previous screen; also names it ("‹ Meer"). */
   readonly backTo = input<string | null>(null);
+  /**
+   * The phone large title. Undefined (the default) gives one to root
+   * screens (parentOf(url) is null) and the glass bar to detail screens.
+   */
+  readonly large = input<boolean | undefined>(undefined);
   /**
    * The screen above this one for the desk crumb. Undefined (the default)
    * derives it from the route with parentOf(); null shows no crumb.
@@ -159,6 +193,8 @@ export class PageHeader {
   private readonly titleField = viewChild<ElementRef<HTMLInputElement>>('titleField');
   private readonly titleText = viewChild<ElementRef<HTMLElement>>('titleText');
   private readonly lead = viewChild<ElementRef<HTMLElement>>('lead');
+  private readonly bar = viewChild<ElementRef<HTMLElement>>('bar');
+  private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
 
   /** The open URL (query-only navigations included). */
   private readonly url = toSignal(
@@ -185,11 +221,38 @@ export class PageHeader {
     return parent ? this.history.upHref(parent.url) : null;
   });
 
+  /** The phone large title (never on the desk: one h1 there). */
+  readonly largeShown = computed(() => !this.desktop.active() && (this.large() ?? parentOf(this.url()) === null));
+
+  /** True once the large title has scrolled under the bar. */
+  readonly condensed = signal(false);
+
   /**
-   * How far the crumb has folded so the title (a document number, a
-   * product name) stays whole: the label, its chevron alone, or nothing.
+   * How far the way up has folded so the title (a document number, a
+   * product name) stays whole. Desk: the crumb label, its chevron alone, or
+   * nothing. Phone: the back capsule, then a chevron circle.
    */
   readonly fold = signal<'full' | 'chevron' | 'none'>('full');
+
+  /** The phone back control: what it says and where it goes without history. */
+  readonly backControl = computed(() => {
+    if (this.desktop.active()) return null;
+    const url = this.url();
+    if (isPhoneTabRoot(url)) return null;
+    const parent = this.resolvedParent();
+    const backTo = this.backTo();
+    let label: string;
+    if (this.history.below()) label = this.history.belowLabel();
+    else if (backTo) label = screenLabel(backTo) || parent?.phoneLabel || parent?.label || '';
+    else if (parent) label = parent.phoneLabel ?? parent.label;
+    else label = 'Meer';
+    const fallback = backTo ?? parent?.url ?? '/more';
+    return {
+      text: this.fold() === 'full' ? capsuleLabel(label) : '',
+      aria: label ? `Terug naar ${label}` : 'Terug',
+      fallback,
+    };
+  });
 
   constructor() {
     effect(() => {
@@ -208,22 +271,34 @@ export class PageHeader {
     effect(() => {
       this.title();
       this.crumb();
+      this.history.below();
       this.desktop.active();
       this.fold.set('full');
       this.scheduleFit();
     });
+    /* The phone large title condenses into the bar once it scrolls away (shared with app-ios-nav). */
+    effect((onCleanup) => {
+      const bar = this.bar()?.nativeElement;
+      const sentinel = this.sentinel()?.nativeElement;
+      if (!bar || !sentinel) { this.condensed.set(false); return; }
+      onCleanup(observeLargeTitle(bar, sentinel, (condensed) => this.condensed.set(condensed)));
+    });
     const destroyRef = inject(DestroyRef);
     afterNextRender(() => {
+      const bar = this.bar()?.nativeElement;
       const lead = this.lead()?.nativeElement;
-      if (!lead || typeof ResizeObserver === 'undefined') return;
-      let width = lead.getBoundingClientRect().width;
+      if (!bar || !lead || typeof ResizeObserver === 'undefined') return;
+      let barWidth = bar.getBoundingClientRect().width;
       const observer = new ResizeObserver(() => {
-        const next = lead.getBoundingClientRect().width;
-        /* More room: try the full crumb again; less room: check the title. */
-        if (next > width + 0.5 && this.fold() !== 'full') this.fold.set('full');
-        width = next;
+        /* A wider bar (a resized window) may hold the full way up again. Only
+           the bar counts: the lead itself grows when the way up folds, and
+           unfolding on that would flip back and forth. */
+        const next = bar.getBoundingClientRect().width;
+        if (next > barWidth + 0.5 && this.fold() !== 'full') this.fold.set('full');
+        barWidth = next;
         this.scheduleFit();
       });
+      observer.observe(bar);
       observer.observe(lead);
       destroyRef.onDestroy(() => { observer.disconnect(); cancelAnimationFrame(this.fitFrame); });
     });
@@ -239,7 +314,11 @@ export class PageHeader {
   /** Folds the way up one step while the title text does not fit; it unfolds only when the room grows. */
   private fit(): void {
     const fold = this.fold();
-    if (fold === 'none' || !this.crumb()) return;
+    if (fold === 'none') return;
+    const desk = !!this.crumb();
+    /* Phone: only a labelled back capsule can give way, and only on a bar title (not the large one). */
+    const phone = !desk && fold === 'full' && !this.largeShown() && !!this.backControl()?.text;
+    if (!desk && !phone) return;
     const text = this.titleText()?.nativeElement;
     if (!text || text.scrollWidth <= text.clientWidth + 0.5) return;
     this.fold.set(fold === 'full' ? 'chevron' : 'none');
@@ -266,9 +345,10 @@ export class PageHeader {
     this.history.up(parent.url);
   }
 
+  /** Phone back: history back to the screen below, or where the control says without one. */
   back(): void {
-    const fallback = this.backTo();
-    if (fallback && window.history.length <= 1) { void this.router.navigateByUrl(fallback); return; }
+    const control = this.backControl();
+    if (control) { this.history.back(control.fallback); return; }
     this.location.back();
   }
 }

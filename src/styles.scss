@@ -213,66 +213,7 @@ a { color: var(--rose); }
    the tab bar's own stacking context can cover the sheet footer. */
 .main:has(.overlay) { position: relative; z-index: 80; }
 
-/* --- bovenbalk --- */
-.appbar {
-  position: sticky;
-  top: 0;
-  /* Above the tab bar and the FAB: the notification sheet renders inside
-     this bar, and a lower bar would trap that sheet underneath them. */
-  z-index: 60;
-  height: var(--appbar-h);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--safe-t) 12px 0;
-  /* Translucent so the pseudo-element blur below shows through. */
-  background: rgb(255 255 255 / 80%);
-  border-bottom: 1px solid rgb(26 22 20 / 6%);
-}
-
-/* Blur behind the bar, not on it: a backdrop-filter on the bar itself makes
-   it the containing block for position:fixed, which pinned the notification
-   sheet to the bar instead of the screen. */
-.appbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-}
-
-.appbar__back {
-  border: 0;
-  background: transparent;
-  font-size: 22px;
-  line-height: 1;
-  padding: 8px 6px;
-  margin-left: -6px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  color: var(--ink-2);
-  min-width: 40px;
-}
-.appbar__back:active { background: var(--surface-2); }
-
-.appbar__titles { min-width: 0; flex: 1; }
-.appbar__title {
-  font-size: 17px;
-  font-weight: 680;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.appbar__sub {
-  font-size: 12.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.appbar__actions { display: flex; gap: 6px; align-items: center; }
+/* --- bovenbalk: app-page-header, styled in styles/shell.scss --- */
 
 /* --- inhoud --- */
 .content {
@@ -1439,18 +1380,6 @@ table.data tfoot td {
   margin-bottom: 4px;
 }
 
-/* Wordmark in the mobile top bar: dark on light. */
-.appbar__brand {
-  --brand-ink: #1a1614;
-  --brand-sub: #8a807a;
-  /* Light bar: the black logo stays as it is. */
-  --brand-logo-filter: none;
-  --brand-logo-filter-inverted: invert(1);
-  margin-right: 4px;
-}
-/* No background plate behind the logo anymore: the theme's green already
-   says the purchase figures are visible, and a dark plate actually made
-   the logo harder to read. */
 
 /* Stock dot, outside the product picker too. */
 .stock-dot {

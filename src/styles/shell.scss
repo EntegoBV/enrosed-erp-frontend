@@ -9,8 +9,21 @@
 .content.content--narrow { max-width: 960px; }
 
 /* ------------------------------------------------- page header, all sizes
-   (app-page-header; these were the component's own styles) */
-.appbar__lead { display: contents; }
+   app-page-header renders .appbar (the bar), and on the phone the large
+   title after it. Trap rule: .appbar holds the bell's sheet, so it never
+   gets a transform, filter, backdrop-filter or container; the glass sits
+   on ::before. z-index 60: above the tab bar and the '+', so that sheet is
+   never trapped under them. */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  height: var(--appbar-h);
+}
+.appbar::before { content: ''; position: absolute; inset: 0; z-index: -1; }
+.appbar__lead { display: flex; min-width: 0; }
 .appbar__titles {
   display: flex;
   min-width: 0;
@@ -19,31 +32,29 @@
   justify-content: center;
   gap: 2px;
 }
-.appbar__title { min-width: 0; line-height: 1; }
+.appbar__title { min-width: 0; overflow: hidden; white-space: nowrap; }
 /* The text ellipsizes on its own span, so a pencil or a hit area never counts as cut text. */
 .appbar__title-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.appbar__sub { margin: 0; line-height: 1; }
+.appbar__sub { margin: 0; min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .appbar__title-button {
+  display: inline-flex;
+  align-items: baseline;
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
-  padding: 0;
   font: inherit;
   font-size: inherit;
   font-weight: inherit;
-  text-align: left;
-  cursor: pointer;
-  max-width: 100%;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: baseline;
   line-height: inherit;
-  position: relative;
-  z-index: 1;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
 }
 .appbar__title-button > .appbar__title-text { flex: 0 1 auto; }
-/* Keep the editable title visually compact inside the bar. The transparent
-   hit area provides a forgiving touch target without pushing the subtitle
-   down. */
+/* A forgiving hit area around the editable title, without pushing the subtitle down. */
 .appbar__title-button::after {
   content: '';
   position: absolute;
@@ -57,45 +68,40 @@
 .appbar__pencil {
   display: inline-block;
   flex: none;
-  margin-left: 3px;
+  margin-left: 4px;
   color: var(--muted-2);
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1;
-  transform: translateY(1px);
 }
 .appbar__title-input {
-  font: inherit;
-  font-size: inherit;
-  font-weight: inherit;
   width: 100%;
   max-width: 240px;
+  padding: 0;
   border: 0;
   border-bottom: 2px solid var(--rose);
   background: transparent;
-  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
+.appbar__actions { display: flex; flex: none; align-items: center; }
 .appbar__divider { display: none; }
 
 /* ------------------------------------------------------------ desk toolbar
    52 px, solid, a crumb to the screen above, the title at the kit's
-   .wk-toolbar__title size, compact actions, a divider and the bell. No
-   container, filter or transform on .appbar: the bell's sheet lives inside. */
+   .wk-toolbar__title size, compact actions, a divider and the bell. */
 @media (min-width: 680px) {
   :root { --appbar-h: calc(52px + var(--safe-t)); }
   .appbar {
     gap: 12px;
     padding: var(--safe-t) 26px 0;
-    background: var(--surface);
     border-bottom: 1px solid var(--line);
+    background: var(--surface);
   }
-  .appbar::before { content: none; }
-  .appbar__lead {
-    display: flex;
-    flex: 1 1 auto;
-    align-items: baseline;
-    gap: 4px;
-    min-width: 0;
-  }
+  .appbar__lead { flex: 1 1 auto; align-items: baseline; gap: 4px; }
+  /* Crumb and chevron sit together on the title's baseline. */
+  .appbar__path { display: inline-flex; flex: none; align-items: center; gap: 2px; min-width: 0; }
   .appbar__crumb {
     flex: none;
     max-width: 220px;
@@ -113,6 +119,7 @@
     transition: background-color var(--dur-1, .12s) var(--ease-out, ease), color var(--dur-1, .12s) var(--ease-out, ease);
   }
   .appbar__crumb:hover { background: var(--surface-2); color: var(--ink); }
+  .appbar__crumb:focus-visible { outline: 2px solid var(--rose); outline-offset: 0; }
   /* Folded when the title needs the room: the chevron alone, named by its label. */
   .appbar__crumb--compact {
     display: inline-grid;
@@ -123,45 +130,23 @@
     place-items: center;
     color: var(--ink-2);
   }
-  .appbar__crumb:focus-visible { outline: 2px solid var(--rose); outline-offset: 0; }
-  /* Crumb and chevron sit together on the title's baseline. */
-  .appbar__path { display: inline-flex; flex: none; align-items: center; gap: 2px; min-width: 0; }
   .appbar__sep { flex: none; color: var(--muted-2); line-height: 0; }
   /* Root screens: the subtitle inline after the title; it gives way first. */
-  .appbar__titles {
-    flex: 1 1 auto;
-    flex-direction: row;
-    align-items: baseline;
-    justify-content: flex-start;
-    gap: 10px;
-  }
+  .appbar__titles { flex: 1 1 auto; flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 10px; }
   .appbar__title {
     flex: 0 0 auto;
     max-width: 100%;
-    overflow: hidden;
     font-size: 18px;
     font-weight: 720;
     letter-spacing: -.02em;
     line-height: 1.15;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .appbar__sub {
-    flex: 0 1 auto;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .appbar__sub { flex: 0 1 auto; font-size: 13px; font-weight: 500; line-height: 1.25; }
   /* Detail screens: title over subtitle (the customer or supplier name stays readable at 1100). */
   .appbar--crumb .appbar__titles { flex-direction: column; align-items: flex-start; gap: 1px; }
   .appbar--crumb .appbar__sub { max-width: 100%; font-size: 12.5px; }
-  .appbar__pencil { margin-left: 4px; font-size: 14px; font-weight: 500; transform: none; }
-  .appbar__actions { flex: none; gap: 8px; }
-  .appbar__actions .btn {
+  .appbar__actions { gap: 8px; }
+  .appbar__actions > .btn {
     gap: 6px;
     min-height: 32px;
     height: 32px;
@@ -176,5 +161,99 @@
 @media (min-width: 680px) and (max-width: 1023.98px) {
   .appbar { padding: var(--safe-t) 16px 0; }
   .appbar__actions { gap: 6px; }
-  .appbar__actions .btn { padding: 0 10px; }
+  .appbar__actions > .btn { padding: 0 10px; }
+}
+
+/* ------------------------------------------------------------ phone header
+   iOS 26: a 44 px bar. Root screens: transparent over a large title that
+   condenses into the glass bar (the IosNav behaviour). Detail screens: the
+   glass bar from the start, title over subtitle. Glass capsules and
+   circles for back, actions and the bell. */
+@media (max-width: 679.98px) {
+  :root { --appbar-h: calc(44px + var(--safe-t)); }
+  .appbar {
+    gap: 2px;
+    padding: var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px);
+  }
+  .appbar::before {
+    border-bottom: .5px solid var(--ios-sep);
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-filter);
+    -webkit-backdrop-filter: var(--glass-filter);
+    transition: opacity var(--dur-2, .2s) var(--ease-out, ease);
+  }
+  .appbar--large:not(.appbar--condensed)::before { opacity: 0; }
+  .appbar__back { flex: none; }
+  .appbar__lead { flex: 1 1 auto; align-items: center; justify-content: center; padding: 0 4px; }
+  .appbar__titles { flex: 0 1 auto; max-width: 100%; align-items: center; gap: 1px; text-align: center; }
+  .appbar__title { max-width: 100%; font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+  .appbar--two .appbar__title { font-size: 15px; }
+  .appbar__sub { max-width: 100%; font-size: 11.5px; font-weight: 500; line-height: 1.2; }
+  .appbar--large .appbar__title {
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity var(--dur-2, .2s) var(--ease-out, ease), transform var(--dur-2, .2s) var(--ease-out, ease);
+  }
+  .appbar--large.appbar--condensed .appbar__title { opacity: 1; transform: none; }
+  /* Centred unless the trail holds more than one glass circle or any capsule
+     (critique B5): then the title sits left, next to the back control. */
+  .appbar:has(.appbar__actions > :not(.hide-mobile, .appbar__divider, app-notification-bell, .btn--icon-mobile)) .appbar__lead,
+  .appbar:has(.appbar__actions > :is(.btn--icon-mobile:not(.hide-mobile), app-notification-bell) ~ :is(.btn--icon-mobile:not(.hide-mobile), app-notification-bell)) .appbar__lead {
+    justify-content: flex-start;
+  }
+  .appbar:has(.appbar__actions > :not(.hide-mobile, .appbar__divider, app-notification-bell, .btn--icon-mobile)) .appbar__titles,
+  .appbar:has(.appbar__actions > :is(.btn--icon-mobile:not(.hide-mobile), app-notification-bell) ~ :is(.btn--icon-mobile:not(.hide-mobile), app-notification-bell)) .appbar__titles {
+    align-items: flex-start;
+    text-align: left;
+  }
+  .appbar__actions { gap: 2px; }
+  /* Projected buttons (direct children; a page's own trail block keeps its own look) become
+     glass capsules; the primary one keeps its accent fill. */
+  .appbar__actions > .btn,
+  .appbar__actions > .btn:active {
+    position: relative;
+    isolation: isolate;
+    gap: 5px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .appbar__actions > .btn::before {
+    content: '';
+    position: absolute;
+    inset: 4px 0;
+    z-index: -1;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    box-shadow: var(--glass-highlight), 0 1px 3px rgb(26 22 20 / 12%);
+    backdrop-filter: var(--glass-filter);
+    -webkit-backdrop-filter: var(--glass-filter);
+    transition: transform var(--dur-1, .12s) var(--ease-out, ease);
+  }
+  .appbar__actions > .btn:active:not(:disabled) { transform: none; }
+  .appbar__actions > .btn:active:not(:disabled)::before { transform: scale(.96); }
+  .appbar__actions > .btn--primary { color: #fff; }
+  .appbar__actions > .btn--primary::before {
+    background: var(--rose);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--rose) 35%, transparent);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .appbar__actions > .btn--danger { color: var(--danger); }
+  .appbar__actions > .btn--icon-mobile { width: 44px; padding: 0; }
+  .appbar__actions > .btn--icon-mobile::before { inset: 4px; border-radius: 50%; }
+  /* The large title: 34/800 like app-ios-nav, its caption the subtitle. */
+  .appbar__large { padding: 2px calc(var(--safe-r) + 20px) 10px calc(var(--safe-l) + 20px); }
+  .appbar__large-title { margin: 0; color: var(--ink); font-size: 34px; font-weight: 800; letter-spacing: -.03em; line-height: 1.12; overflow-wrap: anywhere; }
+  .appbar__large-sub { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.35; }
+  .appbar__sentinel { height: 1px; margin-top: -1px; }
+  /* Content right under a large title starts close to it (critique N8: only there). */
+  app-page-header:has(> .appbar__large) + .content { padding-top: 4px; }
 }

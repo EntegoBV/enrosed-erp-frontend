@@ -104,12 +104,14 @@ import { Icon } from './icon';
     /* One badge rule for every icon badge (bell, tab bar): red with a ring
        of the surface, 9+ capped. The number counts tasks, not events; inline
        counts in lists are accent chips instead. */
+    /* Phone: a glass circle in the bar (44 px hit, 36 px visual), like app-ios-nav's buttons. */
     .bell {
       position: relative;
+      isolation: isolate;
       display: grid;
       place-items: center;
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       flex: none;
       padding: 0;
       border: 0;
@@ -118,12 +120,25 @@ import { Icon } from './icon';
       color: var(--ink);
       font-size: 15px;
       cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
-    .bell:active { background: var(--surface-2); }
+    .bell::before {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      z-index: -1;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      box-shadow: var(--glass-highlight), 0 1px 3px rgb(26 22 20 / 12%);
+      backdrop-filter: var(--glass-filter);
+      -webkit-backdrop-filter: var(--glass-filter);
+      transition: transform var(--dur-1, .12s) var(--ease-out, ease);
+    }
+    .bell:active::before { transform: scale(.96); }
     .bell__badge {
       position: absolute;
-      top: -1px;
-      right: -2px;
+      top: 1px;
+      right: 0;
       display: grid;
       place-items: center;
       min-width: 18px;
@@ -140,6 +155,7 @@ import { Icon } from './icon';
     }
     /* Desk: a 32 px ghost square at the end of the toolbar. */
     @media (min-width: 680px) {
+      .bell::before { content: none; }
       .bell {
         width: 32px;
         height: 32px;
