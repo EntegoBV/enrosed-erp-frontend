@@ -15,14 +15,16 @@ import {
   alreadyLinkedText, carveForeignText, carveText, growLinkPlan, inspectionSplitBlocked, inspectionSplitEur, linkNotice, paymentFigure, pendingAlreadyLinked,
   pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
-import { bankMarker, lineMarkers } from '../src/app/features/finance/bank-markers.ts';
-import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
+import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { preservePurchaseDraft } from '../src/app/features/purchasing/purchase-payment-refresh.ts';
 import { PAYEE_LABEL } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
-import { alsoNotice, alsoTotalEur, alsoWrites } from '../src/app/features/purchasing/purchase-also-containers.ts';
+import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, proposeShare } from '../src/app/features/purchasing/purchase-also-containers.ts';
+import { applyShare, shareBody, shareNewPart, sharePartsOf, shareStatus, shareToast } from '../src/app/features/purchasing/purchase-payment-share.ts';
+import { containerName } from '../src/app/features/purchasing/container-name.ts';
+import { containerPayables } from '../src/app/features/finance/payables.ts';
 /** The menus module imports the payee words at runtime; its euro format is handed in as it reads. */
 const formatEur = (value: number): string => value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });
-import { receiptInstant, receiptLocalParts } from '../src/app/shared/received-at.ts';
+import { receiptLocalParts } from '../src/app/shared/received-at.ts';
 
 test('bank amounts accept Dutch decimal commas, thousands and plain API decimals', () => {
   for (const [raw, expected] of [['1.046,95', 1046.95], ['1 200,25', 1200.25], ['€ 1\u00a0200,25', 1200.25],
@@ -53,7 +55,7 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
   'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount',
   'setPaymentPart', 'paymentTransfer', 'paymentTransferEur', 'writeEur', 'paymentGoodsEur', 'bankLines', 'bankedPaymentIds', 'paymentOnBank',
-  'paymentBankAccount', 'transferLine', 'bankToday', 'paymentInstalmentOptions',
+  'bankToday', 'paymentInstalmentOptions',
   // the round of 2026-10-15: credit offsets, invoices, payments in parts, bank transactions as proof, the inspection split
   'payingCreditOffset', 'roundOnServer', 'payingRow', 'payingParts', 'saveGroup', 'reloadBankLines', 'groupOf', 'preselectedInvoice',
   'storedPaymentDraft', 'rebindPaying', 'removeSheetPart',
@@ -64,7 +66,9 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   // round-2 review: the file goes to the invoice the sheet showed
   'invoiceFileTarget',
   // owner addition 2026-10-15: one transfer for several containers
-  'alsoPartsOf']);
+  'alsoPartsOf',
+  // Emre, 2026-10-16: one transaction shared over containers, an open payment linked instead of a second one
+  'alsoState', 'alsoFor', 'loadAlso', 'proposeShareRows', 'refreshAlsoRows', 'paymentRows', 'loadPaymentRows', 'payingLineShares', 'shareRefused', 'shareMissing']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -75,7 +79,7 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 /** Intl writes '€' and the figure with a no-break space; the assertions read plain spaces. */
-const plain = (text: string | null | undefined): string | null | undefined => text?.replace(/\u00a0/g, ' ');
+const plain = (text: string | null | undefined): string | null | undefined => text?.replace(/\u00a0/g, ' ').replace(/\u2060/g, '');
 function order(id = 50) { return { id, number: `PO-${id}`, paymentTerms: 'THIRDS', alias: 'Container', notes: '', lines: [] }; }
 function payment() { return { id: 80, orderId: 50, amount: 1046.95, amountEur: 1046.95, currency: 'EUR', paidOn: '2026-09-13',
   label: 'Douane en transport', payee: 'LOGISTICS', instalmentDue: null, settles: false }; }
@@ -91,8 +95,11 @@ function setup() {
     paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocumentKind, invoicesOf, paymentRoundOnServer, primaryInvoice, inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur,
     carveText, carveForeignText, linkNotice, pendingAlreadyLinked, surplusQuestion, transferCompanions, invoiceNumberKey, resolveInvoice,
     amountInputText, growLinkPlan, alreadyLinkedText, paymentFigure, alsoNotice, alsoTotalEur, alsoWrites,
-    bankTransactionDay, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
-    PAYEE_LABEL, formatEur, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
+    alsoContainerOptions, proposeShare, applyShare, shareBody, shareNewPart, sharePartsOf, shareStatus, shareToast, containerName, containerPayables,
+    SHARE_SERVER_PENDING: 'Verdelen over containers kan zodra de server bijgewerkt is.',
+    NO_SHARE: { alsoParts: [], shareOwn: null, shareOwnInput: '', shareMode: undefined, shareProposed: false },
+    bankTransactionDay, lineMarkers,
+    PAYEE_LABEL, formatEur, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   const writes: any[] = []; const uploads: string[] = []; const toasts: any[] = []; const lines: any[] = [];
@@ -126,8 +133,7 @@ function setup() {
 /** A supplier transfer in USD that pays the goods, the CIF freight and the inspection, with the bank's euro typed in. */
 function splitDraft() {
   return { id: null, amount: 1000, amountInput: '1000', currency: 'USD', paidOn: '2026-07-02', label: 'Saldo', payee: 'SUPPLIER', files: [], settles: false,
-    instalmentDue: 'ARRIVED', amountEurInput: '1234,56', amountEur: 1234.56, freightAmountInput: '333,33', freightAmount: 333.33, separateAmountInput: '100', separateAmount: 100,
-    toBank: true, bankAccount: 'KBC' };
+    instalmentDue: 'ARRIVED', amountEurInput: '1234,56', amountEur: 1234.56, freightAmountInput: '333,33', freightAmount: 333.33, separateAmountInput: '100', separateAmount: 100 };
 }
 /** A server that stores what it gets and, like the real one, keeps a stored euro when a PUT carries none. */
 function ledgerServer(api: ReturnType<typeof setup>['api'], editor: any) {
@@ -141,7 +147,7 @@ function ledgerServer(api: ReturnType<typeof setup>['api'], editor: any) {
   return ledger;
 }
 
-test('a USD transfer with a typed debit and both parts posts three payments and one bank line with the typed figure and every id', async () => {
+test('a USD transfer with a typed debit and both parts posts three payments with the typed figure and notes no bank line (the picked transaction is the movement)', async () => {
   const { editor, api, writes, toasts, lines } = setup();
   const ledger = ledgerServer(api, editor);
   editor.paying.set(splitDraft());
@@ -151,15 +157,12 @@ test('a USD transfer with a typed debit and both parts posts three payments and 
   assert.deepEqual(writes.map(row => [row.type, row.body.payee, row.body.instalmentDue ?? null, row.body.amountEur, row.body.label]),
     [['POST payment', 'SUPPLIER', 'ARRIVED', 861.33, 'Saldo'], ['POST payment', 'SUPPLIER', 'FREIGHT', 287.1, 'Saldo · zeevracht (CIF)'], ['POST payment', 'SEPARATE', null, 86.13, 'Saldo · inspectie']]);
   assert.equal(ledger.reduce((sum, row) => sum + row.amountEur, 0), 1234.56);
-  assert.equal(lines.length, 1);
-  assert.deepEqual([lines[0].amountEur, lines[0].purchasePaymentIds, lines[0].direction, lines[0].account, lines[0].counterparty],
-    [1234.56, [81, 82, 83], 'OUTGOING', 'KBC', 'Yiwu Trading']);
-  assert.equal(lines[0].reference, 'Saldo · PO-50 · containerbetaling #81');
+  assert.equal(lines.length, 0, "no 'Ook als bankbeweging noteren' any more");
   assert.equal(editor.paying(), null);
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd · ook op KBC', 'ok']);
+  assert.deepEqual(toasts.at(-1), ['Betaling bewaard', 'ok']);
 });
 
-test('a part that fails leaves the goods euro alone: the retry posts only the missing part and the bank line still carries the typed figure', async () => {
+test('a part that fails leaves the goods euro alone: the retry posts only the missing part, and no bank line', async () => {
   const { editor, api, writes, toasts, lines } = setup();
   const ledger = ledgerServer(api, editor);
   const post = api.addPayment; let fail = true;
@@ -170,7 +173,6 @@ test('a part that fails leaves the goods euro alone: the retry posts only the mi
   editor.paying.set(splitDraft());
   await editor.confirmPayment();
   assert.deepEqual(writes.map(row => row.type), ['POST payment', 'POST payment', 'POST payment']);
-  assert.equal(lines.length, 0, 'no bank line while a part of the transfer is missing');
   assert.match(toasts.at(-1)[0], /het deel inspectie is niet genoteerd/);
   const draft = editor.paying();
   assert.deepEqual([draft.id, clone(draft.partIds), draft.freightAmount, draft.separateAmount, draft.planned.goodsEur, draft.planned.parts.length], [81, [82], null, 100, 861.33, 2]);
@@ -178,25 +180,9 @@ test('a part that fails leaves the goods euro alone: the retry posts only the mi
   await editor.confirmPayment();
   assert.deepEqual(writes.slice(3).map(row => [row.type, row.body.payee, row.body.amountEur ?? 'none']), [['PUT payment', 'SUPPLIER', 'none'], ['POST payment', 'SEPARATE', 86.13]]);
   assert.deepEqual(ledger.map(row => row.amountEur), [861.33, 287.1, 86.13], 'the goods euro survives the retry');
-  assert.deepEqual([lines[0].amountEur, lines[0].purchasePaymentIds], [1234.56, [81, 82, 83]]);
+  assert.equal(lines.length, 0);
   assert.equal(editor.paying(), null);
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd · ook op KBC', 'ok']);
-});
-
-test('a failed bank line keeps the sheet open, so the retry sends the line once more with every id and the full debit', async () => {
-  const { editor, api, writes, toasts, lines } = setup();
-  const ledger = ledgerServer(api, editor);
-  api.createLine = async () => { throw new Error('Bank even niet bereikbaar'); };
-  editor.paying.set(splitDraft());
-  await editor.confirmPayment();
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd, maar de bankbeweging is niet bewaard.', 'err']);
-  assert.deepEqual([editor.paying().id, clone(editor.paying().partIds)], [81, [82, 83]]);
-  api.createLine = async (body) => ({ id: 500, ...body });
-  await editor.confirmPayment();
-  assert.deepEqual(writes.slice(3).map(row => [row.type, row.body.amountEur ?? 'none']), [['PUT payment', 'none']], 'nothing is posted twice');
-  assert.deepEqual(ledger.map(row => row.amountEur), [861.33, 287.1, 86.13]);
-  assert.deepEqual(lines.map(line => [line.amountEur, line.purchasePaymentIds]), [[1234.56, [81, 82, 83]], [1234.56, [81, 82, 83]]]);
-  assert.equal(editor.paying(), null);
+  assert.deepEqual(toasts.at(-1), ['Betaling aangepast', 'ok'], 'the retry wrote the saved goods payment once more and added the missing part');
 });
 
 test('editing preserves the booking label and invalid money blocks save instead of submitting the old value', async () => {
@@ -350,7 +336,7 @@ test('a new imported transfer uses one atomic call and a lost response retries t
     if (fails) throw new Error('Bank temporarily unavailable');
     return { line: { id, amountEur: -1234.56, account: 'BE123456', source: 'ODOO', allocated: true }, payments: payments.map((body, i) => ({ ...payment(), ...body, id: 81 + i })) };
   };
-  editor.paying.set({ ...splitDraft(), toBank: false, bankTransaction: { id: 44, amountEur: -1234.56, account: 'BE123456', source: 'ODOO' } });
+  editor.paying.set({ ...splitDraft(), bankTransaction: { id: 44, amountEur: -1234.56, account: 'BE123456', source: 'ODOO' } });
   await editor.confirmPayment(); assert.equal(editor.paying().id, null);
   fails = false; await editor.confirmPayment();
   assert.equal(requests.length, 2); assert.deepEqual(requests[0], requests[1]);
@@ -391,7 +377,7 @@ test('one transfer for three containers: one atomic call, each other part on its
   const also = [{ orderId: 44, number: 'PO-2026-044', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.000,00', amount: 3000 },
     { orderId: 45, number: 'PO-2026-045', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '4.500,00', amount: 4500 }];
   const draft = { id: null, amount: 9000, amountInput: '9.000,00', currency: 'EUR', paidOn: '2026-10-13', label: '30% bij bestelling', payee: 'SUPPLIER', files: [], settles: false,
-    instalmentDue: 'ORDERED', toBank: false, bankTransaction, alsoOpen: true, alsoParts: also };
+    instalmentDue: 'ORDERED', bankTransaction, alsoOpen: true, alsoParts: also };
   // The parts must make the transaction: 9.000 + 3.000 alone is refused before anything is written.
   editor.paying.set({ ...draft, alsoParts: also.slice(0, 1) }); await editor.confirmPayment();
   assert.equal(requests.length, 0); assert.match(toasts.at(-1)[0], /Samen mogen de containers maximaal € 0,02 afwijken/);
@@ -432,7 +418,7 @@ test('the first-instalment shortcut opens the bank-enabled payment sheet without
   await editor.confirmFirstInstalment();
   assert.equal(writes.length, 0); assert.equal(editor.firstInstalmentPrompt(), null);
   assert.equal(editor.paying().amount, 250); assert.equal(editor.paying().currency, 'USD'); assert.equal(editor.paying().instalmentDue, 'ORDERED');
-  assert.equal(editor.paying().files[0], file); assert.equal(typeof editor.paying().toBank, 'boolean');
+  assert.equal(editor.paying().files[0], file); assert.equal('toBank' in editor.paying(), false, "no 'Ook als bankbeweging noteren' any more");
 });
 
 
@@ -672,7 +658,7 @@ test('an inline new invoice is saved once, with its file, before the payment; th
   api.addPayment = async (id: number, body: any) => { if (fail) { fail = false; throw new Error('Even geen verbinding'); } return post(id, body); };
   const file = new File(['ci'], 'CI-2026-118.pdf');
   editor.paying.set({ ...splitDraft(), currency: 'EUR', amount: 10000, amountInput: '10000', amountEur: null, amountEurInput: '', freightAmount: null,
-    freightAmountInput: '', toBank: false, newInvoice: { open: true, number: 'CI-2026-118', invoiceDate: '2026-08-20', amountInput: '31048,04', amount: 31048.04, currency: 'EUR', file, forAll: true } });
+    freightAmountInput: '', newInvoice: { open: true, number: 'CI-2026-118', invoiceDate: '2026-08-20', amountInput: '31048,04', amount: 31048.04, currency: 'EUR', file, forAll: true } });
   await editor.confirmPayment();
   assert.equal(editor.paying().createdInvoiceId, 7, 'the invoice is kept for the retry');
   await editor.confirmPayment();
@@ -1038,4 +1024,194 @@ test('where the edited payment stands: its supplier term, else its payee, as the
   assert.deepEqual(clone(editor.payingTermStanding()), { label: '30% bij bestelling', term: true, plannedEur: 12000, paidEur: 12000 });
   editor.editPayment(payment());
   assert.deepEqual(clone(editor.payingTermStanding()), { label: 'Douane & transport', term: false, plannedEur: 1300, paidEur: 1046.95 });
+});
+
+/* ---- Emre, 2026-10-16: "met 1 transactie 3 containers hun deelbetalingen betaald" */
+
+/** PO-50 noted its 30 % (€ 3.070,20); PO-039 noted the same, PO-040 not yet; one € 11.403,38 transfer on 28/09 paid all three. */
+function shareSetup() {
+  const own = { ...payment(), id: 381, payee: 'SUPPLIER', label: '30% bij bestelling', amount: 3070.2, amountEur: 3070.2, paidOn: '2026-09-25', instalmentDue: 'ORDERED' };
+  const harness = roundSetup(own);
+  const { editor } = harness;
+  editor.view.update((view: any) => ({ ...view, order: { ...view.order, alias: null, number: 'PO-2026-050', supplierId: 8 } }));
+  const requests: any[] = [];
+  const reply = (id: number, parts: any[]) => ({
+    line: { ...bankLine(id, -11403.38, '2026-09-28T09:00:00Z'), allocated: true },
+    payments: parts.map((part, index) => ({ ...own, id: part.paymentId ?? 900 + index, orderId: part.purchaseOrderId ?? (index === 0 ? 50 : 39), amount: part.amountEur,
+      amountEur: part.amountEur, paidOn: '2026-09-28', bankStatementLineId: id })),
+    parts: parts.map((part, index) => ({ paymentId: part.paymentId ?? 900 + index, orderId: part.purchaseOrderId ?? 50, amountEur: part.amountEur,
+      outcome: part.paymentId ? 'GREW' : 'CREATED', wasEur: part.paymentId ? 3070.2 : null, wasPaidOn: part.paymentId ? '2026-09-25' : null, restPaymentId: null })),
+  });
+  editor.banking.sharePurchasePayment = async (id: number, parts: any[]) => { requests.push(clone({ id, parts })); return reply(id, parts); };
+  editor.banking.addPurchasePayment = async () => { throw new Error('a container with an open payment never gets a second one'); };
+  editor.sourcing.purchasePayments = async () => [];
+  const others = [
+    { orderId: 39, number: 'PO-2026-039', alias: 'Kerst 2026', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.801,13', amount: 3801.13,
+      paymentId: 392, paymentEur: 3070.2, paymentCurrency: 'EUR', paymentAmount: 3070.2, paidOn: '2026-09-25', standing: null },
+    { orderId: 40, number: 'PO-2026-040', alias: null, supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.801,12', amount: 3801.12, paymentId: null,
+      openEur: 3070.2, plannedEur: 3070.2, standing: null },
+  ];
+  const share = (values: any = {}) => {
+    editor.editPayment(own);
+    editor.paying.update((draft: any) => ({ ...draft, pendingPartId: 381, pendingLines: [bankLine(610, -11403.38, '2026-09-28T09:00:00Z')], surplus: 'SHARE',
+      alsoParts: others, shareOwn: 3801.13, shareOwnInput: '3.801,13', shareMode: 'AFSPRAAK', ...values }));
+  };
+  return { ...harness, own, requests, reply, share, others };
+}
+
+test("'Verdelen en koppelen': one purchase-share call, this payment first, no PUT; the toast names every container and the pick is cleared", async () => {
+  const { editor, writes, splits, toasts, requests, share } = shareSetup();
+  share({ shareOwn: 3801.14, shareOwnInput: '3.801,14', alsoParts: [] });
+  await editor.confirmPayment();
+  assert.deepEqual([requests.length, plain(toasts.at(-1)[0]), toasts.at(-1)[1]], [0, 'Verdeel eerst de transactie: samen moeten de delen € 11.403,38 zijn.', 'err']);
+  share({ shareOwn: 3500, shareOwnInput: '3.500' });
+  await editor.confirmPayment();
+  assert.equal(requests.length, 0, 'the parts must make the transaction before anything is written');
+  share();
+  await editor.confirmPayment();
+  assert.deepEqual(writes, [], 'nothing typed: the share alone writes the payment');
+  assert.deepEqual(splits, [], 'no bank-part or bank-lines beside it');
+  assert.deepEqual(requests, [{ id: 610, parts: [
+    { paymentId: 381, amountEur: 3801.13, expectedAmountEur: 3070.2 },
+    { paymentId: 392, amountEur: 3801.13, expectedAmountEur: 3070.2 },
+    { purchaseOrderId: 40, amountEur: 3801.12, payee: 'SUPPLIER', instalmentDue: 'ORDERED', label: '30% bij bestelling', settles: false },
+  ] }]);
+  assert.deepEqual([plain(toasts.at(-1)[0]), toasts.at(-1)[1]],
+    ['Verdeeld over 3 containers: PO-2026-050 € 3.801,13 · Kerst 2026 € 3.801,13 · PO-2026-040 € 3.801,12', 'ok']);
+  assert.equal(editor.paying(), null);
+  assert.equal(plain(editor.paymentNotice()?.text), 'Bedrag en datum gevolgd van de transactie: € 3.801,13 op 28/09/2026 (was € 3.070,20 op 25/09/2026).');
+  assert.equal(editor.bankLines()[0].id, 610, 'the line as the server describes it now');
+});
+
+test('a lost answer of purchase-share: the refreshed payment is on the transaction, so the sheet says so and never calls twice', async () => {
+  const { editor, toasts, requests, share, own } = shareSetup();
+  let calls = 0;
+  editor.banking.sharePurchasePayment = async (id: number, parts: any[]) => { calls++; requests.push(clone({ id, parts })); throw Object.assign(new Error('Gateway Timeout'), { status: 504 }); };
+  editor.refreshPaymentState = async () => { editor.payments.set([{ ...own, amount: 3801.13, amountEur: 3801.13, paidOn: '2026-09-28', bankStatementLineId: 610 }]); return true; };
+  share();
+  await editor.confirmPayment();
+  assert.equal(calls, 1);
+  assert.equal(plain(toasts.at(-1)[0]), 'Transactie al gekoppeld · bedrag nu € 3.801,13 (was € 3.070,20) · betaald op 28/09/2026 (was 25/09/2026)');
+  assert.equal(editor.paying(), null);
+});
+
+test('a server without purchase-share says so; a refusal keeps the share open and drops a row whose payment is no longer open', async () => {
+  const missing = shareSetup();
+  missing.editor.banking.sharePurchasePayment = async () => { throw { status: 404, error: null }; };
+  missing.share();
+  await missing.editor.confirmPayment();
+  assert.deepEqual([missing.editor.paying().bankLinkError, missing.editor.paying().surplus, missing.editor.paying().bankLinkPending],
+    ['Verdelen over containers kan zodra de server bijgewerkt is.', 'SHARE', false]);
+  assert.deepEqual(missing.toasts.at(-1), ['Verdelen over containers kan zodra de server bijgewerkt is.', 'err']);
+
+  const refused = shareSetup();
+  const reason = 'PO-2026-039: deze betaling staat al op de bank; maak die koppeling eerst los';
+  refused.editor.banking.sharePurchasePayment = async () => { throw Object.assign(new Error(reason), { status: 409, error: { message: reason } }); };
+  // The containers as the server has them now: PO-039's payment went onto another transaction.
+  const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null },
+    reconciliation: { streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: 'OPEN', plannedEur: 10234, paidEur: 0, remainingEur: 10234, finalized: false }],
+      supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 3070.2, paidEur: id === 39 ? 3070.2 : 0, remainingEur: id === 39 ? 0 : 3070.2, finalized: false }] } }));
+  Object.assign(refused.editor, { cashApi: { settings: async () => ({}) } });
+  Object.assign(refused.editor.sourcing, { purchaseOrders: async () => views, suppliers: async () => [],
+    purchasePayments: async () => [{ id: 392, orderId: 39, orderNumber: 'PO-2026-039', orderAlias: null, paidOn: '2026-09-25', amountEur: 3070.2, payee: 'SUPPLIER',
+      bankStatementLineId: 77, instalmentDue: 'ORDERED', creditOffset: false }] });
+  refused.share();
+  await refused.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const draft = refused.editor.paying();
+  assert.deepEqual([draft.bankLinkError, draft.surplus, draft.alsoParts.map((part: any) => part.orderId)], [reason, 'SHARE', [40]]);
+  assert.deepEqual(refused.toasts.at(-1), [reason, 'err']);
+});
+
+test("a share refused because another payment changed splits again by the mode it shows: 'Volgens afspraak' and the amounts agree", async () => {
+  const reason = 'De betaling van Kerst 2026 is intussen gewijzigd; vernieuw en probeer opnieuw';
+  // PO-039's open payment went from € 3.070,20 to € 3.100,00 between loading and saving.
+  const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: id === 39 ? 'Kerst 2026' : null, supplierId: 8, status: 'BESTELD', archivedAt: null },
+    reconciliation: { streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: 'OPEN', plannedEur: 10234, paidEur: 0, remainingEur: 10234, finalized: false }],
+      supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 3070.2, paidEur: id === 39 ? 3100 : 0, remainingEur: id === 39 ? 0 : 3070.2, finalized: false }] } }));
+  const changed = [{ id: 392, orderId: 39, orderNumber: 'PO-2026-039', orderAlias: 'Kerst 2026', paidOn: '2026-09-25', amountEur: 3100, amount: 3100, currency: 'EUR',
+    payee: 'SUPPLIER', bankStatementLineId: null, instalmentDue: 'ORDERED', creditOffset: false, label: '30% bij bestelling' }];
+  const refuse = (mode: string, values: any = {}) => {
+    const harness = shareSetup();
+    harness.editor.banking.sharePurchasePayment = async () => { throw Object.assign(new Error(reason), { status: 409, error: { message: reason } }); };
+    Object.assign(harness.editor, { cashApi: { settings: async () => ({}) } });
+    Object.assign(harness.editor.sourcing, { purchaseOrders: async () => views, suppliers: async () => [], purchasePayments: async () => changed });
+    harness.share({ shareMode: mode, ...values });
+    return harness;
+  };
+  const afspraak = refuse('AFSPRAAK');
+  await afspraak.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  let draft = afspraak.editor.paying();
+  assert.deepEqual([draft.bankLinkError, draft.surplus, draft.shareMode, draft.alsoParts[0].paymentEur], [reason, 'SHARE', 'AFSPRAAK', 3100]);
+  assert.deepEqual([draft.shareOwn, draft.shareOwnInput, ...draft.alsoParts.map((part: any) => [part.amount, part.amountInput])],
+    [3788.87, '3.788,87', [3825.64, '3.825,64'], [3788.87, '3.788,87']], 'weights 3.070,20 / 3.100,00 / 3.070,20, not the old thirds');
+  // 'Gelijk verdelen' stays 1/3; amounts typed by hand stay as typed.
+  const equal = refuse('EQUAL');
+  await equal.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  draft = equal.editor.paying();
+  assert.deepEqual([draft.shareMode, draft.shareOwn, ...draft.alsoParts.map((part: any) => part.amount)], ['EQUAL', 3801.13, 3801.13, 3801.12]);
+  const manual = refuse('MANUAL', { shareOwn: 3500, shareOwnInput: '3.500,00', alsoParts: equal.others.map((part: any, index: number) => ({ ...part, amount: index ? 3903.38 : 4000,
+    amountInput: index ? '3.903,38' : '4.000,00' })) });
+  await manual.editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  draft = manual.editor.paying();
+  assert.deepEqual([draft.shareMode, draft.shareOwn, ...draft.alsoParts.map((part: any) => part.amount), draft.alsoParts[0].paymentEur], ['MANUAL', 3500, 4000, 3903.38, 3100]);
+});
+
+test('the containers load with their payments or not at all: a failed payment list never hides an open payment behind a new one', async () => {
+  const { editor, toasts } = shareSetup();
+  const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null },
+    reconciliation: { streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: 'OPEN', plannedEur: 10234, paidEur: 0, remainingEur: 10234, finalized: false }],
+      supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 3070.2, paidEur: id === 39 ? 3070.2 : 0, remainingEur: id === 39 ? 0 : 3070.2, finalized: false }] } }));
+  const noted = [{ id: 392, orderId: 39, orderNumber: 'PO-2026-039', orderAlias: null, paidOn: '2026-09-25', amountEur: 3070.2, amount: 3070.2, currency: 'EUR', payee: 'SUPPLIER',
+    bankStatementLineId: null, instalmentDue: 'ORDERED', creditOffset: false, label: '30% bij bestelling' }];
+  Object.assign(editor, { cashApi: { settings: async () => ({}) } });
+  Object.assign(editor.sourcing, { purchaseOrders: async () => views, suppliers: async () => [],
+    purchasePayments: async () => { throw Object.assign(new Error('De server antwoordt niet'), { status: 504 }); } });
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed, editor.alsoState().options.length, editor.alsoFor], [true, 0, null], 'not PO-040 alone with PO-039 as a new payment');
+  assert.deepEqual(toasts.at(-1), ['De server antwoordt niet', 'err']);
+  // 'Opnieuw laden': the list answers now, PO-039 comes with its noted payment.
+  editor.sourcing.purchasePayments = async () => noted;
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed ?? false, editor.alsoState().options.map((option: any) => [option.orderId, option.openPayments.map((item: any) => item.id)])],
+    [false, [[39, [392]], [40, []]]]);
+  // A server without the list (404, no reason of its own): the open terms alone, as before the round.
+  editor.alsoFor = null;
+  editor.sourcing.purchasePayments = async () => { throw { status: 404, error: null }; };
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed ?? false, editor.alsoState().options.map((option: any) => option.orderId)], [false, [40]]);
+});
+
+test('a refused share while the containers cannot load keeps its rows as they were (the server checks each payment again)', async () => {
+  const { editor, share, others } = shareSetup();
+  const reason = 'De betaling van PO-2026-039 is intussen gewijzigd; vernieuw en probeer opnieuw';
+  editor.banking.sharePurchasePayment = async () => { throw Object.assign(new Error(reason), { status: 409, error: { message: reason } }); };
+  Object.assign(editor, { cashApi: { settings: async () => ({}) } });
+  Object.assign(editor.sourcing, { purchaseOrders: async () => [], suppliers: async () => [],
+    purchasePayments: async () => { throw Object.assign(new Error('De server antwoordt niet'), { status: 503 }); } });
+  share();
+  await editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual([editor.paying().bankLinkError, editor.alsoState().failed, editor.paying().alsoParts.map((part: any) => [part.orderId, part.paymentId])],
+    [reason, true, others.map(part => [part.orderId, part.paymentId])]);
+});
+
+test('a new transfer whose other container has an open payment links it in one purchase-share call, never a second payment', async () => {
+  const { editor, writes, toasts, requests } = shareSetup();
+  const bankTransaction = { id: 103, amountEur: -16500, bookedAt: '2026-10-12T22:00:00Z', timeZone: 'Europe/Brussels', account: 'BE94731074082814', source: 'ODOO' };
+  const also = [{ orderId: 44, number: 'PO-2026-044', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.000,00', amount: 3000,
+      paymentId: 441, paymentEur: 3000 },
+    { orderId: 45, number: 'PO-2026-045', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '4.500,00', amount: 4500, paymentId: null }];
+  editor.paying.set({ id: null, amount: 9000, amountInput: '9.000,00', currency: 'EUR', paidOn: '2026-10-13', label: '30% bij bestelling', payee: 'SUPPLIER', files: [],
+    settles: false, instalmentDue: 'ORDERED', bankTransaction, alsoOpen: true, alsoParts: also });
+  await editor.confirmPayment();
+  assert.equal(writes.length, 0, 'no separate payment call');
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].parts.map((part: any) => [part.paymentId ?? null, part.purchaseOrderId ?? null, part.amountEur, part.expectedAmountEur ?? null, part.instalmentDue ?? null]),
+    [[null, 50, 9000, null, 'ORDERED'], [441, null, 3000, 3000, null], [null, 45, 4500, null, 'ORDERED']]);
+  assert.equal(plain(toasts.at(-1)[0]), 'Betaling bewaard en banktransactie gekoppeld · Ook op PO-2026-044 en PO-2026-045');
+  assert.equal(editor.paying(), null);
 });

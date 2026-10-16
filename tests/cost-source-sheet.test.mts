@@ -17,7 +17,7 @@ function setup() {
   const sheet = new exports.CostSheet();
   const original = { id: 5, date: '2026-10-01', party: 'Leverancier', reference: 'CN-5', amountExclEur: -79, amountInclEur: -95.58, vatPct: null };
   const cashRound = signal(true);
-  Object.assign(sheet, { draft: signal(original), mode: signal('incl'), basics: () => true, amount: () => sheet.draft().amountInclEur, bankBlocked: () => false, regimeProblem: () => null, tried: signal(true),
+  Object.assign(sheet, { draft: signal(original), mode: signal('incl'), basics: () => true, amount: () => sheet.draft().amountInclEur, regimeProblem: () => null, tried: signal(true),
     state: { cashRound } });
   return { sheet, original, cashRound };
 }

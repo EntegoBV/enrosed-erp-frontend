@@ -90,8 +90,14 @@ test('mobile section chooser uses full names; Transacties is a phone tab: no bac
   state.go({ view: 'bank', tab: 'movements', account: 'BE94731074082814' });
   assert.equal(page.phoneSegments().length, 0); assert.equal(page.subScreen(), false);
   assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'KBC-zichtrekening']);
+  const views = signal(state.accountsView());
+  state.accountsView = views;
   state.go({ account: '' });
-  assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'Alle rekeningen']);
+  // One active account (Emre, 2026-10-16: "precies hetzelfde, aangezien we 1 rek hebben"): Transacties is that account.
+  assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'KBC-zichtrekening']);
+  views.set([...views(), { account: 'WISE-EUR', label: 'Wise EUR', source: 'MANUAL' }]);
+  assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'Alle rekeningen'], 'two accounts: the stream over both');
+  views.set(views().slice(0, 1));
   state.go({ view: 'bank', tab: 'accounts' });
   assert.equal(page.pageTitle(), 'Bank');
   assert.match(page.phoneSubtitle(), /^KBC-zichtrekening opgehaald \d\d:\d\d$/, 'Bank\'s sub: what was fetched, short enough for 360 px');

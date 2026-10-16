@@ -22,10 +22,14 @@ import { amountInputText, parsePurchasePaymentAmount } from './purchase-payment-
 import { dayText, invoiceCandidates, invoiceNumberKey, invoiceOption, invoicesOf, resolveInvoice } from './purchase-invoices';
 import {
   adjustConsequence, carveForeignText, carveText, foreignLinkWarning, growLinkPlan, growPreview, inspectionSplitBlocked, linkChange, pendingAlreadyLinked,
-  pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions, type ForeignLink, type LinkChangeRow, type SurplusChoice, type TermStanding,
+  pendingLinkPlan, pendingPartEur, shareEffect, surplusQuestion, transferCompanions, type ForeignLink, type LinkChangeRow, type SurplusChoice, type TermStanding,
 } from './purchase-payment-links';
 import { appendPaymentProofs, PROOF_ACCEPT, proofFileKey } from '../../shared/payment-proof-selection';
-import { alsoPartFor, alsoTotalEur, rebalancedGoods, type AlsoContainerOption, type AlsoContainerPart } from './purchase-also-containers';
+import {
+  alsoPartAs, alsoPartChoices, alsoPartFor, alsoPartKey, alsoTotalEur, rebalancedGoods, type AlsoContainerOption, type AlsoContainerPart,
+} from './purchase-also-containers';
+import { applyShare, shareStatus, type ShareMode } from './purchase-payment-share';
+import { containerName, containerNumberHint } from './container-name';
 
 /** The editor's payment draft, as the sheet edits it. */
 export interface PurchasePaymentDraft {
@@ -55,9 +59,6 @@ export interface PurchasePaymentDraft {
   planned?: { goodsEur: number; parts: PurchasePaymentWrite[] };
   /** The ids of the planned parts already saved, in order, so a retry links them to the bank line without posting them again. */
   partIds?: number[];
-  /** 'Ook als bankbeweging noteren' and the chosen account key; '' lets the remembered or the only account stand in. */
-  toBank?: boolean;
-  bankAccount?: string;
   bankTransaction?: BankStatementLine | null;
   bankLinkPending?: boolean;
   bankLinkComplete?: boolean;
@@ -114,9 +115,17 @@ export interface PurchasePaymentDraft {
   paymentWritten?: boolean;
   /** Corrections of unlinked transfers of a payment paid in parts, by their id. */
   partEdits?: Record<number, { amountInput: string; amount: number | null; amountEurInput?: string; amountEur?: number | null }>;
-  /** "Deze transactie dekt ook andere containers" (a new EUR supplier payment on a picked transaction): open, and the other containers' parts. */
+  /**
+   * "Deze transactie dekt ook andere containers" (a new EUR supplier payment on a picked transaction): open, and the other containers' parts.
+   * 'Verdelen over containers' of a saved payment keeps its other rows here too.
+   */
   alsoOpen?: boolean;
   alsoParts?: AlsoContainerPart[];
+  /** 'Verdelen over containers' (surplus 'SHARE'): this payment's part as typed and parsed, how the amounts were set, and whether the first rows were proposed. */
+  shareOwnInput?: string;
+  shareOwn?: number | null;
+  shareMode?: ShareMode;
+  shareProposed?: boolean;
 }
 
 let nextSheetId = 0;
@@ -170,30 +179,15 @@ let nextSheetId = 0;
                   <span class="hint">Kan zodra de server bijgewerkt is.</span>
                 } @else {
                   @if ((pay.alsoParts ?? []).length) {
-                    <ul class="pay-sheet__lines">
-                      @for (part of pay.alsoParts ?? []; track part.orderId) {
-                        <li class="pay-sheet__line pay-sheet__line--note">
-                          <span class="pay-sheet__linecopy"><b>{{ part.number }}</b><small>{{ part.label }}@if (otherSupplier(part)) { <span class="pay-sheet__alsowarn"> · andere leverancier</span> }</small></span>
-                          <div class="input-affix pay-sheet__alsoamount">
-                            <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + part.number" [disabled]="busy() || !!pay.bankLinkPending"
-                                   [ngModel]="part.amountInput" (ngModelChange)="setAlsoAmount(part.orderId, $event)" />
-                            <span class="input-affix__suffix">EUR</span>
-                          </div>
-                          <button class="btn btn--sm" type="button" [disabled]="busy() || !!pay.bankLinkPending" [attr.aria-label]="part.number + ' weghalen'" (click)="removeAlso(part.orderId)">Weghalen</button>
-                          @if (part.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in.</span> }
-                        </li>
-                      }
+                    <ul class="pay-sheet__lines pay-sheet__alsorows">
+                      <ng-container *ngTemplateOutlet="alsoRows; context: { $implicit: !!pay.bankLinkPending }" />
                     </ul>
                   }
                   @if (alsoState().loading) { <span class="hint">Containers laden…</span> }
+                  @else if (alsoState().failed) { <ng-container *ngTemplateOutlet="alsoFailed" /> }
                   @else if (alsoChoices().length) {
-                    <select class="select" aria-label="Container toevoegen" [disabled]="busy() || !!pay.bankLinkPending" (change)="addAlso($any($event.target).value); $any($event.target).value = ''">
-                      <option value="">Container toevoegen…</option>
-                      @for (option of alsoChoices(); track option.orderId) {
-                        <option [value]="option.orderId">{{ option.number }}{{ option.alias ? ' · ' + option.alias : '' }}{{ option.supplierId !== supplierId() ? ' · ' + (option.supplier || 'andere leverancier') : '' }}</option>
-                      }
-                    </select>
-                  } @else { <span class="hint">Geen andere container met een open bedrag voor de leverancier.</span> }
+                    <ng-container *ngTemplateOutlet="alsoAdd; context: { $implicit: !!pay.bankLinkPending }" />
+                  } @else { <span class="hint">{{ alsoEmptyText() }}</span> }
                   <span class="hint" [class.hint--warn]="!alsoMatches()" role="status">Samen {{ alsoTotal() | eur }} van {{ lineEur() | eur }}{{ alsoMatches() ? ' ✓' : '' }}</span>
                 }
               }
@@ -260,21 +254,66 @@ let nextSheetId = 0;
                     </li>
                   }
                   @if (pendingPlan(); as plan) {
-                    @if (plan.kind === 'higher' || (plan.kind === 'part' && plan.surplus)) {
+                    @if (plan.kind === 'higher' || plan.kind === 'share' || (plan.kind === 'part' && plan.surplus)) {
                       <li class="pay-sheet__line pay-sheet__line--choice">
                         <div class="pay-sheet__surplus" role="group" [attr.aria-label]="surplusText()">
                           <b>{{ surplusText() }}</b>
                           <div class="pay-sheet__surplusopts">
                             <!-- Never locked by a pending link: changing the choice writes nothing, the retry links with the new one.
                                No cancel button of its own: the × on the picked transaction drops it, the footer closes the sheet. -->
-                            <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'ADJUST'" [disabled]="busy()" (click)="chooseSurplus('ADJUST')">
-                              Bedrag aanpassen naar {{ pendingLineEur() | eur }}<small>{{ adjustText() }}</small></button>
-                            @if (inspectionOffered()) {
-                              <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'INSPECTION'" [disabled]="busy()" (click)="chooseSurplus('INSPECTION')">
-                                Rest als inspectie via leverancier<small>{{ surplusEur() | eur }} als eigen betaling op dezelfde transactie</small></button>
+                            @if (shareOffered()) {
+                              <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'SHARE'" [disabled]="busy()" (click)="chooseSurplus('SHARE')">
+                                Verdelen over containers<small>Deze transactie betaalde ook andere containers</small></button>
+                            }
+                            @if (foreignPayment()) {
+                              <button class="pay-sheet__option" type="button" [attr.aria-pressed]="false" [disabled]="busy()" (click)="chooseSurplus(null)">
+                                Niet verdelen<small>De hele betaling gaat op deze transactie</small></button>
+                            } @else {
+                              <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'ADJUST'" [disabled]="busy()" (click)="chooseSurplus('ADJUST')">
+                                Bedrag aanpassen naar {{ pendingLineEur() | eur }}<small>{{ adjustText() }}</small></button>
+                              @if (inspectionOffered()) {
+                                <button class="pay-sheet__option" type="button" [attr.aria-pressed]="pay.surplus === 'INSPECTION'" [disabled]="busy()" (click)="chooseSurplus('INSPECTION')">
+                                  Rest als inspectie via leverancier<small>{{ surplusEur() | eur }} als eigen betaling op dezelfde transactie</small></button>
+                              }
                             }
                           </div>
                         </div>
+                      </li>
+                    }
+                    @if (plan.kind === 'share') {
+                      <!-- 'Verdelen over containers': this payment's part and every other container's, together the transaction (one call on save). -->
+                      <li class="pay-sheet__line pay-sheet__line--share">
+                        <section class="pay-sheet__share" aria-label="Verdelen over containers">
+                          <div class="pay-sheet__sharehead"><b>Verdelen over containers</b><small>Per container zijn deel van {{ pendingLineEur() | eur }}</small></div>
+                          <ul class="pay-sheet__lines pay-sheet__alsorows">
+                            <li class="pay-sheet__line pay-sheet__alsorow">
+                              <span class="pay-sheet__linecopy"><b>{{ orderName() || 'Deze container' }}@if (ownNumberHint(); as number) { <small class="pay-sheet__alsonumber"> {{ number }}</small> }<span class="pay-sheet__alsothis"> (deze container)</span></b><small>{{ ownShareText() }}</small></span>
+                              <span class="pay-sheet__alsofields">
+                                <div class="input-affix pay-sheet__alsoamount">
+                                  <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + (orderName() || 'deze container')" [disabled]="busy()"
+                                         [ngModel]="pay.shareOwnInput ?? ''" (ngModelChange)="setShareOwn($event)" />
+                                  <span class="input-affix__suffix">EUR</span>
+                                </div>
+                                <!-- As wide as the other rows' 'Weghalen': every part's amount stands in one column. -->
+                                <span class="btn btn--sm pay-sheet__alsospacer" aria-hidden="true">Weghalen</span>
+                              </span>
+                              @if ((pay.shareOwnInput ?? '').trim() && pay.shareOwn === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in.</span> }
+                            </li>
+                            <ng-container *ngTemplateOutlet="alsoRows; context: { $implicit: false }" />
+                          </ul>
+                          <div class="pay-sheet__shareactions">
+                            @if (alsoState().loading) { <span class="hint">Containers laden…</span> }
+                            @else if (alsoState().failed) { <ng-container *ngTemplateOutlet="alsoFailed" /> }
+                            @else if (alsoChoices().length) { <ng-container *ngTemplateOutlet="alsoAdd; context: { $implicit: false }" /> }
+                            @else { <span class="hint">{{ alsoEmptyText() }}</span> }
+                            <span class="pay-sheet__sharemodes" role="group" aria-label="Verdelen">
+                              <button class="btn btn--sm" type="button" [attr.aria-pressed]="pay.shareMode === 'AFSPRAAK'" [disabled]="busy() || !(pay.alsoParts ?? []).length" (click)="setShareMode('AFSPRAAK')">Volgens afspraak</button>
+                              <button class="btn btn--sm" type="button" [attr.aria-pressed]="pay.shareMode === 'EQUAL'" [disabled]="busy() || !(pay.alsoParts ?? []).length" (click)="setShareMode('EQUAL')">Gelijk verdelen</button>
+                            </span>
+                          </div>
+                          @if (!(pay.alsoParts ?? []).length) { <span class="hint">Voeg minstens één andere container toe.</span> }
+                          <span class="hint" [class.hint--warn]="!shareState().matches" role="status">{{ shareState().text }}</span>
+                        </section>
                       </li>
                     }
                     @if (foreignPick(); as foreign) {
@@ -288,7 +327,12 @@ let nextSheetId = 0;
                             <span class="input-affix__suffix">{{ foreign.currency }}</span>
                           </div>
                           @if (foreignPartInvalid()) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, of laat het leeg.</span> }
-                          @else if (foreignWarning(); as warning) { <span class="hint hint--warn" role="status">{{ warning }}</span> }
+                          @else if (foreignWarning(); as warning) {
+                            <span class="hint hint--warn" role="status">{{ warning }}</span>
+                            @if (shareOffered() && surplusEur() > 0) {
+                              <button class="wk-link pay-sheet__foreignshare" type="button" [disabled]="busy()" (click)="chooseSurplus('SHARE')">Verdelen over containers</button>
+                            }
+                          }
                           @else if (!(pay.pendingPartAmountInput ?? '').trim()) { <span class="hint">Leeg: de hele betaling neemt het eurobedrag van de transactie over; de koers volgt.</span> }
                         </div>
                       </li>
@@ -372,7 +416,7 @@ let nextSheetId = 0;
               </div>
               @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
               @if (linkedSingle()) { <span class="hint">Staat op de bank: maak de banktransactie eerst los om bedrag of datum te wijzigen.</span> }
-              @else if (linkingOne()) { <span class="hint">{{ pay.currency === 'EUR' ? 'Bedrag en datum volgen de transactie bij het koppelen' : 'De euro en de datum volgen de transactie bij het koppelen; het bedrag in ' + pay.currency + ' blijft' }} (zie Wat verandert).</span> }
+              @else if (linkingOne()) { <span class="hint">{{ linkingHint() }}</span> }
               @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0 && !((pay.amountEur ?? 0) > 0)) {
                 <span class="hint">Zonder bankbedrag geldt de orderkoers: ≈ {{ draftEur() | eur }}.</span>
               }
@@ -556,29 +600,6 @@ let nextSheetId = 0;
           <p class="pay-sheet__note">De bestaande banktransactie wordt gekoppeld. Er komt geen extra bankbeweging bij.</p>
         } @else if (bankLinked() && !pay.id) {
           <p class="pay-sheet__note pay-sheet__linked" role="note"><app-icon name="bank" [size]="14" /> Staat op de bank</p>
-        } @else if (toBankOffered()) {
-          <div class="pay-sheet__tobank">
-            <label class="pay-sheet__switch"><span>Ook als bankbeweging noteren<small>Eén uitgaande beweging voor deze overschrijving, met een verwijzing naar de betaling</small></span>
-              <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.toBank" [disabled]="busy() || !!pay.bankLinkPending"
-                     (change)="patch.emit({ toBank: $any($event.target).checked })" /></label>
-            @if (pay.toBank) {
-              @if (accounts().length) {
-                <div class="pay-sheet__accounts" role="group" aria-label="Rekening">
-                  @for (option of accounts(); track option.key) {
-                    <button class="pay-sheet__chip pay-sheet__account" type="button" [attr.aria-pressed]="bankAccount() === option.key" [disabled]="busy() || !!pay.bankLinkPending"
-                            (click)="patch.emit({ bankAccount: option.key })">{{ option.label }}</button>
-                  }
-                </div>
-                @if (future()) { <span class="hint hint--warn" role="status">Een bankbeweging kan niet in de toekomst liggen.</span> }
-                @else if (!bankAccount()) { <span class="hint">Kies de rekening waarvan de betaling vertrok.</span> }
-                @else { <span class="hint">{{ transferEur() | eur }} gaat als uitgaande beweging op {{ accountLabel() }}.</span> }
-              } @else if (accountsLoading()) {
-                <span class="hint">Rekeningen laden…</span>
-              } @else {
-                <span class="hint">Nog geen rekening: vul eerst een saldo in bij Kosten & bank.</span>
-              }
-            }
-          </div>
         }
         @if (!pay.id && !creditOffset()) {
           <!-- A new payment: its files, under the same words as a saved one. -->
@@ -592,6 +613,44 @@ let nextSheetId = 0;
         @if (pay.id && !grouped()) {
           <button class="pay-sheet__delete" type="button" [disabled]="busy() || !!pay.bankLinkPending" (click)="remove.emit(pay.id)">Verwijderen</button>
         }
+        <ng-template #alsoRows let-locked>
+          <!-- The other containers of one transaction: an open payment of theirs is linked ('Bestaand'), else a new payment ('Nieuw'), switchable per row. -->
+          @for (part of pay.alsoParts ?? []; track part.orderId) {
+            @let name = partName(part);
+            <li class="pay-sheet__line pay-sheet__alsorow">
+              <span class="pay-sheet__linecopy"><b>{{ name }}@if (numberHint(part); as number) { <small class="pay-sheet__alsonumber"> {{ number }}</small> }</b>
+                <small>{{ alsoRowText(part) }}@if (otherSupplier(part)) { <span class="pay-sheet__alsowarn"> · andere leverancier</span> }</small></span>
+              <span class="pay-sheet__alsofields">
+                @if (choicesOf(part); as choices) {
+                  @if (choices.length > 1) {
+                    <select class="select pay-sheet__alsochoice" [attr.aria-label]="'Betaling voor ' + name" [disabled]="busy() || locked" [ngModel]="partKey(part)" (ngModelChange)="switchAlso(part.orderId, $event)">
+                      @for (choice of choices; track choice.key) { <option [value]="choice.key">{{ choice.text }}</option> }
+                    </select>
+                  }
+                }
+                <div class="input-affix pay-sheet__alsoamount">
+                  <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + name" [disabled]="busy() || locked"
+                         [ngModel]="part.amountInput" (ngModelChange)="setAlsoAmount(part.orderId, $event)" />
+                  <span class="input-affix__suffix">EUR</span>
+                </div>
+                <button class="btn btn--sm" type="button" [disabled]="busy() || locked" [attr.aria-label]="name + ' weghalen'" (click)="removeAlso(part.orderId)">Weghalen</button>
+              </span>
+              @if (part.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in.</span> }
+            </li>
+          }
+        </ng-template>
+        <ng-template #alsoFailed>
+          <!-- Not 'Geen andere container': the list did not load, and an open payment of another container may be in it. -->
+          <span class="hint hint--warn" role="alert">De containers zijn niet geladen. <button class="wk-link" type="button" [disabled]="busy()" (click)="alsoLoad.emit()">Opnieuw laden</button></span>
+        </ng-template>
+        <ng-template #alsoAdd let-locked>
+          <select class="select pay-sheet__alsoadd" aria-label="Container toevoegen" [disabled]="busy() || locked" (change)="addAlso($any($event.target).value); $any($event.target).value = ''">
+            <option value="">Container toevoegen…</option>
+            @for (option of alsoChoices(); track option.orderId) {
+              <option [value]="option.orderId">{{ optionText(option) }}</option>
+            }
+          </select>
+        </ng-template>
         <ng-template #newFiles>
           @for (file of pay.files; track fileKey(file); let index = $index) {
             <li class="pay-sheet__line pay-sheet__line--pending">
@@ -627,8 +686,9 @@ let nextSheetId = 0;
       </div>
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="cancel.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots() || !pay.paidOn || partsInvalid() || bankBlocked() || saveBlocked()"
-                (click)="confirm.emit()">{{ busy() ? 'Bezig…' : retrying() ? 'Koppeling opnieuw proberen' : pay.addTransfer && shownPending().length ? 'Transactie toevoegen' : (pay.id ? 'Wijziging bewaren' : 'Betaling bewaren') }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots() || !pay.paidOn || partsInvalid() || saveBlocked()"
+                (click)="confirm.emit()">{{ busy() ? 'Bezig…' : retrying() ? 'Koppeling opnieuw proberen' : pay.addTransfer && shownPending().length ? 'Transactie toevoegen'
+                  : pendingPlan().kind === 'share' ? 'Verdelen en koppelen' : (pay.id ? 'Wijziging bewaren' : 'Betaling bewaren') }}</button>
       </div>
     </app-sheet>
   `,
@@ -637,7 +697,7 @@ export class PurchasePaymentSheet {
   private readonly viewport = inject(DesktopViewport);
   private readonly bankAccounts = inject(BankAccountsStore);
   readonly draft = input.required<PurchasePaymentDraft>();
-  /** The bank's day, as the host books the line: a later 'Betaald op' cannot be on a statement yet. */
+  /** Today, as the bank counts it: a new invoice ('Factuur toevoegen…') starts on it. */
   readonly today = input.required<string>();
   readonly chips = input<readonly { label: string; amount: number; due?: Due | null }[]>([]);
   readonly instalmentOptions = input<readonly { due: Due; label: string; netted?: boolean }[]>([]);
@@ -662,8 +722,6 @@ export class PurchasePaymentSheet {
   readonly transferEur = input(0);
   /** The payment already sits on the bank: no second line is offered. */
   readonly bankLinked = input(false);
-  /** The account the chips stand on (the host applies the remembered or the only one). */
-  readonly bankAccount = input('');
   /** The server knows invoices and payments in parts (paymentRoundOnServer); false hides every new control. */
   readonly roundOnServer = input(false);
   /** Every invoice of the container, for the 'Factuur' select. */
@@ -687,10 +745,16 @@ export class PurchasePaymentSheet {
   /** Where the payment's term (or payee) stands against the Afspraak, this payment counted: what more paid does to it. */
   readonly termStanding = input<TermStanding | null>(null);
   /** "Deze transactie dekt ook andere containers": the containers that may share the transfer, as the host loaded them. */
-  readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[] }>({ loading: false, supported: true, options: [] });
+  readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[]; failed?: boolean }>({ loading: false, supported: true, options: [] });
   /** The container's supplier: others are allowed, with a warning. */
   readonly supplierId = input<number | null>(null);
-  /** The section opened: the host loads the containers (once). */
+  /** This container's name (containerName: its alias, else its number), for the share's own row. */
+  readonly orderName = input('');
+  /** Its PO number: small print beside an alias, as the other rows show theirs. */
+  readonly orderNumber = input('');
+  /** Other containers' payments on the bank lines of this payment ('Deze transactie draagt ook: …'), as the host loaded them. */
+  readonly lineShares = input<readonly { lineId: number; name: string; amountEur: number }[]>([]);
+  /** The section opened (or 'Verdelen over containers' chosen): the host loads the containers for the payee (once). */
   readonly alsoLoad = output<void>();
   readonly patch = output<Partial<PurchasePaymentDraft>>();
   readonly amountInput = output<string>();
@@ -775,17 +839,8 @@ export class PurchasePaymentSheet {
   /** The goods payment is posted and the split stands: a retry only notes what is still missing. */
   readonly frozen = computed(() => !!this.draft().planned);
 
-  /* ---- 'Ook als bankbeweging noteren' */
+  /* ---- The bank accounts, for the account name in a transaction's text (a picked transaction is the movement: no second one is noted here) */
   readonly accounts = this.bankAccounts.options;
-  readonly accountsLoading = this.bankAccounts.loading;
-  readonly accountLabel = computed(() => this.accounts().find(option => option.key === this.bankAccount())?.label ?? '');
-  readonly future = computed(() => this.draft().paidOn > this.today());
-  /** Never for a credit offset (no money left the bank), a payment paid in parts, a payment on the bank, or while transactions are picked. */
-  readonly toBankOffered = computed(() => !this.creditOffset() && !this.grouped() && !(this.draft().pendingLines ?? []).length
-    && !this.linkedSingle() && !this.bankLinked());
-  /** The switch is on but the line could not be written: a day the bank has not reached, or no account once the readings are in. */
-  readonly bankBlocked = computed(() => this.toBankOffered() && !this.draft().bankTransaction && !!this.draft().toBank
-    && (this.future() || (!this.bankAccount() && !this.accountsLoading())));
 
   /* ---- Banktransacties of a saved payment */
   /** A payment paid in parts: its money is the sum of its transfers, corrected per unlinked transfer. */
@@ -836,11 +891,13 @@ export class PurchasePaymentSheet {
     if (part.currency === 'EUR') return null;
     return { amount: this.draft().partEdits?.[part.id]?.amount ?? part.amount, currency: part.currency, part: this.draft().pendingPartAmount ?? null };
   }
-  /** One transaction picked for a USD/CNY transfer: 'Alleen een deel? Deel in USD'. */
-  readonly foreignPick = computed(() => {
+  /** One transaction picked for a USD/CNY transfer. */
+  readonly foreignPayment = computed(() => {
     const part = this.pendingPart();
     return part && this.roundOnServer() && this.pendingLine() ? this.foreignOf(part) : null;
   });
+  /** 'Alleen een deel? Deel in USD', unless the transaction is shared over containers (the payment then goes whole, its euro is its share). */
+  readonly foreignPick = computed(() => (this.draft().surplus === 'SHARE' ? null : this.foreignPayment()));
   readonly foreignPartInvalid = computed(() => !!(this.draft().pendingPartAmountInput ?? '').trim() && this.draft().pendingPartAmount == null);
   /** The whole USD/CNY payment would take a euro far from its booked one: maybe the transaction paid only a part. */
   readonly foreignWarning = computed(() => {
@@ -879,8 +936,8 @@ export class PurchasePaymentSheet {
     return linkChange({ amount: part.amount, currency: part.currency, amountEur: part.amountEur, paidOn: part.paidOn, proof },
       { amountEur: line.amountEur, day: bankTransactionDay(line), text: this.lineText(line) }, this.pendingPlan(), companionsEur);
   });
-  /** A larger transaction is picked: it stands alone (its question is open), no second one is offered beside it. */
-  readonly pickingClosed = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'higher' || (plan.kind === 'part' && !!plan.surplus); });
+  /** A larger transaction is picked: it stands alone (its question is open, or it is shared over containers), no second one is offered beside it. */
+  readonly pickingClosed = computed(() => { const plan = this.pendingPlan(); return plan.kind === 'higher' || plan.kind === 'share' || (plan.kind === 'part' && !!plan.surplus); });
   /** One more transaction can be picked: ten at most, one against an older server. */
   readonly pickMore = computed(() => { const count = (this.draft().pendingLines ?? []).length; return this.roundOnServer() ? count < 10 : count < 1; });
   readonly excluded = computed(() => [
@@ -889,8 +946,8 @@ export class PurchasePaymentSheet {
   ]);
   private readonly partEditsInvalid = computed(() => Object.values(this.draft().partEdits ?? {}).some(edit => edit.amount === null
     || (!!edit.amountEurInput && edit.amountEur === null)));
-  /** Something typed or picked cannot be saved yet (a larger transaction waits for its choice). */
-  readonly saveBlocked = computed(() => this.pendingPlan().kind === 'invalid' || this.pendingPlan().kind === 'higher' || this.partEditsInvalid() || this.foreignPartInvalid()
+  /** Something typed or picked cannot be saved yet (a larger transaction waits for its choice, a share for parts that make the transaction). */
+  readonly saveBlocked = computed(() => this.pendingPlan().kind === 'invalid' || this.pendingPlan().kind === 'higher' || this.shareBlocked() || this.partEditsInvalid() || this.foreignPartInvalid()
     || (!!this.draft().inspectionSplitInput && !this.splitValid()) || this.newInvoiceInvalid()
     // The inspection is split off only after a carve or a split over several transactions is done (a later save).
     || (this.splitBlocked() && (this.draft().inspectionSplit ?? 0) > 0));
@@ -911,13 +968,14 @@ export class PurchasePaymentSheet {
    */
   carries(line: BankStatementLine): string | null {
     const own = new Set([...(this.draft().groupIds ?? []), ...this.parts().map(part => part.id)]);
-    const others = this.orderPayments().filter(payment => payment.bankStatementLineId === line.id && !own.has(payment.id));
-    if (!others.length) return null;
-    return others.map(payment => {
+    const others = this.orderPayments().filter(payment => payment.bankStatementLineId === line.id && !own.has(payment.id)).map(payment => {
       const payee = payment.payee ?? 'SUPPLIER';
       const via = payee === 'SEPARATE' && this.viaSupplier() ? ' (via leverancier)' : '';
       return `${PAYEE_SHORT[payee]} ${formatEur(payment.amountEur)}${via}`;
-    }).join(', ');
+    });
+    // One transaction shared over containers (Emre, 2026-10-16): the other containers' parts after this container's own.
+    const shared = this.lineShares().filter(item => item.lineId === line.id).map(item => `${item.name} ${formatEur(item.amountEur)}`);
+    return others.length || shared.length ? [...others, ...shared].join(', ') : null;
   }
   /** One of the payment's transactions already carries an inspection part of this container: no second split is offered. */
   private readonly lineHasInspection = computed(() => this.parts().some(part => part.bankStatementLineId != null
@@ -955,7 +1013,7 @@ export class PurchasePaymentSheet {
   /** 'Transactie toevoegen': the picker opens for that part; picking for another part drops the other part's picks. */
   pickFor(partId: number): void {
     this.picking.set(partId);
-    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, toBank: false, ...this.noForeignPart });
+    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, ...this.noForeignPart });
   }
   /**
    * A pick that carves the payment, splits it over several transactions or is
@@ -971,7 +1029,7 @@ export class PurchasePaymentSheet {
     const foreign = part ? this.foreignOf(part) : null;
     const blocked = !!part && inspectionSplitBlocked(pendingLinkPlan(this.partEur(part), lines, this.roundOnServer(), null, [], foreign ? { ...foreign, part: null } : null));
     const stored = this.roundOnServer() && !this.grouped() && part ? this.storedMoney(part) : {};
-    this.patch.emit({ pendingPartId: partId, pendingLines: lines, surplus: null, toBank: false, ...stored, ...this.noForeignPart, bankLinkError: '',
+    this.patch.emit({ pendingPartId: partId, pendingLines: lines, surplus: null, ...stored, ...this.noForeignPart, bankLinkError: '',
       ...(blocked ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) });
   }
   /** The stored money and day of a payment never split, as the fields show them. */
@@ -993,14 +1051,22 @@ export class PurchasePaymentSheet {
     const newest = this.parts()[this.parts().length - 1];
     if (!newest) return;
     this.picking.set(null);
-    this.patch.emit({ addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, toBank: false, ...this.noForeignPart, bankLinkError: '' });
+    this.patch.emit({ addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, ...this.noForeignPart, bankLinkError: '' });
   }
   pickAdded(line: BankStatementLine | null): void {
     if (line) this.patch.emit({ pendingLines: [line], surplus: null, bankLinkError: '' });
   }
-  /** What the surplus of a larger transaction is; the inspection rest replaces a typed split. A refused choice can be changed: nothing was linked. */
-  chooseSurplus(choice: SurplusChoice): void {
-    this.patch.emit({ surplus: choice, inspectionSplit: null, inspectionSplitInput: '', bankLinkError: '' });
+  /**
+   * What the surplus of a larger transaction is; the inspection rest replaces a typed split. A refused choice can be changed: nothing was linked.
+   * 'Verdelen over containers' starts on this payment's own euro and asks the host for the containers (it proposes the first rows).
+   */
+  chooseSurplus(choice: SurplusChoice | null): void {
+    const part = this.pendingPart();
+    const share: Partial<PurchasePaymentDraft> = choice === 'SHARE' && part
+      ? { alsoParts: [], shareOwn: this.partEur(part), shareOwnInput: amountInputText(this.partEur(part)), shareMode: 'AFSPRAAK', shareProposed: false, ...this.noForeignPart }
+      : { alsoParts: [], shareOwn: null, shareOwnInput: '', shareMode: undefined, shareProposed: false };
+    this.patch.emit({ surplus: choice, inspectionSplit: null, inspectionSplitInput: '', bankLinkError: '', ...share });
+    if (choice === 'SHARE') this.alsoLoad.emit();
   }
 
   /* ---- Inspectie afsplitsen: a saved goods payment to the supplier that also paid the inspection */
@@ -1143,26 +1209,141 @@ export class PurchasePaymentSheet {
     if (open) { this.patch.emit({ alsoOpen: true }); this.alsoLoad.emit(); return; }
     this.patch.emit({ alsoOpen: false, alsoParts: [], ...this.rebalance(pay.alsoParts ?? [], []) });
   }
+  /** A container added: its open payment when it has one, this payment's term first (never a second payment; under 'Automatisch' too), else a new one on its open term. */
   addAlso(value: string): void {
     const option = this.alsoState().options.find(item => item.orderId === Number(value));
     if (!option) return;
-    const before = this.draft().alsoParts ?? [];
-    const after = [...before, alsoPartFor(option, this.draft().instalmentDue ?? null)];
-    this.patch.emit({ alsoParts: after, ...this.rebalance(before, after) });
+    const pay = this.draft(), part = this.pendingPart();
+    const due = pay.id ? part?.payment.instalmentDue ?? pay.instalmentDue ?? null : pay.instalmentDue ?? null;
+    const before = pay.alsoParts ?? [];
+    this.patch.emit(this.withParts(before, [...before, alsoPartFor(option, due, pay.label || part?.payment.label || null)]));
   }
   removeAlso(orderId: number): void {
     const before = this.draft().alsoParts ?? [];
-    const after = before.filter(part => part.orderId !== orderId);
-    this.patch.emit({ alsoParts: after, ...this.rebalance(before, after) });
+    this.patch.emit(this.withParts(before, before.filter(part => part.orderId !== orderId)));
   }
+  /** A typed amount; in a share every amount typed by hand makes the mode MANUAL. */
   setAlsoAmount(orderId: number, raw: string): void {
     const amount = parsePurchasePaymentAmount(raw);
-    this.patch.emit({ alsoParts: (this.draft().alsoParts ?? []).map(part => part.orderId === orderId ? { ...part, amountInput: raw, amount: amount !== null && amount > 0 ? amount : null } : part) });
+    this.patch.emit({ alsoParts: (this.draft().alsoParts ?? []).map(part => part.orderId === orderId ? { ...part, amountInput: raw, amount: amount !== null && amount > 0 ? amount : null } : part),
+      ...(this.draft().id ? { shareMode: 'MANUAL' as const } : {}) });
   }
   /** While the transaction was balanced, this payment's goods give or take what a container added or removed takes. */
   private rebalance(before: readonly AlsoContainerPart[], after: readonly AlsoContainerPart[]): Partial<PurchasePaymentDraft> {
     const goods = rebalancedGoods(this.draft().amount, this.transferEur(), alsoTotalEur(before), alsoTotalEur(after), this.lineEur());
     return goods === null ? {} : { amount: goods, amountInput: amountInputText(goods) };
+  }
+
+  /** "Container toevoegen…": the name first (containerName), the PO number beside an alias, another supplier and an open payment said. */
+  optionText(option: AlsoContainerOption): string {
+    const name = containerName({ id: option.orderId, number: option.number, alias: option.alias });
+    const number = containerNumberHint(name, option.number);
+    return `${name}${number ? ' · ' + number : ''}${option.openPayments?.length ? ' · open betaling' : ''}${option.supplierId !== this.supplierId() ? ' · ' + (option.supplier || 'andere leverancier') : ''}`;
+  }
+  /** 'Geen andere container met een open bedrag of open betaling voor de leverancier.' */
+  readonly alsoEmptyText = computed(() => {
+    const payee = this.draft().payee;
+    return `Geen andere container met een open bedrag of open betaling voor ${payee === 'SUPPLIER' ? 'de leverancier' : PAYEE_LABEL[payee]}.`;
+  });
+  partName(part: AlsoContainerPart): string { return containerName({ id: part.orderId, number: part.number, alias: part.alias }); }
+  numberHint(part: AlsoContainerPart): string | null { return containerNumberHint(this.partName(part), part.number); }
+  partKey(part: AlsoContainerPart): string { return alsoPartKey(part); }
+  /** The row's select: its open payments and the terms a new payment can go on. */
+  choicesOf(part: AlsoContainerPart): { key: string; text: string }[] {
+    const option = this.alsoState().options.find(item => item.orderId === part.orderId);
+    return option ? alsoPartChoices(option) : [];
+  }
+  /** The transaction's day, the one every part takes. */
+  private readonly shareDay = computed(() => {
+    const line = this.draft().id ? this.pendingLine() : this.draft().bankTransaction ?? null;
+    return line ? bankTransactionDay(line) : this.draft().paidOn;
+  });
+  /** 'bestaande betaling · 30% bij bestelling · € 3.070,20 · nog niet op de bank · betaling wordt € 3.801,13 (was …); …', or what a new payment does. */
+  alsoRowText(part: AlsoContainerPart): string {
+    const effect = shareEffect({ paymentEur: part.paymentId != null ? part.paymentEur ?? null : null, currency: part.paymentCurrency, amount: part.paymentAmount,
+      partEur: part.amount, standing: part.standing ?? null, day: this.shareDay(), label: part.label, openEur: part.paymentId != null ? null : part.openEur ?? null });
+    return part.paymentId != null
+      ? `bestaande betaling · ${part.label} · ${this.bookedText(part.paymentAmount ?? null, part.paymentCurrency ?? 'EUR', part.paymentEur ?? 0)} · nog niet op de bank · ${effect}` : effect;
+  }
+  /** '€ 3.070,20', or a USD/CNY payment with its euro: 'US$ 4.000,00 (€ 3.680,00)'. */
+  private bookedText(amount: number | null, currency: Currency, amountEur: number): string {
+    return currency === 'EUR' || amount === null ? formatEur(amountEur)
+      : `${amount.toLocaleString('nl-BE', { style: 'currency', currency })} (${formatEur(amountEur)})`;
+  }
+
+  /* ---- 'Verdelen over containers': a saved payment's larger transaction shared with other containers (Emre, 2026-10-16) */
+  /** Offered on a saved payment's one larger transaction (a USD/CNY one too), never for Andere kosten, a credit offset or 'Transactie toevoegen'. */
+  readonly shareOffered = computed(() => {
+    const pay = this.draft();
+    return this.roundOnServer() && !!pay.id && pay.payee !== 'OTHER' && !this.creditOffset() && !pay.addTransfer && !!this.pendingLine() && !!this.pendingPart();
+  });
+  /** This payment's weight 'Volgens afspraak': its booked euro (or its typed correction). */
+  private readonly shareOwnWeight = computed(() => { const part = this.pendingPart(); return part ? this.partEur(part) : null; });
+  readonly shareState = computed(() => shareStatus(this.draft().shareOwn ?? null, this.draft().alsoParts ?? [], this.pendingLineEur()));
+  /** No other container yet, an empty or invalid amount, parts that do not make the transaction, or the containers still loading. */
+  readonly shareBlocked = computed(() => {
+    if (this.pendingPlan().kind !== 'share') return false;
+    const pay = this.draft(), parts = pay.alsoParts ?? [];
+    return this.alsoState().loading || !parts.length || parts.some(part => !((part.amount ?? 0) > 0)) || !((pay.shareOwn ?? 0) > 0) || !this.shareState().matches;
+  });
+  /** 'deze betaling · 30% bij bestelling · € 3.070,20 · betaling wordt € 3.801,13 (was € 3.070,20); de termijn komt € 789,48 boven de afspraak'. */
+  readonly ownShareText = computed(() => {
+    const part = this.pendingPart(), pay = this.draft();
+    if (!part) return '';
+    const effect = shareEffect({ paymentEur: this.partEur(part), currency: part.currency, amount: part.amount, partEur: pay.shareOwn ?? null,
+      standing: this.termStanding(), day: this.shareDay() });
+    return `deze betaling · ${pay.label || part.payment.label || PAYEE_LABEL[pay.payee]} · ${this.bookedText(part.amount, part.currency, this.partEur(part))} · ${effect}`;
+  });
+  /** 'PO-2026-038' beside 'Moederdag Rood (deze container)'; nothing when the name is the number. */
+  readonly ownNumberHint = computed(() => containerNumberHint(this.orderName(), this.orderNumber()));
+  /**
+   * Under Bedrag while a picked transaction waits: the payment follows the
+   * transaction, or in a share this container's part of it (never the whole
+   * transaction: 'Bedrag aanpassen naar € 11.403,38' was just what was wrong).
+   */
+  readonly linkingHint = computed(() => {
+    const pay = this.draft();
+    if (this.pendingPlan().kind !== 'share') {
+      return `${pay.currency === 'EUR' ? 'Bedrag en datum volgen de transactie bij het koppelen' : `De euro en de datum volgen de transactie bij het koppelen; het bedrag in ${pay.currency} blijft`} (zie Wat verandert).`;
+    }
+    const own = (pay.shareOwn ?? 0) > 0 ? `: ${formatEur(pay.shareOwn!)} op ${dayText(this.shareDay())}` : '';
+    return pay.currency === 'EUR' ? `Bedrag en datum volgen het deel van deze container${own} (zie Verdelen over containers).`
+      : `De euro en de datum volgen het deel van deze container${own}; het bedrag in ${pay.currency} blijft (zie Verdelen over containers).`;
+  });
+  setShareOwn(raw: string): void {
+    const amount = parsePurchasePaymentAmount(raw);
+    this.patch.emit({ shareOwnInput: raw, shareOwn: amount !== null && amount > 0 ? amount : null, shareMode: 'MANUAL' });
+  }
+  /** 'Volgens afspraak' (by each part's Afspraak) or 'Gelijk verdelen' (1/n), to the cent; a part without an Afspraak leaves the amounts as typed. */
+  setShareMode(mode: 'AFSPRAAK' | 'EQUAL'): void {
+    this.patch.emit(this.shared(mode, this.draft().alsoParts ?? []) ?? { shareMode: 'MANUAL' });
+  }
+  /** The rows with the amounts of a mode; MANUAL (or a missing weight) keeps them as typed. */
+  private shared(mode: ShareMode | undefined, parts: readonly AlsoContainerPart[]): Partial<PurchasePaymentDraft> | null {
+    if (mode !== 'AFSPRAAK' && mode !== 'EQUAL') return null;
+    const applied = parts.length ? applyShare(mode, this.pendingLineEur(), this.shareOwnWeight(), parts) : null;
+    return applied ? { alsoParts: applied.parts, shareOwn: applied.own, shareOwnInput: amountInputText(applied.own), shareMode: mode } : null;
+  }
+  /** The other rows changed (added, removed, switched): a share follows its mode, a new transfer keeps this payment's goods balanced. */
+  private withParts(before: readonly AlsoContainerPart[], after: AlsoContainerPart[]): Partial<PurchasePaymentDraft> {
+    if (this.draft().id) return this.shared(this.draft().shareMode, after) ?? { alsoParts: after };
+    return { alsoParts: after, ...this.rebalance(before, after) };
+  }
+  /**
+   * 'Bestaand: € x' or 'Nieuw: <term>' for one row. A share keeps the typed
+   * amount and follows its mode; a new transfer's row takes the choice's own
+   * amount (as a container added does) and this payment's goods give or take
+   * the difference while the transaction was made.
+   */
+  switchAlso(orderId: number, key: string): void {
+    const option = this.alsoState().options.find(item => item.orderId === orderId);
+    const before = this.draft().alsoParts ?? [];
+    const current = before.find(part => part.orderId === orderId);
+    const share = !!this.draft().id;
+    const next = option && current ? alsoPartAs(option, key, current, !share) : null;
+    if (!next) return;
+    const after = before.map(part => part.orderId === orderId ? next : part);
+    this.patch.emit(share ? this.shared(this.draft().shareMode, after) ?? { alsoParts: after } : this.withParts(before, after));
   }
 
   chooseBank(row: BankStatementLine | null): void {
@@ -1172,7 +1353,7 @@ export class PurchasePaymentSheet {
     const total = Math.abs(row.amountEur);
     const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0) + alsoTotalEur(pay.alsoParts);
     const goods = Math.round((total - parts) * 100) / 100;
-    this.patch.emit({ bankTransaction: row, toBank: false, bankAccount: row.account, paidOn: bankTransactionDay(row), bankLinkError: '',
+    this.patch.emit({ bankTransaction: row, paidOn: bankTransactionDay(row), bankLinkError: '',
       ...(pay.id || bankAmountsMatch(this.transferEur(), total) ? {} : pay.currency === 'EUR' ? { amount: goods, amountInput: amountInputText(goods) }
         : { amountEur: total, amountEurInput: amountInputText(total) }) });
   }

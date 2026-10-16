@@ -220,6 +220,9 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                 @if (part.higher && !p.ownsChange()) {
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
                   <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
+                    @if (p.containerSplitOffered()) {
+                      <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.openContainerSplit(part.row)"><b>Verdelen over containers</b><span>Deze transactie betaalde ook andere containers</span></button>
+                    }
                     <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
                       <b>Bedrag aanpassen naar {{ p.abs(row.amountEur) | eur }}</b><span>{{ p.outgoingAdjustText() }}</span></button>
                     @if (p.outgoingInspectionOffered()) {

@@ -7,6 +7,7 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { invoiceCoverage, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
+import { surplusQuestion } from '../purchasing/purchase-payment-links';
 import { BankAllocationSteps } from './bank-allocation-steps';
 import { KEEP_LABEL, changePreview } from './bank-change-preview';
 import type { ChangePreview, KeepAs, LinkTarget } from './bank-change-preview';
@@ -173,7 +174,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
                 <span class="fin-txd__offer-actions"><button class="wk-btn wk-btn--sm" type="button" (click)="splitPayments()">Splitsen…</button>
                   @if (row.amountEur < 0) {
                     <!-- An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). -->
-                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="view.set('containers')">Verdelen over containers…</button>
+                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="openSplit(null)">Verdelen over containers…</button>
                   }</span>
               </section>
               <section class="wk-section fin-txd__offer">
@@ -196,21 +197,29 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
     <ng-template #whatChanges let-change let-target="target" let-row="row">
       <div class="fin-txd__change">
         <h4>Wat verandert</h4>
-        <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
-          <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
-          @for (item of change.rows; track item.label) {
-            <div class="bank-alloc-change__row" role="row" [class.is-changed]="item.changed"><span role="rowheader">{{ item.label }}</span><span role="cell">{{ item.now }}</span><span role="cell">{{ item.after }}</span></div>
-          }
-        </div>
+        @let asking = surplusAsked(change, target);
+        @if (!asking) {
+          <div class="bank-alloc-change" role="table" aria-label="Wat verandert">
+            <div class="bank-alloc-change__row bank-alloc-change__row--head" role="row"><span role="columnheader"></span><span role="columnheader">Betaling nu</span><span role="columnheader">Na koppelen</span></div>
+            @for (item of change.rows; track item.label) {
+              <div class="bank-alloc-change__row" role="row" [class.is-changed]="item.changed"><span role="rowheader">{{ item.label }}</span><span role="cell">{{ item.now }}</span><span role="cell">{{ item.after }}</span></div>
+            }
+          </div>
+        }
         @if (followableFor(target)) {
           <label class="fin-switch-row"><input [class.fin-switch]="state.desk()" [class.ios-switch]="!state.desk()" type="checkbox" [checked]="follow()" [disabled]="change.mode === 'lower' && target.kind === 'purchase-existing'" (change)="follow.set($any($event.target).checked)" />
-            <span><b>Betaling volgt de bank</b><small>{{ change.followText }}</small></span></label>
+            <span><b>Betaling volgt de bank</b><small>{{ asking ? 'Kies hieronder wat er met het verschil gebeurt.' : change.followText }}</small></span></label>
         }
         @if (change.restText) { <p class="fin-hint">{{ change.restText }}</p> }
         @if (change.mode === 'higher' && target.kind === 'purchase-existing' && target.currency === 'EUR' && follow()) {
-          <div class="fin-txd__radios" role="radiogroup" aria-label="Transactie is hoger">
-            <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" />Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</label>
-            @if (target.hasInspectionAfspraak) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" />Rest als inspectie via leverancier</label> }
+          <!-- Nothing chosen beforehand (Emre, 2026-10-16: one transfer paid three containers, 'Bedrag aanpassen' was the trap): the split first. -->
+          <div class="fin-txd__radios" role="radiogroup" [attr.aria-label]="surplusQuestion(change.differenceEur)">
+            <b>{{ surplusQuestion(change.differenceEur) }}</b>
+            @if (state.cashRound()) {
+              <label><input type="radio" name="surplus" [checked]="false" (change)="openSplit(target)" /><span>Verdelen over containers<small>Deze transactie betaalde ook andere containers</small></span></label>
+            }
+            <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" /><span>Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</span></label>
+            @if (target.hasInspectionAfspraak) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" /><span>Rest als inspectie via leverancier</span></label> }
           </div>
         }
         @if (!follow() && change.keepAllowed && state.cashRound()) {
@@ -259,7 +268,11 @@ export class TransactionDetail extends BankMovementPanel {
   readonly view = signal<View>('auto');
   readonly follow = signal(true);
   readonly keepAs = signal<KeepAs>('BANKKOSTEN');
-  readonly surplus = signal<'ADJUST' | 'INSPECTION'>('ADJUST');
+  /** A larger transaction on a purchase payment: nothing chosen beforehand (null), the link waits for the answer. */
+  readonly surplus = signal<'ADJUST' | 'INSPECTION' | null>(null);
+  /** "Verdelen over containers" chosen as that answer: the split starts on this payment's container and payment. */
+  readonly splitFrom = signal<{ orderId: number; paymentId: number } | null>(null);
+  readonly surplusQuestion = surplusQuestion;
   /** Another candidate picked under "Andere mogelijkheden"; the best match otherwise. */
   readonly chosen = signal<LinkTarget | null>(null);
   readonly proofFiles = signal<PurchaseDocument[]>([]);
@@ -294,7 +307,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly preview = computed(() => {
     const row = this.line(), target = this.best();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.effectiveFollow(target), this.keepAs(), this.surplus()) : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST') : null;
   });
   /** The switch as the server can carry it out: an existing cost payment or receipt follows the bank only from the 2026-10-16 round on (linkLine's rule). */
   private effectiveFollow(target: LinkTarget): boolean {
@@ -307,7 +320,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly primaryLabel = computed(() => this.preview()?.primaryLabel ?? 'Koppelen');
   /** What may be linked as the preview stands (the best match and "Bestaande betaling" alike). */
   private linkAllowed(target: LinkTarget, preview: ChangePreview): boolean {
-    if (this.state.linking() !== null || preview.blockedText) return false;
+    if (this.state.linking() !== null || preview.blockedText || this.surplusAsked(preview, target)) return false;
     if (!this.state.cashRound() && (target.kind === 'cost-existing' || target.kind === 'sales-existing') && preview.mode !== 'equal') return false;
     if (!this.state.cashRound() && target.kind === 'purchase-existing' && !this.follow() && preview.mode !== 'equal') return false;
     return true;
@@ -365,7 +378,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly enginePreview = computed(() => {
     const row = this.line(), target = this.engineTarget();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.effectiveFollow(target), this.keepAs(), this.surplus()) : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST') : null;
   });
   readonly canLinkEngine = computed(() => {
     const target = this.engineTarget(), preview = this.enginePreview();
@@ -465,12 +478,34 @@ export class TransactionDetail extends BankMovementPanel {
     return pos ? `Transactie ${pos.index + 1} van ${pos.total}${this.state.location().link === 'unlinked' ? ' te koppelen' : ''}` : 'Transactie';
   });
 
-  /** The supplier name a container split starts from (the best match's container, else the counterparty). */
+  /**
+   * Where a container split starts: the payment 'Verdelen over containers'
+   * was chosen for, else the best match's container on its payment or term,
+   * else the counterparty's supplier.
+   */
   readonly supplierHint = computed(() => {
+    const counterparty = this.line()?.counterparty ?? '';
+    const from = this.splitFrom();
+    if (from) return { orderId: from.orderId, paymentId: from.paymentId, counterparty };
     const target = this.suggestion()?.target;
-    const orderId = target && (target.kind === 'term-new' || target.kind === 'purchase-existing') ? target.orderId : null;
-    return { orderId, counterparty: this.line()?.counterparty ?? '' };
+    if (target?.kind === 'purchase-existing') return { orderId: target.orderId, paymentId: target.paymentId, counterparty };
+    if (target?.kind === 'term-new') return { orderId: target.orderId, termKey: target.payable.key, counterparty };
+    return { orderId: null, counterparty };
   });
+  /** A larger transaction on one euro purchase payment that follows the bank, and nothing chosen yet: the question waits for its answer. */
+  surplusAsked(change: ChangePreview, target: LinkTarget): boolean {
+    return change.mode === 'higher' && target.kind === 'purchase-existing' && target.currency === 'EUR' && this.follow() && this.surplus() === null;
+  }
+  /** "Verdelen over containers": from a larger transaction's choice (that payment ticked), or the offer below (the best match's container). */
+  openSplit(target: LinkTarget | null): void {
+    this.splitFrom.set(target?.kind === 'purchase-existing' ? { orderId: target.orderId, paymentId: target.paymentId } : null);
+    this.view.set('containers');
+  }
+  override containerSplitOffered(): boolean { return this.state.cashRound(); }
+  override openContainerSplit(payment: { id: number; ownerId: number }): void {
+    this.splitFrom.set({ orderId: payment.ownerId, paymentId: payment.id });
+    this.view.set('containers');
+  }
 
   constructor() {
     super();
@@ -480,7 +515,7 @@ export class TransactionDetail extends BankMovementPanel {
       untracked(() => {
         if (!row || this.allocated(row)) { if (this.selected()) this.closeAllocation(); return; }
         if (this.selected()?.id !== row.id) {
-          this.view.set('auto'); this.chosen.set(null); this.follow.set(true); this.surplus.set('ADJUST'); this.keepAs.set('BANKKOSTEN');
+          this.view.set('auto'); this.chosen.set(null); this.follow.set(true); this.surplus.set(null); this.splitFrom.set(null); this.keepAs.set('BANKKOSTEN');
           void this.openAllocation(row);
         }
       });
@@ -500,7 +535,7 @@ export class TransactionDetail extends BankMovementPanel {
     /* Another payment picked under "Bestaande betaling": the switch on, "Bedrag aanpassen", Bankkosten (as for a best match). */
     effect(() => {
       if (!this.engineKey()) return;
-      untracked(() => { this.follow.set(true); this.surplus.set('ADJUST'); this.keepAs.set('BANKKOSTEN'); });
+      untracked(() => { this.follow.set(true); this.surplus.set(null); this.keepAs.set('BANKKOSTEN'); });
     });
     /* The proof files of the linked purchase payments (round 2's list). */
     effect(() => {
@@ -542,7 +577,7 @@ export class TransactionDetail extends BankMovementPanel {
     const target = this.suggestion()?.target;
     if (target?.kind === 'cost-pattern') this.state.bookPattern(row, target.costId);
   }
-  choose(target: LinkTarget): void { this.chosen.set(target); this.follow.set(true); this.surplus.set('ADJUST'); }
+  choose(target: LinkTarget): void { this.chosen.set(target); this.follow.set(true); this.surplus.set(null); }
   searchAll(): void { this.view.set('search'); this.setAllocationStep('documents'); this.localSelectedKey.set(null); }
   splitPayments(): void { this.view.set('search'); this.setAllocationStep('payments'); }
 
@@ -556,7 +591,7 @@ export class TransactionDetail extends BankMovementPanel {
   async linkBest(row: BankStatementLine, target: LinkTarget): Promise<void> {
     if (!this.canLinkBest()) return;
     const parts = target.kind === 'term-new' ? this.termParts(row, target) : undefined;
-    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus(), parts,
+    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST', parts,
       confirmNew: target.kind === 'cost-new' && this.localNewConfirmed() });
     if (!failure) this.afterLink();
   }
@@ -582,7 +617,7 @@ export class TransactionDetail extends BankMovementPanel {
     const target = this.engineTarget();
     if (!target) { await this.submitAllocation(); return; }
     if (!this.canLinkEngine()) return;
-    const failure = await this.state.linkLine(row, target, { follow: this.effectiveFollow(target), keepAs: this.keepAs(), surplus: this.surplus() });
+    const failure = await this.state.linkLine(row, target, { follow: this.effectiveFollow(target), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST' });
     if (!failure) this.afterLink();
   }
   /** On a phone the sheet moves on to the next transaction still to link. */

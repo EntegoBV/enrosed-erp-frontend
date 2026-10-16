@@ -26,7 +26,7 @@ import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnSer
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
 import {
   adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
-  type ForeignLink, type LinkChangeRow, type SurplusChoice,
+  type BankPartSurplus, type ForeignLink, type LinkChangeRow,
 } from '../purchasing/purchase-payment-links';
 
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
@@ -668,7 +668,7 @@ export class BankMovementPanel {
     return part?.foreign && !part.carve && !part.refused && line ? foreignLinkWarning({ amountEur: part.row.amountEur, currency: part.foreign.currency }, line.amountEur) : null;
   });
   /** A transaction larger than the one chosen payment: 'Bedrag aanpassen' or 'Rest als inspectie via leverancier'. */
-  readonly outgoingSurplus = signal<SurplusChoice | null>(null);
+  readonly outgoingSurplus = signal<BankPartSurplus | null>(null);
   readonly outgoingSurplusText = computed(() => {
     const part = this.outgoingPart(), line = this.selected();
     return part?.higher && line ? surplusQuestion((cents(Math.abs(line.amountEur)) - cents(part.row.amountEur)) / 100) : '';
@@ -734,9 +734,13 @@ export class BankMovementPanel {
     this.outgoingSelected.update(keys => keys.includes(row.key) ? keys.filter(key => key !== row.key)
       : [...(row.kind === 'cost' ? keys.filter(key => !key.startsWith('cost:')) : keys), row.key]);
   }
-  chooseOutgoingSurplus(choice: SurplusChoice | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
+  chooseOutgoingSurplus(choice: BankPartSurplus | null): void { if (!this.busy()) this.outgoingSurplus.set(choice); }
   /** The transaction detail shows the spec's "Wat verandert" for the chosen payment itself (§3.6); the panel's own then steps aside. */
   ownsChange(): boolean { return false; }
+  /** 'Verdelen over containers' as the first answer to a larger transaction: only where the host opens the split (the transaction detail). */
+  containerSplitOffered(): boolean { return false; }
+  /** Opens the split with this payment's container ticked on this payment (the transaction detail overrides it). */
+  openContainerSplit(_payment: { id: number; ownerId: number }): void { /* no split here */ }
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();
@@ -1191,9 +1195,11 @@ export class BankMovementPanel {
     if (documents.length) return { text: 'Eerdere registratie', sub: null, reasons: [], open: true };
     return { text: 'Geen factuur gevonden', sub: null, reasons: [], open: false };
   }
-  /** "{account} · {reference}"; a manual line starts with its time. */
+  /** "{account} · {reference}"; a manual line starts with its time. With one active account its name is left out (it is every line's). */
   subOf(row: BankStatementLine): string {
-    return [this.imported(row) ? '' : this.clock(row), this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
+    const active = this.state.accountsView();
+    const only = active.length === 1 && active[0].account === this.state.canonicalAccount(row.account);
+    return [this.imported(row) ? '' : this.clock(row), only ? '' : this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
   }
   /** The saldo after the line: over the active accounts, or the chosen account's own. */
   saldoText(row: BankStatementLine): string {

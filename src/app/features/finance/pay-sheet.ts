@@ -14,10 +14,12 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
 
 /**
  * The one place a payment is entered. For one cost: the amount (what is
- * still open by default; less notes a part payment, more is allowed), the
- * day, and, when switched on, an outgoing bank line on a chosen account
- * (the choice is remembered on this device). For a selection: each cost
- * pays its remainder on that day. Never a one-tap write.
+ * still open by default; less notes a part payment, more is allowed) and the
+ * day, or a bank transaction that already is the payment (picked above the
+ * fields; no second bank line is noted here, 2026-10-16). For a selection:
+ * each cost pays its remainder on that day. Never a one-tap write. A manual
+ * account's movement is noted through Kosten & bank's own 'Bankbeweging
+ * noteren'.
  */
 @Component({
   selector: 'app-pay-sheet',
@@ -49,30 +51,11 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
         }
         <div class="fin-group" [class.ios-group]="!state.desk()">
           <div class="fin-field fin-field--stack"><span>Betaald op</span>
-            <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Betaald op" [options]="choices()" [value]="choice()" (changed)="choice.set($any($event))" />
+            <app-segmented class="fin-paid-seg" [variant]="state.desk() ? 'desk' : 'ios'" label="Betaald op" [options]="choices()" [value]="choice()" (changed)="choice.set($any($event))" />
             @if (choice() === 'other') { <app-date-field fieldId="pay-day" [value]="otherDay()" (valueChange)="otherDay.set($event)" /> }
             <span class="fin-hint">{{ paidLabel() }}</span>
           </div>
-          <label class="fin-field fin-field--switch"><span>Ook als bankbeweging noteren<small>{{ single() ? 'Een uitgaande beweging voor deze betaling, met een verwijzing naar de kost' : 'Een uitgaande beweging per kost, met een verwijzing naar de kost' }}</small></span>
-            <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="toBank()" (change)="toBank.set($any($event.target).checked)" /></label>
-          @if (toBank()) {
-            <div class="fin-field fin-field--stack"><span>Rekening</span>
-              @if (state.manualAccountOptions().length) {
-                <div class="fin-choice" role="group" aria-label="Rekening">
-                  @for (option of state.manualAccountOptions(); track option.key) {
-                    <button class="fin-choice__chip" type="button" [attr.aria-pressed]="account() === option.key" (click)="account.set(option.key)">{{ option.label }}</button>
-                  }
-                </div>
-              } @else {
-                <span class="fin-hint">Nog geen rekening: vul eerst een saldo in bij Bank.</span>
-              }
-            </div>
-          }
         </div>
-        @if (toBank()) {
-          @if (future()) { <p class="fin-hint fin-hint--warn">Een bankbeweging kan niet in de toekomst liggen.</p> }
-          @else if (accountHint(); as hint) { <p class="fin-hint">{{ hint }}</p> }
-        }
         }
       </div>
       <div foot style="display:contents">
@@ -91,22 +74,29 @@ export class PaySheet {
   readonly open = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + openOf(cost) * 100, 0)) / 100);
   readonly total = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + cashTotalOf(cost) * 100, 0)) / 100);
   readonly partial = computed(() => Math.abs(Math.round(this.open() * 100)) < Math.abs(Math.round(this.total() * 100)));
-  private readonly preference = this.state.payToBank();
   readonly choice = signal<PaidChoice>('today');
   readonly otherDay = signal(this.state.today());
-  readonly toBank = signal(this.preference.on);
-  readonly account = signal(this.state.manualAccountOptions().some((option) => option.key === this.preference.accountKey)
-    ? this.preference.accountKey : this.state.manualAccountOptions().length === 1 ? this.state.manualAccountOptions()[0].key : '');
   /** The field starts on the remainder and is not rebound while typing. */
   readonly initialAmount = Math.abs(this.open());
   readonly amount = signal(this.open());
-  readonly selectedBank = signal<BankStatementLine | null>(this.state.bankCostLinkPending()?.costId === this.single()?.id ? this.state.bankCostLinkPending()!.line : null);
+  /** A link still pending for this one cost starts on its transaction; a selection (no single cost) or nothing pending starts empty. */
+  readonly selectedBank = signal<BankStatementLine | null>(this.pendingLine());
 
-  /** 'Kostdatum' only when the costs share one date. */
+  private pendingLine(): BankStatementLine | null {
+    const pending = this.state.bankCostLinkPending(), single = this.single();
+    return pending && single && pending.costId === single.id ? pending.line : null;
+  }
+
+  /**
+   * 'Kostdatum' only when the costs share one date. A phone's four segments
+   * at 390 px cut 'Andere datum' to 'Andere …': there it says 'Andere' (the
+   * screen reader still hears 'Andere datum'; the chosen day stands under it).
+   */
   readonly choices = computed<SegmentOption[]>(() => {
     const dates = new Set(this.costs().map((cost) => cost.date));
     return [{ id: 'today', label: 'Vandaag' }, { id: 'yesterday', label: 'Gisteren' },
-      ...(dates.size === 1 ? [{ id: 'cost', label: 'Kostdatum' }] : []), { id: 'other', label: 'Andere datum', shortLabel: 'Andere' }];
+      ...(dates.size === 1 ? [{ id: 'cost', label: 'Kostdatum' }] : []),
+      this.state.desk() ? { id: 'other', label: 'Andere datum', shortLabel: 'Andere' } : { id: 'other', label: 'Andere', ariaLabel: 'Andere datum' }];
   });
   readonly paidOn = computed(() => {
     const today = this.state.today();
@@ -118,7 +108,6 @@ export class PaySheet {
     }
   });
   readonly paidLabel = computed(() => dayMonthYear(this.paidOn()));
-  readonly future = computed(() => this.paidOn() > this.state.today());
   /** Less than the remainder, the remainder, or more: the button says which. */
   readonly amountState = computed<'rest' | 'part' | 'over' | 'none'>(() => {
     if (!this.single()) return 'rest';
@@ -142,11 +131,7 @@ export class PaySheet {
       default: return '';
     }
   });
-  readonly canSave = computed(() => this.selectedBank() ? !this.state.busy() && !this.state.saving() && (!this.existingPayment() || bankAmountsMatch(this.existingPayment()!.amountEur, -this.selectedBank()!.amountEur)) : !this.existingPayment() && !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none'
-    && (!this.toBank() || (!!this.account() && !this.future())));
-
-  /** Whether the line lands after the account's last check (and so moves its balance); the cost form shows the same hint. */
-  readonly accountHint = computed(() => this.state.accountHint(this.account(), this.paidOn()));
+  readonly canSave = computed(() => this.selectedBank() ? !this.state.busy() && !this.state.saving() && (!this.existingPayment() || bankAmountsMatch(this.existingPayment()!.amountEur, -this.selectedBank()!.amountEur)) : !this.existingPayment() && !!this.paidOn() && !this.state.busy() && !this.state.saving() && this.amountState() !== 'none');
 
   readonly abs = Math.abs;
 
@@ -162,14 +147,12 @@ export class PaySheet {
       void this.state.addPaymentFromBank(this.single()!, selectedBank, this.existingPayment()).then(done => { if (done) this.state.paySheet.set(null); });
       return;
     }
-    this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
-    const bankAccount = this.toBank() ? this.account() : null;
     const single = this.single();
     if (!single) {
-      void this.state.markPaid(this.costs(), { paidOn: this.paidOn(), bankAccount });
+      void this.state.markPaid(this.costs(), { paidOn: this.paidOn() });
       return;
     }
-    void this.state.addPayment(single, { paidOn: this.paidOn(), amountEur: this.amount(), bankAccountKey: bankAccount })
+    void this.state.addPayment(single, { paidOn: this.paidOn(), amountEur: this.amount() })
       .then((done) => { if (done) this.state.paySheet.set(null); });
   }
 }
