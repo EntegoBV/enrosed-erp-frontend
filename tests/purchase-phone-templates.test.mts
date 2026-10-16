@@ -236,3 +236,22 @@ test('the Nacalculatie\'s Kostprijzen toepassen says what it does on the phone: 
   // The editor: its Nacalculatie opens the same sheet.
   assert.match(await read('app/features/purchasing/purchase-editor.ts'), /\(applyCosts\)="apply\(\)"/);
 });
+
+test('the payment sheet opened from the phone\'s Betalingen tab is bound as the desk\'s: the share inputs and outputs, no [bankAccount]', async () => {
+  for (const file of ['purchase-editor.ts', 'purchase-desk.ts']) {
+    const template = templateOf(await read(`app/features/purchasing/${file}`));
+    assert.equal(count(template, '<app-purchase-payment-sheet '), 1, `${file}: one payment sheet host`);
+    const host = /<app-purchase-payment-sheet [\s\S]*?\/>/.exec(template)?.[0] ?? '';
+    for (const binding of ['[orderName]="containerName(data.order)"', '[lineShares]="payingLineShares()"', '[alsoState]="alsoState()"',
+      '[supplierId]="data.order.supplierId ?? null"', '(alsoLoad)="loadAlso(data.order.id, data.order.supplierId ?? null, pay.payee)"']) {
+      assert.ok(host.includes(binding), `${file}: ${binding}`);
+    }
+    assert.doesNotMatch(host, /\[bankAccount\]/, `${file}: the picked transaction is the movement`);
+  }
+  // The phone host sits at host level after the phone frame; the Betalingen pane's overview opens it.
+  const editor = templateOf(await read('app/features/purchasing/purchase-editor.ts'));
+  const pane = editor.indexOf('id="mpo-pane-betalingen"');
+  const overview = editor.indexOf('<app-purchase-payment-overview mode="edit"', pane);
+  assert.ok(pane > 0 && overview > pane && overview < editor.indexOf('id="mpo-pane-dossier"'));
+  assert.match(editor.slice(overview, editor.indexOf('/>', overview)), /\(add\)="requestPayment\(\$event\)" \(edit\)="requestEdit\(\$event\)" \(addTransfer\)="requestAddTransfer\(\$event\)"/);
+});
