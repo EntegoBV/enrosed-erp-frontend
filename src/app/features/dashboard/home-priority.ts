@@ -94,8 +94,11 @@ export interface HomeTaskInput {
   /** The bell's action items (WorkQueue.actions()); `at` is an ISO instant. */
   customers: readonly { kind: string; title: string; orderNumber: string; customer: string | null; at: string | null; detail: string }[];
   loginRequests: number;
-  /** Container terms due now, one per order; label = containerName(). */
-  containerDue: readonly { orderId: number; label: string; eur: number; termLabel?: string | null }[];
+  /**
+   * Container terms due now, one per order; label = containerName(). `terms` is how many payables of the order are due
+   * (a term, or a payee's stream without terms; 1 when left out): the row counts these, as Kosten & bank does.
+   */
+  containerDue: readonly { orderId: number; label: string; eur: number; termLabel?: string | null; terms?: number }[];
   /** Unbilled advances (partnerFinancingAnalysis); `first` is the earliest, `orderIds` every order involved. */
   advances: { count: number; eur: number; overdueEur: number; first: { orderId: number; label: string; due: string | null } | null;
     orderIds?: readonly number[] };
@@ -340,13 +343,15 @@ function customersTask(input: HomeTaskInput): Candidate | null {
 function containerDueTask(input: HomeTaskInput): Candidate | null {
   const rows = input.containerDue;
   if (!rows.length) return null;
-  const n = rows.length;
+  /* The count is of terms (finance-attention's "n containertermijnen nu te betalen"); the row stays one per set of orders. */
+  const n = rows.reduce((sum, row) => sum + Math.max(1, row.terms ?? 1), 0);
   const ids = rows.map((row) => row.orderId).sort((a, b) => a - b);
   const eur = rows.reduce((sum, row) => sum + Math.round(row.eur * 100), 0) / 100;
-  const term = n === 1 ? rows[0].termLabel : rows.map((row) => row.label).join(', ');
+  const term = rows.length === 1 ? rows[0].termLabel : rows.map((row) => row.label).join(', ');
   return {
     key: `container-due:${ids.join(',')}`, source: 'container-due', tier: 'nu',
-    title: n === 1 ? `Containertermijn ${rows[0].label} betalen` : `${n} containertermijnen betalen`,
+    title: n === 1 ? `Containertermijn ${rows[0].label} betalen`
+      : rows.length === 1 ? `${n} containertermijnen ${rows[0].label} betalen` : `${n} containertermijnen betalen`,
     context: ['Volgens de afspraak bij de container', term].filter(Boolean).join(' · '),
     chip: { label: 'Nu betalen', tone: 'danger' }, eur, count: n, daysLate: 0, due: input.today,
     verb: 'Betalen', target: financeTarget({ view: 'open', tab: 'containers' }), plannerId: null, actions: SYSTEM_ACTIONS,

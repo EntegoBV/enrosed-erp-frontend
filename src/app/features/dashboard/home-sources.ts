@@ -65,20 +65,24 @@ export function customersOf(actions: readonly AppNotification[]): HomeTaskInput[
   return actions.map((item) => ({ kind: item.kind, title: item.title, orderNumber: item.orderNumber, customer: item.customer, at: item.at, detail: item.detail ?? '' }));
 }
 
-/** Container terms due now, one row per order (bucket 'now', not archived), named by containerName(). */
+/**
+ * Container terms due now, one row per order (bucket 'now', not archived), named by containerName(); `terms`
+ * counts the order's payables due now, as Kosten & bank's "n containertermijnen nu te betalen" does.
+ */
 export function containerDueOf(purchases: readonly PurchaseOrderView[]): HomeTaskInput['containerDue'] {
-  const byOrder = new Map<number, { orderId: number; label: string; cents: number; terms: string[] }>();
+  const byOrder = new Map<number, { orderId: number; label: string; cents: number; count: number; terms: string[] }>();
   for (const row of containerPayables(purchases)) {
     if (row.bucket !== 'now' || row.archived) continue;
     const entry = byOrder.get(row.orderId)
-      ?? { orderId: row.orderId, label: containerName({ id: row.orderId, number: row.orderNumber, alias: row.alias }), cents: 0, terms: [] };
+      ?? { orderId: row.orderId, label: containerName({ id: row.orderId, number: row.orderNumber, alias: row.alias }), cents: 0, count: 0, terms: [] };
     entry.cents += cents(row.remainingEur);
+    entry.count += 1;
     const term = row.termLabel || PAYEE_LABEL[row.payee];
     if (term && !entry.terms.includes(term)) entry.terms.push(term);
     byOrder.set(row.orderId, entry);
   }
   return [...byOrder.values()].filter((entry) => entry.cents > 0)
-    .map((entry) => ({ orderId: entry.orderId, label: entry.label, eur: entry.cents / 100, termLabel: entry.terms.join(', ') || null }));
+    .map((entry) => ({ orderId: entry.orderId, label: entry.label, eur: entry.cents / 100, termLabel: entry.terms.join(', ') || null, terms: entry.count }));
 }
 
 /** The unbilled advances of partnerFinancingAnalysis; the first one named by containerName(). */

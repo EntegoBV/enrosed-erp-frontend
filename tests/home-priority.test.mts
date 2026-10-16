@@ -426,6 +426,25 @@ test('advances: over date → Nu, within 7 days → Vandaag, later or undated �
   assert.equal(homeTasks(input({ advances: { count: 0, eur: 0, overdueEur: 0, first: null } })).total, 0);
 });
 
+/* ------------------------------------------------------- 13b. container terms */
+
+test('container terms due now: the row counts terms, as Kosten & bank does, and stays one row per set of orders', () => {
+  const row = (containerDue: HomeTaskInput['containerDue']) => bySource(homeTasks(input({ containerDue })), 'container-due')!;
+  const one = row([{ orderId: 44, label: 'PO-2026-044', eur: 6200, termLabel: '30% bij bestelling', terms: 1 }]);
+  assert.deepEqual([one.title, one.count, one.context], ['Containertermijn PO-2026-044 betalen', 1, 'Volgens de afspraak bij de container · 30% bij bestelling']);
+  const twoTerms = row([{ orderId: 44, label: 'PO-2026-044', eur: 9200, termLabel: '30% bij bestelling, Douane & transport', terms: 2 }]);
+  assert.deepEqual([twoTerms.title, twoTerms.count], ['2 containertermijnen PO-2026-044 betalen', 2]);
+  /* the mock of the home check: four orders, five terms, € 17.400 → "5 containertermijnen", as Vraagt aandacht reads */
+  const four = row([
+    { orderId: 21, label: 'PO-2026-021', eur: 2400, terms: 2 }, { orderId: 43, label: 'PO-2026-043', eur: 5000, terms: 1 },
+    { orderId: 44, label: 'PO-2026-044', eur: 6000, terms: 1 }, { orderId: 45, label: 'PO-2026-045', eur: 4000, terms: 1 },
+  ]);
+  assert.deepEqual([four.title, four.count, four.eur, four.key], ['5 containertermijnen betalen', 5, 17400, 'container-due:21,43,44,45']);
+  assert.equal(four.context, 'Volgens de afspraak bij de container · PO-2026-021, PO-2026-043, PO-2026-044, PO-2026-045');
+  /* rows without a count (older callers) count one term each */
+  assert.equal(row([{ orderId: 43, label: 'PO-2026-043', eur: 100 }, { orderId: 44, label: 'PO-2026-044', eur: 100 }]).title, '2 containertermijnen betalen');
+});
+
 /* ---------------------------------------------------------- 14. arrival */
 
 test('a container arriving today or tomorrow is a Vandaag row', () => {
