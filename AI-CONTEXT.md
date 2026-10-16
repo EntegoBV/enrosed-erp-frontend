@@ -650,6 +650,42 @@ cijfers'.
   covered by netting, keeps the old words; the netting is untouched (the
   server nets a surplus into an unpaid later term, which then reads
   'verrekend').
+- Verdelen over containers (Emre, 2026-10-16: one transfer paid the 30 %
+  of three containers). The larger-transaction question starts with
+  'Verdelen over containers' ('Deze transactie betaalde ook andere
+  containers'; a USD/CNY payment far below its line gets it as a link under
+  the warning), before 'Bedrag aanpassen naar …' and 'Rest als inspectie
+  via leverancier'; never for Andere kosten, a credit offset or 'Transactie
+  toevoegen'. The share block lists this container (`containerName`, its
+  part) and each other one on its open payment ('Bestaand: € x': linked and
+  followed, carved when smaller, grown when larger) or a new payment on a
+  term ('Nieuw: <term>'), with 'Container toevoegen…', 'Volgens afspraak' /
+  'Gelijk verdelen' (`splitCents`, to the cent; a typed amount makes it
+  manual), what each part does (`shareEffect`) and 'Samen € x van € y ✓';
+  'Verdelen en koppelen' waits for the two-cent match and sends one POST
+  `/bank-statements/{id}/purchase-share` (`shareBody`: this payment first,
+  with the euro the sheet saw), toast 'Verdeeld over 3 containers: …'. The
+  editor proposes the same supplier's open payments on this term noted
+  within a week (`proposeShare`). A new payment's 'Deze transactie dekt ook
+  andere containers' starts a container on its open payment and then saves
+  through purchase-share too, so no container gets a second payment;
+  without open payments the old `/purchase-payment` call stays.
+  Betaalbewijs names the other containers' parts ('Deze transactie draagt
+  ook: …', `lineShares` from GET `/purchase-payments`). Pure, node-tested:
+  `purchase-payment-share.ts`, `purchase-also-containers.ts`. An older
+  server (404/405): 'Verdelen over containers kan zodra de server
+  bijgewerkt is.'
+- No 'Ook als bankbeweging noteren' (2026-10-16): a picked transaction is
+  the bank's movement, so the purchase payment sheet, the pay sheet and the
+  cost form note no manual bank line and bind no account. A manual movement
+  is Kosten & bank's 'Bankbeweging noteren', which still starts on the
+  remembered account (`pay-to-bank-preference.ts`; its stored `on` is
+  ignored).
+- One payment sheet per screen: the desk's in `purchase-desk.ts` and the
+  phone's at host level of `purchase-editor.ts` (opened from the Betalingen
+  tab). Both bind the same inputs and outputs (orderName, orderNumber,
+  lineShares, alsoState, alsoLoad with the payee); a new binding goes on
+  both lines (`purchase-phone-templates.test.mts` checks them).
 - Wording (owner, 2026-09-26): the planned payee amount is 'Afspraak'
   everywhere in Inkoop and Analyses › Inkoop — never begroot, begroting,
   budget or raming (afspraak/afgesproken in sub lines, 'Afspraak extern' in
@@ -1804,7 +1840,12 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   readings, `transactions` = lines to link on active accounts (both
   directions, booked lines excluded). Under Transacties the desk sidebar
   lists every active account (`FinanceShell.accounts`: balance, "{n} d oud",
-  its own count), also with a single account.
+  its own count) when there are two or more. With exactly one active
+  account Transacties is that account (Emre, 2026-10-16): no account row,
+  its balance and age stand under Transacties (warn after 14 d), Transacties
+  without `account=` shows its card and the phone sub line names it, and a
+  transaction's sub line leaves the account out (an archived account's line
+  still names its own).
 - `line=<id>` (finance-url.ts) opens a transaction on every section: the desk
   inspector (424 px for a line, other kinds keep 360) or the phone sheet. It
   wins the inspector over `cost`/`container`; closing removes it; links and
@@ -1893,7 +1934,15 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   transfer for a term of several containers, one POST `/purchase-payment`
   whose parts each carry their own `purchaseOrderId`; the line reads
   "Inkoop · 3 containers (PO-…, …)", each container's payments "zelfde
-  transactie als PO-… en PO-…".
+  transactie als PO-… en PO-…". Since 2026-10-16 a container whose
+  instalment is noted but not on the bank is listed too and starts on that
+  payment ('Bestaand: € x', `container-split-rows.ts` picks each row's
+  payee and term); with any such row Koppelen sends POST `/purchase-share`
+  (the payment follows its part, the others are new payments), the toast
+  'Verdeeld over n containers: …' has no 'Ongedaan maken' (undo would delete
+  the linked payments); 'Koppeling losmaken' on the line stays. The
+  detail's 'Transactie is € x hoger' question offers 'Verdelen over
+  containers' first and chooses nothing beforehand.
 - Op de bank (Inkoop & kosten › Containers and the container inspector):
   strip "Betaald, op de bank" / "Betaald, nog niet op de bank", column "{k}
   van {n} betalingen · {m} zonder transactie" or "aanbetaling verwacht {d}",
