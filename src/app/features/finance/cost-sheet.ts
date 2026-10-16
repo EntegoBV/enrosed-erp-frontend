@@ -165,25 +165,6 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
           @if (becomingPaid()) {
             <div class="fin-field fin-field--wide"><app-bank-transaction-picker [direction]="cashTotalOf(draft()) < 0 ? 'INCOMING' : 'OUTGOING'" [amount]="abs(cashTotalOf(draft()))" [selected]="selectedBank()" [disabled]="state.saving()" (selectedChange)="chooseBank($event)" /></div>
             @if (selectedBank()) { <p class="fin-hint fin-field--wide">Datum en rekening komen van de bank. Het totaal inclusief btw mag maximaal € 0,02 afwijken. Het factuurbedrag blijft behouden.</p> }
-            @else {
-            <label class="fin-field fin-field--switch fin-field--wide"><span>Ook als bankbeweging noteren<small>Een uitgaande beweging met een verwijzing naar deze kost</small></span>
-              <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="toBank()" (change)="toBank.set($any($event.target).checked)" /></label>
-            @if (toBank()) {
-              <div class="fin-field fin-field--wide fin-field--stack"><span>Rekening</span>
-                @if (state.manualAccountOptions().length) {
-                  <div class="fin-choice" role="group" aria-label="Rekening">
-                    @for (option of state.manualAccountOptions(); track option.key) {
-                      <button class="fin-choice__chip" type="button" [attr.aria-pressed]="account() === option.key" (click)="account.set(option.key)">{{ option.label }}</button>
-                    }
-                  </div>
-                } @else {
-                  <span class="fin-hint">{{ state.loadedAt() ? 'Nog geen rekening: vul eerst een saldo in bij Bank.' : 'Rekeningen laden…' }}</span>
-                }
-                @if (future()) { <span class="fin-hint fin-hint--warn">Een bankbeweging kan niet in de toekomst liggen.</span> }
-                @else if (accountHint(); as hint) { <span class="fin-hint">{{ hint }}</span> }
-              </div>
-            }
-            }
           }
         </div>
         <div class="fin-group" [class.ios-group]="!state.desk()">
@@ -235,7 +216,7 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
         @if (draft().id && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCost(draft())">Verwijderen</button> }
         @if (regimeProblem(); as problem) { <span class="fin-foot-note">{{ problem }}</span> }
         <span class="spacer"></span>
-        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || bankBlocked() || !!regimeProblem() || !!dueProblem() || (bankCreatePending() && !!state.costBankCreateConflict())" (click)="save()">{{ state.saving() ? 'Bezig…' : bankCreatePending() ? 'Registratie bevestigen' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
+        <button class="btn btn--primary" type="button" [disabled]="state.saving() || !basics() || !!regimeProblem() || !!dueProblem() || (bankCreatePending() && !!state.costBankCreateConflict())" (click)="save()">{{ state.saving() ? 'Bezig…' : bankCreatePending() ? 'Registratie bevestigen' : draft().id ? 'Bewaar' : 'Boeken' }}</button>
       </div>
     </app-sheet>
   `,
@@ -361,7 +342,7 @@ export class CostSheet {
     const draft = this.draft();
     return this.state.cashRound() && draft.dueDate && draft.date && draft.dueDate < draft.date ? 'De vervaldag ligt vóór de kostdatum' : null;
   });
-  readonly canSave = computed(() => this.basics() && (this.amount() > 0 || (!!this.source() && this.amount() < 0)) && !this.sourceLoading() && !this.sourceError() && !this.bankBlocked() && !this.regimeProblem()
+  readonly canSave = computed(() => this.basics() && (this.amount() > 0 || (!!this.source() && this.amount() < 0)) && !this.sourceLoading() && !this.sourceError() && !this.regimeProblem()
     && !this.dueProblem());
   readonly showError = computed(() => this.tried() && !(this.amount() > 0 || (!!this.source() && this.amount() < 0)));
 
@@ -393,23 +374,12 @@ export class CostSheet {
   /** One payment that is not on the bank: its date may still move through 'Betaald op'. */
   readonly singleMovable = computed(() => this.payments().length === 1 && this.payments()[0].bankStatementLineId == null);
 
-  /* "Ook als bankbeweging noteren": only when the cost becomes paid in this save */
-  private readonly preference = this.state.payToBank();
+  /* A cost that becomes paid in this save may take a bank transaction (it is the movement; a manual one goes through 'Bankbeweging noteren') */
   readonly before = computed(() => (this.draft().id ? this.state.costs().find((row) => row.id === this.draft().id) ?? null : null));
   readonly becomingPaid = computed(() => !!this.draft().paidOn && !this.payments().length && (!this.draft().id || !this.before()?.paidOn));
   readonly bankOrigin = this.state.costBankTransaction;
   readonly selectedBank = signal<BankStatementLine | null>(this.bankOrigin());
   readonly bankCreatePending = computed(() => !this.draft().id && this.state.costBankCreatePending()?.line.id === this.selectedBank()?.id && !!this.state.costBankCreatePending());
-  readonly toBank = signal(this.bankOrigin() ? false : this.preference.on);
-  /** The remembered account, or the only one, as soon as the accounts are in. */
-  readonly account = linkedSignal(() => {
-    const options = this.state.manualAccountOptions();
-    return options.some((option) => option.key === this.preference.accountKey) ? this.preference.accountKey : options.length === 1 ? options[0].key : '';
-  });
-  readonly future = computed(() => (this.draft().paidOn ?? '') > this.state.today());
-  readonly accountHint = computed(() => this.state.accountHint(this.account(), this.draft().paidOn ?? this.state.today()));
-  /** The switch is on without an account (once the accounts are known) or with a date still ahead. */
-  readonly bankBlocked = computed(() => this.becomingPaid() && !this.selectedBank() && this.toBank() && ((!this.account() && !!this.state.loadedAt()) || this.future()));
 
   patch(changes: Partial<CompanyCost>): void {
     this.draft.update((draft) => ({ ...draft, ...changes, ...(this.sourceLocked() ? {
@@ -660,11 +630,9 @@ export class CostSheet {
     if (!this.canSave()) return;
     const files = this.pending();
     this.state.costFiles.set([...files]);
-    /* The switch was on screen: remember its state either way, then book, and note the line when it was on. */
+    /* A picked transaction is the payment: the cost takes its day and is linked to it. */
     const bank = this.becomingPaid() ? this.selectedBank() : null;
-    const toBank = this.becomingPaid() && !bank && this.toBank();
-    if (this.becomingPaid() && !bank && !this.bankOrigin()) this.state.rememberPayToBank({ on: this.toBank(), accountKey: this.account() || this.preference.accountKey });
-    const saved = await this.state.saveCost({ ...this.draft(), ...(bank ? { paidOn: bankTransactionDay(bank) } : {}) }, { bankAccountKey: toBank ? this.account() || null : null, bankTransaction: bank });
+    const saved = await this.state.saveCost({ ...this.draft(), ...(bank ? { paidOn: bankTransactionDay(bank) } : {}) }, { bankTransaction: bank });
     if (saved?.id && files.length) void this.state.attach(saved.id, files);
     if (saved) this.state.costFiles.set([]);
   }

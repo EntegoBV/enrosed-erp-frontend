@@ -16,13 +16,13 @@ import {
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { receiptInstant, receiptLocalParts, receiptRequest } from '../../shared/received-at';
+import { receiptLocalParts, receiptRequest } from '../../shared/received-at';
 import type { ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { SALES_CHANNELS, channelLabel } from '../sales/sales-channels';
 import type { SalesChannel } from '../sales/sales-channels';
-import { bankAccountKey, canonicalBankAccount, bankCheckpoint, reconciledBank } from './bank-reconciliation';
+import { canonicalBankAccount, reconciledBank } from './bank-reconciliation';
 import { bankAllocationTargets } from './bank-allocation-targets';
 import { changePreview } from './bank-change-preview';
 import type { KeepAs, LinkTarget } from './bank-change-preview';
@@ -40,12 +40,11 @@ import { mergeChannels } from './channel-choices';
 import { SUPPLIER_COUNTRIES } from './cost-countries';
 import type { CountryChoice } from './cost-countries';
 import { newPaymentOf, paymentsBanked } from './cost-payments';
-import { readPayToBank, writePayToBank } from './pay-to-bank-preference';
+import { readPayToBank } from './pay-to-bank-preference';
 import type { PayToBankPreference } from './pay-to-bank-preference';
 import { categoryLabel } from './cost-categories';
 import { CONTAINER_PAYMENT_CATEGORIES, CostLedgerRow, costLedger, costLedgerCsv } from './cost-ledger';
 import { financeAttention } from './finance-attention';
-import { dayMonthYear } from './finance-format';
 import { FinanceIntake } from './finance-intake';
 import {
   addDays, cashTotalOf, costRegimeCells, occurrencesBetween, openOf, previewBacklog, quarterOf, returnLineOf, returnVatOf, upcomingRecurring,
@@ -119,8 +118,6 @@ export interface MovementPrefill {
 
 export interface PayOptions {
   paidOn: string;
-  /** The account key to note a bank line on, or null for only "paid". */
-  bankAccount: string | null;
 }
 
 /** An open invoice in Te ontvangen. */
@@ -1192,13 +1189,12 @@ export class FinanceState {
   }
 
   /**
-   * Books or corrects a cost. With `bankAccountKey` ("Ook als bankbeweging
-   * noteren" in the form) a cost that becomes paid in this save goes onto
-   * that account straight away, in one toast whose undo reverts the paid
-   * date and the line together; otherwise the toast offers the movement
-   * form. The form closes once the line is in, so a failed line is seen.
+   * Books or corrects a cost. With a picked bank transaction the cost is
+   * linked to it (the transaction is the payment); a cost that becomes paid
+   * without one gets a toast that offers the movement form ('Op de bank
+   * noteren'). Since 2026-10-16 the form notes no bank line by itself.
    */
-  async saveCost(draft: CompanyCost, options: { bankAccountKey?: string | null; bankTransaction?: BankStatementLine | null } = {}): Promise<CompanyCost | null> {
+  async saveCost(draft: CompanyCost, options: { bankTransaction?: BankStatementLine | null } = {}): Promise<CompanyCost | null> {
     if (this.saving()) return null;
     if (!draft.id && options.bankTransaction) return this.createCostFromBank(draft, options.bankTransaction);
     const pending = this.bankCostLinkPending();
@@ -1236,8 +1232,6 @@ export class FinanceState {
       /* A cost that just became paid can go onto the bank in one more tap, or right away when the form said so. */
       const newlyPaid = !!saved.paidOn && !before?.paidOn && !!saved.id;
       this.duplicating = false;
-      const accountKey = options.bankAccountKey ?? '';
-      const toBank = newlyPaid && !!accountKey && this.manualAccountAllowed(accountKey) && this.manualAccountOptions().some((option) => option.key === bankAccountKey(accountKey));
       if (options.bankTransaction && saved.id) {
         this.bankCostLinkPending.set({ costId: saved.id, line: options.bankTransaction });
         this.bankCostLinkError.set('');
@@ -1251,22 +1245,8 @@ export class FinanceState {
           this.bankCostLinkError.set(`Kost bewaard. De bankbetaling kon nog niet worden bevestigd: ${messageOf(failure, 'Probeer opnieuw.')} Opnieuw proberen maakt geen extra betaling.`);
           this.paySheet.set({ costs: [saved] });
         }
-      } else if (!toBank) {
-        this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
       } else {
-        const account = this.canonicalAccount(accountKey);
-        /* The server wrote one full payment for the switch; the line links to it. */
-        const payment = newPaymentOf(before, saved);
-        try {
-          const line = await this.banking.create(this.payLine(saved, saved.paidOn!, account, payment?.id ?? null, payment?.amountEur ?? cashTotalOf(saved)));
-          this.bankStatements.update((rows) => [line, ...rows.filter((row) => row.id !== line.id)]);
-          void this.refreshBank();
-          this.ui.toast(`Kost geboekt · ook op ${account} genoteerd`, 'ok',
-            { label: 'Ongedaan maken', run: () => void this.undoPaid([{ cost: saved, paidOn: saved.paidOn!, paymentId: payment?.id ?? null, line }]) });
-        } catch {
-          this.ui.toast('Kost geboekt, maar de bankbeweging is niet bewaard.', 'err',
-            { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved, payment)) });
-        }
+        this.ui.toast(text, 'ok', newlyPaid ? { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved)) } : undefined);
       }
       this.costDraft.set(null);
       this.costBankTransaction.set(null);
@@ -1452,13 +1432,9 @@ export class FinanceState {
     this.ui.toast('Je kunt de banktransactie later koppelen. Controleer de betalingen op deze kost voordat je handmatig een betaling toevoegt.');
   }
 
-  /** The remembered "Ook als bankbeweging noteren" choice of this device, shared with the container payment sheet. */
+  /** The account this device remembered for 'Bankbeweging noteren' (its stored `on` is ignored since 2026-10-16). */
   payToBank(): PayToBankPreference {
     return readPayToBank(globalThis.localStorage);
-  }
-
-  rememberPayToBank(preference: PayToBankPreference): void {
-    writePayToBank(globalThis.localStorage, preference);
   }
 
   /** A phone swipe opens the same payment sheet, including existing bank transactions. */
@@ -1468,40 +1444,24 @@ export class FinanceState {
 
   /**
    * Pays what is still open on each cost on a day, one by one under the busy
-   * lock (the server writes one payment per cost), and notes an outgoing bank
-   * line per payment when an account is given (linked to the payment, with a
-   * "kostbetaling #id" marker so it can be found back). The toast offers to
-   * undo both.
+   * lock (the server writes one payment per cost). The toast offers to undo
+   * it. No bank line is noted here: a picked transaction is the movement, a
+   * manual one goes through 'Bankbeweging noteren' (2026-10-16).
    */
   async markPaid(costs: readonly CompanyCost[], options: PayOptions): Promise<boolean> {
-    if (options.bankAccount && !this.manualAccountAllowed(options.bankAccount)) { this.ui.toast('Kies voor deze rekening een opgehaalde banktransactie.', 'err'); return false; }
     const targets = costs.filter((cost) => !!cost.id && openOf(cost) !== 0);
     if (!targets.length || this.busy()) return false;
-    const account = options.bankAccount ? this.canonicalAccount(options.bankAccount) : null;
     const done: PaidEntry[] = [];
     let firstError = '';
-    let bankFailed = false;
     this.busy.set(true);
     this.progress.set({ done: 0, total: targets.length });
     try {
       for (const cost of targets) {
         try {
-          const remainder = openOf(cost);
           const saved = await this.finance.markCostPaid(cost.id!, options.paidOn);
           this.replaceCost(saved);
           const payment = newPaymentOf(cost, saved);
-          let line: BankStatementLine | null = null;
-          if (account) {
-            try {
-              line = await this.banking.create(this.payLine(saved, options.paidOn, account, payment?.id ?? null, payment?.amountEur ?? remainder));
-              const created = line;
-              this.bankStatements.update((rows) => [created, ...rows.filter((row) => row.id !== created.id)]);
-            } catch (failure: unknown) {
-              bankFailed = true;
-              firstError ||= messageOf(failure, 'Bankbeweging bewaren mislukt');
-            }
-          }
-          done.push({ cost: saved, paidOn: options.paidOn, paymentId: payment?.id ?? null, line });
+          done.push({ cost: saved, paidOn: options.paidOn, paymentId: payment?.id ?? null, line: null });
         } catch (failure: unknown) {
           firstError ||= messageOf(failure, 'Betaald zetten mislukt');
         }
@@ -1512,7 +1472,6 @@ export class FinanceState {
       this.progress.set(null);
     }
     this.paySheet.set(null);
-    if (done.some((entry) => entry.line)) void this.refreshBank();
     if (!done.length) {
       this.ui.toast(firstError || 'Betaald zetten mislukt', 'err');
       return false;
@@ -1522,76 +1481,27 @@ export class FinanceState {
       void this.refreshCosts();
       return true;
     }
-    if (bankFailed) {
-      this.ui.toast('Betaald gezet, maar de bankbeweging is niet bewaard.', 'err');
-      return true;
-    }
     const text = done.length === 1
-      ? `${done[0].cost.description} betaald op ${shortDay(options.paidOn)}${done[0].line ? ` · ook op ${account} genoteerd` : ''}`
+      ? `${done[0].cost.description} betaald op ${shortDay(options.paidOn)}`
       : `${done.length} kosten betaald op ${shortDay(options.paidOn)}`;
     this.ui.toast(text, 'ok', { label: 'Ongedaan maken', run: () => void this.undoPaid(done) });
     return true;
   }
 
   /**
-   * Whether a bank line on a day lands after the account's last check (and
-   * so moves its balance): the hint under the account chips of the pay
-   * sheet and the cost form. '' for an unknown account or day.
+   * Notes one payment on a cost (less, the whole remainder or more than it).
+   * The cost comes back with its payments and what is still open.
    */
-  accountHint(accountKey: string, day: string): string {
-    const account = this.accountsView().find((row) => row.account === accountKey);
-    if (!account) return '';
-    if (!account.reading) return `${account.label} heeft nog geen saldo; de beweging telt mee zodra je er een invult.`;
-    let at: number;
-    try { at = day === this.today() ? Date.now() : Date.parse(receiptInstant(day, '12:00:00', BANK_ZONE)); } catch { return ''; }
-    if (!Number.isFinite(at)) return '';
-    return at <= bankCheckpoint(account.reading)
-      ? `Valt vóór je laatste saldocontrole van ${account.label} (${dayMonthYear(account.reading.date)}); zit al in dat saldo.`
-      : `Telt mee in het saldo van ${account.label}.`;
-  }
-
-  /** The outgoing line of one payment on a cost: its amount, linked to the payment (an older server without payments gets the cost marker). */
-  private payLine(cost: CompanyCost, paidOn: string, account: string, paymentId: number | null, amountEur: number): BankMovementRequest {
-    const now = receiptLocalParts(Date.now(), BANK_ZONE);
-    return {
-      account, amountEur: Math.abs(round2(amountEur)), direction: amountEur < 0 ? 'INCOMING' : 'OUTGOING',
-      bookedAt: receiptInstant(paidOn, paidOn === now.day ? now.time : '12:00:00', BANK_ZONE), timeZone: BANK_ZONE,
-      reference: this.markedReference(cost.reference || cost.description, paymentId ? bankMarker('kostbetaling', paymentId) : bankMarker('kost', cost.id!)),
-      counterparty: (cost.party ?? '').trim().slice(0, 300) || null, requestId: crypto.randomUUID(),
-      costPaymentId: paymentId,
-    };
-  }
-
-  /**
-   * Notes one payment on a cost (less, the whole remainder or more than it)
-   * and, with an account, the bank line linked to it. The cost comes back
-   * with its payments and what is still open.
-   */
-  async addPayment(cost: CompanyCost, options: { paidOn: string; amountEur: number; bankAccountKey: string | null; note?: string | null }): Promise<boolean> {
+  async addPayment(cost: CompanyCost, options: { paidOn: string; amountEur: number; note?: string | null }): Promise<boolean> {
     if (!cost.id || this.saving()) return false;
-    if (options.bankAccountKey && !this.manualAccountAllowed(options.bankAccountKey)) { this.ui.toast('Kies voor deze rekening een opgehaalde banktransactie.', 'err'); return false; }
-    const account = options.bankAccountKey ? this.canonicalAccount(options.bankAccountKey) : null;
     this.saving.set(true);
     try {
-      const saved = await this.finance.addCostPayment(cost.id, { paidOn: options.paidOn, amountEur: round2(options.amountEur), account, note: options.note ?? null });
+      const saved = await this.finance.addCostPayment(cost.id, { paidOn: options.paidOn, amountEur: round2(options.amountEur), account: null, note: options.note ?? null });
       this.replaceCost(saved);
       const payment = newPaymentOf(cost, saved);
-      let banked = '';
-      if (account) {
-        try {
-          const line = await this.banking.create(this.payLine(saved, options.paidOn, account, payment?.id ?? null, payment?.amountEur ?? options.amountEur));
-          this.bankStatements.update((rows) => [line, ...rows.filter((row) => row.id !== line.id)]);
-          void this.refreshBank();
-          banked = ` · ook op ${account} genoteerd`;
-        } catch {
-          this.ui.toast('Betaling genoteerd, maar de bankbeweging is niet bewaard.', 'err',
-            { label: 'Op de bank noteren', run: () => this.openMovement(this.costMovement(saved, payment)) });
-          return true;
-        }
-      }
       const open = openOf(saved);
-      this.ui.toast(open !== 0 ? `Betaling van ${formatEuro(payment?.amountEur ?? options.amountEur)} genoteerd · nog ${formatEuro(open)} open${banked}`
-        : `${saved.description} volledig betaald${banked}`, 'ok');
+      this.ui.toast(open !== 0 ? `Betaling van ${formatEuro(payment?.amountEur ?? options.amountEur)} genoteerd · nog ${formatEuro(open)} open`
+        : `${saved.description} volledig betaald`, 'ok');
       void this.refreshCosts();
       return true;
     } catch (failure: unknown) {

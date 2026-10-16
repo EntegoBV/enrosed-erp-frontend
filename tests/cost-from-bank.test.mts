@@ -178,7 +178,7 @@ test('a refused due date after the PUT keeps the saved changes in the list and t
 });
 
 const Sheet = await selectedClass('../src/app/features/finance/cost-sheet.ts', 'CostSheet', [
-  'bankOrigin', 'selectedBank', 'bankCreatePending', 'toBank', 'regimeProblem', 'fitAmountTo', 'patch', 'setVat', 'close', 'save',
+  'bankOrigin', 'selectedBank', 'bankCreatePending', 'regimeProblem', 'fitAmountTo', 'patch', 'setVat', 'close', 'save',
 ], {
   storedIncl: (cost: any) => cost.amountInclEur || 0, exclFromIncl, fitAmountToRegime, bankTransactionDay,
   NO_VAT_REGIMES: new Set(['EXEMPT', 'OUT_OF_SCOPE', 'NO_INVOICE']), REVERSE_CHARGE,
@@ -187,20 +187,19 @@ const Sheet = await selectedClass('../src/app/features/finance/cost-sheet.ts', '
 });
 function sheetFor(state: any) {
   // The real component injects state before its field initializers run.
-  Sheet.prototype.state = state; Sheet.prototype.preference = { on: true, accountKey: 'OLD' };
+  Sheet.prototype.state = state;
   const sheet = new Sheet();
   Object.assign(sheet, {
     draft: signal(state.costDraft()), mode: signal('incl'), typedIncl: true, totalKept: false,
     sourceLocked: () => false, vatShown: () => !['EXEMPT', 'OUT_OF_SCOPE', 'NO_INVOICE'].includes(sheet.draft().vatRegime),
     tried: signal(false), canSave: () => !sheet.regimeProblem(), pending: signal<any[]>(state.costFiles()), becomingPaid: () => true,
-    account: () => 'OLD',
   });
   return sheet;
 }
 
 test('cost form preselects the bank, requires explicit VAT and preserves gross when choosing rate', () => {
   const { state } = setup(); state.openCostFromBank(bank); const sheet = sheetFor(state);
-  assert.equal(sheet.selectedBank(), bank); assert.equal(sheet.toBank(), false); assert.match(sheet.regimeProblem(), /btw-regeling/);
+  assert.equal(sheet.selectedBank(), bank); assert.equal('toBank' in sheet, false); assert.match(sheet.regimeProblem(), /btw-regeling/);
   sheet.patch({ vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE' }); sheet.fitAmountTo('BE', null);
   assert.equal(sheet.draft().vatPct, null); assert.equal(sheet.draft().amountInclEur, 121); assert.match(sheet.regimeProblem(), /percentage/);
   sheet.setVat(21); assert.equal(sheet.draft().amountExclEur, 100); assert.equal(sheet.draft().amountInclEur, 121); assert.equal(sheet.regimeProblem(), null);
@@ -208,11 +207,10 @@ test('cost form preselects the bank, requires explicit VAT and preserves gross w
   sheet.close(); assert.equal(state.costBankTransaction(), null); assert.equal(state.costDraft(), null);
 });
 
-test('the form retains uploaded files and passes its bank selection without changing manual-bank preferences', async () => {
+test('the form retains uploaded files and passes its bank selection, never a manual bank line', async () => {
   const { state, creates, links, atomic } = setup(); state.openCostFromBank(bank); const sheet = sheetFor(state);
   sheet.patch({ vatRegime: 'BE', vatRegimeConfirmed: true, supplierCountry: 'BE' }); sheet.setVat(21);
   const attachments: any[] = [], file = { name: 'invoice.pdf' }; sheet.pending.set([file]);
-  state.rememberPayToBank = () => { throw new Error('Bank selection must not change manual-bank preference'); };
   state.attach = async (costId: number, files: any[]) => { attachments.push({ costId, files }); };
   await sheet.save();
   assert.equal(creates.length + links.length, 0); assert.equal(atomic.length, 1); assert.equal(attachments[0].costId, 42);
@@ -241,4 +239,16 @@ test('upload failure keeps the already-created cost reachable and never retries 
   await state.attach(saved.id, [{ name: 'invoice.pdf' }]);
   assert.match(notices.at(-1)!, /kost blijft bewaard/); actions[0].run(); assert.equal(inspected[0].id, 42);
   assert.equal(state.costs()[0].id, 42); assert.equal(atomic.length, 1); assert.equal(creates.length, 0);
+});
+
+test("no 'Ook als bankbeweging noteren' in the payment sheets: a picked transaction is the movement (Emre, 2026-10-16)", async () => {
+  for (const path of ['../src/app/features/purchasing/purchase-payment-sheet.ts', '../src/app/features/finance/pay-sheet.ts', '../src/app/features/finance/cost-sheet.ts']) {
+    const text = await readFile(new URL(path, import.meta.url), 'utf8');
+    assert.equal(text.includes('Ook als bankbeweging noteren'), false, path);
+    assert.equal(text.includes('Nog geen rekening'), false, path);
+    assert.equal(text.includes('rememberPayToBank'), false, path);
+  }
+  const state = await readFile(new URL('../src/app/features/finance/finance-state.ts', import.meta.url), 'utf8');
+  assert.equal(/bankAccountKey|rememberPayToBank|payLine\(/.test(state), false, 'the state notes no bank line for a payment any more');
+  assert.match(state, /label: 'Op de bank noteren'/, "a newly paid cost still offers the movement form");
 });

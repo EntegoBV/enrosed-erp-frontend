@@ -263,15 +263,12 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 /* 'Dekt meer dan de goederen': the extra streams of one supplier transfer, and its euro total */
 .pay-sheet__parts{display:grid;gap:12px;padding:2px 14px 14px}
 .pay-sheet__total{margin:0;font-size:13px}.pay-sheet__total b{font-variant-numeric:tabular-nums}
-/* 'Ook als bankbeweging noteren': the switch, the account chips and the guard under them */
+/* 'Deze transactie dekt ook andere containers': the block with its switch (the also block below) */
 .pay-sheet__tobank{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .pay-sheet__switch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;cursor:pointer}
 .pay-sheet__switch>span{display:grid;gap:3px;min-width:0;font-size:14px;font-weight:650}
 .pay-sheet__switch small{color:var(--muted);font-size:12px;font-weight:500;line-height:1.4}
 .pay-sheet__check{flex:none;width:18px;height:18px;margin:0;accent-color:var(--rose);cursor:pointer}
-.pay-sheet__accounts{display:flex;flex-wrap:wrap;gap:8px}
-.pay-sheet__account{min-width:0;font-weight:600}
-.pay-sheet__account[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
 /* 'Deze transactie dekt ook andere containers': one transfer for several containers, each with its amount (owner addition 2026-10-15) */
 .pay-sheet__also .pay-sheet__alsoamount{flex:0 0 190px}
 .pay-sheet__also .pay-sheet__alsowarn{color:var(--warn);font-weight:650}

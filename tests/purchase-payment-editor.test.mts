@@ -15,14 +15,13 @@ import {
   alreadyLinkedText, carveForeignText, carveText, growLinkPlan, inspectionSplitBlocked, inspectionSplitEur, linkNotice, paymentFigure, pendingAlreadyLinked,
   pendingLinkPlan, pendingPartEur, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
-import { bankMarker, lineMarkers } from '../src/app/features/finance/bank-markers.ts';
-import { defaultBankAccount, readPayToBank, writePayToBank } from '../src/app/features/finance/pay-to-bank-preference.ts';
+import { lineMarkers } from '../src/app/features/finance/bank-markers.ts';
 import { preservePurchaseDraft } from '../src/app/features/purchasing/purchase-payment-refresh.ts';
 import { PAYEE_LABEL } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import { alsoNotice, alsoTotalEur, alsoWrites } from '../src/app/features/purchasing/purchase-also-containers.ts';
 /** The menus module imports the payee words at runtime; its euro format is handed in as it reads. */
 const formatEur = (value: number): string => value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' });
-import { receiptInstant, receiptLocalParts } from '../src/app/shared/received-at.ts';
+import { receiptLocalParts } from '../src/app/shared/received-at.ts';
 
 test('bank amounts accept Dutch decimal commas, thousands and plain API decimals', () => {
   for (const [raw, expected] of [['1.046,95', 1046.95], ['1 200,25', 1200.25], ['€ 1\u00a0200,25', 1200.25],
@@ -53,7 +52,7 @@ const names = new Set(['paying', 'payingBusy', 'payments', 'paymentPlanOrder', '
   'setPaymentAmount', 'setPaymentAmountEur', 'paymentDraftEur', 'paymentRateEur', 'editPayment', 'closePayment', 'savePaymentPlan', 'confirmPayment', 'proofSlots', 'proofsOf',
   'firstInstalmentPrompt', 'confirmFirstInstalment', 'setFirstPaymentAmount',
   'setPaymentPart', 'paymentTransfer', 'paymentTransferEur', 'writeEur', 'paymentGoodsEur', 'bankLines', 'bankedPaymentIds', 'paymentOnBank',
-  'paymentBankAccount', 'transferLine', 'bankToday', 'paymentInstalmentOptions',
+  'bankToday', 'paymentInstalmentOptions',
   // the round of 2026-10-15: credit offsets, invoices, payments in parts, bank transactions as proof, the inspection split
   'payingCreditOffset', 'roundOnServer', 'payingRow', 'payingParts', 'saveGroup', 'reloadBankLines', 'groupOf', 'preselectedInvoice',
   'storedPaymentDraft', 'rebindPaying', 'removeSheetPart',
@@ -91,8 +90,8 @@ function setup() {
     paymentPlanError, preservePurchaseDraft, splitTransfer, invoiceDocumentKind, invoicesOf, paymentRoundOnServer, primaryInvoice, inspectionSplitBlocked, inspectionSplitEur, pendingLinkPlan, pendingPartEur,
     carveText, carveForeignText, linkNotice, pendingAlreadyLinked, surplusQuestion, transferCompanions, invoiceNumberKey, resolveInvoice,
     amountInputText, growLinkPlan, alreadyLinkedText, paymentFigure, alsoNotice, alsoTotalEur, alsoWrites,
-    bankTransactionDay, lineMarkers, bankMarker, defaultBankAccount, readPayToBank, writePayToBank,
-    PAYEE_LABEL, formatEur, receiptInstant, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
+    bankTransactionDay, lineMarkers,
+    PAYEE_LABEL, formatEur, receiptLocalParts, BANK_ZONE: 'Europe/Brussels', crypto: globalThis.crypto,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   const writes: any[] = []; const uploads: string[] = []; const toasts: any[] = []; const lines: any[] = [];
@@ -126,8 +125,7 @@ function setup() {
 /** A supplier transfer in USD that pays the goods, the CIF freight and the inspection, with the bank's euro typed in. */
 function splitDraft() {
   return { id: null, amount: 1000, amountInput: '1000', currency: 'USD', paidOn: '2026-07-02', label: 'Saldo', payee: 'SUPPLIER', files: [], settles: false,
-    instalmentDue: 'ARRIVED', amountEurInput: '1234,56', amountEur: 1234.56, freightAmountInput: '333,33', freightAmount: 333.33, separateAmountInput: '100', separateAmount: 100,
-    toBank: true, bankAccount: 'KBC' };
+    instalmentDue: 'ARRIVED', amountEurInput: '1234,56', amountEur: 1234.56, freightAmountInput: '333,33', freightAmount: 333.33, separateAmountInput: '100', separateAmount: 100 };
 }
 /** A server that stores what it gets and, like the real one, keeps a stored euro when a PUT carries none. */
 function ledgerServer(api: ReturnType<typeof setup>['api'], editor: any) {
@@ -141,7 +139,7 @@ function ledgerServer(api: ReturnType<typeof setup>['api'], editor: any) {
   return ledger;
 }
 
-test('a USD transfer with a typed debit and both parts posts three payments and one bank line with the typed figure and every id', async () => {
+test('a USD transfer with a typed debit and both parts posts three payments with the typed figure and notes no bank line (the picked transaction is the movement)', async () => {
   const { editor, api, writes, toasts, lines } = setup();
   const ledger = ledgerServer(api, editor);
   editor.paying.set(splitDraft());
@@ -151,15 +149,12 @@ test('a USD transfer with a typed debit and both parts posts three payments and 
   assert.deepEqual(writes.map(row => [row.type, row.body.payee, row.body.instalmentDue ?? null, row.body.amountEur, row.body.label]),
     [['POST payment', 'SUPPLIER', 'ARRIVED', 861.33, 'Saldo'], ['POST payment', 'SUPPLIER', 'FREIGHT', 287.1, 'Saldo · zeevracht (CIF)'], ['POST payment', 'SEPARATE', null, 86.13, 'Saldo · inspectie']]);
   assert.equal(ledger.reduce((sum, row) => sum + row.amountEur, 0), 1234.56);
-  assert.equal(lines.length, 1);
-  assert.deepEqual([lines[0].amountEur, lines[0].purchasePaymentIds, lines[0].direction, lines[0].account, lines[0].counterparty],
-    [1234.56, [81, 82, 83], 'OUTGOING', 'KBC', 'Yiwu Trading']);
-  assert.equal(lines[0].reference, 'Saldo · PO-50 · containerbetaling #81');
+  assert.equal(lines.length, 0, "no 'Ook als bankbeweging noteren' any more");
   assert.equal(editor.paying(), null);
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd · ook op KBC', 'ok']);
+  assert.deepEqual(toasts.at(-1), ['Betaling bewaard', 'ok']);
 });
 
-test('a part that fails leaves the goods euro alone: the retry posts only the missing part and the bank line still carries the typed figure', async () => {
+test('a part that fails leaves the goods euro alone: the retry posts only the missing part, and no bank line', async () => {
   const { editor, api, writes, toasts, lines } = setup();
   const ledger = ledgerServer(api, editor);
   const post = api.addPayment; let fail = true;
@@ -170,7 +165,6 @@ test('a part that fails leaves the goods euro alone: the retry posts only the mi
   editor.paying.set(splitDraft());
   await editor.confirmPayment();
   assert.deepEqual(writes.map(row => row.type), ['POST payment', 'POST payment', 'POST payment']);
-  assert.equal(lines.length, 0, 'no bank line while a part of the transfer is missing');
   assert.match(toasts.at(-1)[0], /het deel inspectie is niet genoteerd/);
   const draft = editor.paying();
   assert.deepEqual([draft.id, clone(draft.partIds), draft.freightAmount, draft.separateAmount, draft.planned.goodsEur, draft.planned.parts.length], [81, [82], null, 100, 861.33, 2]);
@@ -178,25 +172,9 @@ test('a part that fails leaves the goods euro alone: the retry posts only the mi
   await editor.confirmPayment();
   assert.deepEqual(writes.slice(3).map(row => [row.type, row.body.payee, row.body.amountEur ?? 'none']), [['PUT payment', 'SUPPLIER', 'none'], ['POST payment', 'SEPARATE', 86.13]]);
   assert.deepEqual(ledger.map(row => row.amountEur), [861.33, 287.1, 86.13], 'the goods euro survives the retry');
-  assert.deepEqual([lines[0].amountEur, lines[0].purchasePaymentIds], [1234.56, [81, 82, 83]]);
+  assert.equal(lines.length, 0);
   assert.equal(editor.paying(), null);
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd · ook op KBC', 'ok']);
-});
-
-test('a failed bank line keeps the sheet open, so the retry sends the line once more with every id and the full debit', async () => {
-  const { editor, api, writes, toasts, lines } = setup();
-  const ledger = ledgerServer(api, editor);
-  api.createLine = async () => { throw new Error('Bank even niet bereikbaar'); };
-  editor.paying.set(splitDraft());
-  await editor.confirmPayment();
-  assert.deepEqual(toasts.at(-1), ['Betaling genoteerd, maar de bankbeweging is niet bewaard.', 'err']);
-  assert.deepEqual([editor.paying().id, clone(editor.paying().partIds)], [81, [82, 83]]);
-  api.createLine = async (body) => ({ id: 500, ...body });
-  await editor.confirmPayment();
-  assert.deepEqual(writes.slice(3).map(row => [row.type, row.body.amountEur ?? 'none']), [['PUT payment', 'none']], 'nothing is posted twice');
-  assert.deepEqual(ledger.map(row => row.amountEur), [861.33, 287.1, 86.13]);
-  assert.deepEqual(lines.map(line => [line.amountEur, line.purchasePaymentIds]), [[1234.56, [81, 82, 83]], [1234.56, [81, 82, 83]]]);
-  assert.equal(editor.paying(), null);
+  assert.deepEqual(toasts.at(-1), ['Betaling aangepast', 'ok'], 'the retry wrote the saved goods payment once more and added the missing part');
 });
 
 test('editing preserves the booking label and invalid money blocks save instead of submitting the old value', async () => {
@@ -350,7 +328,7 @@ test('a new imported transfer uses one atomic call and a lost response retries t
     if (fails) throw new Error('Bank temporarily unavailable');
     return { line: { id, amountEur: -1234.56, account: 'BE123456', source: 'ODOO', allocated: true }, payments: payments.map((body, i) => ({ ...payment(), ...body, id: 81 + i })) };
   };
-  editor.paying.set({ ...splitDraft(), toBank: false, bankTransaction: { id: 44, amountEur: -1234.56, account: 'BE123456', source: 'ODOO' } });
+  editor.paying.set({ ...splitDraft(), bankTransaction: { id: 44, amountEur: -1234.56, account: 'BE123456', source: 'ODOO' } });
   await editor.confirmPayment(); assert.equal(editor.paying().id, null);
   fails = false; await editor.confirmPayment();
   assert.equal(requests.length, 2); assert.deepEqual(requests[0], requests[1]);
@@ -391,7 +369,7 @@ test('one transfer for three containers: one atomic call, each other part on its
   const also = [{ orderId: 44, number: 'PO-2026-044', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '3.000,00', amount: 3000 },
     { orderId: 45, number: 'PO-2026-045', supplierId: 8, due: 'ORDERED', label: '30% bij bestelling', amountInput: '4.500,00', amount: 4500 }];
   const draft = { id: null, amount: 9000, amountInput: '9.000,00', currency: 'EUR', paidOn: '2026-10-13', label: '30% bij bestelling', payee: 'SUPPLIER', files: [], settles: false,
-    instalmentDue: 'ORDERED', toBank: false, bankTransaction, alsoOpen: true, alsoParts: also };
+    instalmentDue: 'ORDERED', bankTransaction, alsoOpen: true, alsoParts: also };
   // The parts must make the transaction: 9.000 + 3.000 alone is refused before anything is written.
   editor.paying.set({ ...draft, alsoParts: also.slice(0, 1) }); await editor.confirmPayment();
   assert.equal(requests.length, 0); assert.match(toasts.at(-1)[0], /Samen mogen de containers maximaal € 0,02 afwijken/);
@@ -432,7 +410,7 @@ test('the first-instalment shortcut opens the bank-enabled payment sheet without
   await editor.confirmFirstInstalment();
   assert.equal(writes.length, 0); assert.equal(editor.firstInstalmentPrompt(), null);
   assert.equal(editor.paying().amount, 250); assert.equal(editor.paying().currency, 'USD'); assert.equal(editor.paying().instalmentDue, 'ORDERED');
-  assert.equal(editor.paying().files[0], file); assert.equal(typeof editor.paying().toBank, 'boolean');
+  assert.equal(editor.paying().files[0], file); assert.equal('toBank' in editor.paying(), false, "no 'Ook als bankbeweging noteren' any more");
 });
 
 
@@ -672,7 +650,7 @@ test('an inline new invoice is saved once, with its file, before the payment; th
   api.addPayment = async (id: number, body: any) => { if (fail) { fail = false; throw new Error('Even geen verbinding'); } return post(id, body); };
   const file = new File(['ci'], 'CI-2026-118.pdf');
   editor.paying.set({ ...splitDraft(), currency: 'EUR', amount: 10000, amountInput: '10000', amountEur: null, amountEurInput: '', freightAmount: null,
-    freightAmountInput: '', toBank: false, newInvoice: { open: true, number: 'CI-2026-118', invoiceDate: '2026-08-20', amountInput: '31048,04', amount: 31048.04, currency: 'EUR', file, forAll: true } });
+    freightAmountInput: '', newInvoice: { open: true, number: 'CI-2026-118', invoiceDate: '2026-08-20', amountInput: '31048,04', amount: 31048.04, currency: 'EUR', file, forAll: true } });
   await editor.confirmPayment();
   assert.equal(editor.paying().createdInvoiceId, 7, 'the invoice is kept for the retry');
   await editor.confirmPayment();

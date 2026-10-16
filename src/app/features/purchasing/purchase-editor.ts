@@ -42,14 +42,13 @@ import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit 
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { BankAccountsStore } from '../../core/api/bank-accounts';
-import { BankingApi, type BankMovementRequest, type BankStatementLine } from '../../core/api/banking-api';
-import { bankMarker, lineMarkers } from '../finance/bank-markers';
+import { BankingApi, type BankStatementLine } from '../../core/api/banking-api';
+import { lineMarkers } from '../finance/bank-markers';
 import { clearanceSuggestion } from '../finance/vat-return';
-import { defaultBankAccount, readPayToBank, writePayToBank } from '../finance/pay-to-bank-preference';
 import { containerPayables } from '../finance/payables';
 import { CashForecastApi } from '../../core/api/cash-forecast-api';
 import { alsoContainerOptions, alsoNotice, alsoTotalEur, alsoWrites, type AlsoContainerOption } from './purchase-also-containers';
-import { receiptInstant, receiptLocalParts } from '../../shared/received-at';
+import { receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
 import { ContextMenu } from '../../shared/context-menu';
@@ -1508,7 +1507,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
           [originalPayee]="payingOriginal()?.payee ?? null" [originalSettles]="!!payingOriginal()?.settles"
           [busy]="payingBusy()" [loading]="paymentStateLoading()" [proofSlots]="proofSlots(pay.id)" [groupLabel]="paymentGroupLabel(pay.payee)" [creditOffset]="payingCreditOffset()"
-          [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [bankAccount]="paymentBankAccount()" [today]="bankToday()"
+          [cif]="paymentCif()" [transferEur]="paymentTransferEur()" [bankLinked]="payingOnBank()" [today]="bankToday()"
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
           [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
           [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()" [termStanding]="payingTermStanding()"
@@ -2264,7 +2263,7 @@ export class PurchaseEditor {
   });
   readonly paymentCif = computed(() => { const data = this.view(); return !!data && purchaseCif(data); });
 
-  /* ---- 'Ook als bankbeweging noteren': the one line of a transfer, and which payments already sit on the bank */
+  /* ---- the bank lines of the order screen, and which payments already sit on the bank */
   private readonly banking = inject(BankingApi);
   private readonly bankAccounts = inject(BankAccountsStore);
   /** Every bank line, once per order screen: the text markers of lines older than the hard link. */
@@ -2282,9 +2281,8 @@ export class PurchaseEditor {
     return (this.payments() ?? []).some(payment => payment.id === pay.id && payment.bankStatementLineId != null) || this.bankedPaymentIds().has(pay.id);
   }
   readonly payingOnBank = computed(() => { const pay = this.paying(); return !!pay && this.paymentOnBank(pay); });
-  readonly paymentBankAccount = computed(() => defaultBankAccount(this.bankAccounts.options(), this.paying()?.bankAccount ?? '', readPayToBank(globalThis.localStorage).accountKey));
 
-  /** The bank side of the order screen: the accounts for the sheet's chips, and the lines once. */
+  /** The bank side of the order screen: the accounts (their names in the sheet), and the lines once. */
   private async loadBankLines(): Promise<void> {
     void this.bankAccounts.load();
     if (this.bankLines() !== null) return;
@@ -2321,18 +2319,6 @@ export class PurchaseEditor {
     return !pay.id && pay.bankTransaction && pay.alsoOpen && pay.payee === 'SUPPLIER' && pay.currency === 'EUR' ? pay.alsoParts ?? [] : [];
   }
 
-  /** The one outgoing bank line of a transfer: every payment of it linked, the marker kept for older readers. */
-  private transferLine(pay: PurchasePaymentDraft, orderNumber: string, ids: number[], amountEur: number, account: string): BankMovementRequest {
-    const now = receiptLocalParts(Date.now(), BANK_ZONE);
-    return {
-      account, amountEur, direction: 'OUTGOING',
-      bookedAt: receiptInstant(pay.paidOn, pay.paidOn === now.day ? now.time : '12:00:00', BANK_ZONE), timeZone: BANK_ZONE,
-      reference: `${pay.label || 'Betaling'} · ${orderNumber} · ${bankMarker('containerbetaling', ids[0])}`,
-      counterparty: pay.payee === 'SUPPLIER' ? this.supplier()?.name ?? PAYEE_LABEL.SUPPLIER : PAYEE_LABEL[pay.payee],
-      purchasePaymentIds: ids, requestId: crypto.randomUUID(),
-    };
-  }
-
   /** The euro value of the draft: the bank amount when filled in, else the stored value of unchanged money, else the order rate. */
   readonly paymentDraftEur = computed(() => {
     const pay = this.paying();
@@ -2364,7 +2350,7 @@ export class PurchaseEditor {
       : members.find(member => member.id === payment.groupId) ?? members[0] ?? payment;
     const main = root.invoiceId == null ? this.unresolvedMainInvoice(root, members) : null;
     this.paying.set({ ...this.storedPaymentDraft(root, members), label: root.label ?? '', payee: root.payee ?? 'SUPPLIER', files: [], settles: !!root.settles,
-      instalmentDue: root.instalmentDue ?? null, toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '',
+      instalmentDue: root.instalmentDue ?? null,
       invoiceId: main ?? root.invoiceId ?? null, invoiceIdChanged: main !== null });
     void this.loadBankLines();
   }
@@ -2892,7 +2878,6 @@ export class PurchaseEditor {
       files: [],
       settles: false,
       instalmentDue: payee === 'SUPPLIER' && Array.isArray(this.view()?.reconciliation?.supplierInstalments) ? instalmentDue : null,
-      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '',
       invoiceId: this.preselectedInvoice(payee), invoiceIdChanged: false,
     });
   }
@@ -2974,10 +2959,6 @@ export class PurchaseEditor {
       : pendingLinkPlan(pendingEur, pendingLines, round, pay.surplus ?? null, companions, foreign);
     if (plan.kind === 'invalid') { this.ui.toast(plan.message, 'err'); return; }
     if (plan.kind === 'higher') { this.ui.toast(`${surplusQuestion(plan.extraEur)}: kies eerst wat er met het verschil gebeurt.`, 'err'); return; }
-    /* 'Ook als bankbeweging noteren': a known account and a day the bank has reached; never for an offset, a payment in parts or picked transactions. */
-    const bankOffered = !pay.bankTransaction && typeof pay.toBank === 'boolean' && !this.paymentOnBank(pay) && !offset && !grouped && !(pay.pendingLines ?? []).length;
-    const account = bankOffered && pay.toBank ? this.bankAccounts.options().find(option => option.key === this.paymentBankAccount()) ?? null : null;
-    if (bankOffered && pay.toBank && (!account || pay.paidOn > this.bankToday())) return;
     const also = this.alsoPartsOf(pay);
     if (also.some(part => part.amount === null)) { this.ui.toast('Vul bij elke andere container een positief bedrag in.', 'err'); return; }
     if (pay.bankTransaction && !bankAmountsMatch(this.paymentTransferEur() + alsoTotalEur(also), Math.abs(pay.bankTransaction.amountEur))) {
@@ -3123,12 +3104,6 @@ export class PurchaseEditor {
           bank = 'failed';
           this.paying.update(current => current?.id === saved.id ? { ...current, bankLinkError: `Betaling bewaard. Alleen de bankkoppeling is nog niet gelukt: ${messageOf(failure, 'Probeer de koppeling opnieuw.')} Opnieuw proberen maakt geen extra betaling.` } : current);
         }
-      } else if (account) {
-        try {
-          const line = await this.banking.create(this.transferLine(pay, data.order.number, ids, this.paymentTransferEur(), account.key));
-          this.bankLines.update(lines => [line, ...(lines ?? [])]);
-          bank = 'noted';
-        } catch { bank = 'failed'; }
       }
       // 4. The transactions picked in a saved payment, then 5. the inspection split: from here a retry continues without writing the payment again.
       let notice: string | null = null;
@@ -3217,7 +3192,6 @@ export class PurchaseEditor {
         }
       }
       if (notice) this.paymentNotice.set({ orderId: data.order.id, text: notice });
-      if (bankOffered) writePayToBank(globalThis.localStorage, { on: !!pay.toBank, accountKey: account?.key ?? readPayToBank(globalThis.localStorage).accountKey });
       await Promise.all([this.refreshPaymentState(data.order.id), pay.files.length || pay.newInvoice?.file || pay.invoiceFile ? this.loadDocuments(data.order.id) : Promise.resolve()]);
       if (this.view()?.order.id !== data.order.id) return;
       // A failed line keeps the sheet open with every id of the transfer, so one more 'bewaren' sends the line again.
@@ -3229,7 +3203,7 @@ export class PurchaseEditor {
       if (pay.id && invoiceFiled) done.push('Factuurbestand toegevoegd');
       if (pay.id && wrote && !linked) done.unshift('Betaling aangepast');
       const alsoText = also.length && bank === 'noted' ? ` · ${alsoNotice(also)}` : '';
-      this.ui.toast(bank === 'noted' ? (pay.bankTransaction ? `Betaling bewaard en banktransactie gekoppeld${alsoText}` : `Betaling genoteerd · ook op ${account!.label}`) : bank === 'failed' ? (pay.bankTransaction ? 'Betaling bewaard, banktransactie nog niet gekoppeld.' : 'Betaling genoteerd, maar de bankbeweging is niet bewaard.')
+      this.ui.toast(bank === 'noted' ? `Betaling bewaard en banktransactie gekoppeld${alsoText}` : bank === 'failed' ? 'Betaling bewaard, banktransactie nog niet gekoppeld.'
         : done.length ? done.join(' · ') : pay.id ? 'Geen wijzigingen' : filed.length ? `Betaling en ${filed[0]} bewaard` : 'Betaling bewaard',
         bank === 'failed' ? 'err' : 'ok');
     } catch (failure: unknown) {
@@ -3435,7 +3409,7 @@ export class PurchaseEditor {
       const parts = this.payingParts();
       const newest = parts[parts.length - 1];
       if (newest && parts.every(part => part.bankStatementLineId != null)) {
-        this.paying.update(pay => pay ? { ...pay, addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, toBank: false } : pay);
+        this.paying.update(pay => pay ? { ...pay, addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null } : pay);
       }
     });
   }
@@ -4058,7 +4032,7 @@ export class PurchaseEditor {
     const first = this.firstInstalmentPrompt();
     if (!first || first.amount === null || !((first.amount ?? 0) > 0) || this.payingBusy() || this.paying()) return;
     this.paying.set({ ...first, payee: 'SUPPLIER', settles: false, instalmentDue: first.due ?? null,
-      toBank: readPayToBank(globalThis.localStorage).on, bankAccount: '', invoiceId: this.preselectedInvoice('SUPPLIER'), invoiceIdChanged: false });
+      invoiceId: this.preselectedInvoice('SUPPLIER'), invoiceIdChanged: false });
     this.firstInstalmentPrompt.set(null);
   }
 

@@ -55,9 +55,6 @@ export interface PurchasePaymentDraft {
   planned?: { goodsEur: number; parts: PurchasePaymentWrite[] };
   /** The ids of the planned parts already saved, in order, so a retry links them to the bank line without posting them again. */
   partIds?: number[];
-  /** 'Ook als bankbeweging noteren' and the chosen account key; '' lets the remembered or the only account stand in. */
-  toBank?: boolean;
-  bankAccount?: string;
   bankTransaction?: BankStatementLine | null;
   bankLinkPending?: boolean;
   bankLinkComplete?: boolean;
@@ -556,29 +553,6 @@ let nextSheetId = 0;
           <p class="pay-sheet__note">De bestaande banktransactie wordt gekoppeld. Er komt geen extra bankbeweging bij.</p>
         } @else if (bankLinked() && !pay.id) {
           <p class="pay-sheet__note pay-sheet__linked" role="note"><app-icon name="bank" [size]="14" /> Staat op de bank</p>
-        } @else if (toBankOffered()) {
-          <div class="pay-sheet__tobank">
-            <label class="pay-sheet__switch"><span>Ook als bankbeweging noteren<small>Eén uitgaande beweging voor deze overschrijving, met een verwijzing naar de betaling</small></span>
-              <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.toBank" [disabled]="busy() || !!pay.bankLinkPending"
-                     (change)="patch.emit({ toBank: $any($event.target).checked })" /></label>
-            @if (pay.toBank) {
-              @if (accounts().length) {
-                <div class="pay-sheet__accounts" role="group" aria-label="Rekening">
-                  @for (option of accounts(); track option.key) {
-                    <button class="pay-sheet__chip pay-sheet__account" type="button" [attr.aria-pressed]="bankAccount() === option.key" [disabled]="busy() || !!pay.bankLinkPending"
-                            (click)="patch.emit({ bankAccount: option.key })">{{ option.label }}</button>
-                  }
-                </div>
-                @if (future()) { <span class="hint hint--warn" role="status">Een bankbeweging kan niet in de toekomst liggen.</span> }
-                @else if (!bankAccount()) { <span class="hint">Kies de rekening waarvan de betaling vertrok.</span> }
-                @else { <span class="hint">{{ transferEur() | eur }} gaat als uitgaande beweging op {{ accountLabel() }}.</span> }
-              } @else if (accountsLoading()) {
-                <span class="hint">Rekeningen laden…</span>
-              } @else {
-                <span class="hint">Nog geen rekening: vul eerst een saldo in bij Kosten & bank.</span>
-              }
-            }
-          </div>
         }
         @if (!pay.id && !creditOffset()) {
           <!-- A new payment: its files, under the same words as a saved one. -->
@@ -627,7 +601,7 @@ let nextSheetId = 0;
       </div>
       <div foot style="display:contents">
         <button class="btn" type="button" (click)="cancel.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots() || !pay.paidOn || partsInvalid() || bankBlocked() || saveBlocked()"
+        <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots() || !pay.paidOn || partsInvalid() || saveBlocked()"
                 (click)="confirm.emit()">{{ busy() ? 'Bezig…' : retrying() ? 'Koppeling opnieuw proberen' : pay.addTransfer && shownPending().length ? 'Transactie toevoegen' : (pay.id ? 'Wijziging bewaren' : 'Betaling bewaren') }}</button>
       </div>
     </app-sheet>
@@ -637,7 +611,7 @@ export class PurchasePaymentSheet {
   private readonly viewport = inject(DesktopViewport);
   private readonly bankAccounts = inject(BankAccountsStore);
   readonly draft = input.required<PurchasePaymentDraft>();
-  /** The bank's day, as the host books the line: a later 'Betaald op' cannot be on a statement yet. */
+  /** Today, as the bank counts it: a new invoice ('Factuur toevoegen…') starts on it. */
   readonly today = input.required<string>();
   readonly chips = input<readonly { label: string; amount: number; due?: Due | null }[]>([]);
   readonly instalmentOptions = input<readonly { due: Due; label: string; netted?: boolean }[]>([]);
@@ -662,8 +636,6 @@ export class PurchasePaymentSheet {
   readonly transferEur = input(0);
   /** The payment already sits on the bank: no second line is offered. */
   readonly bankLinked = input(false);
-  /** The account the chips stand on (the host applies the remembered or the only one). */
-  readonly bankAccount = input('');
   /** The server knows invoices and payments in parts (paymentRoundOnServer); false hides every new control. */
   readonly roundOnServer = input(false);
   /** Every invoice of the container, for the 'Factuur' select. */
@@ -775,17 +747,8 @@ export class PurchasePaymentSheet {
   /** The goods payment is posted and the split stands: a retry only notes what is still missing. */
   readonly frozen = computed(() => !!this.draft().planned);
 
-  /* ---- 'Ook als bankbeweging noteren' */
+  /* ---- The bank accounts, for the account name in a transaction's text (a picked transaction is the movement: no second one is noted here) */
   readonly accounts = this.bankAccounts.options;
-  readonly accountsLoading = this.bankAccounts.loading;
-  readonly accountLabel = computed(() => this.accounts().find(option => option.key === this.bankAccount())?.label ?? '');
-  readonly future = computed(() => this.draft().paidOn > this.today());
-  /** Never for a credit offset (no money left the bank), a payment paid in parts, a payment on the bank, or while transactions are picked. */
-  readonly toBankOffered = computed(() => !this.creditOffset() && !this.grouped() && !(this.draft().pendingLines ?? []).length
-    && !this.linkedSingle() && !this.bankLinked());
-  /** The switch is on but the line could not be written: a day the bank has not reached, or no account once the readings are in. */
-  readonly bankBlocked = computed(() => this.toBankOffered() && !this.draft().bankTransaction && !!this.draft().toBank
-    && (this.future() || (!this.bankAccount() && !this.accountsLoading())));
 
   /* ---- Banktransacties of a saved payment */
   /** A payment paid in parts: its money is the sum of its transfers, corrected per unlinked transfer. */
@@ -955,7 +918,7 @@ export class PurchasePaymentSheet {
   /** 'Transactie toevoegen': the picker opens for that part; picking for another part drops the other part's picks. */
   pickFor(partId: number): void {
     this.picking.set(partId);
-    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, toBank: false, ...this.noForeignPart });
+    if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, ...this.noForeignPart });
   }
   /**
    * A pick that carves the payment, splits it over several transactions or is
@@ -971,7 +934,7 @@ export class PurchasePaymentSheet {
     const foreign = part ? this.foreignOf(part) : null;
     const blocked = !!part && inspectionSplitBlocked(pendingLinkPlan(this.partEur(part), lines, this.roundOnServer(), null, [], foreign ? { ...foreign, part: null } : null));
     const stored = this.roundOnServer() && !this.grouped() && part ? this.storedMoney(part) : {};
-    this.patch.emit({ pendingPartId: partId, pendingLines: lines, surplus: null, toBank: false, ...stored, ...this.noForeignPart, bankLinkError: '',
+    this.patch.emit({ pendingPartId: partId, pendingLines: lines, surplus: null, ...stored, ...this.noForeignPart, bankLinkError: '',
       ...(blocked ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) });
   }
   /** The stored money and day of a payment never split, as the fields show them. */
@@ -993,7 +956,7 @@ export class PurchasePaymentSheet {
     const newest = this.parts()[this.parts().length - 1];
     if (!newest) return;
     this.picking.set(null);
-    this.patch.emit({ addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, toBank: false, ...this.noForeignPart, bankLinkError: '' });
+    this.patch.emit({ addTransfer: true, pendingPartId: newest.id, pendingLines: [], surplus: null, ...this.noForeignPart, bankLinkError: '' });
   }
   pickAdded(line: BankStatementLine | null): void {
     if (line) this.patch.emit({ pendingLines: [line], surplus: null, bankLinkError: '' });
@@ -1172,7 +1135,7 @@ export class PurchasePaymentSheet {
     const total = Math.abs(row.amountEur);
     const parts = (pay.freightAmount ?? 0) + (pay.separateAmount ?? 0) + alsoTotalEur(pay.alsoParts);
     const goods = Math.round((total - parts) * 100) / 100;
-    this.patch.emit({ bankTransaction: row, toBank: false, bankAccount: row.account, paidOn: bankTransactionDay(row), bankLinkError: '',
+    this.patch.emit({ bankTransaction: row, paidOn: bankTransactionDay(row), bankLinkError: '',
       ...(pay.id || bankAmountsMatch(this.transferEur(), total) ? {} : pay.currency === 'EUR' ? { amount: goods, amountInput: amountInputText(goods) }
         : { amountEur: total, amountEurInput: amountInputText(total) }) });
   }

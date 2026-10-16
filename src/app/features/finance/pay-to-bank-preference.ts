@@ -1,9 +1,11 @@
 /*
- * The remembered "Ook als bankbeweging noteren" choice of this device: the
- * pay sheet, the cost form and the container payment sheet read and write
- * the same key, so one answer carries over between them. Pure: node-tested;
- * the storage is handed in (localStorage in the app, a map in tests) and a
- * missing or throwing storage reads as "off".
+ * The account this device remembered for 'Bankbeweging noteren' (Kosten &
+ * bank's movement form starts on it). The key once also held the "Ook als
+ * bankbeweging noteren" switch of the payment sheets; that switch is gone
+ * since 2026-10-16 (a picked bank transaction is the movement), so the
+ * stored `on` is read but ignored. Pure: node-tested; the storage is handed
+ * in (localStorage in the app, a map in tests) and a missing or throwing
+ * storage reads as nothing remembered.
  */
 
 export const PAY_TO_BANK_KEY = 'enrosed.finance.payToBank';
