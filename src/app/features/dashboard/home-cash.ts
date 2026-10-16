@@ -62,6 +62,35 @@ export function cashHeadline(forecast: CashForecast | null, context: CashHeadlin
   };
 }
 
+/** The desk Kas card's two Vooruitblik figures; null where a source behind the figure failed. */
+export interface OutlookFigures {
+  /** "Nu te betalen": open costs + container terms due now + 30 days of fixed costs (the equation's three "−" rows). */
+  payEur: number | null;
+  /** "Nog te ontvangen": open invoices minus the open credit-note tegoed (klant & partner). */
+  receiveEur: number | null;
+}
+
+/** Which sources behind the Vooruitblik failed: the home's costs, purchases and sales, CashData's fixed costs ('vaste kosten'). */
+export interface OutlookFailures { costs: boolean; purchases: boolean; recurring: boolean; sales: boolean }
+
+/**
+ * "Nu te betalen" and "Nog te ontvangen" (spec-home D3, amendment D), each
+ * only from sources that answered: a figure whose source failed reads
+ * "— · Opnieuw" (§6), never a sum without the part that is missing. Null
+ * while there is no Vooruitblik yet (no bank).
+ */
+export function outlookFigures(
+  outlook: { openCostsEur: number; containerNowEur: number; upcomingEur: number; openInvoicesEur: number } | null,
+  failed: OutlookFailures,
+): OutlookFigures | null {
+  if (!outlook) return null;
+  const pay = Math.round((outlook.openCostsEur + outlook.containerNowEur + outlook.upcomingEur) * 100) / 100;
+  return {
+    payEur: failed.costs || failed.purchases || failed.recurring ? null : pay,
+    receiveEur: failed.sales ? null : outlook.openInvoicesEur,
+  };
+}
+
 export interface SparkLine {
   /** SVG polyline points, x from 0 to w, y from 0 (top, highest) to h (bottom, lowest). */
   points: string;

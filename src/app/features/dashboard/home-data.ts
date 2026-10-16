@@ -27,7 +27,7 @@ import { weekdayDayMonth } from '../finance/cash-format';
 import { receivableTotals } from '../finance/incoming-money';
 import { agendaModel } from './agenda-entries';
 import { localPlannerDate, purchasePlannerMilestones } from './dashboard-today-state';
-import { cashHeadline } from './home-cash';
+import { cashHeadline, outlookFigures } from './home-cash';
 import { monthWindows } from './home-figures';
 import { readLater, writeLater } from './home-later';
 import { COVERAGE_ORDER, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
@@ -182,6 +182,15 @@ export class HomeData {
   readonly outlook = computed(() => {
     const sources = this.forecastSources();
     return sources ? vooruitblikOf(sources) : null;
+  });
+
+  /** The desk Kas card's "Nu te betalen" and "Nog te ontvangen", each null when a source behind it failed (never a partial sum). */
+  readonly outlookFigures = computed(() => {
+    const states = this.states();
+    return outlookFigures(this.outlook(), {
+      costs: states.kosten === 'failed', purchases: states.inkoop === 'failed', sales: states.verkoop === 'failed',
+      recurring: this.cashData.warnings().includes('vaste kosten'),
+    });
   });
 
   /**

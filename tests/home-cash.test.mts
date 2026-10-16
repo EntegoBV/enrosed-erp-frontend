@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CashForecast } from '../src/app/features/finance/cash-forecast.ts';
-import { cashHeadline, sparkPoints } from '../src/app/features/dashboard/home-cash.ts';
+import { cashHeadline, outlookFigures, sparkPoints } from '../src/app/features/dashboard/home-cash.ts';
 
 const forecast = (changes: Partial<CashForecast> = {}): CashForecast => ({
   today: '2026-10-15', horizonEnd: '2027-04-15', mode: 'absolute', bufferEur: 10000, startEur: 48215,
@@ -72,4 +72,18 @@ test('the sparkline fits the box and the buffer line sits at its value', () => {
   assert.ok(above.points.split(' ').every((pair) => Number(pair.split(',')[1]) <= 40));
   assert.equal(sparkPoints([], 100, 40, 10000).points, '');
   assert.equal(sparkPoints([{ day: '2026-10-15', withEur: 100 }], 100, 40, null).points, '50,20');
+});
+
+test('Nu te betalen and Nog te ontvangen: a figure whose source failed is null ("— · Opnieuw"), never a sum without it', () => {
+  const outlook = { openCostsEur: 3509.25, containerNowEur: 17400, upcomingEur: 1538.5, openInvoicesEur: 29175.4 };
+  const none = { costs: false, purchases: false, recurring: false, sales: false };
+  assert.equal(outlookFigures(null, none), null);
+  assert.deepEqual(outlookFigures(outlook, none), { payEur: 22447.75, receiveEur: 29175.4 });
+  /* 500 on /api/sales-orders: no € 0 to receive */
+  assert.deepEqual(outlookFigures(outlook, { ...none, sales: true }), { payEur: 22447.75, receiveEur: null });
+  /* 500 on /api/costs: no € 18.939 without the open costs */
+  assert.deepEqual(outlookFigures(outlook, { ...none, costs: true }), { payEur: null, receiveEur: 29175.4 });
+  assert.deepEqual(outlookFigures(outlook, { ...none, purchases: true }), { payEur: null, receiveEur: 29175.4 });
+  assert.deepEqual(outlookFigures(outlook, { ...none, recurring: true }), { payEur: null, receiveEur: 29175.4 });
+  assert.equal(outlookFigures({ ...outlook, openCostsEur: 0.1, containerNowEur: 0.2, upcomingEur: 0 }, none)?.payEur, 0.3);
 });

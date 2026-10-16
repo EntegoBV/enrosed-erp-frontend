@@ -19,7 +19,8 @@ const SPARK_H = 54;
  * point and the first krap period of the same 6-month forecast Analyses
  * shows (with the scenario: "met scenario"), and on the desk the accounts,
  * a compact chart and the Vooruitblik's "Nu te betalen" and "Nog te
- * ontvangen" (which show even when the forecast failed). The forecast is
+ * ontvangen" (which show even when the forecast failed; each reads
+ * "— · Opnieuw" when a source behind it failed). The forecast is
  * built at idle; until then the bank shows with "Kasprognose wordt
  * berekend…". On the phone it is the hero: one tap target, the retry button
  * when the bank failed, "Saldo invullen" when there is no reading
@@ -91,13 +92,25 @@ const SPARK_H = 54;
               @case ('computing') { <p class="home-kas__note">Kasprognose wordt berekend…</p> }
               @case ('partial') { <p class="home-kas__note is-warn">Prognose onvolledig: {{ c.warnings.join(', ') }}</p> }
             }
-            @if (data.outlook(); as o) {
+            @if (data.outlookFigures(); as o) {
               <div class="home-w__fig"><span class="home-w__fig-label">Nu te betalen</span>
-                <strong class="home-w__fig-value">{{ whole(o.openCostsEur + o.containerNowEur + o.upcomingEur) }}</strong>
-                <span class="home-w__fig-sub">kosten, containers, 30 d vast</span></div>
+                @if (o.payEur === null) {
+                  <strong class="home-w__fig-value home-w__value--none">—</strong>
+                  <span class="home-w__fig-sub"><button class="wk-link home-w__raise" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
+                } @else {
+                  <strong class="home-w__fig-value">{{ whole(o.payEur) }}</strong>
+                  <span class="home-w__fig-sub">kosten, containers, 30 d vast</span>
+                }
+              </div>
               <div class="home-w__fig"><span class="home-w__fig-label">Nog te ontvangen</span>
-                <strong class="home-w__fig-value">{{ whole(o.openInvoicesEur) }}</strong>
-                <span class="home-w__fig-sub">klant &amp; partner</span></div>
+                @if (o.receiveEur === null) {
+                  <strong class="home-w__fig-value home-w__value--none">—</strong>
+                  <span class="home-w__fig-sub"><button class="wk-link home-w__raise" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
+                } @else {
+                  <strong class="home-w__fig-value">{{ whole(o.receiveEur) }}</strong>
+                  <span class="home-w__fig-sub">klant &amp; partner</span>
+                }
+              </div>
             }
           </div>
         }
