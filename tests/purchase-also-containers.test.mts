@@ -122,3 +122,33 @@ test('several open payments: the same label wins, the choices tell them apart', 
   const same = alsoContainerOptions([], [{ id: 44, supplierId: 8 }], names, 43, 8, { payments: payments.map(item => ({ ...item, label: 'Saldo' })), views })[0];
   assert.deepEqual(alsoPartChoices(same).slice(0, 2).map(choice => plain(choice.text)), ['Bestaand 01/10: € 3.000,00', 'Bestaand 12/10: € 3.000,00']);
 });
+
+test("under 'Automatisch' (no term) or a term not open there, a container's open payment is linked, never a new payment beside it", () => {
+  // PO-039 noted its 30 % (€ 3.070,20, not on the bank); its 70 % is open (€ 7.163,80). The new payment on PO-038 stays on 'Automatisch'.
+  const views = [view(39, [['ORDERED', 3070.2, 3070.2], ['SHIPPED', 7163.8, 0]], { alias: 'Moederdag Rood' }), view(40, [['ORDERED', 3070.2, 0]])];
+  const open = [{ ...term(39, 'SHIPPED', 7163.8), alias: 'Moederdag Rood' }, term(40, 'ORDERED', 3070.2)];
+  const payments = [paid(392, 39, 3070.2, { orderAlias: 'Moederdag Rood', paidOn: '2026-09-25' })];
+  const [po39, po40] = alsoContainerOptions(open, [{ id: 39, supplierId: 8 }, { id: 40, supplierId: 8 }], names, 38, 8, { payments, views });
+  const auto = alsoPartFor(po39, null, null);
+  assert.deepEqual([auto.paymentId, auto.amount, auto.amountInput, auto.due], [392, 3070.2, '3.070,20', 'ORDERED'], "not 'nieuwe betaling · 70% bij vertrek'");
+  assert.equal(alsoPartFor(po39, null, 'Aanbetaling').paymentId, 392, 'another label: still its open payment');
+  assert.equal(alsoPartFor(po39, 'ARRIVED', null).paymentId, 392, 'a term it does not have open: its open payment');
+  assert.deepEqual([alsoPartFor(po39, 'SHIPPED').paymentId, alsoPartFor(po39, 'SHIPPED').amount], [null, 7163.8], 'its open term of this payment: a new payment on it');
+  assert.deepEqual([alsoPartFor(po40, null).paymentId, alsoPartFor(po40, null).due, alsoPartFor(po40, null).amount], [null, 'ORDERED', 3070.2], 'no open payment: its earliest open term');
+  // Two open payments: the same label first, else the earliest term.
+  const two = alsoContainerOptions(open, [{ id: 39, supplierId: 8 }], names, 38, 8,
+    { payments: [paid(395, 39, 1000, { instalmentDue: 'SHIPPED', label: '70% bij vertrek', paidOn: '2026-09-01' }), ...payments], views })[0];
+  assert.equal(alsoPartFor(two, null, null).paymentId, 392, '30 % before 70 %, whichever was noted first');
+  assert.equal(alsoPartFor(two, null, '70% bij vertrek').paymentId, 395);
+});
+
+test("a new transfer's row switched to another choice brings that choice's own amount; a term with nothing open keeps the typed one", () => {
+  const views = [view(39, [['ORDERED', 3070.2, 3070.2], ['SHIPPED', 7163.8, 0]])];
+  const [po39] = alsoContainerOptions([term(39, 'SHIPPED', 7163.8)], [{ id: 39, supplierId: 8 }], names, 38, 8, { payments: [paid(392, 39, 3070.2)], views });
+  const fresh = alsoPartAs(po39, 't:SHIPPED', alsoPartFor(po39, null), true)!;
+  assert.deepEqual([fresh.paymentId, fresh.amount, fresh.amountInput], [null, 7163.8, '7.163,80']);
+  const back = alsoPartAs(po39, 'p:392', fresh, true)!;
+  assert.deepEqual([back.paymentId, back.amount, back.amountInput], [392, 3070.2, '3.070,20'], 'not € 7.163,80 on a € 3.070,20 payment');
+  assert.deepEqual([alsoPartAs(po39, 't:ORDERED', back, true)!.amount, alsoPartAs(po39, 't:ORDERED', back, true)!.paymentId], [3070.2, null], 'its term is covered: the typed amount stays');
+  assert.equal(alsoPartAs(po39, 'p:392', fresh)!.amount, 7163.8, 'a share keeps the typed amount');
+});

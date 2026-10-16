@@ -167,21 +167,34 @@ function newPart(option: AlsoContainerOption, due: TermDue | null, fallbackLabel
     standing: standingFor(option, due) };
 }
 
+/** Term order, a payee without terms last (Kosten & bank's split rows count the same). */
+const TERM_ORDER: readonly (TermDue | null)[] = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED', null];
+
 /**
  * A container added. An open payment on this payment's term (`due`; the same
  * `label` first, or by label without a term) is linked: never a second
  * payment for the same instalment. Else this payment's term when that
- * container has it open (30 % of all three), else its earliest open term, at
- * its open amount; a container with only open payments takes the first.
- * Without open payments (and without `extra`) exactly the first round's part.
+ * container has it open (30 % of all three), at its open amount. Else, under
+ * 'Automatisch' (no term) or a term that container does not have open, its
+ * open payment (the same label first, else the earliest term, the oldest) is
+ * linked rather than a second payment noted beside it (Kosten & bank's
+ * split starts a row the same way); only a container without open payments
+ * gets a new payment on its earliest open term. Without open payments (and
+ * without `extra`) exactly the first round's part.
  */
 export function alsoPartFor(option: AlsoContainerOption, due: TermDue | null, label: string | null = null): AlsoContainerPart {
   const open = option.openPayments ?? [];
   const sameTerm = open.filter((payment) => payment.due === due && (due !== null || sameWords(payment.label, label)));
-  const payment = sameTerm.find((item) => sameWords(item.label, label)) ?? sameTerm[0] ?? (option.terms.length ? undefined : open[0]);
+  const payment = sameTerm.find((item) => sameWords(item.label, label)) ?? sameTerm[0];
   if (payment) return alsoPaymentPart(option, payment);
-  const term = option.terms.find((item) => due !== null && item.due === due) ?? option.terms[0];
-  return newPart(option, term?.due ?? null, term?.label ?? null);
+  const term = due !== null ? option.terms.find((item) => item.due === due) : undefined;
+  if (term) return newPart(option, term.due, term.label);
+  const byTerm = open.map((item, index) => ({ item, index }))
+    .sort((a, b) => TERM_ORDER.indexOf(a.item.due) - TERM_ORDER.indexOf(b.item.due) || a.index - b.index).map(({ item }) => item);
+  const noted = byTerm.find((item) => sameWords(item.label, label)) ?? byTerm[0];
+  if (noted) return alsoPaymentPart(option, noted);
+  const first = option.terms[0];
+  return newPart(option, first?.due ?? null, first?.label ?? null);
 }
 
 /** The key of a part's choice: 'p:{id}' for an open payment, 't:{due}' for a new payment on a term. */
@@ -211,8 +224,16 @@ export function alsoPartChoices(option: AlsoContainerOption): { key: string; tex
   return [...choices, ...[...terms].map(([key, label]) => ({ key, text: `Nieuw: ${label}` }))];
 }
 
-/** The part as another choice of the row ('p:…' or 't:…'): the typed amount stays, the payment or term changes. Null for an unknown key. */
-export function alsoPartAs(option: AlsoContainerOption, key: string, current: AlsoContainerPart): AlsoContainerPart | null {
+/**
+ * The part as another choice of the row ('p:…' or 't:…'): the payment or term
+ * changes. The typed amount stays (a share then follows its mode); with
+ * `own` the choice brings its own amount (the open payment's euro, the term's
+ * open amount), as a container added does: a new transfer's row, so 'Nieuw:
+ * 70% bij vertrek' at € 7.163,80 switched to 'Bestaand: € 3.070,20' links
+ * that payment at € 3.070,20. A term with nothing open keeps the typed
+ * amount. Null for an unknown key.
+ */
+export function alsoPartAs(option: AlsoContainerOption, key: string, current: AlsoContainerPart, own = false): AlsoContainerPart | null {
   let next: AlsoContainerPart | null = null;
   if (key.startsWith('p:')) {
     const payment = (option.openPayments ?? []).find((item) => item.id === Number(key.slice(2)));
@@ -222,6 +243,7 @@ export function alsoPartAs(option: AlsoContainerOption, key: string, current: Al
     const known = option.terms.some((term) => term.due === due) || (option.openPayments ?? []).some((payment) => payment.due === due);
     next = known ? newPart(option, due, (option.openPayments ?? []).find((payment) => payment.due === due)?.label ?? null) : null;
   }
+  if (next && own && next.amount !== null) return next;
   return next && { ...next, amount: current.amount, amountInput: current.amountInput };
 }
 

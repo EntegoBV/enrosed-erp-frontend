@@ -490,3 +490,32 @@ test("Betaalbewijs: a transaction shared with other containers names them after 
   sheet.lineShares.set([]);
   assert.equal(sheet.carries(line610), null);
 });
+
+test("a new transfer on 'Automatisch': a container with an open payment and another open term starts on that payment, and a switched row brings its own amount", () => {
+  const { sheet } = mount();
+  // PO-039 noted its 30 % (not on the bank) and has its 70 % open (€ 7.163,80); PO-038's new payment stays on 'Automatisch'.
+  const payables = [...sharedPayables, { ...sharedPayables[0], key: 'container:39:SUPPLIER:SHIPPED', orderId: 39, orderNumber: 'PO-2026-039', alias: 'Moederdag Rood',
+    termLabel: '70% bij vertrek', due: 'SHIPPED', plannedEur: 7163.8, remainingEur: 7163.8 }];
+  const views = sharedViews.map(view => view.order.id !== 39 ? view : { ...view, order: { ...view.order, alias: 'Moederdag Rood' },
+    reconciliation: { ...view.reconciliation, supplierInstalments: [...view.reconciliation.supplierInstalments,
+      { due: 'SHIPPED', label: '70% bij vertrek', plannedEur: 7163.8, paidEur: 0, remainingEur: 7163.8, finalized: false }] } });
+  const options = alsoContainerOptions(payables, views.map(view => ({ id: view.order.id, supplierId: 8 })), new Map([[8, 'Yunnan']]), 38, 8,
+    { payments: sharedRows.map(row => ({ ...row, orderAlias: 'Moederdag Rood' })), views, payee: 'SUPPLIER' });
+  const bank = { ...line610, id: 702, amountEur: -16500, bookedAt: '2026-10-14T22:00:00Z', account: 'BE94731074082814', reference: 'PO38 PO39 DEPOSIT' };
+  sheet.draft.set({ id: null, amount: 16500, amountInput: '16.500,00', currency: 'EUR', paidOn: '2026-10-15', label: '', payee: 'SUPPLIER', files: [],
+    settles: false, instalmentDue: null, bankTransaction: bank, alsoOpen: true, alsoParts: [] });
+  sheet.transferEur.set(16500);
+  sheet.supplierId.set(8);
+  sheet.alsoState.set({ loading: false, supported: true, options });
+  sheet.addAlso('39');
+  const row = sheet.draft().alsoParts[0];
+  assert.deepEqual([row.paymentId, row.amount, sheet.partKey(row), sheet.draft().amount], [392, 3070.2, 'p:392', 13429.8], "'Bestaand: € 3.070,20', never a second payment");
+  assert.match(plain(sheet.alsoRowText(row))!, /^bestaande betaling · 30% bij bestelling · € 3\.070,20 · nog niet op de bank · /);
+  sheet.transferEur.set(sheet.draft().amount);
+  sheet.switchAlso(39, 't:SHIPPED');
+  assert.deepEqual([sheet.draft().alsoParts[0].paymentId, sheet.draft().alsoParts[0].amount, sheet.draft().amount], [null, 7163.8, 9336.2], 'the 70 % at its open amount, the goods give way');
+  sheet.transferEur.set(sheet.draft().amount);
+  sheet.switchAlso(39, 'p:392');
+  assert.deepEqual([sheet.draft().alsoParts[0].paymentId, sheet.draft().alsoParts[0].amount, sheet.draft().amountInput], [392, 3070.2, '13.429,80'],
+    'back on the open payment at its own € 3.070,20: nothing to retype');
+});

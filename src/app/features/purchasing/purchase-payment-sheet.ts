@@ -1209,7 +1209,7 @@ export class PurchasePaymentSheet {
     if (open) { this.patch.emit({ alsoOpen: true }); this.alsoLoad.emit(); return; }
     this.patch.emit({ alsoOpen: false, alsoParts: [], ...this.rebalance(pay.alsoParts ?? [], []) });
   }
-  /** A container added: its open payment on this payment's term when it has one (never a second payment), else a new one on its open term. */
+  /** A container added: its open payment when it has one, this payment's term first (never a second payment; under 'Automatisch' too), else a new one on its open term. */
   addAlso(value: string): void {
     const option = this.alsoState().options.find(item => item.orderId === Number(value));
     if (!option) return;
@@ -1329,15 +1329,21 @@ export class PurchasePaymentSheet {
     if (this.draft().id) return this.shared(this.draft().shareMode, after) ?? { alsoParts: after };
     return { alsoParts: after, ...this.rebalance(before, after) };
   }
-  /** 'Bestaand: € x' or 'Nieuw: <term>' for one row: the typed amount stays (a share then follows its mode). */
+  /**
+   * 'Bestaand: € x' or 'Nieuw: <term>' for one row. A share keeps the typed
+   * amount and follows its mode; a new transfer's row takes the choice's own
+   * amount (as a container added does) and this payment's goods give or take
+   * the difference while the transaction was made.
+   */
   switchAlso(orderId: number, key: string): void {
     const option = this.alsoState().options.find(item => item.orderId === orderId);
     const before = this.draft().alsoParts ?? [];
     const current = before.find(part => part.orderId === orderId);
-    const next = option && current ? alsoPartAs(option, key, current) : null;
+    const share = !!this.draft().id;
+    const next = option && current ? alsoPartAs(option, key, current, !share) : null;
     if (!next) return;
     const after = before.map(part => part.orderId === orderId ? next : part);
-    this.patch.emit(this.draft().id ? this.shared(this.draft().shareMode, after) ?? { alsoParts: after } : { alsoParts: after });
+    this.patch.emit(share ? this.shared(this.draft().shareMode, after) ?? { alsoParts: after } : this.withParts(before, after));
   }
 
   chooseBank(row: BankStatementLine | null): void {
