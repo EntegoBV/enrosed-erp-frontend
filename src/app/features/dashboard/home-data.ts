@@ -282,7 +282,7 @@ export class HomeData {
 
   readonly agenda = computed(() => agendaModel(agendaInputOf({
     today: this.today(), nowTime: this.nowTime(), planner: this.planner.items(), milestones: this.milestones(),
-    forecast: this.forecast(), headline: this.cash(), sales: this.salesOrders(), salesOk: this.states().verkoop === 'ready',
+    forecast: this.forecast(), headline: this.cash(), purchases: this.purchases(), sales: this.salesOrders(), salesOk: this.states().verkoop === 'ready',
     customers: this.customers(), cash: this.homeCash(), vat: vatOf(this.homeCash(), this.forecast(), this.forecastVat(), this.today()),
   })));
 

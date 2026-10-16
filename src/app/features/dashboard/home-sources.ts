@@ -259,6 +259,22 @@ export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
 
 /* --------------------------------------------------------------- agenda */
 
+/**
+ * A forecast item's title with its container named by containerName(): the forecast titles container terms,
+ * import VAT and advances by the PO number ("PO-2026-030 · 70% bij vertrek", cash-forecast.ts), the home by
+ * the Herkenbare naam when the order has one ("Valentijn 2027 · 70% bij vertrek"). Other titles stay as they are.
+ */
+export function containerTitleOf(item: Pick<ForecastItem, 'title' | 'orderId' | 'source'>,
+  orders: ReadonlyMap<number, { id?: number | null; number?: string | null; alias?: string | null }>): string {
+  if (item.orderId === null || (item.source.type !== 'container' && item.source.type !== 'advance')) return item.title;
+  const order = orders.get(item.orderId);
+  /* The forecast's own prefixes: the order's number, else its 'Inkoop #id' (cash-forecast-input advance rows). */
+  for (const prefix of [order?.number, `Inkoop #${item.orderId}`]) {
+    if (prefix && item.title.startsWith(`${prefix} · `)) return `${containerName(order ?? null, item.orderId)} · ${item.title.slice(prefix.length + 3)}`;
+  }
+  return item.title;
+}
+
 const linkOf = (item: ForecastItem): AgendaLink => {
   const link = itemLink(item);
   if (!link || !link.path.length) return { path: ['/analyses/cash'] };
@@ -281,6 +297,8 @@ export interface HomeAgendaSources {
   milestones: readonly PlannerMilestone[];
   forecast: CashForecast | null;
   headline: CashHeadline;
+  /** The containers behind the forecast's money, for their names. */
+  purchases: readonly PurchaseOrderView[];
   sales: readonly SalesOrderView[];
   salesOk: boolean;
   customers: readonly Customer[];
@@ -290,7 +308,9 @@ export interface HomeAgendaSources {
 
 /**
  * The agenda's input: money from the forecast's BASE items when it is
- * there (agendaForecastMoney: no scenario, nothing overdue), else open
+ * there (agendaForecastMoney: no scenario, nothing overdue; containers
+ * named by containerName(), so the chips, Daarna and the Agenda page say
+ * what the Te doen rows say), else open
  * invoices on their due day and the recurring costs on their next day,
  * neither once that day has passed; the next VAT filing deadline unless
  * that quarter is paid; the first krap period.
@@ -306,8 +326,9 @@ export function agendaInputOf(s: HomeAgendaSources): AgendaInput {
   let moneySource: AgendaInput['moneySource'] = null;
   if (forecastUsable) {
     moneySource = 'prognose';
-    money = agendaForecastMoney(s.forecast!.items, vatPeriod.deadline)
-      .map((item) => ({ date: item.date, eur: item.amountEur, title: item.title, party: item.party, orderId: item.orderId, link: linkOf(item) }));
+    const orders = new Map(s.purchases.map((row) => [row.order.id, row.order]));
+    money = agendaForecastMoney(s.forecast!.items, vatPeriod.deadline).map((item) => ({ date: item.date, eur: item.amountEur,
+      title: containerTitleOf(item, orders), party: item.party, orderId: item.orderId, link: linkOf(item) }));
   } else if (s.salesOk) {
     moneySource = 'facturen';
     const names = new Map(s.customers.map((customer) => [customer.id, customer.company]));
