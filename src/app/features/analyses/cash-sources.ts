@@ -47,6 +47,16 @@ export function statementsFromOf(today: string, accounts: readonly BankAccount[]
 export const CASH_DATA_MAX_AGE_MS = 120_000;
 
 /**
+ * ensure()'s rule: fetch again when nothing loaded yet, when the last round was for another day or older than
+ * `maxAgeMs`, or when it left something out (a warning, the bank missing). A failed round is never "fresh".
+ */
+export function cashDataStale(round: { state: 'idle' | 'loading' | 'ready'; loadedAt: number | null; loadedFor: string | null;
+  warnings: readonly string[]; bankMissing: boolean }, today: string, nowMs: number, maxAgeMs = CASH_DATA_MAX_AGE_MS): boolean {
+  return round.state === 'idle' || round.loadedFor !== today || round.loadedAt === null || nowMs - round.loadedAt > maxAgeMs
+    || round.warnings.length > 0 || round.bankMissing;
+}
+
+/**
  * The bank and forecast data of Analyses › Kasprognose, the Overzicht card
  * and the home's Kas card, loaded lazily the first time one of them is shown.
  * Each source fails on its own and keeps its last good data; the failures
@@ -99,20 +109,25 @@ export class CashData {
   /** The server knows this round and what it stores is loaded: stored choices and the buffer can be saved. */
   readonly cashRound = computed(() => this.choicesKnown() && this.settings() !== null);
 
-  private bankLoaded = false;
+  /*
+   * The bank answered once (accounts, balances and statements). A signal, so a round in which the bank comes
+   * back wakes what reads sourcesWith(): `state` stays 'ready' through a later round, and the statements
+   * arrive after the other calls, when the home's own page load may long have finished.
+   */
+  private readonly bankLoaded = signal(false);
   private schedulesRound = -1;
   private readonly failed = signal<Record<string, true>>({});
 
   /**
-   * Loads when nothing is loaded yet, when the last round was for another day
-   * or is older than `maxAgeMs`; otherwise (or while a round runs) nothing.
+   * Loads when nothing is loaded yet, when the last round was for another day,
+   * is older than `maxAgeMs` or left something out (a warning: the bank or
+   * another source failed, so the next screen asks again rather than showing
+   * the failure for two minutes); otherwise (or while a round runs) nothing.
    */
   ensure(today: string, maxAgeMs = CASH_DATA_MAX_AGE_MS): void {
     if (this.refreshing()) return;
-    const loadedAt = this.loadedAt();
-    if (this.state() === 'idle' || this.loadedFor() !== today || loadedAt === null || Date.now() - loadedAt > maxAgeMs) {
-      void this.reload(today);
-    }
+    if (cashDataStale({ state: this.state(), loadedAt: this.loadedAt(), loadedFor: this.loadedFor(), warnings: this.warnings(),
+      bankMissing: this.bankMissing() }, today, Date.now(), maxAgeMs)) void this.reload(today);
   }
 
   async reload(today: string): Promise<void> {
@@ -138,7 +153,7 @@ export class CashData {
         try {
           this.statements.set(await this.banking.list(from));
           this.statementsFrom.set(from);
-          this.bankLoaded = true;
+          this.bankLoaded.set(true);
         } catch {
           failed['bank'] = true;
         }
@@ -146,7 +161,7 @@ export class CashData {
     } finally {
       this.failed.update((current) => ({ ...Object.fromEntries(Object.entries(current).filter(([word]) => word === 'partners')), ...failed }));
       this.warnings.set(this.warningWords());
-      this.bankMissing.set(!this.bankLoaded);
+      this.bankMissing.set(!this.bankLoaded());
       this.loadedAt.set(Date.now());
       this.loadedFor.set(today);
       this.state.set('ready');
@@ -188,7 +203,7 @@ export class CashData {
 
   /** Everything cashForecastInput needs, or null while the bank is not there yet. */
   sourcesWith(page: CashPageData, today: string): CashForecastSources | null {
-    if (this.state() === 'idle' || (this.state() === 'loading' && !this.bankLoaded) || !this.bankLoaded) return null;
+    if (this.state() === 'idle' || !this.bankLoaded()) return null;
     return {
       today, bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.statements(), incomingPayments: page.incomingPayments,
       costs: page.costs, recurring: this.recurring(), purchaseViews: page.purchases, purchasePayments: this.purchasePayments(), suppliers: page.suppliers,
