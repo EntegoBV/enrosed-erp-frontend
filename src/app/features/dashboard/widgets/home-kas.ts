@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CashChart } from '../../../shared/cash-chart';
@@ -20,16 +21,17 @@ const SPARK_H = 54;
  * shows (with the scenario: "met scenario"), and on the desk the accounts,
  * a compact chart and the Vooruitblik's "Nu te betalen" and "Nog te
  * ontvangen" (which show even when the forecast failed; each reads
- * "— · Opnieuw" when a source behind it failed). The forecast is
- * built at idle; until then the bank shows with "Kasprognose wordt
- * berekend…". On the phone it is the hero: one tap target, the retry button
+ * "— · Opnieuw" when a source behind it failed). The forecast is built at
+ * idle; until then the bank shows with "Kasprognose wordt berekend…", and
+ * the desk card keeps the room of the chart and the figures, so nothing
+ * below it moves when they land. On the phone it is the hero: one tap target, the retry button
  * when the bank failed, "Saldo invullen" when there is no reading
  * (amendment G8: nothing interactive nested).
  */
 @Component({
   selector: 'app-home-kas',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, CashChart],
+  imports: [NgTemplateOutlet, RouterLink, Icon, CashChart],
   template: `
     @let c = data.cash();
     @if (variant() === 'desk') {
@@ -55,6 +57,7 @@ const SPARK_H = 54;
               @default {
                 <span class="home-kas__value">{{ whole(c.startEur) }}</span>
                 @if (age()) { <span class="home-kas__sub">bijgewerkt {{ age() }}</span> }
+                @else if (c.state === 'computing') { <span class="home-kas__sub" aria-hidden="true">&nbsp;</span> }
               }
             }
           </div>
@@ -72,8 +75,11 @@ const SPARK_H = 54;
             <app-cash-chart variant="compact" [height]="96" [series]="chart.series" [today]="data.today()" [bufferEur]="chart.bufferEur"
                             [tight]="chart.tight" ariaLabel="Saldo met scenario, 6 maanden" />
           </div>
+        } @else if (waiting()) {
+          <!-- The chart's room while the bank loads and the forecast is built at idle: nothing below moves when it lands. -->
+          <div class="home-kas__chart home-kas__chart--wait" aria-hidden="true"></div>
         }
-        @if (c.state !== 'loading' && c.state !== 'no-bank') {
+        @if (c.state !== 'no-bank') {
           <div class="home-w__figs home-w__figs--4 home-kas__figs">
             @switch (c.state) {
               @case ('ready') {
@@ -89,8 +95,15 @@ const SPARK_H = 54;
                   }
                 </div>
               }
-              @case ('computing') { <p class="home-kas__note">Kasprognose wordt berekend…</p> }
               @case ('partial') { <p class="home-kas__note is-warn">Prognose onvolledig: {{ c.warnings.join(', ') }}</p> }
+              @case ('no-reading') {}
+              @default {
+                <!-- Loading or computing: the height of the ready figures, the note over it. -->
+                <div class="home-kas__wait">
+                  <ng-container [ngTemplateOutlet]="ghost" />
+                  @if (c.state === 'computing') { <p class="home-kas__note">Kasprognose wordt berekend…</p> }
+                </div>
+              }
             }
             @if (data.outlookFigures(); as o) {
               <div class="home-w__fig"><span class="home-w__fig-label">Nu te betalen</span>
@@ -111,9 +124,15 @@ const SPARK_H = 54;
                   <span class="home-w__fig-sub">klant &amp; partner</span>
                 }
               </div>
+            } @else if (busy()) {
+              <ng-container [ngTemplateOutlet]="ghost" /><ng-container [ngTemplateOutlet]="ghost" />
             }
           </div>
         }
+        <ng-template #ghost>
+          <div class="home-w__fig home-kas__ghost" aria-hidden="true">
+            <span class="home-w__fig-label">&nbsp;</span><strong class="home-w__fig-value">—</strong><span class="home-w__fig-sub">&nbsp;</span></div>
+        </ng-template>
       </article>
     } @else {
       @switch (c.state) {
@@ -183,6 +202,8 @@ export class HomeKas {
   readonly sparkH = SPARK_H;
 
   readonly busy = computed(() => ['loading', 'computing'].includes(this.data.cash().state));
+  /** The chart is on its way: loading or computing with no failed source (a partial forecast draws no chart). */
+  readonly waiting = computed(() => this.busy() && !this.data.cash().warnings.length);
   /** "bijgewerkt vandaag": the oldest reading of the accounts that have one. */
   readonly age = computed(() => {
     const ages = this.data.cash().accounts.map((account) => account.ageDays).filter((days): days is number => days !== null);

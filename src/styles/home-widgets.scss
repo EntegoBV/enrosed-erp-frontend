@@ -134,6 +134,13 @@ app-home-website, app-home-markt { display: contents; }
 .home-kas__chart { margin: -2px -4px 0; pointer-events: none; }
 .home-kas__note { grid-column: span 2; align-self: center; margin: 0; color: var(--muted); font-size: 12.5px; }
 .home-kas__note.is-warn { color: var(--warn); font-weight: 600; }
+/* Loading and computing keep the ready card's height: the chart's room and figures of a ready figure's height
+   (an invisible ghost under the note), so the blocks and the Agenda below never move when the forecast lands. */
+.home-kas__chart--wait { height: 96px; }
+.home-kas__wait { display: grid; grid-column: span 2; }
+.home-kas__wait > * { grid-area: 1 / 1 / 2 / 2; }
+.home-kas__wait > .home-kas__note { grid-area: 1 / 1 / 2 / 2; }
+.home-kas__ghost { visibility: hidden; }
 
 /* ---- Kas, phone hero (kit .ios-hero) */
 .home-kas-hero > span { display: block; }
