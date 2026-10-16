@@ -1,6 +1,7 @@
 import { capitalize, customerReading, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesSetupText } from './product-sales-unit';
 import { effectiveOrderStep, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
+import { ProductCostHistorySheet } from './product-cost-history-sheet';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -62,7 +63,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [KgPipe, Skeleton, ProductCostHistory, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     ProductPlacesLine, PageHeader, Icon, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -300,7 +301,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 <div class="tile"><span>Extra kost per {{ salesUnit(product).singular }}</span><b class="num">
                   @if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }
                 </b><small>bv. display of giftbox</small></div>
-                <button class="tile tile--price" type="button" (click)="openPriceInfo(product)">
+                <button class="tile tile--price" type="button" (click)="openHistory()">
                   <i class="tile-chev" aria-hidden="true"></i>
                   <span>Kostprijs incl. rechten</span><b class="num">
                   @if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }
@@ -313,13 +314,11 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                   ? 'vaste verkoopprijs'
                   : 'kostprijs + ' + (product.markupPct | num) + ' % opslag' }}</small></button>
                 <div class="tile"><span>HS-code</span><b class="mono">{{ product.hsCode || '—' }}</b></div>
-                @if (sourceOrderId(); as orderId) {
-                  <a class="tile tile--link" [routerLink]="['/purchasing', orderId]">
-                    <span>Bron kostprijs</span><b>{{ product.landedCostSource }} ›</b>
-                  </a>
-                } @else {
-                  <div class="tile"><span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b></div>
-                }
+                <!-- The history names every container behind the cost and links to it. -->
+                <button class="tile" type="button" (click)="openHistory()">
+                  <span>Bron kostprijs</span><b>{{ product.landedCostSource || '—' }}</b>
+                  <small>Kostprijshistoriek ›</small>
+                </button>
                 <button class="tile tile--price tile--price-result" type="button" (click)="openPriceInfo(product)">
                   <i class="tile-chev" aria-hidden="true"></i>
                   <span>Marge per {{ salesUnit(product).singular }}</span>
@@ -628,7 +627,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               <button type="button" [class.on]="priceTab() === 'history'" (click)="priceTab.set('history')">Historiek</button>
             </div>
             @if (priceTab() === 'history') {
-              @if (product.id; as id) { <app-product-cost-history [productId]="id" /> }
+              @if (product.id; as id) { <app-product-cost-history [productId]="id" [product]="product" [sourceLink]="historySourceLink()" /> }
             } @else {
               <ng-container *ngTemplateOutlet="priceBuildTpl" />
             }
@@ -638,6 +637,10 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             <button class="btn" type="button" (click)="closePriceInfo()">Sluiten</button>
           </div>
         </app-sheet>
+      }
+
+      @if (historyOpen()) {
+        <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
       }
 
       <!-- Broken or given away as demo: the piece leaves the shelf with a
@@ -1136,7 +1139,21 @@ export class ProductView {
 
   readonly priceTab = signal<'build' | 'history'>('build');
 
+  /** Kostprijshistoriek as its own sheet: the cost tiles, the desk's cost figure and the flow step open it. */
+  readonly historyOpen = signal(false);
+  /** The order of the cost's source, so the history keeps the Bron tile's link: on the rows that name it, or in an empty history. */
+  readonly historySourceLink = computed(() => {
+    const id = this.sourceOrderId();
+    const text = this.product()?.landedCostSource;
+    return id !== null && text ? { id, text } : null;
+  });
+
+  openHistory(): void {
+    this.historyOpen.set(true);
+  }
+
   openPriceInfo(product: Product): void {
+    this.priceTab.set('build');
     this.priceInfoOpen.set(true);
     if (product.id !== null && this.priceBuild() === null) {
       void this.loadPriceBuild(product);
@@ -1427,6 +1444,8 @@ export class ProductView {
     this.product.set(null);
     this.priceOpen.set(false);
     this.priceInfoOpen.set(false);
+    this.historyOpen.set(false);
+    this.priceTab.set('build');
     this.priceBuild.set(null);
     this.stockHistory.set(null);
     this.allMovesOpen.set(false);

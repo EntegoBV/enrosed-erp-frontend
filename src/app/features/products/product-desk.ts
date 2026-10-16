@@ -1,4 +1,5 @@
 import { ProductCostHistory } from './product-cost-history';
+import { ProductCostHistorySheet } from './product-cost-history-sheet';
 import { ChangeDetectionStrategy, Component, computed, effect, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -34,7 +35,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader,
+  imports: [ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
   ],
   template: `
@@ -114,7 +115,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <span>niets besteld</span>
               </div>
             }
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="openPriceDetail()">
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="openHistory()" title="Kostprijshistoriek">
               <small>Kostprijs</small>
               @if (product.landedCostEur; as landed) {
                 <strong>{{ landed | eur: 2 }}</strong>
@@ -294,6 +295,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               <small>Kostprijs</small>
               <b>@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</b>
               <span>{{ product.landedCostSource ? 'geland · ' + product.landedCostSource : 'incl. transport en rechten' }}</span>
+              <button class="linklike pd-flow__link" type="button" (click)="openHistory()">Kostprijshistoriek ›</button>
             </div>
             <i aria-hidden="true">→</i>
             <div class="pd-flow__step">
@@ -328,7 +330,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             </div>
             @if (priceTab() === 'history') {
               <div class="pd-price__history">
-                <app-product-cost-history [productId]="product.id!" />
+                <app-product-cost-history [productId]="product.id!" [product]="product" [sourceLink]="historySourceLink()" />
               </div>
             } @else {
             <div class="pd-price__detail">
@@ -642,6 +644,9 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 
       <app-photo-lightbox [photos]="galleryPhotos()" [(index)]="lightbox" />
       <app-product-supplier-agreement-photo-viewer [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
+      @if (historyOpen()) {
+        <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
+      }
     }
   `,
   styles: [`
@@ -679,6 +684,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-flow__step b{font-size:17px;font-variant-numeric:tabular-nums;line-height:1.15}
     .pd-flow__step span{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .pd-flow__step .pd-flow__note{overflow:visible;white-space:normal}
+    .pd-flow__step .pd-flow__link{justify-self:start;margin-top:3px;padding:0;font-size:11.5px;text-align:left}
     .pd-flow>i{align-self:center;flex:none;color:var(--muted);font-style:normal;font-size:15px;font-weight:700}
     .pd-flow__step--price b{color:var(--rose-dark)}
     .pd-flow__step--margin{border-color:color-mix(in srgb,var(--ok) 45%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.pd-flow__step--margin b{color:var(--ok)}

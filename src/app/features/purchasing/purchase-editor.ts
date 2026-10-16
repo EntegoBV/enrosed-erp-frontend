@@ -94,6 +94,8 @@ import {
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
+import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
+import { applyCostsPlan, applyCostsToast, missingProductIds } from './purchase-apply-costs';
 import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -148,7 +150,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     @if (view(); as data) {
@@ -1712,6 +1714,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-purchase-status-back-sheet [current]="stepBackSheet().status" [options]="stepBackSheet().options"
                                         [dirty]="stepBackSheet().dirty" [busy]="stepBackBusy()"
                                         (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
+      }
+      @if (applyPlan(); as plan) {
+        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()"
+                                        (confirm)="confirmApply()" (cancel)="closeApply()" />
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
@@ -4533,7 +4539,11 @@ export class PurchaseEditor {
     ++this.previewVersion;
     ++this.documentLoadVersion;
     this.documents.set(null);
-    if (this.view()?.order.id !== orderId) this.view.set(null);
+    if (this.view()?.order.id !== orderId) {
+      this.view.set(null);
+      /* The Kostprijzen toepassen sheet was for the order being left. */
+      this.applyFor.set(null);
+    }
     this.paymentStateError.set(null);
     this.paymentStateLoading.set(false);
     this.payments.set(null);
@@ -5117,25 +5127,80 @@ export class PurchaseEditor {
     return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number);
   });
 
-  apply(): void {
+  /* ---- Kostprijzen toepassen: the sheet shows every product's cost now and next first */
+  /**
+   * The order the sheet was opened for. The desk keeps this screen when it
+   * moves to another order (a container link in the history, Back), so the
+   * sheet belongs to that one order and never comes back for another.
+   */
+  readonly applyFor = signal<number | null>(null);
+  readonly applyBusy = signal(false);
+  /**
+   * Products of lines the supplier's list lacks: a placed order keeps a line
+   * of another supplier. Fetched by id when the sheet opens, so that row too
+   * shows its cost now, its unit and its history.
+   */
+  readonly applyOtherProducts = signal<Product[]>([]);
+  /** The rows of the saved calculation against the products as they stand; live while the sheet is open. */
+  readonly applyPlan = computed(() => {
     const data = this.view();
-    if (!data) return;
-    const again = this.costsApplied();
-    this.ui.confirm(
-      {
-        title: again ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
-        message: 'De berekende kostprijs per stuk wordt op de producten in de catalogus '
-          + 'gezet en overschrijft wat daar staat. Alle marges op verkooporders rekenen '
-          + 'vanaf dan met deze cijfers.',
-        confirmLabel: again ? 'Opnieuw toepassen' : 'Toepassen',
-      },
-      async () => {
-        await this.sourcing.applyLandedCosts(data.order.id);
-        this.products.set(await this.catalog.products(data.order.supplierId));
-        await this.reloadOrderQuietly();
-        this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
-      },
-    );
+    return data && data.order.id === this.applyFor()
+      ? applyCostsPlan(data.order, data.costing.lines, [...this.products(), ...this.applyOtherProducts()]) : null;
+  });
+
+  /**
+   * Opens the sheet. The server applies the saved order, so unsaved edits
+   * are saved first; the supplier's products are fetched again so "Nu"
+   * shows the cost they carry right now.
+   */
+  async apply(): Promise<void> {
+    const data = this.view();
+    if (!data || this.applyFor() === data.order.id || this.applyBusy() || this.saving()) return;
+    if (this.dirty()) {
+      const saved = await this.save();
+      if (!saved || this.view()?.order.id !== data.order.id) return;
+    }
+    void this.catalog.unitNames().catch(() => undefined);
+    this.applyOtherProducts.set([]);
+    this.applyFor.set(data.order.id);
+    let products = this.products();
+    try {
+      products = await this.catalog.products(data.order.supplierId);
+      if (this.view()?.order.id === data.order.id) this.products.set(products);
+    } catch { /* the list from opening the order still names every product */ }
+    const current = this.view();
+    if (current?.order.id !== data.order.id) return;
+    const missing = missingProductIds(current.costing.lines, products);
+    if (!missing.length) return;
+    /* A product that cannot be fetched stays unknown: its row says so and names no unit. */
+    const found = await Promise.all(missing.map((id) => this.catalog.product(id).catch(() => null)));
+    if (this.applyFor() === data.order.id) this.applyOtherProducts.set(found.filter((product): product is Product => product !== null));
+  }
+
+  closeApply(): void {
+    if (!this.applyBusy()) this.applyFor.set(null);
+  }
+
+  async confirmApply(): Promise<void> {
+    const data = this.view();
+    const plan = this.applyPlan();
+    if (!data || !plan || this.applyBusy()) return;
+    this.applyBusy.set(true);
+    try {
+      await this.sourcing.applyLandedCosts(data.order.id);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Kostprijzen toepassen mislukt'), 'err');
+      return;
+    } finally {
+      this.applyBusy.set(false);
+    }
+    this.applyFor.set(null);
+    this.ui.toast(applyCostsToast(plan));
+    try {
+      const products = await this.catalog.products(data.order.supplierId);
+      if (this.view()?.order.id === data.order.id) this.products.set(products);
+    } catch { /* the costs are applied; the list catches up on the next load */ }
+    await this.reloadOrderQuietly();
   }
 
   remove(): void {
