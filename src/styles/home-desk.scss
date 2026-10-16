@@ -4,9 +4,12 @@
 
    Media queries only: no container query may sit above the planner sheets,
    the bell or a menu (the kit's trap rule). Row 1 from 1280 px is Te doen
-   beside a 432 px column of Kas, Verkoop + Resultaat and Inkoop; below it
-   Te doen runs full width over a 2-column grid. The Agenda's seven days are
-   columns from 1000 px and stacked rows below. Titles and contexts of the
+   beside a 432 px column of Kas, Verkoop, Resultaat and Inkoop, one above
+   the other (at half of 432 px Verkoop's four figures were cramped and
+   Resultaat stretched into an empty card); below it Te doen runs full width
+   over a 2-column grid with Verkoop and Resultaat side by side. The
+   Agenda's seven days are columns from 1000 px and stacked rows below.
+   Titles and contexts of the
    task rows and the agenda chips may cut by design (their full text is in
    title); amounts, counts and chips never do. Kept small: the four home
    partials share one ~30 kB budget in the initial styles.
@@ -38,6 +41,7 @@ app-home-desk-agenda { display: block; }
 .home-desk__placeholder { min-height: 180px; }
 @media (min-width: 1280px) {
   .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; }
+  .home-desk__figs { grid-template-columns: minmax(0, 1fr); }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 

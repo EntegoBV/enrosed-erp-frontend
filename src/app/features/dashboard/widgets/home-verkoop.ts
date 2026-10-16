@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { isPartnerFundingDocument, overdueInvoiceRows, salesAnalysis } from '../../analyses/analysis-metrics';
 import { eurWhole } from '../../finance/cash-format';
 import { HomeData } from '../home-data';
@@ -29,7 +29,7 @@ const OPEN_QUOTE = new Set(['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAA
             <span class="home-w__delta" [class.is-up]="(delta() ?? 0) > 0" [class.is-down]="(delta() ?? 0) < 0">
               {{ deltaLabel(delta()) }} t.o.v. {{ data.windows().prevLabel }}</span>
           </div>
-          <div class="home-w__bars" role="img" [attr.aria-label]="barsLabel()">
+          <div class="home-w__bars home-w__raise" role="img" [attr.aria-label]="barsLabel()" (click)="openCard()">
             @for (bar of bars(); track bar.key) {
               <span class="home-w__bar-col" [title]="bar.label + ': ' + whole(bar.value)">
                 <i class="home-w__bar" [class.is-current]="bar.current" [style.height.%]="bar.pct"></i>
@@ -57,6 +57,7 @@ const OPEN_QUOTE = new Set(['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAA
 })
 export class HomeVerkoop {
   readonly data = inject(HomeData);
+  private readonly router = inject(Router);
   readonly variant = input<'desk' | 'phone'>('desk');
   readonly state = computed(() => this.data.combined('verkoop'));
   readonly whole = amount;
@@ -93,5 +94,10 @@ export class HomeVerkoop {
 
   deltaLabel(pct: number | null): string {
     return deltaText(pct);
+  }
+
+  /** The month bars sit above the card's stretched link (their amount on hover); a click on them still opens the card. */
+  openCard(): void {
+    void this.router.navigateByUrl('/analyses/sales');
   }
 }

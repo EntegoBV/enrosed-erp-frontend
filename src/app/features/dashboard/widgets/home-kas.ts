@@ -60,7 +60,7 @@ const SPARK_H = 54;
           @if (c.accounts.length && c.state !== 'no-reading') {
             <ul class="home-kas__accounts">
               @for (account of c.accounts; track account.key) {
-                <li [class.is-warn]="account.stale" [title]="account.stale ? 'Saldo ' + account.ageDays + ' d oud' : ''">
+                <li [class.is-warn]="account.stale" [class.home-w__raise]="account.stale" [title]="account.stale ? 'Saldo ' + account.ageDays + ' d oud' : ''">
                   <span>{{ account.label }}</span><b>{{ whole(account.eur) }}</b></li>
               }
             </ul>

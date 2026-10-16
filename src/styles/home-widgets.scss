@@ -65,7 +65,7 @@ app-home-website, app-home-markt { display: contents; }
 .home-w__fig { display: grid; align-content: start; gap: 1px; min-width: 0; color: inherit; text-decoration: none; }
 .home-w__fig-label { color: var(--muted); font-size: 11.5px; font-weight: 650; }
 .home-w__fig-value { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
-.home-w__fig-value--text { font-size: 13px; font-weight: 650; white-space: normal; }
+.home-w__fig-value--text { font-size: 13px; font-weight: 650; white-space: normal; overflow-wrap: anywhere; }
 .home-w__fig-sub { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
 .home-w__fig.is-warn .home-w__fig-value { color: var(--warn); }
 .home-w__fig.is-danger .home-w__fig-value { color: var(--danger); }
@@ -83,7 +83,8 @@ app-home-website, app-home-markt { display: contents; }
 }
 
 /* ---- bars (Verkoop months, Website days) */
-.home-w__bars { display: flex; align-items: stretch; gap: 5px; height: 56px; min-width: 0; }
+/* Raised above the card link so each bar's title shows on hover; a click opens the card (the block's own handler). */
+.home-w__bars { display: flex; align-items: stretch; gap: 5px; height: 56px; min-width: 0; cursor: pointer; }
 .home-w__bar-col { display: grid; flex: 1 1 0; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 3px; min-width: 0; }
 .home-w__bar { align-self: end; width: 100%; min-height: 3px; border-radius: 4px 4px 1px 1px; background: color-mix(in srgb, #3b945a 30%, var(--surface)); }
 .home-w__bar.is-current { background: repeating-linear-gradient(135deg, color-mix(in srgb, #3b945a 62%, var(--surface)) 0 3px, color-mix(in srgb, #3b945a 24%, var(--surface)) 3px 6px); }

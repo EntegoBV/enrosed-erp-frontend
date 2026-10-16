@@ -379,7 +379,7 @@ interface CompactAgendaEntry {
             <label class="pin-toggle span-2">
               <input type="checkbox" [checked]="draft.pinned ?? false"
                      (change)="patch({ pinned: !(draft.pinned ?? false) })" />
-              <span><b>Vastpinnen</b> · als lijn bovenaan het dashboard, tot de afspraak voorbij is of de taak afgevinkt</span>
+              <span><b>Vastpinnen</b> · bovenaan de agenda op het dashboard, tot de afspraak voorbij is of de taak afgevinkt</span>
             </label>
           </div>
 
