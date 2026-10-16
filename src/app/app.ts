@@ -20,6 +20,7 @@ import type { SidebarGroup } from './core/platform/sidebar-navigation';
 import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 import { installReducedMotionScroll } from './core/platform/reduced-motion';
 import type { ReducedMotionWindow } from './core/platform/reduced-motion';
+import { NavHistory } from './core/platform/nav-history-service';
 
 /**
  * App shell.
@@ -327,6 +328,8 @@ export class App {
   /* Register the push worker at startup: the cash register must ring
      even when nobody opened Instellingen this session. */
   private readonly pushSetup = inject(PushSetup);
+  /* Created with the shell, so the back labels and the crumb know the history from the first navigation. */
+  private readonly navHistory = inject(NavHistory);
 
   constructor() {
     void this.pushSetup.init();

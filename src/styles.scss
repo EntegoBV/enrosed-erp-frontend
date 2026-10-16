@@ -358,7 +358,6 @@ a { color: var(--rose); }
     padding-top: var(--safe-t);
   }
   .tabbar { display: none; }
-  .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
   .hide-desktop.hide-desktop { display: none !important; }
@@ -437,7 +436,6 @@ a { color: var(--rose); }
 @media (min-width: 680px) and (max-width: 1023.98px) {
   .sidebar { @include sidebar-rail; }
   .content { padding: 18px 20px 60px; }
-  .appbar { padding: var(--safe-t) 20px 0; }
 }
 
 /* A Fold shows only the four doors in its rail: home, sales, purchasing and products;
@@ -448,7 +446,6 @@ a { color: var(--rose); }
 }
 
 @media (min-width: 1024px) {
-  :root { --appbar-h: calc(62px + var(--safe-t)); }
   .shell { flex-direction: row; }
 
   /* Light sidebar in the tab bar's idiom: white surface, hairline edge,
@@ -633,8 +630,6 @@ a { color: var(--rose); }
 
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
-  .appbar { padding: var(--safe-t) 26px 0; height: var(--appbar-h); }
-  .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
   .hide-desktop.hide-desktop { display: none !important; }
