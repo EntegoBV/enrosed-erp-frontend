@@ -109,7 +109,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
   STEP_BUTTON, actionsMenu, editNextStep, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
-  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type PhoneStep, type PhoneTab,
+  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
 import { IosNav } from '../../shared/ios-nav';
@@ -1319,9 +1319,8 @@ export class PurchaseEditor {
   readonly keepAfterStep = signal(false);
   /** The step was confirmed on the read view: back leads there, not one history entry back. */
   readonly handedFromView = signal(false);
-  readonly applyingCosts = signal(false);
-  /** A step is still running or waiting on a sheet: a save, the count, a celebration, a payment. */
-  readonly stepFlowBusy = computed(() => this.saving() || this.booking() || this.applyingCosts() || this.receiving() !== null
+  /** A step is still running or waiting on a sheet: a save, the count, the Kostprijzen toepassen sheet, a celebration, a payment. */
+  readonly stepFlowBusy = computed(() => this.saving() || this.booking() || this.applyFor() !== null || this.applyBusy() || this.receiving() !== null
     || this.orderPlaced() || this.statusCelebration() !== null || this.firstInstalmentPrompt() !== null
     || this.paying() !== null || this.payingBusy());
 
@@ -1350,26 +1349,11 @@ export class PurchaseEditor {
       else void this.bookStock();
       return true;
     }
-    void this.applyCostsNow();
+    /* Kostprijzen toepassen asks in its own sheet (apply()): every product's cost now and next. */
+    void this.apply();
     return true;
   }
 
-  /** apply()'s confirmed work without its question: the phone asked already. */
-  async applyCostsNow(): Promise<void> {
-    const data = this.view();
-    if (!data || this.applyingCosts()) return;
-    this.applyingCosts.set(true);
-    try {
-      await this.sourcing.applyLandedCosts(data.order.id);
-      this.products.set(await this.catalog.products(data.order.supplierId));
-      await this.reloadOrderQuietly();
-      this.ui.toast('Kostprijzen bijgewerkt in de catalogus');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Kostprijzen toepassen mislukt'), 'err');
-    } finally {
-      this.applyingCosts.set(false);
-    }
-  }
   /** Cost breakdowns as totals or per piece; one switch for all lines. */
   /* Per piece is what the buying conversation is about; totals are the
      exception you toggle to. */
@@ -1448,11 +1432,11 @@ export class PurchaseEditor {
     return data ? editNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked }) : null;
   });
 
-  editStepLabel(step: PhoneStep | 'PRODUCTEN'): string {
+  editStepLabel(step: AskedStep | 'PRODUCTEN'): string {
     return step === 'PRODUCTEN' ? 'Producten toevoegen' : STEP_BUTTON[step];
   }
 
-  runEditStep(step: PhoneStep | 'PRODUCTEN'): void {
+  runEditStep(step: AskedStep | 'PRODUCTEN'): void {
     if (step === 'PRODUCTEN') {
       this.setPhoneTab('producten');
       this.openPicker();
@@ -1472,12 +1456,12 @@ export class PurchaseEditor {
   });
 
   /** The step the confirmation sheet asks about; the save bar, Acties and the received banner open it. */
-  readonly stepOpen = signal<PhoneStep | null>(null);
+  readonly stepOpen = signal<AskedStep | null>(null);
 
-  stepText(step: PhoneStep) {
+  stepText(step: AskedStep) {
     const order = this.view()!.order;
     return stepConfirm(step, { number: order.number, planLabel: this.planLabel(order), location: this.receivingLocationName(order.receivingLocationId),
-      dirty: this.dirty(), again: this.costsApplied() });
+      dirty: this.dirty() });
   }
 
   confirmPhoneStep(event: { tracking: string | null }): void {

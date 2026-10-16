@@ -247,7 +247,7 @@ export function stepTarget(step: PhoneStep): PurchaseOrder['status'] | null {
 }
 
 /** The status step that leads to a status (the editor's nextStep().to). */
-export function stepToward(to: string | null | undefined): PhoneStep | null {
+export function stepToward(to: string | null | undefined): AskedStep | null {
   return to === 'BESTELD' ? 'BESTELLEN' : to === 'ONDERWEG' ? 'VERTROKKEN' : to === 'ONTVANGEN' ? 'ONTVANGEN' : null;
 }
 
@@ -266,7 +266,7 @@ export function readNextStep(s: {
 }
 
 /** The editor's save-bar step; Kostprijzen stays under Acties there. */
-export function editNextStep(s: { status: PurchaseOrder['status']; lineCount: number; stockBooked: boolean | null | undefined }): PhoneStep | 'PRODUCTEN' | null {
+export function editNextStep(s: { status: PurchaseOrder['status']; lineCount: number; stockBooked: boolean | null | undefined }): AskedStep | 'PRODUCTEN' | null {
   if (s.status === 'CONCEPT') return s.lineCount <= 0 ? 'PRODUCTEN' : 'BESTELLEN';
   if (s.status === 'BESTELD') return 'VERTROKKEN';
   if (s.status === 'ONDERWEG') return 'ONTVANGEN';
@@ -275,10 +275,16 @@ export function editNextStep(s: { status: PurchaseOrder['status']; lineCount: nu
 
 export interface StepConfirm { title: string; message: string; confirmLabel: string; tracking: boolean; dirtyNote: boolean }
 
-/** The question every next step asks first. */
-export function stepConfirm(step: PhoneStep, ctx: { number: string; planLabel: string; location: string; dirty: boolean; again: boolean }): StepConfirm {
-  const saves = step === 'BESTELLEN' || step === 'VERTROKKEN' || step === 'ONTVANGEN' || step === 'BIJBOEKEN';
-  const base = { tracking: step === 'VERTROKKEN', dirtyNote: ctx.dirty && saves };
+/**
+ * The steps this question asks about. Kostprijzen toepassen asks in its own
+ * sheet in the editor (PurchaseEditor.apply(), the cost price history round):
+ * every product's cost now and next.
+ */
+export type AskedStep = Exclude<PhoneStep, 'KOSTPRIJZEN'>;
+
+/** The question every next step asks first; each of them saves a draft that goes along. */
+export function stepConfirm(step: AskedStep, ctx: { number: string; planLabel: string; location: string; dirty: boolean }): StepConfirm {
+  const base = { tracking: step === 'VERTROKKEN', dirtyNote: ctx.dirty };
   switch (step) {
     case 'BESTELLEN':
       return { ...base, title: 'Bestellen?', confirmLabel: 'Ja, bestellen',
@@ -292,11 +298,6 @@ export function stepConfirm(step: PhoneStep, ctx: { number: string; planLabel: s
     case 'BIJBOEKEN':
       return { ...base, title: 'Voorraad bijboeken?', confirmLabel: 'Bijboeken',
         message: `Ontvangen min beschadigd gaat nu in de voorraad op ${ctx.location}.` };
-    default:
-      return { ...base, title: ctx.again ? 'Opnieuw kostprijzen toepassen?' : 'Kostprijzen toepassen?',
-        confirmLabel: ctx.again ? 'Opnieuw toepassen' : 'Toepassen',
-        message: 'De berekende kostprijs per stuk wordt op de producten in de catalogus gezet en overschrijft wat daar staat. '
-          + 'Alle marges op verkooporders rekenen vanaf dan met deze cijfers.' };
   }
 }
 
@@ -372,7 +373,7 @@ export function actionsMenu(s: ActionsMenuState): ContextMenuItem[] {
   }
   items.push(
     { id: 'apply', label: s.costsApplied ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
-      hint: 'Gelande kostprijs per stuk naar de producten', iconName: 'tag' },
+      hint: 'Gelande kostprijs per display of per stuk naar de producten', iconName: 'tag' },
     { id: 'quote', label: s.partner ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken', iconName: 'sales', disabled: !s.canQuote },
     { id: 'copy', label: 'Deze container kopiëren', iconName: 'copy' },
     { id: 'pdf', label: 'PDF downloaden', iconName: 'pdf' },

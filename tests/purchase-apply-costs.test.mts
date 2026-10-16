@@ -366,8 +366,15 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   for (const [name, text] of [['phone', editorSource], ['desk', desk]] as const) {
     assert.equal(text.match(/<app-purchase-apply-costs-sheet /g)?.length, 1, name);
     assert.match(text, /@if \(applyPlan\(\); as plan\) \{\s*<app-purchase-apply-costs-sheet \[plan\]="plan" \[orderId\]="data\.order\.id" \[busy\]="applyBusy\(\)"\s+\(confirm\)="confirmApply\(\)" \(cancel\)="closeApply\(\)" \/>/, name);
-    assert.equal(text.match(/\(click\)="apply\(\)"/g)?.length, 1, name);
   }
+  assert.equal(desk.match(/\(click\)="apply\(\)"/g)?.length, 1, 'desk');
+  /* The phone editor: Acties, the Nacalculatie and the read view's handed KOSTPRIJZEN step all open the sheet. */
+  assert.match(editorSource, /case 'apply': this\.apply\(\); break;/);
+  assert.match(editorSource, /\(applyCosts\)="apply\(\)"/);
+  assert.match(editorSource, /\n    void this\.apply\(\);\n    return true;\n  \}/);
+  assert.doesNotMatch(editorSource, /applyCostsNow|applyingCosts/, 'no apply without the sheet');
+  const phoneView = await readFile(new URL('../src/app/features/purchasing/purchase-view.ts', import.meta.url), 'utf8');
+  assert.match(phoneView, /if \(step === 'KOSTPRIJZEN'\) this\.handOff\(step, null\);/, 'the read view skips its own question');
   assert.doesNotMatch(editorSource, /ui\.confirm\(\s*\{\s*title: again/, 'the generic confirm is gone');
   assert.match(desk, /Zet de gelande kost per display of per stuk op de productkaarten\./);
 });

@@ -10,7 +10,7 @@ import {
   HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance, parseTab,
   paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
-  type ActionsMenuState, type PhoneStep, type PhoneTab, type StepHandoff,
+  type ActionsMenuState, type AskedStep, type PhoneTab, type StepHandoff,
 } from '../src/app/features/purchasing/purchase-phone-model.ts';
 
 /** The euro formatter writes a no-break space; the assertions read plain spaces. */
@@ -237,8 +237,8 @@ test('the editor offers the status road and the shelf; Kostprijzen stays under A
 });
 
 test('every step asks first, in exactly these words', () => {
-  const ctx = { number: 'PO-2026-047', planLabel: '30% bij bestelling · 70% bij vertrek', location: 'Magazijn Gent', dirty: false, again: false };
-  const ask = (step: PhoneStep, extra: Partial<typeof ctx> = {}) => seen(stepConfirm(step, { ...ctx, ...extra }));
+  const ctx = { number: 'PO-2026-047', planLabel: '30% bij bestelling · 70% bij vertrek', location: 'Magazijn Gent', dirty: false };
+  const ask = (step: AskedStep, extra: Partial<typeof ctx> = {}) => seen(stepConfirm(step, { ...ctx, ...extra }));
   assert.deepEqual(ask('BESTELLEN'), { title: 'Bestellen?', confirmLabel: 'Ja, bestellen', tracking: false, dirtyNote: false,
     message: 'PO-2026-047 gaat van Concept naar Besteld. Betalingen volgen vanaf nu het betaalplan: 30% bij bestelling · 70% bij vertrek.' });
   assert.deepEqual(ask('VERTROKKEN'), { title: 'Container vertrokken?', confirmLabel: 'Ja, vertrokken', tracking: true, dirtyNote: false,
@@ -247,11 +247,9 @@ test('every step asks first, in exactly these words', () => {
     message: 'Je telt eerst per product wat er echt in de container zat. Pas als je die telling bevestigt, gaat PO-2026-047 naar Ontvangen.' });
   assert.deepEqual(ask('BIJBOEKEN'), { title: 'Voorraad bijboeken?', confirmLabel: 'Bijboeken', tracking: false, dirtyNote: false,
     message: 'Ontvangen min beschadigd gaat nu in de voorraad op Magazijn Gent.' });
-  const costs = 'De berekende kostprijs per stuk wordt op de producten in de catalogus gezet en overschrijft wat daar staat. Alle marges op verkooporders rekenen vanaf dan met deze cijfers.';
-  assert.deepEqual(ask('KOSTPRIJZEN'), { title: 'Kostprijzen toepassen?', confirmLabel: 'Toepassen', tracking: false, dirtyNote: false, message: costs });
-  assert.deepEqual(ask('KOSTPRIJZEN', { again: true }), { title: 'Opnieuw kostprijzen toepassen?', confirmLabel: 'Opnieuw toepassen', tracking: false, dirtyNote: false, message: costs });
-  assert.deepEqual((['BESTELLEN', 'VERTROKKEN', 'ONTVANGEN', 'BIJBOEKEN', 'KOSTPRIJZEN'] as const).map((step) => ask(step, { dirty: true }).dirtyNote),
-    [true, true, true, true, false], 'the steps that save the draft say so');
+  // Kostprijzen toepassen asks in the cost history round's sheet in the editor, never here.
+  assert.deepEqual((['BESTELLEN', 'VERTROKKEN', 'ONTVANGEN', 'BIJBOEKEN'] as const).map((step) => ask(step, { dirty: true }).dirtyNote),
+    [true, true, true, true], 'the steps that save the draft say so');
 });
 
 test('a handoff is taken only for its order, within thirty seconds, and only once', async () => {
@@ -419,7 +417,7 @@ test('nothing the module can say uses "begroot"', async () => {
   assert.deepEqual(words.filter((word) => /begroot/i.test(word)), []);
   assert.ok(returned.length > 20);
   assert.doesNotMatch(JSON.stringify(returned), /begroot/i);
-  for (const step of Object.keys(STEP_BUTTON) as PhoneStep[]) {
-    assert.doesNotMatch(JSON.stringify(stepConfirm(step, { number: 'X', planLabel: 'Y', location: 'Z', dirty: true, again: true })), /begroot/i);
+  for (const step of ['BESTELLEN', 'VERTROKKEN', 'ONTVANGEN', 'BIJBOEKEN'] as const) {
+    assert.doesNotMatch(JSON.stringify(stepConfirm(step, { number: 'X', planLabel: 'Y', location: 'Z', dirty: true })), /begroot/i);
   }
 });

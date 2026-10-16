@@ -59,7 +59,7 @@ import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
 import {
   STEP_BUTTON, costsAppliedFor, costsSupersededFor, landedTile, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
-  replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type PhoneStep, type PhoneTab,
+  replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
 
@@ -1400,16 +1400,18 @@ export class PurchaseView {
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
       costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number) });
   });
-  readonly stepOpen = signal<PhoneStep | null>(null);
+  readonly stepOpen = signal<AskedStep | null>(null);
 
+  /** Kostprijzen toepassen skips this view's question: the editor opens its sheet with every product's cost now and next. */
   openStep(step: PhoneStep): void {
-    this.stepOpen.set(step);
+    if (step === 'KOSTPRIJZEN') this.handOff(step, null);
+    else this.stepOpen.set(step);
   }
 
-  stepText(step: PhoneStep) {
+  stepText(step: AskedStep) {
     const order = this.view()!.order;
     return stepConfirm(step, { number: order.number, planLabel: this.planLabel(), location: this.receivingLocationName(order.receivingLocationId),
-      dirty: false, again: this.costsApplied() });
+      dirty: false });
   }
 
   /**
@@ -1418,12 +1420,17 @@ export class PurchaseView {
    * reload never changes a status.
    */
   confirmStep(event: { tracking: string | null }): void {
-    const data = this.view();
     const step = this.stepOpen();
-    if (!data || !step) return;
-    const tab = this.activeTab();
-    this.stepHandoff.offer({ orderId: data.order.id, step, tracking: event.tracking, tab, at: Date.now() });
+    if (!step) return;
     this.stepOpen.set(null);
+    this.handOff(step, event.tracking);
+  }
+
+  private handOff(step: PhoneStep, tracking: string | null): void {
+    const data = this.view();
+    if (!data) return;
+    const tab = this.activeTab();
+    this.stepHandoff.offer({ orderId: data.order.id, step, tracking, tab, at: Date.now() });
     void this.routerNav.navigate(['/purchasing', data.order.id, 'edit'], { queryParams: { tab: tabParam(tab) }, replaceUrl: true });
   }
 }

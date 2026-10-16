@@ -248,7 +248,7 @@ test('a deep link and a tab change in one navigation: the deep link\'s card stay
 /* ---- PurchaseEditor.runStep and stepFlowBusy ----------------------------- */
 
 const editorSource = await readFile(new URL('../src/app/features/purchasing/purchase-editor.ts', import.meta.url), 'utf8');
-const editorJs = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['runStep', 'stepFlowBusy', 'applyCostsNow', 'applyingCosts']));
+const editorJs = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['runStep', 'stepFlowBusy']));
 
 function editorHarness(order: Record<string, unknown>, nextTo: string | null, dirty = false) {
   const calls: unknown[][] = [];
@@ -266,11 +266,9 @@ function editorHarness(order: Record<string, unknown>, nextTo: string | null, di
     save: async () => { calls.push(['save']); return { order: {} }; },
     saving: signal(false), booking: signal(false), receiving: signal(null), orderPlaced: signal(false), statusCelebration: signal(null),
     firstInstalmentPrompt: signal(null), paying: signal(null), payingBusy: signal(false),
-    sourcing: { applyLandedCosts: async (id: number) => calls.push(['apply', id]) },
-    catalog: { products: async (supplier: number) => { calls.push(['products', supplier]); return []; } },
-    products: { set: () => calls.push(['products set']) },
-    reloadOrderQuietly: async () => calls.push(['reload']),
-    ui: { toast: (text: string, kind?: string) => calls.push(['toast', text, kind]) },
+    applyFor: signal<number | null>(null), applyBusy: signal(false),
+    // The cost history round's apply(): it opens the Kostprijzen toepassen sheet for this order at once.
+    apply: async () => { calls.push(['apply sheet']); editor.applyFor.set(50); },
   });
   return { editor, calls };
 }
@@ -303,7 +301,7 @@ test('a step the container has passed returns false and calls nothing', () => {
   }
 });
 
-test('Bijboeken needs an unbooked receipt and saves a dirty draft first; Kostprijzen applies without asking again', async () => {
+test('Bijboeken needs an unbooked receipt and saves a dirty draft first; Kostprijzen opens the apply sheet', async () => {
   for (const stockBooked of [null, true]) {
     const state = editorHarness({ status: 'ONTVANGEN', stockBooked }, null);
     assert.equal(state.editor.runStep('BIJBOEKEN', null), false, String(stockBooked));
@@ -318,29 +316,18 @@ test('Bijboeken needs an unbooked receipt and saves a dirty draft first; Kostpri
   assert.deepEqual(dirty.calls, [['save'], ['book']]);
   const costs = editorHarness({ status: 'ONTVANGEN', stockBooked: true }, null);
   assert.equal(costs.editor.runStep('KOSTPRIJZEN', null), true);
-  assert.equal(costs.editor.stepFlowBusy(), true, 'busy at once, so the screen waits');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(costs.calls, [['apply', 50], ['products', 7], ['products set'], ['reload'], ['toast', 'Kostprijzen bijgewerkt in de catalogus', undefined]]);
+  assert.deepEqual(costs.calls, [['apply sheet']], 'the sheet asks; nothing is applied yet');
+  assert.equal(costs.editor.stepFlowBusy(), true, 'busy while the sheet is open, so the screen waits');
+  costs.editor.applyBusy.set(true); costs.editor.applyFor.set(null);
+  assert.equal(costs.editor.stepFlowBusy(), true, 'and while it applies');
+  costs.editor.applyBusy.set(false);
   assert.equal(costs.editor.stepFlowBusy(), false);
-});
-
-test('applying the costs twice at once runs once; a failure says so and frees the step', async () => {
-  const state = editorHarness({ status: 'ONTVANGEN' }, null);
-  const first = state.editor.applyCostsNow();
-  const second = state.editor.applyCostsNow();
-  await Promise.all([first, second]);
-  assert.equal(state.calls.filter((call) => call[0] === 'apply').length, 1);
-  const failing = editorHarness({ status: 'ONTVANGEN' }, null);
-  failing.editor.sourcing = { applyLandedCosts: async () => { throw new Error('Geen verbinding'); } };
-  await failing.editor.applyCostsNow();
-  assert.deepEqual(failing.calls, [['toast', 'Geen verbinding', 'err']]);
-  assert.equal(failing.editor.applyingCosts(), false);
 });
 
 test('stepFlowBusy follows every save, sheet, celebration and payment of a step', () => {
   const { editor } = editorHarness({ status: 'BESTELD' }, 'ONDERWEG');
   assert.equal(editor.stepFlowBusy(), false);
-  const flags: [string, unknown][] = [['saving', true], ['booking', true], ['applyingCosts', true], ['receiving', {}], ['orderPlaced', true],
+  const flags: [string, unknown][] = [['saving', true], ['booking', true], ['applyFor', 50], ['applyBusy', true], ['receiving', {}], ['orderPlaced', true],
     ['statusCelebration', 'SHIPPED'], ['firstInstalmentPrompt', {}], ['paying', {}], ['payingBusy', true]];
   for (const [name, value] of flags) {
     const before = editor[name]();

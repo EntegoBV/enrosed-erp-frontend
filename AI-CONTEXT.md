@@ -1300,9 +1300,9 @@ and on copies. Without the blocks (older backend) every screen is as before.
   Documenten & media, Ontvangstanalyse. Dock: Bewerken + the next step.
 - Next step, always confirmed (`app-purchase-step-confirm-sheet`,
   `stepConfirm` texts: Bestellen? / Container vertrokken? (track & trace
-  field) / Container ontvangen? (Ontvangst tellen) / Voorraad bijboeken? /
-  (Opnieuw) Kostprijzen toepassen?; 'Je openstaande wijzigingen worden mee
-  opgeslagen.' when a draft goes along). On the read view the confirm offers
+  field) / Container ontvangen? (Ontvangst tellen) / Voorraad bijboeken?;
+  'Je openstaande wijzigingen worden mee opgeslagen.' when a draft goes
+  along). On the read view the confirm offers
   a `StepHandoff` to `PurchaseStepHandoff` (memory only, 30 s, never the
   URL: a link or reload changes no status) and opens the editor on the same
   tab; `PurchaseScreen.runHandedStep` runs it there once the payments are in
@@ -1313,11 +1313,14 @@ and on copies. Without the blocks (older backend) every screen is as before.
   keep the editor. The editor counts as `handedFromView` as soon as a
   handoff waits for it (back then leads to the view, even while loading);
   an edit screen that goes away before its editor took the step discards
-  it, so a later editor never runs it unasked. KOSTPRIJZEN runs `applyCostsNow` (apply()'s work, its
-  question asked by the sheet); `readNextStep` skips it when a newer
-  container's costs sit on the products. Merge rule with the cost-history
-  apply sheet: whichever lands second makes the KOSTPRIJZEN step open that
-  sheet in the editor and drops `applyCostsNow` and its `stepConfirm` row.
+  it, so a later editor never runs it unasked. KOSTPRIJZEN asks nothing on
+  the view (`AskedStep` leaves it out of `stepConfirm`): the view hands it
+  over at once and `runStep` calls `apply()`, which opens the cost-history
+  round's `app-purchase-apply-costs-sheet` (every product's cost now and
+  next); `stepFlowBusy` covers that sheet (`applyFor`, `applyBusy`), so the
+  screen returns to the view once it closes (merge rule, release
+  2026-10-16; `applyCostsNow` is gone). `readNextStep` skips it when a newer
+  container's costs sit on the products.
 - Editor: header 'Container bewerken' + pill + tiles Lading (fill %, the
   pieces below) and Totaal geland, 'Acties ⌄' (next status, Voorraad bijboeken, Kostprijzen (opnieuw)
   toepassen, offer/advance invoices, copy, PDF, Status terugzetten… on
@@ -1332,7 +1335,7 @@ and on copies. Without the blocks (older backend) every screen is as before.
   phone and in the desk's Afronden tab only, never on the read view.
 - Known limit: the Nacalculatie component still says 'Kostprijzen toepassen
   bij Afronden ›' (the desk keeps its Afronden tab); on the phone it opens
-  the confirmation. Tests: purchase-phone-model, purchase-phone-step,
+  the apply sheet. Tests: purchase-phone-model, purchase-phone-step,
   purchase-phone-templates.
 
 ### Products
