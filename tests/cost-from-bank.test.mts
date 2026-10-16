@@ -253,7 +253,19 @@ test("no 'Ook als bankbeweging noteren' in the payment sheets: a picked transact
   assert.match(state, /label: 'Op de bank noteren'/, "a newly paid cost still offers the movement form");
 });
 
-const Pay = await selectedClass('../src/app/features/finance/pay-sheet.ts', 'PaySheet', ['costs', 'single', 'selectedBank', 'pendingLine'], {});
+const Pay = await selectedClass('../src/app/features/finance/pay-sheet.ts', 'PaySheet', ['costs', 'single', 'selectedBank', 'pendingLine', 'choices'], {});
+test("'Betaald op' on a phone says 'Andere' (its four segments cut 'Andere datum'); the desk keeps 'Andere datum'", () => {
+  /** Values made inside the vm context compare by their JSON. */
+  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+  const state = { paySheet: signal<any>({ costs: [{ id: 21, date: '2026-10-01' }] }), bankCostLinkPending: signal<any>(null), desk: signal(false) };
+  Pay.prototype.state = state;
+  assert.deepEqual(clone(new Pay().choices()).map((option: any) => [option.label, option.ariaLabel ?? null]),
+    [['Vandaag', null], ['Gisteren', null], ['Kostdatum', null], ['Andere', 'Andere datum']]);
+  state.desk.set(true);
+  assert.deepEqual(clone(new Pay().choices()).at(-1), { id: 'other', label: 'Andere datum', shortLabel: 'Andere' });
+  state.paySheet.set({ costs: [{ id: 21, date: '2026-10-01' }, { id: 22, date: '2026-10-02' }] });
+  assert.deepEqual(clone(new Pay().choices()).map((option: any) => option.id), ['today', 'yesterday', 'other'], 'Kostdatum only for one shared date');
+});
 test('the pay sheet opens for a selection; only a link pending for its one cost starts on that transaction', () => {
   const state = { paySheet: signal<any>({ costs: [{ id: 21 }, { id: 11 }] }), bankCostLinkPending: signal<any>(null) };
   Pay.prototype.state = state;

@@ -26,6 +26,8 @@
     .fin-sheet { --ios-inset: 0px; padding: 0 16px; }
     .fin-form, .fin-field-row { grid-template-columns: minmax(0, 1fr); }
     .fin-sheet .input, .fin-sheet .select, .fin-sheet .textarea { min-height: 44px; font-size: 16px; }
+    /* 'Betaald op': four segments at 390 px; a little less padding keeps 'Kostdatum' whole (as the Kasprognose defaults do) */
+    .fin-paid-seg .ios-seg__opt { padding: 0 4px; font-size: 12.5px; }
     .fin-choice__chip, .fin-inline-btn, .fin-sign { min-height: 44px; font-size: 15px; }
     .fin-history { margin: 0; }
     .fin-foot-note { flex-basis: 100%; text-align: center; }

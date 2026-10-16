@@ -51,7 +51,7 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
         }
         <div class="fin-group" [class.ios-group]="!state.desk()">
           <div class="fin-field fin-field--stack"><span>Betaald op</span>
-            <app-segmented [variant]="state.desk() ? 'desk' : 'ios'" label="Betaald op" [options]="choices()" [value]="choice()" (changed)="choice.set($any($event))" />
+            <app-segmented class="fin-paid-seg" [variant]="state.desk() ? 'desk' : 'ios'" label="Betaald op" [options]="choices()" [value]="choice()" (changed)="choice.set($any($event))" />
             @if (choice() === 'other') { <app-date-field fieldId="pay-day" [value]="otherDay()" (valueChange)="otherDay.set($event)" /> }
             <span class="fin-hint">{{ paidLabel() }}</span>
           </div>
@@ -87,11 +87,16 @@ export class PaySheet {
     return pending && single && pending.costId === single.id ? pending.line : null;
   }
 
-  /** 'Kostdatum' only when the costs share one date. */
+  /**
+   * 'Kostdatum' only when the costs share one date. A phone's four segments
+   * at 390 px cut 'Andere datum' to 'Andere …': there it says 'Andere' (the
+   * screen reader still hears 'Andere datum'; the chosen day stands under it).
+   */
   readonly choices = computed<SegmentOption[]>(() => {
     const dates = new Set(this.costs().map((cost) => cost.date));
     return [{ id: 'today', label: 'Vandaag' }, { id: 'yesterday', label: 'Gisteren' },
-      ...(dates.size === 1 ? [{ id: 'cost', label: 'Kostdatum' }] : []), { id: 'other', label: 'Andere datum', shortLabel: 'Andere' }];
+      ...(dates.size === 1 ? [{ id: 'cost', label: 'Kostdatum' }] : []),
+      this.state.desk() ? { id: 'other', label: 'Andere datum', shortLabel: 'Andere' } : { id: 'other', label: 'Andere', ariaLabel: 'Andere datum' }];
   });
   readonly paidOn = computed(() => {
     const today = this.state.today();
