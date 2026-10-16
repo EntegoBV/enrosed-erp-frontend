@@ -3,11 +3,13 @@
    the Agenda card. The figure blocks live in home-widgets.
 
    Media queries only: no container query may sit above the planner sheets,
-   the bell or a menu (the kit's trap rule). Row 1 from 1280 px is Te doen
-   beside a 432 px column of Kas, Verkoop, Resultaat and Inkoop, one above
-   the other (at half of 432 px Verkoop's four figures were cramped and
-   Resultaat stretched into an empty card); below it Te doen runs full width
-   over a 2-column grid with Verkoop and Resultaat side by side. The
+   the bell or a menu (the kit's trap rule). From 1280 px the top is two
+   columns that each stack their own cards: Te doen with Resultaat and Inkoop
+   under it (side by side when they fit), and a 432 px column of Kas and
+   Verkoop - so a short Te doen leaves no hole beside a long column (it did
+   with all four figure blocks on the right). Below 1280 px the wrappers are
+   display: contents and one grid orders the cards: Te doen and Kas full
+   width, Verkoop beside Resultaat, Inkoop full width. The
    Agenda's seven days are columns from 1000 px and stacked rows below.
    Titles and contexts of the
    task rows and the agenda chips may cut by design (their full text is in
@@ -36,9 +38,15 @@ app-home-desk-agenda { display: block; }
 .home-desk__status button { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 750; text-decoration: underline; cursor: pointer; }
 
 /* ---- layout */
-.home-desk__top { display: grid; align-items: start; gap: 16px; }
-.home-desk__figs, .home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.home-desk__figs .home-w--kas, .home-desk__figs .home-w--inkoop { grid-column: 1 / -1; }
+.home-desk__top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'todo todo' 'kas kas' 'verkoop resultaat' 'inkoop inkoop';
+  align-items: start; gap: 16px; }
+.home-desk__main, .home-desk__under, .home-desk__figs { display: contents; }
+.home-desk__top .home-todo { grid-area: todo; }
+.home-desk__top .home-w--kas { grid-area: kas; }
+.home-desk__top .home-w--verkoop { grid-area: verkoop; }
+.home-desk__top .home-w--resultaat { grid-area: resultaat; }
+.home-desk__top .home-w--inkoop { grid-area: inkoop; }
+.home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-desk__more > app-dashboard-search-console { grid-column: auto; }
 .home-desk__more .search-summary { height: 100%; border-radius: 16px; }
 .home-desk__placeholder { min-height: 180px; }
@@ -47,8 +55,10 @@ app-home-desk-agenda { display: block; }
 .home-desk__more-head .wk-link { font-size: 13px; white-space: nowrap; }
 @media (min-width: 1280px) {
   .home-desk__lead { flex-basis: 440px; }
-  .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; }
-  .home-desk__figs { grid-template-columns: minmax(0, 1fr); }
+  .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; grid-template-areas: none; }
+  .home-desk__top :is(.home-todo, .home-w--kas, .home-w--verkoop, .home-w--resultaat, .home-w--inkoop) { grid-area: auto; }
+  .home-desk__main, .home-desk__figs { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 16px; min-width: 0; }
+  .home-desk__under { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; gap: 16px; }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 

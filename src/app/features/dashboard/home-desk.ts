@@ -107,77 +107,84 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
       </header>
 
       <div class="home-desk__top">
-        <section class="wk-card home-todo" aria-labelledby="home-todo-title" [attr.aria-busy]="data.loading() || null">
-          <header class="home-todo__head">
-            <h2 id="home-todo-title" class="home-desk__card-title">Vandaag te doen</h2>
-            @if (!data.loading()) { <span class="wk-pill home-todo__count" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
-            <span #whyAnchor class="wk-popover-anchor home-todo__why">
-              <button class="wk-link" type="button" aria-haspopup="dialog" [attr.aria-expanded]="whyOpen()" (click)="whyOpen.set(!whyOpen())">
-                <app-icon name="info" [size]="14" /> Waarom deze volgorde</button>
-              @if (whyOpen()) {
-                <div class="wk-popover home-why" role="dialog" aria-label="Waarom deze volgorde">
-                  <ng-container [ngTemplateOutlet]="whyText" />
+        <!-- Two columns from 1280 px that each stack their own cards, so a short Te doen leaves no hole under it
+             (Emre, 2026-10-16: "gigantische white space"): Te doen with Resultaat and Inkoop under it, the bank and
+             Verkoop beside it. Below 1280 px the wrappers step aside (display: contents) and the grid orders the cards. -->
+        <div class="home-desk__main">
+          <section class="wk-card home-todo" aria-labelledby="home-todo-title" [attr.aria-busy]="data.loading() || null">
+            <header class="home-todo__head">
+              <h2 id="home-todo-title" class="home-desk__card-title">Vandaag te doen</h2>
+              @if (!data.loading()) { <span class="wk-pill home-todo__count" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
+              <span #whyAnchor class="wk-popover-anchor home-todo__why">
+                <button class="wk-link" type="button" aria-haspopup="dialog" [attr.aria-expanded]="whyOpen()" (click)="whyOpen.set(!whyOpen())">
+                  <app-icon name="info" [size]="14" /> Waarom deze volgorde</button>
+                @if (whyOpen()) {
+                  <div class="wk-popover home-why" role="dialog" aria-label="Waarom deze volgorde">
+                    <ng-container [ngTemplateOutlet]="whyText" />
+                  </div>
+                }
+              </span>
+            </header>
+
+            @if (data.loading()) {
+              <div class="home-todo__loading" aria-label="Te doen laden"><app-skeleton kind="card" [rows]="4" /></div>
+            } @else if (t.count === 0) {
+              @if (t.allClear) {
+                <div class="home-todo__clear">
+                  <span class="home-todo__tick" aria-hidden="true"><app-icon name="tick" [size]="18" /></span>
+                  <b>Niets dringends</b>
+                  <span>Geen klantvragen, termijnen of taken die vandaag moeten.</span>
+                </div>
+              } @else if (!data.settled()) {
+                <div class="home-todo__clear is-open">
+                  <span class="home-todo__tick" aria-hidden="true">…</span>
+                  <b>Nog niet alles geladen</b>
+                  <span>Bijwerken…</span>
+                </div>
+              } @else {
+                <div class="home-todo__clear is-open">
+                  <span class="home-todo__tick" aria-hidden="true">!</span>
+                  <b>Nog niet alles nagekeken</b>
+                  <span>Niet geladen: {{ t.missing.join(', ') }} ·
+                    <button class="wk-link" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
                 </div>
               }
-            </span>
-          </header>
-
-          @if (data.loading()) {
-            <div class="home-todo__loading" aria-label="Te doen laden"><app-skeleton kind="card" [rows]="4" /></div>
-          } @else if (t.count === 0) {
-            @if (t.allClear) {
-              <div class="home-todo__clear">
-                <span class="home-todo__tick" aria-hidden="true"><app-icon name="tick" [size]="18" /></span>
-                <b>Niets dringends</b>
-                <span>Geen klantvragen, termijnen of taken die vandaag moeten.</span>
-              </div>
-            } @else if (!data.settled()) {
-              <div class="home-todo__clear is-open">
-                <span class="home-todo__tick" aria-hidden="true">…</span>
-                <b>Nog niet alles geladen</b>
-                <span>Bijwerken…</span>
-              </div>
             } @else {
-              <div class="home-todo__clear is-open">
-                <span class="home-todo__tick" aria-hidden="true">!</span>
-                <b>Nog niet alles nagekeken</b>
-                <span>Niet geladen: {{ t.missing.join(', ') }} ·
-                  <button class="wk-link" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
-              </div>
+              @if (nu().length) {
+                <h3 class="home-todo__group"><b class="is-nu">Nu</b> · geld of een termijn loopt vandaag uit</h3>
+                <ul class="home-tasks">
+                  @for (task of nu(); track task.key) { <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: task, sheet: false }" /> }
+                </ul>
+              }
+              @if (vandaag().length) {
+                <h3 class="home-todo__group"><b class="is-vandaag">Vandaag</b> · iemand wacht, of een termijn binnen {{ vatDays }} dagen</h3>
+                <ul class="home-tasks">
+                  @for (task of vandaag(); track task.key) { <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: task, sheet: false }" /> }
+                </ul>
+              }
+              @if (data.settled() && !t.complete) {
+                <p class="home-todo__note" role="status">Niet volledig: {{ t.missing.join(', ') }} ·
+                  <button class="wk-link" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></p>
+              }
             }
-          } @else {
-            @if (nu().length) {
-              <h3 class="home-todo__group"><b class="is-nu">Nu</b> · geld of een termijn loopt vandaag uit</h3>
-              <ul class="home-tasks">
-                @for (task of nu(); track task.key) { <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: task, sheet: false }" /> }
-              </ul>
-            }
-            @if (vandaag().length) {
-              <h3 class="home-todo__group"><b class="is-vandaag">Vandaag</b> · iemand wacht, of een termijn binnen {{ vatDays }} dagen</h3>
-              <ul class="home-tasks">
-                @for (task of vandaag(); track task.key) { <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: task, sheet: false }" /> }
-              </ul>
-            }
-            @if (data.settled() && !t.complete) {
-              <p class="home-todo__note" role="status">Niet volledig: {{ t.missing.join(', ') }} ·
-                <button class="wk-link" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></p>
-            }
-          }
 
-          @if (!data.loading() && t.total > t.top.length) {
-            <footer class="home-todo__foot">
-              <b>{{ others() }} {{ others() === 1 ? 'ander open punt' : 'andere open punten' }}</b>
-              <span [title]="othersTitles()">{{ othersTitles() }}</span>
-              <button class="wk-link home-todo__all" type="button" (click)="openAll()">Alle {{ t.total }} ›</button>
-            </footer>
-          }
-        </section>
+            @if (!data.loading() && t.total > t.top.length) {
+              <footer class="home-todo__foot">
+                <b>{{ others() }} {{ others() === 1 ? 'ander open punt' : 'andere open punten' }}</b>
+                <span [title]="othersTitles()">{{ othersTitles() }}</span>
+                <button class="wk-link home-todo__all" type="button" (click)="openAll()">Alle {{ t.total }} ›</button>
+              </footer>
+            }
+          </section>
+          <div class="home-desk__under">
+            <app-home-resultaat variant="desk" />
+            <app-home-inkoop variant="desk" />
+          </div>
+        </div>
 
         <div class="home-desk__figs">
           <app-home-kas variant="desk" />
           <app-home-verkoop variant="desk" />
-          <app-home-resultaat variant="desk" />
-          <app-home-inkoop variant="desk" />
         </div>
       </div>
 
