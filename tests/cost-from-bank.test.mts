@@ -252,3 +252,16 @@ test("no 'Ook als bankbeweging noteren' in the payment sheets: a picked transact
   assert.equal(/bankAccountKey|rememberPayToBank|payLine\(/.test(state), false, 'the state notes no bank line for a payment any more');
   assert.match(state, /label: 'Op de bank noteren'/, "a newly paid cost still offers the movement form");
 });
+
+const Pay = await selectedClass('../src/app/features/finance/pay-sheet.ts', 'PaySheet', ['costs', 'single', 'selectedBank', 'pendingLine'], {});
+test('the pay sheet opens for a selection; only a link pending for its one cost starts on that transaction', () => {
+  const state = { paySheet: signal<any>({ costs: [{ id: 21 }, { id: 11 }] }), bankCostLinkPending: signal<any>(null) };
+  Pay.prototype.state = state;
+  assert.equal(new Pay().selectedBank(), null, 'two costs, nothing pending: it used to throw before the sheet showed');
+  state.bankCostLinkPending.set({ costId: 21, line: bank });
+  assert.equal(new Pay().selectedBank(), null, 'a selection never starts on a transaction');
+  state.paySheet.set({ costs: [{ id: 21 }] });
+  assert.equal(new Pay().selectedBank(), bank);
+  state.bankCostLinkPending.set({ costId: 11, line: bank });
+  assert.equal(new Pay().selectedBank(), null);
+});

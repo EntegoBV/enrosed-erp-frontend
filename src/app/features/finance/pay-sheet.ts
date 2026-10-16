@@ -79,7 +79,13 @@ export class PaySheet {
   /** The field starts on the remainder and is not rebound while typing. */
   readonly initialAmount = Math.abs(this.open());
   readonly amount = signal(this.open());
-  readonly selectedBank = signal<BankStatementLine | null>(this.state.bankCostLinkPending()?.costId === this.single()?.id ? this.state.bankCostLinkPending()!.line : null);
+  /** A link still pending for this one cost starts on its transaction; a selection (no single cost) or nothing pending starts empty. */
+  readonly selectedBank = signal<BankStatementLine | null>(this.pendingLine());
+
+  private pendingLine(): BankStatementLine | null {
+    const pending = this.state.bankCostLinkPending(), single = this.single();
+    return pending && single && pending.costId === single.id ? pending.line : null;
+  }
 
   /** 'Kostdatum' only when the costs share one date. */
   readonly choices = computed<SegmentOption[]>(() => {
