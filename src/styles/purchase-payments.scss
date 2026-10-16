@@ -278,6 +278,8 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .pay-sheet__alsofields{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;flex:0 1 auto;min-width:0;max-width:100%}
 .pay-sheet__alsochoice{width:auto;min-width:0;max-width:100%;min-height:36px}
 .pay-sheet__alsoamount{flex:0 0 170px}
+/* the share's own row: as wide as 'Weghalen', so its amount stands in the others' column */
+.pay-sheet__alsospacer{visibility:hidden;pointer-events:none}
 .pay-sheet__alsowarn{color:var(--warn);font-weight:650}
 .pay-sheet .pay-sheet__alsoadd{justify-self:start;width:auto;flex:0 1 300px;min-width:0;max-width:100%}
 .pay-sheet__line--share{display:block}

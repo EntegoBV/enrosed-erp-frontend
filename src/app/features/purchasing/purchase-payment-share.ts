@@ -106,7 +106,17 @@ export function shareNewPart(orderId: number, write: PurchasePaymentWrite): Bank
     label: write.label ?? null, settles: !!write.settles, invoiceId: write.invoiceId ?? null, inspectionViaSupplier: write.inspectionViaSupplier ?? null };
 }
 
-/** 'Verdeeld over 3 containers: PO-2026-038 € 3.801,13 · PO-2026-039 € 3.801,13 · PO-2026-040 € 3.801,12'. */
+/**
+ * A container name that never breaks at its hyphens (a word joiner after
+ * each: 'PO-2026-' / '038' read as two things in a toast). Invisible; the
+ * same rule as alsoNotice's (purchase-also-containers): keep the two in step.
+ */
+export const unbrokenName = (name: string): string => name.replace(/-/g, '-\u2060');
+
+/**
+ * 'Verdeeld over 3 containers: PO-2026-038 € 3.801,13 · PO-2026-039 € 3.801,13 · PO-2026-040 € 3.801,12'.
+ * Each name keeps its amount on its line (no break inside the name, a no-break space before the euro).
+ */
 export function shareToast(rows: readonly { name: string; amountEur: number }[]): string {
-  return `Verdeeld over ${rows.length} ${rows.length === 1 ? 'container' : 'containers'}: ${rows.map((row) => `${row.name} ${eur(cents(row.amountEur) / 100)}`).join(' · ')}`;
+  return `Verdeeld over ${rows.length} ${rows.length === 1 ? 'container' : 'containers'}: ${rows.map((row) => `${unbrokenName(row.name)}\u00a0${eur(cents(row.amountEur) / 100)}`).join(' · ')}`;
 }

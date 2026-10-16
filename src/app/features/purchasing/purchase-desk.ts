@@ -1086,7 +1086,7 @@ type DeskRow =
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
           [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
           [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()" [termStanding]="payingTermStanding()"
-          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" [orderName]="containerName(data.order)" [lineShares]="payingLineShares()"
+          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" [orderName]="containerName(data.order)" [orderNumber]="data.order.number" [lineShares]="payingLineShares()"
           (alsoLoad)="loadAlso(data.order.id, data.order.supplierId ?? null, pay.payee)"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"

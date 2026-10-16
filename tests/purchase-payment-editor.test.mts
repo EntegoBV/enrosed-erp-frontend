@@ -79,7 +79,7 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 /** Intl writes '€' and the figure with a no-break space; the assertions read plain spaces. */
-const plain = (text: string | null | undefined): string | null | undefined => text?.replace(/\u00a0/g, ' ');
+const plain = (text: string | null | undefined): string | null | undefined => text?.replace(/\u00a0/g, ' ').replace(/\u2060/g, '');
 function order(id = 50) { return { id, number: `PO-${id}`, paymentTerms: 'THIRDS', alias: 'Container', notes: '', lines: [] }; }
 function payment() { return { id: 80, orderId: 50, amount: 1046.95, amountEur: 1046.95, currency: 'EUR', paidOn: '2026-09-13',
   label: 'Douane en transport', payee: 'LOGISTICS', instalmentDue: null, settles: false }; }
@@ -1121,6 +1121,45 @@ test('a server without purchase-share says so; a refusal keeps the share open an
   const draft = refused.editor.paying();
   assert.deepEqual([draft.bankLinkError, draft.surplus, draft.alsoParts.map((part: any) => part.orderId)], [reason, 'SHARE', [40]]);
   assert.deepEqual(refused.toasts.at(-1), [reason, 'err']);
+});
+
+test('the containers load with their payments or not at all: a failed payment list never hides an open payment behind a new one', async () => {
+  const { editor, toasts } = shareSetup();
+  const views = [39, 40].map(id => ({ order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null },
+    reconciliation: { streams: [{ payee: 'SUPPLIER', label: 'Leverancier', status: 'OPEN', plannedEur: 10234, paidEur: 0, remainingEur: 10234, finalized: false }],
+      supplierInstalments: [{ due: 'ORDERED', label: '30% bij bestelling', plannedEur: 3070.2, paidEur: id === 39 ? 3070.2 : 0, remainingEur: id === 39 ? 0 : 3070.2, finalized: false }] } }));
+  const noted = [{ id: 392, orderId: 39, orderNumber: 'PO-2026-039', orderAlias: null, paidOn: '2026-09-25', amountEur: 3070.2, amount: 3070.2, currency: 'EUR', payee: 'SUPPLIER',
+    bankStatementLineId: null, instalmentDue: 'ORDERED', creditOffset: false, label: '30% bij bestelling' }];
+  Object.assign(editor, { cashApi: { settings: async () => ({}) } });
+  Object.assign(editor.sourcing, { purchaseOrders: async () => views, suppliers: async () => [],
+    purchasePayments: async () => { throw Object.assign(new Error('De server antwoordt niet'), { status: 504 }); } });
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed, editor.alsoState().options.length, editor.alsoFor], [true, 0, null], 'not PO-040 alone with PO-039 as a new payment');
+  assert.deepEqual(toasts.at(-1), ['De server antwoordt niet', 'err']);
+  // 'Opnieuw laden': the list answers now, PO-039 comes with its noted payment.
+  editor.sourcing.purchasePayments = async () => noted;
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed ?? false, editor.alsoState().options.map((option: any) => [option.orderId, option.openPayments.map((item: any) => item.id)])],
+    [false, [[39, [392]], [40, []]]]);
+  // A server without the list (404, no reason of its own): the open terms alone, as before the round.
+  editor.alsoFor = null;
+  editor.sourcing.purchasePayments = async () => { throw { status: 404, error: null }; };
+  await editor.loadAlso(50, 8, 'SUPPLIER');
+  assert.deepEqual([editor.alsoState().failed ?? false, editor.alsoState().options.map((option: any) => option.orderId)], [false, [40]]);
+});
+
+test('a refused share while the containers cannot load keeps its rows as they were (the server checks each payment again)', async () => {
+  const { editor, share, others } = shareSetup();
+  const reason = 'De betaling van PO-2026-039 is intussen gewijzigd; vernieuw en probeer opnieuw';
+  editor.banking.sharePurchasePayment = async () => { throw Object.assign(new Error(reason), { status: 409, error: { message: reason } }); };
+  Object.assign(editor, { cashApi: { settings: async () => ({}) } });
+  Object.assign(editor.sourcing, { purchaseOrders: async () => [], suppliers: async () => [],
+    purchasePayments: async () => { throw Object.assign(new Error('De server antwoordt niet'), { status: 503 }); } });
+  share();
+  await editor.confirmPayment();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual([editor.paying().bankLinkError, editor.alsoState().failed, editor.paying().alsoParts.map((part: any) => [part.orderId, part.paymentId])],
+    [reason, true, others.map(part => [part.orderId, part.paymentId])]);
 });
 
 test('a new transfer whose other container has an open payment links it in one purchase-share call, never a second payment', async () => {

@@ -1512,7 +1512,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           [roundOnServer]="roundOnServer()" [invoices]="data.invoices ?? []" [viaSupplier]="!!data.order.inspectionViaSupplier" [orderPayments]="payments() ?? []"
           [parts]="payingParts()" [proofFiles]="payingProofFiles()" [bankLines]="bankLines() ?? []" [invoiceFiles]="payingInvoiceFiles()"
           [inspectionOffered]="payingInspectionOffered()" [payeePaymentCount]="payingPayeeCount()" [termStanding]="payingTermStanding()"
-          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" [orderName]="containerName(data.order)" [lineShares]="payingLineShares()"
+          [alsoState]="alsoState()" [supplierId]="data.order.supplierId ?? null" [orderName]="containerName(data.order)" [orderNumber]="data.order.number" [lineShares]="payingLineShares()"
           (alsoLoad)="loadAlso(data.order.id, data.order.supplierId ?? null, pay.payee)"
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
@@ -2296,7 +2296,8 @@ export class PurchaseEditor {
 
   /* ---- "Deze transactie dekt ook andere containers" (owner addition 2026-10-15): the other containers of the transfer */
   private readonly cashApi = inject(CashForecastApi);
-  readonly alsoState = signal<{ loading: boolean; supported: boolean; options: AlsoContainerOption[] }>({ loading: false, supported: true, options: [] });
+  /** `failed`: the containers or their payments did not load; the sheet says so and offers to load again (never an empty list that hides an open payment). */
+  readonly alsoState = signal<{ loading: boolean; supported: boolean; options: AlsoContainerOption[]; failed?: boolean }>({ loading: false, supported: true, options: [] });
   private alsoFor: string | null = null;
   /**
    * Once per order screen and payee: the containers with an open amount or an
@@ -2310,9 +2311,10 @@ export class PurchaseEditor {
     this.alsoFor = key;
     this.alsoState.set({ loading: true, supported: true, options: [] });
     try {
-      // The payments are what links an open one instead of a second; an older server without the list still offers the open terms.
+      // The payments are what links an open one instead of a second: a failed list fails the load (toast, retry by opening again), so an
+      // open payment is never hidden behind 'Nieuw'. Only a server without the list (404/405, no reason of its own) offers the open terms alone.
       const [settings, views, suppliers, rows] = await Promise.all([this.cashApi.settings(), this.sourcing.purchaseOrders(), this.sourcing.suppliers(),
-        this.sourcing.purchasePayments().catch(() => [] as PurchasePaymentRow[])]);
+        this.sourcing.purchasePayments().catch((failure: unknown) => { if (this.shareMissing(failure)) return [] as PurchasePaymentRow[]; throw failure; })]);
       if (this.alsoFor !== key) return;
       this.paymentRows.set({ orderId, rows });
       const names = new Map(suppliers.filter(row => row.id != null).map(row => [row.id!, row.name]));
@@ -2323,7 +2325,7 @@ export class PurchaseEditor {
     } catch (failure: unknown) {
       if (this.alsoFor !== key) return;
       this.alsoFor = null;
-      this.alsoState.set({ loading: false, supported: true, options: [] });
+      this.alsoState.set({ loading: false, supported: true, options: [], failed: true });
       this.ui.toast(messageOf(failure, 'Containers laden mislukt'), 'err');
     }
   }
@@ -2353,7 +2355,8 @@ export class PurchaseEditor {
     this.alsoFor = null;
     await this.loadAlso(orderId, supplierId, payee);
     const pay = this.paying();
-    if (!pay || this.view()?.order.id !== orderId) return;
+    // Not loaded: the rows stay as they are (the server checks each payment's euro again), the sheet offers to load again.
+    if (!pay || this.view()?.order.id !== orderId || this.alsoState().failed) return;
     const options = this.alsoState().options;
     const rows = (pay.alsoParts ?? []).flatMap(part => {
       if (part.paymentId == null) return [part];

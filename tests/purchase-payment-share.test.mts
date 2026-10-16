@@ -11,7 +11,7 @@ import { inspectionSplitBlocked, linkChange, pendingLinkPlan, shareEffect } from
  * paid the 30 % of PO-2026-038, -039 and -040. "1/3 nemen van die transactie
  * bijvoorbeeld en ook manueel kunnen aanpassen."
  */
-const plain = (text: string | null | undefined) => text?.replace(/[  ]/g, ' ');
+const plain = (text: string | null | undefined) => text?.replace(/[  ]/g, ' ').replace(/\u2060/g, '');
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 test('splitCents: the transaction to the cent, rounding rest on the largest part (the last of equal ones)', () => {
@@ -129,6 +129,10 @@ test('shareBody: this payment first (its euro only when given), open payments wi
 test('shareToast names every container, its alias first', () => {
   assert.equal(plain(shareToast([{ name: 'PO-2026-038', amountEur: 3801.13 }, { name: 'Kerst 2026', amountEur: 3801.13 }, { name: 'PO-2026-040', amountEur: 3801.12 }])),
     'Verdeeld over 3 containers: PO-2026-038 € 3.801,13 · Kerst 2026 € 3.801,13 · PO-2026-040 € 3.801,12');
+  // A toast never breaks inside a name or between a name and its amount (the desk toast read 'PO-2026-' / '038 € 3.801,13').
+  const raw = shareToast([{ name: 'PO-2026-038', amountEur: 3801.13 }, { name: 'Kerst 2026', amountEur: 3801.13 }]);
+  assert.ok(raw.includes('PO-\u20602026-\u2060038\u00a0€'), 'a word joiner after each hyphen, a no-break space before the euro');
+  assert.ok(raw.includes('Kerst 2026\u00a0€'), 'an alias keeps its own spaces; only the euro sticks to it');
 });
 
 /** What 'Verdelen over containers' starts with, plus PO-040 added on this payment's term. */

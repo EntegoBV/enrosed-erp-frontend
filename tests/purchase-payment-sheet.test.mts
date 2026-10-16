@@ -410,6 +410,53 @@ test('a USD payment and a transaction far above its euro may be shared too: the 
   assert.equal(sheet.shareOffered(), false);
 });
 
+test("with 'Verdelen over containers' the Bedrag hint says this container's part, never the transaction; the own row reads like the others", () => {
+  const { sheet } = mount();
+  const own = { ...goods, id: 381, orderId: 38, amount: 3070.2, amountEur: 3070.2, paidOn: '2026-09-25', bankStatementLineId: null, label: '30% bij bestelling' };
+  sheet.draft.set(draft(own));
+  sheet.parts.set([part(own)]);
+  sheet.orderPayments.set([own]);
+  const line = { ...line610, id: 700, amountEur: -11403.38, bookedAt: '2026-09-28T09:00:00Z', account: 'BE94731074082814' };
+  sheet.pickLine(381, line);
+  assert.equal(plain(sheet.linkingHint()), 'Bedrag en datum volgen de transactie bij het koppelen (zie Wat verandert).');
+  sheet.chooseSurplus('SHARE');
+  assert.equal(plain(sheet.linkingHint()), 'Bedrag en datum volgen het deel van deze container: € 3.070,20 op 28/09/2026 (zie Verdelen over containers).');
+  sheet.setShareOwn('3.801,13');
+  assert.equal(plain(sheet.linkingHint()), 'Bedrag en datum volgen het deel van deze container: € 3.801,13 op 28/09/2026 (zie Verdelen over containers).');
+  sheet.setShareOwn('');
+  assert.equal(plain(sheet.linkingHint()), 'Bedrag en datum volgen het deel van deze container (zie Verdelen over containers).');
+  assert.equal(sheet.changeRows().length, 0, "no 'Wat verandert' table in a share: the hint never points at one");
+  assert.match(template, /@else if \(linkingOne\(\)\) \{ <span class="hint">\{\{ linkingHint\(\) \}\}<\/span> \}/);
+  // USD: the euro is the part, the dollars stay.
+  const usd = { ...goods, id: 421, orderId: 38, amount: 4000, currency: 'USD', amountEur: 3680, paidOn: '2026-09-06', bankStatementLineId: null };
+  sheet.draft.set(draft(usd));
+  sheet.parts.set([part(usd)]);
+  sheet.orderPayments.set([usd]);
+  sheet.pickLine(421, { ...line, id: 701 });
+  sheet.chooseSurplus('SHARE');
+  assert.equal(plain(sheet.linkingHint()), 'De euro en de datum volgen het deel van deze container: € 3.680,00 op 28/09/2026; het bedrag in USD blijft (zie Verdelen over containers).');
+  // The own row: the PO number beside an alias (as every other row), its amount in the others' column.
+  sheet.orderName.set('Moederdag Rood');
+  sheet.orderNumber.set('PO-2026-038');
+  assert.equal(sheet.ownNumberHint(), 'PO-2026-038');
+  sheet.orderName.set('PO-2026-038');
+  assert.equal(sheet.ownNumberHint(), null, 'never the number twice');
+  const ownRow = template.slice(template.indexOf('<section class="pay-sheet__share"'), template.indexOf('<ng-container *ngTemplateOutlet="alsoRows; context: { $implicit: false }" />'));
+  assert.match(ownRow, /@if \(ownNumberHint\(\); as number\) \{ <small class="pay-sheet__alsonumber">\{\{ number \}\}<\/small> \}/);
+  assert.match(ownRow, /<span class="btn btn--sm pay-sheet__alsospacer" aria-hidden="true">Weghalen<\/span>/);
+});
+
+test('containers that did not load are said so, with a way to load them again; never an empty list that hides an open payment', () => {
+  const { sheet, outputs } = mount();
+  assert.equal((template.match(/@else if \(alsoState\(\)\.failed\) \{ <ng-container \*ngTemplateOutlet="alsoFailed" \/> \}/g) ?? []).length, 2, 'the new transfer and the share alike');
+  assert.ok(template.indexOf('alsoState().failed') < template.indexOf('alsoEmptyText()'), "before 'Geen andere container …'");
+  const failed = template.slice(template.indexOf('<ng-template #alsoFailed>'), template.indexOf('<ng-template #alsoAdd'));
+  assert.match(failed, /De containers zijn niet geladen\. <button class="wk-link" type="button" \[disabled\]="busy\(\)" \(click\)="alsoLoad\.emit\(\)">Opnieuw laden<\/button>/);
+  sheet.alsoState.set({ loading: false, supported: true, options: [], failed: true });
+  sheet.alsoLoad.emit();
+  assert.equal(outputs.alsoLoad.length, 1);
+});
+
 test("a new transfer's other container starts on its open payment (never a second one), switchable to a new payment", () => {
   const { sheet } = mount();
   const bank = { ...line610, id: 702, amountEur: -16500, bookedAt: '2026-10-12T22:00:00Z', account: 'BE94731074082814' };

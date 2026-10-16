@@ -129,6 +129,17 @@ export function alsoContainerOptions(payables: readonly ContainerPayable[], orde
   return [...byOrder.values()].sort((a, b) => rank(a) - rank(b) || a.number.localeCompare(b.number, 'nl'));
 }
 
+/**
+ * Where a term of a container stands against the Afspraak (the payee's
+ * stream for a payee without terms), its noted payments counted: what a
+ * share's effect is said against (Kosten & bank's split as the sheet).
+ */
+export function containerStanding(view: PurchaseOrderView | undefined, payee: Payee, due: TermDue | null): TermStanding | null {
+  const standings = standingsOf(view, payee);
+  const standing = standings.find((item) => item.due === due) ?? standings.find((item) => !item.term) ?? null;
+  return standing ? { label: standing.label, term: standing.term, plannedEur: standing.plannedEur, paidEur: standing.paidEur } : null;
+}
+
 /** Where a term of the container stands (its payee's stream without terms). */
 function standingFor(option: AlsoContainerOption, due: TermDue | null): TermStanding | null {
   const standing = (option.standings ?? []).find((item) => item.due === due) ?? (option.standings ?? []).find((item) => !item.term) ?? null;
@@ -240,7 +251,8 @@ export function alsoWrites(parts: readonly AlsoContainerPart[] | null | undefine
 
 /** "Ook op PO-2026-044 en PO-2026-045" after the save, each container by its name. */
 export function alsoNotice(parts: readonly AlsoContainerPart[] | null | undefined): string | null {
-  const names = (parts ?? []).filter((part) => (part.amount ?? 0) > 0).map(nameOf);
+  // A word joiner after each hyphen: a toast never breaks 'PO-2026-' / '038' (purchase-payment-share's unbrokenName).
+  const names = (parts ?? []).filter((part) => (part.amount ?? 0) > 0).map((part) => nameOf(part).replace(/-/g, '-\u2060'));
   if (!names.length) return null;
   return `Ook op ${names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' en ' + names.at(-1)}`;
 }

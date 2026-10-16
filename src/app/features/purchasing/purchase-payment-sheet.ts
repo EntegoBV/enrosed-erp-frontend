@@ -184,6 +184,7 @@ let nextSheetId = 0;
                     </ul>
                   }
                   @if (alsoState().loading) { <span class="hint">Containers laden…</span> }
+                  @else if (alsoState().failed) { <ng-container *ngTemplateOutlet="alsoFailed" /> }
                   @else if (alsoChoices().length) {
                     <ng-container *ngTemplateOutlet="alsoAdd; context: { $implicit: !!pay.bankLinkPending }" />
                   } @else { <span class="hint">{{ alsoEmptyText() }}</span> }
@@ -286,13 +287,15 @@ let nextSheetId = 0;
                           <div class="pay-sheet__sharehead"><b>Verdelen over containers</b><small>Per container zijn deel van {{ pendingLineEur() | eur }}</small></div>
                           <ul class="pay-sheet__lines pay-sheet__alsorows">
                             <li class="pay-sheet__line pay-sheet__alsorow">
-                              <span class="pay-sheet__linecopy"><b>{{ orderName() || 'Deze container' }} <span class="pay-sheet__alsothis">(deze container)</span></b><small>{{ ownShareText() }}</small></span>
+                              <span class="pay-sheet__linecopy"><b>{{ orderName() || 'Deze container' }}@if (ownNumberHint(); as number) { <small class="pay-sheet__alsonumber">{{ number }}</small> } <span class="pay-sheet__alsothis">(deze container)</span></b><small>{{ ownShareText() }}</small></span>
                               <span class="pay-sheet__alsofields">
                                 <div class="input-affix pay-sheet__alsoamount">
                                   <input class="input num right" type="text" inputmode="decimal" autocomplete="off" [attr.aria-label]="'Bedrag voor ' + (orderName() || 'deze container')" [disabled]="busy()"
                                          [ngModel]="pay.shareOwnInput ?? ''" (ngModelChange)="setShareOwn($event)" />
                                   <span class="input-affix__suffix">EUR</span>
                                 </div>
+                                <!-- As wide as the other rows' 'Weghalen': every part's amount stands in one column. -->
+                                <span class="btn btn--sm pay-sheet__alsospacer" aria-hidden="true">Weghalen</span>
                               </span>
                               @if ((pay.shareOwnInput ?? '').trim() && pay.shareOwn === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in.</span> }
                             </li>
@@ -300,6 +303,7 @@ let nextSheetId = 0;
                           </ul>
                           <div class="pay-sheet__shareactions">
                             @if (alsoState().loading) { <span class="hint">Containers laden…</span> }
+                            @else if (alsoState().failed) { <ng-container *ngTemplateOutlet="alsoFailed" /> }
                             @else if (alsoChoices().length) { <ng-container *ngTemplateOutlet="alsoAdd; context: { $implicit: false }" /> }
                             @else { <span class="hint">{{ alsoEmptyText() }}</span> }
                             <span class="pay-sheet__sharemodes" role="group" aria-label="Verdelen">
@@ -412,7 +416,7 @@ let nextSheetId = 0;
               </div>
               @if (pay.amountInput && pay.amount === null) { <span class="hint hint--warn" role="alert">Vul een positief bedrag in, bijvoorbeeld 1.046,95.</span> }
               @if (linkedSingle()) { <span class="hint">Staat op de bank: maak de banktransactie eerst los om bedrag of datum te wijzigen.</span> }
-              @else if (linkingOne()) { <span class="hint">{{ pay.currency === 'EUR' ? 'Bedrag en datum volgen de transactie bij het koppelen' : 'De euro en de datum volgen de transactie bij het koppelen; het bedrag in ' + pay.currency + ' blijft' }} (zie Wat verandert).</span> }
+              @else if (linkingOne()) { <span class="hint">{{ linkingHint() }}</span> }
               @if (pay.currency !== 'EUR' && (pay.amount ?? 0) > 0 && !((pay.amountEur ?? 0) > 0)) {
                 <span class="hint">Zonder bankbedrag geldt de orderkoers: ≈ {{ draftEur() | eur }}.</span>
               }
@@ -635,6 +639,10 @@ let nextSheetId = 0;
             </li>
           }
         </ng-template>
+        <ng-template #alsoFailed>
+          <!-- Not 'Geen andere container': the list did not load, and an open payment of another container may be in it. -->
+          <span class="hint hint--warn" role="alert">De containers zijn niet geladen. <button class="wk-link" type="button" [disabled]="busy()" (click)="alsoLoad.emit()">Opnieuw laden</button></span>
+        </ng-template>
         <ng-template #alsoAdd let-locked>
           <select class="select pay-sheet__alsoadd" aria-label="Container toevoegen" [disabled]="busy() || locked" (change)="addAlso($any($event.target).value); $any($event.target).value = ''">
             <option value="">Container toevoegen…</option>
@@ -737,11 +745,13 @@ export class PurchasePaymentSheet {
   /** Where the payment's term (or payee) stands against the Afspraak, this payment counted: what more paid does to it. */
   readonly termStanding = input<TermStanding | null>(null);
   /** "Deze transactie dekt ook andere containers": the containers that may share the transfer, as the host loaded them. */
-  readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[] }>({ loading: false, supported: true, options: [] });
+  readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[]; failed?: boolean }>({ loading: false, supported: true, options: [] });
   /** The container's supplier: others are allowed, with a warning. */
   readonly supplierId = input<number | null>(null);
   /** This container's name (containerName: its alias, else its number), for the share's own row. */
   readonly orderName = input('');
+  /** Its PO number: small print beside an alias, as the other rows show theirs. */
+  readonly orderNumber = input('');
   /** Other containers' payments on the bank lines of this payment ('Deze transactie draagt ook: …'), as the host loaded them. */
   readonly lineShares = input<readonly { lineId: number; name: string; amountEur: number }[]>([]);
   /** The section opened (or 'Verdelen over containers' chosen): the host loads the containers for the payee (once). */
@@ -1283,6 +1293,22 @@ export class PurchasePaymentSheet {
     const effect = shareEffect({ paymentEur: this.partEur(part), currency: part.currency, amount: part.amount, partEur: pay.shareOwn ?? null,
       standing: this.termStanding(), day: this.shareDay() });
     return `deze betaling · ${pay.label || part.payment.label || PAYEE_LABEL[pay.payee]} · ${this.bookedText(part.amount, part.currency, this.partEur(part))} · ${effect}`;
+  });
+  /** 'PO-2026-038' beside 'Moederdag Rood (deze container)'; nothing when the name is the number. */
+  readonly ownNumberHint = computed(() => containerNumberHint(this.orderName(), this.orderNumber()));
+  /**
+   * Under Bedrag while a picked transaction waits: the payment follows the
+   * transaction, or in a share this container's part of it (never the whole
+   * transaction: 'Bedrag aanpassen naar € 11.403,38' was just what was wrong).
+   */
+  readonly linkingHint = computed(() => {
+    const pay = this.draft();
+    if (this.pendingPlan().kind !== 'share') {
+      return `${pay.currency === 'EUR' ? 'Bedrag en datum volgen de transactie bij het koppelen' : `De euro en de datum volgen de transactie bij het koppelen; het bedrag in ${pay.currency} blijft`} (zie Wat verandert).`;
+    }
+    const own = (pay.shareOwn ?? 0) > 0 ? `: ${formatEur(pay.shareOwn!)} op ${dayText(this.shareDay())}` : '';
+    return pay.currency === 'EUR' ? `Bedrag en datum volgen het deel van deze container${own} (zie Verdelen over containers).`
+      : `De euro en de datum volgen het deel van deze container${own}; het bedrag in ${pay.currency} blijft (zie Verdelen over containers).`;
   });
   setShareOwn(raw: string): void {
     const amount = parsePurchasePaymentAmount(raw);

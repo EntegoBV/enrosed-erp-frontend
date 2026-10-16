@@ -57,15 +57,16 @@ test('the writes name their own order, in euro on the transaction\'s day; the no
     { paidOn: '2026-10-13', amount: 3000, currency: 'EUR', label: '30% bij bestelling', payee: 'SUPPLIER', settles: false, instalmentDue: 'ORDERED', purchaseOrderId: 44 },
     { paidOn: '2026-10-13', amount: 4500, currency: 'EUR', label: '30% bij bestelling', payee: 'SUPPLIER', settles: false, instalmentDue: 'ORDERED', purchaseOrderId: 45 },
   ]);
-  assert.equal(alsoNotice(parts), 'Ook op PO-2026-044 en PO-2026-045');
-  assert.equal(alsoNotice(parts.slice(0, 1)), 'Ook op PO-2026-044');
-  assert.equal(alsoNotice([...parts, { ...parts[0], orderId: 30, number: 'PO-2026-030' }]), 'Ook op PO-2026-044, PO-2026-045 en PO-2026-030');
+  assert.equal(plain(alsoNotice(parts)), 'Ook op PO-2026-044 en PO-2026-045');
+  assert.equal(alsoNotice(parts.slice(0, 1)), 'Ook op PO-\u20602026-\u2060044', 'a toast never breaks inside the number');
+  assert.equal(plain(alsoNotice(parts.slice(0, 1))), 'Ook op PO-2026-044');
+  assert.equal(plain(alsoNotice([...parts, { ...parts[0], orderId: 30, number: 'PO-2026-030' }])), 'Ook op PO-2026-044, PO-2026-045 en PO-2026-030');
   assert.equal(alsoNotice([]), null);
 });
 
 /* ---- Emre, 2026-10-16: a container whose instalment was already noted gets that payment linked, never a second one */
 
-const plain = (text: string | null | undefined) => text?.replace(/[\u00a0\u202f]/g, ' ');
+const plain = (text: string | null | undefined) => text?.replace(/[\u00a0\u202f]/g, ' ').replace(/\u2060/g, '');
 const view = (id: number, terms: [string, number, number][], extra: Record<string, unknown> = {}) => ({
   order: { id, number: `PO-2026-0${id}`, alias: null, supplierId: 8, status: 'BESTELD', archivedAt: null, ...extra },
   reconciliation: { streams: [{ payee: 'SUPPLIER', plannedEur: 0, paidEur: 0, finalized: false }, { payee: 'LOGISTICS', plannedEur: 1300, paidEur: 1046.95, finalized: false }],
@@ -108,7 +109,7 @@ test('with the payments loaded, a container whose term an open payment covers is
   const logistics = alsoContainerOptions([], views.map((item: any) => ({ id: item.order.id, supplierId: item.order.supplierId })), names, 43, 8, { payments, views, payee: 'LOGISTICS' });
   assert.deepEqual(logistics.map(option => [option.number, option.openPayments!.map(payment => payment.id)]), [['PO-2026-044', [443]]]);
   assert.deepEqual(logistics[0].standings, [{ due: null, label: 'Douane & transport', term: false, plannedEur: 1300, paidEur: 1046.95 }]);
-  assert.equal(alsoNotice([part, alsoPartFor(options[1], 'ORDERED')]), 'Ook op Lente en PO-2026-045', 'containers by their name');
+  assert.equal(plain(alsoNotice([part, alsoPartFor(options[1], 'ORDERED')])), 'Ook op Lente en PO-2026-045', 'containers by their name');
 });
 
 test('several open payments: the same label wins, the choices tell them apart', () => {
