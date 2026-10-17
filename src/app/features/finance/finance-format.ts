@@ -55,10 +55,11 @@ export function syncMoment(instant: string, today: string): string {
   return day === today ? clockOf(instant) : clean(date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', timeZone: 'Europe/Brussels' }));
 }
 
-/** '+ € 1.250,50' / '− € 80,00' for signed bank amounts. */
+/** '+ € 1.250,50' / '− € 80,00' for signed bank amounts; '€ 0,00' without a sign when it rounds to no cent (an exact "Verschil"). */
 export function signedEur(amount: number): string {
-  const text = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(Math.abs(amount));
-  return amount < 0 ? `− ${text}` : `+ ${text}`;
+  const cents = Math.round(amount * 100);
+  const text = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(Math.abs(cents) / 100);
+  return cents === 0 ? text : cents < 0 ? `− ${text}` : `+ ${text}`;
 }
 
 /** Payee tones, the same as Inkoop: Leverancier accent, Douane & transport blue, Inspectie amber, Bijkomende kosten grey. */
