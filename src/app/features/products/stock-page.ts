@@ -15,6 +15,7 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { keyContext } from '../../shared/key-context';
+import { rovingRow } from './product-list-query';
 import { DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { salesPhotoUrl } from '../../shared/sales-photo';
@@ -154,7 +155,7 @@ function mediaSignal(query: string) {
               <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="resetFilters()">Filters wissen</button></div>
             </div>
           } @else {
-            <div class="wk-table sk-table mo-fade" role="table" aria-label="Voorraad" [style.--wk-cols]="columns()" (keydown)="onTableKey($event)">
+            <div class="wk-table sk-table mo-fade" role="table" aria-label="Voorraad" [style.--wk-cols]="columns()" (keydown)="onTableKey($event)" (focusin)="onTableFocus($event)">
               <div class="wk-thead" role="row">
                 <span class="wk-th" role="columnheader"><span class="sr-only">Foto</span></span>
                 <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('NAME_ASC', 'NAME_DESC')"><button class="wk-th__btn" type="button" (click)="sortBy('NAME_ASC', 'NAME_DESC')">Product</button></span>
@@ -267,7 +268,7 @@ function mediaSignal(query: string) {
         <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: group.rows[0], nested: false }" />
       } @else {
         @let open = isOpen(group);
-        <div class="wk-tr wk-tr--link sk-tr sk-tr--head" role="row" tabindex="-1" [attr.aria-expanded]="open" [attr.data-row]="'h:' + group.key" (click)="toggle(group)">
+        <div class="wk-tr wk-tr--link sk-tr sk-tr--head" role="row" [attr.tabindex]="rowTab('h:' + group.key)" [attr.aria-expanded]="open" [attr.data-row]="'h:' + group.key" (click)="toggle(group)">
           <span class="wk-td" role="cell">
             @if (group.photo) { <img class="sk-thumb" [appAuthSrc]="group.photo" alt="" draggable="false" /> } @else { <span class="sk-thumb sk-thumb--empty" aria-hidden="true">◈</span> }
           </span>
@@ -304,7 +305,7 @@ function mediaSignal(query: string) {
     <ng-template #deskRow let-row let-nested="nested">
       @let exp = expectedFor(row.product.id);
       @let onway = exp ? { quantity: exp.quantity, earliest: exp.expectedArrival, orderNumbers: exp.orderNumbers, orderIds: exp.orderIds } : null;
-      <div class="wk-tr wk-tr--link sk-tr" role="row" tabindex="-1" [class.wk-tr--sub]="nested" [class.sk-tr--variant]="nested"
+      <div class="wk-tr wk-tr--link sk-tr" role="row" [attr.tabindex]="rowTab('p:' + row.product.id)" [class.wk-tr--sub]="nested" [class.sk-tr--variant]="nested"
            [attr.data-row]="'p:' + row.product.id" (click)="rowClick($event, row)"
            [animate.enter]="nested ? 'mo-enter' : ''">
         <span class="wk-td" role="cell">
@@ -999,6 +1000,35 @@ export class StockPage {
     if (!field) return;
     event.preventDefault();
     field.focus();
+  }
+
+  /** The row that takes Tab (roving tabindex): the last focused one while it is on screen, else the first. */
+  private readonly focusedRow = signal<string | null>(null);
+  private rowKeyOf(group: StockGroup): string {
+    return group.rows.length === 1 ? `p:${group.rows[0].product.id}` : `h:${group.key}`;
+  }
+  private readonly shownRows = computed(() => {
+    const keys = new Set<string>();
+    const add = (group: StockGroup) => {
+      keys.add(this.rowKeyOf(group));
+      if (group.rows.length > 1 && this.isOpen(group)) for (const row of group.rows) keys.add(`p:${row.product.id}`);
+    };
+    for (const section of this.sections()) section.groups.forEach(add);
+    if (this.showDemo()) this.demoGroups().forEach(add);
+    return keys;
+  });
+  private readonly firstRow = computed(() => {
+    const group = this.sections()[0]?.groups[0] ?? (this.showDemo() ? this.demoGroups()[0] : undefined);
+    return group ? this.rowKeyOf(group) : null;
+  });
+
+  rowTab(key: string): number {
+    return rovingRow(this.focusedRow(), this.shownRows(), this.firstRow()) === key ? 0 : -1;
+  }
+
+  onTableFocus(event: FocusEvent): void {
+    const key = (event.target as Element).closest<HTMLElement>('[data-row]')?.dataset['row'];
+    if (key && key !== this.focusedRow()) this.focusedRow.set(key);
   }
 
   /** ↑ ↓ through the rows, Enter opens the product sheet (a head folds), B opens Voorraad boeken. */

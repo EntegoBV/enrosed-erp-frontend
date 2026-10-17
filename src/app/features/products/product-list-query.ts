@@ -131,3 +131,13 @@ export function headerAriaSort(column: SortColumn, current: ListSort): 'ascendin
   if (current !== one && current !== two) return null;
   return current.endsWith('ASC') ? 'ascending' : 'descending';
 }
+
+/**
+ * The one row of a table that takes Tab (roving tabindex): the row last
+ * focused while it is still on screen, else the first row. A row that a
+ * delete, a fold or a filter took away never leaves the table without a
+ * way in. Shared by Producten and Voorraad.
+ */
+export function rovingRow(focused: string | null, shown: ReadonlySet<string>, first: string | null): string | null {
+  return focused !== null && shown.has(focused) ? focused : first;
+}

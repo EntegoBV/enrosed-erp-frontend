@@ -766,11 +766,13 @@ export class ProductDesk extends ProductView {
 
   /**
    * E Bewerken, B Voorraad boeken, ⌥ ← / ⌥ → the previous or next colour
-   * (the stepper's own links). Off while typing or with a sheet open.
+   * (the stepper's own links). Off while typing, with a sheet open or with
+   * a photo enlarged (the lightboxes are no kit overlay).
    */
   onDocumentKey(event: KeyboardEvent): void {
     const product = this.product();
     if (!product || product.id === null) return;
+    if (this.lightbox() >= 0 || this.agreementLightbox() >= 0) return;
     const context = keyContext(event, null);
     if (context.typing || context.overlayOpen || context.mod) return;
     if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {

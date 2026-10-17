@@ -9,7 +9,7 @@ import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { onderwegOrdersLabel, productMargin, type Margin, type Onderweg } from './product-figures';
-import { headerAriaSort, nextHeaderSort, type ListSort, type SortColumn } from './product-list-query';
+import { headerAriaSort, nextHeaderSort, rovingRow, type ListSort, type SortColumn } from './product-list-query';
 import type { productSalesUnit } from './product-sales-unit';
 
 /** One row of the list: a product on its own, or a series that folds its variants away. */
@@ -339,8 +339,23 @@ export class ProductListTable {
     return group.products.length === 1 ? `p:${group.products[0].id}` : `h:${group.key}`;
   });
 
+  /** The rows on screen: a series' variants only while it is open, the demo rows only with the fold open. */
+  private readonly shownRows = computed(() => {
+    const list = this.host();
+    const keys = new Set<string>();
+    const add = (group: ListGroup) => {
+      if (group.products.length === 1) { keys.add(`p:${group.products[0].id}`); return; }
+      keys.add(`h:${group.key}`);
+      if (list.isOpen(group)) for (const product of group.products) keys.add(`p:${product.id}`);
+    };
+    for (const section of list.sections()) section.groups.forEach(add);
+    if (list.showDemoFold()) list.demoGroups().forEach(add);
+    return keys;
+  });
+
+  /** The last focused row takes Tab while it is on screen; once deleted, folded or filtered away, the first row does. */
   tabIndexOf(key: string): number {
-    return (this.focused() ?? this.firstRow()) === key ? 0 : -1;
+    return rovingRow(this.focused(), this.shownRows(), this.firstRow()) === key ? 0 : -1;
   }
 
   ariaSort(column: SortColumn): 'ascending' | 'descending' | null {

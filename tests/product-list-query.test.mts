@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  DEFAULT_LIST_STATE, SORT_OPTIONS, headerAriaSort, listQueryParams, listQueryString, nextHeaderSort, readListQuery, sortButtonLabel,
+  DEFAULT_LIST_STATE, SORT_OPTIONS, headerAriaSort, listQueryParams, listQueryString, nextHeaderSort, readListQuery, rovingRow, sortButtonLabel,
   type ListState,
 } from '../src/app/features/products/product-list-query.ts';
 
@@ -58,4 +58,12 @@ test('a header cycles its order, then back to the standard order', () => {
   assert.equal(headerAriaSort('stock', 'STOCK_DESC'), 'descending');
   assert.equal(headerAriaSort('stock', 'STOCK_SMART'), null);
   assert.equal(headerAriaSort('price', 'COST_DESC'), null);
+});
+
+test('the tabbable row falls back to the first row when the focused one is gone', () => {
+  const shown = new Set(['h:f1', 'p:12', 'p:13']);
+  assert.equal(rovingRow('p:12', shown, 'h:f1'), 'p:12');
+  assert.equal(rovingRow('p:99', shown, 'h:f1'), 'h:f1', 'deleted, folded away or filtered out');
+  assert.equal(rovingRow(null, shown, 'h:f1'), 'h:f1');
+  assert.equal(rovingRow('p:12', new Set(), null), null, 'an empty table has no tabbable row');
 });
