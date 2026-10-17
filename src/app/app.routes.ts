@@ -214,9 +214,9 @@ export const routes: Routes = [
     title: 'Categorieën · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
-    data: { websiteCategoryMode: true },
     loadComponent: () =>
-      import('./features/settings/settings-page').then((m) => m.SettingsPage),
+      import('./features/website-builder/website-categories-page')
+        .then((m) => m.WebsiteCategoriesPage),
   },
   {
     path: 'website/seo',

@@ -49,3 +49,8 @@ test("the list uses the app's own verb", () => {
   assert.match(all, /Opslaan/);
   assert.doesNotMatch(all, /Bewaren/);
 });
+
+test('Categorieën lists its own keys next to Opslaan', () => {
+  assert.deepEqual(pageShortcutsFor('/website/categories?code=domes').map((row) => row.text),
+    ['Opslaan', 'Andere categorie kiezen', 'Categorie hoger of lager zetten', 'Categorie openen']);
+});

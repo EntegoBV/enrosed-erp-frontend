@@ -46,9 +46,9 @@ interface CategoryLanguageState {
       <div class="codex-brief-action" role="note">
         <div>
           <b>Opnieuw laten vertalen na een bronwijziging</b>
-          <small>De opdracht bevat uitsluitend de vaste categorie-identiteit en publieke tekstvelden in acht talen.</small>
+          <small>De opdracht bevat uitsluitend de vaste categorie-identiteit en publieke tekstvelden in alle {{ languages.length }} talen.</small>
         </div>
-        <button class="btn btn--sm btn--primary" type="button"
+        <button class="btn btn--sm" type="button"
                 [disabled]="busy() || category().id === null"
                 [title]="category().id === null ? 'Sla de categorie eerst op voor een vaste categoryId' : null"
                 (click)="copyCodexBrief()">
@@ -163,18 +163,19 @@ interface CategoryLanguageState {
     .partial-save-note > span { display: grid; width: 24px; height: 24px; flex: none; place-items: center; border-radius: 999px; background: var(--surface); color: var(--rose-dark); font-weight: 850; }
     .partial-save-note p { color: var(--muted); font-size: 13px; line-height: 1.45; }
     .partial-save-note b { color: var(--ink-2); }
-    .codex-brief-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
-    .codex-brief-action > div { display: grid; gap: 2px; }
+    .codex-brief-action { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+    .codex-brief-action > div { display: grid; flex: 1 1 220px; gap: 2px; }
     .codex-brief-action b { color: var(--ink-2); font-size: 13px; }
     .codex-brief-action small { color: var(--muted); font-size: 12px; line-height: 1.4; }
     .codex-brief-action .btn { flex: none; min-height: 44px; white-space: nowrap; }
+    /* All 9 languages on one row (never "EL" alone on a second row): code over its count. */
     .language-tabs {
-      display: grid; grid-template-columns: repeat(8, minmax(48px, 1fr)); gap: 5px;
-      margin-top: 11px; overflow-x: auto; padding-bottom: 3px;
+      display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px;
+      margin-top: 11px; padding-bottom: 3px;
     }
     .language-tabs button {
-      display: flex; min-width: 54px; min-height: 48px; align-items: center; justify-content: center;
-      gap: 4px; border: 1px solid var(--line); border-radius: 8px;
+      display: flex; flex-direction: column; min-width: 0; min-height: 48px; align-items: center; justify-content: center;
+      gap: 2px; padding: 4px 0; border: 1px solid var(--line); border-radius: 8px;
       background: var(--surface-2); color: var(--ink-2); cursor: pointer;
     }
     .language-tabs button.active { border-color: var(--rose); background: var(--rose-soft); }

@@ -77,6 +77,14 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
       { keys: ['↵'], text: 'Reeks openen' },
     ],
   },
+  {
+    routes: ['/website/categories'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere categorie kiezen' },
+      { keys: ['⌥', '↑'], alt: ['⌥', '↓'], text: 'Categorie hoger of lager zetten' },
+      { keys: ['↵'], text: 'Categorie openen' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */
