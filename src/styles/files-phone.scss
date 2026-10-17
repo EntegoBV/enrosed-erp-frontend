@@ -24,6 +24,8 @@
     .files-shelf__item { display: grid; flex: none; gap: 6px; width: 96px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; text-align: left; scroll-snap-align: start; -webkit-tap-highlight-color: transparent; }
     .files-shelf__item > img, .files-shelf__item > .files-ext, .files-shelf__item > .skel { width: 96px; height: 96px; border-radius: 16px; background: var(--surface); object-fit: cover; }
     .files-shelf__item > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .files-shelf__name, .files-shelf__where { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .files-shelf__where { margin-top: -4px; color: var(--muted); font-size: 11.5px; }
     .files-shelf__item--skel > .skel { display: block; }
     .files-shelf__cell { display: grid; flex: none; scroll-snap-align: start; }
     .files-shelf__empty { padding: 12px 4px; }

@@ -468,3 +468,33 @@ export function bulkSummary(verb: string, done: number, failed: number, reason: 
   const base = `${done} ${verb}`;
   return failed ? `${base}, ${failed} mislukt${reason ? ': ' + reason : ''}` : base;
 }
+
+/**
+ * What a place holds, for the inspector when nothing is chosen: loaded
+ * count, photos, documents, total size and the newest change ("vandaag
+ * 10:41"). Figures the list already has; nothing is fetched.
+ */
+export function placeSummary(
+  assets: readonly Pick<MediaAssetSummary, 'kind' | 'sizeBytes' | 'updatedAt'>[],
+  now: Date = new Date(),
+): { label: string; value: string }[] {
+  if (!assets.length) return [];
+  const photos = assets.filter((asset) => asset.kind === 'IMAGE').length;
+  const bytes = assets.reduce((sum, asset) => sum + (Number.isFinite(asset.sizeBytes) ? asset.sizeBytes : 0), 0);
+  const newest = Math.max(...assets.map((asset) => new Date(asset.updatedAt).getTime()).filter((time) => !Number.isNaN(time)));
+  const rows = [
+    { label: 'Geladen', value: String(assets.length) },
+    { label: 'Foto’s', value: String(photos) },
+    { label: 'Documenten', value: String(assets.length - photos) },
+    { label: 'Samen', value: sizeLabel(bytes) },
+  ];
+  if (Number.isFinite(newest)) {
+    const date = new Date(newest);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+    const day = key(date) === key(now) ? 'vandaag' : key(date) === key(yesterday) ? 'gisteren' : `${pad(date.getDate())}/${pad(date.getMonth() + 1)}`;
+    rows.push({ label: 'Nieuwste', value: `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}` });
+  }
+  return rows;
+}

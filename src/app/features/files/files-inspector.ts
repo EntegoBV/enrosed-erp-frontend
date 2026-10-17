@@ -16,7 +16,7 @@ import {
   badgeText, extensionTone, extensionToneClass, fileKindChip, fileKindLabel, isSourceLink, linkLabel, sourceCaption,
   sourceRoute, targetIconName, targetLabel, targetRoute, targetTone,
 } from './files-collections';
-import { canLink, canReplace, canShare, crumbsFor, deleteBlock, fileActions, hasWeb, sizeLabel } from './files-rules';
+import { canLink, canReplace, canShare, crumbsFor, deleteBlock, fileActions, hasWeb, sizeLabel, placeSummary } from './files-rules';
 import { FilesController } from './files-controller';
 
 /**
@@ -480,6 +480,13 @@ import { FilesController } from './files-controller';
       <section class="wk-section files-insp__none">
         @switch (c.place()) {
           @case ('folders') {
+            @if (c.childFolders().length) {
+              <dl class="wk-kv files-insp__kv">
+                @for (folder of c.childFolders(); track folder.id) {
+                  <div><dt>{{ folder.name }}</dt><dd>{{ folderCounts(folder.id) }}</dd></div>
+                }
+              </dl>
+            }
             <p>{{ c.childFolders().length }} mappen · {{ c.assets().length }}{{ c.hasMore() ? '+' : '' }} zonder map</p>
             <p class="files-muted">Bestanden komen vanzelf in de juiste map zodra je ze koppelt aan een product, kost, reeks of inkooporder.</p>
           }
@@ -492,6 +499,11 @@ import { FilesController } from './files-controller';
             <p class="files-muted">Definitief verwijderen kan alleen voor bestanden die nergens meer gekoppeld zijn.</p>
           }
           @default {
+            @if (summary().length) {
+              <dl class="wk-kv files-insp__kv">
+                @for (row of summary(); track row.label) { <div><dt>{{ row.label }}</dt><dd>{{ row.value }}{{ row.label === 'Geladen' && c.hasMore() ? '+' : '' }}</dd></div> }
+              </dl>
+            }
             <p>Kies een bestand om het hier te zien.</p>
             <p class="files-muted">⌘-klik of ⇧-klik om meer te kiezen · spatie om snel te bekijken</p>
           }
@@ -532,6 +544,15 @@ export class FilesInspector {
       : '';
     return { folder, selected: !!selected, counts: text };
   });
+
+  /** Loaded, photos, documents, size, newest: for the inspector with nothing chosen. */
+  readonly summary = computed(() => placeSummary(this.c.assets()));
+
+  /** "12 direct · 214 totaal" for a folder of the Mappen root. */
+  folderCounts(folderId: number): string {
+    const counts = this.c.store.counts().get(folderId);
+    return counts ? `${counts.direct} direct · ${counts.total} totaal` : '';
+  }
 
   readonly noneTitle = computed(() => {
     switch (this.c.place()) {
