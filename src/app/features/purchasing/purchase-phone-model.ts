@@ -175,6 +175,17 @@ export function paymentTile(summary: LedgerSummary | null | undefined, state: Ph
   }
 }
 
+/**
+ * What the container counts in (F18, 2026-10-17): a container of display
+ * products says 'Displays', a mix of displays and pieces 'Eenheden', else
+ * 'Stuks'. From reconciliation.totals.setBasis; missing counts as pieces.
+ */
+export function countWords(setBasis: string | null | undefined): { label: 'Stuks' | 'Displays' | 'Eenheden'; plural: 'stuks' | 'displays' | 'stuks en displays' } {
+  if (setBasis === 'DISPLAY') return { label: 'Displays', plural: 'displays' };
+  if (setBasis === 'MIXED') return { label: 'Eenheden', plural: 'stuks en displays' };
+  return { label: 'Stuks', plural: 'stuks' };
+}
+
 /** Totaal geland and what the road adds on top of the goods (PurchaseView.overheadPct's rounding). */
 export function landedTile(totals: { totalEur: number; goodsEur: number }, ddp: boolean): { valueEur: number; sub: string } {
   const sub = ddp ? 'DDP · transport en rechten in de prijs'

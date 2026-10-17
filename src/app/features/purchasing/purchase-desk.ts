@@ -1,5 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, inject, input, linkedSignal, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, inject, input, linkedSignal, signal, viewChild } from '@angular/core';
 import { LandedCostLine, Payee, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -45,6 +45,10 @@ import { PurchaseDeskPicker } from './purchase-desk-picker';
 import { stripColour } from './purchase-desk-format';
 import { messageOf } from '../../core/api/errors';
 import { STATUS_LABEL } from '../sales/quote-status';
+import { Icon } from '../../shared/icon';
+import { containerNumberHint } from './container-name';
+import { PAYEE_LABEL } from './purchase-payment-ledger';
+import { costsSupersededFor, countWords, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
@@ -53,6 +57,25 @@ type DeskRow =
   | { kind: 'group'; key: string; groupKey: string; label: string; lines: LandedCostLine[]; pieces: number;
       cartons: number; cbm: number; goodsEur: number; unitMinEur: number; unitMaxEur: number; totalEur: number; leadProductId: number }
   | { kind: 'line'; key: string; line: LandedCostLine; variant: boolean };
+
+/**
+ * The desk's area stylesheet (Inkoop redesign, 2026-10-17): styles/purchase-desk.scss
+ * stays global CSS with every rule under app-purchase-desk, but it loads with
+ * this screen's lazy chunk instead of styles.scss (the initial bundle had
+ * about 20 kB left under its 1 MB error budget). Encapsulation None keeps the
+ * selectors as written; Angular adds the sheet when the host is first created,
+ * in the same render as the page, so nothing paints unstyled. Renders nothing.
+ * tests/purchase-area-styles.test.mts checks the wiring and the scoping.
+ */
+@Component({
+  selector: 'app-purchase-desk-styles',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  encapsulation: ViewEncapsulation.None,
+  host: { hidden: '' },
+  template: '',
+  styleUrl: '../../../styles/purchase-desk.scss',
+})
+export class PurchaseDeskStyles {}
 
 /**
  * The container on a desk: one screen, no scrolling to find things.
@@ -69,16 +92,15 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
-            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
+    <app-purchase-desk-styles />
     @if (view(); as data) {
-      <app-page-header [title]="data.order.number"
-                       [subtitle]="data.order.alias ? data.order.alias + ' · ' + supplierName() : supplierName()"
-                       [showBack]="true" [showBell]="false"
-                       [titleEditable]="true"
-                       (titleChange)="patch({ number: $event })">
+      @let title = containerName(data.order);
+      <app-page-header [title]="title" [subtitle]="containerNumberHint(title, data.order.number) ?? ''"
+                       [showBack]="true" [showBell]="false">
         @if (editing()) {
           <button class="btn btn--sm" type="button" [disabled]="saving()" (click)="cancelEdit()">Annuleren</button>
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || !dirty() || negativeExtra()" (click)="saveAndClose()">
@@ -86,102 +108,120 @@ type DeskRow =
           </button>
         } @else {
           <button class="btn btn--sm" type="button" (click)="pdfOpen.set(true)"
-                  [attr.aria-label]="'Download ' + data.order.number + ' als PDF'">PDF</button>
-          <button class="btn btn--primary btn--sm" type="button" (click)="startEdit()">Bewerken</button>
+                  [attr.aria-label]="'Download ' + title + ' als PDF'"><app-icon name="pdf" [size]="16" />PDF</button>
+          <button class="btn btn--sm" type="button" (click)="startEdit()"><app-icon name="pencil" [size]="16" />Bewerken</button>
         }
       </app-page-header>
 
-      <div class="content desk">
-        <!-- ============================ hero: who, how far, and the figures that matter -->
-        <header class="desk-hero">
-          <div class="desk-hero__top">
-            <div class="desk-hero__who">
-              <span class="desk-hero__eyebrow">Inkoopcontainer</span>
-              <h1>{{ supplierName() }}</h1>
-              <p>{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}
-                · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}</p>
-              <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }} · {{ creatorName(data) }}@if (isReceived() && data.order.receivedOn) { · ontvangen {{ data.order.receivedOn | dateNl }} } @else if (data.order.expectedArrival) { · verwacht {{ data.order.expectedArrival | dateNl }} }@if (data.order.trackingReference) { · {{ data.order.trackingReference }} }@if (!data.order.clearance) { · inklaring te bevestigen }</p>
+      <div class="content pdk">
+        <!-- ============================ the summary card: who, how far, the six figures (Inkoop redesign I2; was the dark hero) -->
+        <section class="pdk-head" aria-label="Container in het kort">
+          <div class="pdk-head__top">
+            <div class="pdk-who">
+              <div class="pdk-who__line">
+                <span class="wk-pill" [class]="statusTone(data.order.status)"><span class="wk-pill__dot" aria-hidden="true"></span>{{ statusText(data.order.status) }}</span>
+                @if (!data.order.clearance) { <span class="wk-pill tone-warn">inklaring te bevestigen</span> }
+                <h2 class="pdk-who__supplier" [title]="supplierName()">{{ supplierName() }}</h2>
+              </div>
+              <p class="pdk-who__meta">{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }} · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}@if (data.createdBy?.displayName; as maker) { · gemaakt door {{ maker }} }@if (data.order.trackingReference) { · T&amp;T {{ data.order.trackingReference }} }</p>
             </div>
-            <div class="desk-status" role="group" aria-label="Voortgang van de inkooporder">
-              @for (step of statusSteps; track step.value; let last = $last) {
-                <span class="desk-status__step"
-                      [class.desk-status__step--done]="stepIndex(data.order.status) > $index"
-                      [class.desk-status__step--now]="stepIndex(data.order.status) === $index"
-                      [class.desk-status__step--arrived]="step.value === 'ONTVANGEN' && isReceived()">
-                  <i aria-hidden="true">@if (stepIndex(data.order.status) > $index) { ✓ } @else { {{ $index + 1 }} }</i>{{ step.label }}
-                </span>
-                @if (!last) { <span class="desk-status__line" [class.desk-status__line--done]="stepIndex(data.order.status) > $index" aria-hidden="true"></span> }
+            <ol class="pdk-steps" aria-label="Voortgang van de inkooporder">
+              @for (step of progress(); track step.label) {
+                <li class="pdk-step" [class.is-done]="step.state === 'done'" [class.is-now]="step.state === 'now'" [class.is-todo]="step.state === 'todo'"
+                    [attr.aria-current]="step.state === 'now' ? 'step' : null">
+                  <span class="pdk-step__bar" aria-hidden="true"></span>
+                  <span class="pdk-step__label">{{ step.label }}</span>
+                  <span class="pdk-step__date">@if (step.date) { {{ step.prefix ? 'verwacht ' : '' }}{{ step.date | dateNl }} } @else { &nbsp; }</span>
+                </li>
               }
-            </div>
+            </ol>
           </div>
 
-          <div class="desk-kpis" aria-label="Kerncijfers">
-            <div class="desk-kpi">
-              <small>Lading</small>
+          <div class="pdk-tiles" aria-label="Kerncijfers">
+            <div class="pdk-tile">
+              <span class="pdk-tile__label">Lading</span>
               @if (!isDdp() && data.costing.containerFill; as fill) {
-                <strong [class.is-ok]="fill.overflowCbm <= 0 && fill.fillPercent >= 97"
-                        [class.is-warn]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                        [class.is-bad]="fill.fillPercent > 105">{{ fill.fillPercent | num: 0 }}%</strong>
-                <i class="desk-kpi__meter" aria-hidden="true"><i [class.is-warn]="fill.fillPercent > 100 && fill.fillPercent <= 105"
-                   [class.is-bad]="fill.fillPercent > 105" [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></i>
-                <span>{{ fill.usedCbm | cbm }} van {{ fill.capacityCbm }} m³</span>
+                @let fillTone = fill.fillPercent > 105 ? 'bad' : fill.fillPercent > 100 ? 'warn' : fill.overflowCbm <= 0 && fill.fillPercent >= 97 ? 'ok' : '';
+                <span class="pdk-tile__value" [class.is-ok]="fillTone === 'ok'" [class.is-warn]="fillTone === 'warn'" [class.is-bad]="fillTone === 'bad'">{{ fill.fillPercent | num: 0 }} %</span>
+                <i class="wk-meter" [class]="fillTone === 'bad' ? 'tone-danger' : fillTone === 'warn' ? 'tone-warn' : 'tone-ok'" aria-hidden="true"><i [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></i>
+                <span class="pdk-tile__sub"><span class="pdk-nw">{{ fill.usedCbm | cbm }}</span> van <span class="pdk-nw">{{ fill.capacityCbm }} m³</span></span>
               } @else {
-                <strong>{{ data.costing.totals.cbm | cbm }}</strong>
-                <span>{{ isDdp() ? 'geleverd DDP' : 'volume' }}</span>
+                <span class="pdk-tile__value">{{ data.costing.totals.cbm | cbm }}</span>
+                <span class="pdk-tile__sub">{{ isDdp() ? 'geleverd DDP' : 'volume' }}</span>
               }
             </div>
-            <div class="desk-kpi">
-              <small>Stuks</small>
-              <strong>{{ data.costing.totals.pieces | num }}</strong>
-              <span>{{ data.costing.totals.cartons | num }} dozen · {{ data.costing.lines.length }} regels</span>
+            <div class="pdk-tile">
+              <span class="pdk-tile__label">{{ countWords(data.reconciliation?.totals?.setBasis).label }}</span>
+              <span class="pdk-tile__value">{{ data.costing.totals.pieces | num }}</span>
+              <span class="pdk-tile__sub"><span class="pdk-nw">{{ data.costing.totals.cartons | num }} dozen</span> · <span class="pdk-nw">{{ data.costing.lines.length }} regels</span></span>
             </div>
-            <div class="desk-kpi">
-              <small>Goederen</small>
-              <strong>{{ data.costing.totals.goodsEur | eur: 0 }}</strong>
-              <span>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</span>
+            <div class="pdk-tile">
+              <span class="pdk-tile__label">Goederen</span>
+              <span class="pdk-tile__value">{{ data.costing.totals.goodsEur | eur: 0 }}</span>
+              <span class="pdk-tile__sub"><span class="pdk-nw">{{ data.costing.totals.goodsUsd | cur: 'USD' }}</span></span>
             </div>
-            <div class="desk-kpi desk-kpi--total">
-              <small>Totaal geland</small>
-              <strong>{{ data.costing.totals.totalEur | eur: 0 }}</strong>
-              <!-- Several products have no one price per stuk: their count and range, never an average over them (Emre 2026-10-15). -->
-              <span>{{ landedUnitText() }}@if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) { · waarvan {{ data.costing.totals.separateCostsEur | eur: 0 }} inspectie &amp; andere }</span>
-            </div>
-            @let money = paymentLedger()?.summary;
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="showPayments()" [class.is-warn]="(money?.dueNowEur ?? 0) > 0">
-              <small>Nu te betalen</small>
-              <strong>@if (paymentStateError()) { — } @else { {{ (money?.dueNowEur ?? 0) | eur: 0 }} }</strong>
-              <span>@if (paymentStateError()) { Opnieuw laden } @else if (paymentStateLoading() || !money) { Bijwerken… } @else if (data.order.status === 'CONCEPT') { Nog niet besteld } @else if (money.openEur === 0 && money.paidTotalEur > 0) { Alles betaald } @else { {{ money.paidTotalEur | eur: 0 }} betaald@if (money.laterEur > 0) { · {{ money.laterEur | eur: 0 }} later } }</span>
+            <!-- Several products have no one price per stuk: their count and range, never an average over them (Emre 2026-10-15). -->
+            <button class="pdk-tile pdk-tile--landed" type="button" (click)="showCosts()">
+              <span class="pdk-tile__label">Totaal geland</span>
+              <span class="pdk-tile__value">{{ data.costing.totals.totalEur | eur: 0 }}</span>
+              <span class="pdk-tile__sub">{{ keepAmounts(landedUnitText()) }}</span>
+              @if (hasSeparateCosts(data.order) && data.costing.totals.separateCostsEur) {
+                <span class="pdk-tile__sub">waarvan <span class="pdk-nw">{{ data.costing.totals.separateCostsEur | eur: 0 }}</span> inspectie &amp; andere</span>
+              }
+              <app-icon class="pdk-tile__chev" name="chevron-right" [size]="14" />
             </button>
-            @if (nextStep(); as step) {
-              <button class="desk-kpi desk-kpi--go" type="button" (click)="advanceStatus()">
-                <small>Volgende stap</small>
-                <strong>{{ step.action }} ›</strong>
-                <span>{{ dirty() ? 'slaat eerst op' : 'klaar wanneer jij het bent' }}</span>
+            @let pay = payTile();
+            @let money = paymentLedger()?.summary;
+            <button class="pdk-tile" type="button" [class.pdk-tile--warn]="pay.tone === 'warn'" [class.pdk-tile--ok]="pay.tone === 'ok'"
+                    (click)="paymentState() === 'error' ? refreshPaymentState() : showPayments()">
+              <span class="pdk-tile__label">{{ pay.label }}</span>
+              <span class="pdk-tile__value">{{ pay.valueEur === null ? '—' : (pay.valueEur | eur: 0) }}</span>
+              @if (pay.sub) { <span class="pdk-tile__sub">{{ pay.sub }}</span> }
+              @if (money && paymentState() !== 'error' && paymentState() !== 'loading') {
+                @if (money.headline.kind === 'concept') {
+                  <span class="pdk-tile__sub">nu niets te betalen</span>
+                } @else if (money.headline.kind === 'due' || money.headline.kind === 'later' || money.headline.kind === 'review') {
+                  <span class="pdk-tile__sub"><span class="pdk-nw">{{ money.paidTotalEur | eur: 0 }}</span> betaald@if (money.laterEur > 0) { · <span class="pdk-nw">{{ money.laterEur | eur: 0 }}</span> later }</span>
+                }
+              }
+              <app-icon class="pdk-tile__chev" [name]="paymentState() === 'error' ? 'refresh' : 'chevron-right'" [size]="14" />
+            </button>
+            @if (readStep(); as step) {
+              <button class="pdk-tile pdk-tile--go" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">
+                <span class="pdk-tile__label">Volgende stap</span>
+                <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : STEP_BUTTON[step] }}</span>
+                <span class="pdk-tile__sub">@switch (step) {
+                  @case ('BIJBOEKEN') { @if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad } }
+                  @case ('KOSTPRIJZEN') { zet de gelande kost op de productkaarten }
+                  @default { {{ dirty() ? 'slaat eerst op' : 'klaar wanneer jij het bent' }} }
+                }</span>
+                <app-icon class="pdk-tile__chev" name="chevron-right" [size]="14" />
               </button>
-            } @else if (isReceived() && !(data.order.stockBooked ?? true)) {
-              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="booking()" (click)="bookStock()">
-                <small>Volgende stap</small>
-                <strong>{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</strong>
-                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad }</span>
+            } @else if (!data.costing.lines.length && !isReceived()) {
+              <button class="pdk-tile pdk-tile--go" type="button" (click)="runNextStep()">
+                <span class="pdk-tile__label">Volgende stap</span>
+                <span class="pdk-tile__value">Producten toevoegen</span>
+                <span class="pdk-tile__sub">bouw je container op</span>
+                <app-icon class="pdk-tile__chev" name="chevron-right" [size]="14" />
               </button>
             } @else {
-              <div class="desk-kpi desk-kpi--total">
-                <small>Status</small>
-                <strong>Afgerond ✓</strong>
-                <span>@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · bijgeboekt } @else { ontvangen en bijgeboekt }</span>
+              <div class="pdk-tile pdk-tile--done">
+                <span class="pdk-tile__label">Status</span>
+                <span class="pdk-tile__value">Afgerond ✓</span>
+                <span class="pdk-tile__sub">@if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · bijgeboekt } @else { ontvangen en bijgeboekt }</span>
               </div>
             }
           </div>
-        </header>
 
-        @if (attentionShown().length) {
-          <div class="desk-attention" role="status">
-            <b>{{ attentionShown().length }}</b>
-            <span>@for (item of attentionShown(); track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
-            @if (paymentAttention()) { <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button> }
-            <button class="linklike" type="button" (click)="showRail('done')">Bekijken ›</button>
-          </div>
-        }
+          @if (attentionShown().length) {
+            <div class="pdk-attn" role="status">
+              <span class="pdk-attn__count">{{ attentionShown().length }}</span>
+              <span class="pdk-attn__text">@for (item of attentionShown(); track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
+              @if (paymentAttention()) { <button class="wk-link" type="button" (click)="showPayments()">Betalingen ›</button> }
+              <button class="wk-link" type="button" (click)="showRail('done')">Afronden ›</button>
+            </div>
+          }
+        </section>
 
         <div class="desk-body" [class.desk-body--payments]="mainView() !== 'products'">
           <!-- ============================ the table: every line, keyed through -->
@@ -213,7 +253,7 @@ type DeskRow =
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
-                <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
+                <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).plural }} · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
               </div>
               <span class="per-toggle" role="group" aria-label="Bedragen tonen als">
                 <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
@@ -477,9 +517,16 @@ type DeskRow =
                     </dl>
                   } @else {
                   <div class="desk-form">
-                    <div class="field">
-                      <label for="dk-alias">Herkenbare naam <span class="opt"></span></label>
-                      <input class="input" id="dk-alias" [ngModel]="data.order.alias" (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
+                    <div class="desk-form__duo">
+                      <div class="field">
+                        <label for="dk-alias">Herkenbare naam <span class="opt"></span></label>
+                        <input class="input" id="dk-alias" [ngModel]="data.order.alias" (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
+                        <span class="hint">De titel van deze container in de hele ERP.</span>
+                      </div>
+                      <div class="field">
+                        <label for="dk-number">Ordernummer</label>
+                        <input class="input" id="dk-number" autocomplete="off" [ngModel]="data.order.number" (ngModelChange)="$event?.trim() && patch({ number: $event.trim() })" />
+                      </div>
                     </div>
                     <div class="desk-form__duo">
                       <div class="field">
@@ -579,8 +626,8 @@ type DeskRow =
                   @if (!editing()) {
                     <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
                     <div class="desk-rates">
-                      <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
-                      <div><small>USD → EUR</small><b>{{ usdToEurRate() }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
+                      <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd != null ? (data.order.cnyToUsd | num: 4) : '—' }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
+                      <div><small>USD → EUR</small><b>{{ usdToEurRate() | num: 4 }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
                       <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : isCif() ? 'CIF' : 'EXW' }}</b></div>
                     </div>
                     @if (!isDdp()) {
@@ -1199,15 +1246,14 @@ type DeskRow =
     } @else {
       @if (loadError(); as error) {
         <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />
-        <div class="content desk-skeleton">
+        <div class="content pdk">
           <app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" />
         </div>
       } @else {
         <app-page-header title="Inkoop" subtitle="Inkooporder laden…" [showBack]="true" [showBell]="false" />
-        <div class="content desk-skeleton" role="status" aria-live="polite" aria-label="Inkooporder laden">
-          <app-skeleton kind="card" [rows]="1" />
-          <app-skeleton kind="stats" [rows]="4" />
-          <app-skeleton kind="list" [rows]="5" />
+        <div class="content pdk pdk--loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
+          <app-skeleton kind="card" [rows]="3" />
+          <app-skeleton kind="table" [rows]="6" />
         </div>
       }
     }
@@ -1353,6 +1399,42 @@ export class PurchaseDesk extends PurchaseEditor {
   }
 
   readonly statusLabel$ = STATUS_LABEL;
+  readonly containerNumberHint = containerNumberHint;
+  readonly countWords = countWords;
+
+  /* ---- the summary card (Inkoop redesign I2): the phone's helpers, so desk and phone never disagree */
+  /** Concept, Besteld, Vertrokken, Ontvangen with the day each was reached (Ontvangen 'verwacht …' until it happened). */
+  readonly progress = computed(() => {
+    const data = this.view();
+    return data ? progressSteps(data.order, data.createdAt) : [];
+  });
+  /** The payment tile in the Betalingen headline's words; a concept shows its Afspraak. */
+  readonly payTile = computed(() => {
+    const order = this.view()?.order;
+    return paymentTile(this.paymentLedger()?.summary ?? null, this.paymentState(), order ? this.planLabel(order) : '', PAYEE_LABEL);
+  });
+  /** The status road, then the shelf, then the catalogue costs (Kostprijzen toepassen, B8); null on an empty or finished container. */
+  readonly readStep = computed<PhoneStep | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
+      costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number) });
+  });
+
+  /** The next-step tile: one method, so the template keeps a single apply() button (Afronden). */
+  runNextStep(): void {
+    const step = this.readStep();
+    if (step === 'BIJBOEKEN') { void this.bookStock(); return; }
+    if (step === 'KOSTPRIJZEN') { void this.apply(); return; }
+    if (step) { this.advanceStatus(); return; }
+    const data = this.view();
+    if (data && !data.costing.lines.length && !this.isReceived()) { this.startEdit(); this.openAdd(); }
+  }
+
+  /** An amount range never breaks inside: '€ 3,124 – € 10,859' stays on one line. */
+  keepAmounts(text: string): string {
+    return text.replace(/ – /g, '\u00a0–\u00a0');
+  }
   /** How the route opened us; the desk itself decides when editing ends. */
   readonly mode = input<'view' | 'edit'>('view');
   /** Reading is the default; Bewerken switches the inputs on. */
@@ -1520,8 +1602,10 @@ export class PurchaseDesk extends PurchaseEditor {
     const index = this.stepIndex(order.status);
     const booked = order.stockBooked === true;
     const steps = [
-      { key: 'made', label: 'Calculatie gemaakt', done: true, date: order.orderDate, text: this.creatorName(data) },
-      { key: 'ordered', label: 'Besteld', done: index >= 1, date: null as string | null, text: index >= 1 ? 'aantallen en prijzen liggen vast' : 'nog een concept' },
+      /* The same days as the summary card's steps (F7): the calculation from its creation, Besteld from the order date. */
+      { key: 'made', label: 'Calculatie gemaakt', done: true, date: data.createdAt ?? order.orderDate, text: this.creatorName(data) },
+      { key: 'ordered', label: 'Besteld', done: index >= 1, date: index >= 1 ? order.orderDate || null : null as string | null,
+        text: index >= 1 ? 'aantallen en prijzen liggen vast' : 'nog een concept' },
       { key: 'shipped', label: 'Vertrokken', done: index >= 2, date: order.shippedOn ?? null,
         text: index >= 2 ? (order.trackingReference ?? '') : 'nog bij de leverancier' },
       { key: 'received', label: 'Ontvangen', done: index >= 3, date: order.receivedOn ?? null,

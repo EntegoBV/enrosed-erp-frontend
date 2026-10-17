@@ -8,7 +8,7 @@ import type { NacalcHeadline } from '../src/app/features/purchasing/purchase-nac
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import {
   HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance, parseTab,
-  paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  countWords, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
   type ActionsMenuState, type AskedStep, type PhoneTab, type StepHandoff,
 } from '../src/app/features/purchasing/purchase-phone-model.ts';
@@ -420,4 +420,11 @@ test('nothing the module can say uses "begroot"', async () => {
   for (const step of ['BESTELLEN', 'VERTROKKEN', 'ONTVANGEN', 'BIJBOEKEN'] as const) {
     assert.doesNotMatch(JSON.stringify(stepConfirm(step, { number: 'X', planLabel: 'Y', location: 'Z', dirty: true })), /begroot/i);
   }
+});
+
+test('the count word follows what the container holds: Stuks, Displays or Eenheden (Inkoop redesign F18)', () => {
+  assert.deepEqual(countWords('DISPLAY'), { label: 'Displays', plural: 'displays' });
+  assert.deepEqual(countWords('MIXED'), { label: 'Eenheden', plural: 'stuks en displays' });
+  assert.deepEqual(countWords('PIECE'), { label: 'Stuks', plural: 'stuks' });
+  assert.deepEqual(countWords(undefined), { label: 'Stuks', plural: 'stuks' }, 'an older server without setBasis counts pieces');
 });
