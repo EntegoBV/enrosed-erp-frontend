@@ -44,6 +44,19 @@
  /* A page that is not on the kit yet still clears the website tab bar with its last row. */
  .shell--website .main>*>.content{padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px)}
 }
+/* Website beheren keeps the ERP's light side (Emre, 2026-10-17: "menu wel wit laten links, enkel bij bank en transactie en
+   document beheer" - only Kosten & bank and Documenten & media are dark): the kit's side tokens on the light sidebar's colours. */
+.shell--website .wk-side{--wk-side-bg:var(--surface);--wk-side-ink:var(--ink-2);--wk-side-muted:var(--muted);--wk-side-line:var(--line);
+  --wk-side-hover:var(--surface-2);--wk-side-active-bg:var(--rose-soft);--wk-side-active-ink:var(--rose-dark);border-right:1px solid var(--line);color:var(--ink)}
+.shell--website .wk-side__brand app-brand-mark{filter:none}
+.shell--website .wk-side__item:hover{color:var(--ink)}
+.shell--website .wk-side__item.active,.shell--website .wk-side__item[aria-current=page]{font-weight:700}
+.shell--website .wk-side__back{color:var(--ink-2)}
+.shell--website .wk-side__back:hover{color:var(--ink)}
+.shell--website .wk-side__account{color:var(--muted)}
+.shell--website .wk-side__account button{border-color:var(--line-strong)}
+.shell--website .ws-env{border-color:var(--line-strong);color:#8a6a1c}
+@media (min-width:900px){.shell--website .wk-side__count{background:var(--surface-2);color:var(--ink-2)}}
 .ws-side .wk-side__count--danger{background:#e0695f;color:#fff}
 .ws-side .wk-side__count--word{padding:0 7px;font-size:10.5px;font-weight:750;letter-spacing:.01em}
 .ws-side .ws-side__dot--danger{background:#e0695f}
