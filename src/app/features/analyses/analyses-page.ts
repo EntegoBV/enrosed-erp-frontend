@@ -149,6 +149,7 @@ const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; 
 };
 type PageSheet = 'period' | 'receipt' | 'partner' | 'value' | 'how' | 'menu' | null;
 const RECEIPT_PERIOD_NOTE = 'Geldt voor Kwaliteit en Afwijkingen. Een order telt op zijn ontvangstdatum.';
+const VARIANCE_FAILED = 'De ontvangstafwijkingen konden niet worden geladen.';
 const PART_LABELS: Record<InkoopPart, string> = { kosten: 'Containerkost', kwaliteit: 'Kwaliteit', partners: 'Partners', afwijkingen: 'Afwijkingen' };
 const PART_PHONE: Record<InkoopPart, string> = { kosten: 'Kosten', kwaliteit: 'Kwaliteit', partners: 'Partners', afwijkingen: 'Afwijkingen' };
 
@@ -943,6 +944,12 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           @case ('kosten') { <app-container-cost-analysis [purchases]="purchases()" [loading]="loading()" /> }
           @case ('kwaliteit') {
             <ng-container *ngTemplateOutlet="receiptBar; context: { $implicit: false }" />
+            @if (qualityError()) {
+              <div [class]="desk.active() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
+                <span class="wk-banner__text"><b>Ontvangstafwijkingen niet beschikbaar.</b> {{ qualityError() }}</span>
+                <button [class]="desk.active() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" [disabled]="filtering()" (click)="loadVariances()">Opnieuw</button>
+              </div>
+            }
             @if (loading()) {
               <div class="an-kpis an-kpis--6" aria-label="Kwaliteit laden">@for (n of [1, 2, 3, 4, 5, 6]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
             } @else {
@@ -957,10 +964,17 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <span class="an-kpi__sub">{{ perf.onTimeOrders }} van {{ plural(perf.datedOrders, 'ontvangst', 'ontvangsten') }} tegen de laatst opgeslagen ETA</span><span class="an-kpi__foot"></span></div>
                 <div class="an-kpi"><span class="an-kpi__label">Doorlooptijd</span><span class="an-kpi__value">{{ leadDays() === null ? '—' : plural(leadDays()!, 'dag', 'dagen') }}</span>
                   <span class="an-kpi__sub">van bestelling tot ontvangst, gemiddeld</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">{{ whole(q.totalLossValueEur) }}</span>
-                  <span class="an-kpi__sub">{{ q.missingPieces + q.damagedPieces | num }} afwijkende stuks</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="q.unvaluedLossPieces ? 'warn' : null">{{ q.unvaluedLossPieces | num }} st</span>
-                  <span class="an-kpi__sub">{{ q.valuationComplete ? 'alles gewaardeerd' : 'Vul de ontvangstwaarde in om de impact compleet te maken' }}</span><span class="an-kpi__foot"></span></div>
+                @if (qualityError()) {
+                  <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">—</span>
+                    <span class="an-kpi__sub">afwijkingen niet geladen</span><span class="an-kpi__foot"></span></div>
+                  <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value">—</span>
+                    <span class="an-kpi__sub">afwijkingen niet geladen</span><span class="an-kpi__foot"></span></div>
+                } @else {
+                  <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">{{ whole(q.totalLossValueEur) }}</span>
+                    <span class="an-kpi__sub">{{ q.missingPieces + q.damagedPieces | num }} afwijkende stuks</span><span class="an-kpi__foot"></span></div>
+                  <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="q.unvaluedLossPieces ? 'warn' : null">{{ q.unvaluedLossPieces | num }} st</span>
+                    <span class="an-kpi__sub">{{ q.valuationComplete ? 'alles gewaardeerd' : 'Vul de ontvangstwaarde in om de impact compleet te maken' }}</span><span class="an-kpi__foot"></span></div>
+                }
               </div>
               <section class="an-card" aria-labelledby="an-score-title">
                 <header class="an-card__head"><h2 class="an-card__title" id="an-score-title">Scorekaart per leverancier</h2><span class="an-card__trail">ontvangen orders in de gekozen periode</span></header>
@@ -1351,7 +1365,11 @@ export class AnalysesPage {
   readonly receiptNote = RECEIPT_PERIOD_NOTE;
   /** Kwaliteit's report: the receipt filter without the order focus (N8). */
   private readonly unfocusedReport = signal<ReceiptVarianceReport>(EMPTY_REPORT);
+  /** The unfocused call's failure: Kwaliteit shows it, Afwijkingen (focused) does not need that report. */
+  private readonly unfocusedError = signal('');
   readonly qualityReport = computed(() => this.focusedOrderId() === null ? this.report() : this.unfocusedReport());
+  /** Kwaliteit's variance figures failed: a banner and "—", never € 0 and "alles gewaardeerd". */
+  readonly qualityError = computed(() => this.focusedOrderId() === null ? this.receiptError() : this.unfocusedError());
   readonly partnerSheetId = signal<number | null>(null);
   readonly partnerSheetRow = computed(() => this.financing().rows.find((row) => row.purchaseOrderId === this.partnerSheetId()) ?? null);
   readonly valueSheetKey = signal<string | null>(null);
@@ -1824,7 +1842,10 @@ export class AnalysesPage {
 
   async load(): Promise<void> {
     if (this.data() === 'idle') this.data.set('loading');
+    /* The variance ticket: a filter change while this load runs starts a newer loadVariances(), whose report wins. */
+    const round = ++this.varianceRound;
     this.receiptError.set('');
+    this.unfocusedError.set('');
     try {
       const filters = this.filters();
       this.loadedFilterKey = JSON.stringify(filters);
@@ -1845,12 +1866,16 @@ export class AnalysesPage {
         this.catalog.stockLevels(),
       ] as const);
       const warnings: string[] = [];
-      if (report.status === 'fulfilled') this.acceptReport(report.value);
-      else this.receiptError.set(messageOf(report.reason, 'De ontvangstafwijkingen konden niet worden geladen.'));
-      /* Overzicht reuses Afwijkingen' report while its filter is the default (this year, everything). */
+      if (round === this.varianceRound) {
+        if (report.status === 'fulfilled') this.acceptReport(report.value);
+        else this.receiptError.set(messageOf(report.reason, VARIANCE_FAILED));
+        if (unfocused.status === 'fulfilled') { if (unfocused.value) this.unfocusedReport.set(unfocused.value); }
+        else this.unfocusedError.set(messageOf(unfocused.reason, VARIANCE_FAILED));
+        this.filtering.set(false);
+      }
+      /* Overzicht reuses Afwijkingen' report while its filter is the default (this year, everything); that filter never changes, so an older round still fits it. */
       const overviewReport = sameFilters ? report : overview;
       if (overviewReport.status === 'fulfilled' && overviewReport.value) this.overviewReport.set(overviewReport.value);
-      if (unfocused.status === 'fulfilled' && unfocused.value) this.unfocusedReport.set(unfocused.value);
       if (purchases.status === 'fulfilled') this.purchases.set(purchases.value); else warnings.push('inkoop');
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value); else warnings.push('leveranciers');
       if (products.status === 'fulfilled') this.products.set(products.value); else warnings.push('voorraad');
@@ -1875,17 +1900,19 @@ export class AnalysesPage {
     const round = ++this.varianceRound;
     this.filtering.set(true);
     this.receiptError.set('');
+    this.unfocusedError.set('');
     const filters = this.filters();
     this.loadedFilterKey = JSON.stringify(filters);
     try {
-      const [report, unfocused] = await Promise.all([this.sourcing.receiptVariances(filters),
+      const [report, unfocused] = await Promise.allSettled([this.sourcing.receiptVariances(filters),
         filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null })]);
       if (round !== this.varianceRound) return;
-      this.acceptReport(report);
-      if (unfocused) this.unfocusedReport.set(unfocused);
-      if (this.sameFilters(filters, this.overviewFilters())) this.overviewReport.set(report);
-    } catch (failure: unknown) {
-      if (round === this.varianceRound) this.receiptError.set(messageOf(failure, 'De ontvangstafwijkingen konden niet worden geladen.'));
+      if (report.status === 'fulfilled') {
+        this.acceptReport(report.value);
+        if (this.sameFilters(filters, this.overviewFilters())) this.overviewReport.set(report.value);
+      } else this.receiptError.set(messageOf(report.reason, VARIANCE_FAILED));
+      if (unfocused.status === 'fulfilled') { if (unfocused.value) this.unfocusedReport.set(unfocused.value); }
+      else this.unfocusedError.set(messageOf(unfocused.reason, VARIANCE_FAILED));
     } finally {
       if (round === this.varianceRound) this.filtering.set(false);
     }
