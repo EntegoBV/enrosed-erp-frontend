@@ -305,11 +305,11 @@ const normalizeCategoryCode = (value: string): string => value
               @for (tier of orderTiers(); track $index; let tierIndex = $index) {
                 <div class="tier">
                   <span>Vanaf</span>
-                  <input class="set-input" type="number" min="1" step="50" inputmode="numeric" aria-label="Vanaf aantal"
+                  <input class="disc-input" type="number" min="1" step="50" inputmode="numeric" aria-label="Vanaf aantal"
                          [value]="tier.minQuantity" (input)="orderMinInput(tierIndex, $any($event.target).value)" (blur)="sortOrderTiers()" />
                   <span>stuks</span>
                   <span aria-hidden="true">→</span>
-                  <input class="set-input" type="text" inputmode="decimal" aria-label="Kortingspercentage"
+                  <input class="disc-input" type="text" inputmode="decimal" aria-label="Kortingspercentage"
                          [value]="pctText(tier.percent)" (input)="orderPctInput(tierIndex, $any($event.target).value)"
                          (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
                   <span>%</span>
@@ -356,12 +356,12 @@ const normalizeCategoryCode = (value: string): string => value
                       @for (tier of group.tiers; track tier.id ?? $index) {
                         <div class="tier tier--line">
                           <span>Vanaf</span>
-                          <input class="set-input" type="number" min="1" step="1" inputmode="numeric"
+                          <input class="disc-input" type="number" min="1" step="1" inputmode="numeric"
                                  [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
                                  [value]="tier.minQuantity" (input)="lineMinInput(tier, $any($event.target).value)" />
                           <span>{{ unitWord(group.product) }}</span>
                           <span aria-hidden="true">→</span>
-                          <input class="set-input" type="text" inputmode="decimal"
+                          <input class="disc-input" type="text" inputmode="decimal"
                                  [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
                                  [value]="pctText(tier.percent)" (input)="linePctInput(tier, $any($event.target).value)"
                                  (change)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />

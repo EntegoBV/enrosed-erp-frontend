@@ -2,7 +2,9 @@
    Kortingen (Instellingen › ?sectie=discounts, company area 2026-10-17).
    A global partial, scoped under the settings page host, so the page's own
    component styles stay under their budget. Kit classes are used as they
-   are; only area classes (.disc*, .tier, .set-input here) are styled.
+   are; only Kortingen's own classes (.disc*, .tier) are styled. Never a
+   name another settings view uses: the shared .set-input once leaked this
+   right alignment into every Bedrijfsgegevens field.
    ========================================================================== */
 app-settings-page {
   .disc { container: set-disc / inline-size; }
@@ -19,9 +21,9 @@ app-settings-page {
   .disc-product__foot { padding: 6px 12px 8px; }
   .disc-none { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
   .disc-legacy { margin: 0 16px 12px; }
-  .set-input { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface);
+  .disc-input { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface);
     color: var(--ink); font: inherit; font-size: 13.5px; text-align: right; font-variant-numeric: tabular-nums; }
-  .set-input:focus { border-color: var(--rose); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 18%, transparent); }
+  .disc-input:focus { border-color: var(--rose); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 18%, transparent); }
   .tier { display: grid; grid-template-columns: auto 92px auto 12px 60px 12px 26px; align-items: center; gap: 6px; padding: 6px 16px;
     border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; white-space: nowrap; }
   .tier--line { grid-template-columns: auto minmax(56px, 1fr) auto 12px 56px 12px 26px; gap: 5px; padding: 6px 12px; }
