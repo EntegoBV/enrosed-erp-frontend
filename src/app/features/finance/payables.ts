@@ -1,4 +1,5 @@
 import type { CompanyCost, Payee, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
+import type { ForecastCertainty } from './cash-forecast';
 import type { UpcomingCost } from './finance-metrics';
 
 /*
@@ -118,7 +119,16 @@ export interface PayableRow {
   cost: CompanyCost | null;
   container: ContainerPayable | null;
   upcoming: UpcomingCost | null;
+  /** Containers dated by the Kaslijn: how sure the day is (FIXED reads without "±"); null for other rows and undated containers. */
+  dateCertainty?: ForecastCertainty | null;
+  /** Containers: when the term falls due in words ('bij vertrek', 'na aankomst'); null for other rows. */
+  dueWord?: string | null;
+  /** Containers whose planned day already passed (e.g. a departure planned in the past while the order is still Besteld): that day. */
+  plannedDate?: string | null;
 }
+
+/** The Kaslijn's day of one container row (cash-forecast.ts containerDueDates). */
+export interface ContainerDate { date: string; certainty: ForecastCertainty; overdue: boolean; originalDate: string | null }
 
 /** An open cost with the money the state computed for it (openOf / cashTotalOf of finance-metrics.ts). */
 export type OpenCost = CompanyCost & { openEur: number; cashTotalEur: number };
@@ -128,6 +138,16 @@ export interface PayablesInput {
   upcoming30: readonly UpcomingCost[];
   containerRows: readonly ContainerPayable[];
   today: string;
+  /** Optional: the Kaslijn's days of the container rows by key. Without it containers stay undated, Nu or Later (the Vooruitblik passes none). */
+  containerDates?: ReadonlyMap<string, ContainerDate>;
+}
+
+/** When a container row falls due, in words: the supplier term by its moment, the other payees by their rule. */
+export function containerDueWord(row: Pick<ContainerPayable, 'payee' | 'due'>): string {
+  if (row.payee === 'LOGISTICS') return 'na aankomst';
+  if (row.payee === 'SEPARATE') return 'voor vertrek';
+  if (row.payee === 'OTHER') return 'bij aankomst';
+  return row.due === 'SHIPPED' || row.due === 'FREIGHT' ? 'bij vertrek' : row.due === 'ARRIVED' ? 'bij aankomst' : 'bij bestelling';
 }
 
 /** Whole days from one ISO day to another. */
@@ -137,6 +157,16 @@ export function daysBetween(from: string, to: string): number {
 
 function addDays(day: string, days: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A container's name: containerName() of purchasing/container-name.ts, inlined (alias, else number, else 'Inkoop #id'); the PO number goes in the sub. */
+export function containerTitle(row: Pick<ContainerPayable, 'alias' | 'orderNumber' | 'orderId'>): string {
+  return row.alias?.trim() || row.orderNumber?.trim() || `Inkoop #${row.orderId}`;
+}
+
+/** What Te betalen's search reads of a row besides the category words: a container is also found by its PO number and alias (B9). */
+export function payableSearchTexts(row: Pick<PayableRow, 'title' | 'party' | 'cost' | 'container'>): (string | null | undefined)[] {
+  return [row.title, row.party, row.cost?.reference, row.container?.orderNumber, row.container?.alias];
 }
 
 const BUCKET_ORDER: Readonly<Record<PayableBucket, number>> = { now: 0, soon: 1, later: 2 };
@@ -160,9 +190,13 @@ export function payablesFor(input: PayablesInput): PayableRow[] {
       estimated: false, autoPaid: !!row.definition.autoPaid, recurringId: row.definition.id, upcoming: row });
   }
   for (const container of input.containerRows) {
-    rows.push({ ...empty, key: container.key, kind: 'container', bucket: container.bucket, date: null, ageDays: null,
-      title: container.alias ? `${container.orderNumber} · ${container.alias}` : container.orderNumber, party: null,
-      amountEur: container.remainingEur, ofEur: container.remainingEur, estimated: true, autoPaid: false, orderId: container.orderId, container });
+    const dated = input.containerDates?.get(container.key) ?? null;
+    const bucket: PayableBucket = !dated || container.bucket === 'now' ? container.bucket : dated.date <= horizon ? 'soon' : 'later';
+    rows.push({ ...empty, key: container.key, kind: 'container', bucket, date: dated?.date ?? null, ageDays: null,
+      title: containerTitle(container), party: null,
+      amountEur: container.remainingEur, ofEur: container.remainingEur, estimated: true, autoPaid: false, orderId: container.orderId, container,
+      dateCertainty: dated?.certainty ?? null, dueWord: containerDueWord(container),
+      plannedDate: dated?.overdue && container.bucket !== 'now' ? dated.originalDate : null });
   }
   return rows.sort((a, b) => BUCKET_ORDER[a.bucket] - BUCKET_ORDER[b.bucket]
     || (a.bucket === 'now' ? KIND_ORDER[a.kind] - KIND_ORDER[b.kind] : 0)
@@ -183,6 +217,8 @@ export interface PayableTotals {
   laterEur: number;
   totalEur: number;
   containerNowEur: number;
+  /** Container terms the Kaslijn dates within 30 days (0 without containerDates). */
+  containerSoonEur: number;
   containerLaterEur: number;
   byKind: Readonly<Record<PayableRow['kind'], number>>;
   counts: { now: number; soon: number; later: number; cost: number; container: number; recurring: number; total: number };
@@ -201,6 +237,7 @@ export function payableTotals(rows: readonly PayableRow[]): PayableTotals {
     laterEur: sum((row) => row.bucket === 'later'),
     totalEur: sum(() => true),
     containerNowEur: sum((row) => row.kind === 'container' && row.bucket === 'now'),
+    containerSoonEur: sum((row) => row.kind === 'container' && row.bucket === 'soon'),
     containerLaterEur: sum((row) => row.kind === 'container' && row.bucket === 'later'),
     byKind: { cost: sum((row) => row.kind === 'cost'), container: sum((row) => row.kind === 'container'), recurring: sum((row) => row.kind === 'recurring') },
     counts: {

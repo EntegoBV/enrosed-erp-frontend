@@ -44,7 +44,8 @@
    * option carries the raised look itself instead of the sliding indicator, and "Transacties ophalen" keeps its icon
    * (aria-label and title keep the words). That keeps, at 1440 px wide (a 1152 px bar), the title, the "Te koppelen"
    * count and the whole search placeholder "Bedrag, naam of mededeling" (the kit's 240 px search, at every width from
-   * 900). Narrower, the title steps aside (the sidebar marks the place); the "Te koppelen" count stays at every width
+   * 900). From 940 to 1120 the title steps aside (the sidebar marks the place); below 940 the toolbar's short labels
+   * leave room for it again, down to 720 (a 760 px bar, tight()). The "Te koppelen" count stays at every width
    * (a key number). Only from 940 to 970, where "Nieuw" still carries its words beside the 240 px search, the options
    * narrow to 7 px sides and the count stands without its dot (16 px to spare with a three-digit count); below 900
    * "Inkomend" and "Uitgaand" read "In" and "Uit" and the search folds to its icon (the kit). The widths are the bar's
@@ -57,7 +58,8 @@
       .wk-seg__opt { padding: 0 10px; }
       .wk-seg__opt[aria-checked='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
   }
-  @container wk-bar (max-width: 1119.98px) {
+  /* below a 980 px bar (940 content) the toolbar's short labels free the room again: the title stays down to 760 (§3.12) */
+  @container wk-bar (min-width: 940px) and (max-width: 1119.98px) {
     .fin-toolbar--tx .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
   @container wk-bar (min-width: 940px) and (max-width: 969.98px) {
@@ -73,17 +75,18 @@
 
   /* ==================================================== desk cockpit */
   .fin-cockpit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; > * { min-width: 0; margin: 0; } }
-  .fin-accounts { display: flex; gap: 12px; min-width: 0; overflow-x: auto; overscroll-behavior-inline: contain; padding-bottom: 2px; scrollbar-width: thin;
-    > * { flex: 1 0 248px; max-width: 360px; } > .fin-total { flex: 0 0 300px; } }
-  .fin-total { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 14px 16px; border: 1px solid #2c2622; border-radius: 16px; background: #1f1b19;
-    color: #fff; font: inherit; text-align: left; cursor: pointer;
-    &:hover { box-shadow: 0 4px 14px rgb(26 22 20 / 18%); } }
-  .fin-total__top { display: flex; justify-content: space-between; gap: 8px; color: rgb(255 255 255 / 66%); font-size: 12px; font-weight: 650; small { font-size: 11.5px; font-weight: 600; } }
-  .fin-total__value { font-size: 27px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
-  .fin-total__sub { color: rgb(255 255 255 / 64%); font-size: 11.5px; line-height: 1.35; &.is-warn { color: #f4cf9a; } }
-  .fin-total__action { color: #fff; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
-  .fin-total__moves { display: flex; gap: 22px; margin-top: 6px; padding-top: 8px; border-top: 1px solid rgb(255 255 255 / 12%);
-    span { display: grid; gap: 1px; } small { color: rgb(255 255 255 / 55%); font-size: 11px; } b { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; } }
+  /* several accounts (or none): the total tile and the cards fill the row; the tile is light, with an accent edge (no dark block) */
+  .fin-accounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; min-width: 0; padding-bottom: 2px;
+    > * { min-width: 0; max-width: none; } }
+  .fin-total { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 14px 16px 14px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+    box-shadow: inset 3px 0 0 var(--rose), 0 1px 2px rgb(26 22 20 / 4%); color: var(--ink); font: inherit; text-align: left; cursor: pointer;
+    &:hover { background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); } }
+  .fin-total__top { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 650; small { font-size: 11.5px; font-weight: 600; } }
+  .fin-total__value { color: var(--ink); font-size: 27px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+  .fin-total__sub { color: var(--muted); font-size: 11.5px; line-height: 1.35; &.is-warn { color: var(--warn); } }
+  .fin-total__action { color: var(--rose-dark); font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
+  .fin-total__moves { display: flex; gap: 22px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line);
+    span { display: grid; gap: 1px; } small { color: var(--muted); font-size: 11px; } b { color: var(--ink); font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; } }
 
   /* one account as a card */
   app-bank-account-card { display: block; min-width: 0; }
@@ -124,6 +127,10 @@
     .fin-acct--wide .fin-acct__open { grid-template-columns: minmax(min-content, 1fr) minmax(0, 150px); grid-template-areas: 'head spark' 'balance spark' 'source source' 'foot foot'; gap: 4px 18px; }
   }
   app-bank-account-card.fin-tx-account .fin-acct--wide { display: flex; align-items: center; padding-right: 10px; }
+  @container fin-acct-wide (max-width: 519.98px) {
+    .fin-acct--wide .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'spark' 'source' 'foot'; }
+    .fin-acct--wide .fin-acct__spark { max-width: 160px; }
+  }
 
   /* the Geld strip: four cells, each opens its section */
   .fin-geld { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; }
@@ -145,6 +152,18 @@
     > app-icon { flex: none; color: var(--warn); } .wk-btn, .wk-link { flex: none; } }
   /* the whole sentence, on a second line when it needs one (nothing is cut at 1440; the fold keeps its first row) */
   .fin-kaslijn__banner-text { flex: 1; min-width: 0; line-height: 1.35; }
+  /*
+   * A narrow pane (below 720, and beside a docked line: 428 px at 1100) left the sentence a 64 px column of one word
+   * per line next to its three actions: there it takes the first line beside the icon, the actions the next.
+   */
+  @container wk-pane (max-width: 719.98px) {
+    .fin-kaslijn__banner { flex-wrap: wrap; row-gap: 6px; padding-block: 6px; }
+    .fin-kaslijn__banner-text { flex: 1 1 calc(100% - 23px); + * { margin-left: 23px; } }
+  }
+  @container wk-pane (max-width: 1023.98px) {
+    .wk-body--split .fin-kaslijn__banner { flex-wrap: wrap; row-gap: 6px; padding-block: 6px; }
+    .wk-body--split .fin-kaslijn__banner-text { flex: 1 1 calc(100% - 23px); + * { margin-left: 23px; } }
+  }
   /* chart left, the three facts stacked beside it (one row less: the fold) */
   .fin-kaslijn__grid { display: grid; grid-template-columns: minmax(0, 1fr) 250px; align-items: start; }
   .fin-kaslijn__plot { min-width: 0; padding: 2px 8px 10px 16px; }
@@ -158,34 +177,173 @@
   .fin-outlook .fin-hint { margin-top: 6px; font-size: 11.5px; line-height: 1.4; }
 
   /* the transactions beside the rail */
-  .fin-cockpit__cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
   .fin-cockpit__tx { margin: 0; overflow: hidden; }
   .fin-cockpit__tx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px 8px; }
   .fin-cockpit__exact { margin-left: auto; }
-  .fin-cockpit__rail { display: grid; gap: 14px; > .wk-card { margin: 0; } }
-  .fin-cockpit__rail .fin-attention__row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 6px 12px; }
-  .fin-cockpit__rail .fin-attention__text { b { font-size: 13px; } small { font-size: 11.5px; line-height: 1.35; } .fin-attention__amount { color: var(--ink-2); font-weight: 650; } }
-  .fin-recent__row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 7px 16px; border: 0; border-top: 1px solid var(--line);
+  .fin-recent__row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: start; gap: 8px; width: 100%; padding: 7px 16px; border: 0; border-top: 1px solid var(--line);
     background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; &:hover { background: var(--surface-2); } }
   .fin-recent__day { color: var(--muted); font-size: 11.5px; }
-  .fin-recent__text { display: grid; min-width: 0; b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; } small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; } }
+  /* Laatst geboekt: a container's name and a cost's description wrap whole, never "…" (N13) */
+  .fin-recent__text { display: grid; min-width: 0; b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; } }
   .fin-recent__amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-recent__empty { padding: 0 16px 14px; }
+
+  /* ==================================================== cockpit 2026-10-17: the band, the work above the fold */
+  .fin-cockpit { gap: 14px; }
+  /*
+   * One active account: one light band. Stacked below a 600 px pane (beside a docked line at 1100), two rows up to
+   * 1149 (1024, 1100, 1280, 1366), one row from a 1150 px pane (1440). Nothing in it is nowrap except the figures; the
+   * status column may shrink and its pills wrap (critique B1).
+   */
+  .fin-band { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'id more' 'balance balance' 'moves moves' 'status status';
+    align-items: center; gap: 12px 20px; margin: 0; padding: 14px 14px 14px 18px; }
+  .fin-band__id { grid-area: id; display: flex; align-items: center; gap: 10px; min-width: 0;
+    > span:last-child { display: grid; min-width: 0; } b { font-size: 13.5px; font-weight: 650; overflow-wrap: anywhere; }
+    small { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } }
+  .fin-band__balance { grid-area: balance; display: grid; justify-items: start; min-width: 0; }
+  /* the hover wash reaches 6 px around the figures with a shadow, so the button stays inside its column */
+  .fin-band__open { display: grid; gap: 0; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    transition: background-color var(--dur-1, 120ms) var(--ease-out, ease-out), box-shadow var(--dur-1, 120ms) var(--ease-out, ease-out);
+    &:hover { background: var(--surface-2); box-shadow: 0 0 0 6px var(--surface-2); } }
+  .fin-band__label { color: var(--muted); font-size: 11.5px; font-weight: 650; }
+  .fin-band__value { font-size: 26px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.15; white-space: nowrap; }
+  .fin-band__age { color: var(--muted); font-size: 11.5px; &.is-warn { color: var(--warn); } }
+  .fin-band__check { padding: 0; font-size: 11.5px; }
+  .fin-band__spark { grid-area: spark; display: none; width: 100%; min-width: 0; height: 40px; overflow: visible;
+    path { fill: none; stroke: var(--rose); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .is-area { fill: color-mix(in srgb, var(--rose) 9%, transparent); stroke: none; } }
+  .fin-band__moves { grid-area: moves; display: flex; flex-wrap: wrap; gap: 4px 22px; min-width: 0;
+    span { display: grid; gap: 1px; } small { color: var(--muted); font-size: 11px; } b { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; } }
+  .fin-band__status { grid-area: status; display: grid; justify-items: start; gap: 5px; min-width: 0;
+    > small { color: var(--muted); font-size: 11.5px; line-height: 1.35; } }
+  .fin-band__pills { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0;
+    button { border: 0; font-family: inherit; cursor: pointer; } .wk-link { padding: 0; color: var(--muted); font-size: 12px; font-weight: 600; &:hover { color: var(--rose-dark); } } }
+  .fin-band__more { grid-area: more; justify-self: end; align-self: start; }
+  /*
+   * Two rows. Every column keeps its min-content: the balance its figure (the age wraps under it), the status its
+   * widest pill (the source line and the pills wrap around it; a pill cannot wrap, so this column's floor is that
+   * pill, not 0), the spark 64 px (the old card's was 87). The room above that goes to the balance and the status
+   * first, then to the spark. 1280 with a docked line (pane 608): balance 170 ("gecontroleerd 7 dagen geleden" on one
+   * line), spark 64, status 124; with a 6-digit balance, a 30-character label and "· controleren" nothing sticks out,
+   * down to a 600 px pane.
+   */
+  @container wk-pane (min-width: 600px) {
+    .fin-band { grid-template-columns: auto minmax(64px, 1fr) minmax(min-content, max-content) auto; grid-template-areas: 'id id status more' 'balance spark moves moves'; gap: 12px 28px; }
+    .fin-band__balance, .fin-band__pills { min-width: min-content; }
+    .fin-band__spark { display: block; }
+  }
+  @container wk-pane (min-width: 1150px) {
+    .fin-band { grid-template-columns: minmax(170px, 1.05fr) auto minmax(90px, 1fr) auto minmax(0, max-content) auto; grid-template-areas: 'id balance spark moves status more'; }
+  }
+
+  /* the Geld strip keeps its four cells down to a 780 px pane (1100 wide); narrower, two by two */
+  @container wk-pane (max-width: 1023.98px) {
+    .fin-cockpit .fin-geld { grid-template-columns: repeat(4, minmax(0, 1fr));
+      .fin-geld__cell:nth-child(3) { border-left: 1px solid var(--line); } .fin-geld__cell:nth-child(n + 3) { border-top: 0; } }
+  }
+  @container wk-pane (max-width: 779.98px) {
+    .fin-cockpit .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr));
+      .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }
+  }
+
+  /*
+   * The work. In the DOM: Vraagt aandacht, then the Kaslijn and Transacties, then the Vooruitblik and Laatst geboekt
+   * (the reading order, so the tab order). From a 1024 px pane the grid puts Kaslijn and Transacties left and the rail
+   * right with Vraagt aandacht on top; below it, one page with Vraagt aandacht first (two columns of rows) and the
+   * Vooruitblik beside Laatst geboekt. Beside a docked line (wk-body--split) the list stays where it was clicked:
+   * one column, the list before the rail, no reflow (critique B3).
+   */
+  .fin-cockpit__cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+  .fin-cockpit__attn, .fin-cockpit__main, .fin-cockpit__rail { display: grid; align-content: start; gap: 14px; min-width: 0; > .wk-card { margin: 0; } }
+  .fin-cockpit__main { order: 1; } .fin-cockpit__attn { order: 2; } .fin-cockpit__rail { order: 3; }
+  @container wk-pane (min-width: 1024px) {
+    .fin-cockpit__cols { grid-template-columns: minmax(0, 1fr) 352px; grid-template-rows: auto 1fr; }
+    .fin-cockpit__main { grid-column: 1; grid-row: 1 / span 2; order: 0; }
+    .fin-cockpit__attn { grid-column: 2; grid-row: 1; order: 0; }
+    .fin-cockpit__rail { grid-column: 2; grid-row: 2; order: 0; }
+    .fin-cockpit .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr) 236px; }
+  }
+  @container wk-pane (max-width: 1023.98px) {
+    .wk-body:not(.wk-body--split) .fin-cockpit .fin-cockpit__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .wk-body:not(.wk-body--split) .fin-cockpit { .fin-cockpit__main, .fin-cockpit__rail { display: contents; }
+      .fin-cockpit__attn { grid-column: 1 / -1; order: 0; } .fin-cockpit__main > * { grid-column: 1 / -1; }
+      .fin-attention__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); > li:nth-child(2n) { border-left: 1px solid var(--line); } } }
+  }
+  /* Beside a docked line the Kaslijn keeps its facts at its side while there is room: the list does not move down. */
+  @container wk-pane (min-width: 720px) and (max-width: 1023.98px) {
+    .wk-body--split .fin-cockpit .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr) 236px; }
+    .wk-body--split .fin-cockpit .fin-kaslijn__facts { grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 4px 0 8px; padding: 0 16px; border-top: 0; border-left: 1px solid var(--line); }
+  }
+  .fin-kaslijn__head { padding: 10px 16px 2px; }
+  /* The compact list's segments take their own words' width (as the toolbars below 1400), so the head stays one row. */
+  .fin-cockpit__tx-head .wk-seg { grid-auto-columns: auto; &::before { display: none; } .wk-seg__opt { padding: 0 12px; }
+    .wk-seg__opt[aria-checked='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
+
+  /* Vraagt aandacht: the whole row opens its list; a trail button only where the action does something itself (N9) */
+  .fin-attention__list { margin: 0; padding: 0; list-style: none; }
+  .fin-attention__row { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 8px 14px;
+    border-top: 1px solid var(--line); transition: background-color var(--dur-1, 120ms) var(--ease-out, ease-out); &:hover { background: var(--surface-2); } }
+  .fin-attention__open { position: absolute; inset: 0; z-index: 0; width: 100%; padding: 0; border: 0; background: none; cursor: pointer;
+    &:focus-visible { outline: 2px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: -2px; } }
+  .fin-attention__icon, .fin-attention__text, .fin-attention__chev { position: relative; pointer-events: none; }
+  .fin-attention__act { position: relative; z-index: 1; margin-top: 1px; }
+  .fin-attention__icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; --tone: var(--muted);
+    background: color-mix(in srgb, var(--tone) 13%, var(--surface)); color: var(--tone);
+    &.tone-warn { --tone: var(--warn); } &.tone-danger { --tone: var(--danger); } &.tone-blue { --tone: var(--blue); } }
+  .fin-attention__text { display: grid; gap: 1px; min-width: 0;
+    b { font-size: 13px; font-weight: 650; line-height: 1.3; } small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+    .fin-attention__amount { color: var(--ink-2); font-weight: 650; font-variant-numeric: tabular-nums; } }
+  .fin-attention__chev { margin-top: 6px; color: var(--muted-2); }
+  .fin-attention__more { margin: 8px 14px 12px; }
+
+  /* Vooruitblik: the horizon is named under the grand total */
+  .fin-outlook__horizon { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; text-align: right; }
 
   /* ==================================================== Transacties */
   .fin-tx-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px;
     app-finance-filters { display: flex; align-items: center; gap: 8px; } }
   .fin-tx-bar__totals { margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; small { color: var(--muted); font-size: 11px; } }
   /*
-   * Transacties' tracks must fit the pane: the tracks, the 12 px gaps, the rows' 2 × 16 px and the table's border within
-   * the pane minus its 2 × 24 px. Koppeling steps aside below 1024 (data-hide md), Saldo below 720 (xs: the day heads keep
-   * "Saldo einde dag", the detail its own saldo). Beside the detail (wk-body--split) Koppeling and the action go; the
-   * cockpit's compact list has neither Koppeling nor Saldo. :not(compact) keeps the pane sets off the compact list.
+   * Transacties' tracks (critique B3): one set per state, for the head, the rows and their empty cells alike. The full
+   * list: party · status · Koppeling (the action folded in) · bedrag · saldo · ⋯ from a 1024 px pane; below it the
+   * status becomes a dot before the party; beside a docked detail no Koppeling (the detail links), and below a 720 px
+   * pane beside it only party and bedrag. Several accounts (no --one) put the 10 px account dot first. The cockpit's
+   * compact list keeps its action in a cell of its own: one fixed width for every row (each row is its own grid, so an
+   * auto track would differ per row and push the status pills about), 0 when no row on screen has an action. The
+   * tracks, the 12 px gaps and the rows' 2 × 16 px fit the pane minus its 2 × 24 px at every width.
    */
-  .fin-table--tx { --wk-cols: 10px minmax(216px, 1fr) 112px minmax(150px, 200px) 96px 120px 116px 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(200px, 1fr) 112px 120px 116px 36px; }
-  .fin-table--tx-compact, .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 92px 112px 30px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
-  .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
+  .fin-table--tx { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .fin-table--full.fin-table--one { --wk-cols: minmax(220px, 1fr) 108px minmax(240px, 1.2fr) 128px 120px 36px; }
+  .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(210px, 1fr) 108px minmax(240px, 1.2fr) 128px 120px 36px; }
+  .wk-body--split .fin-table--full.fin-table--one { --wk-cols: minmax(200px, 1fr) 108px 124px 116px 36px; }
+  .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(190px, 1fr) 108px 124px 116px 36px; }
+  .wk-body--split .fin-table--full .fin-col-link { display: none; }
+  .fin-table--tx-compact { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .fin-table--tx-compact { --fin-act-w: 88px; &.fin-table--no-act { --fin-act-w: 0px; } }
+  .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(160px, 1fr) 104px var(--fin-act-w) 120px 30px; }
+  .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(150px, 1fr) 100px var(--fin-act-w) 112px 30px; }
+  .wk-body--split .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(160px, 1fr) 104px 120px 30px; }
+  .wk-body--split .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
+  .wk-body--split .fin-table--tx-compact .fin-col-act { display: none; }
+  .fin-tx__dot { display: none; flex: none; width: 8px; height: 8px; margin-top: 6px; }
+  .fin-th-short { display: none; }
+  @container wk-pane (max-width: 1023.98px) {
+    .wk-body:not(.wk-body--split) .fin-table--full.fin-table--one { --wk-cols: minmax(170px, 1fr) minmax(170px, 1.25fr) 116px 112px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(160px, 1fr) minmax(160px, 1.25fr) 116px 112px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full { .fin-col-status { display: none; } .fin-tx__dot { display: block; } }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    .wk-body:not(.wk-body--split) .fin-table--full.fin-table--one { --wk-cols: minmax(140px, 1fr) minmax(140px, 200px) 104px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(130px, 1fr) minmax(130px, 190px) 104px 36px; }
+    .wk-body--split .fin-table--full.fin-table--one { --wk-cols: minmax(150px, 1fr) 116px 36px; }
+    .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(140px, 1fr) 116px 36px; }
+    .fin-table--full { .fin-col-status, .fin-col-saldo, .fin-th-full { display: none; } .fin-tx__dot, .fin-th-short { display: block; } }
+    .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(120px, 1fr) var(--fin-act-w) 104px 30px; }
+    .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(110px, 1fr) var(--fin-act-w) 104px 30px; }
+    .wk-body--split .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(140px, 1fr) 104px 30px; }
+    .wk-body--split .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(130px, 1fr) 104px 30px; }
+    .fin-table--tx-compact { .fin-col-status { display: none; } .fin-tx__dot { display: block; } }
+  }
   /* The cockpit's list reads without its column heads (kept for screen readers; the day heads stick to the top): one row more above the fold. */
   .fin-table--tx-compact { --wk-head-h: 0px; }
   .fin-table--tx-compact > .wk-thead { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); border: 0; white-space: nowrap; }
@@ -194,38 +352,35 @@
   .fin-tx-day__saldo { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-tx { min-height: 48px; }
   /*
-   * Nothing in a row is cut (1440 with or without the detail, the cockpit's compact list): the counterparty, its sub
-   * line, the Koppeling and "Saldo onbekend vóór {dd/mm}" take a second line instead of an ellipsis.
+   * One line each (bankTextOf): the party wraps whole (two lines beside the docked detail, N7); the cleaned reference is
+   * the one text that may end in "…", its whole words in its title and the raw text in the detail. In the Koppeling the
+   * linked document and the suggested target (container names, cost descriptions) wrap beside the action, as the party
+   * does (contract §1.3); only the why / reasons line keeps one line with "…" and its title.
    */
+  .fin-tx__who { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+  .fin-tx__what { display: grid; min-width: 0; }
   .fin-tx__party { display: block; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx .wk-td__sub { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx__link { display: grid; align-content: center; gap: 2px; white-space: normal;
-    .bank-document-link { padding: 0; font-size: 12.5px; } }
-  .fin-tx__target { display: block; color: var(--ink-2); font-size: 12.5px; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx__reasons { display: flex; flex-wrap: wrap; gap: 3px; .wk-pill { height: 17px; padding: 0 6px; font-size: 10px; } }
+  .fin-tx .wk-td__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tx__link { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; align-content: center; gap: 1px 8px; white-space: normal;
+    &:has(> .wk-btn) { grid-template-columns: minmax(0, 1fr) auto; } > .wk-btn { grid-row: 1 / span 3; grid-column: 2; }
+    > .bank-document-link, > .fin-tx__find { justify-self: start; display: block; max-width: 100%; padding: 0; font-size: 12.5px; line-height: 1.3; text-align: left; }
+    > .bank-document-link { overflow-wrap: anywhere; white-space: normal; }
+    > .fin-tx__find { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+  .fin-tx__target { display: block; color: var(--ink-2); font-size: 12.5px; line-height: 1.3; overflow-wrap: anywhere; white-space: normal; }
+  .fin-tx__why { display: block; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tx__find { color: var(--muted); font-weight: 600; &:hover { color: var(--rose-dark); } }
+  .fin-tx-bar .fin-unbanked-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 9px; border: 1px solid #f0dcbc; border-radius: 999px;
+    background: var(--warn-soft); color: #7c450b; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
   .fin-tx__saldo { color: var(--ink-2); font-size: 12px; line-height: 1.3; white-space: normal; }
   /* "Interne overboeking" is wider than the 112 px column: the chip takes two lines rather than cutting the word. */
   .fin-tx__status .wk-pill { height: auto; min-height: 20px; padding-block: 2px; line-height: 1.2; white-space: normal; }
   .fin-tx-foot { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
-  .bank-unbanked { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 10px; padding: 10px 14px; border: 1px solid #f0dcbc; border-radius: 12px; background: var(--warn-soft);
-    color: #7c450b; font: inherit; font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; span { flex: 1; } }
   .bank-searched { margin: 0 0 10px; }
 
   @container wk-pane (max-width: 1023.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(180px, 1fr) 104px 96px 116px 112px 36px; }
     .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }
     .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr); }
     .fin-kaslijn__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 16px 12px; padding: 8px 0 0; border-top: 1px solid var(--line); border-left: 0; }
-    .fin-cockpit__cols { grid-template-columns: minmax(0, 1fr); }
-  }
-  @container wk-pane (max-width: 859.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(130px, 1fr) 96px 88px 104px 102px 36px; }
-    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(170px, 1fr) 104px 116px 112px 36px; }
-  }
-  @container wk-pane (max-width: 719.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 36px; }
-    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(140px, 1fr) 104px 112px 36px; }
-    .fin-table--tx-compact { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 30px; }
   }
 
   /* ==================================================== the transaction detail */
@@ -279,6 +434,8 @@
   .fin-txd__steps .fin-alloc { gap: 10px; }
   .fin-txd__pattern { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; > span { min-width: 0; } .btn { flex: none; } }
   .fin-txd .btn:not(.wk-btn) { font: inherit; }
+  /* a document already paid stays in the score order, muted (its receipt may be the line's match) */
+  .bank-alloc-document.is-paid .bank-alloc-document__amount b { color: var(--muted); }
 
   /* "Verdelen over containers" */
   .fin-split { display: grid; gap: 6px; margin: 8px 0; }
@@ -325,6 +482,12 @@
   .fin-tree__adjusted { padding-left: 22px; color: var(--muted); font-size: 11.5px; &.fin-tree__payment--nested { padding-left: 34px; } }
 }
 
+/* a row a link, a booking or an undo just changed: one soft flash (the user's actions only, never a data load) */
+@keyframes fin-flash { from { background-color: var(--rose-soft); } }
+@media (prefers-reduced-motion: no-preference) {
+  #finance-workspace .fin-tx.is-flash, #finance-workspace .fin-txrow.is-flash { animation: fin-flash 900ms var(--ease-out, ease-out); }
+}
+
 /* ==================================================== phone */
 @media (max-width: 679.98px) {
   #finance-workspace {
@@ -349,20 +512,66 @@
     .fin-kaslijn-phone__rows { display: grid; margin: 4px 0 0;
       > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: .5px solid var(--ios-sep); font-size: 15px; }
       dt { min-width: 0; color: var(--ink-2); } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; } }
-    .fin-tolink { gap: 8px; padding-right: 10px; }
-    .fin-tolink__open { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-    /* "Yunnan Pubei Flowers Co., Ltd" and the reference take a second line at 390 rather than an ellipsis */
-    .fin-tolink__party { min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-    .fin-tolink__amount { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .fin-tolink__sub { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
     .fin-attention-phone .ios-cell__title--2 { display: block; }
     .fin-nobreak { white-space: nowrap; }
-    .fin-tolink__status { font-weight: 650; &.is-suggested { color: var(--ok); } &.is-open { color: var(--warn); } }
+
+    /* one account: the account lives in the hero; no carousel beside it */
+    .fin-hero--one { padding: 16px 16px 14px 18px; }
+    .fin-hero__open { position: absolute; inset: 0; z-index: 0; width: 100%; border: 0; background: none; cursor: pointer; }
+    .fin-hero--one > *:not(.fin-hero__open, .fin-hero__more) { position: relative; z-index: 1; pointer-events: none; }
+    .fin-hero--one .fin-hero__tap { pointer-events: auto; }
+    .fin-hero__acct { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding-right: 36px; color: rgb(255 255 255 / 78%); font-size: 13px; font-weight: 650;
+      small { color: rgb(255 255 255 / 62%); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; } }
+    .fin-hero__more { position: absolute; top: 8px; right: 8px; z-index: 2; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: rgb(255 255 255 / 85%);
+      &::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: rgb(255 255 255 / 12%); } app-icon { position: relative; } }
+    .fin-hero--one .fin-hero__moves { justify-content: space-between; }
+    .fin-hero__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-top: 10px;
+      small { color: rgb(255 255 255 / 66%); font-size: 12px; } }
+    .fin-hero__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+    .fin-hero__pill { padding: 1px 8px; border: 1px solid rgb(255 255 255 / 32%); border-radius: 999px; color: rgb(255 255 255 / 82%); font-size: 12px; line-height: 1.4; }
+    .fin-hero__done { display: inline-flex; align-items: center; gap: 4px; color: rgb(255 255 255 / 82%); font-size: 13px; font-weight: 650; app-icon { color: #9fd9b4; } }
+    .fin-hero__link { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 12px; border: 0; border-radius: 999px;
+      background: rgb(255 255 255 / 14%); color: #fff; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+      b { color: #f4cf9a; } &::before { content: ''; position: absolute; inset: -5px -2px; } }
+    .fin-widgets .ios-widget { min-height: 96px; }
+    /* the Kaslijn on a phone: the desk's span switch and facts; 44 px hit areas around the small controls (N15) */
+    /* the 30 px segmented holds 24 px options (3 px padding): 10 px above and below make the 44 px */
+    .fin-kaslijn-phone__head { align-items: center; .ios-seg { width: 150px; height: 30px; } .ios-seg__opt { position: relative; padding: 0 4px; font-size: 12px; }
+      .ios-seg__opt::before { content: ''; position: absolute; inset: -10px 0; } }
+    .fin-kaslijn-phone__rows { dt small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.3; overflow-wrap: anywhere; }
+      dt { display: grid; } dd small { display: block; color: var(--muted); font-size: 12px; font-weight: 500; text-align: right; white-space: normal; }
+      .is-total { border-top-color: var(--line-strong); dt { color: var(--ink); font-weight: 650; } } }
+    .fin-kaslijn-phone__buffer { justify-self: start; padding: 0; font-size: 12.5px; font-weight: 650; }
+    .fin-kaslijn-phone__more { position: relative; margin-top: 8px; &::before { inset: -4px 0; } }
+    /* Te koppelen (and Transacties): two-line rows, the capsule only where it does something other than opening */
+    .fin-txrow { display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 0 16px 0 0; background: var(--surface); }
+    .fin-txrow__open { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 2px 10px; flex: 1; min-width: 0; min-height: 60px; padding: 10px 0 10px 16px;
+      border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+      &:active { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); } }
+    .fin-txrow:not(.fin-txrow--action) { padding-right: 0; .fin-txrow__open { padding-right: 16px; } }
+    /* title and sub wrap in full (no line clamp on phone texts, N13); bankTextOf keeps them short */
+    .fin-txrow__title { display: block; min-width: 0; font-size: 16px; font-weight: 600; line-height: 1.28; overflow-wrap: anywhere; }
+    .fin-txrow__amount { padding-top: 1px; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .fin-txrow__sub { grid-column: 1 / -1; display: block; min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.32; overflow-wrap: anywhere; }
+    .fin-txrow__st { font-weight: 650; &.is-ok { color: var(--ok); } &.is-open { color: var(--warn); } &.is-sug { color: var(--rose-dark); } }
+    .fin-txrow > .ios-capsule { flex: none; }
+    .fin-recent-cell { align-items: flex-start; .ios-cell__trail { padding-top: 2px; } }
     .fin-tx-account .fin-acct--wide { display: block; margin: 0 var(--ios-inset) 12px;
       .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'source' 'foot'; } .fin-acct__spark { display: none; }
       .fin-acct__more { position: absolute; top: 10px; right: 10px; span { display: none; } } }
-    .bank-unbanked, .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
-    .bank-totals-line { margin: 0 var(--ios-inset) 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; span { color: var(--muted); } }
+    .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
+    /* Transacties: search, one chip row (Periode a chip at its end), a caption with the totals and the period, then the days */
+    .fin-tx-filters { display: grid; gap: 4px; margin: 0 0 4px; }
+    .fin-period-chip { display: inline-flex; align-items: center; gap: 5px; }
+    .fin-tx-caption { margin: 2px calc(var(--ios-inset) + 4px) 12px; color: var(--muted); font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+    .fin-tx-caption__clear { position: relative; padding: 0; font-size: 13px; &::before { content: ''; position: absolute; inset: -12px -6px; } }
+    .fin-unbanked-group { margin-bottom: 16px; }
+    .fin-unbanked-cell .ios-cell__title { font-weight: 600; }
+    .ios-section:has(> .bank-day-head) { margin-bottom: 14px; }
+    /* the transaction sheet's own ⋯ (Intrekken and every other line action) */
+    .fin-txd--phone .fin-txd__hero { position: relative; }
+    .fin-txd--phone .fin-txd__dir { display: flex; align-items: center; min-height: 40px; padding-right: 48px; }
+    .fin-txd__more { position: absolute; top: 8px; right: 8px; }
     .fin-txd--phone { padding: 0 2px; .wk-section { padding: 12px 16px; } }
     /* Each button starts from its own words ("Registreren en koppelen" is 180 px) and the two share what is left; a pair that does not fit takes two lines. */
     .fin-txd__foot--phone { display: flex; flex-wrap: wrap; gap: 8px; .btn { flex: 1 1 auto; } }

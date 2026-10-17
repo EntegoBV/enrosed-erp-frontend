@@ -7,7 +7,9 @@ import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, ReceivableRow, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
-import { IncomingPaymentList } from './incoming-payment-list';
+import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import type { IncomingMoneyRow } from './incoming-money';
+import { IncomingPaymentList, receiptMenu } from './incoming-payment-list';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNER_ADVANCE: 'Partnervoorschot', PARTNER_SETTLEMENT: 'Partnerafrekening' };
@@ -31,7 +33,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
             <span class="wk-th" role="columnheader">Factuur</span>
             <span class="wk-th" role="columnheader">Klant</span>
             <span class="wk-th" role="columnheader" data-hide="sm">Soort</span>
-            <span class="wk-th" role="columnheader">Factuurdatum</span>
+            <span class="wk-th" role="columnheader">Factuurdatum · vervalt</span>
             <span class="wk-th wk-th--num" role="columnheader" data-hide="md">Totaal</span>
             <span class="wk-th wk-th--num" role="columnheader" data-hide="md">Ontvangen</span>
             <span class="wk-th wk-th--num" role="columnheader">Nog open</span>
@@ -43,7 +45,8 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
               <span class="wk-td" role="gridcell"><b>{{ row.number }}</b></span>
               <span class="wk-td" role="gridcell">{{ row.customer || '—' }}</span>
               <span class="wk-td" role="gridcell" data-hide="sm"><span class="wk-pill" [class.tone-plum]="row.kind === 'partner' || row.kind === 'credit'">{{ kindLabel(row) }}</span>@if (row.kind === 'credit' && row.creditedInvoiceNumber) { <span class="wk-td__sub">op {{ row.creditedInvoiceNumber }}</span> }</span>
-              <span class="wk-td" role="gridcell">{{ day(row.orderDate) }} @if (row.ageDays > 0) { <span class="wk-pill fin-age" [class.tone-warn]="row.ageDays > 30">{{ row.ageDays }} d</span> }</span>
+              <span class="wk-td" role="gridcell" [attr.title]="dueTitle(row)">{{ day(row.orderDate) }} @if (row.ageDays > 0) { <span class="wk-pill fin-age" [class.tone-warn]="row.ageDays > 30">{{ row.ageDays }} d</span> }
+                @if (row.kind !== 'credit') { <span class="wk-td__sub">vervalt {{ dueText(row) }}@if (row.dueDays > 0) { · <b class="fin-warn-text">{{ row.dueDays }} d te laat</b> }</span> }</span>
               <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ row.totalEur | eur }}</span>
               <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ row.receivedEur | eur }}</span>
               <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.kind === 'credit' ? '− ' + (row.creditEur | eur) : (row.remainingEur | eur) }}</b></span>
@@ -56,6 +59,19 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
           <p class="wk-empty__title">{{ state.location().q || state.location().kind ? 'Niets gevonden' : 'Alle facturen zijn betaald' }}</p>
           <p class="wk-empty__text">Openstaande verkoop- en partnerfacturen verschijnen hier, de oudste eerst.</p></div>
       }
+      <!-- What came in lately, under the open invoices (it used to take a click to Ontvangen). -->
+      <section class="wk-card fin-recv" aria-labelledby="fin-recv-title">
+        <header class="wk-card__head"><h2 class="wk-card__title" id="fin-recv-title">Laatst ontvangen</h2>
+          <button class="wk-link wk-card__trail" type="button" (click)="state.go({ tab: 'received' }, 'push')">Alles bij Ontvangen ›</button></header>
+        @for (payment of lastReceived(); track payment.id) {
+          <button class="fin-recv__row" type="button" (click)="openReceived(payment)" appMenuTrigger (menuTrigger)="receivedMenu(payment, $event)">
+            <span class="fin-recv__when">{{ moment(payment) }}</span>
+            <span class="fin-recv__what">{{ payment.orderNumber }}{{ customerOf(payment) ? ' · ' + customerOf(payment) : '' }}</span>
+            <span class="fin-recv__kind">{{ purpose(payment) }}</span>
+            <b class="fin-recv__amount" [class.wk-amount--in]="payment.amountEur > 0">{{ payment.amountEur > 0 ? '+' : '−' }} {{ abs(payment.amountEur) | eur }}</b>
+          </button>
+        } @empty { <p class="wk-empty__text fin-recv__empty">Nog niets ontvangen</p> }
+      </section>
     } @else {
       <div class="ios-headline">
         <div class="ios-headline__label">Nog open</div>
@@ -72,8 +88,8 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
         <div class="ios-group">
           @for (row of rows(); track row.key) {
             <button class="ios-cell ios-cell--tall" [class.fin-credit-row]="row.kind === 'credit'" type="button" (click)="state.inspectItem({ kind: 'invoice', id: row.id })">
-              <span class="ios-cell__body"><span class="ios-cell__title">@if (row.kind === 'credit') { <i class="fin-dot-plum" aria-hidden="true"></i> }{{ row.number }}{{ row.customer ? ' · ' + row.customer : '' }}</span>
-                <span class="ios-cell__sub">{{ kindLabel(row) }}@if (row.kind === 'credit' && row.creditedInvoiceNumber) { · op {{ row.creditedInvoiceNumber }} } · <span [class.fin-warn-text]="row.kind !== 'credit' && row.ageDays > 30">sinds {{ row.ageDays }} d</span>{{ row.receivedEur > 0 ? ' · deels betaald' : '' }}</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">@if (row.kind === 'credit') { <i class="fin-dot-plum" aria-hidden="true"></i> }{{ row.number }}{{ row.customer ? ' · ' + row.customer : '' }}</span>
+                <span class="ios-cell__sub fin-wrapall">{{ kindLabel(row) }}@if (row.kind === 'credit' && row.creditedInvoiceNumber) { · op {{ row.creditedInvoiceNumber }} } · <span [class.fin-warn-text]="row.kind !== 'credit' && row.ageDays > 30">sinds {{ row.ageDays }} d</span>@if (row.kind !== 'credit') { · {{ row.dueDays > 0 ? 'vervallen' : 'vervalt' }} {{ day(row.dueDate) }}@if (row.dueDays > 0) { · <b class="fin-warn-text">{{ row.dueDays }} d te laat</b> } }{{ row.receivedEur > 0 ? ' · deels betaald' : '' }}</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.kind === 'credit' ? '− ' + (row.creditEur | eur) : (row.remainingEur | eur) }}</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
@@ -85,6 +101,19 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
       } @else {
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="tick" [size]="26" /></span><p class="ios-empty__title">Alle facturen zijn betaald</p></div>
       }
+      <section class="ios-section">
+        <div class="ios-section__head"><h2>Laatst ontvangen</h2></div>
+        <div class="ios-group">
+          @for (payment of lastReceived().slice(0, 3); track payment.id) {
+            <button class="ios-cell ios-cell--tall" type="button" (click)="openReceived(payment)">
+              <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ payment.orderNumber }}{{ customerOf(payment) ? ' · ' + customerOf(payment) : '' }}</span>
+                <span class="ios-cell__sub fin-wrapall">{{ moment(payment) }} · {{ purpose(payment) }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="payment.amountEur > 0">{{ payment.amountEur > 0 ? '+' : '−' }} {{ abs(payment.amountEur) | eur }}</span></span>
+            </button>
+          } @empty { <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Nog niets ontvangen</span></span></div> }
+          <button class="ios-cell ios-cell--action" type="button" (click)="state.go({ tab: 'received' }, 'push')">Alles bij Ontvangen</button>
+        </div>
+      </section>
     }
   `,
 })
@@ -122,9 +151,9 @@ export class ReceivablesPanel implements FinanceSectionApi {
       const totals = this.received()?.totals();
       if (!totals) return [];
       return [
-        { label: 'Ontvangen', value: formatEuro(totals.grossReceivedEur), tone: 'in' },
-        { label: 'Terugbetaald', value: formatEuro(totals.refundedEur) },
-        { label: 'Netto', value: formatEuro(totals.receivedEur), tone: 'strong' },
+        { label: 'Ontvangen', value: formatEuro(totals.grossReceivedEur), tone: totals.grossReceivedEur ? 'in' : 'muted' },
+        { label: 'Terugbetaald', value: formatEuro(totals.refundedEur), tone: totals.refundedEur ? undefined : 'muted' },
+        { label: 'Netto', value: formatEuro(totals.receivedEur), tone: totals.receivedEur ? 'strong' : 'muted' },
         { label: 'Verrekend', value: formatEuro(totals.offsetEur), tone: 'muted', title: 'Creditnota\u2019s verrekend met facturen: geen geld op de bank.' },
         { label: 'Klantbetalingen', value: formatEuro(totals.standardEur), tone: 'muted' },
         { label: 'Partnervoorschotten', value: formatEuro(totals.partnerAdvanceEur), tone: 'muted', title: 'Een partnervoorschot is financiering, geen omzet.' },
@@ -169,6 +198,32 @@ export class ReceivablesPanel implements FinanceSectionApi {
       pick: () => this.state.openInvoice(row.id) });
   }
 
+  /** The five newest receipts (verrekeningen are no money in): the "Laatst ontvangen" card. */
+  readonly lastReceived = computed(() => uniqueIncomingPayments(this.state.incomingPayments()).filter((payment) => payment.offsetPaymentId == null).slice(0, 5));
+  /** "8 okt · 23:21" ("8 okt 2025 · …" in another year, "· GMT+8" in another zone), in the receipt's own zone; a date-only receipt reads "14 okt". */
+  moment(payment: { receivedAt: string; timeZone: string }): string {
+    return paymentMomentLabel(payment, this.state.today(), true);
+  }
+  /**
+   * A receipt of "Laatst ontvangen": its invoice in the inspector while that invoice is still open. A paid one has no
+   * inspector (it left Openstaand), so the desk opens the invoice and the phone the receipt's menu, as Ontvangen does.
+   */
+  openReceived(payment: IncomingMoneyRow): void {
+    if (this.state.receivables().some((row) => row.id === payment.salesOrderId)) { this.state.inspectItem({ kind: 'invoice', id: payment.salesOrderId }); return; }
+    if (this.state.desk()) this.state.openInvoice(payment.salesOrderId);
+    else receiptMenu(this.state, payment, null);
+  }
+  /** Right-click on a desk row: the invoice, and the container of a partner receipt (Ontvangen's menu). */
+  receivedMenu(payment: IncomingMoneyRow, anchor: MenuPoint): void { receiptMenu(this.state, payment, anchor); }
+  purpose(payment: { purpose: 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT' }): string { return incomingPurposeLabel(payment.purpose); }
+  customerOf(payment: { customerId: number | null }): string { return this.state.customerNames().get(payment.customerId ?? -1) ?? ''; }
+  abs(value: number): number { return Math.abs(value); }
+  /** "11 okt" or "over 12 d" for a due day still to come. */
+  dueText(row: ReceivableRow): string { return row.dueDays < 0 ? `over ${-row.dueDays} d` : dayMonth(row.dueDate); }
+  /** Without a due date on the invoice the day is 30 days after it, and the cell says so. */
+  dueTitle(row: ReceivableRow): string | null {
+    return row.kind !== 'credit' && !row.view.order.invoiceDueDate ? 'Geen vervaldag op de factuur: 30 dagen na factuurdatum' : null;
+  }
   kindLabel(row: ReceivableRow): string { return row.kind === 'credit' ? 'Tegoed' : KIND_LABEL[row.purpose] ?? 'Klant'; }
   day(date: string): string { return dayMonth(date); }
 }

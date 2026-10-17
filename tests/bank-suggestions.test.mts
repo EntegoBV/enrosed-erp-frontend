@@ -8,6 +8,7 @@ import {
 } from '../src/app/features/finance/bank-suggestions.ts';
 import type { SuggestionInput } from '../src/app/features/finance/bank-suggestions.ts';
 import type { ContainerPayable } from '../src/app/features/finance/payables.ts';
+import { containerName } from '../src/app/features/purchasing/container-name.ts';
 
 function line(id: number, amountEur: number, values: Partial<BankStatementLine> = {}): BankStatementLine {
   return { id, account: 'BE94731074082814', fingerprint: `f${id}`, amountEur, bookedAt: '2026-10-13T22:00:00Z', timeZone: 'Europe/Brussels',
@@ -139,4 +140,22 @@ test('Boeken als: the other leg of a transfer, the VAT quarters', () => {
   assert.deepEqual(vatPeriods('2026-10-15', '2026-10-24'), { options: ['2026-Q4', '2026-Q3', '2026-Q2', '2026-Q1', '2025-Q4'], preferred: '2026-Q3' });
   assert.equal(vatPeriods('2026-01-05', '2026-01-05').preferred, '2025-Q4');
   assert.equal(vatPeriodLabel('2026-Q3'), 'Btw-kwartaal Q3 2026');
+});
+
+test('suggestion titles name a container as the linked rows do (containerName); the PO number still scores', () => {
+  // Review 2026-10-17: "Inkoop · PO-2026-043 · …" one row above "Inkoop · ORDER (3e) …" for the same container.
+  const deposit = line(103, -9000, { counterparty: 'Yunnan Pubei Flowers Co., Ltd', reference: 'PO-2026-043 DEPOSIT 30PCT' });
+  const named = { ...term, alias: 'ORDER (3e) OOSTENRIJKER' };
+  const result = lineSuggestions(input({ lines: [deposit], containers: [named] })).get(103)!;
+  assert.equal(result.target.title, 'Inkoop · ORDER (3e) OOSTENRIJKER · 30% bij bestelling');
+  assert.ok(result.reasons.includes('PO in mededeling'), 'the PO number in the bank text still counts');
+  assert.equal(lineSuggestions(input({ lines: [deposit], containers: [term] })).get(103)!.target.title, 'Inkoop · PO-2026-043 · 30% bij bestelling', 'no alias: the number');
+  const transfer = line(8841, -12480, { counterparty: 'Yunnan Pubei Flower Co Ltd', reference: 'PO-2026-031 2ND PAYMENT' });
+  const existing = lineSuggestions(input({ lines: [transfer], purchasePayments: [payment(77, { orderAlias: 'Foam Bear' })] })).get(8841)!;
+  assert.equal(existing.target.title, 'Inkoop · Foam Bear · 2e termijn');
+  assert.ok(existing.reasons.includes('PO in mededeling'));
+  for (const [alias, number] of [['Foam Bear', 'PO-2026-031'], [null, 'PO-2026-031'], ['  ', ''], [null, null]] as const) {
+    const title = lineSuggestions(input({ lines: [transfer], purchasePayments: [payment(77, { orderAlias: alias, orderNumber: number as string })] })).get(8841)?.target.title;
+    if (title) assert.equal(title, `Inkoop · ${containerName({ id: 31, alias, number })} · 2e termijn`, 'the same rule as containerName');
+  }
 });

@@ -143,7 +143,7 @@ const DAY = 86_400_000;
         @case ('container') {
           @if (container(); as view) {
             <section class="wk-section fin-insp-hero">
-              <span class="fin-insp-party">{{ view.order.alias || 'Container' }} · {{ statusOf(view) }}</span>
+              <span class="fin-insp-party">{{ view.order.number }} · {{ statusOf(view) }}</span>
               <strong class="fin-insp-amount">{{ (view.reconciliation?.totals?.remainingEur ?? 0) | eur }}</strong>
               <span class="wk-amount--muted">nog open · verwacht</span>
             </section>
@@ -339,7 +339,7 @@ export class FinanceInspector {
   rhythm(code: string): string { return intervalLabel(code); }
   monthly(definition: RecurringCost): number { return monthlyEquivalentEur(definition); }
   purposeLabel(purpose: 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT'): string { return purpose === 'STANDARD' ? 'Klant' : incomingPurposeLabel(purpose); }
-  moment(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }); }
+  moment(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }, this.state.today()); }
   size(asset: MediaAssetSummary): string { return formatBytes(asset.sizeBytes); }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
   recurringOf(id: number | null | undefined) { return id ? this.state.recurring().find((row) => row.id === id) ?? null : null; }

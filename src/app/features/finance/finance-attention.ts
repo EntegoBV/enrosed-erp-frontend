@@ -10,8 +10,11 @@ export const OVERDUE_COST_DAYS = 30;
 export const STALE_READING_DAYS = 14;
 export const OLD_RECEIVABLE_DAYS = 30;
 export const DOCUMENT_WINDOW_DAYS = 90;
+/** The VAT reminder shows from 30 days before the deadline, calm (info) until its last 7 days (warn). */
+export const VAT_REMINDER_DAYS = 30;
+export const VAT_URGENT_DAYS = 7;
 
-export type AttentionKind = 'container-due' | 'overdue-costs' | 'account-without-reading' | 'recurring-due' | 'unlinked-incoming'
+export type AttentionKind = 'vat-deadline' | 'container-due' | 'overdue-costs' | 'account-without-reading' | 'recurring-due' | 'unlinked-incoming'
   | 'old-receivables' | 'stale-reading' | 'receipts-without-account' | 'unbanked-payments' | 'costs-without-document' | 'open-credits' | 'unconfirmed-regimes';
 export type AttentionTone = 'danger' | 'warn' | 'info';
 /** What the row's button does directly; null means it just opens the target. 'unbanked' opens Transacties with the payments without a transaction. */
@@ -29,6 +32,23 @@ export interface AttentionItem {
   actionLabel: string;
   target: Partial<FinanceLocation>;
   accountKey?: string;
+  /** Unlinked lines: what came in and what went out; their sum is amountEur, which only sorts (and the home still reads). */
+  split?: { inEur: number; outEur: number };
+  /** Days until the item's deadline (the VAT return); it leads its tone group when close. */
+  dueInDays?: number;
+}
+
+/** The return of the closed quarter: its deadline, its figures and whether its payment is booked already. */
+export interface VatDueInput {
+  year: number;
+  quarter: number;
+  deadline: string;
+  refundEur: number;
+  payableEur: number;
+  /** Lines to confirm or decide before filing. */
+  pending: number;
+  /** A VAT payment for the quarter is on the bank: the reminder is done. */
+  booked: boolean;
 }
 
 export interface AttentionInput {
@@ -48,8 +68,10 @@ export interface AttentionInput {
   unbanked: { count: number; eur: number };
   /** Company costs with whether a document hangs on them. */
   costs: readonly { date: string; recurringCostId?: number | null; documented: boolean }[];
-  /** Open invoices: the invoice date and what is still open. */
-  receivables: readonly { orderDate: string; remainingEur: number }[];
+  /** Open invoices: the invoice date and what is still open; optional: the due date (else invoice date + 30), number and customer. */
+  receivables: readonly { orderDate: string; remainingEur: number; dueDate?: string | null; number?: string | null; customer?: string | null }[];
+  /** Optional: the closed quarter's return (absent: no VAT reminder, as on the home). */
+  vatDue?: VatDueInput | null;
 }
 
 const TONE_ORDER: Readonly<Record<AttentionTone, number>> = { danger: 0, warn: 1, info: 2 };
@@ -61,11 +83,25 @@ function days(from: string, to: string): number {
 }
 
 const plural = (count: number, one: string, many: string): string => (count === 1 ? one : many);
+const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+const dayMonth = (day: string): string => `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
+const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
+const addDays = (day: string, count: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + count * 86_400_000).toISOString().slice(0, 10);
 
 export function financeAttention(input: AttentionInput): AttentionItem[] {
   const { today } = input;
   const items: AttentionItem[] = [];
   const add = (item: Omit<AttentionItem, 'id'> & { id?: string }): void => { items.push({ ...item, id: item.id ?? item.kind }); };
+
+  const vat = input.vatDue;
+  if (vat && !vat.booked && vat.deadline >= today && days(today, vat.deadline) <= VAT_REMINDER_DAYS) {
+    const left = days(today, vat.deadline);
+    const money = vat.refundEur > 0 ? `${EURO.format(vat.refundEur)} terug te krijgen` : vat.payableEur > 0 ? `${EURO.format(vat.payableEur)} te betalen` : 'niets te betalen';
+    add({ kind: 'vat-deadline', tone: left <= VAT_URGENT_DAYS ? 'warn' : 'info', count: 1, amountEur: null, dueInDays: left,
+      title: `Btw-aangifte Q${vat.quarter} indienen vóór ${dayMonth(vat.deadline)}`,
+      detail: [left === 0 ? 'Vandaag indienen' : `Nog ${left} ${plural(left, 'dag', 'dagen')}`, money, vat.pending > 0 ? `${vat.pending} te bevestigen` : ''].filter(Boolean).join(' · '),
+      action: null, actionLabel: 'Openen', target: { view: 'analysis', tab: 'vat', year: String(vat.year), quarter: String(vat.quarter) as FinanceLocation['quarter'] } });
+  }
 
   if (input.containerNow.count > 0) {
     const n = input.containerNow.count;
@@ -100,7 +136,9 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
   const unlinked = input.bankLines.filter((line) => !line.allocated && line.salesPaymentId === null);
   if (unlinked.length) {
     const n = unlinked.length;
-    add({ kind: 'unlinked-incoming', tone: 'warn', count: n, amountEur: eur(unlinked.map((line) => Math.abs(line.amountEur))),
+    const split = { inEur: eur(unlinked.filter((line) => line.amountEur > 0).map((line) => line.amountEur)),
+      outEur: eur(unlinked.filter((line) => line.amountEur < 0).map((line) => -line.amountEur)) };
+    add({ kind: 'unlinked-incoming', tone: 'warn', count: n, amountEur: eur(unlinked.map((line) => Math.abs(line.amountEur))), split,
       title: `${n} ${plural(n, 'banktransactie', 'banktransacties')} nog te koppelen`,
       detail: 'Koppel aan een factuur, kostenbetaling of containerbetaling', action: 'link', actionLabel: 'Koppelen',
       target: { view: 'bank', tab: 'movements', link: 'unlinked' } });
@@ -113,12 +151,19 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
       detail: 'Verreken met een openstaande factuur of noteer de terugbetaling', action: null, actionLabel: 'Bekijken', target: { view: 'incoming', kind: 'credit' } });
   }
 
-  const old = input.receivables.filter((row) => row.remainingEur > 0 && days(row.orderDate, today) > OLD_RECEIVABLE_DAYS);
+  /* Late by the invoice's own due date; without one, 30 days after the invoice date (the old rule). */
+  const dueOf = (row: AttentionInput['receivables'][number]): string => row.dueDate || addDays(row.orderDate, OLD_RECEIVABLE_DAYS);
+  const old = input.receivables.filter((row) => row.remainingEur > 0 && today > dueOf(row));
   if (old.length) {
     const n = old.length;
+    const late = Math.max(...old.map((row) => days(dueOf(row), today)));
+    const named = old.some((row) => !!row.number);
+    const detail = !named ? 'Samen nog te ontvangen'
+      : n === 1 ? [old[0].number, old[0].customer, `${late} ${plural(late, 'dag', 'dagen')} te laat`].filter(Boolean).join(' · ')
+      : `Samen nog te ontvangen · de oudste ${late} ${plural(late, 'dag', 'dagen')} te laat`;
     add({ kind: 'old-receivables', tone: 'warn', count: n, amountEur: eur(old.map((row) => row.remainingEur)),
-      title: `${n} ${plural(n, 'factuur staat', 'facturen staan')} langer dan ${OLD_RECEIVABLE_DAYS} dagen open`,
-      detail: 'Samen nog te ontvangen', action: null, actionLabel: 'Bekijken', target: { view: 'incoming' } });
+      title: named ? `${n} vervallen ${plural(n, 'factuur', 'facturen')}` : `${n} ${plural(n, 'factuur staat', 'facturen staan')} langer dan ${OLD_RECEIVABLE_DAYS} dagen open`,
+      detail, action: null, actionLabel: 'Bekijken', target: { view: 'incoming' } });
   }
 
   for (const account of input.accounts.filter((row) => row.hasReading && row.ageDays !== null && row.ageDays > STALE_READING_DAYS)) {
@@ -159,7 +204,7 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
 
   return items
     .map((item, index) => ({ item, index }))
-    .sort((a, b) => TONE_ORDER[a.item.tone] - TONE_ORDER[b.item.tone]
+    .sort((a, b) => TONE_ORDER[a.item.tone] - TONE_ORDER[b.item.tone] || (a.item.dueInDays ?? 99) - (b.item.dueInDays ?? 99)
       || (b.item.amountEur ?? 0) - (a.item.amountEur ?? 0) || a.index - b.index)
     .map(({ item }) => item);
 }

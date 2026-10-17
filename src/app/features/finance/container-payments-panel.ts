@@ -10,7 +10,9 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { dayMonth } from './finance-format';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
+import { meerBetaaldOf } from './finance-metrics';
 import { ContainerPaymentTreeView } from './container-payment-tree-view';
+import { containerName, containerNumberHint } from '../purchasing/container-name';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' };
@@ -48,12 +50,14 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
                    [attr.aria-expanded]="expanded().has(view.order.id)" (focus)="table.focused(key(view))" (click)="table.click(key(view), $event)" (dblclick)="toggle(view.order.id)"
                    appMenuTrigger (menuTrigger)="menu(view, $event)">
                 <!-- The alias takes a second line beside the inspector rather than an ellipsis. -->
-                <span class="wk-td wk-td--wrap" role="gridcell"><b>{{ view.order.number }}</b>{{ view.order.alias ? ' · ' + view.order.alias : '' }}
+                <span class="wk-td wk-td--wrap" role="gridcell"><b>{{ name(view) }}</b>@if (hint(view); as number) { <span class="fin-hint-number">{{ number }}</span> }
                   @if (view.order.archivedAt) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }</span>
                 <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(view) }}</span></span>
                 <span class="wk-td wk-td--num" role="gridcell" data-hide="sm">{{ row.reconciliation.totals.plannedExternalEur | eur }}</span>
                 <span class="wk-td wk-td--num" role="gridcell">{{ row.reconciliation.totals.paidEur | eur }}</span>
-                <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--warn]="row.reconciliation.totals.remainingEur > 0.005">{{ row.reconciliation.totals.remainingEur | eur }}</b></span>
+                <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--warn]="row.reconciliation.totals.remainingEur > 0.005">{{ row.reconciliation.totals.remainingEur | eur }}</b>
+                  <!-- Afspraak − betaald ± verschil = open: the difference in the PO page's words, Bijkomende kosten apart. -->
+                  @for (line of differenceLines(row.reconciliation); track line) { <span class="fin-more-paid">{{ line }}</span> }</span>
                 @let bank = onBank(view.order.id);
                 <span class="wk-td fin-onbank" role="gridcell" data-hide="xs">@if (bank.total) { {{ bank.linked }} van {{ bank.total }} {{ bank.total === 1 ? 'betaling' : 'betalingen' }}@if (bank.missing) { <span class="wk-amount--warn"> · {{ bank.missing }} zonder transactie</span> } }
                   @else if (bank.deposit) { <span class="wk-amount--muted">{{ bank.deposit }}</span> } @else { — }</span>
@@ -79,7 +83,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
         <div class="ios-chips" role="group" aria-label="Welke containers">
           <button class="ios-chip" type="button" [attr.aria-pressed]="!state.location().scope" (click)="state.go({ scope: '' })">Lopend</button>
           <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().scope === 'all'" (click)="state.go({ scope: 'all' })">Alles</button>
-          @if (state.location().container) { <button class="ios-chip" type="button" aria-pressed="true" (click)="state.go({ container: null })" aria-label="Filter op container wissen">{{ rows()[0]?.view?.order?.number ?? 'Container' }} <app-icon name="close" [size]="12" /></button> }
+          @if (state.location().container) { <button class="ios-chip" type="button" aria-pressed="true" (click)="state.go({ container: null })" aria-label="Filter op container wissen">{{ rows()[0] ? name(rows()[0].view) : 'Container' }} <app-icon name="close" [size]="12" /></button> }
         </div>
         <p class="ios-section__foot fin-ios-note">Containerbetalingen zijn inkoop, geen bedrijfskosten; btw wordt niet afgeleid.</p>
         @if (state.containersLoading() && !state.purchaseViews().length) {
@@ -89,9 +93,9 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
             @for (row of rows(); track row.view.order.id) {
               <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'container', id: row.view.order.id })">
                 <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ row.view.order.number }}{{ row.view.order.alias ? ' · ' + row.view.order.alias : '' }}</span>
+                <span class="ios-cell__body"><span class="ios-cell__title fin-wrap">{{ name(row.view) }}@if (hint(row.view); as number) { <small class="fin-hint-number">{{ number }}</small> }</span>
                   <!-- At 390 each figure keeps its words together and the line breaks at the dot rather than cutting. -->
-                  <span class="ios-cell__sub fin-wrap"><span class="fin-nobreak">Betaald {{ row.reconciliation.totals.paidEur | eur }}</span> · <span class="fin-nobreak">Open {{ row.reconciliation.totals.remainingEur | eur }}</span></span>
+                  <span class="ios-cell__sub fin-wrap"><span class="fin-nobreak">Betaald {{ row.reconciliation.totals.paidEur | eur }}</span> · <span class="fin-nobreak">Open {{ row.reconciliation.totals.remainingEur | eur }}</span>@for (line of differenceLines(row.reconciliation); track line) { · <span class="fin-nobreak">{{ line }}</span> }</span>
                   @let bank = onBank(row.view.order.id);
                   @if (bank.total) { <span class="ios-cell__sub fin-wrap" [class.fin-warn-text]="bank.missing > 0"><span class="fin-nobreak">Op de bank: {{ bank.linked }} van {{ bank.total }}</span>@if (bank.missing) { · <span class="fin-nobreak">{{ bank.missing }} zonder transactie</span> }</span> }</span>
                 <span class="ios-cell__trail"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(row.view) }}</span></span>
@@ -131,6 +135,8 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
     return [
       { label: 'Afspraak', value: formatEuro(totals.plannedEur) },
       { label: 'Betaald', value: formatEuro(totals.paidEur) },
+      ...(Math.round(this.difference().moreEur * 100) ? [{ label: 'Verschil', value: this.moreText(this.difference().moreEur), title: 'Afspraak − betaald ± verschil = open' }] : []),
+      ...(Math.round(this.difference().otherEur * 100) ? [{ label: 'Bijkomende kosten', value: formatEuro(this.difference().otherEur), title: 'Betaald zonder afspraak (bijkomende kosten)' }] : []),
       { label: 'Open', value: formatEuro(totals.remainingEur), tone: totals.remainingEur > 0 ? 'warn' : 'muted' },
       { label: 'Betaald, op de bank', value: formatEuro(this.bankTotals().linkedEur) },
       { label: 'Betaald, nog niet op de bank', value: `${formatEuro(this.bankTotals().missingEur)} · ${this.bankTotals().missing}`, tone: this.bankTotals().missing ? 'warn' : 'muted' },
@@ -161,6 +167,18 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
     return { linkedEur: linked / 100, missingEur: missing / 100, missing: count };
   });
   readonly status = computed(() => `${this.rows().length} ${this.rows().length === 1 ? 'container' : 'containers'}`);
+  /** The strip's Verschil and Bijkomende kosten over the containers on screen, summed in cents. */
+  readonly difference = computed(() => {
+    let more = 0, other = 0;
+    for (const row of this.rows()) { const d = meerBetaaldOf(row.reconciliation); more += Math.round(d.moreEur * 100); other += Math.round(d.otherEur * 100); }
+    return { moreEur: more / 100, otherEur: other / 100 };
+  });
+  /** "€ 4.959,42 meer" / "€ 56,36 minder", and "€ 180,00 bijkomende kosten" when paid without an Afspraak. */
+  differenceLines(reconciliation: Parameters<typeof meerBetaaldOf>[0]): string[] {
+    const d = meerBetaaldOf(reconciliation);
+    return [Math.round(d.moreEur * 100) ? this.moreText(d.moreEur) : '', Math.round(d.otherEur * 100) ? `${formatEuro(d.otherEur)} bijkomende kosten` : ''].filter(Boolean);
+  }
+  moreText(eur: number): string { return `${formatEuro(Math.abs(eur))} ${eur > 0 ? 'meer' : 'minder'}`; }
 
   constructor() {
     /* ?container=<id> (from the purchase order) opens that container once: expanded on a desk, as a sheet on a phone. */
@@ -214,5 +232,8 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
   }
 
   key(view: PurchaseOrderView): string { return `container:${view.order.id}`; }
+  /** The container by its name (alias, else PO number); the number as small print when the name is the alias. */
+  name(view: PurchaseOrderView): string { return containerName(view.order); }
+  hint(view: PurchaseOrderView): string | null { return containerNumberHint(containerName(view.order), view.order.number); }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
 }

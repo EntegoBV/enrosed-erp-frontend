@@ -18,6 +18,14 @@ export function dayMonthYear(day: string | null | undefined): string {
   return day ? clean(DAY_MONTH_YEAR.format(asDate(day))) : '—';
 }
 
+const MONTH_SHORT = new Intl.DateTimeFormat('nl-BE', { month: 'short', timeZone: 'UTC' });
+
+/** 'mrt' (the app's short month), 'okt 2025' when the day lies in another year than `today`. */
+export function monthShort(day: string, today: string): string {
+  const month = clean(MONTH_SHORT.format(asDate(day)));
+  return day.slice(0, 4) === today.slice(0, 4) ? month : `${month} ${day.slice(0, 4)}`;
+}
+
 /** 'september 2026' */
 export function monthLabel(month: string): string {
   return MONTH_YEAR.format(asDate(`${month.slice(0, 7)}-01`));
@@ -47,10 +55,11 @@ export function syncMoment(instant: string, today: string): string {
   return day === today ? clockOf(instant) : clean(date.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', timeZone: 'Europe/Brussels' }));
 }
 
-/** '+ € 1.250,50' / '− € 80,00' for signed bank amounts. */
+/** '+ € 1.250,50' / '− € 80,00' for signed bank amounts; '€ 0,00' without a sign when it rounds to no cent (an exact "Verschil"). */
 export function signedEur(amount: number): string {
-  const text = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(Math.abs(amount));
-  return amount < 0 ? `− ${text}` : `+ ${text}`;
+  const cents = Math.round(amount * 100);
+  const text = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(Math.abs(cents) / 100);
+  return cents === 0 ? text : cents < 0 ? `− ${text}` : `+ ${text}`;
 }
 
 /** Payee tones, the same as Inkoop: Leverancier accent, Douane & transport blue, Inspectie amber, Bijkomende kosten grey. */

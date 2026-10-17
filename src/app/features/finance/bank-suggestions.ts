@@ -80,6 +80,15 @@ export function lineStatus(line: Pick<BankStatementLine, 'allocated' | 'salesPay
 
 interface Candidate { target: LinkTarget; amountEur: number; existing: boolean; open: boolean; po: string | null; invoices: string[]; reference: string | null; party: string | null; day: string | null; }
 
+/**
+ * A container's one name, the rule of purchasing/container-name.ts's containerName (alias, else the PO number, else
+ * 'Inkoop #id'), copied so this file keeps type-only imports. Titles name the container as the linked rows do; the PO
+ * number stays in `po`, so the reasons ("PO in mededeling") still match on it.
+ */
+function nameOfContainer(alias: string | null | undefined, number: string | null | undefined, id: number): string {
+  return alias?.trim() || number?.trim() || `Inkoop #${id}`;
+}
+
 /** Every candidate of one line, new payments on documents and terms first, then the free payments in its direction. */
 function candidatesOf(line: BankStatementLine, input: SuggestionInput, linkedReceipts: ReadonlySet<number>): Candidate[] {
   const out: Candidate[] = [];
@@ -99,7 +108,7 @@ function candidatesOf(line: BankStatementLine, input: SuggestionInput, linkedRec
     } else if (target.container) {
       const term = target.container;
       const words = term.termLabel ?? target.reference;
-      out.push({ target: { kind: 'term-new', orderId: term.orderId, payable: term, title: `Inkoop · ${term.orderNumber} · ${words}` }, amountEur: open, existing: false, open: open > 0,
+      out.push({ target: { kind: 'term-new', orderId: term.orderId, payable: term, title: `Inkoop · ${nameOfContainer(term.alias, term.orderNumber, term.orderId)} · ${words}` }, amountEur: open, existing: false, open: open > 0,
         po: term.orderNumber, invoices: term.invoiceNumber ? [term.invoiceNumber] : [], reference: null, party: target.party && target.party !== term.orderNumber ? target.party : null, day: null });
     }
   }
@@ -114,7 +123,7 @@ function candidatesOf(line: BankStatementLine, input: SuggestionInput, linkedRec
     for (const payment of input.purchasePayments) if (payment.groupId != null) groups.set(payment.groupId, (groups.get(payment.groupId) ?? 0) + 1);
     for (const payment of input.purchasePayments) {
       if (payment.bankStatementLineId != null || payment.creditOffset || !(payment.amountEur > 0)) continue;
-      const order = payment.orderNumber || payment.orderAlias || `#${payment.orderId}`;
+      const order = nameOfContainer(payment.orderAlias, payment.orderNumber, payment.orderId);
       out.push({ target: { kind: 'purchase-existing', orderId: payment.orderId, paymentId: payment.id, title: `Inkoop · ${order}${payment.label ? ' · ' + payment.label : ''}`,
         amountEur: payment.amountEur, paidOn: payment.paidOn, currency: payment.currency ?? 'EUR', amount: payment.amount ?? payment.amountEur, account: null, proofCount: 0,
         hasInspectionAfspraak: false, groupSize: payment.groupId != null ? groups.get(payment.groupId) ?? 1 : 1 },

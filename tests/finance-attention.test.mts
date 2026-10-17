@@ -151,3 +151,49 @@ test('bank work opens the stream over every account; payments without a transact
     ['unbanked-payments', 'unbanked', 'Bekijken', 'Betaald gezet, maar geen transactie gevonden']);
   assert.deepEqual(unbanked.target, { view: 'bank', tab: 'movements' });
 });
+
+/* ---- Kosten & bank 2026-10-17: the VAT reminder, the in/uit split, late invoices by their due date (all inputs optional for the home) */
+
+const vat = (extra: Partial<NonNullable<AttentionInput['vatDue']>> = {}): AttentionInput['vatDue'] => ({
+  year: 2026, quarter: 3, deadline: '2026-10-25', refundEur: 228.95, payableEur: 0, pending: 14, booked: false, ...extra });
+
+test('the VAT reminder shows from 30 days before the deadline, calm until its last week, and is gone after it or once booked', () => {
+  assert.deepEqual(kinds({ today: '2026-09-24', vatDue: vat() }), [], '31 days before');
+  const [calm] = financeAttention({ ...clear, today: '2026-09-25', vatDue: vat() });
+  assert.deepEqual([calm.kind, calm.tone, calm.dueInDays, calm.amountEur, calm.action, calm.actionLabel], ['vat-deadline', 'info', 30, null, null, 'Openen']);
+  assert.equal(calm.title, 'Btw-aangifte Q3 indienen vóór 25 okt');
+  assert.equal(calm.detail.replace(/\u00a0/g, ' '), 'Nog 30 dagen · € 228,95 terug te krijgen · 14 te bevestigen');
+  assert.deepEqual(calm.target, { view: 'analysis', tab: 'vat', year: '2026', quarter: '3' });
+  const [urgent] = financeAttention({ ...clear, today: '2026-10-18', vatDue: vat({ refundEur: 0, payableEur: 1200, pending: 0 }) });
+  assert.deepEqual([urgent.tone, urgent.detail.replace(/\u00a0/g, ' ')], ['warn', 'Nog 7 dagen · € 1.200,00 te betalen']);
+  assert.equal(financeAttention({ ...clear, today: '2026-10-25', vatDue: vat({ refundEur: 0, pending: 0 }) })[0].detail, 'Vandaag indienen · niets te betalen');
+  assert.deepEqual(kinds({ today: '2026-10-26', vatDue: vat() }), [], 'after the deadline');
+  assert.deepEqual(kinds({ today: '2026-10-20', vatDue: vat({ booked: true }) }), [], 'the payment is booked');
+});
+
+test('a close VAT deadline leads its tone group; without the input the order is today\'s', () => {
+  const lines = [{ amountEur: 18145.28, salesPaymentId: null }, { amountEur: -279.96, salesPaymentId: null }];
+  const order = financeAttention({ ...clear, today: '2026-10-20', bankLines: lines, containerNow: { count: 3, eur: 12439.38 }, vatDue: vat() }).map((item) => item.kind);
+  assert.deepEqual(order, ['vat-deadline', 'unlinked-incoming', 'container-due']);
+  const calm = financeAttention({ ...clear, today: '2026-10-10', bankLines: lines, unconfirmedRegimes: { count: 23 }, vatDue: vat() }).map((item) => item.kind);
+  assert.deepEqual(calm, ['unlinked-incoming', 'vat-deadline', 'unconfirmed-regimes'], 'calm until its last week: first among the info rows');
+});
+
+test('unlinked lines carry their in and out parts; amountEur stays the gross sum for the sort and the home', () => {
+  const [item] = financeAttention({ ...clear, bankLines: [{ amountEur: 18145.28, salesPaymentId: null }, { amountEur: 931.85, salesPaymentId: null },
+    { amountEur: -279.96, salesPaymentId: null }, { amountEur: -33867, salesPaymentId: null, allocated: true }] });
+  assert.deepEqual(item.split, { inEur: 19077.13, outEur: 279.96 });
+  assert.equal(item.amountEur, 19357.09);
+});
+
+test('late invoices by their own due date, else 30 days after the invoice date; named when the number is known', () => {
+  const today = '2026-10-16';
+  assert.deepEqual(kinds({ today, receivables: [{ orderDate: '2026-09-11', remainingEur: 18846.43, dueDate: '2026-10-20', number: 'F-2026-0001', customer: 'Verhoeven BV' }] }), [],
+    'the due date wins over the 30-day rule');
+  const [one] = financeAttention({ ...clear, today, receivables: [{ orderDate: '2026-09-11', remainingEur: 18846.43, dueDate: '2026-10-11', number: 'F-2026-0001', customer: 'Verhoeven BV' }] });
+  assert.deepEqual([one.kind, one.title, one.detail, one.amountEur], ['old-receivables', '1 vervallen factuur', 'F-2026-0001 · Verhoeven BV · 5 dagen te laat', 18846.43]);
+  const [two] = financeAttention({ ...clear, today, receivables: [{ orderDate: '2026-08-01', remainingEur: 100, number: 'F-1', customer: 'A' }, { orderDate: '2026-09-01', remainingEur: 50, dueDate: '2026-10-15', number: 'F-2', customer: 'B' }] });
+  assert.deepEqual([two.title, two.detail], ['2 vervallen facturen', 'Samen nog te ontvangen · de oudste 46 dagen te laat']);
+  const [legacy] = financeAttention({ ...clear, today, receivables: [{ orderDate: '2026-09-11', remainingEur: 10 }] });
+  assert.deepEqual([legacy.title, legacy.detail], ['1 factuur staat langer dan 30 dagen open', 'Samen nog te ontvangen'], 'without a number: today\'s words');
+});

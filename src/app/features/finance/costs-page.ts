@@ -12,6 +12,7 @@ import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { WK_DOCK_MIN_PX, elementWidth } from '../../shared/workspace-layout';
+import { capsuleLabel } from '../../core/platform/return-label';
 import { AccountCheckSheet } from './account-check-sheet';
 import { AccountHistorySheet } from './account-history-sheet';
 import { AccountantPackageSheet } from './accountant-package-sheet';
@@ -54,6 +55,8 @@ import { VatReturnPanel } from './vat-return-panel';
 /** A quiet refresh when the page comes back after this long. */
 const STALE_MS = 5 * 60_000;
 /** The shortcuts of the open transaction (spec-bank-forecast §1.1): they act on the transaction shown, not on the list's focus. */
+/** A transaction's detail docks beside the list from an 840 px host (1100 wide): Bedrag stays in view while linking. */
+const LINE_DOCK_MIN_PX = 840;
 const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlink', 'open-linked', 'link']);
 
 /**
@@ -128,19 +131,14 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
       }
     } @else {
       <div class="ios-page fin-ios">
-        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
+        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : backCapsule()" [backUrl]="subScreen() ? null : ret.phoneUrl()"
+                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + backText()" (back)="backFromSection()">
           <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
           <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
-          <div below class="ios-subbar" [hidden]="!phoneSegments().length">
-            @if (phoneSegments().length > 2) {
-              <label class="fin-phone-section"><span>Toon</span>
-                <select [attr.aria-label]="'Onderdeel van ' + current().label" [value]="state.location().tab" (change)="state.go({ tab: $any($event.target).value })">
-                  @for (option of phoneSegments(); track option.id) { <option [value]="option.id">{{ option.label }}{{ option.dot ? ' · vraagt aandacht' : '' }}</option> }
-                </select><app-icon name="chevron-down" [size]="16" />
-              </label>
-            } @else if (phoneSegments().length) {
-              <app-segmented variant="ios" semantics="tabs" label="Onderdeel"
+          <!-- The kit's segmented control on every place with segments (it replaced a native 'Toon' select for three or four). -->
+          <div below class="ios-subbar fin-phone-seg" [hidden]="!phoneSegments().length">
+            @if (phoneSegments().length) {
+              <app-segmented variant="ios" semantics="tabs" [label]="'Onderdeel van ' + current().label"
                              [options]="phoneSegments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
             }
           </div>
@@ -162,7 +160,14 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
 
     <ng-template #content>
       @if (!state.loadedAt()) {
-        <div class="fin-loading" aria-busy="true"><app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="list" [rows]="8" /></div>
+        <!-- A skeleton per place: Bank its figures and list, Rapportage its figures and lines, the lists only rows. -->
+        <div class="fin-loading" aria-busy="true">
+          @switch (skeletonPlace()) {
+            @case ('bank') { <app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="list" [rows]="8" /> }
+            @case ('analysis') { <app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="lines" [rows]="6" /> }
+            @default { @if (state.desk()) { <app-skeleton kind="table" [rows]="10" /> } @else { <app-skeleton kind="group" [rows]="6" /> } }
+          }
+        </div>
       } @else {
         @switch (state.location().view) {
           @case ('open') { <app-payables-panel /> }
@@ -242,7 +247,8 @@ export class CostsPage {
   readonly current = computed(() => financeSection(this.state.location().view));
   readonly selectedCount = computed(() => this.section()?.selectedCosts?.().length ?? 0);
   private readonly width = elementWidth(() => this.host.nativeElement);
-  readonly docked = computed(() => this.width() >= WK_DOCK_MIN_PX);
+  /** A transaction docks from an 840 px host (1100 wide), so its amounts stay beside the list while linking; the rest from the kit's 1000. */
+  readonly docked = computed(() => this.width() >= (this.state.inspect()?.kind === 'line' ? LINE_DOCK_MIN_PX : WK_DOCK_MIN_PX));
   readonly readView = computed(() => this.state.location().view === 'analysis' || (this.state.location().view === 'bank' && this.state.location().tab !== 'movements'));
   readonly hasFilters = computed(() => {
     const { view, tab } = this.state.location();
@@ -272,8 +278,23 @@ export class CostsPage {
   });
   readonly phoneInspector = computed(() => !this.state.desk() && !this.state.costDraft() && !this.state.paySheet()
     && !this.state.recurringDraft() && !this.state.menu() ? this.state.inspect() : null);
-  /** A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component). */
-  readonly phoneLine = computed(() => { const target = this.phoneInspector(); return target?.kind === 'line' ? target : null; });
+  /**
+   * A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component).
+   * Its own ⋯ menu stacks above it instead of hiding it: the action then runs on the sheet it came from (an Intrekken
+   * that fails says so), and a choice in progress survives Annuleren.
+   */
+  readonly phoneLine = computed(() => {
+    const target = this.state.inspect();
+    return !this.state.desk() && target?.kind === 'line' && !this.state.costDraft() && !this.state.paySheet() && !this.state.recurringDraft() ? target : null;
+  });
+  /** The phone's way out: "‹ Dashboard" (capitalised); a label over 10 characters becomes the chevron circle, its words in the aria-label. */
+  readonly backText = computed(() => { const label = this.ret.label(); return label.charAt(0).toLocaleUpperCase('nl-BE') + label.slice(1); });
+  readonly backCapsule = computed(() => capsuleLabel(this.backText()));
+  /** Which skeleton fits the place while it loads. */
+  readonly skeletonPlace = computed(() => {
+    const { view, tab } = this.state.location();
+    return view === 'bank' && tab !== 'movements' ? 'bank' : view === 'analysis' ? 'analysis' : 'list';
+  });
   /** Transacties is a tab on the phone, no sub-screen; Rapportage still is one. */
   readonly subScreen = computed(() => this.state.location().view === 'analysis');
   backFromSection(): void {
@@ -285,7 +306,10 @@ export class CostsPage {
     const view = this.state.location().view;
     if (view === 'bank') return [];
     /* The segment behind a tab badge carries a dot, so the badge leads somewhere visible. */
-    return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.label, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
+    /* Short words only where there are more than two segments (Te betalen, Inkoop & kosten); the full label stays the accessible name. */
+    const tabs = FINANCE_TABS[view];
+    return tabs.map((tab) => ({ id: tab.id, label: tabs.length > 2 ? tab.short : tab.label, ariaLabel: tab.label,
+      dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
   });
 
   constructor() {
@@ -390,6 +414,8 @@ export class CostsPage {
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
         { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
         ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : []),
+        ...(this.state.location().view === 'bank' && this.state.location().tab === 'movements' && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
+          label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
       ],
       pick: (id) => {
         if (id === 'sync') void this.sync.syncBank();
@@ -400,6 +426,7 @@ export class CostsPage {
         else if (id === 'help') this.state.helpOpen.set(true);
         else if (id === 'odoo') this.sync.sheetOpen.set(true);
         else if (id === 'archived') this.state.archivedOpen.set(true);
+        else if (id === 'historical') this.state.showHistorical.set(!this.state.showHistorical());
       },
     });
   }

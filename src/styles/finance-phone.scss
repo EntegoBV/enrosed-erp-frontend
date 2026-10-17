@@ -6,16 +6,8 @@
   #finance-workspace {
     .fin-ios-search { padding: 0 var(--ios-inset) 8px; }
     .fin-ios-note { margin: 0 0 12px; }
-    .fin-ios-single, .fin-ios-add, .fin-ios-more { margin-bottom: 22px; }
-    .fin-ios-add .ios-cell { gap: 8px; }
+    .fin-ios-single, .fin-ios-more { margin-bottom: 22px; }
     .fin-ios-foot { margin: 0 0 24px; text-align: center; }
-    .fin-ios-total { display: grid; gap: 2px;
-      strong { font-size: 30px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
-      small { color: var(--muted); font-size: 13px; }
-      .ios-hero__label { color: var(--muted); } }
-    .fin-wallet-link { display: flex; align-items: center; justify-content: space-between; margin: 10px -18px -18px; padding: 12px 18px; border: 0; border-top: .5px solid var(--ios-sep);
-      background: none; color: var(--ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
-    .fin-round { border-radius: 50%; }
     .fin-wrap { white-space: normal; }
     .fin-cell-button { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
     .fin-share-cell .wk-meter { height: 4px; margin-top: 6px; }
@@ -41,10 +33,11 @@
     .fin-ios > app-finance-tabbar .ios-tab { font-size: 10.5px; }
     .fin-phone-add::before { background: var(--rose-soft); }
     .fin-phone-add { color: var(--rose-dark); }
-    .fin-phone-section { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-    .fin-phone-section > span { color: var(--muted); font-size: 13px; }
-    .fin-phone-section > select { flex: 1; min-width: 0; min-height: 44px; border: 0; padding: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; appearance: none; }
-    .fin-phone-section > app-icon { flex: none; color: var(--muted); pointer-events: none; }
+    /* the kit's segmented control under the large title: 12.5 px keeps 'Containers' whole at 375 */
+    .fin-phone-seg .ios-seg__opt { padding: 0 4px; font-size: 12.5px; }
+    /* container names and their terms wrap whole (the owner's rule: texts wrap, nothing ends in "…") */
+    .fin-wrapall { white-space: normal; overflow: visible; overflow-wrap: anywhere; -webkit-line-clamp: none; }
+    .fin-due { color: var(--ink-2); font-weight: 650; }
     .fin-cost-list-summary { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 0 12px; padding: 0 16px 8px; color: var(--muted); font-size: 12px; }
     .fin-cost-list-summary button { min-height: 44px; font-size: 13px; }
     .fin-cost-list-summary .fin-cost-list-clear { grid-column: 1 / -1; justify-self: end; min-height: 36px; }
@@ -114,7 +107,6 @@
         > .fin-hint { padding-bottom: 6px; } } }
     .fin-payment { grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) 24px 44px; min-height: 44px; font-size: 15px; > .fin-payment__where { font-size: 13px; } }
     .fin-payment__menu { width: 44px; height: 44px; }
-    .fin-vat__value { font-size: 30px; }
     .fin-vat__row { grid-template-columns: 72px minmax(0, 1fr) 92px; min-height: 44px; font-size: 14px; i { display: none; } }
     .fin-vat__badges { display: flex; margin: 2px 0 0; }
     .fin-group .fin-field-row { display: grid; gap: 0; }

@@ -6,6 +6,7 @@ import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { FinanceFilterFields } from './finance-filter-fields';
 import { dayMonthYear } from './finance-format';
+import { containerName as nameOfContainer } from '../purchasing/container-name';
 import { FinanceState } from './finance-state';
 import { FinancePeriod } from './finance-url';
 
@@ -138,7 +139,9 @@ export class FinanceFilters {
   readonly containerName = computed(() => {
     const id = this.state.location().container;
     const view = this.state.purchaseViews().find((row) => row.order.id === id);
-    return view?.order.number ?? this.state.payments().find((row) => row.orderId === id)?.orderNumber ?? `Container #${id}`;
+    if (view) return nameOfContainer(view.order);
+    const payment = this.state.payments().find((row) => row.orderId === id);
+    return nameOfContainer({ id, number: payment?.orderNumber, alias: payment?.orderAlias });
   });
 
   periodName(period: FinancePeriod | ''): string {

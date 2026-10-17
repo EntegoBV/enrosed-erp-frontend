@@ -7,12 +7,12 @@ import { Icon } from '../../shared/icon';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
 import { bankAccountKey } from './bank-reconciliation';
-import { clockOf, dayHeading, signedEur } from './finance-format';
+import { clockOf, dayHeading, dayMonth, signedEur } from './finance-format';
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { NO_ACCOUNT } from './finance-url';
-import { incomingMoneyTotals, incomingPurposeLabel, isOffsetRow, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import { foreignZoneName, incomingMoneyTotals, incomingPurposeLabel, isOffsetRow, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { FinanceFilterFields } from './finance-filter-fields';
 import { Sheet } from '../../shared/ui';
 
@@ -31,12 +31,13 @@ import { Sheet } from '../../shared/ui';
   template: `
     @if (state.desk()) {
       @if (filtered().length) {
-        <div class="wk-table fin-table fin-table--receipts" role="grid" aria-label="Ontvangen">
+        <!-- One active account: no Rekening column (the account is every row's); its "geen rekening" joins the Transactie cell (critique B5). -->
+        <div class="wk-table fin-table fin-table--receipts" [class.fin-table--one]="one()" role="grid" aria-label="Ontvangen">
           <div class="wk-thead" role="row">
             <span class="wk-th" role="columnheader">Moment</span>
             <span class="wk-th" role="columnheader">Factuur · klant</span>
             <span class="wk-th" role="columnheader" data-hide="xs">Waarvoor</span>
-            <span class="wk-th" role="columnheader" data-hide="sm">Rekening</span>
+            @if (!one()) { <span class="wk-th" role="columnheader" data-hide="sm">Rekening</span> }
             <span class="wk-th" role="columnheader" data-hide="md">Transactie</span>
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
@@ -46,10 +47,16 @@ import { Sheet } from '../../shared/ui';
                  (focus)="table.focused(key(row))" (click)="table.click(key(row), $event)" (dblclick)="state.openInvoice(row.salesOrderId)"
                  appMenuTrigger (menuTrigger)="rowMenu(row, $event)">
               <span class="wk-td" role="gridcell">{{ moment(row) }}</span>
-              <span class="wk-td" role="gridcell">@if (offset(row)) { Verrekening · <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a> ↔ {{ row.offsetOrderNumber || 'document' }} } @else { <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }} }@if (row.reference && !offset(row)) { <span class="wk-td__sub">{{ row.reference }}</span> }</span>
+              <span class="wk-td" role="gridcell">@if (offset(row)) { Verrekening · <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a> ↔ {{ row.offsetOrderNumber || 'document' }} } @else { <a class="wk-link" tabindex="-1" [routerLink]="['/sales', row.salesOrderId]" (click)="$event.stopPropagation()">{{ row.orderNumber }}</a>{{ customer(row) ? ' · ' + customer(row) : '' }} }@if (row.reference && !offset(row)) { <span class="wk-td__sub">{{ row.reference }}</span> }
+                @if (one() && !offset(row) && !account(row)) { <span class="wk-td__sub fin-narrow-only"><span class="fin-warn-text" title="Telt niet mee in je banksaldo">geen rekening</span></span> }
+                @if (one() && offset(row)) { <span class="wk-td__sub fin-narrow-only">geen bankbeweging</span> }</span>
               <span class="wk-td" role="gridcell" data-hide="xs">@if (offset(row)) { <span class="wk-pill tone-grey" title="Een creditnota verrekend met een factuur: geen geld op de bank.">Verrekening</span> } @else { <span class="wk-pill" [class.tone-plum]="row.purpose !== 'STANDARD'" [attr.title]="row.purpose === 'PARTNER_ADVANCE' ? 'Een partnervoorschot is financiering, geen omzet.' : null">{{ purpose(row) }}</span> }</span>
-              <span class="wk-td" role="gridcell" data-hide="sm">@if (offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> } @else if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
-              <span class="wk-td wk-td--wrap" role="gridcell" data-hide="md">@if (!offset(row)) { @if (lineOf(row); as line) { <button class="wk-link fin-wrap-link" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openLine(line.id)">{{ lineText(line) }} ›</button> } @else { <span class="wk-amount--muted">niet op de bank</span> } }</span>
+              @if (!one()) {
+                <span class="wk-td" role="gridcell" data-hide="sm">@if (offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> } @else if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
+              }
+              <span class="wk-td wk-td--wrap" role="gridcell" data-hide="md">@if (one() && offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> }
+                @if (!offset(row)) { @if (one() && !account(row)) { <span class="wk-pill tone-warn fin-pill-lead" title="Telt niet mee in je banksaldo">geen rekening</span> }
+                  @if (lineOf(row); as line) { <button class="wk-link fin-wrap-link" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openLine(line.id)">{{ lineText(line) }} ›</button> } @else { <span class="wk-amount--muted">niet op de bank</span> } }</span>
               <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0 && !offset(row)" [class.wk-amount--muted]="offset(row)">{{ signed(row.amountEur) }}</b></span>
               <span class="wk-td fin-td-end" role="gridcell">
                 <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" tabindex="-1" aria-label="Acties" (click)="$event.stopPropagation(); rowMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
@@ -83,8 +90,8 @@ import { Sheet } from '../../shared/ui';
           <div class="ios-group">
             @for (row of day.rows; track row.id) {
               <button class="ios-cell" [class.fin-offset-row]="offset(row)" type="button" (click)="rowMenu(row, null)">
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ offset(row) ? 'Verrekening · ' + row.orderNumber + ' ↔ ' + (row.offsetOrderNumber || 'document') : row.orderNumber + (customer(row) ? ' · ' + customer(row) : '') }}</span>
-                  <span class="ios-cell__sub">{{ clock(row) }} · @if (offset(row)) { geen bankbeweging } @else if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ offset(row) ? 'Verrekening · ' + row.orderNumber + ' ↔ ' + (row.offsetOrderNumber || 'document') : row.orderNumber + (customer(row) ? ' · ' + customer(row) : '') }}</span>
+                  <span class="ios-cell__sub">@if (clock(row); as time) { {{ time }} · }@if (offset(row)) { geen bankbeweging } @else if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
                 <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0 && !offset(row)">{{ signed(row.amountEur) }}</span></span>
               </button>
             }
@@ -195,21 +202,29 @@ export class IncomingPaymentList {
     return this.state.bankStatements().find((line) => line.salesPaymentId === row.id) ?? null;
   }
 
+  /** "KBC-zichtrekening · 8 okt", or "8 okt" with one active account (the account is every row's). */
   lineText(line: BankStatementLine): string {
-    const day = this.state.lineDay(line);
-    return `${this.state.accountLabel(line.account)} · ${day.slice(8, 10)}/${day.slice(5, 7)}`;
+    const day = dayMonth(this.state.lineDay(line));
+    return this.one() ? day : `${this.state.accountLabel(line.account)} · ${day}`;
   }
+  /** One active account: the Rekening column goes. */
+  readonly one = computed(() => this.state.accountsView().length <= 1);
 
   purpose(row: IncomingPaymentRow): string {
     return incomingPurposeLabel(row.purpose);
   }
 
+  /** "8 okt · 23:21", "· GMT+8" in another zone; a receipt entered with a date only reads "8 okt" (no 00:00). */
   moment(row: IncomingPaymentRow): string {
-    return paymentMomentLabel(row);
+    return paymentMomentLabel(row, this.state.today(), true);
   }
 
+  /** The phone's clock under the day head: '' for a date-only receipt, the zone after it when it is not Brussels'. */
   clock(row: IncomingPaymentRow): string {
-    return clockOf(row.receivedAt, row.timeZone);
+    const clock = clockOf(row.receivedAt, row.timeZone);
+    if (clock === '00:00') return '';
+    const zone = foreignZoneName(row);
+    return zone ? `${clock} · ${zone}` : clock;
   }
 
   signed(amount: number): string {
@@ -218,13 +233,18 @@ export class IncomingPaymentList {
 
   /** Right-click or ⋯ on a desk, a tap on a phone: the invoice, and the container of a partner receipt. */
   rowMenu(row: IncomingPaymentRow, anchor: MenuPoint | null): void {
-    this.state.openMenu({
-      title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
-      items: [
-        { id: 'invoice', label: row.docType === 'CREDITNOTA' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' },
-        ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
-      ],
-      pick: (id) => (id === 'container' ? this.state.openPartnerContainer(row.purchaseOrderId!) : this.state.openInvoice(row.salesOrderId)),
-    });
+    receiptMenu(this.state, row, anchor);
   }
+}
+
+/** The menu of one receipt (Ontvangen, and "Laatst ontvangen" on Te ontvangen): its invoice, and the container of a partner receipt. */
+export function receiptMenu(state: FinanceState, row: { orderNumber: string; amountEur: number; docType?: string | null; purchaseOrderId: number | null; salesOrderId: number }, anchor: MenuPoint | null): void {
+  state.openMenu({
+    title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
+    items: [
+      { id: 'invoice', label: row.docType === 'CREDITNOTA' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' },
+      ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
+    ],
+    pick: (id) => (id === 'container' ? state.openPartnerContainer(row.purchaseOrderId!) : state.openInvoice(row.salesOrderId)),
+  });
 }

@@ -132,3 +132,12 @@ test('one transfer for three containers: each container says which others it sha
   assert.equal(supplier.terms[0].payments[0].sharedWith, 'zelfde transactie als PO-2026-015 en PO-2026-016');
   assert.equal(inspection.payments[0].sharedWith, null);
 });
+
+test('a payee with nothing agreed, paid or invoiced reads as one "… · geen" line; any figure or document keeps the block', () => {
+  const empty = exports['emptyBranch'];
+  const base = { payee: 'OTHER', label: 'Bijkomende kosten', status: '', plannedEur: 0, paidEur: 0, remainingEur: 0, invoices: [], invoiceFiles: [], viaSupplier: null, terms: [], payments: [] };
+  assert.equal(empty(base), true);
+  assert.equal(empty({ ...base, paidEur: 180 }), false);
+  assert.equal(empty({ ...base, invoiceFiles: [{ documentId: 1, text: 'x', name: 'x' }] }), false);
+  assert.equal(empty({ ...base, payee: 'SEPARATE', viaSupplier: 'Factuur via leverancier · CI-2026-140' }), false);
+});

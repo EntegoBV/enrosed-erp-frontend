@@ -109,13 +109,13 @@ type TableId = 'category' | 'party' | 'channel';
           </ul>
         </section>
         <section class="wk-card fin-compare">
-          <header class="wk-card__head"><h2 class="wk-card__title">Per maand tegenover {{ year() - 1 }}</h2><span class="wk-card__trail">{{ compareTotal().thisYearEur | eur: 0 }} · vorig jaar {{ compareTotal().lastYearEur | eur: 0 }}</span></header>
+          <header class="wk-card__head"><h2 class="wk-card__title">{{ hasLastYear() ? 'Per maand tegenover ' + (year() - 1) : 'Per maand' }}</h2><span class="wk-card__trail">{{ compareTotal().thisYearEur | eur: 0 }}@if (hasLastYear()) { · vorig jaar {{ compareTotal().lastYearEur | eur: 0 }} }</span></header>
           <div class="wk-card__body fin-months">
             @for (row of compare(); track row.month) {
               <div class="fin-months__row" [class.fin-months__row--quiet]="!row.thisYearEur && !row.lastYearEur">
                 <span class="fin-months__label">{{ monthName(row.month) }}</span>
                 <span class="fin-months__bars"><i class="fin-months__this" [style.width.%]="compareMax() ? row.thisYearEur / compareMax() * 100 : 0"></i><i class="fin-months__last" [style.width.%]="compareMax() ? row.lastYearEur / compareMax() * 100 : 0"></i></span>
-                <strong>{{ row.thisYearEur | eur: 0 }}</strong><small>{{ row.lastYearEur ? (row.lastYearEur | eur: 0) : '—' }}</small>
+                <strong>{{ row.thisYearEur | eur: 0 }}</strong>@if (hasLastYear()) { <small>{{ row.lastYearEur ? (row.lastYearEur | eur: 0) : '—' }}</small> }
               </div>
             }
           </div>
@@ -128,7 +128,7 @@ type TableId = 'category' | 'party' | 'channel';
               <div class="ios-cell ios-cell--tall">
                 <button class="fin-cell-button" type="button" (click)="state.openVatReturn(year(), row.quarter)">
                   <span class="ios-cell__body"><span class="ios-cell__title">Q{{ row.quarter }} · aftrekbaar {{ row.deductibleEur | eur }}</span>
-                    <span class="ios-cell__sub">{{ row.sub }} · naar de btw-aangifte ›</span></span>
+                    <span class="ios-cell__sub fin-wrapall">{{ row.sub }} · naar de btw-aangifte ›</span></span>
                 </button>
                 <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openPackage({ year: year(), quarter: row.quarter })">Pakket</button>
               </div>
@@ -183,24 +183,29 @@ export class CostAnalysis implements FinanceSectionApi {
     { label: 'Kosten excl. btw', value: formatEuro(this.summary().exclEur), tone: 'strong' },
     { label: 'Btw', value: formatEuro(this.summary().vatEur) },
     { label: 'Gemiddeld per maand', value: formatEuro(this.perMonth()) },
-    ...(this.state.purchaseFiguresVisible() ? [{ label: 'Containerbetalingen (betaald)', value: formatEuro(this.containerTotals().containerPaidEur), tone: 'muted' as const, title: 'Inkoop, geen bedrijfskosten' }] : []),
+    ...(this.state.purchaseFiguresVisible() ? [{ label: 'Containerbetalingen (betaald, alle containers)', value: formatEuro(this.containerTotals().containerPaidEur), tone: 'muted' as const, title: 'Inkoop, geen bedrijfskosten' }] : []),
   ]);
   readonly strip = this.kpis;
   readonly status = computed(() => `${this.summary().count} ${this.summary().count === 1 ? 'kost' : 'kosten'} · ${this.year() || 'alle jaren'}`);
 
-  readonly chartTitle = computed(() => (this.year() ? `Per maand · ${this.year()} tegenover ${this.year() - 1}` : 'Per maand · laatste twaalf maanden'));
+  /** The previous year has any month with costs: only then is it drawn and compared (its zeros were no data). */
+  readonly hasLastYear = computed(() => !!this.year() && yearComparison(this.state.costs(), this.year()!).some((row) => row.lastYearEur));
+  readonly chartTitle = computed(() => (this.year() ? `Per maand · ${this.year()}${this.hasLastYear() ? ` tegenover ${this.year()! - 1}` : ''}` : 'Per maand · laatste twaalf maanden'));
   readonly series = computed<TrendSeries[]>(() => {
     const year = this.year();
     if (!year) {
       const months = monthlyCostSeries(this.state.costs(), 12, this.state.today());
       return months.values.some((value) => value > 0) ? [{ label: 'Kosten excl. btw', dates: months.dates, values: months.values, tone: 'accent' }] : [];
     }
-    const compare = yearComparison(this.state.costs(), year);
+    const all = yearComparison(this.state.costs(), year);
+    if (!all.some((row) => row.thisYearEur || row.lastYearEur)) return [];
+    /* The running year stops at this month: later months are not € 0, they have not happened yet. */
+    const today = this.state.today();
+    const compare = Number(today.slice(0, 4)) === year ? all.filter((row) => row.month <= Number(today.slice(5, 7))) : all;
     const dates = compare.map((row) => `${year}-${String(row.month).padStart(2, '0')}-01`);
-    if (!compare.some((row) => row.thisYearEur || row.lastYearEur)) return [];
     return [
       { label: String(year), dates, values: compare.map((row) => row.thisYearEur), tone: 'accent' },
-      { label: String(year - 1), dates, values: compare.map((row) => row.lastYearEur), tone: 'muted' },
+      ...(this.hasLastYear() ? [{ label: String(year - 1), dates, values: compare.map((row) => row.lastYearEur), tone: 'muted' as const }] : []),
     ];
   });
 

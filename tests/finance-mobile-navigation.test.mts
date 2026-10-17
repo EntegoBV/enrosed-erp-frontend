@@ -83,10 +83,15 @@ test('editing or paying hides the mobile detail dialog without discarding its or
   }
 });
 
-test('mobile section chooser uses full names; Transacties is a phone tab: no back label "Rekeningen", subScreen() false', () => {
+test('the phone segmented reads the short words with four segments, the full names as their accessible names; Transacties is a phone tab', () => {
   // Reversed on purpose (spec-bank-forecast §1.1, §6.1): the account register's explicit "Rekeningen" back is gone.
+  // 2026-10-17 (critique N12): the kit's segmented replaces the native select; shorts only where there are more than two segments.
   const { state, page } = setup({ view: 'costs', tab: 'company' });
-  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  state.go({ view: 'incoming', tab: 'open' });
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Openstaand', 'Ontvangen'], 'two segments keep their words');
+  state.go({ view: 'costs', tab: 'company' });
   state.go({ view: 'bank', tab: 'movements', account: 'BE94731074082814' });
   assert.equal(page.phoneSegments().length, 0); assert.equal(page.subScreen(), false);
   assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'KBC-zichtrekening']);
@@ -116,6 +121,23 @@ test('a transaction (line=) opens its own sheet on the phone, not the generic de
   state.inspect.set({ kind: 'cost', id: 26 });
   assert.equal(page.phoneLine(), null);
   assert.equal(page.phoneInspector().id, 26);
+});
+
+test('the transaction sheet stays under its own ⋯ menu; the generic detail sheet steps aside for a menu or a form', () => {
+  // Review 2026-10-17 (B6 follow-up): the sheet unmounted when its ⋯ opened, so Intrekken ran on a destroyed sheet and a choice in progress was lost.
+  const { state, page } = setup({ view: 'bank', tab: 'movements', line: '8841' });
+  state.inspect.set({ kind: 'line', id: 8841 });
+  state.menu.set({ items: [] });
+  assert.equal(page.phoneLine().id, 8841, 'the menu stacks above the transaction sheet');
+  state.menu.set(null);
+  for (const field of ['costDraft', 'paySheet', 'recurringDraft']) {
+    state[field].set({ id: 1 }); assert.equal(page.phoneLine(), null, `${field} takes the screen`);
+    state[field].set(null); assert.equal(page.phoneLine().id, 8841);
+  }
+  state.inspect.set({ kind: 'cost', id: 26 }); state.menu.set({ items: [] });
+  assert.equal(page.phoneLine(), null); assert.equal(page.phoneInspector(), null);
+  state.desk.set(true); state.menu.set(null); state.inspect.set({ kind: 'line', id: 8841 });
+  assert.equal(page.phoneLine(), null, 'a desk docks the line instead');
 });
 
 test('opening anything else while a transaction is open takes line= off the address, so it cannot win the inspector back', () => {

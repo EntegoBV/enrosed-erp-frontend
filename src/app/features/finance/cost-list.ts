@@ -15,7 +15,7 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { FinancePeriod } from './finance-url';
-import { COST_MONEY, cashTotalOf, returnVatOf } from './finance-metrics';
+import { COST_MONEY, cashTotalOf, returnVatOf, reverseChargeOf } from './finance-metrics';
 
 type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
 
@@ -32,6 +32,14 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
   imports: [Icon, EurPipe, CostRow, Sheet, DateField, FinanceFilterFields],
   template: `
     @if (state.desk()) {
+      @if (state.unconfirmedRegimeCount() && state.location().regime !== 'unconfirmed') {
+        <!-- "te bevestigen" as one queue: Bekijken filters them; confirming stays the selection's own choice (critique N5). -->
+        <div class="wk-banner wk-banner--info wk-banner--inset" role="status">
+          <app-icon name="info" [size]="18" />
+          <span class="wk-banner__text"><b>{{ state.unconfirmedRegimeCount() }} {{ state.unconfirmedRegimeCount() === 1 ? 'kost heeft' : 'kosten hebben' }} een afgeleide btw-regeling.</b> Selecteer ze om in één keer te bevestigen.</span>
+          <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" (click)="reviewRegimes()">Bekijken</button></span>
+        </div>
+      }
       @if (rows().length) {
         <div class="wk-table fin-table fin-table--costs" role="grid" aria-label="Bedrijfskosten" [class.wk-table--selecting]="table.count() > 0">
           <div class="wk-thead" role="row">
@@ -50,9 +58,10 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
           @for (group of groups(); track group.key) {
             @if (group.label) {
               <div class="wk-group" role="row">
-                <span class="wk-group__label">{{ group.label }} <span class="wk-group__count">· {{ group.rows.length }} {{ group.rows.length === 1 ? 'kost' : 'kosten' }}</span></span>
+                <!-- the month's reverse charge reads on the label line, beside the Btw total it is left out of (and gone with it below md): one line a month -->
+                <span class="wk-group__label">{{ group.label }} <span class="wk-group__count">· {{ group.rows.length }} {{ group.rows.length === 1 ? 'kost' : 'kosten' }}</span>@if (group.reverseEur) { <span class="wk-group__count" data-hide="md" title="Btw verlegd: aangegeven en afgetrokken, niet betaald">· verlegd {{ group.reverseEur | eur }}</span> }</span>
                 <span class="wk-td--num fin-sum fin-sum--excl" data-hide="xs">{{ group.exclEur | eur }}</span>
-                <span class="wk-td--num fin-sum fin-sum--vat" data-hide="md">{{ group.vatEur | eur }}</span>
+                <span class="wk-td--num fin-sum fin-sum--vat" data-hide="md" [attr.title]="group.reverseEur ? 'Zonder de verlegde btw (' + (group.reverseEur | eur) + ')' : null">{{ group.vatEur | eur }}</span>
                 <span class="wk-td--num fin-sum fin-sum--incl">{{ group.inclEur | eur }}</span>
               </div>
             }
@@ -100,14 +109,15 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
       <details class="fin-cost-list-totals"><summary><span>Totaal binnen selectie</span><strong>{{ summary().inclEur | eur }} <small>incl. btw</small></strong></summary>
       <div class="ios-figures">
         <div><small>Excl. btw</small><strong>{{ summary().exclEur | eur }}</strong></div>
-        <div><small>Btw</small><strong>{{ summary().vatEur | eur }}</strong></div>
+        <div><small>Btw</small><strong>{{ summary().vatEur - reverseVatEur() | eur }}</strong></div>
+        @if (reverseVatEur()) { <div><small>Verlegd</small><strong>{{ reverseVatEur() | eur }}</strong></div> }
         <div><small>Incl. btw</small><strong>{{ summary().inclEur | eur }}</strong></div>
         <div><small>Open ({{ summary().unpaidCount }})</small><strong [class.wk-amount--warn]="summary().unpaidCount > 0">{{ summary().unpaidEur | eur }}</strong></div>
       </div>
       </details>
       @for (group of monthGroups(); track group.key) {
         <section class="ios-section">
-          <div class="ios-section__head"><h2>{{ group.label }}</h2><span class="ios-section__trail">{{ group.inclEur | eur }} incl.</span></div>
+          <div class="ios-section__head"><h2>{{ group.label }}</h2><span class="ios-section__trail">{{ group.inclEur | eur }} incl.@if (group.reverseEur) { · verlegd {{ group.reverseEur | eur }} }</span></div>
           <div class="ios-group ios-group--icons">
             @for (row of group.rows; track row.key) { <app-cost-row [cost]="row.cost!" layout="inset" columns="ledger" /> }
           </div>
@@ -159,6 +169,8 @@ export class CostList implements FinanceSectionApi {
   });
   readonly costs = computed(() => this.rows().map((row) => row.cost!));
   readonly summary = computed(() => costSummary(this.costs(), COST_MONEY));
+  /** Reverse-charge VAT: in the return on both sides, never paid; shown apart so Excl + Btw = Incl. */
+  readonly reverseVatEur = computed(() => Math.round(this.costs().reduce((sum, cost) => sum + reverseChargeOf(cost) * 100, 0)) / 100);
   readonly sorted = computed(() => {
     const sort = this.sort();
     if (sort.key === 'date') return sortRows(this.rows(), (row) => row.date, sort.direction);
@@ -197,7 +209,8 @@ export class CostList implements FinanceSectionApi {
     const summary = this.summary();
     return [
       { label: 'Excl. btw', value: formatEuro(summary.exclEur), tone: 'strong' },
-      { label: 'Btw', value: formatEuro(summary.vatEur) },
+      { label: 'Btw', value: formatEuro(Math.round((summary.vatEur - this.reverseVatEur()) * 100) / 100) },
+      ...(this.reverseVatEur() ? [{ label: 'Verlegd', value: formatEuro(this.reverseVatEur()), title: 'Btw verlegd: aangegeven en afgetrokken, niet betaald' }] : []),
       { label: 'Incl. btw', value: formatEuro(summary.inclEur) },
       { label: `Open (${summary.unpaidCount})`, value: formatEuro(summary.unpaidEur), tone: summary.unpaidCount ? 'warn' : 'muted' },
     ];
@@ -263,6 +276,11 @@ export class CostList implements FinanceSectionApi {
     this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', regime: '', cost: null });
   }
 
+  /** "Bekijken": this year's costs with a derived or unknown regime, nothing selected (a regime feeds the return). */
+  reviewRegimes(): void {
+    this.state.go({ regime: 'unconfirmed', period: 'year', from: '', to: '' });
+  }
+
   /** The derived and unknown regimes of this year, where 'Klopt' or an edit confirms them. */
   toggleUnconfirmed(): void {
     const on = this.state.location().regime === 'unconfirmed';
@@ -295,9 +313,11 @@ export class CostList implements FinanceSectionApi {
     return [...groups.entries()].map(([month, list]) => ({ ...this.totalsOf(list), key: month, label: capitalise(monthLabel(month)), rows: list }));
   }
 
-  private totalsOf(rows: readonly CostLedgerRow[]): { exclEur: number; vatEur: number; inclEur: number } {
+  /** A month's totals: Btw without the reverse-charge part (shown as "verlegd"), so Excl + Btw = Incl per month too. */
+  private totalsOf(rows: readonly CostLedgerRow[]): { exclEur: number; vatEur: number; reverseEur: number; inclEur: number } {
     const sum = (value: (cost: CompanyCost) => number): number => Math.round(rows.reduce((total, row) => total + value(row.cost!) * 100, 0)) / 100;
-    return { exclEur: sum((cost) => cost.amountExclEur || 0), vatEur: sum(returnVatOf), inclEur: sum(cashTotalOf) };
+    const reverseEur = sum(reverseChargeOf);
+    return { exclEur: sum((cost) => cost.amountExclEur || 0), vatEur: Math.round((sum(returnVatOf) - reverseEur) * 100) / 100, reverseEur, inclEur: sum(cashTotalOf) };
   }
 }
 

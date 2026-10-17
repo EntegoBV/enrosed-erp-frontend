@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SalesOrderView, SalesPaymentSummary } from '../src/app/core/api/models.ts';
-import { incomingMoneyTotals, invoiceReceivable, openInvoiceRows, paymentLocalDay, paymentMomentLabel, receivableTotals, uniqueIncomingPayments } from '../src/app/features/finance/incoming-money.ts';
+import { foreignZoneName, incomingMoneyTotals, invoiceReceivable, openInvoiceRows, paymentLocalDay, paymentMomentLabel, receivableTotals, uniqueIncomingPayments } from '../src/app/features/finance/incoming-money.ts';
 import type { IncomingMoneyRow } from '../src/app/features/finance/incoming-money.ts';
 
 const payment = (input: Partial<IncomingMoneyRow> = {}): IncomingMoneyRow => ({ id: 1, salesOrderId: 12, customerId: 7, purchaseOrderId: 4, orderNumber: 'PARTNER-12',
@@ -25,8 +25,29 @@ test('received moment is the entered timezone calendar date and includes exact h
   const late = payment({ receivedAt: '2026-09-08T22:17:00Z' });
   assert.equal(paymentLocalDay(late), '2026-09-09');
   assert.match(paymentMomentLabel(late), /00:17/);
+  assert.equal(paymentMomentLabel(late, '2026-10-16'), '9 sep · 00:17', 'the day and month of this year, then the clock');
+  assert.equal(paymentMomentLabel(late, '2027-01-02'), '9 sep 2026 · 00:17', 'another year names it');
+  assert.equal(paymentMomentLabel(late), '9 sep 2026 · 00:17', 'without today the year stays');
+  assert.equal(paymentMomentLabel(payment({ receivedAt: '2026-10-08T21:21:00Z' }), '2026-10-16'), '8 okt · 23:21');
   assert.equal(incomingMoneyTotals([late], '2026-09-09', '2026-09-09').count, 1);
   assert.equal(incomingMoneyTotals([late], '2026-09-08', '2026-09-08').count, 0);
+});
+
+test('a moment recorded in another zone names that zone; Brussels and a zone with the same clock do not', () => {
+  // Review 2026-10-17: "8 okt · 23:21" printed the receipt's own clock without its zone, so it read as Brussels time.
+  const shanghai = payment({ receivedAt: '2026-10-08T21:21:00Z', timeZone: 'Asia/Shanghai' });
+  assert.equal(foreignZoneName(shanghai), 'GMT+8');
+  assert.equal(paymentMomentLabel(shanghai, '2026-10-16'), '9 okt · 05:21 · GMT+8');
+  assert.equal(paymentMomentLabel(payment({ receivedAt: '2026-10-08T21:21:00Z', timeZone: 'Europe/Amsterdam' }), '2026-10-16'), '8 okt · 23:21', 'the same clock as Brussels');
+  assert.equal(foreignZoneName(payment({ receivedAt: '2026-10-08T21:21:00Z' })), '');
+  assert.equal(paymentMomentLabel(payment({ receivedAt: '2026-10-08T21:21:00Z', timeZone: '' }), '2026-10-16'), '8 okt · 23:21', 'no zone is Brussels');
+});
+
+test('a receipt entered with a date only (00:00) reads its day without a clock where the caller asks for it', () => {
+  const dateOnly = payment({ receivedAt: '2026-10-13T22:00:00Z' });
+  assert.equal(paymentMomentLabel(dateOnly, '2026-10-16', true), '14 okt');
+  assert.equal(paymentMomentLabel(dateOnly, '2026-10-16'), '14 okt · 00:00', 'balance readings and bank stamps keep their clock');
+  assert.equal(paymentMomentLabel(payment({ receivedAt: '2026-09-08T22:17:00Z' }), '2026-10-16', true), '9 sep · 00:17');
 });
 
 test('partial, overpaid, cancelled and credit invoices have distinct receivable outcomes', () => {

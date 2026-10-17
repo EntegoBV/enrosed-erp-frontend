@@ -9,7 +9,7 @@ import { CERTAINTY_LABEL } from '../src/app/features/finance/cash-forecast.ts';
 import { parseFinanceLocation, patchLocation } from '../src/app/features/finance/finance-url.ts';
 
 /* Bank as the home of Kosten & bank (spec-bank-forecast §3.1-§3.3): the total tile's words, what moved, the Kaslijn's facts and banner. */
-async function selectedClass(file: string, name: string, members: string[]) {
+async function selectedClass(file: string, name: string, members: string[], extra: Record<string, unknown> = {}) {
   const source = await readFile(new URL(`../src/app/features/finance/${file}`, import.meta.url), 'utf8');
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === name)!;
@@ -18,7 +18,7 @@ async function selectedClass(file: string, name: string, members: string[]) {
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter(m => !ts.isDecorator(m)), cls.name, undefined, undefined, kept);
   const code = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
-  vm.runInNewContext(code, { exports, computed, signal, dayMon, dayMonth, eur, weekdayDayMonth, CERTAINTY_LABEL });
+  vm.runInNewContext(code, { exports, computed, signal, dayMon, dayMonth, eur, weekdayDayMonth, CERTAINTY_LABEL, ...extra });
   return exports[name];
 }
 const Cockpit = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['bankKnown', 'bankStale', 'accountCount', 'bankSub', 'computedSub', 'moves', 'outlookComplete']);
@@ -29,7 +29,7 @@ function cockpit(accounts: any[], movements: any[] = [], extra: Record<string, u
   const panel = new Cockpit();
   panel.state = { accountsView: signal(accounts), today: () => '2026-10-15', cashInput: () => ({ movements }),
     bankLedger: () => ({ accounts: accounts.map(account => ({ currentEur: account.reading ? 1 : null })) }),
-    containersLoading: signal(false), loadErrors: signal([]), ...extra };
+    containersLoading: signal(false), loadErrors: signal([]), kaslijn: () => ({ likelyPaid: [] }), ...extra };
   return panel;
 }
 const kbc = { account: 'BE94', label: 'KBC-zichtrekening', reading: { id: 1 }, ageDays: 5 };
@@ -58,6 +58,8 @@ test('Vandaag and Deze week count the active accounts from Monday; an archived o
   assert.deepEqual(JSON.parse(JSON.stringify(cockpit([kbc, wise], moves).moves())), { today: 4562, week: -6438 });
   assert.equal(cockpit([kbc, wise], [], { containersLoading: signal(true) }).outlookComplete(), false);
   assert.equal(cockpit([kbc, wise]).outlookComplete(), true);
+  assert.equal(cockpit([kbc, wise], [], { kaslijn: () => ({ likelyPaid: [{ lineId: 1 }] }) }).outlookComplete(), false,
+    'a transaction that probably paid an open item counts twice until it is linked: onvolledig');
 });
 
 function kaslijn(forecast: any) {
@@ -97,4 +99,50 @@ test('phone "Vraagt aandacht": a row that only opens its list keeps its figure a
   assert.equal(rows.phoneVerb(item(null)), null);
   assert.deepEqual(['book', 'link', 'check'].map((action) => rows.phoneVerb(item(action))), ['Nu boeken', 'Koppel', 'Controleer']);
   assert.equal(rows.phoneVerb(item('fill', 'Saldo invullen')), 'Saldo invullen');
+});
+
+const euroFormat = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
+const Band = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['single', 'bandAge', 'splitText', 'phoneTrail', 'phoneVerb', 'phoneLabel', 'trailVerb'], { euro: euroFormat });
+
+test('the band names its one account and its check; attention rows read in/uit, the VAT row "nog n d", and only doing rows get a button', () => {
+  const band = new Band();
+  band.state = { accountsView: signal([{ ...kbc, ageDays: 4 }]) };
+  assert.equal(band.single().label, 'KBC-zichtrekening');
+  assert.equal(band.bandAge(), 'gecontroleerd 4 dagen geleden');
+  band.state.accountsView.set([kbc, wise]);
+  assert.equal(band.single(), null, 'several accounts keep the total tile and the cards');
+  const nbsp = (text: string) => text.replace(/\u00a0/g, ' ');
+  assert.equal(nbsp(band.splitText({ split: { inEur: 19077.13, outEur: 203349.07 } })), 'in € 19.077,13 · uit € 203.349,07');
+  assert.equal(nbsp(band.splitText({ split: { inEur: 0, outEur: 279.96 } })), 'uit € 279,96', 'a zero side is left out');
+  assert.equal(band.phoneTrail({ kind: 'vat-deadline', action: null, dueInDays: 9, amountEur: null, count: 1 }), 'nog 9 d');
+  assert.equal(band.phoneTrail({ kind: 'vat-deadline', action: null, dueInDays: 0, amountEur: null, count: 1 }), 'vandaag');
+  assert.equal(nbsp(band.phoneTrail({ kind: 'unbanked-payments', action: 'unbanked', amountEur: 80276.76, count: 15 })), '€ 80.276,76');
+  assert.deepEqual(['link', 'book', 'check', 'fill', null, 'unbanked'].map((action) => band.trailVerb({ action })),
+    ['Koppelen', 'Nu boeken', 'Controleren', 'Saldo invullen', null, null]);
+});
+
+const Hero = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['heroTap', 'toTransactions', 'capsule', 'leaving', 'runCapsule'], { bankTextOf: () => ({ title: 'X', sub: '' }) });
+
+test('the one-account phone hero opens Transacties, or without a balance that account\'s own first reading (review 2026-10-17)', () => {
+  const calls: unknown[] = [];
+  const hero = new Hero();
+  hero.state = { go: (patch: any, mode: string) => calls.push(['go', patch.view, patch.tab, mode]), checkOrFill: (key: string) => calls.push(['fill', key]), openBank: () => calls.push(['blank']) };
+  hero.heroTap({ ...kbc, currentEur: 1200 });
+  hero.heroTap({ ...kbc, currentEur: null });
+  assert.deepEqual(calls, [['go', 'bank', 'movements', 'push'], ['fill', kbc.account]], 'never the blank balance form without an account');
+});
+
+test('only the Te koppelen row he links with its capsule leaves with a motion, and only while it links', async () => {
+  // Contract §1.5: motion follows his own action, never a data load (the 5-minute refresh, an Odoo sync, another device).
+  const line = { id: 31, amountEur: -80, bookedAt: '2026-10-15T08:00:00Z' };
+  const suggestion = { target: { kind: 'cost-new', costId: 2, title: 'Kost · Huur' }, changesAmount: false, others: [] };
+  let release!: () => void; const seen: (number | null)[] = [];
+  const hero = new Hero();
+  hero.state = { suggestions: () => new Map([[31, suggestion]]), linking: () => null,
+    linkLine: () => { seen.push(hero.leaving()); return new Promise<string>((done) => { release = () => done(''); }); } };
+  assert.equal(hero.leaving(), null, 'nothing leaves on a load');
+  const running = hero.runCapsule(line);
+  assert.deepEqual(seen, [31], 'set before the link starts, so the row that goes takes mo-leave');
+  release(); await running;
+  assert.equal(hero.leaving(), null, 'cleared afterwards: a later reload removes rows without motion');
 });

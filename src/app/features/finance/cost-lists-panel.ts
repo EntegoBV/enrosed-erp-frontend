@@ -50,11 +50,12 @@ interface FairRow {
           <header class="wk-card__head"><h2 class="wk-card__title" id="fin-parties-title">Aan wie</h2><span class="wk-card__trail">{{ parties().length }}</span>
             <button class="wk-btn wk-btn--sm" type="button" (click)="state.openCostParty(null)"><app-icon name="plus" [size]="14" />Aan wie toevoegen</button></header>
           @if (parties().length) {
-            <div class="wk-table fin-table fin-table--parties" role="grid" aria-label="Aan wie">
+            <!-- Without any IBAN the column goes (the sheet still edits it). -->
+            <div class="wk-table fin-table fin-table--parties" [class.fin-table--no-iban]="!anyIban()" role="grid" aria-label="Aan wie">
               <div class="wk-thead" role="row">
                 <span class="wk-th" role="columnheader">Naam</span>
                 <span class="wk-th" role="columnheader">Standaard</span>
-                <span class="wk-th fin-lists-md" role="columnheader">IBAN</span>
+                @if (anyIban()) { <span class="wk-th fin-lists-md" role="columnheader">IBAN</span> }
                 <span class="wk-th wk-th--num" role="columnheader">Kosten dit jaar</span>
                 <span class="wk-th wk-th--num" role="columnheader">Totaal excl.</span>
                 <span class="wk-th fin-lists-sm" role="columnheader">Laatst</span>
@@ -64,7 +65,7 @@ interface FairRow {
                      appMenuTrigger (menuTrigger)="partyMenu(row, $event)">
                   <span class="wk-td" role="gridcell"><b>{{ row.party.name }}</b></span>
                   <span class="wk-td" role="gridcell" [class.wk-tr--muted]="!row.detail">{{ row.detail || 'Geen standaard' }}</span>
-                  <span class="wk-td fin-lists-md fin-iban" role="gridcell">{{ row.iban || '—' }}</span>
+                  @if (anyIban()) { <span class="wk-td fin-lists-md fin-iban" role="gridcell">{{ row.iban || '—' }}</span> }
                   <span class="wk-td wk-td--num" role="gridcell">{{ row.count || '—' }}</span>
                   <span class="wk-td wk-td--num" role="gridcell">@if (row.count) { {{ row.exclEur | eur }} } @else { — }</span>
                   <span class="wk-td fin-lists-sm" role="gridcell">{{ row.lastDate ? day(row.lastDate) : '—' }}</span>
@@ -169,6 +170,9 @@ export class CostListsPanel implements FinanceSectionApi {
     const figures = this.state.partyFiguresFor(party.name);
     return { party, detail: this.detailOf(party), iban: spaced(party.iban), ...figures };
   }).filter((row) => this.matches(row.party.name, row.detail, row.iban)));
+
+  /** Any name with an IBAN: else the IBAN column stays out. */
+  readonly anyIban = computed(() => this.state.costParties().some((party) => !!(party.iban ?? '').trim()));
 
   /** Per fair: every cost and recurring cost on its code (what blocks a delete), and this year's costs with their total. */
   readonly fairRows = computed<FairRow[]>(() => {

@@ -31,7 +31,7 @@ import type { LinkOutcome } from './bank-link-actions';
 import { lineSuggestions } from './bank-suggestions';
 import type { LineSuggestion } from './bank-suggestions';
 import { addDismissed, readDismissed } from './cash-dismissed';
-import { NO_DEFAULTS, buildCashForecast, dayEndBalances, runningBalances } from './cash-forecast';
+import { NO_DEFAULTS, buildCashForecast, containerDueDates, dayEndBalances, runningBalances } from './cash-forecast';
 import { cashForecastInput, vooruitblikOf } from './cash-forecast-input';
 import { bankAmountsMatch, bankTransactionDay } from '../../shared/bank-transaction-options';
 import { bankMarker, lineMarkers, matchOutgoings, unbankedOutgoings, unbankedSinceDay } from './bank-markers';
@@ -45,9 +45,10 @@ import type { PayToBankPreference } from './pay-to-bank-preference';
 import { categoryLabel } from './cost-categories';
 import { CONTAINER_PAYMENT_CATEGORIES, CostLedgerRow, costLedger, costLedgerCsv } from './cost-ledger';
 import { financeAttention } from './finance-attention';
+import type { VatDueInput } from './finance-attention';
 import { FinanceIntake } from './finance-intake';
 import {
-  addDays, cashTotalOf, costRegimeCells, occurrencesBetween, openOf, previewBacklog, quarterOf, returnLineOf, returnVatOf, upcomingRecurring,
+  addDays, cashTotalOf, costRegimeCells, defaultReturnPeriod, occurrencesBetween, openOf, previewBacklog, quarterOf, returnLineOf, returnVatOf, upcomingRecurring,
 } from './finance-metrics';
 import { blankBalance, blankCost, blankCostParty, blankFair, blankRecurring, FINANCE_TABS, financeSection, localIsoDay, periodRange } from './finance-sections';
 import type { PeriodId } from './finance-sections';
@@ -60,6 +61,7 @@ import { containerPayables, daysBetween, payableTotals, payablesFor } from './pa
 import { containerPaymentTree, type PayeeBranch } from './container-payment-tree';
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
 import { shareToast } from '../purchasing/purchase-payment-share';
+import { containerName } from '../purchasing/container-name';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -132,6 +134,10 @@ export interface ReceivableRow {
   purpose: SalesPurpose;
   orderDate: string;
   ageDays: number;
+  /** When the invoice falls due: its own due date, else 30 days after the invoice date. */
+  dueDate: string;
+  /** Days past the due date (negative while it is still to come). */
+  dueDays: number;
   totalEur: number;
   receivedEur: number;
   remainingEur: number;
@@ -472,6 +478,7 @@ export class FinanceState {
         key: `invoice:${view.order.id}`, id: view.order.id, number: view.order.number, customerId: view.order.customerId,
         customer: this.customerNames().get(view.order.customerId ?? -1) ?? '', kind: credit ? 'credit' as const : partner ? 'partner' as const : 'customer' as const,
         purpose, orderDate: view.order.orderDate, ageDays: Math.max(0, daysBetween(view.order.orderDate, this.today())),
+        ...this.dueOf(view.order.orderDate, view.order.invoiceDueDate),
         totalEur: view.paymentSummary?.invoiceTotalEur ?? view.priced?.totals?.totalInclVat ?? 0,
         receivedEur: money.receivedEur, remainingEur: credit ? 0 : money.remainingEur, creditEur: credit ? money.creditEur : 0,
         creditedInvoiceId: view.order.creditedInvoiceId ?? view.creditedInvoiceId ?? null, creditedInvoiceNumber: view.creditedInvoiceNumber ?? null, view,
@@ -479,6 +486,13 @@ export class FinanceState {
     })
     .filter((row) => row.remainingEur > 0 || row.creditEur > 0)
     .sort((left, right) => left.orderDate.localeCompare(right.orderDate) || left.id - right.id));
+
+  /** An invoice's due date (its own, else invoice date + 30, the forecast's rule) and how many days late it is. */
+  private dueOf(orderDate: string, invoiceDueDate: string | null | undefined): { dueDate: string; dueDays: number } {
+    const own = invoiceDueDate && /^\d{4}-\d{2}-\d{2}/.test(invoiceDueDate) ? invoiceDueDate.slice(0, 10) : null;
+    const dueDate = own ?? addDays(orderDate, 30);
+    return { dueDate, dueDays: daysBetween(dueDate, this.today()) };
+  }
 
   readonly incomingThisMonth = computed(() => incomingMoneyTotals(this.incomingPayments(), periodRange('month', this.today()).from, this.today()));
 
@@ -533,10 +547,13 @@ export class FinanceState {
 
   /* payables: costs, containers and recurring in one list */
   readonly containerPayables = computed(() => (this.purchaseFiguresVisible() ? containerPayables(this.purchaseViews()) : []));
+  /* Container terms are dated by the Kaslijn's own rule (containerDates), so Binnenkort and the Kaslijn agree. */
   readonly payables = computed(() => payablesFor({
-    openCosts: this.openCosts(), upcoming30: this.upcoming(), containerRows: this.containerPayables(), today: this.today(),
+    openCosts: this.openCosts(), upcoming30: this.upcoming(), containerRows: this.containerPayables(), today: this.today(), containerDates: this.containerDates(),
   }));
   readonly payableTotals = computed(() => payableTotals(this.payables()));
+  /** The Kaslijn's day of every open container row, by its payables key (Te betalen dates its terms with it). */
+  readonly containerDates = computed(() => containerDueDates(this.cashInput()));
   /** The Vooruitblik: computed in one place (cash-forecast-input), so Bank, Kasprognose and Analyse never disagree. */
   readonly outlook = computed(() => vooruitblikOf({
     today: this.today(), bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.bankStatements(), incomingPayments: this.incomingPayments(),
@@ -682,6 +699,18 @@ export class FinanceState {
   readonly receiptsWithoutAccount = computed(() => uniqueIncomingPayments(this.incomingPayments())
     .filter((row) => !this.receiptAccountKey(row as IncomingPaymentRow)));
 
+  /**
+   * The closed quarter's return for the VAT reminder: its deadline, figures and pending lines; booked when a VAT
+   * payment of the quarter is on the bank (the forecast's own rule, cashInput().paidVatPeriods).
+   */
+  readonly vatDue = computed<VatDueInput>(() => {
+    const { year, quarter } = defaultReturnPeriod(this.today());
+    const result = this.vatReturnFor(year, quarter);
+    return { year, quarter, deadline: result.filingDeadline, refundEur: result.totals.refundEur, payableEur: result.totals.payableEur,
+      pending: result.unconfirmedCount + result.unknown.length + result.openClearanceCount,
+      booked: this.cashInput().paidVatPeriods.includes(`${year}-Q${quarter}`) };
+  });
+
   readonly attention = computed(() => {
     const containersNow = this.containerPayables().filter((row) => row.bucket === 'now');
     const unassigned = this.receiptsWithoutAccount();
@@ -697,7 +726,8 @@ export class FinanceState {
       accounts: this.accountsView().map((account) => ({ key: account.account, label: account.label, hasReading: !!account.reading, ageDays: account.ageDays })),
       unbanked: { count: unbanked.length, eur: round2(unbanked.reduce((sum, row) => sum + row.amountEur, 0)) },
       costs: this.costs().map((cost) => ({ date: cost.date, recurringCostId: cost.recurringCostId, documented: cost.id !== null && this.documentedIds().has(cost.id) })),
-      receivables: this.receivables().map((row) => ({ orderDate: row.orderDate, remainingEur: row.remainingEur })),
+      receivables: this.receivables().map((row) => ({ orderDate: row.orderDate, remainingEur: row.remainingEur, dueDate: row.dueDate, number: row.number, customer: row.customer })),
+      vatDue: this.vatDue(),
       openCredits: { count: this.openInvoices().creditNoteCount, eur: round2(this.receivables().filter((row) => row.kind === 'credit').reduce((sum, row) => sum + row.creditEur, 0)) },
     });
   });
@@ -863,6 +893,43 @@ export class FinanceState {
   }
   /** The account key whose balance history is open. */
   readonly historyAccount = signal<string | null>(null);
+
+  /** A bank line that a link, booking or undo just changed: its row flashes once (user actions only, never on load). */
+  readonly flashLine = signal<number | null>(null);
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  flash(lineId: number): void {
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashLine.set(lineId);
+    this.flashTimer = setTimeout(() => { this.flashTimer = null; this.flashLine.set(null); }, 900);
+  }
+
+  /** Transacties: the manual registrations an Odoo account keeps aside ("Eerdere registraties"), shown on request. */
+  readonly showHistorical = signal(false);
+  readonly historicalCount = computed(() => {
+    const account = this.location().account ? this.canonicalAccount(this.location().account) : '';
+    return this.bankStatements().filter((line) => !this.officialBankLine(line) && (!account || this.canonicalAccount(line.account) === account)).length;
+  });
+
+  /** An account's ⋯: the four account actions plus "Telt mee in de kasprognose" (the card, the band and the phone hero). */
+  accountMenu(account: ReturnType<FinanceState['accountsView']>[number], anchor: MenuPoint | null): void {
+    const a = account;
+    this.openMenu({ title: a.label, anchor, cancelLabel: anchor ? '' : 'Sluiten',
+      items: [
+        { id: 'manage', label: 'Rekeninggegevens en beheer', iconName: 'pencil' },
+        { id: 'check', label: a.reading ? 'Saldo controleren' : 'Beginsaldo invullen', iconName: 'tick' },
+        { id: 'history', label: 'Saldogeschiedenis', iconName: 'recent' },
+        ...(a.reading ? [{ id: 'fix', label: 'Saldo corrigeren', iconName: 'pencil' }] : []),
+        ...(this.cashRound() ? [{ id: 'counts', label: 'Telt mee in de kasprognose', iconName: 'bank', checked: a.countsInCash, divider: true }] : []),
+      ],
+      pick: (id) => {
+        if (id === 'manage') this.bankAccountEditor.set({ key: a.account, label: a.label, source: a.source, archived: a.archived, aliases: a.aliases,
+          odooJournalId: a.odooJournalId, manualMovementsAllowed: a.manualMovementsAllowed });
+        else if (id === 'check') this.checkOrFill(a.account);
+        else if (id === 'history') this.historyAccount.set(a.account);
+        else if (id === 'fix') this.openBank(a.reading);
+        else if (id === 'counts') this.setCountsInCash(a.account, !a.countsInCash);
+      } });
+  }
   readonly outlookOpen = signal(false);
 
   constructor() {
@@ -959,8 +1026,11 @@ export class FinanceState {
   inspectTitle(target: InspectTarget): string {
     switch (target.kind) {
       case 'cost': return this.costs().find((row) => row.id === target.id)?.description || 'Kost';
-      case 'container': return this.purchaseViews().find((view) => view.order.id === target.id)?.order.number
-        ?? this.payments().find((row) => row.orderId === target.id)?.orderNumber ?? 'Container';
+      case 'container': {
+        const order = this.purchaseViews().find((view) => view.order.id === target.id)?.order;
+        const payment = order ? null : this.payments().find((row) => row.orderId === target.id);
+        return order ? containerName(order) : payment ? containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias }) : 'Container';
+      }
       case 'invoice': return this.receivables().find((row) => row.id === target.id)?.number ?? 'Document';
       case 'line': return 'Transactie';
       default: return this.recurring().find((row) => row.id === target.id)?.name || 'Vaste kost';
@@ -1242,6 +1312,7 @@ export class FinanceState {
           this.bankCostLinkPending.set(null);
           void this.refreshBank(); void this.refreshCosts();
           this.ui.toast('Kost bewaard en banktransactie gekoppeld', 'ok');
+      this.flash(line.id);
         } catch (failure) {
           this.bankCostLinkError.set(`Kost bewaard. De bankbetaling kon nog niet worden bevestigd: ${messageOf(failure, 'Probeer opnieuw.')} Opnieuw proberen maakt geen extra betaling.`);
           this.paySheet.set({ costs: [saved] });
@@ -2212,6 +2283,7 @@ export class FinanceState {
       this.bankStatements.update((rows) => rows.map((row) => outcome.lines.find((saved) => saved.id === row.id) ?? row));
       const purchase = target.kind === 'term-new' || target.kind === 'purchase-existing';
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', ...(purchase ? ['containers' as const] : [])])]);
+      this.flash(line.id);
       if (options.toast !== false) {
         const followed = preview.rows.some((row) => (row.label === 'Bedrag' || row.label === 'Betaald op' || row.label === 'Ontvangen op') && row.changed)
           && !['sales-new', 'cost-new', 'term-new'].includes(target.kind) && preview.primaryLabel === 'Koppelen en aanpassen';
@@ -2237,6 +2309,7 @@ export class FinanceState {
     try {
       await undoLink({ banking: this.banking, sourcing: this.sourcing, finance: this.finance }, line, target, { costPaymentId, purchase: outcome.purchasePayments });
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
+      this.flash(line.id);
       const paid = target.kind === 'purchase-existing' ? this.payments().find((row) => row.id === target.paymentId)
         : target.kind === 'cost-existing' ? this.costs().flatMap((cost) => cost.payments ?? []).find((row) => row.id === target.costPaymentId) : null;
       this.ui.toast(followed && paid ? `Ontkoppeld. De betaling houdt ${formatEuro(paid.amountEur)} op ${shortDay(paid.paidOn)}; pas ze aan in de betaling als dat niet klopt.` : 'Ontkoppeld.');
@@ -2322,6 +2395,7 @@ export class FinanceState {
       try {
         if (receipt) await this.banking.unallocate(line.id); else await this.banking.unlinkPayments(line.id);
         await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
+        this.flash(line.id);
         this.ui.toast('Koppeling losgemaakt');
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Losmaken mislukt'), 'err');
@@ -2338,6 +2412,7 @@ export class FinanceState {
     try {
       await this.banking.unclassify(line.id);
       await this.refreshBank();
+      this.flash(line.id);
       this.ui.toast('Boeken als ongedaan gemaakt');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ongedaan maken mislukt'), 'err');

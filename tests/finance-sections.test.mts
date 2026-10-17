@@ -42,7 +42,8 @@ test('five sections in groups; Bank leads and the Overzicht is gone', () => {
   assert.deepEqual(FINANCE_GROUPS, ['Bank', 'Geld', 'Boekhouding']);
   assert.deepEqual(financeSection('bank'), { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true });
   assert.deepEqual(FINANCE_TABS.bank.map((tab) => [tab.id, tab.label, tab.short]), [['accounts', 'Bank', 'Bank'], ['movements', 'Transacties', 'Transacties']]);
-  assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Cont.', 'Vast', 'Lijsten']);
+  assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
+  assert.deepEqual(FINANCE_TABS.open.map((tab) => tab.short), ['Alles', 'Kosten', 'Containers', 'Vast']);
   assert.deepEqual(FINANCE_TABS.analysis.map((tab) => [tab.id, tab.label, tab.short]), [['costs', 'Kosten', 'Kosten'], ['vat', 'Btw-aangifte', 'Btw']]);
   assert.equal(financeSection('analysis').hint, 'Per categorie, per maand, de btw-aangifte');
   assert.equal(blankCost('2026-10-02').amountInclEur, null, 'a new cost is entered excl. btw until the form says otherwise');

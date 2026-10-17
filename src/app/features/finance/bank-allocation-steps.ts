@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRend
 import { EurPipe } from '../../shared/pipes';
 import type { BankMovementPanel } from './bank-movement-panel';
 import type { BankAllocationTarget } from './bank-allocation-targets';
+import { dayMonthYear, signedEur } from './finance-format';
 
 /**
  * Today's three ways to link a transaction, as sections of the transaction
@@ -40,14 +41,14 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
             <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Naam, factuur, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
             <div class="fin-choice" role="group" aria-label="Documentsoort">
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'all'" (click)="p.localKind.set('all')">Alles</button>
-              <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'cost'" (click)="p.localKind.set('cost')">{{ row.amountEur < 0 ? 'Uitgaven' : 'Creditnota leverancier' }}</button>
+              <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'cost'" (click)="p.localKind.set('cost')">{{ row.amountEur < 0 ? 'Factuur of kost' : 'Creditnota leverancier' }}</button>
               <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'sales'" (click)="p.localKind.set('sales')">{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Verkoopfacturen' }}</button>
               @if (row.amountEur < 0) { <button class="fin-choice__chip" type="button" [attr.aria-pressed]="p.localKind() === 'purchase'" (click)="p.localKind.set('purchase')">Inkoop</button> }
             </div>
             <div class="bank-alloc-list" role="group" aria-label="Facturen en uitgaven in ENROSED">
               @for (document of p.visibleLocalDocuments(); track document.key) {
-                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.localSelectedKey() === document.key" (click)="selectDocument(document)">
-                  <span class="bank-alloc-document__identity"><small>{{ document.label }}{{ document.estimated ? ' · verwacht bedrag' : '' }}</small><b>{{ document.title }}</b><span>{{ document.party }}{{ document.reference && document.reference !== document.title ? ' · ' + document.reference : '' }}</span><small>{{ document.date || 'Volgens betaalafspraak' }}</small></span>
+                <button class="bank-alloc-document" type="button" [class.is-paid]="!document.openBankEur" [disabled]="p.busy()" [attr.aria-pressed]="p.localSelectedKey() === document.key" (click)="selectDocument(document)">
+                  <span class="bank-alloc-document__identity"><small>{{ document.label }}{{ document.estimated ? ' · verwacht bedrag' : '' }}</small><b>{{ document.title }}</b><span>{{ document.party }}{{ document.reference && document.reference !== document.title ? ' · ' + document.reference : '' }}</span><small>{{ document.date ? day(document.date) : 'Volgens betaalafspraak' }}</small></span>
                   <span class="bank-alloc-document__amount"><b>{{ p.abs(document.openBankEur) | eur }}</b><small>{{ document.openBankEur ? 'nog open' : 'al betaald' }}</small><small>totaal {{ document.totalEur | eur }}</small></span>
                 </button>
               } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Nog te registreren</button>.</p> } }
@@ -101,10 +102,10 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   }
                   <dl class="bank-alloc-amounts">
                     @if (document.kind === 'cost') { <div><dt>Factuurtotaal</dt><dd>{{ document.totalEur | eur }}</dd></div><div><dt>Nog open op de kost</dt><dd>{{ preview.openEur | eur }}</dd></div> }
-                    <div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div>
-                    <div><dt>{{ preview.paymentKind === 'new' ? 'Toe te passen betaling' : 'Geregistreerde betaling' }}</dt><dd>@if (preview.paymentEur !== null) { {{ preview.paymentEur | eur }} } @else { — }</dd></div>
+                    <div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div>
+                    <div><dt>{{ preview.paymentKind === 'new' ? 'Toe te passen betaling' : 'Geregistreerde betaling' }}</dt><dd>{{ signed(preview.paymentEur) }}</dd></div>
                     @if (preview.paymentKind === 'new') { <div><dt>{{ document.estimated ? 'Daarna nog verwacht' : 'Daarna nog open' }}</dt><dd>{{ preview.remainingEur | eur }}</dd></div> }
-                    <div><dt>Verschil bank − betaling</dt><dd>@if (preview.differenceEur !== null) { {{ preview.differenceEur | eur }} } @else { — }</dd></div>
+                    <div><dt>Verschil bank − betaling</dt><dd>{{ signed(preview.differenceEur) }}</dd></div>
                     @if (preview.paymentLinked !== null) { <div><dt>Bestaande bankkoppeling</dt><dd>{{ preview.paymentLinked ? 'Al gekoppeld' : 'Nog geen' }}</dd></div> }
                   </dl>
                   @if (preview.explanation) { <p class="fin-hint" [class.fin-hint--warn]="!p.allocationReady()">{{ preview.explanation }}</p> }
@@ -112,7 +113,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                     <h4>Geregistreerde betalingen op deze kost</h4>
                     <ul class="bank-alloc-recorded-payments">@for (payment of p.localRecordedCostPayments(); track $index) {
                       @let difference = p.localRecordedPaymentDifference(payment);
-                      <li><strong>{{ -payment.amountEur | eur }}</strong><span>{{ payment.paidOn }} · {{ payment.bankStatementLineId != null ? 'Al gekoppeld aan een banktransactie' : 'Nog zonder bankkoppeling' }}</span><small>Verschil met bank: @if (difference !== null) { {{ difference | eur }} } @else { — }</small></li>
+                      <li><strong>{{ -payment.amountEur | eur }}</strong><span>{{ day(payment.paidOn) }} · {{ payment.bankStatementLineId != null ? 'Al gekoppeld aan een banktransactie' : 'Nog zonder bankkoppeling' }}</span><small>Verschil met bank: {{ signed(difference) }}</small></li>
                     }</ul>
                   }
                   @if (preview.differenceEur && !preview.explanation) { <p class="fin-hint">Een afrondingsverschil tot € 0,02 is toegestaan. Oorspronkelijke bedragen blijven behouden.</p> }
@@ -121,7 +122,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   @if (p.localExistingPayments().length || p.localExistingSales().length) {
                     <h4>Deze betaling staat mogelijk al in ENROSED</h4>
                     <div class="fin-alloc__cards">
-                      @for (payment of p.localExistingPayments(); track payment.key) { <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.reuseLocalPayment(payment)"><b>Bestaande betaling · {{ payment.amountEur | eur }}</b><small>{{ payment.paidOn }} · {{ payment.detail }}</small><span>Deze betaling hergebruiken ›</span></button> }
+                      @for (payment of p.localExistingPayments(); track payment.key) { <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.reuseLocalPayment(payment)"><b>Bestaande betaling · {{ payment.amountEur | eur }}</b><small>{{ day(payment.paidOn) }} · {{ payment.detail }}</small><span>Deze betaling hergebruiken ›</span></button> }
                       @for (payment of p.localExistingSales(); track payment.existingPaymentId) { <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.reuseLocalSales(payment)"><b>Bestaande betaling · {{ payment.number }}</b><small>{{ p.matchStamp(payment) }} · {{ payment.reference }}</small><span>Deze betaling hergebruiken ›</span></button> }
                     </div>
                   }
@@ -163,8 +164,8 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   <div><dt>Btw op document</dt><dd>{{ preview.vatEur | eur }}</dd></div>
                   <div><dt>Factuurtotaal</dt><dd>{{ preview.invoiceTotalEur | eur }}</dd></div>
                   <div><dt>Te koppelen betaling</dt><dd>{{ -preview.paymentAmountEur | eur }}</dd></div>
-                  <div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div>
-                  <div><dt>Verschil bank − betaling</dt><dd>{{ preview.differenceEur | eur }}</dd></div>
+                  <div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div>
+                  <div><dt>Verschil bank − betaling</dt><dd>{{ signed(preview.differenceEur) }}</dd></div>
                 </dl>
                 <p class="fin-hint">Maximaal € 0,02 verschil. De oorspronkelijke bank- en factuurbedragen blijven behouden.</p>
                 @if (preview.actionMessage) { <p class="fin-hint fin-hint--warn">{{ preview.actionMessage }}</p> }
@@ -175,7 +176,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                   <div class="fin-alloc__cards" role="group" aria-label="Bestaande kost hergebruiken">
                     @for (cost of preview.existingCandidates; track cost.id) {
                       <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.receivedExistingCostId() === cost.id" (click)="p.selectReceivedCost(cost.id)">
-                        <b>{{ cost.description }} · {{ cost.totalEur | eur }}</b><span>{{ cost.party }} · {{ cost.date }}</span><small>{{ cost.reference }} · {{ cost.openEur | eur }} open</small>
+                        <b>{{ cost.description }} · {{ cost.totalEur | eur }}</b><span>{{ cost.party }} · {{ day(cost.date) }}</span><small>{{ cost.reference }} · {{ cost.openEur | eur }} open</small>
                       </button>
                     }
                   </div>
@@ -194,7 +195,7 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
                 <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales' && p.isChosen(payment)" (click)="p.reuseLocalSales(payment)"><span class="bank-alloc-document__identity"><small>{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Ontvangst klant' }}</small><b>{{ payment.number }}</b><span>{{ payment.reference }}</span><small>{{ p.matchStamp(payment) }}</small></span><span class="bank-alloc-document__amount"><b>{{ p.existingSalesAmount(payment) | eur }}</b><small>hergebruiken</small></span></button>
               }
               @for (payment of p.visibleOutgoing(); track payment.key) {
-                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'expense' && p.outgoingSelected().includes(payment.key)" (click)="p.toggleExistingPayment(payment)"><span class="bank-alloc-document__identity"><small>{{ payment.kind === 'cost' ? (payment.amountEur < 0 ? 'Terugbetaling leverancier' : 'Kostenbetaling') : 'Inkoopbetaling' }}</small><b>{{ payment.title }}</b><span>{{ payment.detail }}</span><small>{{ payment.paidOn }}</small></span><span class="bank-alloc-document__amount"><b>{{ -payment.amountEur | eur }}</b><small>{{ p.outgoingSelected().includes(payment.key) ? 'geselecteerd' : 'hergebruiken' }}</small></span></button>
+                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'expense' && p.outgoingSelected().includes(payment.key)" (click)="p.toggleExistingPayment(payment)"><span class="bank-alloc-document__identity"><small>{{ payment.kind === 'cost' ? (payment.amountEur < 0 ? 'Terugbetaling leverancier' : 'Kostenbetaling') : 'Inkoopbetaling' }}</small><b>{{ payment.title }}</b><span>{{ payment.detail }}</span><small>{{ day(payment.paidOn) }}</small></span><span class="bank-alloc-document__amount"><b>{{ -payment.amountEur | eur }}</b><small>{{ p.outgoingSelected().includes(payment.key) ? 'geselecteerd' : 'hergebruiken' }}</small></span></button>
               }
               @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
             </div>
@@ -243,9 +244,9 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
               </section>
               }
             } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
-              <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.outgoingDifference() | eur }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
+              <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.outgoingDifference()) }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {
-              <section class="bank-alloc-preview"><h3>{{ payment.number }} · bestaande betaling</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ row.amountEur | eur }}</dd></div><div><dt>Bestaande betaling</dt><dd>{{ p.existingSalesAmount(payment) | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ p.matchDifference(payment) | eur }}</dd></div></dl><p class="fin-hint">De bestaande ontvangst of terugbetaling wordt hergebruikt.</p></section>
+              <section class="bank-alloc-preview"><h3>{{ payment.number }} · bestaande betaling</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betaling</dt><dd>{{ p.existingSalesAmount(payment) | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.matchDifference(payment)) }}</dd></div></dl><p class="fin-hint">De bestaande ontvangst of terugbetaling wordt hergebruikt.</p></section>
             } }
           }
           @if (p.error()) { <p class="fin-error" role="alert">{{ p.error() }}</p> }
@@ -268,6 +269,10 @@ export class BankAllocationSteps {
   partLine(part: PaymentNode['parts'][number]): string {
     return `${part.paidOn.slice(8, 10)}/${part.paidOn.slice(5, 7)} · ${part.amountEur.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR' })} · ${part.bank}`;
   }
+  /** '11 sep 2026'. */
+  day(iso: string | null | undefined): string { return dayMonthYear(iso); }
+  /** '− € 95,58', '+ € 0,01'; '—' without a figure. */
+  signed(value: number | null | undefined): string { return value === null || value === undefined || !Number.isFinite(value) ? '—' : signedEur(value); }
   selectDocument(document: BankAllocationTarget): void {
     this.panel().chooseLocalDocument(document);
     afterNextRender(() => this.selectionHeading()?.nativeElement.focus(), { injector: this.injector });

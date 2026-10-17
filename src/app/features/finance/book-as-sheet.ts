@@ -141,6 +141,7 @@ export class BookAsSheet {
       const result = await this.banking.classify(row.id, { classification: choice, note: this.note().trim() || null, transferLineId, vatPeriod: choice === 'VAT' ? this.period() : null });
       this.state.bankStatements.update((rows) => rows.map((line) => result.lines.find((saved) => saved.id === line.id) ?? line));
       this.state.bookAsLine.set(null);
+      this.state.flash(row.id);
       void this.state.refreshBank();
       this.ui.toast(`Geboekt als ${CLASSIFICATION_LABEL[choice]}`, 'ok', { label: 'Ongedaan maken', run: () => void this.state.unclassifyLine(row) });
     } catch (failure: unknown) {
