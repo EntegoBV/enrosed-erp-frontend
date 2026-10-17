@@ -79,3 +79,40 @@
 @media (pointer: coarse) {
   :is(.btn, .wk-btn, .fab, .ios-accessory):active:not(:disabled) { transform: scale(.97); }
 }
+
+/* ---- sheets and toasts leave (F2b)
+   Angular's animate.leave puts mo-leaving on a closing app-sheet host and
+   keeps its DOM until the host's own animation (mo-hold, the longest one)
+   ends; the component is already destroyed, so the leaving overlay takes no
+   taps. Phone: the backdrop fades, the sheet slides down from where a drag
+   let go (--drag-y). Desk: the dialog fades and shrinks a little. */
+app-sheet.mo-leaving { animation: mo-hold var(--dur-out) linear; }
+app-sheet.mo-leaving .overlay { pointer-events: none; animation: mo-fade-out var(--dur-out) var(--ease-in) forwards; }
+app-sheet.mo-leaving .sheet { animation: mo-sheet-out var(--dur-out) var(--ease-in) forwards; }
+@media (min-width: 680px) {
+  app-sheet.mo-leaving { animation-duration: var(--dur-1); }
+  app-sheet.mo-leaving .overlay { animation-duration: var(--dur-1); }
+  app-sheet.mo-leaving .sheet { animation: mo-dialog-out var(--dur-1) var(--ease-in) forwards; }
+}
+.toast.mo-toast-leaving { pointer-events: none; animation: mo-toast-out var(--dur-1) var(--ease-in) forwards; }
+
+/* Drag to dismiss (phone): the grab and the head take the finger; the grab's
+   hit area is 24 px tall. The body keeps its native scrolling. */
+@media (max-width: 679.98px) and (pointer: coarse) {
+  .sheet__grab, .sheet__head { touch-action: none; }
+  .sheet__grab { position: relative; cursor: grab; }
+  .sheet__grab::before { content: ''; position: absolute; inset: -10px -60px; }
+}
+
+/* ---- the confirm sheet (Ui.confirm, confirmLeave): <app-sheet variant="ios">
+   Desk: Annuleren · second choice · main choice, right-aligned (as before).
+   Phone: stacked 50 px buttons, the main (or danger) choice on top, then the
+   second choice, Annuleren last. */
+.confirm-message { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.confirm-actions { display: flex; flex: 1; justify-content: flex-end; gap: 8px; }
+.confirm-actions > .btn { flex: none; }
+@media (max-width: 679.98px) {
+  .sheet--ios .confirm-message { padding: 4px 20px 0; }
+  .confirm-actions { flex-direction: column-reverse; }
+  .confirm-actions > .btn { width: 100%; min-height: 50px; }
+}

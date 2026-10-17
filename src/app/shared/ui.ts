@@ -17,6 +17,9 @@ import {
   output,
   signal,
 } from '@angular/core';
+import {
+  sheetBackdropFactor, sheetDragOffset, sheetDragOutcome, sheetDragStarted,
+} from './sheet-drag';
 
 /* ------------------------------------------------------------------ sheet */
 
@@ -32,17 +35,27 @@ import {
  * `variant="ios"` gives phone sheets the iOS 26 look of the workspace kit
  * (grouped background, centred title, round close button, glass foot with
  * a 50px primary button); desks see no difference.
+ *
+ * Motion (styles/motion.scss): it rises in, and when its parent removes it
+ * Angular's animate.leave puts mo-leaving on the host, so the backdrop
+ * fades and the sheet slides down (desk: fades and shrinks a little)
+ * before the DOM goes; the component itself is destroyed at once, so
+ * closing stays synchronous for callers and the leaving overlay takes no
+ * taps. On a phone the grab and the head can drag it down to dismiss
+ * (sheet-drag.ts); the ×, Escape and the backdrop stay the ways out for
+ * keyboards and screen readers.
  */
 @Component({
   selector: 'app-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { 'animate.leave': 'mo-leaving' },
   template: `
-    <div class="overlay" (click)="onBackdrop($event)">
+    <div #overlay class="overlay" (click)="onBackdrop($event)">
       <div #dialog class="sheet" [class.sheet--wide]="wide()" [class.sheet--ios]="variant() === 'ios'"
            role="dialog" aria-modal="true"
            [attr.aria-labelledby]="headingId" tabindex="-1">
-        <div class="sheet__grab"></div>
-        <div class="sheet__head">
+        <div class="sheet__grab" aria-hidden="true" (pointerdown)="dragStart($event)"></div>
+        <div class="sheet__head" (pointerdown)="dragStart($event)">
           <h2 [id]="headingId">{{ heading() }}</h2>
           <button class="sheet__close" type="button" [attr.aria-label]="closeLabel()"
                   (click)="requestClose()">
@@ -74,8 +87,14 @@ export class Sheet implements AfterViewInit, OnDestroy {
   readonly headingId = `sheet-heading-${++Sheet.nextId}`;
 
   @ViewChild('dialog', { static: true }) private dialog?: ElementRef<HTMLElement>;
+  @ViewChild('overlay', { static: true }) private overlay?: ElementRef<HTMLElement>;
   private returnFocus: HTMLElement | null = null;
   private registered = false;
+  /** Set when the parent removed the sheet: a drag that asked to close then lets the leave animation finish. */
+  private destroyed = false;
+  private drag: {
+    id: number; startY: number; lastY: number; lastT: number; velocity: number; active: boolean; handle: HTMLElement;
+  } | null = null;
 
   ngAfterViewInit(): void {
     this.returnFocus = document.activeElement instanceof HTMLElement
@@ -105,6 +124,8 @@ export class Sheet implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.stopDragListening();
     if (this.registered) {
       const index = Sheet.stack.lastIndexOf(this);
       if (index >= 0) Sheet.stack.splice(index, 1);
@@ -149,6 +170,107 @@ export class Sheet implements AfterViewInit, OnDestroy {
 
   requestClose(): void {
     if (Sheet.stack.at(-1) === this) this.closed.emit();
+  }
+
+  /* ---- drag to dismiss (phone) */
+
+  /** Only a touch phone drags; a desk dialog never moves. */
+  private dragEnabled(): boolean {
+    return typeof window !== 'undefined' && window.innerWidth < 680
+      && !!window.matchMedia?.('(pointer: coarse)').matches;
+  }
+
+  dragStart(event: PointerEvent): void {
+    if (this.drag || !this.dragEnabled() || Sheet.stack.at(-1) !== this) return;
+    /* A press on a control stays a press: the × keeps its click (critique B13). */
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('button, a, input, select, textarea, [role=button]')) return;
+    this.drag = {
+      id: event.pointerId, startY: event.clientY, lastY: event.clientY, lastT: event.timeStamp, velocity: 0,
+      active: false, handle: event.currentTarget as HTMLElement,
+    };
+    document.addEventListener('pointermove', this.onDragMove, { passive: false });
+    document.addEventListener('pointerup', this.onDragEnd);
+    document.addEventListener('pointercancel', this.onDragCancel);
+  }
+
+  private readonly onDragMove = (event: PointerEvent): void => {
+    const drag = this.drag;
+    if (!drag || event.pointerId !== drag.id) return;
+    const raw = event.clientY - drag.startY;
+    if (!drag.active) {
+      if (!sheetDragStarted(raw)) return;
+      /* Only now is the pointer captured: before this, a tap reaches its target as usual. */
+      drag.active = true;
+      try { drag.handle.setPointerCapture(drag.id); } catch { /* the pointer may already be gone */ }
+    }
+    event.preventDefault();
+    const dt = event.timeStamp - drag.lastT;
+    if (dt > 0) drag.velocity = (event.clientY - drag.lastY) / dt;
+    drag.lastY = event.clientY;
+    drag.lastT = event.timeStamp;
+    this.placeSheet(sheetDragOffset(raw));
+  };
+
+  private readonly onDragEnd = (event: PointerEvent): void => {
+    const drag = this.drag;
+    if (!drag || event.pointerId !== drag.id) return;
+    this.stopDragListening();
+    if (!drag.active) return;
+    const dy = sheetDragOffset(event.clientY - drag.startY);
+    if (sheetDragOutcome(dy, drag.velocity) === 'close') {
+      this.requestClose();
+      /* The leave animation continues from where the finger let go. A parent
+         that refuses to close keeps the sheet (not destroyed): it springs back. */
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!this.destroyed) this.springBack();
+      }));
+    } else {
+      this.springBack();
+    }
+  };
+
+  private readonly onDragCancel = (event: PointerEvent): void => {
+    if (!this.drag || event.pointerId !== this.drag.id) return;
+    const active = this.drag.active;
+    this.stopDragListening();
+    if (active) this.springBack();
+  };
+
+  private stopDragListening(): void {
+    this.drag = null;
+    if (typeof document === 'undefined') return;
+    document.removeEventListener('pointermove', this.onDragMove);
+    document.removeEventListener('pointerup', this.onDragEnd);
+    document.removeEventListener('pointercancel', this.onDragCancel);
+  }
+
+  /** Follows the finger: the sheet moves, the backdrop lightens. */
+  private placeSheet(dy: number): void {
+    const sheet = this.dialog?.nativeElement;
+    const overlay = this.overlay?.nativeElement;
+    if (!sheet || !overlay) return;
+    sheet.style.transition = 'none';
+    sheet.style.transform = `translateY(${dy}px)`;
+    sheet.style.setProperty('--drag-y', `${Math.max(0, dy)}px`);
+    overlay.style.backgroundColor = `rgb(26 22 20 / ${(45 * sheetBackdropFactor(dy)).toFixed(1)}%)`;
+  }
+
+  /** Back to rest; afterwards no transform stays on the sheet (trap rule). */
+  private springBack(): void {
+    const sheet = this.dialog?.nativeElement;
+    const overlay = this.overlay?.nativeElement;
+    if (!sheet || !overlay) return;
+    sheet.style.transition = 'transform var(--dur-2, .2s) var(--ease-spring, ease)';
+    sheet.style.transform = '';
+    overlay.style.backgroundColor = '';
+    const done = () => {
+      sheet.style.transition = '';
+      sheet.style.removeProperty('--drag-y');
+      sheet.removeEventListener('transitionend', done);
+    };
+    sheet.addEventListener('transitionend', done);
+    setTimeout(done, 400);
   }
 
   onBackdrop(event: MouseEvent): void {
@@ -343,11 +465,12 @@ export function confirmLeave(
   imports: [Sheet],
   template: `
     @if (confirm(); as request) {
-      <app-sheet [title]="request.title" (closed)="ui.resolveConfirm(false)">
+      <app-sheet variant="ios" [title]="request.title" (closed)="ui.resolveConfirm(false)">
         <div body>
-          <p style="font-size:14.5px;line-height:1.55" [innerHTML]="request.message"></p>
+          <p class="confirm-message" [innerHTML]="request.message"></p>
         </div>
-        <div foot style="display:contents">
+        <!-- Desk: Annuleren · second choice · main choice in a row; phone: stacked, the main choice on top. -->
+        <div foot class="confirm-actions">
           <button class="btn" type="button" data-initial-focus
                   (click)="ui.resolveConfirm(false)">Annuleren</button>
           @if (request.secondaryLabel) {
@@ -370,7 +493,7 @@ export function confirmLeave(
 
     <div class="toasts" aria-live="polite" aria-relevant="additions text">
       @for (toast of toasts(); track toast.id) {
-        <div class="toast" [class.toast--err]="toast.kind === 'err'"
+        <div class="toast" animate.leave="mo-toast-leaving" [class.toast--err]="toast.kind === 'err'"
              [attr.role]="toast.kind === 'err' ? 'alert' : 'status'" aria-atomic="true">
           <span class="toast__dot"></span>
           <span>{{ toast.text }}</span>
