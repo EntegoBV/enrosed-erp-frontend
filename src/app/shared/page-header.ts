@@ -39,6 +39,11 @@ export function textCut(element: HTMLElement): boolean {
   return range.getBoundingClientRect().width > element.getBoundingClientRect().width + 0.01;
 }
 
+/** Two labels that read as the same word (trimmed, case-insensitive). */
+function sameWords(a: string, b: string): boolean {
+  return a.trim().toLocaleLowerCase('nl') === b.trim().toLocaleLowerCase('nl');
+}
+
 /** The screen above this one, as a page names it: label and URL. */
 export interface PageHeaderParent {
   label: string;
@@ -230,8 +235,15 @@ export class PageHeader {
     return parentOf(this.url());
   });
 
-  /** The desk crumb (the phone has its back control). */
-  readonly crumb = computed(() => this.desktop.active() ? this.resolvedParent() : null);
+  /**
+   * The desk crumb (the phone has its back control). None when it would
+   * repeat the title: while a document loads or fails, the desks title the
+   * bar with the parent's word ("Verkoop › Verkoop" read wrong).
+   */
+  readonly crumb = computed(() => {
+    const parent = this.desktop.active() ? this.resolvedParent() : null;
+    return parent && !sameWords(parent.label, this.title()) ? parent : null;
+  });
 
   /** The crumb as a real link, so ⌘-click opens the parent in a new tab. */
   readonly crumbHref = computed(() => {

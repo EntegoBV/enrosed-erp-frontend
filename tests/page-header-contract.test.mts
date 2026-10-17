@@ -69,3 +69,10 @@ test('B5: a cut title is measured unrounded, and the phone folds the back label,
   /* the button keeps its name when the pencil is gone */
   assert.match(header, /\[attr\.aria-label\]="'Titel wijzigen: ' \+ title\(\)" \(click\)="startEditing\(\)"/);
 });
+
+test('the desk crumb never repeats the title (the desks\' loading and error states)', () => {
+  const crumb = header.slice(header.indexOf('readonly crumb = computed('), header.indexOf('/** The crumb as a real link'));
+  assert.match(crumb, /parent && !sameWords\(parent\.label, this\.title\(\)\) \? parent : null/);
+  assert.match(header, /return a\.trim\(\)\.toLocaleLowerCase\('nl'\) === b\.trim\(\)\.toLocaleLowerCase\('nl'\);/);
+  /* for the desks' loading and error headers (title="Verkoop" / "Inkoop" under a derived "Verkoop ›" / "Inkoop ›") */
+});
