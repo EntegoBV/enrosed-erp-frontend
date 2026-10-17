@@ -26,6 +26,8 @@
 /* ---------- Bezoekers (critique N4: these replace component rules) */
 app-website-analytics .an-bar { margin-bottom: 6px; }
 app-website-analytics .an-kpis { margin-top: 8px; }
+/* The source hint is a quiet note under the tool row, like a figure sub (W6b had dropped its rule with the old component styles). */
+app-website-analytics .wa__source-hint { margin: 0 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 app-website-analytics .an-kpi__foot.is-ok { color: var(--ok); }
 app-website-analytics .wa__plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
 app-website-analytics .wa__yaxis { display: flex; flex-direction: column; justify-content: space-between; min-width: 28px; color: var(--muted);
