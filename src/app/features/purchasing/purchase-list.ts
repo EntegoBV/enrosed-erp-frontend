@@ -209,7 +209,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
         <div class="ios-search pl-isearch">
           <div class="ios-search__field">
             <app-icon name="search" [size]="17" />
-            <input type="search" data-page-search placeholder="Zoek container, PO of product" aria-label="Inkooporders zoeken"
+            <input type="search" data-page-search [placeholder]="smallPhone() ? 'Zoek container of PO' : 'Zoek container, PO of product'" aria-label="Inkooporders zoeken"
                    autocomplete="off" enterkeyhint="search" [value]="query()" (input)="query.set($any($event.target).value)" />
             @if (query()) {
               <button class="ios-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="query.set('')"><app-icon name="close" [size]="16" /></button>
@@ -579,14 +579,19 @@ export class PurchaseList {
 
   /** Up to 1100px wide the toolbar is tight: the search gets a shorter placeholder so neither it nor the title is cut (N10). */
   readonly compactBar = signal(false);
+  /** Phones under 375px: 'Zoek container, PO of product' would lose its last letters, so the phone search reads like the compact desk. */
+  readonly smallPhone = signal(false);
 
   constructor() {
     if (typeof matchMedia === 'function') {
-      const narrow = matchMedia('(max-width: 1100px)');
-      const follow = (): void => this.compactBar.set(narrow.matches);
-      follow();
-      narrow.addEventListener('change', follow);
-      inject(DestroyRef).onDestroy(() => narrow.removeEventListener('change', follow));
+      const destroyRef = inject(DestroyRef);
+      for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
+        const media = matchMedia(query);
+        const follow = (): void => target.set(media.matches);
+        follow();
+        media.addEventListener('change', follow);
+        destroyRef.onDestroy(() => media.removeEventListener('change', follow));
+      }
     }
     void this.load();
     /* Fill each untouched field as soon as the daily reference arrives. */
