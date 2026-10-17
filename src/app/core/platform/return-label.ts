@@ -25,7 +25,7 @@ function under(path: string, root: string): boolean {
 export function isWorkspaceUrl(url: string): boolean {
   const path = pathOf(url);
   if (path === '' || path === '/') return true;
-  return ['/costs', '/files', '/login', '/offerte', '/voorwaarden'].some((root) => under(path, root));
+  return ['/costs', '/files', '/website', '/login', '/offerte', '/voorwaarden'].some((root) => under(path, root));
 }
 
 /** The name of the screen behind a URL, as it reads after "Terug naar". */

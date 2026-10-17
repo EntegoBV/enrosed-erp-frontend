@@ -26,3 +26,34 @@
 .ws-chip.is-warn i{background:var(--warn)}.ws-chip.is-danger i{background:var(--danger)}.ws-chip.is-muted i{background:var(--muted-2)}
 .ws-chip:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
 .ws-sync-banner .ios-capsule{flex:none}
+
+/* ---- shell: the website side is the kit's .wk-side; a converted page is a .wk-page (desk) or .ios-page (phone).
+   app.ts applies .shell--website, not .shell--workspace, so the kit's scroll lock and toast offset are repeated here. */
+@media (min-width:680px){
+ .shell.shell--website{flex-direction:row}
+ .shell--website:has(.wk-page){height:100dvh;overflow:hidden}
+ .shell--website:has(.wk-page)>.main{height:100dvh;min-height:0;overflow:hidden;background:var(--wk-bg)}
+ body:has(.shell--website .wk-page) .toasts{bottom:calc(var(--wk-status-h) + 14px)}
+}
+@media (max-width:679.98px){
+ body:has(.shell--website .ios-tabbar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 24px)}
+ /* A page that is not on the kit yet still clears the website tab bar with its last row. */
+ .shell--website .main>*>.content{padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px)}
+}
+.ws-side .wk-side__count--danger{background:#e0695f;color:#fff}
+.ws-side .wk-side__count--word{padding:0 7px;font-size:10.5px;font-weight:750;letter-spacing:.01em}
+.ws-side .ws-side__dot--danger{background:#e0695f}
+.ws-side__brandrow{display:contents}
+.ws-side__site,.ws-side .ws-env{display:none}
+.ws-env{align-items:center;height:18px;margin-left:auto;padding:0 7px;border:1px solid rgb(255 255 255/20%);border-radius:999px;color:#d7b876;font-size:9px;font-weight:850;letter-spacing:.12em}
+@media (min-width:900px){
+ .ws-side__brand{display:grid;gap:6px;align-content:center}
+ .ws-side__brandrow{display:flex;align-items:center;gap:8px;min-width:0}
+ .ws-side .ws-env{display:inline-flex;flex:none}
+ .ws-side__site{display:inline-flex;align-items:center;gap:5px;justify-self:start;color:var(--wk-side-active-ink);font-size:12px;font-weight:650;text-decoration:none}
+ .ws-side__site:hover{text-decoration:underline;text-underline-offset:3px}
+ .ws-side__site:focus-visible{outline:2px solid var(--rose-mid);outline-offset:2px}
+}
+/* the "…" sheet */
+.ws-more .ios-section:first-child{margin-top:4px}
+.ws-more__back{justify-content:flex-start;gap:6px}
