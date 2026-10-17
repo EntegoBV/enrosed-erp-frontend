@@ -10,6 +10,7 @@ import { AnalyticsApi, WebsiteAnalyticsReport, WebsitePageKind } from '../../cor
 import { messageOf } from '../../core/api/errors';
 import { NumPipe } from '../../shared/pipes';
 import { deltaOf, durationLabel } from './website-analytics-math';
+import { dayMonth } from './analyses-words';
 import { GoogleWebsiteAnalytics } from './google-website-analytics';
 import { websiteAnalyticsQuery, websiteAnalyticsRouteState, WebsiteAnalyticsSource } from './website-analytics-route';
 
@@ -305,7 +306,7 @@ const RANGES: readonly Range[] = [
     .wa__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .wa__card{min-width:0;padding:14px 16px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
     .wa__card--wide{grid-column:1/-1}
-    .wa__card h3{margin:0 0 10px;font-size:14.5px;font-weight:750}
+    .wa__card h3{margin:0 0 10px;font-size:14px;font-weight:700;letter-spacing:-.01em}
     .wa__card h4{margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .wa__card-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
     .wa__sub{margin:-4px 0 10px;color:var(--muted);font-size:12px}.wa__sub--after{margin:10px 0 0}
@@ -348,8 +349,6 @@ const RANGES: readonly Range[] = [
     @media(max-width:520px){.wa__duo{grid-template-columns:1fr}}
     :host { min-width: 0; }
     .wa__live { min-height: 36px; }
-    .wa__card { padding: 18px; border-radius: 22px; }
-    .wa__card h3 { font-size: 16px; line-height: 1.35; }
     .wa__chart { min-width: 0; width: 100%; }
     .wa__axis { gap: 8px; font-size: 10px; }
     .wa__axis > span { min-width: 0; }
@@ -572,9 +571,9 @@ export class WebsiteAnalytics {
     return [...code].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('');
   }
 
+  /** "17 sep", with the year when it is not this year: the area's date words (was "17/09/2026"). */
   dateLabel(date: string): string {
-    const [year, month, day] = date.split('-');
-    return `${day}/${month}/${year}`;
+    return dayMonth(date, String(new Date().getFullYear())) || date;
   }
 
   isWeekend(date: string): boolean {

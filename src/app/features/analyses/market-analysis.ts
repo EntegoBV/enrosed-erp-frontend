@@ -11,6 +11,7 @@ import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { Sheet, Ui } from '../../shared/ui';
+import { dayMonth } from './analyses-words';
 import {
   DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, changeOverMonths, crossOf, freightNarrative, fxInsight,
   invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, weeklyRows, windowOf,
@@ -111,14 +112,14 @@ const STORAGE_KEY = 'enrosed.market';
       <div class="an-bar">
         @if (desk.active()) {
           <app-segmented label="Periode van de grafieken en vergelijkingen" [options]="periodOptions" [value]="'' + months()" (changed)="setMonths($any(+$event))" />
-          <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }</span>
+          <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ dayText(rates.asOf) }} }</span>
           <div class="an-bar__end"><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
         } @else {
           <!-- Phone: the capsule and sheet of the Kasprognose horizon (design §3.7). -->
           <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
                   [attr.aria-label]="'Periode: ' + monthsWord(months())" (click)="periodSheet.set(true)">
             <app-icon name="calendar" [size]="15" />{{ monthsWord(months()) }}<app-icon name="chevron-down" [size]="14" /></button>
-          @if (fx.series(); as rates) { <span class="an-bar__text">ECB · bijgewerkt {{ shortDate(rates.asOf) }}</span> }
+          @if (fx.series(); as rates) { <span class="an-bar__text">ECB · bijgewerkt {{ dayText(rates.asOf) }}</span> }
         }
       </div>
 
@@ -129,12 +130,10 @@ const STORAGE_KEY = 'enrosed.market';
       <!-- ── Currency ─────────────────────────────────────────────── -->
       <section class="mk-card" aria-labelledby="mk-fx-title">
         <header class="mk-card__head">
+          <!-- The an-card head (design §3.7): title and sub, no eyebrow; "bijgewerkt" lives in the tool row only. -->
           <div>
-            <span class="mk-eyebrow">Wisselkoersen</span>
             <h2 id="mk-fx-title">Valuta</h2>
-            <p>ECB-referentiekoersen zonder bankopslag
-              @if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }
-              · tik op een paar om de richting om te keren</p>
+            <p>ECB-referentiekoersen zonder bankopslag · tik op een paar om de richting om te keren</p>
           </div>
         </header>
 
@@ -236,7 +235,6 @@ const STORAGE_KEY = 'enrosed.market';
       <section class="mk-card" aria-labelledby="mk-freight-title">
         <header class="mk-card__head">
           <div>
-            <span class="mk-eyebrow">Containervracht</span>
             <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
             <p>Wat wij betalen, wat de markt betaalt en welke kant het op gaat · tik op een tegel voor het verloop en de uitleg</p>
           </div>
@@ -453,9 +451,9 @@ const STORAGE_KEY = 'enrosed.market';
   styles: `
     :host{display:block}.mk{display:grid;gap:18px}
     .mk-warning{padding:9px 12px;border:1px solid #eddcb9;border-radius:10px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
-    .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh-1)}
-    .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:16px 18px 14px;border-bottom:1px solid var(--line)}
-    .mk-card__head h2{margin:2px 0 0;font-size:18px}.mk-card__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20 / 4%)}
+    .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+    .mk-card__head h2{margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em}.mk-card__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
     .mk-eyebrow{display:block;color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
     .mk-badge{display:inline-block;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:750;white-space:nowrap}
     .mk-badge--ok{background:var(--ok-soft);color:var(--ok)}.mk-badge--warn{background:var(--warn-soft);color:var(--warn)}.mk-badge--lg{padding:5px 11px;font-size:12px}
@@ -523,9 +521,6 @@ const STORAGE_KEY = 'enrosed.market';
       .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons{grid-template-columns:repeat(2,1fr)}
       .fx-pair__now strong{font-size:26px}}
     :host, .mk { min-width: 0; }
-    .mk-card { border-radius: 22px; box-shadow: 0 3px 12px rgb(25 35 30 / 3%); }
-    .mk-card__head { padding: 19px 20px; gap: 12px; }
-    .mk-card__head h2 { font-size: 20px; line-height: 1.3; }
     .mk-card__head p { line-height: 1.5; }
     .mk-eyebrow { font-size: 10px; }
     .mk .btn, .mk .linklike, .mk-table summary, .fr-reference, .sheet-recent__row .linklike { min-height: 44px; }
@@ -547,7 +542,7 @@ const STORAGE_KEY = 'enrosed.market';
     @media (max-width: 679px) {
       .mk { gap: 14px; }
       .mk-card__head, .fx-pair, .fx-insight, .fr-detail { padding: 16px; }
-      .mk-card__head h2 { font-size: 18px; }
+      .mk-card { border-radius: 22px; }
       .fx-grid { padding: 0 12px; }
       .fx-pair { margin-block: 10px; border: 1px solid var(--line); border-radius: 18px; }
       .fx-pair + .fx-pair { border-left: 1px solid var(--line); }
@@ -585,6 +580,8 @@ export class MarketAnalysis {
   readonly periodSheet = signal(false);
   readonly periodWords = periodWords;
   readonly shortDate = shortDate;
+  /** The tool row's "bijgewerkt 16 okt" in the area's date words (the year only when it is not this year). */
+  dayText(day: string): string { return dayMonth(day.slice(0, 10), String(new Date().getFullYear())) || shortDate(day); }
   readonly historyLimit = 8;
   readonly freightGroups = [
     { id: 'own' as const, title: 'Wat wij betalen', unit: 'USD per 40ft',
