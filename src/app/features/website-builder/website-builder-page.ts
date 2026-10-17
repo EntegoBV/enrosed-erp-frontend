@@ -14,7 +14,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -29,6 +29,7 @@ import {
   WebsiteBuilderSectionKey,
 } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { NavHistory } from '../../core/platform/nav-history-service';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { LoadError } from '../../shared/load-error';
@@ -41,7 +42,7 @@ import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { environment } from '../../../environments/environment';
 import { WEBSITE_LANGUAGE_ORDER, plural } from './website-attention';
-import { normalizeSections } from './website-homepage';
+import { LayoutEdits, editedKeys, layoutEdits, layoutEditsText, normalizeSections } from './website-homepage';
 import { WebsitePhoneBack } from './website-phone-back';
 import { websitePreviewUrl } from './website-preview-url';
 import { WebsiteStatusBar } from './website-status-bar';
@@ -101,6 +102,7 @@ const THREE_COLUMNS = '(min-width: 1348px)';
 const PREVIEW_DESK_WIDTH = 1280;
 const PREVIEW_PHONE_WIDTH = 390;
 const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands en klik Verder.';
+const LIST_URL = '/website/layout';
 
 /**
  * Homepage of Website beheren (/website/layout): the order and visibility of
@@ -184,7 +186,7 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
           } @else {
             <div class="ws-hp" [class.ws-hp--three]="threeColumns()" [class.ws-hp--preview]="!threeColumns() && rightView() === 'preview'">
               <section class="ws-hp__list" aria-labelledby="ws-blocks-title">
-                <h2 class="ws-blk-head" id="ws-blocks-title">Volgorde op de homepage @if (snapshot()) {<span>· {{ visibleCount() }} van {{ sections().length }} zichtbaar</span>}</h2>
+                <h2 class="ws-blk-head" id="ws-blocks-title">Volgorde op de homepage @if (snapshot()) {<span>{{ visibleCount() }} van {{ sections().length }} zichtbaar</span>}</h2>
                 @if (!snapshot()) {
                   <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="8" /></div>
                 } @else {
@@ -277,21 +279,29 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
                 </div>
               </section>
               <section class="ios-section">
-                <div class="ios-section__head"><h2>Teksten · {{ blockGroups(section.key).length }} · {{ blockMissing(section.key) ? plural(blockMissing(section.key), 'ontbreekt', 'ontbreken') : 'alle talen ✓' }}</h2></div>
+                <div class="ios-section__head"><h2>Teksten @if (store.content()) { · {{ blockGroups(section.key).length }} · {{ blockMissing(section.key) ? plural(blockMissing(section.key), 'ontbreekt', 'ontbreken') : 'alle talen ✓' }} }</h2></div>
+                @if (!store.content()) {
+                  @if (store.errors().content) {
+                    <app-load-error title="Teksten konden niet worden geladen" [message]="store.errors().content!" [busy]="store.isLoading('content')" (retry)="store.refresh(['content'])" />
+                  } @else {
+                    <app-skeleton kind="group" [rows]="3" />
+                  }
+                } @else {
                 <div class="ios-group">
                   @for (group of blockGroups(section.key).slice(0, showAllTexts() ? 999 : 6); track group.key) {
                     <a class="ios-cell" routerLink="/website/texts" [queryParams]="{ key: group.key, returnTo: '/website/layout?blok=' + section.key }">
-                      <span class="ios-cell__body"><span class="ios-cell__title">{{ labelOf(group) }}</span><span class="ios-cell__sub">{{ dutchOf(group) }}</span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title">{{ labelOf(group) }}</span><span class="ios-cell__sub" [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</span></span>
                       <span class="ios-cell__value" [class.ws-warn-text]="group.missingLanguages.length">{{ group.missingLanguages.length ? group.missingLanguages.length + ' leeg' : languageCount + '/' + languageCount }}</span>
                       <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
                     </a>
                   } @empty {
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">{{ store.content() ? 'Geen teksten voor dit blok.' : 'Teksten laden…' }}</span></span></div>
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen teksten voor dit blok.</span></span></div>
                   }
                   @if (!showAllTexts() && blockGroups(section.key).length > 6) {
                     <button class="ios-cell ws-more-cell" type="button" (click)="showAllTexts.set(true)">Alle {{ blockGroups(section.key).length }} tonen</button>
                   }
                 </div>
+                }
                 @if (sharedWith(section.key); as other) { <p class="ios-section__foot">Deze teksten deelt dit blok met ‘{{ other }}’.</p> }
               </section>
               <section class="ios-section">
@@ -299,6 +309,15 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
                   <a class="ios-cell" [routerLink]="definition(section.key).manageRoute"><span class="ios-cell__body">{{ definition(section.key).manageLabel }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="18" /></a>
                 </div>
               </section>
+            </div>
+          } @else {
+            <app-ios-nav title="Blok" [largeTitle]="false" backLabel="Homepage" backAriaLabel="Terug naar Homepage" (back)="closeBlock()" />
+            <div class="ws-ph-view">
+              @if (loadError() && !snapshot()) {
+                <app-load-error title="Website-indeling kon niet worden geladen" [message]="loadError()" [busy]="loading()" (retry)="load()" />
+              } @else {
+                <app-skeleton kind="group" [rows]="6" />
+              }
             </div>
           }
         } @else {
@@ -323,7 +342,7 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
                       <div class="ios-cell" [class.is-moved]="flash() === section.key">
                         <span class="ws-numtile" [class.is-off]="!section.enabled">{{ positionLabel(index) }}</span>
                         <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ definition(section.key).label }}</span>
-                          <span class="ios-cell__sub" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
+                          <span class="ios-cell__sub ios-cell__sub--wrap" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
                         @if (!definition(section.key).fixed) {
                           <span class="ws-ph-arrows">
                             <button class="ws-arrow" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omhoog'" [disabled]="busy() || !canMoveUp(index)" (click)="move(index, -1)"><app-icon name="chevron-up" [size]="18" /></button>
@@ -335,7 +354,7 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
                       <button class="ios-cell" type="button" (click)="openBlock(section.key)">
                         <span class="ws-numtile" [class.is-off]="!section.enabled">{{ positionLabel(index) }}</span>
                         <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ definition(section.key).label }}</span>
-                          <span class="ios-cell__sub" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
+                          <span class="ios-cell__sub ios-cell__sub--wrap" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
                       </button>
                     }
@@ -347,10 +366,13 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
           </div>
         }
         @if (dirty() || hasUnpublishedChanges()) {
-          <div class="ws-savebar" role="region" aria-label="Opslaan en publiceren">
+          <div class="ws-savebar" [class.is-dirty]="dirty()" role="region" aria-label="Opslaan en publiceren">
             <span class="ws-savebar__text"><b>{{ dirty() ? 'Niet opgeslagen' : 'Concept' }}</b>
               <small>{{ dirty() ? changedText() : 'niet gepubliceerd' }}</small></span>
-            @if (dirty()) { <button class="ios-capsule ios-capsule--sm" type="button" [disabled]="busy()" (click)="saveDraft()">Opslaan</button> }
+            @if (dirty()) {
+              <button class="ios-capsule ios-capsule--sm ws-savebar__revert" type="button" [disabled]="busy()" (click)="revertLayout()">Herstellen</button>
+              <button class="ios-capsule ios-capsule--sm" type="button" [disabled]="busy()" (click)="saveDraft()">Opslaan</button>
+            }
             <button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="busy()" (click)="publish()">{{ publishing() ? 'Publiceren…' : 'Publiceren' }}</button>
           </div>
         }
@@ -434,15 +456,17 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
               <div class="ws-panel__editor">
                 <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="false"
                   [keyPrefixes]="definition(section.key).contentPrefixes" [initialKey]="editorKey()"
-                  (dirtyChange)="copyDirty.set($event)" (busyChange)="copyBusy.set($event)" (contentSaved)="onCopySaved($event)" />
+                  (dirtyChange)="copyDirty.set($event)" (busyChange)="copyBusy.set($event)" (contentSaved)="onCopySaved()" />
               </div>
+            } @else if (!store.content() && store.errors().content) {
+              <app-load-error title="Teksten konden niet worden geladen" [message]="store.errors().content!" [busy]="store.isLoading('content')" (retry)="store.refresh(['content'])" />
             } @else if (!store.content()) {
               <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="4" /></div>
             } @else {
               <div class="ws-panel__list">
                 @for (group of blockGroups(section.key); track group.key) {
-                  <button class="ws-grp ws-grp--two" type="button" [attr.title]="group.key" (click)="openEditor(group.key)">
-                    <span class="ws-grp__body"><span class="ws-grp__label">{{ labelOf(group) }}</span><small>{{ dutchOf(group) }}</small></span>
+                  <button class="ws-grp ws-grp--two" type="button" [attr.title]="labelOf(group) + ' · ' + group.key" (click)="openEditor(group.key)">
+                    <span class="ws-grp__body"><span class="ws-grp__label">{{ labelOf(group) }}</span><small [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</small></span>
                     @if (group.missingLanguages.length) { <small class="ws-grp__miss">{{ group.missingLanguages.length }}</small> }
                     @else { <em>{{ languageCount }}/{{ languageCount }}</em> }
                   </button>
@@ -467,6 +491,8 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   readonly store = inject(WebsiteStore);
   readonly sync = inject(WebsiteSyncStore);
   readonly back = inject(WebsitePhoneBack);
+  private readonly nav = inject(NavHistory);
+  private readonly location = inject(Location);
   private readonly stageRef = viewChild<ElementRef<HTMLElement>>('stage');
 
   readonly previewBaseUrl = environment.websitePreviewUrl;
@@ -505,6 +531,8 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   readonly previewSheet = signal(false);
   readonly reordering = signal(false);
   readonly showAllTexts = signal(false);
+  /** The blocks he moved, showed or hid since the saved concept: only they count and get marked. */
+  private readonly acted = signal<ReadonlySet<WebsiteBuilderSectionKey>>(new Set());
   /** The block that just moved: its row and the eyebrow flash once (ws-moved). */
   readonly flash = signal<string | null>(null);
   readonly viewMotion = signal('');
@@ -526,20 +554,14 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     const snapshot = this.snapshot();
     return !!snapshot && JSON.stringify(normalizeSections(snapshot.published.sections)) !== JSON.stringify(this.sections());
   });
-  /** Blocks whose place or visibility differs from the saved concept. */
-  readonly changedKeys = computed(() => {
-    const saved = this.baseline() ? JSON.parse(this.baseline()) as WebsiteBuilderSection[] : [];
-    return new Set(this.sections().filter((section, index) => {
-      const before = saved.findIndex((item) => item.key === section.key);
-      return before !== index || saved[before]?.enabled !== section.enabled;
-    }).map((section) => section.key));
-  });
-  readonly changedText = computed(() => {
-    const count = this.changedKeys().size;
-    return `${plural(count, 'blok', 'blokken')} gewijzigd`;
-  });
+  private readonly savedSections = computed(() => this.baseline() ? JSON.parse(this.baseline()) as WebsiteBuilderSection[] : []);
+  /** What he changed since the saved concept, counting only the blocks he acted on (website-homepage.ts). */
+  readonly edits = computed<LayoutEdits>(() => layoutEdits(this.savedSections(), this.sections(), this.acted()));
+  /** The rows that get the change dot. */
+  readonly changedKeys = computed(() => editedKeys(this.edits()));
+  readonly changedText = computed(() => layoutEditsText(this.edits()));
   readonly state = computed(() => {
-    if (this.copyDirty()) return { tone: 'warn', label: 'Tekst niet opgeslagen', short: 'Tekst', detail: 'Sla de tekst eerst op in de editor.' };
+    if (this.copyDirty()) return { tone: 'warn', label: 'Tekst niet opgeslagen', short: 'Niet opgeslagen', detail: 'Sla de tekst eerst op in de editor.' };
     if (this.dirty()) return { tone: 'warn', label: `Niet opgeslagen · ${this.changedText()}`, short: 'Niet opgeslagen', detail: 'Sla het concept op of publiceer meteen.' };
     if (this.hasUnpublishedChanges()) return { tone: 'warn', label: 'Concept · niet gepubliceerd', short: 'Concept', detail: 'Publiceer wanneer de volgorde klaar is.' };
     return { tone: 'ok', label: 'Gelijk aan live', short: 'Gelijk aan live', detail: 'Concept en gepubliceerde indeling zijn gelijk.' };
@@ -601,10 +623,23 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
       observer.observe(stage);
       onCleanup(() => observer.disconnect());
     });
-    /* Start the 15 s watch only once the preview is visible. */
+    /*
+     * The 15 s watch runs only while the preview can be seen (critique B6.4).
+     * Hidden, the frame is gone: the watch stops and the next show starts a
+     * fresh load with its own loading state and watch.
+     */
+    let shown = false;
     effect(() => {
-      if (!this.previewVisible() || !this.snapshot()) return;
-      untracked(() => { if (!this.previewLoaded() && this.previewWatch === null) this.startPreviewWatch(); });
+      const visible = this.previewVisible() && !!this.snapshot();
+      untracked(() => {
+        if (visible && !shown && !this.previewLoaded() && this.previewWatch === null) this.startPreviewWatch();
+        if (!visible && shown) {
+          this.clearPreviewWatch();
+          this.previewLoaded.set(false);
+          this.previewError.set(null);
+        }
+        shown = visible;
+      });
     });
     /* After a publish: reload the preview once the site is live on a newer revision (N8). */
     effect(() => {
@@ -650,11 +685,11 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     return this.sections().find((section) => section.key === key) ?? null;
   }
 
-  /** "05" when the block stood elsewhere in the saved concept. */
+  /** "05" when he moved the block and it stood elsewhere in the saved concept. */
   movedFrom(key: WebsiteBuilderSectionKey): string | null {
-    const saved = this.baseline() ? JSON.parse(this.baseline()) as WebsiteBuilderSection[] : [];
-    const before = saved.findIndex((section) => section.key === key);
-    return before >= 0 && before !== this.indexOf(key) ? this.positionLabel(before) : null;
+    if (!this.edits().moved.includes(key)) return null;
+    const before = this.savedSections().findIndex((section) => section.key === key);
+    return before >= 0 ? this.positionLabel(before) : null;
   }
 
   pillOf(section: WebsiteBuilderSection): string | null {
@@ -662,11 +697,12 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     return section.enabled ? null : 'Verborgen';
   }
 
+  /** "Zichtbaar", "Verplaatst · was 05"; with the site gap of N26 on the row it concerns. */
   phoneSub(section: WebsiteBuilderSection): string {
     const was = this.movedFrom(section.key);
-    if (was) return `Verplaatst · was ${was}`;
-    if (this.definition(section.key).fixed) return 'Vast';
-    return section.enabled ? 'Zichtbaar' : 'Verborgen';
+    const state = was ? `Verplaatst · was ${was}` : this.definition(section.key).fixed ? 'Vast' : section.enabled ? 'Zichtbaar' : 'Verborgen';
+    const gap = this.definition(section.key).siteGap;
+    return gap ? `${state} · ${gap}` : state;
   }
 
   /** The block's text groups from the shared store: no request per block (critique B5). */
@@ -779,13 +815,16 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
       return next;
     });
     if (this.selectedSectionIndex() === index) this.selectedSectionIndex.set(target);
+    this.act(key);
     this.reorderAnnouncement.set(`${label} staat nu op positie ${target + 1} van ${this.sections().length}.`);
     this.markMoved(key);
     this.resetActionState();
   }
 
   toggle(index: number): void {
-    if (this.busy()) return;
+    const section = this.sections()[index];
+    if (this.busy() || !section || this.definition(section.key).fixed) return;
+    this.act(section.key);
     this.sections.update((sections) => sections.map((section, current) =>
       current === index && !this.definition(section.key).fixed ? { ...section, enabled: !section.enabled } : section));
     this.resetActionState();
@@ -810,8 +849,8 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.editorKey.set(null);
   }
 
-  onCopySaved(group: ContentTranslationGroup | null): void {
-    if (group) this.store.patchContentGroup(group);
+  /** The workspace patched the store; the website update it started shows in the status. */
+  onCopySaved(): void {
     void this.sync.load();
   }
 
@@ -820,11 +859,11 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { blok: key }, queryParamsHandling: 'merge' });
   }
 
-  /** Back from the block view: pop the entry when the list is below it, else replace (never a loop). */
+  /** Back from the block view: pop the entry when the list is below it (also after a trip to Teksten), else replace (never a loop). */
   closeBlock(): void {
-    if (this.cameFromList) {
+    if (this.cameFromList || this.nav.below() === LIST_URL) {
       this.cameFromList = false;
-      history.back();
+      this.location.back();
       return;
     }
     void this.router.navigate([], { relativeTo: this.route, queryParams: { blok: null }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -880,8 +919,10 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.publishing.set(true);
     this.resetActionState();
     this.lastAction.set('publish');
-    const liveBefore = this.sync.status()?.liveRevision ?? null;
     try {
+      /* N8 compares live revisions: the one before this publish must be known, else nothing is watched (no early "bijgewerkt"). */
+      if (!this.sync.status()) await this.sync.load();
+      const before = this.sync.status();
       if (this.dirty()) {
         snapshot = await this.catalog.saveWebsiteBuilderHomepage(snapshot.revision, this.sections());
         this.applySnapshot(snapshot);
@@ -890,7 +931,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
       const published = await this.catalog.publishWebsiteBuilderHomepage(snapshot.revision);
       this.applySnapshot(published);
       /* The preview waits for the site to be live on a newer revision (critique N8), not for "LIVE" alone. */
-      this.publishedFrom.set(liveBefore);
+      if (before) this.publishedFrom.set(before.liveRevision ?? null);
       void this.sync.load();
       this.ui.toast('Homepage-indeling gepubliceerd');
     } catch (failure: unknown) {
@@ -911,6 +952,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     }, () => {
       const baseline = JSON.parse(this.baseline()) as WebsiteBuilderSection[];
       this.sections.set(baseline.map((section) => ({ ...section })));
+      this.acted.set(new Set());
       this.selectedSectionIndex.set(Math.max(0, baseline.findIndex((section) => section.key === selectedKey)));
       this.resetActionState();
       this.ui.toast('Niet-opgeslagen indeling hersteld');
@@ -971,6 +1013,10 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     void this.saveDraft();
   }
 
+  private act(key: WebsiteBuilderSectionKey): void {
+    if (!this.acted().has(key)) this.acted.update((keys) => new Set([...keys, key]));
+  }
+
   private markMoved(key: string): void {
     this.flash.set(null);
     if (this.flashTimer) clearTimeout(this.flashTimer);
@@ -1007,6 +1053,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.selectedSectionIndex.set(selectedIndex >= 0 ? selectedIndex : 0);
     this.syncPreviewAnchor();
     this.baseline.set(JSON.stringify(sections));
+    this.acted.set(new Set());
     this.loadError.set(null);
     this.resetActionState();
   }

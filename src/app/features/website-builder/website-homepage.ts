@@ -105,3 +105,47 @@ export function differenceLine(difference: HomepageDifference): string {
   }
   return `${HOMEPAGE_SECTION_LABELS[difference.key]} · ${parts.join(' · ')}`;
 }
+
+export interface LayoutEdits {
+  /** Blocks he moved that stand elsewhere than in the saved concept. */
+  moved: WebsiteBuilderSectionKey[];
+  hidden: WebsiteBuilderSectionKey[];
+  shown: WebsiteBuilderSectionKey[];
+}
+
+/**
+ * What he changed since the saved concept, counting only the blocks he
+ * acted on (moved, shown or hidden): one ⌥↓ swaps two places, but he moved
+ * one block, and only that row is marked.
+ */
+export function layoutEdits(
+  saved: readonly WebsiteBuilderSection[],
+  current: readonly WebsiteBuilderSection[],
+  acted: ReadonlySet<WebsiteBuilderSectionKey>,
+): LayoutEdits {
+  const edits: LayoutEdits = { moved: [], hidden: [], shown: [] };
+  current.forEach((section, index) => {
+    if (!acted.has(section.key)) return;
+    const before = saved.findIndex((item) => item.key === section.key);
+    if (before < 0) return;
+    if (before !== index) edits.moved.push(section.key);
+    if (saved[before].enabled !== section.enabled) (section.enabled ? edits.shown : edits.hidden).push(section.key);
+  });
+  return edits;
+}
+
+/** The blocks to mark as changed. */
+export function editedKeys(edits: LayoutEdits): Set<WebsiteBuilderSectionKey> {
+  return new Set([...edits.moved, ...edits.hidden, ...edits.shown]);
+}
+
+/** "1 blok verplaatst", "2 blokken verplaatst · 1 blok verborgen"; "volgorde gewijzigd" when nothing he did is left. */
+export function layoutEditsText(edits: LayoutEdits): string {
+  const count = (list: readonly unknown[], word: string) => `${list.length} ${list.length === 1 ? 'blok' : 'blokken'} ${word}`;
+  const parts = [
+    edits.moved.length ? count(edits.moved, 'verplaatst') : null,
+    edits.hidden.length ? count(edits.hidden, 'verborgen') : null,
+    edits.shown.length ? count(edits.shown, 'getoond') : null,
+  ].filter((part): part is string => part !== null);
+  return parts.join(' · ') || 'volgorde gewijzigd';
+}

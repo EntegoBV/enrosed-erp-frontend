@@ -48,3 +48,43 @@ test('a difference reads as one line', async () => {
   assert.equal(differenceLine({ key: 'flowerbox', draftPosition: 3, livePosition: 5, draftVisible: true, liveVisible: true }),
     'Glass bowls & flowerboxes · positie 3 in concept, 5 live');
 });
+
+test('one ⌥↓ swaps two places but counts one moved block, and only that row is marked', async () => {
+  const { editedKeys, layoutEdits, layoutEditsText } = await import('../src/app/features/website-builder/website-homepage.ts');
+  const saved = standard();
+  const current = saved.map((section) => ({ ...section }));
+  [current[3], current[4]] = [current[4], current[3]];
+  const edits = layoutEdits(saved, current, new Set([current[4].key]));
+  assert.deepEqual(edits.moved, ['counter']);
+  assert.equal(layoutEditsText(edits), '1 blok verplaatst');
+  assert.deepEqual([...editedKeys(edits)], ['counter'], 'the neighbour that slid up is not marked');
+});
+
+test('moves, hides and shows read in words; a block moved back counts no more', async () => {
+  const { layoutEdits, layoutEditsText } = await import('../src/app/features/website-builder/website-homepage.ts');
+  const saved = standard();
+  const current = saved.map((section) => ({ ...section }));
+  current[2] = { ...current[2], enabled: false };
+  current[6] = { ...current[6], enabled: true };
+  [current[4], current[5]] = [current[5], current[4]];
+  const acted = new Set(['order', 'occasion', 'soap'] as const);
+  assert.equal(layoutEditsText(layoutEdits(saved, current, acted)), '1 blok verplaatst · 1 blok verborgen · 1 blok getoond');
+  assert.equal(layoutEditsText(layoutEdits(saved, saved, acted)), 'volgorde gewijzigd', 'nothing he did is left');
+  const two = saved.map((section) => ({ ...section }));
+  [two[1], two[2], two[3]] = [two[2], two[3], two[1]];
+  assert.equal(layoutEditsText(layoutEdits(saved, two, new Set(['range', 'order'] as const))), '2 blokken verplaatst');
+});
+
+test('the Homepage page uses the acted-on edits, the save bar can restore, the phone block view never stays blank', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(new URL('../src/app/features/website-builder/website-builder-page.ts', import.meta.url), 'utf8');
+  assert.match(page, /readonly changedText = computed\(\(\) => layoutEditsText\(this\.edits\(\)\)\);/);
+  assert.match(page, /short: 'Niet opgeslagen', detail: 'Sla de tekst eerst op in de editor\.'/);
+  assert.match(page, /ws-savebar__revert" type="button" \[disabled\]="busy\(\)" \(click\)="revertLayout\(\)">Herstellen<\/button>/);
+  assert.match(page, /<app-ios-nav title="Blok" \[largeTitle\]="false" backLabel="Homepage"[^>]*\(back\)="closeBlock\(\)" \/>/);
+  assert.doesNotMatch(page, /Teksten laden…/);
+  assert.match(page, /const gap = this\.definition\(section\.key\)\.siteGap;/);
+  assert.match(page, /if \(!visible && shown\) \{\s*this\.clearPreviewWatch\(\);\s*this\.previewLoaded\.set\(false\);/);
+  assert.match(page, /if \(!this\.sync\.status\(\)\) await this\.sync\.load\(\);\s*const before = this\.sync\.status\(\);/);
+  assert.match(page, /if \(before\) this\.publishedFrom\.set\(before\.liveRevision \?\? null\);/);
+});
