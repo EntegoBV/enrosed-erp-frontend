@@ -18,7 +18,7 @@ import { messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerPayables } from '../finance/payables';
 import { statusLabel, statusTone } from '../purchasing/purchase-phone-model';
-import { containerCounts, supplierOverview, type SupplierContainer } from './supplier-overview';
+import { containerCellSub, containerCounts, supplierOverview, type SupplierContainer } from './supplier-overview';
 
 /**
  * Leveranciers' area stylesheet (Inkoop redesign, 2026-10-17): styles/suppliers.scss
@@ -312,7 +312,7 @@ function blank(): Supplier {
                       <a class="ios-cell" [routerLink]="['/purchasing', container.id]" (click)="close()">
                         <span class="ios-cell__body">
                           <span class="ios-cell__title sup-wrap">{{ container.name }}</span>
-                          <span class="ios-cell__sub sup-wrap">{{ container.number }} · {{ statusText(container.status) }}@if (container.partner) { · Partner }@if (container.archived) { · gearchiveerd }</span>
+                          <span class="ios-cell__sub sup-wrap">{{ containerCellSub(container, statusText(container.status)) }}</span>
                         </span>
                         <span class="ios-cell__trail">
                           <span class="ios-cell__value ios-cell__value--strong">{{ container.totalEur | eur: 0 }}</span>
@@ -515,6 +515,7 @@ export class SupplierList {
   readonly isoCountries = ISO_COUNTRIES;
   readonly desktop = inject(DesktopViewport);
   readonly containerCounts = containerCounts;
+  readonly containerCellSub = containerCellSub;
   readonly statusTone = statusTone;
   readonly statusText = statusLabel;
   private readonly sourcing = inject(SourcingApi);

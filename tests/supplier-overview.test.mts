@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderView } from '../src/app/core/api/models.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
-import { containerCounts, supplierOverview } from '../src/app/features/suppliers/supplier-overview.ts';
+import { containerCellSub, containerCounts, supplierOverview } from '../src/app/features/suppliers/supplier-overview.ts';
 
 // Leveranciers (Inkoop redesign I7, F20): per supplier its containers, what they ask now and later, open credits, counts, last order.
 
@@ -61,3 +61,15 @@ test('Nieuwe calculatie opens the Inkoop list\'s sheet with the supplier chosen,
   assert.match(suppliers, /message: `<b>\$\{escapeHtml\(supplier\.name\)\}<\/b> verwijderen\?`/, 'the name is escaped in both confirms (F6)');
   assert.doesNotMatch(suppliers, /function message\(/, 'messageOf, not a local copy');
 });
+
+test('the phone Containers cell names the PO only under a herkenbare naam; partner and archive follow the status', () => {
+  const cell = (name: string, number: string, extra: { partner?: boolean; archived?: boolean } = {}) =>
+    ({ name, number, partner: !!extra.partner, archived: !!extra.archived });
+  assert.equal(containerCellSub(cell('PO-2026-045', 'PO-2026-045'), 'Besteld'), 'Besteld', 'titled by its PO: not twice');
+  assert.equal(containerCellSub(cell('Moederdag 2027', 'PO-2026-046'), 'Concept'), 'PO-2026-046 · Concept');
+  assert.equal(containerCellSub(cell('Partner Van Gils rozen', 'PO-2026-047', { partner: true }), 'Besteld'), 'PO-2026-047 · Besteld · Partner');
+  assert.equal(containerCellSub(cell('PO-2026-014', 'PO-2026-014', { archived: true }), 'Ontvangen'), 'Ontvangen · gearchiveerd');
+  const rows = supplierOverview([view(45, 8, 'BESTELD', '2026-10-12'), view(46, 8, 'CONCEPT', '2026-10-15', { alias: 'Moederdag 2027' })], []).get(8)!.containers;
+  assert.deepEqual(rows.map((row) => containerCellSub(row, row.status)), ['PO-2026-046 · CONCEPT', 'BESTELD']);
+});
+

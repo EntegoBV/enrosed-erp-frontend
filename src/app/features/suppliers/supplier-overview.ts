@@ -125,3 +125,14 @@ export function containerCounts(row: Pick<SupplierOverview, 'running' | 'receive
     row.archived ? `${row.archived} gearchiveerd` : ''].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'gearchiveerd';
 }
+
+/**
+ * The phone sheet's Containers cell sub: '{PO} · {status}' + Partner / gearchiveerd. The PO number only when the
+ * title is a herkenbare naam (as the desk's sub): a container without one is titled by its PO already.
+ */
+export function containerCellSub(container: Pick<SupplierContainer, 'name' | 'number' | 'partner' | 'archived'>, status: string): string {
+  const number = typeof container.number === 'string' ? container.number.trim() : '';
+  return [number && number !== container.name ? number : '', status, container.partner ? 'Partner' : '', container.archived ? 'gearchiveerd' : '']
+    .filter(Boolean).join(' · ');
+}
+
