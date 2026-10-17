@@ -107,6 +107,11 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
       { keys: ['B'], text: 'Voorraad boeken' },
     ],
   },
+  {
+    /* Analyses: the eight tabs in sidebar order (analyses-keys.ts). */
+    routes: ['/analyses/*'],
+    rows: [{ keys: ['⌥', '1–8'], text: 'Onderdeel van Analyses' }],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */

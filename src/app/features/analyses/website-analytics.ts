@@ -1,12 +1,18 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, ParamMap } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Segmented } from '../../shared/segmented';
+import { Icon } from '../../shared/icon';
+import { Sheet } from '../../shared/ui';
+import type { SegmentOption } from '../../shared/segmented';
 import { AnalyticsApi, WebsiteAnalyticsReport, WebsitePageKind } from '../../core/api/analytics-api';
 import { messageOf } from '../../core/api/errors';
 import { NumPipe } from '../../shared/pipes';
 import { deltaOf, durationLabel } from './website-analytics-math';
+import { dayMonth } from './analyses-words';
 import { GoogleWebsiteAnalytics } from './google-website-analytics';
-import { websiteAnalyticsRouteState, WebsiteAnalyticsSource } from './website-analytics-route';
+import { websiteAnalyticsQuery, websiteAnalyticsRouteState, WebsiteAnalyticsSource } from './website-analytics-route';
 
 const KIND_LABEL: Record<WebsitePageKind, string> = {
   HOME: 'Startpagina', PRODUCTS: 'Productoverzicht', COLLECTION: 'Collecties', PRODUCT: 'Productpagina’s',
@@ -43,29 +49,27 @@ const RANGES: readonly Range[] = [
 @Component({
   selector: 'app-website-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NumPipe, GoogleWebsiteAnalytics],
+  imports: [NumPipe, GoogleWebsiteAnalytics, Segmented, Icon, Sheet],
   template: `
-    <div class="wa__sources" role="group" aria-label="Bron van de websitecijfers">
-      @for (choice of sources; track choice.id) {
-        <button type="button" [attr.aria-pressed]="source() === choice.id" [class.on]="source() === choice.id" (click)="source.set(choice.id)">{{ choice.label }}</button>
+    <!-- The tab's tool row (critique N10, design §3.8): source and period; Vernieuwen is the page's. -->
+    <div class="an-bar">
+      @if (desk.active()) {
+        <app-segmented label="Bron van de websitecijfers" [options]="sourceOptions" [value]="source()" (changed)="setSource($any($event))" />
+        <app-segmented label="Periode" [options]="rangeOptions()" [value]="'' + days()" (changed)="setDays(+$event)" />
+      } @else {
+        <!-- Phone: tinted capsules that open a sheet each (design §3.8). -->
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                [attr.aria-label]="'Bron: ' + sourceLabel()" (click)="phoneSheet.set('source')">{{ sourceLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                [attr.aria-label]="'Periode: ' + rangeLabel()" (click)="phoneSheet.set('days')">
+          <app-icon name="calendar" [size]="15" />{{ rangeLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
       }
+      @if (source() === 'INTERNAL') { @if (report(); as r) {
+        <span class="an-bar__end"><span class="wa__live" [class.wa__live--on]="r.totals.activeNow > 0" [title]="'Bezoekers gezien in het laatste half uur'">
+          <i aria-hidden="true"></i>{{ r.totals.activeNow | num }} nu op de site</span></span>
+      } }
     </div>
     <p class="wa__source-hint">{{ source() === 'INTERNAL' ? 'Eigen websitemeting. Google Analytics en zoekprestaties zijn afzonderlijk beschikbaar.' : 'Google gebruikt andere meetregels dan de eigen websitemeting; de aantallen worden niet samengevoegd.' }}</p>
-    <div class="wa__toolbar">
-      <div class="wa__ranges" role="group" aria-label="Periode">
-        @for (range of ranges; track range.days) {
-          <button type="button" [class.on]="days() === range.days" [attr.aria-pressed]="days() === range.days" (click)="days.set(range.days)">{{ source() === 'SEARCH_CONSOLE' && range.days === 1 ? 'Laatste dag' : range.label }}</button>
-        }
-      </div>
-      <div class="wa__toolbar-side">
-        @if (source() === 'INTERNAL') { @if (report(); as r) {
-          <span class="wa__live" [class.wa__live--on]="r.totals.activeNow > 0" [title]="'Bezoekers gezien in het laatste half uur'">
-            <i aria-hidden="true"></i>{{ r.totals.activeNow | num }} nu op de site
-          </span>
-        } }
-        <button class="wa__refresh" type="button" (click)="reloadSelected()" [disabled]="source() === 'INTERNAL' ? loading() : googleBusy()" title="Vernieuwen" aria-label="Vernieuwen">↻</button>
-      </div>
-    </div>
 
     @if (source() !== 'INTERNAL') {
       <app-google-website-analytics [source]="source() === 'GA4' ? 'GA4' : 'SEARCH_CONSOLE'" [days]="days()" [refreshKey]="googleRefresh()" (loadingChanged)="googleBusy.set($event)" />
@@ -75,31 +79,21 @@ const RANGES: readonly Range[] = [
     } @else if (error(); as error) {
       <p class="wa__state wa__state--error" role="alert">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
     } @else if (report(); as r) {
-      <div class="wa__kpis" [class.wa__kpis--stale]="loading()">
-        <div class="wa__kpi">
-          <span>Bezoeken</span><b>{{ r.totals.visits | num }}</b>
-          <small>{{ deltaLine(r.totals.visits, r.previous.visits) }}</small>
-        </div>
-        <div class="wa__kpi">
-          <span>Unieke bezoekers</span><b>{{ r.totals.visitors | num }}</b>
-          <small>{{ deltaLine(r.totals.visitors, r.previous.visitors) }}</small>
-        </div>
-        <div class="wa__kpi">
-          <span>Sessies</span><b>{{ r.totals.sessions | num }}</b>
-          <small>{{ deltaLine(r.totals.sessions, r.previous.sessions) }}</small>
-        </div>
-        <div class="wa__kpi">
-          <span>Pagina’s per sessie</span><b>{{ r.totals.pagesPerSession }}</b>
-          <small>{{ r.totals.sessions ? r.totals.bounceRatePct + ' % haakt na één pagina af' : 'nog geen sessies' }}</small>
-        </div>
-        <div class="wa__kpi">
-          <span>Sessieduur</span><b>{{ duration(r.totals.avgSessionSeconds) }}</b>
-          <small>gemiddeld, bij meer dan één pagina</small>
-        </div>
-        <div class="wa__kpi wa__kpi--accent">
-          <span>Offerte-interesse</span><b>{{ r.funnel.quoteSessions | num }}</b>
-          <small>{{ r.funnel.quoteSessions ? share(r.funnel.quoteSessions, r.funnel.sessions) + ' van de sessies · ' + deltaLine(r.funnel.quoteSessions, r.previous.quoteSessions, true) : 'nog niemand op de offertepagina' }}</small>
-        </div>
+      <div class="an-kpis an-kpis--6" [attr.aria-busy]="loading()">
+        <div class="an-kpi"><span class="an-kpi__label">Bezoeken</span><span class="an-kpi__value">{{ r.totals.visits | num }}</span>
+          <span class="an-kpi__sub">{{ deltaLine(r.totals.visits, r.previous.visits) }}</span><span class="an-kpi__foot"></span></div>
+        <div class="an-kpi"><span class="an-kpi__label">Unieke bezoekers</span><span class="an-kpi__value">{{ r.totals.visitors | num }}</span>
+          <span class="an-kpi__sub">{{ deltaLine(r.totals.visitors, r.previous.visitors) }}</span><span class="an-kpi__foot"></span></div>
+        <div class="an-kpi"><span class="an-kpi__label">Sessies</span><span class="an-kpi__value">{{ r.totals.sessions | num }}</span>
+          <span class="an-kpi__sub">{{ deltaLine(r.totals.sessions, r.previous.sessions) }}</span><span class="an-kpi__foot"></span></div>
+        <div class="an-kpi"><span class="an-kpi__label">Pagina’s per sessie</span><span class="an-kpi__value">{{ r.totals.pagesPerSession | num: 1 }}</span>
+          <span class="an-kpi__sub">{{ r.totals.sessions ? r.totals.bounceRatePct + ' % haakt na één pagina af' : 'nog geen sessies' }}</span><span class="an-kpi__foot"></span></div>
+        <div class="an-kpi"><span class="an-kpi__label">Sessieduur</span><span class="an-kpi__value">{{ duration(r.totals.avgSessionSeconds) }}</span>
+          <span class="an-kpi__sub">gemiddeld, bij meer dan één pagina</span><span class="an-kpi__foot"></span></div>
+        <div class="an-kpi"><span class="an-kpi__label">Offerte-interesse</span><span class="an-kpi__value">{{ r.funnel.quoteSessions | num }}</span>
+          <span class="an-kpi__sub">{{ r.funnel.quoteSessions ? share(r.funnel.quoteSessions, r.funnel.sessions) + ' van de sessies' : 'nog niemand op de offertepagina' }}</span>
+          @let quoteTrend = r.funnel.quoteSessions ? direction(r.funnel.quoteSessions, r.previous.quoteSessions) : null;
+          <span class="an-kpi__foot" [class.is-ok]="quoteTrend === 'up'" [class.is-warn]="quoteTrend === 'down'">{{ r.funnel.quoteSessions ? deltaLine(r.funnel.quoteSessions, r.previous.quoteSessions, true) : '' }}</span></div>
       </div>
 
       @if (!r.totals.visits) {
@@ -113,6 +107,7 @@ const RANGES: readonly Range[] = [
             <span class="wa__legend"><i></i> bezoeken <em></em> unieke bezoekers</span>
           </div>
           @if (days() === 1) {
+            <div class="wa__plot"><span class="wa__yaxis" aria-hidden="true"><span>{{ maxHourOfDay() | num }}</span><span>{{ half(maxHourOfDay()) | num }}</span><span>0</span></span>
             <div class="wa__chart" role="img" aria-label="Bezoeken per uur, vandaag">
               @for (hour of r.perHour; track hour.hour) {
                 <div class="wa__bar" [class.wa__bar--future]="hour.hour > currentHour()" [title]="hour.hour + 'u: ' + hour.visits + ' bezoeken, ' + hour.visitors + ' bezoekers'">
@@ -120,9 +115,10 @@ const RANGES: readonly Range[] = [
                   <em [style.height.%]="barHeight(hour.visitors, maxHourOfDay())"></em>
                 </div>
               }
-            </div>
+            </div></div>
             <div class="wa__axis"><span>0u</span><span>6u</span><span>12u</span><span>18u</span><span>23u</span></div>
           } @else {
+            <div class="wa__plot"><span class="wa__yaxis" aria-hidden="true"><span>{{ maxDay() | num }}</span><span>{{ half(maxDay()) | num }}</span><span>0</span></span>
             <div class="wa__chart" role="img" [attr.aria-label]="'Bezoeken per dag, ' + r.days + ' dagen'">
               @for (day of r.perDay; track day.date) {
                 <div class="wa__bar" [class.wa__bar--weekend]="isWeekend(day.date)" [title]="dateLabel(day.date) + ': ' + day.visits + ' bezoeken, ' + day.visitors + ' bezoekers'">
@@ -130,7 +126,7 @@ const RANGES: readonly Range[] = [
                   <em [style.height.%]="barHeight(day.visitors, maxDay())"></em>
                 </div>
               }
-            </div>
+            </div></div>
             <div class="wa__axis"><span>{{ dateLabel(r.from) }}</span><span>piek {{ maxDay() | num }} op een dag</span><span>{{ dateLabel(r.to) }}</span></div>
           }
         </section>
@@ -267,33 +263,50 @@ const RANGES: readonly Range[] = [
       </footer>
     }
     }
+
+    @switch (phoneSheet()) {
+      @case ('source') {
+        <app-sheet title="Bron" variant="ios" (closed)="phoneSheet.set(null)">
+          <div body>
+            <div class="ios-group" role="radiogroup" aria-label="Bron van de websitecijfers">
+              @for (choice of sources; track choice.id) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="source() === choice.id" (click)="pickSource(choice.id)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ choice.label }}</span></span>
+                  @if (source() === choice.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+            <p class="ios-section__foot">Google gebruikt andere meetregels dan de eigen websitemeting; de aantallen worden niet samengevoegd.</p>
+          </div>
+        </app-sheet>
+      }
+      @case ('days') {
+        <app-sheet title="Periode" variant="ios" (closed)="phoneSheet.set(null)">
+          <div body>
+            <div class="ios-group" role="radiogroup" aria-label="Periode">
+              @for (range of rangeOptions(); track range.id) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="'' + days() === range.id" (click)="pickDays(+range.id)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ range.label }}</span></span>
+                  @if ('' + days() === range.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+          </div>
+        </app-sheet>
+      }
+    }
   `,
   styles: `
     :host{display:block}
-    .wa__sources{display:flex;gap:4px;padding:4px;border-radius:18px;border:1px solid var(--line);background:var(--surface-2);width:max-content;max-width:100%}.wa__sources button{min-height:44px;min-width:0;padding:8px 16px;border:0;border-radius:14px;background:none;color:var(--muted);font:inherit;font-size:12px;font-weight:650;cursor:pointer}.wa__sources button.on{color:var(--rose-dark);background:var(--surface);box-shadow:0 2px 7px rgb(25 35 30 / 10%)}.wa__source-hint{margin:9px 0 18px;font-size:11px;color:var(--muted);line-height:1.6}@media(max-width:679px){.wa__sources{width:100%}.wa__sources button{flex:1;padding-inline:8px;font-size:11px}.wa__source-hint{margin-bottom:14px}}
-    .wa__toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
-    .wa__toolbar-side{display:flex;align-items:center;gap:8px}
-    .wa__ranges{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface);max-width:100%;overflow-x:auto}
-    .wa__ranges button{padding:6px 12px;border:0;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap}
-    .wa__ranges button.on{background:var(--ink);color:#fff}
     .wa__live{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px;font-weight:650;white-space:nowrap}
     .wa__live i{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
     .wa__live--on{border-color:color-mix(in srgb,var(--ok) 40%,var(--line));color:var(--ok)}
     .wa__live--on i{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
-    .wa__refresh{width:32px;height:32px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--ink-2);font-size:16px;cursor:pointer}
-    .wa__refresh:disabled{opacity:.5;cursor:default}
     .wa__state{margin:0;padding:18px;color:var(--muted);font-size:13px}.wa__state--error{color:var(--danger)}
-    .wa__kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;transition:opacity .2s}
-    .wa__kpis--stale{opacity:.55}
-    .wa__kpi{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-    .wa__kpi span{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-    .wa__kpi b{font-size:22px;font-weight:750;letter-spacing:-.02em}
-    .wa__kpi small{color:var(--muted);font-size:11.5px}
-    .wa__kpi--accent{border-color:var(--rose-line);background:var(--rose-soft)}.wa__kpi--accent b{color:var(--rose-dark)}
     .wa__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .wa__card{min-width:0;padding:14px 16px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
     .wa__card--wide{grid-column:1/-1}
-    .wa__card h3{margin:0 0 10px;font-size:14.5px;font-weight:750}
+    .wa__card h3{margin:0 0 10px;font-size:14px;font-weight:700;letter-spacing:-.01em}
     .wa__card h4{margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
     .wa__card-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
     .wa__sub{margin:-4px 0 10px;color:var(--muted);font-size:12px}.wa__sub--after{margin:10px 0 0}
@@ -332,21 +345,10 @@ const RANGES: readonly Range[] = [
     .wa__chip{display:inline-block;margin:2px 4px 0 0;padding:2px 8px;border:1px solid var(--line);border-radius:999px;font-size:11.5px}
     .wa__foot{display:grid;gap:8px;justify-items:start;margin-top:14px;padding:12px 14px;border:1px dashed var(--line);border-radius:14px;color:var(--muted);font-size:12px}
     .wa__foot p{margin:0;line-height:1.5}.wa__foot small{font-size:11px}
-    @media(max-width:860px){.wa__grid{grid-template-columns:1fr}.wa__toolbar{align-items:stretch}.wa__toolbar-side{justify-content:space-between}}
+    @media(max-width:860px){.wa__grid{grid-template-columns:1fr}}
     @media(max-width:520px){.wa__duo{grid-template-columns:1fr}}
     :host { min-width: 0; }
-    .wa__toolbar { gap: 10px 16px; margin-bottom: 16px; }
-    .wa__ranges { min-width: 0; padding: 4px; gap: 2px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%); scrollbar-width: none; }
-    .wa__ranges button { min-height: 44px; min-width: 44px; border-radius: 14px; padding-inline: 12px; }
-    .wa__ranges button.on { background: var(--surface); color: var(--rose-dark); box-shadow: 0 2px 7px rgb(25 35 30 / 10%); }
-    .wa__refresh { width: 44px; height: 44px; flex: none; border-radius: 15px; background: var(--surface); }
     .wa__live { min-height: 36px; }
-    .wa__kpi { min-width: 0; gap: 7px; padding: 17px; border-radius: 20px; }
-    .wa__kpi span { font-size: 11px; line-height: 1.4; letter-spacing: 0; text-transform: none; }
-    .wa__kpi b { font-size: clamp(24px, 3vw, 30px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-    .wa__kpi small { font-size: 11px; line-height: 1.5; }
-    .wa__card { padding: 18px; border-radius: 22px; }
-    .wa__card h3 { font-size: 16px; line-height: 1.35; }
     .wa__chart { min-width: 0; width: 100%; }
     .wa__axis { gap: 8px; font-size: 10px; }
     .wa__axis > span { min-width: 0; }
@@ -360,18 +362,10 @@ const RANGES: readonly Range[] = [
     .wa__foot .btn, .wa__state .linklike { min-height: 44px; }
     button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
     @media (max-width: 679px) {
-      .wa__toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-      .wa__ranges { display: flex; width: 100%; }
-      .wa__ranges button { flex: 1 0 auto; padding-inline: 10px; font-size: 12px; }
-      .wa__toolbar-side { min-width: 0; justify-content: space-between; }
-      .wa__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-      .wa__kpi { padding: 14px; border-radius: 18px; }
-      .wa__kpi b { font-size: 24px; }
       .wa__card { padding: 15px; border-radius: 20px; }
       .wa__hours-head, .wa__hours-row { grid-template-columns: 22px repeat(24, minmax(0, 1fr)); gap: 1px; }
     }
-    @media (max-width: 359px) { .wa__ranges button { padding-inline: 8px; font-size: 11px; } }
-    @media (prefers-reduced-motion: reduce) { .wa__kpis, .wa__funnel-track i { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .wa__funnel-track i { transition: none; } }
 
   `,
 })
@@ -386,6 +380,16 @@ export class WebsiteAnalytics {
     { id: 'SEARCH_CONSOLE', label: 'Google zoeken' },
   ] as const;
   readonly source = signal<WebsiteAnalyticsSource>(this.initialRouteState.source);
+  readonly desk = inject(DesktopViewport);
+  private readonly router = inject(Router);
+  readonly sourceOptions: SegmentOption[] = this.sources.map((choice) => ({ id: choice.id, label: choice.label }));
+  /** "Vandaag" reads "Laatste dag" for Google zoeken (its data lag a day). */
+  readonly rangeOptions = computed<SegmentOption[]>(() => RANGES.map((range) => ({ id: String(range.days),
+    label: this.source() === 'SEARCH_CONSOLE' && range.days === 1 ? 'Laatste dag' : range.label })));
+  /** The phone capsules' texts and their sheets. */
+  readonly sourceLabel = computed(() => this.sources.find((choice) => choice.id === this.source())?.label ?? '');
+  readonly rangeLabel = computed(() => this.rangeOptions().find((option) => option.id === String(this.days()))?.label ?? this.range().label);
+  readonly phoneSheet = signal<'source' | 'days' | null>(null);
   readonly googleRefresh = signal(0);
   readonly googleBusy = signal(false);
   readonly weekdays = WEEKDAYS;
@@ -437,6 +441,35 @@ export class WebsiteAnalytics {
     this.days.set(selection.days);
   }
 
+  /** Every choice goes into the address (?source=&days=, replaceUrl) and reads back through applyRouteQuery. */
+  setSource(source: WebsiteAnalyticsSource): void {
+    this.source.set(source);
+    this.writeQuery();
+  }
+
+  setDays(days: number): void {
+    if (!RANGES.some((range) => range.days === days)) return;
+    this.days.set(days);
+    this.writeQuery();
+  }
+
+  /** A choice in a phone sheet: apply and close. */
+  pickSource(source: WebsiteAnalyticsSource): void {
+    this.setSource(source);
+    this.phoneSheet.set(null);
+  }
+
+  pickDays(days: number): void {
+    this.setDays(days);
+    this.phoneSheet.set(null);
+  }
+
+  half(value: number): number { return Math.round(value / 2); }
+
+  private writeQuery(): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: websiteAnalyticsQuery(this.source(), this.days()), queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   reloadSelected(): void {
     if (this.source() === 'INTERNAL') { if (!this.loading()) void this.reload(); }
     else if (!this.googleBusy()) this.googleRefresh.update(value => value + 1);
@@ -479,6 +512,12 @@ export class WebsiteAnalytics {
   }
 
   /** "▲ 12 % t.o.v. gisteren", or what there is to say when nothing came before. */
+  /** Up is good, down is a warning, the same rule as the Overzicht's Bezoekers row (deltaMeta); flat or unknown stays muted. */
+  direction(current: number, previous: number): 'up' | 'down' | null {
+    const delta = deltaOf(current, previous);
+    return delta && delta.direction !== 'flat' ? delta.direction : null;
+  }
+
   deltaLine(current: number, previous: number, short = false): string {
     const delta = deltaOf(current, previous);
     const before = this.range().before;
@@ -532,9 +571,9 @@ export class WebsiteAnalytics {
     return [...code].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join('');
   }
 
+  /** "17 sep", with the year when it is not this year: the area's date words (was "17/09/2026"). */
   dateLabel(date: string): string {
-    const [year, month, day] = date.split('-');
-    return `${day}/${month}/${year}`;
+    return dayMonth(date, String(new Date().getFullYear())) || date;
   }
 
   isWeekend(date: string): boolean {

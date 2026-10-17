@@ -45,3 +45,11 @@ test('query changes on the reused analysis component update selection and remova
   assert.equal(selectedSource, 'INTERNAL');
   assert.equal(selectedDays, 30);
 });
+
+test('a selection writes ?source=&days= back, the defaults leave the address clean (design §3.8)', async () => {
+  const { websiteAnalyticsQuery } = await import('../src/app/features/analyses/website-analytics-route.ts');
+  assert.deepEqual(websiteAnalyticsQuery('SEARCH_CONSOLE', 90), { source: 'SEARCH_CONSOLE', days: '90' });
+  assert.deepEqual(websiteAnalyticsQuery('INTERNAL', 30), { source: null, days: null });
+  assert.deepEqual(websiteAnalyticsRouteState(params(new URLSearchParams(Object.entries(websiteAnalyticsQuery('GA4', 7)).filter(([, value]) => value !== null) as [string, string][]).toString())),
+    { source: 'GA4', days: 7 }, 'what is written reads back');
+});

@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import type { PurchaseOrderView } from '../../core/api/models';
@@ -7,330 +8,233 @@ import { PurchaseReconciliation } from '../purchasing/purchase-reconciliation';
 import { ContainerCostFilter, containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
 import { mixRange, nacalcUnitMix, purchasePaymentResult, reconciliationUnit, type NacalcUnitMix, type ReconciliationUnit } from '../purchasing/purchase-payment-result-metrics';
 import { containerPaymentResultTotals } from './container-payment-result-metrics';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Icon } from '../../shared/icon';
+import { Sheet } from '../../shared/ui';
+import { containerName } from '../purchasing/container-name';
+import { plural } from './analyses-words';
 
-/** Payment reconciliation remains independent of the receipt-quality date filter below it. */
+/**
+ * Analyses › Inkoop › Containerkost (redesign 2026-10-17): its own filter row
+ * (row 2 of the Inkoop bar), four light figures, the payment result and the
+ * difference with the afspraak side by side, then the table per container.
+ * The phone shows the containers as cells; each opens a sheet with every
+ * figure of its row and the Afrekening & PDF (critique B1). Styles live in
+ * src/styles/analyses-tabs.scss under app-container-cost-analysis (N4).
+ * Payment reconciliation remains independent of the receipt-quality period.
+ */
 @Component({
   selector: 'app-container-cost-analysis',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, EurPipe, NumPipe, PurchaseReconciliation],
+  imports: [FormsModule, Icon, NgTemplateOutlet, RouterLink, EurPipe, NumPipe, PurchaseReconciliation, Sheet],
+  host: { class: 'an-part cc' },
   template: `
-    <section class="container-cost-analysis" aria-labelledby="container-cost-analysis-title" [attr.aria-busy]="loading()">
-      <header class="container-cost-analysis__heading">
-        <div><span class="eyebrow">Containerafrekening</span><h2 id="container-cost-analysis-title">Wat de container werkelijk kost</h2><p>Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.</p></div>
-        <a class="btn btn--sm" routerLink="/costs">Kosten &amp; bank ›</a>
-      </header>
-      <div class="container-cost-analysis__filters">
-        <label><span>Containers</span><select class="select" [ngModel]="filter()" (ngModelChange)="filter.set($event)"><option value="active">Actieve containers</option><option value="all">Alle containers · ook concepten</option><option value="open">Nog niet volledig afgerekend</option><option value="finalized">Volledig afgerekend</option><option value="higher">Duurder dan afgesproken</option><option value="lower">Goedkoper dan afgesproken</option></select></label>
-        <label><span>Zoeken</span><input class="input" type="search" placeholder="Containernummer of naam" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label>
-      </div>
-      @if (loading()) {
-        <p class="container-cost-analysis__empty" role="status">Betalingen en containerkosten laden…</p>
+    <!-- Row 2 of the Inkoop tool bar: this part's own filters (critique B10, N10). -->
+    <div class="an-bar an-bar--sub">
+      @if (desk.active()) {
+        <label class="an-field"><span class="sr-only">Containers</span>
+          <select class="an-select" [ngModel]="filter()" (ngModelChange)="filter.set($event)" aria-label="Containers">
+            @for (option of filters; track option.id) { <option [value]="option.id">{{ option.label }}</option> }
+          </select></label>
+        <label class="wk-search an-search"><app-icon name="search" [size]="15" />
+          <input type="search" placeholder="Zoek container" aria-label="Zoek container" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label>
       } @else {
-        @if (unavailable()) { <p class="container-cost-analysis__warning" role="status">Voor {{ unavailable() }} container(s) ontbreekt de nacalculatie. Die bedragen zijn niet opgenomen; vernieuw om ze opnieuw op te halen.</p> }
-        @if (rows().length) {
-          @let payment = paymentTotals();
-          <section class="payment-result-analysis" aria-labelledby="payment-result-analysis-title">
-            <header class="payment-result-analysis__heading">
-              <div>
-                <span class="eyebrow">Apart van de ENROSED-kost</span>
-                <h3 id="payment-result-analysis-title">Extra opbrengst uit betalingen</h3>
-              </div>
-              @if (payment.eligibleCount) {
-                <span class="cost-state" [class.cost-state--final]="!payment.provisionalCount">
-                  {{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}
-                </span>
-              }
-            </header>
-            @if (payment.eligibleCount) {
-              <div class="payment-result-analysis__summary">
-                <div class="payment-result-analysis__amount">
-                  <span>{{ payment.netResultEur < 0 ? 'Negatief betaalresultaat' : 'Netto extra opbrengst' }}</span>
-                  <strong [class.higher]="payment.netResultEur < 0">{{ payment.netResultEur | eur: 2 }}</strong>
-                  <small>{{ payment.eligibleCount | num }} container(s) in deze selectie · {{ payment.finalizedCount | num }} volledig afgerekend</small>
-                </div>
-                <dl class="payment-result-analysis__comparison">
-                  <div><dt>ENROSED-kost</dt><dd>{{ payment.internalMarkupEur | eur: 2 }}</dd></div>
-                  <div><dt>Betaalresultaat</dt><dd>{{ payment.netResultEur > 0 ? '+' : '' }}{{ payment.netResultEur | eur: 2 }}</dd></div>
-                  <div><dt>ENROSED-kost + betaalresultaat</dt><dd>{{ payment.markupWithResultEur | eur: 2 }}</dd></div>
-                </dl>
-              </div>
-              @if (payment.unsettledOverrunsEur > 0) {
-                <p class="payment-result-analysis__pending" role="note">
-                  <b>{{ payment.unsettledOverrunsEur | eur: 2 }} meer betaald, nog te beoordelen.</b>
-                  Dit bedrag is nog niet verrekend in het betaalresultaat.
-                </p>
-              }
-              <details class="payment-result-analysis__details">
-                <summary>Hoe is dit berekend? <span aria-hidden="true">⌄</span></summary>
-                <dl class="payment-result-analysis__breakdown">
-                  <div><dt>Minder betaald, definitief vereffend</dt><dd>{{ payment.settledSavingsEur | eur: 2 }}</dd></div>
-                  <div><dt>Meer betaald, definitief vereffend</dt><dd>− {{ payment.settledOverrunsEur | eur: 2 }}</dd></div>
-                  <div><dt>Extra uitgaven buiten de afspraak</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
-                </dl>
-                <p>Besparing telt zodra de betreffende betaalgroep of leverancierstermijn is afgerekend. Andere termijnen blijven open; voorschotten en open bedragen zijn geen extra opbrengst.</p>
-                <p>ENROSED-kost en productprijzen blijven gelijk. Kostenverschillen zitten al in de verwachte containerkost; dit overzicht boekt ze niet nogmaals als winst.</p>
-              </details>
-            } @else {
-              <p class="payment-result-analysis__empty">Nog geen betaalresultaat voor deze selectie.</p>
-            }
-            @if (payment.excludedCount) { <small class="payment-result-analysis__excluded">{{ payment.excludedCount }} conceptcontainer(s) of containers zonder productregels niet meegeteld.</small> }
-            @if (payment.unavailableCount) { <small class="payment-result-analysis__excluded">Voor {{ payment.unavailableCount }} container(s) is het betaalresultaat nog niet beschikbaar.</small> }
-          </section>
-          <div class="container-cost-kpis">
-            <article><span>Afgesproken externe kost</span><strong>{{ totals().plannedEur | eur }}</strong><small>{{ rows().length | num }} container(s) in dit overzicht</small></article>
-            <article><span>Werkelijk betaald</span><strong>{{ totals().paidEur | eur }}</strong><small>Opgeslagen eurobedragen van betalingen</small></article>
-            <article><span>Nog te betalen</span><strong>{{ totals().remainingEur | eur }}</strong><small>{{ totals().provisionalCount }} container(s) nog voorlopig</small></article>
-            <article class="container-cost-kpis__forecast"><span>{{ totals().provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><strong>{{ totals().forecastEur | eur }}</strong><small>{{ totals().finalizedCount }} container(s) volledig afgerekend</small></article>
-          </div>
-          <div class="container-cost-differences">
-            <div><span>Meer betaald op afgesproken kosten</span><b>{{ totals().overpaidEur | eur }}</b><small>Controleer bij open betaalstromen of er nog een correctie volgt.</small></div>
-            <div><span>Minder betaald na vereffening</span><b>{{ totals().settledSavingEur | eur }}</b><small>Een open saldo of gedeeltelijke betaling is geen besparing.</small></div>
-            <div><span>Extra uitgaven buiten de afspraak</span><b>{{ totals().additionalEur | eur }}</b><small>Bankkosten, koerier en andere betalingen tellen mee in de kost.</small></div>
-            <div><span>Netto verschil met de afspraak</span><b [class.higher]="totals().varianceEur > 0" [class.lower]="totals().varianceEur < 0">{{ totals().varianceEur > 0 ? '+' : '' }}{{ totals().varianceEur | eur }}</b><small>Interne Enrosed opslag staat apart in elke afrekening.</small></div>
-          </div>
-          <div class="container-cost-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
-            <table>
-              <thead><tr><th>Container</th><th>Status</th><th>Afspraak</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
-              <tbody>
-                @for (row of rows(); track row.view.order.id) {
-                  <tr [class.selected]="expandedId() === row.view.order.id">
-                    <td class="container-cost-table__identity"><a [routerLink]="['/purchasing', row.view.order.id]">{{ row.view.order.alias || row.view.order.number }}</a>@if (row.view.order.alias) { <small>{{ row.view.order.number }}</small> }<small>{{ orderStatus(row.view.order.status) }}</small></td>
-                    <td class="container-cost-table__status"><span class="cost-state" [class.cost-state--final]="row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
-                    <td data-label="Afspraak">{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
-                    <td data-label="Betaald">{{ row.reconciliation.totals.paidEur | eur }}</td>
-                    <td data-label="Open">{{ row.reconciliation.totals.remainingEur | eur }}</td>
-                    <td data-label="Verwachte kost"><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b></td>
-                    <td data-label="Verschil" [class.higher]="row.reconciliation.totals.varianceEur > 0" [class.lower]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</td>
-                    <td class="container-payment-result" data-label="Betaalresultaat">
-                      @if (row.paymentResult; as result) {
-                        @if (result.eligible) {
-                          <b [class.higher]="result.netResultEur < 0" [class.lower]="result.netResultEur > 0">{{ result.netResultEur | eur: 2 }}</b>
-                          <small>{{ result.finalized ? 'Afgerekend' : 'Tussenstand' }}</small>
-                        } @else { <span>—</span><small>Niet meegeteld</small> }
-                      } @else { <span>—</span><small>Niet beschikbaar</small> }
-                    </td>
-                    @let mix = unitMix(row.reconciliation);
-                    @if (mix.uniform) {
-                      <!-- One product in its own unit: a display product per display with its piece price beside it, never 'per stuk' for a display. -->
-                      @let unit = unitOf(row.reconciliation.totals);
-                      <td data-label="Per eenheid">@if (unit.unitEur === null) { — } @else { {{ unit.unitEur | eur: 4 }} per {{ unit.unit }} }@if (unit.pieceEur !== null) { <small>{{ unit.pieceEur | eur: 4 }} per stuk</small> }<small>{{ unit.quantity | num }} {{ unit.usable ? 'bruikbare' : 'bestelde' }} {{ unit.plural }}</small></td>
-                    } @else {
-                      <!-- Several products: their range per {{ mix.unit }}, never an average over them. -->
-                      <td data-label="Per eenheid">{{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small></td>
-                    }
-                    <td class="container-cost-table__actions"><button class="btn btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + row.view.order.number" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
-                  </tr>
+        <select class="an-capsule-select" [ngModel]="filter()" (ngModelChange)="filter.set($event)" aria-label="Containers">
+          @for (option of filters; track option.id) { <option [value]="option.id">{{ option.label }}</option> }
+        </select>
+      }
+    </div>
+    @if (!desk.active()) {
+      <div class="ios-search an-phone-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
+        <input type="search" placeholder="Zoek container" aria-label="Zoek container" [ngModel]="search()" (ngModelChange)="search.set($event)" /></label></div>
+    }
+    @if (loading()) {
+      <div class="an-kpis" aria-label="Containerkost laden">@for (n of [1, 2, 3, 4]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+    } @else {
+      @if (unavailable()) {
+        <div [class]="desk.active() ? 'wk-banner wk-banner--warn wk-banner--inset' : 'ios-banner'" role="status"><span class="wk-banner__text">Voor {{ plural(unavailable(), 'container', 'containers') }} ontbreekt de nacalculatie. Die bedragen zijn niet opgenomen; vernieuw om ze opnieuw op te halen.</span></div>
+      }
+      @if (rows().length) {
+        @let total = totals();
+        @let payment = paymentTotals();
+        <div class="an-kpis an-kpis--cents">
+          <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">Afgesproken externe kost</span><span class="cc-narrow">Afgesproken</span></span><span class="an-kpi__value">{{ total.plannedEur | eur }}</span>
+            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(rows().length, 'container', 'containers') }} in dit overzicht</span><span class="an-kpi__foot"></span></div>
+          <div class="an-kpi"><span class="an-kpi__label">Werkelijk betaald</span><span class="an-kpi__value">{{ total.paidEur | eur }}</span>
+            <span class="an-kpi__sub">opgeslagen eurobedragen van betalingen</span><span class="an-kpi__foot"></span></div>
+          <div class="an-kpi"><span class="an-kpi__label">Nog te betalen</span><span class="an-kpi__value">{{ total.remainingEur | eur }}</span>
+            <span class="an-kpi__sub">{{ plural(total.provisionalCount, 'container', 'containers') }} nog voorlopig</span><span class="an-kpi__foot"></span></div>
+          <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">{{ total.provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><span class="cc-narrow">{{ total.provisionalCount ? 'Verwachte kost' : 'Definitieve kost' }}</span></span><span class="an-kpi__value">{{ total.forecastEur | eur }}</span>
+            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(total.finalizedCount, 'container', 'containers') }} volledig afgerekend</span><span class="an-kpi__foot"></span></div>
+        </div>
+        <div class="an-cols">
+          <div class="an-col">
+            <section class="an-card cc-pay" aria-labelledby="cc-pay-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="cc-pay-title">Extra opbrengst uit betalingen</h2><span class="an-card__sub">apart van de ENROSED-kost</span>
+                @if (payment.eligibleCount) { <span class="an-card__trail"><span class="wk-pill" [class.tone-warn]="payment.provisionalCount" [class.tone-ok]="!payment.provisionalCount">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></span> }</header>
+              <div class="an-card__body an-card__pad">
+                @if (payment.eligibleCount) {
+                  <div class="cc-pay__amount">
+                    <span>{{ payment.netResultEur < 0 ? 'Negatief betaalresultaat' : 'Netto extra opbrengst' }}</span>
+                    <strong [class.is-warn]="payment.netResultEur < 0">{{ payment.netResultEur | eur: 2 }}</strong>
+                    <small>{{ plural(payment.eligibleCount, 'container', 'containers') }} in deze selectie · {{ payment.finalizedCount | num }} volledig afgerekend</small>
+                  </div>
+                  <dl class="cc-pay__list">
+                    <div><dt>ENROSED-kost</dt><dd>{{ payment.internalMarkupEur | eur: 2 }}</dd></div>
+                    <div><dt>Betaalresultaat</dt><dd>{{ payment.netResultEur > 0 ? '+' : '' }}{{ payment.netResultEur | eur: 2 }}</dd></div>
+                    <div class="is-total"><dt>ENROSED-kost + betaalresultaat</dt><dd>{{ payment.markupWithResultEur | eur: 2 }}</dd></div>
+                  </dl>
+                  @if (payment.unsettledOverrunsEur > 0) {
+                    <p class="cc-pay__pending" role="note"><b>{{ payment.unsettledOverrunsEur | eur: 2 }} meer betaald, nog te beoordelen.</b>
+                      Dit bedrag is nog niet verrekend in het betaalresultaat.</p>
+                  }
+                  <details class="cc-pay__details">
+                    <summary>Hoe is dit berekend? <app-icon name="chevron-down" [size]="14" /></summary>
+                    <dl class="cc-pay__list">
+                      <div><dt>Minder betaald, definitief vereffend</dt><dd>{{ payment.settledSavingsEur | eur: 2 }}</dd></div>
+                      <div><dt>Meer betaald, definitief vereffend</dt><dd>− {{ payment.settledOverrunsEur | eur: 2 }}</dd></div>
+                      <div><dt>Extra uitgaven buiten de afspraak</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
+                    </dl>
+                    <p>Besparing telt zodra de betreffende betaalgroep of leverancierstermijn is afgerekend. Andere termijnen blijven open; voorschotten en open bedragen zijn geen extra opbrengst.</p>
+                    <p>ENROSED-kost en productprijzen blijven gelijk. Kostenverschillen zitten al in de verwachte containerkost; dit overzicht boekt ze niet nogmaals als winst.</p>
+                  </details>
+                } @else {
+                  <p class="cc-pay__note">Nog geen betaalresultaat voor deze selectie.</p>
                 }
-              </tbody>
-            </table>
+                @if (payment.excludedCount) { <p class="cc-pay__note">{{ plural(payment.excludedCount, 'conceptcontainer of container', 'conceptcontainers of containers') }} zonder productregels niet meegeteld.</p> }
+                @if (payment.unavailableCount) { <p class="cc-pay__note">Voor {{ plural(payment.unavailableCount, 'container', 'containers') }} is het betaalresultaat nog niet beschikbaar.</p> }
+              </div>
+            </section>
           </div>
-          @if (expanded(); as row) {
-            <div class="container-cost-detail">
-              <header><div><span>Container</span><h3>{{ row.view.order.alias || row.view.order.number }}</h3><small>{{ row.view.order.number }}</small></div><button class="btn btn--sm" type="button" (click)="expandedId.set(null)">Sluiten</button></header>
-              <app-purchase-reconciliation [data]="row.reconciliation" [orderId]="row.view.order.id" [orderNumber]="row.view.order.number" />
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="cc-diff-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="cc-diff-title">Verschil met de afspraak</h2></header>
+              <div class="an-card__body">
+                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Meer betaald op afgesproken kosten</span>
+                  <span class="an-row__sub">Controleer bij open betaalstromen of er nog een correctie volgt.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.overpaidEur | eur }}</span></span></div>
+                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Minder betaald na vereffening</span>
+                  <span class="an-row__sub">Een open saldo of gedeeltelijke betaling is geen besparing.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.settledSavingEur | eur }}</span></span></div>
+                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Extra uitgaven buiten de afspraak</span>
+                  <span class="an-row__sub">Bankkosten, koerier en andere betalingen tellen mee in de kost.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.additionalEur | eur }}</span></span></div>
+                <div class="an-row an-row--nolead cc-total"><span class="an-row__body"><span class="an-row__title">Netto verschil met de afspraak</span>
+                  <span class="an-row__sub">Interne Enrosed opslag staat apart in elke afrekening.</span></span>
+                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="total.varianceEur > 0 ? 'warn' : total.varianceEur < 0 ? 'ok' : null">{{ total.varianceEur > 0 ? '+' : '' }}{{ total.varianceEur | eur }}</span></span></div>
+              </div>
+            </section>
+          </div>
+        </div>
+        <section class="an-card" aria-labelledby="cc-table-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="cc-table-title">Per container</h2><span class="an-card__trail">{{ plural(rows().length, 'container', 'containers') }}</span></header>
+          @if (desk.active()) {
+            <div class="cc-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
+              <table>
+                <thead><tr><th>Container</th><th class="cc-col-status">Status</th><th>Afspraak</th><th>Betaald</th><th class="cc-col-fold">Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th class="cc-col-unit">Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
+                <tbody>
+                  @for (row of rows(); track row.view.order.id) {
+                    <tr [class.is-on]="expandedId() === row.view.order.id">
+                      <td class="cc-name"><a [routerLink]="['/purchasing', row.view.order.id]">{{ name(row) }}</a>@if (row.view.order.alias) { <small>{{ row.view.order.number }}</small> }
+                        <small>{{ orderStatus(row.view.order.status) }}<span class="cc-state-inline"> · {{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></small></td>
+                      <td class="cc-col-status"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized" [class.tone-warn]="!row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
+                      <td>{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
+                      <td>{{ row.reconciliation.totals.paidEur | eur }}<small class="cc-fold">open {{ row.reconciliation.totals.remainingEur | eur }}</small></td>
+                      <td class="cc-col-fold">{{ row.reconciliation.totals.remainingEur | eur }}</td>
+                      <td><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b>
+                        <span class="cc-fold cc-unit-fold"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></span></td>
+                      <td [class.is-warn]="row.reconciliation.totals.varianceEur > 0" [class.is-ok]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</td>
+                      <td>
+                        @if (row.paymentResult; as result) {
+                          @if (result.eligible) {
+                            <b [class.is-warn]="result.netResultEur < 0" [class.is-ok]="result.netResultEur > 0">{{ result.netResultEur | eur: 2 }}</b>
+                            <small>{{ result.finalized ? 'Afgerekend' : 'Tussenstand' }}</small>
+                          } @else { <span>—</span><small>Niet meegeteld</small> }
+                        } @else { <span>—</span><small>Niet beschikbaar</small> }
+                      </td>
+                      <td class="cc-unit cc-col-unit"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></td>
+                      <td class="cc-actions"><button class="wk-btn wk-btn--sm cc-act" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening & PDF ' + name(row)"
+                          [attr.title]="expandedId() === row.view.order.id ? 'Afrekening sluiten' : 'Afrekening & PDF'" (click)="toggle(row.view.order.id)">
+                        <app-icon class="cc-act__icon" [name]="expandedId() === row.view.order.id ? 'close' : 'pdf'" [size]="14" />
+                        <span class="cc-act__text">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</span></button></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <div class="an-card__body">
+              @for (row of phoneRows(); track row.view.order.id) {
+                <button class="an-row an-row--nolead an-row--chev" type="button" data-detail (click)="sheetId.set(row.view.order.id)">
+                  <span class="an-row__body"><span class="an-row__title ios-cell__title--2">{{ name(row) }}</span>
+                    <span class="an-row__sub">Afspraak {{ row.reconciliation.totals.plannedExternalEur | eur: 0 }} · betaald {{ row.reconciliation.totals.paidEur | eur: 0 }} · open {{ row.reconciliation.totals.remainingEur | eur: 0 }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value">{{ row.reconciliation.totals.forecastExternalEur | eur: 0 }}</span>
+                    <span class="an-row__meta" [attr.data-tone]="row.reconciliation.totals.varianceEur > 0 ? 'warn' : row.reconciliation.totals.varianceEur < 0 ? 'ok' : null">verschil {{ row.reconciliation.totals.varianceEur | eur: 0 }}</span></span>
+                  <span class="an-row__chev" aria-hidden="true">›</span>
+                </button>
+              }
+              @if (rows().length > 5) {
+                <button class="an-more" type="button" [attr.aria-expanded]="showAll()" (click)="showAll.set(!showAll())">{{ showAll() ? 'Minder tonen' : 'Alle ' + rows().length + ' tonen' }}</button>
+              }
             </div>
           }
-        } @else { <p class="container-cost-analysis__empty">Geen containers voor deze selectie.</p> }
-      }
-    </section>
-  `,
-  styles: `
-    .payment-result-analysis {
-      margin: 0 0 18px;
-      padding: 20px;
-      border: 1px solid var(--rose-line);
-      border-radius: 17px;
-      background: linear-gradient(125deg, var(--rose-soft), var(--surface) 72%);
-    }
-    .payment-result-analysis__heading {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 14px;
-    }
-    .payment-result-analysis__heading h3 {
-      margin: 6px 0 0;
-      font-size: 19px;
-      line-height: 1.3;
-    }
-    .payment-result-analysis__heading .cost-state { flex-shrink: 0; }
-    .payment-result-analysis__summary {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 20px 34px;
-      align-items: center;
-      margin-top: 20px;
-    }
-    .payment-result-analysis__amount { display: grid; gap: 8px; }
-    .payment-result-analysis__amount > span { font-size: 12px; color: var(--muted); }
-    .payment-result-analysis__amount > strong {
-      color: var(--rose-dark);
-      font-size: clamp(26px, 3vw, 36px);
-      line-height: 1.15;
-      letter-spacing: -.025em;
-      font-variant-numeric: tabular-nums;
-      overflow-wrap: anywhere;
-    }
-    .payment-result-analysis__amount > strong.higher { color: var(--warn); }
-    .payment-result-analysis__amount > small {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.5;
-    }
-    .payment-result-analysis__comparison,
-    .payment-result-analysis__breakdown { margin: 0; }
-    .payment-result-analysis__comparison > div,
-    .payment-result-analysis__breakdown > div {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 8px 0;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-    .payment-result-analysis__comparison dt,
-    .payment-result-analysis__breakdown dt { min-width: 0; color: var(--muted); }
-    .payment-result-analysis__comparison dd,
-    .payment-result-analysis__breakdown dd {
-      flex-shrink: 0;
-      margin: 0;
-      font-weight: 650;
-      font-variant-numeric: tabular-nums;
-    }
-    .payment-result-analysis__comparison > div:last-child {
-      margin-top: 5px;
-      padding-top: 12px;
-      border-top: 1px solid var(--rose-line);
-    }
-    .payment-result-analysis__comparison > div:last-child dt { color: var(--ink); font-weight: 650; }
-    .payment-result-analysis__comparison > div:last-child dd { font-size: 17px; }
-    .payment-result-analysis__pending {
-      display: grid;
-      gap: 4px;
-      margin: 16px 0 0;
-      padding: 11px 13px;
-      border-radius: 10px;
-      background: var(--warn-soft);
-      color: var(--ink-2);
-      font-size: 11px;
-      line-height: 1.5;
-    }
-    .payment-result-analysis__pending b { color: var(--warn); font-weight: 650; }
-    .payment-result-analysis__details { margin-top: 14px; border-top: 1px solid var(--rose-line); }
-    .payment-result-analysis__details summary {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 44px;
-      gap: 10px;
-      padding: 10px 0;
-      color: var(--rose-dark);
-      font-size: 12px;
-      font-weight: 650;
-      list-style: none;
-      cursor: pointer;
-    }
-    .payment-result-analysis__details summary::-webkit-details-marker { display: none; }
-    .payment-result-analysis__details summary:focus-visible {
-      outline: 2px solid var(--rose);
-      outline-offset: 3px;
-      border-radius: 5px;
-    }
-    .payment-result-analysis__details summary > span { transition: transform .18s ease; }
-    .payment-result-analysis__details[open] summary > span { transform: rotate(180deg); }
-    .payment-result-analysis__details p {
-      margin: 10px 0 0;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.6;
-    }
-    .payment-result-analysis__breakdown { max-width: 540px; }
-    .payment-result-analysis__excluded {
-      display: block;
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.5;
-    }
-    .payment-result-analysis__empty { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
-    @media (max-width: 679px) {
-      .payment-result-analysis { padding: 16px; border-radius: 14px; }
-      .payment-result-analysis__heading { gap: 9px; flex-wrap: wrap; }
-      .payment-result-analysis__heading h3 { font-size: 18px; }
-      .payment-result-analysis__summary { grid-template-columns: minmax(0, 1fr); gap: 17px; margin-top: 17px; }
-      .payment-result-analysis__amount > strong { font-size: 30px; }
-      .payment-result-analysis__comparison { padding-top: 8px; border-top: 1px solid var(--rose-line); }
-      .payment-result-analysis__comparison > div,
-      .payment-result-analysis__breakdown > div { gap: 12px; font-size: 11px; }
-      .payment-result-analysis__comparison > div:last-child dd { font-size: 15px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .payment-result-analysis__details summary > span { transition: none; }
-    }
-    :host{display:block;min-width:0;margin:24px 0}.container-cost-analysis{min-width:0}.container-cost-analysis__heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.eyebrow{font-size:10px;color:var(--rose-dark);font-weight:750;letter-spacing:.08em;text-transform:uppercase}h2{margin:5px 0;font-size:21px}.container-cost-analysis__heading p{max-width:740px;margin:0;font-size:12px;line-height:1.5;color:var(--muted)}.container-cost-analysis__heading>a{flex-shrink:0}
-    .container-cost-analysis__filters{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0}.container-cost-analysis__filters label{display:grid;gap:5px;min-width:0;flex:1}.container-cost-analysis__filters span{font-size:11px;color:var(--muted)}.container-cost-analysis__filters .select,.container-cost-analysis__filters .input{width:100%;min-width:0}
-    .container-cost-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.container-cost-kpis article{display:grid;align-content:start;gap:8px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.container-cost-kpis span{font-size:11px;color:var(--muted)}.container-cost-kpis strong{font-size:23px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.container-cost-kpis small{color:var(--muted);font-size:10px;line-height:1.4}.container-cost-kpis .container-cost-kpis__forecast{background:var(--ink);color:#fff}.container-cost-kpis__forecast span,.container-cost-kpis__forecast small{color:rgb(255 255 255 / 75%)}
-    .container-cost-differences{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 16px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.container-cost-differences>div{display:grid;align-content:start;gap:5px}.container-cost-differences span{font-size:11px}.container-cost-differences b{font-size:16px;font-variant-numeric:tabular-nums}.container-cost-differences small{font-size:10px;color:var(--muted);line-height:1.4}.higher{color:var(--warn)}.lower{color:var(--ok)}
-    .container-cost-table{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}table{width:100%;border-collapse:collapse}th,td{padding:12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line);font-size:12px;font-variant-numeric:tabular-nums}thead th{font-size:10px;color:var(--muted);font-weight:650;background:var(--surface-2)}th:first-child,td:first-child{text-align:left}td:first-child{min-width:150px;max-width:260px;white-space:normal;overflow-wrap:anywhere}td:first-child a{color:var(--rose-dark);font-weight:700;text-decoration:none}td small{display:block;margin-top:3px;font-size:10px;color:var(--muted)}tr:last-child td{border-bottom:0}.selected td{background:var(--rose-soft)}.cost-state{display:inline-block;padding:4px 7px;border-radius:999px;background:var(--warn-soft);color:var(--warn);font-size:10px}.cost-state--final{background:var(--ok-soft);color:var(--ok)}.container-cost-analysis__warning{padding:12px;border-radius:12px;background:var(--warn-soft);font-size:12px;line-height:1.5}.container-cost-analysis__empty{padding:20px;border:1px solid var(--line);border-radius:12px;color:var(--muted);font-size:12px;background:var(--surface)}
-    .container-cost-detail{max-width:820px;margin-top:16px;padding:14px;border:1px solid var(--rose-line);border-radius:16px;background:var(--rose-soft)}.container-cost-detail>header{display:flex;justify-content:space-between;align-items:center;gap:12px}.container-cost-detail>header span,.container-cost-detail>header small{font-size:10px;color:var(--muted)}h3{font-size:17px;margin:4px 0}.container-cost-detail app-purchase-reconciliation{margin-bottom:0}
-    @media(max-width:1050px){.container-cost-kpis,.container-cost-differences{grid-template-columns:repeat(2,minmax(0,1fr))}.container-cost-kpis strong{font-size:21px}}@media(max-width:540px){.container-cost-analysis__heading{flex-direction:column}.container-cost-analysis__filters{display:grid}.container-cost-kpis{gap:7px}.container-cost-kpis article{padding:12px}.container-cost-kpis strong{font-size:18px}.container-cost-differences{gap:14px}.container-cost-detail{padding:8px}.container-cost-detail>header{padding:4px}h2{font-size:19px}}
-    .container-cost-analysis__filters { padding: 13px; gap: 12px; border: 1px solid var(--line); border-radius: 20px; background: color-mix(in srgb, var(--surface) 92%, transparent); }
-    .container-cost-analysis__filters label { flex: 1 1 230px; }
-    .container-cost-analysis__filters span { color: var(--ink-2); font-weight: 650; }
-    .container-cost-analysis__filters :is(.select, .input) { min-height: 44px; border-radius: 13px; }
-    .container-cost-analysis .btn { min-height: 44px; }
-    .container-cost-kpis article { border-radius: 20px; padding: 17px; }
-    .container-cost-kpis span { line-height: 1.4; }
-    .container-cost-kpis strong { letter-spacing: -.025em; }
-    .container-cost-differences { border-radius: 20px; padding: 17px; }
-    .container-cost-differences b { overflow-wrap: anywhere; }
-    .container-cost-table { max-width: 100%; border-radius: 20px; }
-    .container-cost-table__identity a { display: inline-flex; align-items: center; min-height: 44px; }
-    .payment-result-analysis { border-radius: 22px; }
-    .payment-result-analysis__comparison > div, .payment-result-analysis__breakdown > div { flex-wrap: wrap; gap: 4px 14px; }
-    .payment-result-analysis__comparison dt, .payment-result-analysis__breakdown dt { flex: 1 1 150px; }
-    .payment-result-analysis__comparison dd, .payment-result-analysis__breakdown dd { margin-left: auto; max-width: 100%; overflow-wrap: anywhere; }
-    .container-cost-detail { border-radius: 20px; }
-    .container-cost-detail > header > div { min-width: 0; overflow-wrap: anywhere; }
-    :is(a, button, input, select):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
-    @media (max-width: 679px) {
-      :host { margin-top: 18px; }
-      .container-cost-analysis__heading { flex-direction: column; gap: 10px; }
-      .container-cost-analysis__heading h2 { font-size: 21px; line-height: 1.25; }
-      .container-cost-analysis__filters { display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px; gap: 10px; }
-      .container-cost-analysis__filters :is(.select, .input) { font-size: 16px; }
-      .container-cost-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-      .container-cost-kpis article { padding: 14px; border-radius: 18px; }
-      .container-cost-kpis strong { font-size: 20px; }
-      .container-cost-kpis small { font-size: 11px; line-height: 1.5; }
-      .container-cost-differences { padding: 14px; gap: 15px 12px; }
-      .container-cost-differences small { font-size: 11px; }
-      .payment-result-analysis { padding: 17px; border-radius: 20px; }
-      .payment-result-analysis__heading h3 { font-size: 19px; }
-      .payment-result-analysis__comparison > div, .payment-result-analysis__breakdown > div { font-size: 12px; }
-      .container-cost-table { overflow: visible; border: 0; background: transparent; }
-      .container-cost-table table, .container-cost-table tbody { display: block; width: 100%; }
-      .container-cost-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-      .container-cost-table tbody { display: grid; gap: 12px; }
-      .container-cost-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 14px; padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
-      .container-cost-table td { min-width: 0; max-width: none; padding: 0; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
-      .container-cost-table td[data-label]::before { display: block; margin-bottom: 4px; content: attr(data-label); color: var(--muted); font-size: 10px; font-weight: 500; }
-      .container-cost-table .container-cost-table__identity { grid-column: 1 / -1; min-width: 0; max-width: none; padding-right: 0; }
-      .container-cost-table__identity a { min-height: 44px; font-size: 16px; }
-      .container-cost-table__identity small { display: inline; margin-right: 8px; }
-      .container-cost-table .container-cost-table__status { grid-column: 1 / -1; margin-top: -5px; }
-      .container-cost-table .cost-state { padding: 5px 9px; }
-      .container-cost-table tr.selected { border-color: var(--rose-line); background: var(--rose-soft); }
-      .container-cost-table tr.selected td { background: transparent; }
-      .container-cost-table .container-cost-table__actions { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid var(--line); }
-      .container-cost-table__actions .btn { width: 100%; justify-content: center; border-radius: 13px; }
-      .container-cost-detail { padding: 12px; }
+        </section>
+        @if (desk.active() && expanded(); as row) {
+          <section class="an-card cc-detail" aria-labelledby="cc-detail-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="cc-detail-title">{{ name(row) }}</h2><span class="an-card__sub">{{ row.view.order.number }} · afrekening &amp; PDF</span>
+              <span class="an-card__trail"><button class="wk-btn wk-btn--sm" type="button" (click)="expandedId.set(null)">Sluiten</button></span></header>
+            <div class="an-card__body an-card__pad"><app-purchase-reconciliation [data]="row.reconciliation" [orderId]="row.view.order.id" [orderNumber]="row.view.order.number" /></div>
+          </section>
+        }
+      } @else { <p class="an-empty an-empty--card">Geen containers voor deze selectie.</p> }
     }
 
+    <ng-template #unitCell let-row>
+      @let mix = unitMix(row.reconciliation);
+      @if (mix.uniform) {
+        <!-- One product in its own unit: a display product per display with its piece price beside it, never 'per stuk' for a display. -->
+        @let unit = unitOf(row.reconciliation.totals);
+        @if (unit.unitEur === null) { — } @else { {{ unit.unitEur | eur: 4 }} per {{ unit.unit }} }@if (unit.pieceEur !== null) { <small>{{ unit.pieceEur | eur: 4 }} per stuk</small> }<small>{{ unit.quantity | num }} {{ unit.usable ? 'bruikbare' : 'bestelde' }} {{ unit.plural }}</small>
+      } @else {
+        <!-- Several products: their range per unit, never an average over them. -->
+        {{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small>
+      }
+    </ng-template>
+
+    <!-- Phone: every figure of a container in one sheet (critique B1). -->
+    @if (sheetRow(); as row) {
+      <app-sheet [title]="name(row)" variant="ios" (closed)="sheetId.set(null)">
+        <div body class="cc-sheet">
+          <div class="ios-group">
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Status</span></span>
+              <span class="ios-cell__value">{{ orderStatus(row.view.order.status) }} · {{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Afspraak</span></span><span class="ios-cell__value">{{ row.reconciliation.totals.plannedExternalEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald</span></span><span class="ios-cell__value">{{ row.reconciliation.totals.paidEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Open</span></span><span class="ios-cell__value">{{ row.reconciliation.totals.remainingEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Verwachte kost</span></span><span class="ios-cell__value ios-cell__value--strong">{{ row.reconciliation.totals.forecastExternalEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Verschil</span></span>
+              <span class="ios-cell__value" [class.is-warn]="row.reconciliation.totals.varianceEur > 0" [class.is-ok]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalresultaat</span>
+              <span class="ios-cell__sub">@if (row.paymentResult; as result) { {{ result.eligible ? (result.finalized ? 'Afgerekend' : 'Tussenstand') : 'Niet meegeteld' }} } @else { Niet beschikbaar }</span></span>
+              <span class="ios-cell__value">@if (row.paymentResult?.eligible) { {{ row.paymentResult!.netResultEur | eur: 2 }} } @else { — }</span></div>
+            <div class="ios-cell cc-unit"><span class="ios-cell__body"><span class="ios-cell__title">Per eenheid</span></span>
+              <span class="ios-cell__value"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></span></div>
+          </div>
+          <div class="ios-section cc-sheet__recon">
+            <div class="ios-section__head"><h3 class="ios-section__title">Afrekening &amp; PDF</h3></div>
+            <app-purchase-reconciliation [data]="row.reconciliation" [orderId]="row.view.order.id" [orderNumber]="row.view.order.number" />
+          </div>
+          <a class="ios-capsule ios-capsule--accent ios-capsule--block" [routerLink]="['/purchasing', row.view.order.id]" (click)="sheetId.set(null)">Inkooporder openen</a>
+        </div>
+      </app-sheet>
+    }
   `,
 })
 export class ContainerCostAnalysis {
+  readonly desk = inject(DesktopViewport);
+  readonly plural = plural;
+  readonly filters: readonly { id: ContainerCostFilter; label: string }[] = [
+    { id: 'active', label: 'Actieve containers' }, { id: 'all', label: 'Alle containers · ook concepten' },
+    { id: 'open', label: 'Nog niet volledig afgerekend' }, { id: 'finalized', label: 'Volledig afgerekend' },
+    { id: 'higher', label: 'Duurder dan afgesproken' }, { id: 'lower', label: 'Goedkoper dan afgesproken' },
+  ];
   readonly purchases = input.required<PurchaseOrderView[]>();
   readonly loading = input(false);
   readonly filter = signal<ContainerCostFilter>('active');
@@ -341,6 +245,13 @@ export class ContainerCostAnalysis {
   readonly totals = computed(() => containerCostTotals(this.rows()));
   readonly paymentTotals = computed(() => containerPaymentResultTotals(this.rows()));
   readonly expanded = computed(() => this.rows().find((row) => row.view.order.id === this.expandedId()) ?? null);
+  /** The phone shows five containers, the rest behind "Alle n tonen" (design §2.3). */
+  readonly showAll = signal(false);
+  readonly phoneRows = computed(() => this.showAll() ? this.rows() : this.rows().slice(0, 5));
+  /** The container whose sheet is open on the phone. */
+  readonly sheetId = signal<number | null>(null);
+  readonly sheetRow = computed(() => this.rows().find((row) => row.view.order.id === this.sheetId()) ?? null);
+  name(row: { view: PurchaseOrderView }): string { return containerName(row.view.order); }
   readonly unavailable = computed(() => this.purchases().filter((row) => !row.reconciliation).length);
   toggle(id: number): void { this.expandedId.update((current) => current === id ? null : id); }
   /** One product keeps the container's own figure in its unit (unitOf); several get their range, never an average. */

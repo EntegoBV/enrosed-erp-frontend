@@ -1,3 +1,6 @@
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Segmented } from '../../shared/segmented';
+import type { SegmentOption } from '../../shared/segmented';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { messageOf } from '../../core/api/errors';
@@ -8,9 +11,11 @@ import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { Sheet, Ui } from '../../shared/ui';
+import { dayMonth } from './analyses-words';
 import {
   DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, changeOverMonths, crossOf, freightNarrative, fxInsight,
   invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, weeklyRows, windowOf,
+  quoteVsMarketPct,
 } from './market-math';
 
 type PairId = 'usd' | 'cny' | 'cross';
@@ -100,20 +105,22 @@ const STORAGE_KEY = 'enrosed.market';
 @Component({
   selector: 'app-market-analysis',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NumPipe, Sheet, Icon, TrendChart],
+  imports: [FormsModule, NumPipe, Segmented, Sheet, Icon, TrendChart],
   template: `
     <div class="mk" [attr.aria-busy]="loading() || saving()">
-      <div class="mk-toolbar">
-        <div class="mk-seg" role="group" aria-label="Periode van de grafieken en vergelijkingen">
-          <span class="mk-seg__label">Periode</span>
-          @for (option of monthOptions; track option.months) {
-            <button type="button" [class.is-on]="months() === option.months"
-                    [attr.aria-pressed]="months() === option.months" (click)="setMonths(option.months)">{{ option.label }}</button>
-          }
-        </div>
-        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
-          {{ loading() ? 'Laden…' : 'Vernieuwen' }}
-        </button>
+      <!-- The tab's tool row (critique N10): one period for every chart, the source, the one writing action. Vernieuwen is the page's. -->
+      <div class="an-bar">
+        @if (desk.active()) {
+          <app-segmented label="Periode van de grafieken en vergelijkingen" [options]="periodOptions" [value]="'' + months()" (changed)="setMonths($any(+$event))" />
+          <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ dayText(rates.asOf) }} }</span>
+          <div class="an-bar__end"><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
+        } @else {
+          <!-- Phone: the capsule and sheet of the Kasprognose horizon (design §3.7). -->
+          <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                  [attr.aria-label]="'Periode: ' + monthsWord(months())" (click)="periodSheet.set(true)">
+            <app-icon name="calendar" [size]="15" />{{ monthsWord(months()) }}<app-icon name="chevron-down" [size]="14" /></button>
+          @if (fx.series(); as rates) { <span class="an-bar__text">ECB · bijgewerkt {{ dayText(rates.asOf) }}</span> }
+        }
       </div>
 
       @if (loadError()) {
@@ -123,12 +130,10 @@ const STORAGE_KEY = 'enrosed.market';
       <!-- ── Currency ─────────────────────────────────────────────── -->
       <section class="mk-card" aria-labelledby="mk-fx-title">
         <header class="mk-card__head">
+          <!-- The an-card head (design §3.7): title and sub, no eyebrow; "bijgewerkt" lives in the tool row only. -->
           <div>
-            <span class="mk-eyebrow">Wisselkoersen</span>
             <h2 id="mk-fx-title">Valuta</h2>
-            <p>ECB-referentiekoersen zonder bankopslag
-              @if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }
-              · tik op een paar om de richting om te keren</p>
+            <p>ECB-referentiekoersen zonder bankopslag · tik op een paar om de richting om te keren</p>
           </div>
         </header>
 
@@ -163,9 +168,9 @@ const STORAGE_KEY = 'enrosed.market';
                     <div><dt>Laag</dt><dd>{{ summary.min | num: 4 }}<small>{{ shortDate(summary.minOn) }}</small></dd></div>
                   </dl>
                 }
-                <div class="mk-horizons" aria-label="Verandering per periode">
+                <div class="mk-horizons mk-fig" role="group" aria-label="Verandering per periode">
                   @for (horizon of pair.horizons; track horizon.months) {
-                    <button type="button" [class.is-on]="months() === horizon.months" (click)="setMonths(horizon.months)">
+                    <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" (click)="setMonths(horizon.months)">
                       <span>{{ horizon.label }}</span>
                       @if (horizon.pct !== null) {
                         <b [class]="'tone-' + horizon.tone">{{ horizon.pct >= 0 ? '+' : '' }}{{ horizon.pct | num: 1 }}%</b>
@@ -187,7 +192,7 @@ const STORAGE_KEY = 'enrosed.market';
               <ul>
                 @for (line of insight.lines; track line) { <li>{{ line }}</li> }
               </ul>
-              <div class="fx-insight__grid" role="group" aria-label="Koopkracht per periode">
+              <div class="fx-insight__grid mk-fig mk-fig--lg" role="group" aria-label="Koopkracht per periode">
                 @for (horizon of insight.horizons; track horizon.months) {
                   <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" [disabled]="horizon.pct === null"
                           (click)="setMonths(horizon.months)">
@@ -230,11 +235,10 @@ const STORAGE_KEY = 'enrosed.market';
       <section class="mk-card" aria-labelledby="mk-freight-title">
         <header class="mk-card__head">
           <div>
-            <span class="mk-eyebrow">Containervracht</span>
             <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
             <p>Wat wij betalen, wat de markt betaalt en welke kant het op gaat · tik op een tegel voor het verloop en de uitleg</p>
           </div>
-          <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">Tarief toevoegen</button>
+          @if (!desk.active()) { <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="openAdd()"><app-icon name="plus" [size]="14" />Tarief toevoegen</button> }
         </header>
 
         @for (group of freightGroups; track group.id) {
@@ -244,6 +248,10 @@ const STORAGE_KEY = 'enrosed.market';
               <i class="mk-chip mk-chip--unit">{{ group.unit }}</i>
               <small>{{ group.hint }}</small>
             </div>
+            @if (group.id === 'own' && quoteVsMarket(); as q) {
+              <p class="fr-vs">Onze laatste offerte ({{ q.route }}, {{ shortDate(q.quotedOn) }}): $ {{ q.ownUsd | num: 0 }} · {{ q.benchmark }} $ {{ q.marketUsd | num: 0 }} ·
+                <b [class.is-warn]="q.pct > 0" [class.is-ok]="q.pct < 0">{{ q.pct > 0 ? '+ ' : q.pct < 0 ? '− ' : '' }}{{ abs(q.pct) | num: 0 }} %</b></p>
+            }
             <div class="fr-tiles" role="group" [attr.aria-label]="group.title">
               @for (tile of tilesFor(group.id); track tile.code) {
                 <button class="fr-tile" type="button" [class.is-on]="selected() === tile.code"
@@ -339,8 +347,8 @@ const STORAGE_KEY = 'enrosed.market';
                   @if (source.latestPublishedOn) { <span>publicatie {{ shortDate(source.latestPublishedOn) }}</span> }
                   @if (source.lastCheckedAt) { <span>gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
                   <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">Bron ↗</a>
-                  <button class="linklike" type="button" [disabled]="refreshingSource() === source.code"
-                          (click)="refreshSource(source.code)">
+                  <button class="btn btn--sm" type="button" [disabled]="refreshingSource() === source.code"
+                          (click)="refreshSource(source.code)"><app-icon name="refresh" [size]="14" />
                     {{ refreshingSource() === source.code ? 'Bron ophalen…' : 'Bron nu ophalen' }}</button>
                 </div>
                 @if (sourceNeedsAttention(source)) { <p class="fr-source__detail">{{ sourceGuidance(source) }}</p> }
@@ -360,7 +368,7 @@ const STORAGE_KEY = 'enrosed.market';
                           <td class="num" [attr.data-label]="d.definition.unit === 'usd' ? 'USD / 40ft' : 'Punten'">{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ row.rate.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</td>
                           <td class="num" data-label="Verschil">@if (row.stepPct !== null) { <b [class]="'tone-' + freightTone(row.stepPct)">{{ row.stepPct > 0 ? '+' : '' }}{{ row.stepPct | num: 1 }}%</b> } @else { <span class="tone-neutral">—</span> }</td>
                           @if (d.definition.group === 'own') {
-                            <td class="num mk-table__action"><button class="linklike" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
+                            <td class="num mk-table__action"><button class="btn btn--sm btn--danger" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
                           }
                         </tr>
                       }
@@ -408,7 +416,7 @@ const STORAGE_KEY = 'enrosed.market';
                 @for (rate of recent; track rate.id ?? rate.quotedOn) {
                   <div class="sheet-recent__row">
                     <b>$ {{ rate.usdPerContainer | num: 0 }}</b><span>{{ shortDate(rate.quotedOn) }}</span>
-                    <button class="linklike" type="button" [disabled]="deletingId() === rate.id" (click)="remove(rate)">Verwijderen</button>
+                    <button class="btn btn--sm btn--danger" type="button" [disabled]="deletingId() === rate.id" (click)="remove(rate)">Verwijderen</button>
                   </div>
                 }
               </div>
@@ -423,18 +431,29 @@ const STORAGE_KEY = 'enrosed.market';
         </div>
       </app-sheet>
     }
+
+    @if (periodSheet()) {
+      <app-sheet title="Periode" variant="ios" (closed)="periodSheet.set(false)">
+        <div body>
+          <div class="ios-group" role="radiogroup" aria-label="Periode van de grafieken en vergelijkingen">
+            @for (option of monthOptions; track option.months) {
+              <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="months() === option.months" (click)="pickMonths(option.months)">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ monthsWord(option.months) }}</span></span>
+                @if (months() === option.months) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+              </button>
+            }
+          </div>
+          <p class="ios-section__foot">Geldt voor elke grafiek en vergelijking op dit scherm. Dit toestel onthoudt de keuze.</p>
+        </div>
+      </app-sheet>
+    }
   `,
   styles: `
     :host{display:block}.mk{display:grid;gap:18px}
-    .mk-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
-    .mk-seg{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--surface)}
-    .mk-seg__label{padding:0 8px 0 10px;color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
-    .mk-seg button{padding:6px 12px;border:0;border-radius:99px;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer}
-    .mk-seg button:hover{color:var(--ink)}.mk-seg button.is-on{background:var(--rose-soft);color:var(--rose-dark)}
     .mk-warning{padding:9px 12px;border:1px solid #eddcb9;border-radius:10px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
-    .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh-1)}
-    .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:16px 18px 14px;border-bottom:1px solid var(--line)}
-    .mk-card__head h2{margin:2px 0 0;font-size:18px}.mk-card__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20 / 4%)}
+    .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+    .mk-card__head h2{margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em}.mk-card__head p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
     .mk-eyebrow{display:block;color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
     .mk-badge{display:inline-block;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:750;white-space:nowrap}
     .mk-badge--ok{background:var(--ok-soft);color:var(--ok)}.mk-badge--warn{background:var(--warn-soft);color:var(--warn)}.mk-badge--lg{padding:5px 11px;font-size:12px}
@@ -454,19 +473,11 @@ const STORAGE_KEY = 'enrosed.market';
     .fx-pair__range{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:10px 0 0;border-top:1px solid var(--line)}
     .fx-pair__range div{display:grid;gap:1px;min-width:0}.fx-pair__range dt{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
     .fx-pair__range dd{display:grid;margin:0;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}.fx-pair__range small{color:var(--muted);font-size:10px;font-weight:500}
-    .mk-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-    .mk-horizons button{display:grid;gap:2px;padding:7px 4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
-    .mk-horizons button:hover{border-color:var(--rose-line)}.mk-horizons button.is-on{border-color:var(--rose);background:var(--rose-soft)}
-    .mk-horizons span{color:var(--muted);font-size:10px;font-weight:700}.mk-horizons b{font-size:12px;font-variant-numeric:tabular-nums}
     /* buying power */
     .fx-insight{display:grid;gap:10px;padding:16px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
     .fx-insight header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.fx-insight h3{margin:2px 0 0;font-size:15px}
     .fx-insight__lead{margin:0;font-size:13.5px;font-weight:600;line-height:1.45}
     .fx-insight ul{display:grid;gap:6px;margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.5}
-    .fx-insight__grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px}
-    .fx-insight__grid button{display:grid;gap:1px;padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
-    .fx-insight__grid button:disabled{cursor:default;opacity:.6}.fx-insight__grid button.is-on{border-color:var(--rose);box-shadow:0 0 0 1px var(--rose)}
-    .fx-insight__grid span{color:var(--muted);font-size:10px;font-weight:700}.fx-insight__grid b{font-size:15px;font-variant-numeric:tabular-nums}.fx-insight__grid small{color:var(--muted);font-size:10px}
     /* tables */
     .mk-table{border-top:1px solid var(--line)}.mk-table summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;font-size:12px;font-weight:750;cursor:pointer}
     .mk-table summary span{color:var(--muted);font-size:10.5px;font-weight:500}
@@ -479,7 +490,6 @@ const STORAGE_KEY = 'enrosed.market';
     .mk-chip--unit{background:var(--surface-2);color:var(--ink-2);font-variant-numeric:tabular-nums}
     .fr-tile__source{color:var(--muted);font-size:10.5px;line-height:1.3}
     .fr-detail__what{margin:4px 0 2px;color:var(--ink-2);font-size:12.5px;line-height:1.45}
-    .fr-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),224px));gap:8px}
     .fr-tile{display:grid;gap:3px;min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
     .fr-tile:hover{border-color:var(--rose-line)}.fr-tile.is-on{border-color:var(--rose);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose)}
     .fr-tile__name{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--ink-2);font-size:11.5px;font-weight:700}
@@ -508,24 +518,15 @@ const STORAGE_KEY = 'enrosed.market';
     .market-sheet-foot{display:flex;width:100%;justify-content:flex-end;gap:8px}
     @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
     @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
-      .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
-      .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}.fr-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons{grid-template-columns:repeat(2,1fr)}
+      .fx-pair__now strong{font-size:26px}}
     :host, .mk { min-width: 0; }
-    .mk-toolbar { gap: 10px; }
-    .mk-seg { min-width: 0; padding: 4px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%); }
-    .mk-seg button { flex: none; min-height: 44px; min-width: 44px; border-radius: 14px; }
-    .mk-seg button.is-on { background: var(--surface); color: var(--rose-dark); box-shadow: 0 2px 7px rgb(25 35 30 / 10%); }
-    .mk-card { border-radius: 22px; box-shadow: 0 3px 12px rgb(25 35 30 / 3%); }
-    .mk-card__head { padding: 19px 20px; gap: 12px; }
-    .mk-card__head h2 { font-size: 20px; line-height: 1.3; }
     .mk-card__head p { line-height: 1.5; }
     .mk-eyebrow { font-size: 10px; }
     .mk .btn, .mk .linklike, .mk-table summary, .fr-reference, .sheet-recent__row .linklike { min-height: 44px; }
     .fx-pair { padding: 20px; gap: 12px; }
     .fx-pair__flip { min-height: 44px; border-radius: 15px; }
     .fx-pair__now strong { font-size: 32px; font-variant-numeric: tabular-nums; }
-    .mk-horizons button { min-height: 50px; border-radius: 13px; }
-    .fx-insight__grid button { min-height: 68px; border-radius: 15px; }
     .fr-tile { padding: 14px; border-radius: 17px; }
     .fr-tile strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     .fr-horizon { min-width: 0; border-radius: 15px; }
@@ -540,19 +541,13 @@ const STORAGE_KEY = 'enrosed.market';
     :is(button, summary, a):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
     @media (max-width: 679px) {
       .mk { gap: 14px; }
-      .mk-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-      .mk-toolbar .btn { order: 0; margin: 0; padding-inline: 11px; }
-      .mk-seg { overflow-x: auto; border-radius: 17px; scrollbar-width: none; }
-      .mk-seg__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-      .mk-seg button { flex: 1 0 auto; padding-inline: 10px; font-size: 11px; }
       .mk-card__head, .fx-pair, .fx-insight, .fr-detail { padding: 16px; }
-      .mk-card__head h2 { font-size: 18px; }
+      .mk-card { border-radius: 22px; }
       .fx-grid { padding: 0 12px; }
       .fx-pair { margin-block: 10px; border: 1px solid var(--line); border-radius: 18px; }
       .fx-pair + .fx-pair { border-left: 1px solid var(--line); }
       .fx-pair__now strong { font-size: 29px; }
       .fr-group { padding-inline: 14px; }
-      .fr-tiles { gap: 8px; }
       .fr-tile { padding: 12px; }
       .fr-detail__head > div { min-width: 0; }
       .fr-detail__now { justify-items: start; text-align: left; }
@@ -579,8 +574,14 @@ export class MarketAnalysis {
   readonly fx = inject(Fx);
 
   readonly monthOptions = MONTH_OPTIONS;
+  readonly desk = inject(DesktopViewport);
+  readonly periodOptions: SegmentOption[] = MONTH_OPTIONS.map((option) => ({ id: String(option.months), label: option.label }));
+  /** The phone's Periode sheet (the capsule in the tool row). */
+  readonly periodSheet = signal(false);
   readonly periodWords = periodWords;
   readonly shortDate = shortDate;
+  /** The tool row's "bijgewerkt 16 okt" in the area's date words (the year only when it is not this year). */
+  dayText(day: string): string { return dayMonth(day.slice(0, 10), String(new Date().getFullYear())) || shortDate(day); }
   readonly historyLimit = 8;
   readonly freightGroups = [
     { id: 'own' as const, title: 'Wat wij betalen', unit: 'USD per 40ft',
@@ -757,6 +758,18 @@ export class MarketAnalysis {
     return withTrend('own')?.code ?? withTrend('usd')?.code ?? withTrend()?.code ?? FREIGHT[0].code;
   }
 
+  /** Our latest quote against the latest market price in USD (design §3.7): "+ 36 %". */
+  readonly quoteVsMarket = computed(() => {
+    const latest = (group: FreightDefinition['group']) => this.tiles().filter((tile) => tile.group === group && tile.latest)
+      .sort((left, right) => right.latest!.quotedOn.localeCompare(left.latest!.quotedOn))[0] ?? null;
+    const own = latest('own');
+    const market = latest('usd');
+    if (!own?.latest || !market?.latest) return null;
+    const pct = quoteVsMarketPct(own.latest.usdPerContainer, market.latest.usdPerContainer);
+    return pct === null ? null : { route: own.short, quotedOn: own.latest.quotedOn, ownUsd: own.latest.usdPerContainer, benchmark: market.short,
+      marketUsd: market.latest.usdPerContainer, pct };
+  });
+
   tilesFor(group: FreightDefinition['group']) {
     return this.tiles().filter((tile) => tile.group === group);
   }
@@ -769,6 +782,17 @@ export class MarketAnalysis {
   setMonths(months: Months): void {
     this.months.set(months);
     this.storePreferences();
+  }
+
+  /** A choice in the phone's Periode sheet: apply and close. */
+  pickMonths(months: Months): void {
+    this.setMonths(months);
+    this.periodSheet.set(false);
+  }
+
+  /** "1 maand", "6 maanden": the capsule and the sheet rows. */
+  monthsWord(months: Months): string {
+    return months === 1 ? '1 maand' : `${months} maanden`;
   }
 
   flip(id: PairId): void {

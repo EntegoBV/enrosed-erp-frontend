@@ -14,7 +14,7 @@ import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
 import {
   adjusted, amountText, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, parseAmount, phoneKrapBanner,
-  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, suggestionText, underBuffer,
+  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, standardMarkupNote, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, RuleSwitch } from './cash-view';
 
@@ -35,8 +35,12 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
   imports: [CashChart, CashDefaults, CashMonths, CashPoSheet, Icon, IosNav, NgTemplateOutlet, RouterLink, Sheet],
   template: `
     <div class="ios-page cf-phone">
-      <app-ios-nav title="Kasprognose" subtitle="Banksaldo vandaag en wat er komt" backLabel="Meer" backUrl="/more">
+      <app-ios-nav title="Kasprognose" subtitle="Banksaldo vandaag en wat er komt" [backLabel]="backLabel()" [backAriaLabel]="backAriaLabel()" (back)="back.emit()">
         <div trail class="ios-glass-group">
+          <button class="ios-circle an-bell" type="button" [attr.aria-label]="bellLabel()" (click)="bell.emit()">
+            <app-icon name="bell" [size]="20" />
+            @if (bellCount()) { <span class="an-badge" aria-hidden="true">{{ bellCount() > 9 ? '9+' : bellCount() }}</span> }
+          </button>
           <button class="ios-circle" type="button" aria-label="Link kopiëren" (click)="state.copyLink()"><app-icon name="share" [size]="19" /></button>
           <button class="ios-circle" type="button" aria-label="Meer acties" (click)="sheet.set('menu')"><app-icon name="more" [size]="20" /></button>
         </div>
@@ -316,6 +320,14 @@ export class CashPhone {
   /** The eight Analyses tabs as chips (the page passes its list, so the labels stay one). */
   readonly tabs = input<readonly { id: string; label: string }[]>([]);
   readonly pageWarnings = input<string[]>([]);
+  /** The page's origin (critique B8): "Meer" by default, the screen he came from otherwise; '' is a chevron circle. */
+  readonly backLabel = input<string>('Meer');
+  readonly backAriaLabel = input('Terug naar Meer');
+  readonly back = output<void>();
+  /** The bell proxy (critique B7): the page hosts the bell itself, outside the sticky nav. */
+  readonly bellCount = input(0);
+  readonly bellLabel = input('Meldingen');
+  readonly bell = output<void>();
   /** "Vernieuwen": the page reloads its own data and the bank's. */
   readonly refreshed = output<void>();
 
@@ -411,7 +423,8 @@ export class CashPhone {
   readonly daysText = computed(() => `${this.location().paymentDays ?? this.history()?.paymentDays ?? 30} dagen`);
   readonly choiceFoot = computed(() => {
     const basis = this.location().costBasis === 'PRICING' ? 'kost met Enrosed-kost' : 'externe kost';
-    return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}. Verandert niets aan orders of betalingen.`;
+    const note = this.location().markupPct === null ? standardMarkupNote(this.history()?.realisedMarkupPct ?? null, this.history()?.realisedSample) : '';
+    return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}${note ? ` · ${note}` : ''}. Verandert niets aan orders of betalingen.`;
   });
 
   readonly howLines = [

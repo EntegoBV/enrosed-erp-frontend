@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input } from '@an
 import type { CostBasis, PriceMode } from '../../core/api/models';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { CashState } from './cash-state';
-import { marginOfMarkup, pct } from './cash-view';
+import { marginOfMarkup, pct, realisedHint, standardMarkupNote } from './cash-view';
 
 const PRICE_OPTIONS: SegmentOption[] = [
   { id: 'MARKUP_PCT', label: 'Opslag' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijstprijs' }, { id: 'HISTORIC', label: 'Historisch' },
@@ -43,7 +43,7 @@ const DAY_CHOICES = [14, 30, 45, 60];
               <button type="button" aria-label="5 % meer" [disabled]="markup() >= 1000" (click)="stepMarkup(5)">+</button>
             </span>
           </div>
-          <p class="cf-ctl__hint">= marge {{ marginText() }}@if (realised() !== null) { · 12 mnd: {{ pctText(realised()!) }} % }
+          <p class="cf-ctl__hint">= marge {{ marginText() }}@if (realisedText()) { · {{ realisedText() }} }@if (standardNote() && location().markupPct === null) { · {{ standardNote() }} }
             @if (priceMode() !== 'MARKUP_PCT') { · voor producten zonder {{ priceMode() === 'LIST' ? 'lijstprijs' : 'factuurprijs' }} }</p>
         }
         <div class="cf-ctl">
@@ -82,9 +82,12 @@ export class CashDefaults {
   readonly basisOptions = BASIS_OPTIONS;
   readonly pctText = pct;
 
-  private readonly location = this.state.location;
+  readonly location = this.state.location;
   private readonly history = computed(() => this.state.input()?.history ?? null);
   readonly realised = computed(() => this.history()?.realisedMarkupPct ?? null);
+  /* The raw 12-month markup stays visible with its basis, even when too thin to be the default (critique B4). */
+  readonly realisedText = computed(() => realisedHint(this.realised(), this.history()?.realisedSample));
+  readonly standardNote = computed(() => standardMarkupNote(this.realised(), this.history()?.realisedSample));
   readonly seasonAvailable = computed(() => !!this.history()?.seasonal);
 
   readonly priceMode = computed<PriceMode>(() => this.location().priceMode ?? 'MARKUP_PCT');

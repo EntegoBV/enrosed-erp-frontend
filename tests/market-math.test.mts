@@ -149,3 +149,12 @@ test('fx insight averages dollar and yuan and reads the verdict from the selecte
   const short = fxInsight({ dates: dates.slice(-5), usd: usd.slice(-5), cny: cny.slice(-5) }, 1);
   assert.equal(short?.verdict, 'Onvoldoende historiek');
 });
+
+test('our latest quote against the market: + 36 % above, − below, nothing without a market price', async () => {
+  const { quoteVsMarketPct } = await import('../src/app/features/analyses/market-math.ts');
+  assert.equal(quoteVsMarketPct(4800, 3522), 36.3);
+  assert.equal(quoteVsMarketPct(3000, 3522), -14.8);
+  assert.equal(quoteVsMarketPct(3522, 3522), 0);
+  assert.equal(quoteVsMarketPct(4800, 0), null);
+  assert.equal(quoteVsMarketPct(Number.NaN, 3522), null);
+});

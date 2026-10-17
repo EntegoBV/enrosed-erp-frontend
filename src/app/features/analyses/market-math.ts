@@ -443,3 +443,13 @@ export function freightNarrative(entries: DatedSeries, unit: 'usd' | 'points'): 
   }
   return lines;
 }
+
+/**
+ * Our latest freight quote against the latest market price in the same unit
+ * (USD per 40ft): "+ 36 %" means we pay 36 % above the market. Null without
+ * a positive market price or a finite quote.
+ */
+export function quoteVsMarketPct(ownUsd: number, marketUsd: number): number | null {
+  if (!Number.isFinite(ownUsd) || !Number.isFinite(marketUsd) || marketUsd <= 0) return null;
+  return Math.round(((ownUsd - marketUsd) / marketUsd) * 1000) / 10;
+}

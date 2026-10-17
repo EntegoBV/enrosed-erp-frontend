@@ -394,3 +394,30 @@ test('forecastStartEur: the forecast\'s own start, without building it (the home
   assert.equal(forecastStartEur(all), 37665.27);
   assert.equal(forecastStartEur(all), buildCashForecast(cashForecastInput(all), options).startEur);
 });
+
+test('the realised markup is the scenario default only on a fair sample; the raw figure stays (Analyses critique B4)', () => {
+  const full = cashForecastInput(sources());
+  assert.ok(full.history.realisedSample, 'the sample is exported');
+  assert.equal(full.history.realisedSample!.invoices, 7, 'regular invoices of the last year; partner advances and credit notes are no sample');
+  assert.ok(full.history.realisedSample!.revenueEur >= 10000);
+  assert.equal(full.history.realisedMarkupPct, full.history.realisedSample!.markupPct, 'a fair sample is the default');
+  assert.notEqual(full.history.realisedMarkupPct, null);
+  const one = salesOrders().filter((view) => view.order.id === 410);
+  const thin = cashForecastInput(sources({ salesOrders: one }));
+  assert.equal(thin.history.realisedMarkupPct, null, 'one invoice: the default falls back to 50 %');
+  assert.equal(thin.history.realisedSample!.invoices, 1);
+  assert.equal(thin.history.realisedSample!.revenueEur, 5401.43);
+  assert.notEqual(thin.history.realisedSample!.markupPct, null, 'the raw 12-month figure is still there to show');
+  const three = salesOrders().filter((view) => [300, 401, 402].includes(view.order.id));
+  assert.equal(cashForecastInput(sources({ salesOrders: three })).history.realisedMarkupPct, null, 'three invoices but under € 10.000: still thin');
+  const concept = sale({ id: 901, number: 'F2026-0901', customerId: 1, orderDate: '2026-09-15', total: 9000, status: 'CONCEPT' });
+  const cancelled = sale({ id: 902, number: 'F2026-0902', customerId: 1, orderDate: '2026-09-16', total: 9000, status: 'GEANNULEERD' });
+  const notIssued = cashForecastInput(sources({ salesOrders: [...one, concept, cancelled] })).history;
+  assert.equal(notIssued.realisedSample!.invoices, 1, 'a concept or cancelled invoice is no sample');
+  assert.equal(notIssued.realisedSample!.revenueEur, 5401.43);
+  assert.equal(notIssued.realisedMarkupPct, null);
+  const big = sale({ id: 903, number: 'F2026-0903', customerId: 1, orderDate: '2026-09-17', total: 20000 });
+  const single = cashForecastInput(sources({ salesOrders: [big, concept, cancelled] })).history;
+  assert.equal(single.realisedSample!.invoices, 1, 'one issued € 20.000 invoice is still one invoice');
+  assert.equal(single.realisedMarkupPct, null, 'the guard does not pass on a single real invoice');
+});

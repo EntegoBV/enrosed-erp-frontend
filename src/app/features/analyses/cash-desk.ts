@@ -12,8 +12,9 @@ import { CashDefaults } from './cash-defaults';
 import { CashMonths } from './cash-months';
 import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
+import { AnHow, HOW_TEXTS } from './analyses-how';
 import {
-  RegisterFilter, adjusted, amountText, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummaryParts, itemLink, kpiCards,
+  RegisterFilter, adjusted, amountText, bankTextShort, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummaryParts, itemLink, kpiCards,
   krapBanner, lineLink, monthStrip, parseAmount, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, RuleSwitch } from './cash-view';
@@ -37,15 +38,11 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 @Component({
   selector: 'app-cash-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CashChart, CashDefaults, CashMonths, CashPoSheet, Icon, RouterLink, Segmented],
+  imports: [AnHow, CashChart, CashDefaults, CashMonths, CashPoSheet, Icon, RouterLink, Segmented],
   host: { class: 'cf' },
   template: `
-    <header class="cf-head">
-      <div class="cf-head__copy">
-        <span class="cf-eyebrow">Kas &amp; bank</span>
-        <h2 id="cf-title">Wat er op de rekening staat, vandaag en de komende maanden</h2>
-        <p>Vertrekt van het berekende banksaldo en zet elke verwachte betaling en ontvangst op zijn dag.</p>
-      </div>
+    <!-- The tool row (design §3.1): the old eyebrow, heading and paragraph went to "Hoe gerekend". -->
+    <header class="cf-head an-bar">
       <div class="cf-head__tools">
         <app-segmented label="Horizon" [options]="horizons" [value]="'' + location().horizon" (changed)="setHorizon($event)" />
         <div class="wk-popover-anchor">
@@ -66,6 +63,9 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
             </form>
           }
         </div>
+      </div>
+      <div class="an-bar__end">
+        <app-an-how [lines]="howLines" />
         <button class="wk-btn" type="button" (click)="state.copyLink()"><app-icon name="share" [size]="15" />Link kopiëren</button>
       </div>
     </header>
@@ -99,12 +99,12 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 
       <div class="cf-kpis">
         @for (card of kpis(); track card.id) {
-          <article class="cf-kpi" [class.cf-kpi--dark]="card.id === 'scenario'" [attr.data-kpi]="card.id">
+          <article class="cf-kpi" [attr.data-kpi]="card.id">
             @if (card.id === 'bank') {
               <a class="cf-kpi__link" routerLink="/costs" aria-label="Op de bank vandaag, naar Kosten & bank"></a>
             }
             <span class="cf-kpi__label">{{ card.label }}</span>
-            <strong class="cf-kpi__value" [attr.data-tone]="card.valueTone">{{ card.value }}</strong>
+            <strong class="cf-kpi__value" [attr.data-tone]="card.valueTone" [attr.data-kind]="card.kind ?? null">{{ card.value }}</strong>
             <span class="cf-kpi__sub">{{ card.sub }}</span>
             <span class="cf-kpi__foot" [class.is-warn]="card.footWarn">{{ card.foot }}</span>
           </article>
@@ -174,7 +174,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                 <div class="wk-tr wk-tr--muted wk-tr--link cf-past" role="row" tabindex="0" [id]="'cf-row-' + row.key" [class.is-flash]="flash() === row.key"
                      (click)="openRow(row)" (keydown.enter)="openRow(row)">
                   <span class="wk-td" role="cell">{{ wd(row.date) }}</span>
-                  <span class="wk-td" role="cell"><b class="cf-title">{{ row.title }}</b><span class="wk-td__sub">{{ pastLine(row)?.reference || 'Gebeurd' }}</span></span>
+                  <span class="wk-td" role="cell"><b class="cf-title">{{ row.title }}</b><span class="wk-td__sub" [attr.title]="pastLine(row)?.reference || null">{{ shortBank(pastLine(row)?.reference) || 'Gebeurd' }}</span></span>
                   <span class="wk-td" role="cell"><span class="cf-bank">Bank · {{ pastLine(row)?.account ?? 'rekening' }}</span>
                     @if (row.lineId !== null && unlinked().has(row.lineId)) { <a class="wk-pill tone-warn cf-pill-link" routerLink="/costs" [queryParams]="{ view: 'bank', tab: 'movements', line: row.lineId }" (click)="$event.stopPropagation()">Te koppelen</a> }
                     @else { <span class="wk-td__sub">Gebeurd</span> }</span>
@@ -329,6 +329,9 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
   `,
 })
 export class CashDesk {
+  /** "Hoe gerekend": the explanation that stood above the page. */
+  readonly howLines = HOW_TEXTS.cash;
+  readonly shortBank = bankTextShort;
   readonly state = inject(CashState);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);

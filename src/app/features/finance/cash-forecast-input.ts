@@ -28,6 +28,10 @@ import type {
  * that node cannot follow.
  */
 
+
+/** The fair sample for the realised markup as the scenario default (Analyses critique B4). */
+export const REALISED_MIN_INVOICES = 3;
+export const REALISED_MIN_REVENUE_EUR = 10000;
 export interface CashForecastSources {
   today: Iso;
   bankAccounts: BankAccount[]; balances: BankBalance[]; statements: BankStatementLine[]; incomingPayments: IncomingPaymentRow[];
@@ -224,7 +228,15 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const externalSum = received.reduce((sum, view) => sum + finite(view.reconciliation!.totals.forecastExternalEur), 0);
   const pricingSum = received.reduce((sum, view) => sum + finite(view.reconciliation!.totals.forecastPricingEur), 0);
   const externalShare = received.length && pricingSum > 0 ? externalSum / pricingSum : 1;
-  const realisedMarkupPct = revenue > 0 && cost > 0 ? Math.round((revenue / (cost * externalShare) - 1) * 1000) / 10 : null;
+  const rawMarkupPct = revenue > 0 && cost > 0 ? Math.round((revenue / (cost * externalShare) - 1) * 1000) / 10 : null;
+  /*
+   * The scenario default uses the realised markup only on a fair sample: at least three regular invoices and
+   * € 10.000 recognised revenue in the window (Analyses critique B4). One invoice at −11 % gave every container
+   * a −2,5 % default. The raw figure stays visible through realisedSample.
+   */
+  /* Issued regular invoices only: a concept or cancelled invoice adds no revenue (documentAccounting), so it is no sample either. */
+  const sampleInvoices = inWindow.filter(regularInvoice).length;
+  const realisedMarkupPct = sampleInvoices >= REALISED_MIN_INVOICES && revenue >= REALISED_MIN_REVENUE_EUR ? rawMarkupPct : null;
 
   const paidDayOf = (view: SalesOrderView): Iso | null => {
     const marker = dayOfInstant(view.order.paidAt);
@@ -252,6 +264,7 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const declined = decided.filter((view) => view.order.status === 'AFGEWEZEN' || view.order.status === 'VERLOPEN').length;
   const history: ForecastHistory = {
     realisedMarkupPct, paymentDays,
+    realisedSample: { invoices: sampleInvoices, revenueEur: round2(revenue), markupPct: rawMarkupPct },
     vatPct: netSum > 0 ? round2(vatSum / netSum * 100) : 21,
     seasonal: seasonalProfile([...perMonth].map(([month, value]) => ({ month, eur: value }))),
     openQuoteConversionPct: accepted + declined > 0 ? Math.round(accepted / (accepted + declined) * 100) : 0,

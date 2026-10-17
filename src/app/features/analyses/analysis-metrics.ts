@@ -34,6 +34,10 @@ export interface SalesFunnel {
   rejected: number;
   expired: number;
   closed: number;
+  /** Quotes still in an open status (CONCEPT … WIJZIGING_GEVRAAGD): the same set as the pipeline. */
+  open: number;
+  /** Quotes cancelled (GEANNULEERD); created − open − closed − cancelled is what is left over. */
+  cancelled: number;
   sendRatePct: number | null;
   viewRatePct: number | null;
   conversionRatePct: number | null;
@@ -61,6 +65,10 @@ export interface InvoiceAnalysis {
   /** Issued live credit notes in the period, incl. btw, positive; already taken off issuedValueEur. */
   creditedEur: number;
   creditNoteCount: number;
+  /** Recognised revenue of the issued invoices and credit notes, excl. btw: the Omzet that Resultaat shows. */
+  revenueExclEur: number;
+  /** The claims of the issued advance invoices (partner voorschotten and regular voorschotfacturen), incl. btw: part of issuedValueEur. */
+  advanceClaimEur: number;
 }
 
 /** One calendar month of the period: what was invoiced, accepted and asked. */
@@ -310,6 +318,7 @@ export function salesAnalysis(
   const rejectedCount = quotes.filter((row) => row.order.status === 'AFGEWEZEN').length;
   const expiredCount = quotes.filter((row) => row.order.status === 'VERLOPEN').length;
   const closedCount = quotes.filter((row) => CLOSED_QUOTE_STATUSES.has(row.order.status)).length;
+  const cancelledCount = quotes.filter((row) => row.order.status === 'GEANNULEERD').length;
 
   const issuedInvoices = invoices.filter(isIssuedInvoice);
   const issuedClaims = [...issuedInvoices, ...creditNotes];
@@ -342,6 +351,8 @@ export function salesAnalysis(
       rejected: rejectedCount,
       expired: expiredCount,
       closed: closedCount,
+      open: pipelineRows.length,
+      cancelled: cancelledCount,
       sendRatePct: percentage(sentCount, quotes.length),
       viewRatePct: percentage(viewedCount, sentCount),
       conversionRatePct: percentage(acceptedCount, closedCount),
@@ -366,6 +377,8 @@ export function salesAnalysis(
       missingCostLines: missingCostLines(issuedInvoices.filter((row) => !isAdvanceDocument(row))),
       creditedEur,
       creditNoteCount: creditNotes.length,
+      revenueExclEur: round2(invoiceGoods),
+      advanceClaimEur: round2(sumInvoiceClaims(issuedInvoices.filter((row) => isAdvanceDocument(row) || row.advanceBilling?.stage === 'ADVANCE'))),
     },
     topCustomers: topCustomers(issuedClaims, customerNames, limit),
     topProducts: topProducts(issuedClaims, limit),
@@ -1253,7 +1266,9 @@ export interface ResultMonthRow {
 
 export interface ResultAnalysis {
   period: { from: string | null; to: string | null };
+  /** Issued invoices (FACTUUR) in the period; credit notes count apart. */
   invoiceCount: number;
+  creditNoteCount: number;
   /** Issued invoices, excluding VAT. */
   revenueEur: number;
   /** The landed cost of the goods on those invoices. */
@@ -1272,7 +1287,7 @@ export interface ResultAnalysis {
   receivedContainers: number;
   byChannel: ResultChannelRow[];
   byCategory: { category: string; amountEur: number; sharePct: number }[];
-  /** Oldest month first. */
+  /** Oldest month first; with `today` every month of the period up to today, empty months as zeros. */
   monthly: ResultMonthRow[];
   /** Invoice lines whose product has no landed cost: the margin is incomplete by that much. */
   missingCostLines: number;
@@ -1290,6 +1305,8 @@ export interface ResultOptions {
   costCharge?: CostCharge;
   /** What is still to pay on a cost (openOf); without it the excl. amount plus VAT of costs without a paid date. */
   openEur?: (cost: CompanyCost) => number;
+  /** With today the monthly rows run over every month of the period up to today (all years: from the first data month). */
+  today?: string;
 }
 
 const defaultCharge: CostCharge = (cost, from, to) => ({
@@ -1337,7 +1354,7 @@ export function resultAnalysis(
   };
   for (const invoice of invoices) {
     const row = channelRow(channelOf(invoice.order));
-    row.invoiceCount += 1;
+    if (docType(invoice) !== 'CREDITNOTA') row.invoiceCount += 1;
     row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
     row.goodsCostEur = round2(row.goodsCostEur + documentAccounting(invoice).recognizedCostEur);
     row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
@@ -1377,7 +1394,12 @@ export function resultAnalysis(
   }
   /* Each month takes its own charge: the expenses made in it and the depreciation it carries. */
   for (const cost of periodCosts) monthRow(cost.date.slice(0, 7));
-  for (const month of monthsOf(from, to, [...invoices.map((row) => row.order.orderDate), ...charges.map((row) => row.cost.date)])) {
+  const dataDays = [...invoices.map((row) => row.order.orderDate), ...charges.map((row) => row.cost.date)];
+  /* With today every month of the period shows, empty ones as zeros, never past today. */
+  const today = isoDayOrNull(options.today);
+  const shownMonths = today ? monthsOf(from, to && to < today ? to : today, dataDays) : [];
+  for (const month of shownMonths) monthRow(month);
+  for (const month of [...new Set([...monthsOf(from, to, dataDays), ...shownMonths])]) {
     const [year, index] = month.split('-').map(Number);
     const monthFrom = `${month}-01`;
     const monthTo = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, '0')}`;
@@ -1394,7 +1416,8 @@ export function resultAnalysis(
 
   return {
     period: { from, to },
-    invoiceCount: invoices.length,
+    invoiceCount: invoices.filter((row) => docType(row) !== 'CREDITNOTA').length,
+    creditNoteCount: invoices.filter((row) => docType(row) === 'CREDITNOTA').length,
     revenueEur,
     goodsCostEur,
     marginEur,
