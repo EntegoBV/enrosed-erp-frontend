@@ -6,7 +6,7 @@ import { WorkQueue } from '../core/api/work-queue';
 import { AppNotification } from '../core/api/models';
 import { Sheet } from './ui';
 import { Icon } from './icon';
-import { localDay, oldestFirst, waitLabel, whenLabel } from './customer-wait';
+import { localDay, oldestFirst, waitLabel, waitingSummary, whenLabel } from './customer-wait';
 
 /**
  * The bell top right: what is waiting on us.
@@ -38,7 +38,7 @@ import { localDay, oldestFirst, waitLabel, whenLabel } from './customer-wait';
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (count(); as n) {<b>{{ n }} {{ n === 1 ? 'klant' : 'klanten' }}</b> {{ n === 1 ? 'wacht' : 'wachten' }} op ons@if (oldest(); as wait) { · {{ n === 1 ? wait : 'de oudste ' + wait }}}} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -239,6 +239,8 @@ export class NotificationBell {
   });
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
+  /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */
+  readonly summary = computed(() => waitingSummary(this.actions(), this.oldest()));
 
   refresh(): Promise<void> {
     return this.work.refresh(true);

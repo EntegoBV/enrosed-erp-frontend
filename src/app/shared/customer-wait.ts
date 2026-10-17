@@ -3,7 +3,8 @@
  * (redesign home design §4 #6, critique N14): "< 1 u" and "17 u" within the
  * first day, then "1 werkdag", "27 werkdagen" (Mon–Fri after the day the item
  * came in, Brussels time), Nu from CUSTOMER_WAIT_NU_WORKDAYS; and when a
- * customer's own news came in: "vandaag 14:02", "gisteren", "di 13 okt".
+ * customer's own news came in: "vandaag 14:02", "gisteren", "di 13 okt";
+ * and the bell's summary line ("6 meldingen van 4 klanten · de oudste …").
  *
  * A small pure module so the bell (on every page) never loads the home's
  * ranking. Node-tested: no imports. home-priority.ts keeps its own copy of
@@ -75,4 +76,30 @@ export function whenLabel(at: string | null | undefined, nowMs: number): string 
 export function oldestFirst<T extends { at: string | null }>(items: readonly T[]): T[] {
   const time = (item: T): number => { const ms = item.at ? Date.parse(item.at) : Number.NaN; return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms; };
   return items.map((item, index) => ({ item, index })).sort((a, b) => time(a.item) - time(b.item) || a.index - b.index).map((row) => row.item);
+}
+
+/**
+ * How many customers the items come from: distinct names (trimmed, case-insensitive); an item without a name counts
+ * once per order (one order is one customer), else on its own.
+ */
+export function customerCount(items: readonly { customer: string | null; orderId: number | null }[]): number {
+  return new Set(items.map((item, index) => {
+    const name = item.customer?.trim().toLocaleLowerCase('nl');
+    return name ? `name:${name}` : item.orderId !== null ? `order:${item.orderId}` : `item:${index}`;
+  })).size;
+}
+
+/**
+ * The bell's summary line, the bold part apart: the item count (the badge's and Te doen's number) and, when that
+ * is not one per customer, how many customers it is - "6 meldingen van 4 klanten · de oudste 3 werkdagen";
+ * "4 klanten wachten op ons · de oudste …"; "1 klant wacht op ons · 27 werkdagen". Null when nothing waits.
+ */
+export function waitingSummary(items: readonly { customer: string | null; orderId: number | null }[], oldest: string | null): { lead: string; rest: string } | null {
+  const n = items.length;
+  if (!n) return null;
+  const customers = customerCount(items);
+  const age = oldest ? ` · ${n === 1 ? oldest : `de oudste ${oldest}`}` : '';
+  if (n === 1) return { lead: '1 klant', rest: ` wacht op ons${age}` };
+  if (customers === n) return { lead: `${n} klanten`, rest: ` wachten op ons${age}` };
+  return { lead: `${n} meldingen`, rest: ` van ${customers} ${customers === 1 ? 'klant' : 'klanten'}${age}` };
 }

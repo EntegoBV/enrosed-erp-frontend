@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
-  CUSTOMER_WAIT_NU_WORKDAYS, brusselsDay, localDay, oldestFirst, waitLabel, whenLabel, workdaysBetween,
+  CUSTOMER_WAIT_NU_WORKDAYS, brusselsDay, customerCount, localDay, oldestFirst, waitLabel, waitingSummary, whenLabel, workdaysBetween,
 } from '../src/app/shared/customer-wait.ts';
 import * as home from '../src/app/features/dashboard/home-priority.ts';
 
@@ -53,10 +53,28 @@ test('the bell keeps its button and badge; the sheet has no foot, a summary with
   assert.match(bell, /<button class="bell" type="button" \(click\)="open\(\)"/);
   assert.doesNotMatch(bell, /<div foot|Sluiten/);
   assert.match(bell, /\[variant\]="desk\(\) \? 'default' : 'ios'"/);
-  assert.match(bell, /wachten' \}\} op ons@if \(oldest\(\); as wait\) \{ · \{\{ n === 1 \? wait : 'de oudste ' \+ wait \}\}\}\} @else \{Niemand wacht op ons\}/);
+  assert.match(bell, /@if \(summary\(\); as line\) \{<b>\{\{ line\.lead \}\}<\/b>\{\{ line\.rest \}\}\} @else \{Niemand wacht op ons\}/);
+  assert.match(bell, /waitingSummary\(this\.actions\(\), this\.oldest\(\)\)/);
   assert.match(bell, /'Melding wegklikken: ' \+ nameOf\(item\)/);
   assert.match(bell, /Geen klanten die op ons wachten\./);
   /* The ✕ is a sibling of the row's button, never inside it. */
   assert.match(bell, /<\/button>\s*<button class="bell-row__x"/);
   assert.doesNotMatch(bell, /import .*home-priority/);
+});
+
+test('the bell\'s summary counts the items and names how many customers they come from', () => {
+  const item = (customer: string | null, orderId: number | null) => ({ customer, orderId });
+  /* The desk shot: 6 rows from 4 customers. */
+  const six = [item('Fleur & Co', 1), item('Bloemenhuis Lier', 2), item('Bloemenhuis Lier', 3), item('Fleurs de Lille', 4), item(' fleurs de lille ', 4),
+    item('Bloemen Maes', 5)];
+  assert.equal(customerCount(six), 4);
+  assert.deepEqual(waitingSummary(six, '3 werkdagen'), { lead: '6 meldingen', rest: ' van 4 klanten · de oudste 3 werkdagen' });
+  /* One item per customer keeps the design's words. */
+  assert.deepEqual(waitingSummary([item('A', 1), item('B', 2)], '17 u'), { lead: '2 klanten', rest: ' wachten op ons · de oudste 17 u' });
+  assert.deepEqual(waitingSummary([item('A', 1)], '27 werkdagen'), { lead: '1 klant', rest: ' wacht op ons · 27 werkdagen' });
+  assert.deepEqual(waitingSummary([item('A', 1), item('a', 2)], null), { lead: '2 meldingen', rest: ' van 1 klant' });
+  assert.equal(waitingSummary([], '1 werkdag'), null);
+  /* Without a name an item counts once per order, else on its own. */
+  assert.equal(customerCount([item(null, 7), item('', 7), item(null, 8), item(null, null), item(null, null)]), 4);
+  assert.deepEqual(waitingSummary([item(null, 7), item(null, 7), item('A', 1)], '2 werkdagen'), { lead: '3 meldingen', rest: ' van 2 klanten · de oudste 2 werkdagen' });
 });

@@ -997,7 +997,9 @@ cijfers'.
     ("< 1 u", "17 u", "1 werkdag", "27 werkdagen"; "vandaag 14:02",
     "gisteren", "di 13 okt"); home-priority keeps a copy (node-tested, no
     runtime imports) held equal by `tests/customer-wait.test.mts`. The bell
-    sheet: summary + Vernieuwen, no foot, oldest first, one button per row
+    sheet: summary + Vernieuwen (`waitingSummary`: the item count, the
+    badge's number, and the customers when that is not one each - "6
+    meldingen van 4 klanten · de oudste 3 werkdagen"), no foot, oldest first, one button per row
     with the ✕ beside it, ios variant with inset groups on the phone.
   - *Desk page.* `app-page-header` "Dashboard" + "vrijdag 16 oktober · week
     42", the status pill (nowrap, its words give way, Opnieuw stays), one
