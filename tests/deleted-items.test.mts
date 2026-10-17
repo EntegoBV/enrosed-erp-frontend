@@ -38,7 +38,7 @@ function harness() {
   const confirmRequest = signal<any>(null);
   Object.assign(page, {
     items: signal<DeletedItemSummary[]>([]), query: signal(''), type: signal(''), retentionDays: signal(null), loading: signal(false), listError: signal(''),
-    selected: signal(null), detail: signal(null), detailLoading: signal(false), detailError: signal(''), attachmentBusy: signal({}), attachmentErrors: signal({}), restoringId: signal(null), restored: signal(null),
+    selected: signal(null), detail: signal(null), detailLoading: signal(false), detailError: signal(''), attachmentBusy: signal({}), attachmentErrors: signal({}), restoringId: signal(null), restored: signal(null), leavingId: signal(null),
     listVersion: 0, detailVersion: 0, destroyed: false, label: deletedItemLabel,
     api: { list: async () => { calls.push('GET list'); return { retentionDays: 30, items: [item()] }; },
       detail: async (id: number) => { calls.push(`GET ${id}`); return item(id); },
@@ -88,6 +88,7 @@ test('restore is explicit, single-flight, removes only its row, and offers a saf
   assert.deepEqual(page.items().map((row: DeletedItemSummary) => row.id), [2]);
   assert.equal(page.selected(), null); assert.equal(page.restored().route, '/sales/101');
   assert.equal(toasts.length, 1);
+  assert.equal(page.leavingId(), 1, 'only the restored row collapses as it leaves; filtering swaps rows at once');
 });
 
 test('backend blocks and failures keep the deleted document available for review and retry', async () => {
@@ -99,6 +100,7 @@ test('backend blocks and failures keep the deleted document available for review
   page.api.restore = async () => { throw { status: 409, error: { message: 'De hersteltermijn is verstreken.' } }; };
   await page.restore(page.detail());
   assert.equal(page.detailError(), 'De hersteltermijn is verstreken.'); assert.equal(page.items().length, 1);
+  assert.equal(page.leavingId(), null, 'a failed restore leaves no row marked to collapse');
   assert.equal(page.restoringId(), null); assert.equal(page.restored(), null);
   page.api.list = async () => { throw { status: 0 }; }; await page.load(); assert.match(page.listError(), /Geen verbinding/);
   assert.equal(page.items().length, 1);
@@ -221,6 +223,7 @@ test('templates parse with read-only details, no direct attachment links, and al
   assert.equal(parseTemplate(template, 'deleted-items.html').errors, null);
   assert.doesNotMatch(template, /innerHTML|\[href\]|app-sales-editor|app-purchase-editor|Definitief verwijderen/);
   assert.match(template, /\{\{ data.notes \}\}/); assert.match(template, /aria-pressed/);
+  assert.doesNotMatch(template, / animate\.leave="/, 'no unconditional leave animation on the filtered rows');
   for (const file of ['sales/sales-list.ts', 'sales/sales-view.ts', 'sales/sales-editor.ts', 'purchasing/purchase-list.ts', 'purchasing/purchase-editor.ts']) {
     const content = await readFile(new URL('../src/app/features/' + file, import.meta.url), 'utf8');
     assert.match(content, /TEMPORARY_DELETION_NOTICE/); assert.doesNotMatch(content, /Dit kan niet ongedaan worden gemaakt|definitief verwijderen\?/);

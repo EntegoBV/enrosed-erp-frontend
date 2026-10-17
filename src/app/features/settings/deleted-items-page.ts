@@ -32,12 +32,14 @@ import {
       @if (desktop.active()) {
         <label class="wk-search">
           <app-icon name="search" [size]="16" />
-          <input type="search" data-page-search placeholder="Nummer, klant of leverancier" aria-label="Zoeken op nummer, klant of leverancier"
+          <input type="search" data-page-search placeholder="Zoek nummer of relatie" aria-label="Zoeken op nummer, klant of leverancier"
                  [value]="query()" (input)="query.set($any($event.target).value)" />
           <kbd class="wk-kbd" aria-hidden="true">/</kbd>
         </label>
         <button class="wk-btn wk-btn--icon" type="button" aria-label="Vernieuwen" title="Vernieuwen" [class.is-busy]="loading()"
                 [disabled]="loading() || restoringId() !== null" (click)="load()"><app-icon name="refresh" [size]="16" /></button>
+      } @else {
+        <button class="btn btn--icon-mobile" type="button" aria-label="Vernieuwen" [disabled]="loading() || restoringId() !== null" (click)="load()"><app-icon name="refresh" [size]="18" /></button>
       }
     </app-page-header>
     <main class="content trash-page">
@@ -71,20 +73,20 @@ import {
               }
               <div class="trash-rows" (keydown)="rowKey($event)">
                 @for (item of visible(); track item.id) {
-                  <button class="wk-tr wk-tr--link trash-row" type="button" animate.leave="mo-leave" [disabled]="restoringId() !== null"
+                  <button class="wk-tr wk-tr--link trash-row" type="button" [animate.leave]="leaveClass(item)" [disabled]="restoringId() !== null"
                           [attr.aria-label]="label(item.type) + ' ' + item.number + ' bekijken'" (click)="open(item)">
                     <span class="wk-td"><b>{{ docName(item) }}</b>
+                      <span class="wk-td__sub">{{ label(item.type) }} · {{ status(item.status) }}@if (docSub(item); as sub) { · {{ sub }} }</span>
                       @if (!item.restoreAllowed) {
-                        <span class="wk-td__sub trash-why"><span class="wk-pill tone-warn">Niet herstelbaar</span> {{ item.blockReason || label(item.type) }}</span>
-                      } @else {
-                        <span class="wk-td__sub">{{ label(item.type) }} · {{ status(item.status) }}@if (docSub(item); as sub) { · {{ sub }} }</span>
+                        <span class="wk-td__sub trash-why"><span class="wk-pill tone-warn">Niet herstelbaar</span>@if (item.blockReason) { {{ item.blockReason }} }</span>
                       }
                     </span>
                     <span class="wk-td wk-td--wrap trash-party" [attr.title]="item.partyName || null">{{ item.partyName || 'Geen relatie vermeld' }}</span>
                     <span class="wk-td"><time [attr.datetime]="item.deletedAt">{{ item.deletedAt | dateTimeNl }}</time>
                       @if (item.deletedBy) { <span class="wk-td__sub">door {{ item.deletedBy }}</span> }</span>
                     <span class="wk-td"><time [attr.datetime]="item.expiresAt">{{ dateOnly(item.expiresAt) }}</time>
-                      <span class="wk-td__sub" [class.trash-soon]="left(item) <= 14">{{ leftText(item) }}</span></span>
+                      @if (item.restoreAllowed) { <span class="wk-td__sub" [class.trash-soon]="left(item) <= 14">{{ leftText(item) }}</span> }
+                      @else { <span class="wk-td__sub">niet herstelbaar</span> }</span>
                     <span class="wk-td wk-td--num trash-amount" [class.trash-amount--zero]="!item.totalEur">@if (item.totalEur !== null) { {{ item.totalEur | eur }} } @else { — }</span>
                     <span class="wk-td trash-chev"><app-icon name="chevron-right" [size]="14" /></span>
                   </button>
@@ -124,10 +126,11 @@ import {
           } @else {
             <div class="ios-group">
               @for (item of visible(); track item.id) {
-                <button class="ios-cell" type="button" animate.leave="mo-leave" [disabled]="restoringId() !== null" (click)="open(item)">
+                <button class="ios-cell" type="button" [animate.leave]="leaveClass(item)" [disabled]="restoringId() !== null" (click)="open(item)">
                   <span class="ios-cell__body">
                     <span class="ios-cell__title ios-cell__title--strong">{{ docName(item) }}</span>
-                    <span class="ios-cell__sub ios-cell__sub--2">{{ label(item.type) }} · {{ status(item.status) }} · {{ item.partyName || 'Geen relatie' }}</span>
+                    <span class="ios-cell__sub trash-wrap">{{ label(item.type) }} · {{ status(item.status) }}@if (docSub(item); as sub) { · {{ sub }} }</span>
+                    <span class="ios-cell__sub trash-wrap">{{ item.partyName || 'Geen relatie vermeld' }}</span>
                     <span class="ios-cell__sub">{{ shortDate(item.deletedAt) }}@if (item.deletedBy) { · {{ item.deletedBy }} } · {{ item.restoreAllowed ? leftText(item) : 'niet herstelbaar' }}</span>
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__value" [class.trash-amount--zero]="!item.totalEur">@if (item.totalEur !== null) { {{ item.totalEur | eur }} }</span></span>
@@ -150,7 +153,7 @@ import {
             <dl class="wk-kv deleted-facts">
               <div><dt>Relatie</dt><dd>{{ data.partyName || '—' }}</dd></div><div><dt>Status bij verwijderen</dt><dd>{{ status(data.status) }}</dd></div>
               <div><dt>Verwijderd op</dt><dd>{{ data.deletedAt | dateTimeNl }}@if (data.deletedBy) { <small>door {{ data.deletedBy }}</small> }</dd></div>
-              <div><dt>Herstelbaar tot</dt><dd>{{ data.expiresAt | dateTimeNl }} <small>{{ leftText(data) }}</small></dd></div>
+              <div><dt>Herstelbaar tot</dt><dd>{{ data.expiresAt | dateTimeNl }} <small>{{ data.restoreAllowed ? leftText(data) : 'niet herstelbaar' }}</small></dd></div>
               @if (data.totalEur !== null) { <div><dt>Documentbedrag</dt><dd>{{ data.totalEur | eur }}</dd></div> }
               @for (field of data.fields; track $index) { <div><dt>{{ fieldLabel(field.label) }}</dt><dd>{{ fieldValue(field.label, field.value) }}</dd></div> }
             </dl>
@@ -191,6 +194,7 @@ import {
     .trash-phone .ios-search { margin-bottom: 8px; }
     .trash-phone__chips { margin: 0 -12px 8px; padding-inline: 12px; }
     .trash-why { white-space: normal; overflow-wrap: anywhere; }
+    .trash-wrap { white-space: normal; overflow-wrap: anywhere; }
     .deleted-attachments li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0}.deleted-attachments li>span{flex:1;min-width:120px;overflow-wrap:anywhere}.deleted-attachments .btn{min-height:44px}.deleted-attachments li>small{flex-basis:100%;color:var(--danger);font-size:11px;line-height:1.6}
     .deleted-error{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:14px;border-radius:12px;line-height:1.5;font-size:12px;background:var(--surface-2);color:var(--danger)}.deleted-error>span{flex:1;min-width:0;overflow-wrap:anywhere}
     .deleted-detail{display:grid;gap:18px}.deleted-detail h3{margin:0 0 10px;font-size:13px}.deleted-readonly{margin:0;font-size:12px;color:var(--muted)}
@@ -228,6 +232,8 @@ export class DeletedItemsPage implements OnDestroy {
   readonly attachmentErrors = signal<Record<number, string>>({});
   readonly restoringId = signal<number | null>(null);
   readonly restored = signal<{ number: string; route: string | null } | null>(null);
+  /** The row being restored: only it collapses when it leaves; a filter or search swaps rows at once. */
+  readonly leavingId = signal<number | null>(null);
   private readonly api = inject(DeletedItemsApi);
   private readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
@@ -259,6 +265,10 @@ export class DeletedItemsPage implements OnDestroy {
   docSub(item: DeletedItemSummary): string | null {
     const name = this.docName(item);
     return name !== item.number ? item.number : null;
+  }
+
+  leaveClass(item: DeletedItemSummary): string {
+    return item.id === this.leavingId() ? 'mo-leave' : '';
   }
 
   left(item: DeletedItemSummary): number {
@@ -357,7 +367,7 @@ export class DeletedItemsPage implements OnDestroy {
     if (this.destroyed || this.detail()?.id !== item.id || !this.detail()?.restoreAllowed || this.restoringId() !== null) return;
     /* A refresh started before restoring must not reinsert the removed row. */
     this.listVersion++; this.loading.set(false);
-    this.restoringId.set(item.id); this.detailError.set('');
+    this.restoringId.set(item.id); this.detailError.set(''); this.leavingId.set(item.id);
     try {
       const result = await this.api.restore(item.id);
       if (this.destroyed) return;
@@ -368,6 +378,7 @@ export class DeletedItemsPage implements OnDestroy {
       void this.work.refresh(true);
     } catch (failure) {
       if (!this.destroyed) this.detailError.set(messageOf(failure, 'Herstellen is niet gelukt. Controleer het document en probeer opnieuw.'));
+      this.leavingId.set(null);
     } finally { if (!this.destroyed) this.restoringId.set(null); }
   }
 
