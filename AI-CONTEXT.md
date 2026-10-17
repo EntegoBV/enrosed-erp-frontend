@@ -1502,8 +1502,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
 
 ### Inkoop redesign (2026-10-17)
 Area 3 of the ERP redesign, on the foundation (shell and motion above). One
-commit per package; revert units: I4, I6, I1, I5, I5a, I7, I8 alone; I2 + I3
-(+ the attention-amount commit) together.
+commit per package; revert units: I4, I5, I5a, I7, I8 alone; I1 together with
+the phone-search polish; I2 + I3 + the attention-amount commit + the edit-mode
+polish together; I6 only with that I2 + I3 unit. The three polish commits
+(edit mode, phone search, supplier address) each revert alone.
 - Container desk (`purchase-desk.ts`): the toolbar title is `containerName`
   (the herkenbare naam), the PO number its small print
   (`containerNumberHint`); no rename from the toolbar (the Order form has
@@ -1527,6 +1529,10 @@ commit per package; revert units: I4, I6, I1, I5, I5a, I7, I8 alone; I2 + I3
   stays mounted with `[hidden]` behind Betalingen and Nacalculatie; a pane
   fades in only after a user switch. The B/L of a departure is uploaded after
   the status save (`enqueue` is protected). Rates print with four decimals.
+  The panel is 340 (docked) or 380 px (drawer), so its Order form stacks what
+  a duo would cut: Herkenbare naam above Ordernummer, Vertrekhaven above
+  Aankomsthaven; the Betaalplan trigger wraps. Edit-mode columns: price 152,
+  money 120 ('Goederen / stuk' whole), the table still 806 px at 1440.
 - List (`purchase-list.ts` + pure `purchase-list-model.ts`): desk = one kit
   table per supplier group (Container, Lading, Status, Betaling, Totaal
   geland, ⋯), search (also product names), status chips with counts, subbar
@@ -1535,7 +1541,7 @@ commit per package; revert units: I4, I6, I1, I5, I5a, I7, I8 alone; I2 + I3
   desk's payment tile, checked on the mock). Phone = segmented, one search row
   with a round status filter over the native picker, rows without a tags line
   (five on a 390×844 screen), the count and 'nu te betalen' in the large-title
-  caption. Row menu = the kit's context menu; Openen carries 'leverancier ·
+  caption. Under 375px the search reads 'Zoek container of PO' (`smallPhone`). Row menu = the kit's context menu; Openen carries 'leverancier ·
   status · totaal · ontvangen …'. `/purchasing?nieuw=1&leverancier={id}` opens
   the new-calculation sheet with that supplier.
 - Leveranciers (`supplier-list.ts` + pure `suppliers/supplier-overview.ts`):
@@ -1555,6 +1561,8 @@ commit per package; revert units: I4, I6, I1, I5, I5a, I7, I8 alone; I2 + I3
   (`signedEur`), `landedRangeText` for a series ('Geland / stuk': one figure
   or the range, never the average), the payment sheet's 'Verdelen over
   containers' switch and its read-only summary line (`purchaseSheetSummary`).
+- Phone purchase order: the supplier's address in the Order pane wraps
+  (`.mpo-address`) instead of an ellipsis.
 - Load errors: list, editor/desk, phone view, Leveranciers and Douane show
   `app-load-error` with 'Opnieuw proberen'; the editor starts payments,
   documents, bank lines and partner documents beside the order.
