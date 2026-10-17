@@ -58,9 +58,10 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
           @for (group of groups(); track group.key) {
             @if (group.label) {
               <div class="wk-group" role="row">
-                <span class="wk-group__label">{{ group.label }} <span class="wk-group__count">· {{ group.rows.length }} {{ group.rows.length === 1 ? 'kost' : 'kosten' }}</span></span>
+                <!-- the month's reverse charge reads on the label line, beside the Btw total it is left out of (and gone with it below md): one line a month -->
+                <span class="wk-group__label">{{ group.label }} <span class="wk-group__count">· {{ group.rows.length }} {{ group.rows.length === 1 ? 'kost' : 'kosten' }}</span>@if (group.reverseEur) { <span class="wk-group__count" data-hide="md" title="Btw verlegd: aangegeven en afgetrokken, niet betaald">· verlegd {{ group.reverseEur | eur }}</span> }</span>
                 <span class="wk-td--num fin-sum fin-sum--excl" data-hide="xs">{{ group.exclEur | eur }}</span>
-                <span class="wk-td--num fin-sum fin-sum--vat" data-hide="md" [attr.title]="group.reverseEur ? 'Verlegd: ' + (group.reverseEur | eur) : null">{{ group.vatEur | eur }}@if (group.reverseEur) { <small class="fin-sum__note">· verlegd {{ group.reverseEur | eur }}</small> }</span>
+                <span class="wk-td--num fin-sum fin-sum--vat" data-hide="md" [attr.title]="group.reverseEur ? 'Zonder de verlegde btw (' + (group.reverseEur | eur) + ')' : null">{{ group.vatEur | eur }}</span>
                 <span class="wk-td--num fin-sum fin-sum--incl">{{ group.inclEur | eur }}</span>
               </div>
             }

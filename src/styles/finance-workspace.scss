@@ -279,7 +279,6 @@
   .fin-stream--none .fin-stream__head { margin: 0; }
   /* Facturen & kosten: a long description wraps whole rather than ending in "…" */
   .fin-table--costs .fin-desc { white-space: normal; overflow-wrap: anywhere; }
-  .fin-sum__note { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
   .fin-stream { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 12.5px; }
   .fin-stream__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; b { font-size: 13px; } }
   .fin-stream__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0;
