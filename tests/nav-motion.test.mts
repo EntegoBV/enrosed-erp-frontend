@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { cssTimeMs, navMotionKeyframes, navMotionTargets, navPageHosts } from '../src/app/core/platform/nav-motion-targets.ts';
+import { NAV_FIXED_SELECTOR, cssTimeMs, navMotionKeyframes, navMotionTargets, navPageHosts } from '../src/app/core/platform/nav-motion-targets.ts';
 import type { MotionNode } from '../src/app/core/platform/nav-motion-targets.ts';
 
 /** A fake element: tag.class1.class2, its children, whether it holds a fixed bar, its display. */
@@ -44,6 +44,17 @@ test('kit pages: plain blocks and the children of pass-through hosts move; fixed
     el('button.ios-accessory', [], { fixed: true }),
   ])])])]);
   assert.deepEqual(names(navMotionTargets(home)), ['div.ios-large', 'a.ios-hero', 'section.ios-section']);
+});
+
+test('the fixed bars inside a page are known: the website builder\'s Opslaan bar and the phone save bars', () => {
+  /* .builder-actions is position:fixed on the phone inside main.content.builder-page: the content holding
+     it must not slide, or the bar rides along for 320 ms. */
+  const parts = NAV_FIXED_SELECTOR.split(', ');
+  for (const bar of ['.builder-actions', '.erp-workspace__mobile-actions', '.erp-workspace__mobile-dock', '[data-fixed-bar]', '.action-bar', '.fab']) {
+    assert.ok(parts.includes(bar), bar);
+  }
+  const builder = el('div.main', [el('app-website-builder-page', [el('main.content.builder-page', [el('div.builder-actions', [], { fixed: true })])])]);
+  assert.deepEqual(names(navMotionTargets(builder)), []);
 });
 
 test('push and pop slide 28 px with a fade, a tab only fades; tokens read as milliseconds', () => {

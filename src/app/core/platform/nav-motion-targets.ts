@@ -28,10 +28,17 @@ export interface MotionNode {
 /** The wrapper screens whose child is the page host. */
 export const NAV_WRAPPER_HOSTS: readonly string[] = ['app-sales-screen', 'app-purchase-screen', 'app-product-screen', 'app-dashboard-home'];
 
-/** Never moved: fixed bars and overlays, and the hosts that render them. */
+/**
+ * Never moved: fixed bars and overlays, and the hosts that render them.
+ * An area's own fixed bar inside its .content (the website builder's
+ * Opslaan bar, the phone save bars) belongs here too, or marks itself with
+ * data-fixed-bar: a transform on the moving block would carry the bar along
+ * for the length of the slide.
+ */
 export const NAV_FIXED_SELECTOR = [
   'app-sheet', 'app-context-menu', 'app-ios-tabbar', '.overlay', '.ios-tabbar', '.ios-accessory', '.ios-toolbar',
   '.ios-float', '.action-bar', '[class*="dock"]', '.fab', '.tabbar',
+  '.builder-actions', '.erp-workspace__mobile-actions', '.erp-workspace__mobile-dock', '[data-fixed-bar]',
 ].join(', ');
 
 const KIT_ROOTS = ['ios-page', 'mpo-phone'];
