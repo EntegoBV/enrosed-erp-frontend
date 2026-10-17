@@ -50,6 +50,9 @@ import {
 })
 export class PurchaseListStyles {}
 
+/** A subtitle or caption while the list is not known yet: keeps the line's height and says nothing (no false '0'). */
+const NOT_KNOWN_YET = '\u00a0';
+
 const PURCHASE_STATUS_LABEL: Record<string, string> = {
   CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Vertrokken', ONTVANGEN: 'Ontvangen',
 };
@@ -61,7 +64,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             EurPipe, NumPipe, CbmPipe, DateNlPipe],
   template: `
     <app-purchase-list-styles />
-    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? activeOrders().length + ' containercalculaties' : phoneCaption()">
+    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
       @if (desktop.active()) {
         <app-segmented class="pl-tabs" label="Werklijst of archief" semantics="tabs" [options]="tabOptions()"
                        [value]="archiveTab() ? 'archive' : 'active'" (changed)="showArchive($event === 'archive')" />
@@ -84,10 +87,13 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             @for (chip of chips(); track chip.key) {
               <button class="wk-chip" type="button" [class.tone-warn]="chip.key === 'ATTENTION' && chip.count > 0"
                       [attr.aria-pressed]="statusFilter() === chip.key" [disabled]="chip.key !== 'ALL' && !chip.count && statusFilter() !== chip.key"
-                      (click)="statusFilter.set(chip.key)">{{ chip.label }} <span class="wk-seg__count">{{ chip.count }}</span></button>
+                      (click)="statusFilter.set(chip.key)">{{ chip.label }} @if (ready()) { <span class="wk-seg__count">{{ chip.count }}</span> }</button>
             }
           </div>
-          <span class="wk-subbar__end pl-subbar__end">{{ filtered().length }} van {{ pile().length }} · Nu te betalen <b class="pl-warn pl-nw">{{ shownSums().nowEur | eur: 0 }}</b> · Later <span class="pl-nw">{{ shownSums().laterEur | eur: 0 }}</span></span>
+          <!-- The counts and sums only once the list is known: while it loads or failed they would read '0' and '€ 0'. -->
+          @if (ready()) {
+            <span class="wk-subbar__end pl-subbar__end">{{ filtered().length }} van {{ pile().length }} · Nu te betalen <b class="pl-warn pl-nw">{{ shownSums().nowEur | eur: 0 }}</b> · Later <span class="pl-nw">{{ shownSums().laterEur | eur: 0 }}</span></span>
+          }
         </div>
 
         @if (loadError(); as error) {
@@ -526,11 +532,13 @@ export class PurchaseList {
     ...option, count: option.key === 'ALL' ? this.searched().length : this.statusCounts().get(option.key) ?? 0,
   })));
   readonly tabOptions = computed<SegmentOption[]>(() => [
-    { id: 'active', label: 'Inkooporders', count: this.activeOrders().length },
-    { id: 'archive', label: 'Archief', count: this.archivedOrders().length },
+    { id: 'active', label: 'Inkooporders', count: this.ready() ? this.activeOrders().length : null },
+    { id: 'archive', label: 'Archief', count: this.ready() ? this.archivedOrders().length : null },
   ]);
+  readonly deskSubtitle = computed(() => this.ready() ? `${this.activeOrders().length} containercalculaties` : NOT_KNOWN_YET);
   /** The phone's large-title caption: the count and what is due now; with a search or filter, what shows of how many. */
   readonly phoneCaption = computed(() => {
+    if (!this.ready()) return NOT_KNOWN_YET;
     const narrowed = this.query().trim() !== '' || this.statusFilter() !== 'ALL';
     const now = narrowed ? this.shownSums().nowEur : groupSums(this.pile().map((row) => this.paymentOf(row))).nowEur;
     const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0, minimumFractionDigits: 0 }).format(now);
@@ -563,6 +571,8 @@ export class PurchaseList {
   readonly loading = signal(true);
   /** The list could not load (B2): app-load-error with 'Opnieuw proberen'. */
   readonly loadError = signal<string | null>(null);
+  /** The containers are known: until then (loading, or a failed load) no count or sum shows, never a false '0' or '€ 0'. */
+  readonly ready = computed(() => !this.loading() && !this.loadError());
   readonly picking = signal(false);
   /** 'Aanmaken' runs once (F3). */
   readonly creating = signal(false);
