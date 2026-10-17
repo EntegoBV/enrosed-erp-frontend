@@ -156,7 +156,8 @@ button.an-row { width: 100%; border: 0; background: none; font: inherit; text-al
 
 /* ---------- phone frame (< 680) */
 /* The bell lives at page-host level; the nav shows a proxy circle (critique B7, the home's pattern). */
-.an-bell-host .bell { display: none; }
+/* The bell's own component rule (.bell, display: grid) arrives later and ties a two-class selector: the host tag wins it. */
+app-notification-bell.an-bell-host .bell { display: none; }
 .an-badge { position: absolute; top: 3px; right: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
   border: 2px solid var(--surface); border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 750;
   font-variant-numeric: tabular-nums; line-height: 1; pointer-events: none; }
