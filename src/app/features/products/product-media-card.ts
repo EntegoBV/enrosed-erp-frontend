@@ -44,8 +44,9 @@ import { isSourceLink } from '../files/files-collections';
     } @else if (!assets().length) {
       <p class="mc__empty">Nog geen documenten bij dit product. Voeg hier een tekening, certificaat of ander bestand toe. Productfoto’s voor website, catalogus en offertes beheer je bij Foto’s. <a [routerLink]="photosLink()" [queryParams]="photosQuery">Naar Foto’s</a></p>
     } @else {
+      @if (documents().length) {
       <ul class="mc__grid" [class.mc__grid--compact]="compact()">
-        @for (asset of assets(); track asset.id) {
+        @for (asset of documents(); track asset.id) {
           <li class="mc__tile">
             <button class="mc__open" type="button" (click)="open(asset)"
                     [title]="asset.kind === 'IMAGE' ? 'Vergroten' : 'Downloaden'">
@@ -56,15 +57,19 @@ import { isSourceLink } from '../files/files-collections';
               }
             </button>
             <span class="mc__copy"><b>{{ asset.name }}</b><small>{{ meta(asset) }}</small></span>
-            @if (managedBySource(asset)) {
-              <span class="mc__source">Productfoto · <a [routerLink]="photosLink()" [queryParams]="photosQuery">beheer bij Foto’s</a></span>
-            } @else {
-              <button class="mc__unlink" type="button" [disabled]="busyId() === asset.id" (click)="unlink(asset)"
-                      title="Loskoppelen van dit product (het bestand blijft in Documenten &amp; media)" aria-label="Loskoppelen">×</button>
-            }
+            <button class="mc__unlink" type="button" [disabled]="busyId() === asset.id" (click)="unlink(asset)"
+                    title="Loskoppelen van dit product (het bestand blijft in Documenten &amp; media)" aria-label="Loskoppelen">×</button>
           </li>
         }
       </ul>
+      }
+      <!-- The product photos the photo section manages: one row, never a second photo list (B20). -->
+      @if (managedPhotos().length; as count) {
+        <div class="mc__photos">
+          <span><b>{{ count }} productfoto{{ count === 1 ? '' : '’s' }}</b><small>{{ managedNames() }}</small></span>
+          <a [routerLink]="photosLink()" [queryParams]="photosQuery">Beheer bij Foto’s ›</a>
+        </div>
+      }
     }
     <app-photo-lightbox [photos]="photos()" [(index)]="lightbox" />
   `,
@@ -96,10 +101,9 @@ import { isSourceLink } from '../files/files-collections';
     .mc__grid--compact .mc__open{aspect-ratio:1;border-radius:10px}
     .mc__grid--compact .mc__ext{font-size:11px}
     .mc__grid--compact .mc__unlink{position:static;opacity:1;background:var(--surface-2);color:var(--muted)}
-    .mc__source{color:var(--ink-2);font-size:12px;line-height:1.35}
-    .mc__source a{color:var(--rose-dark);font-weight:600}
-    .mc__grid--compact .mc__source{grid-column:2/-1;margin-top:-14px}
-    .mc__grid--compact .mc__source a{display:inline-block;padding-block:14px}
+    .mc__photos{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:12.5px}
+    .mc__photos>span{display:grid;min-width:0}.mc__photos small{color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+    .mc__photos a{color:var(--rose-dark);font-weight:650;white-space:nowrap}
     @media(hover:none){.mc__unlink{opacity:1}}
   `,
 })
@@ -136,6 +140,14 @@ export class ProductMediaCard {
       downloadUrl: this.media.fileUrl(asset.id, 'original'),
     })));
 
+  /** Files that are not product photos: the tiles. */
+  readonly documents = computed(() => this.assets().filter((asset) => !this.managedBySource(asset)));
+  /** Product photos the photo section manages: summarised in one row. */
+  readonly managedPhotos = computed(() => this.assets().filter((asset) => this.managedBySource(asset)));
+  readonly managedNames = computed(() => {
+    const names = this.managedPhotos().map((asset) => asset.name);
+    return names.length > 4 ? `${names.slice(0, 4).join(', ')} +${names.length - 4}` : names.join(', ');
+  });
   readonly summary = computed(() => {
     const count = this.assets().length;
     if (!count) return 'Tekeningen, certificaten en andere bestanden die bij dit product horen';

@@ -416,9 +416,9 @@ test('desk, phone and editor each open the history sheet from the cost', async (
   const desk = await read('../src/app/features/products/product-desk.ts');
   const view = await read('../src/app/features/products/product-view.ts');
   const editor = await read('../src/app/features/products/product-editor.ts');
-  /* Desk: the Kostprijs KPI and the flow step, as a button (a span there ellipsizes). */
-  assert.match(desk, /<button class="desk-kpi desk-kpi--button" type="button" \(click\)="openHistory\(\)"[^>]*>\s*<small>Kostprijs<\/small>/);
-  assert.match(desk, /<button class="linklike pd-flow__link" type="button" \(click\)="openHistory\(\)">Kostprijshistoriek ›<\/button>/);
+  /* Desk: the Kostprijs figure of the hero strip (the whole cell, its label with a chevron) and the flow step, as buttons. */
+  assert.match(desk, /<button class="pdk-kpi" type="button" \(click\)="openHistory\(\)"[^>]*>\s*<small>Kostprijs <app-icon name="chevron-right"/);
+  assert.match(desk, /<button class="linklike pdk-flow__link" type="button" \(click\)="openHistory\(\)">Historiek ›<\/button>/);
   assert.equal(desk.match(/<app-product-cost-history-sheet /g)?.length, 1);
   /* Catalogusprijs and Marge keep opening the build-up. */
   assert.equal(desk.match(/\(click\)="openPriceDetail\(\)"/g)?.length, 2);

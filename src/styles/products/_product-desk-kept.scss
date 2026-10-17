@@ -1,0 +1,87 @@
+/* Producten & voorraad: the product page on the desk (app-product-desk),
+   the second half of its partial: the blocks kept from the earlier page
+   (facts, gallery, the build-up, website points, supplier note, schade/
+   tekort), now on the light cards. Split from _product-desk.scss only to
+   keep each stylesheet under the 16 kB component budget. */
+
+app-product-desk .pd-kicker { margin: 0 0 4px; color: var(--rose); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
+app-product-desk .pd-kicker--gap { margin-top: 14px; }
+app-product-desk .pd-muted { color: var(--muted); font-weight: 500; }
+app-product-desk .pd-prose { font-weight: 500; line-height: 1.4; white-space: pre-wrap; }
+app-product-desk .pd-empty { margin: 0; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); font-size: 12px; }
+app-product-desk .pd-empty--gap { margin-top: 14px; }
+app-product-desk .pd-facts > div { grid-template-columns: 118px minmax(0, 1fr); }
+app-product-desk .pd-facts > div:last-child { border-bottom: 0; }
+app-product-desk .pd-barcode { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--rose-dark); font: inherit; font-weight: 650; cursor: pointer; }
+app-product-desk .pd-barcode:hover { text-decoration: underline; }
+app-product-desk .pd-barcode i { color: var(--muted); font-size: 13px; font-style: normal; }
+app-product-desk .pd-price__tabs { margin-top: 12px; }
+app-product-desk .pd-price__history { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+app-product-desk .pd-price__detail { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(240px, 1fr); gap: 20px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+app-product-desk .pd-aside { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
+app-product-desk .pd-aside b { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+app-product-desk .pd-chain__row--margin { background: color-mix(in srgb, var(--ok) 9%, var(--surface)); }
+app-product-desk .pd-chain__row--margin i { background: var(--ok); color: #fff; }
+app-product-desk .pd-chain__row--margin b { color: var(--ok); font-weight: 750; }
+app-product-desk .pd-gallery { display: grid; gap: 6px; }
+app-product-desk .pd-gallery__stage { position: relative; }
+app-product-desk .pd-gallery__main { display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); cursor: zoom-in; }
+app-product-desk .pd-gallery__main img { display: block; width: 100%; height: 100%; object-fit: contain; }
+app-product-desk .pd-gallery__step {
+  position: absolute; top: 50%; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / 85%);
+  color: var(--ink); font-size: 18px; line-height: 1; box-shadow: var(--sh-1); cursor: pointer; transform: translateY(-50%); opacity: 0; transition: opacity var(--dur-1, .12s);
+}
+app-product-desk .pd-gallery__step--prev { left: 8px; }
+app-product-desk .pd-gallery__step--next { right: 8px; }
+app-product-desk .pd-gallery__stage:hover .pd-gallery__step, app-product-desk .pd-gallery__step:focus-visible { opacity: 1; }
+app-product-desk .pd-gallery__badges { position: absolute; top: 8px; left: 8px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 16px); pointer-events: none; }
+app-product-desk .pd-gallery__badges span { padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--ink-2); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); font-size: 10.5px; font-weight: 700; }
+app-product-desk .pd-gallery__count { position: absolute; right: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; background: rgb(16 13 12 / 62%); color: #fff; font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+app-product-desk .pd-gallery__thumbs { display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: thin; }
+app-product-desk .pd-gallery__thumbs button { flex: none; width: 40px; height: 40px; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 9px; background: var(--surface-2); cursor: pointer; }
+app-product-desk .pd-gallery__thumbs button.on { border-color: var(--rose); }
+app-product-desk .pd-gallery__thumbs img { display: block; width: 100%; height: 100%; object-fit: contain; }
+app-product-desk .pd-gallery__manage { justify-self: start; margin-top: 2px; }
+app-product-desk .pd-gallery__empty { display: grid; place-content: center; justify-items: center; gap: 8px; aspect-ratio: 1; border: 1px dashed var(--line-strong); border-radius: 14px; color: var(--muted); text-align: center; }
+app-product-desk .pd-gallery__empty b { color: var(--ink-2); font-size: 13px; }
+app-product-desk .pd-gallery__places { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+app-product-desk .pd-channels { display: flex; flex: none; gap: 6px; }
+app-product-desk .pd-channels span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+app-product-desk .pd-channels i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+app-product-desk .pd-channels span.is-live { border-color: color-mix(in srgb, var(--ok) 40%, transparent); color: var(--ok); }
+app-product-desk .pd-channels span.is-live i { background: var(--ok); }
+app-product-desk .pd-links { margin-top: 14px; }
+app-product-desk .desk-action { text-decoration: none; }
+app-product-desk .pd-fix { display: grid; gap: 8px; }
+app-product-desk .pd-fix__group { padding: 8px 12px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+app-product-desk .pd-fix__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+app-product-desk .pd-fix__head b { font-size: 12.5px; }
+app-product-desk .pd-fix__head b small { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--warn); color: #fff; font-size: 10px; font-weight: 750; }
+app-product-desk .pd-fix__group ul { margin: 0; padding: 0 0 0 16px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+app-product-desk .pd-issues__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+app-product-desk .pd-issues__list li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 3px 12px; align-items: baseline; padding: 10px 12px; border: 1px solid #f0d2d9; border-left: 3px solid var(--rose); border-radius: 12px; background: #fff6f8; }
+app-product-desk .pd-issues__order { color: var(--rose-dark); font-size: 13px; font-weight: 750; text-decoration: none; }
+app-product-desk .pd-issues__order:hover { text-decoration: underline; }
+app-product-desk .pd-issues__when { color: var(--muted); font-size: 12px; }
+app-product-desk .pd-issues__facts { font-size: 12.5px; }
+app-product-desk .pd-issues__facts b { color: var(--rose-dark); }
+app-product-desk .pd-issues__note { grid-column: 1 / -1; color: var(--ink-2); font-size: 12.5px; font-style: italic; }
+app-product-desk .pd-issues__note--empty { color: var(--muted); }
+app-product-desk .pd-agreement { display: grid; gap: 12px; }
+app-product-desk .pd-effective-agreement { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); font-size: 12px; }
+app-product-desk .pd-effective-agreement > span { color: var(--muted); }
+app-product-desk .pd-effective-agreement > a { display: inline-flex; align-items: center; justify-self: start; min-height: 32px; }
+app-product-desk .pd-note { margin: 0; padding: 10px 14px; border: 1px solid #eddcb9; border-radius: 12px; background: var(--warn-soft); color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
+app-product-desk .pd-note p { margin: 0; white-space: pre-line; }
+app-product-desk .pd-note p + p, app-product-desk .pd-note ul + p, app-product-desk .pd-note p + ul { margin-top: 6px; }
+app-product-desk .pd-note ul { margin: 0; padding-left: 18px; }
+app-product-desk .pd-note ul ul { margin-top: 2px; padding-left: 16px; color: var(--muted); }
+app-product-desk .pd-note li { margin: 2px 0; }
+app-product-desk .pd-refs { display: flex; flex-wrap: wrap; gap: 8px; }
+app-product-desk .pd-ref { position: relative; display: grid; gap: 3px; width: 92px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; text-align: left; cursor: zoom-in; }
+app-product-desk .pd-ref img { width: 92px; height: 92px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); object-fit: cover; }
+app-product-desk .pd-ref span { overflow-wrap: anywhere; }
+app-product-desk .pd-ref i { position: absolute; top: 5px; left: 5px; padding: 2px 6px; border-radius: 999px; background: rgb(16 13 12 / 72%); color: #fff; font-size: 9.5px; font-style: normal; font-weight: 750; }
+app-product-desk .pd-note__ref { display: inline; padding: 0 5px; border: 1px solid color-mix(in srgb, var(--rose) 35%, transparent); border-radius: 999px; background: var(--surface); color: var(--rose-dark); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+app-product-desk .pd-note__ref:hover { background: var(--rose-soft); }
+
