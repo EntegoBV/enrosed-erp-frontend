@@ -106,14 +106,17 @@ export function nlNumber(raw: string): string {
   return `${negative ? '−' : ''}${grouped}${decimals}`;
 }
 
-/** "-18415.00" → "€ −18.415,00" (always two decimals for money). */
+/**
+ * "-18415.00" → "€ −18.415,00" (always two decimals for money). The space
+ * after the symbol is a no-break space: a line never ends on a bare "€".
+ */
 export function nlMoney(raw: string, currency = 'EUR'): string {
   const negative = raw.trim().startsWith('-');
   const [whole, fraction = ''] = raw.trim().replace(/^[-+]/, '').split('.');
   const grouped = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const cents = (fraction + '00').slice(0, 2);
   const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency;
-  return `${symbol} ${negative ? '−' : ''}${grouped},${cents}`;
+  return `${symbol}\u00a0${negative ? '−' : ''}${grouped},${cents}`;
 }
 
 const NUMBER = /^-?\d+(\.\d+)?$/;

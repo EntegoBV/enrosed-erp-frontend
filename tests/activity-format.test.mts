@@ -28,16 +28,16 @@ test('production values read as elsewhere in the ERP', () => {
   assert.equal(activityValue({ field: 'supplierId', label: 'Leverancier' }, '5', ev(1)), '5');
   assert.equal(activityValue({ field: 'x', label: 'Gearchiveerd' }, 'ja', ev(1)), 'Ja');
   assert.equal(activityValue({ field: 'ean', label: 'EAN' }, '5400000000017', ev(1)), '5400000000017');
-  assert.equal(activityValue({ field: 'price', label: 'Verkoopprijs (EUR)' }, '24.50', ev(1)), '€ 24,50');
+  assert.equal(activityValue({ field: 'price', label: 'Verkoopprijs (EUR)' }, '24.50', ev(1)), '€\u00a024,50');
   const usd = ev(2, { changes: [{ field: 'currency', label: 'Valuta', beforeValue: null, afterValue: 'USD' }] });
-  assert.equal(activityValue({ field: 'goods', label: 'Goederen' }, '1200.00', usd), '$ 1.200,00');
+  assert.equal(activityValue({ field: 'goods', label: 'Goederen' }, '1200.00', usd), '$\u00a01.200,00');
   assert.equal(activityValue({ field: 'x', label: 'Notities' }, null, ev(1)), 'Niet ingevuld');
   assert.equal(nlNumber('-18415.00'), '−18.415');
 });
 
 test('bank summaries and labels in euro, purchase orders by container name', () => {
-  assert.equal(activitySummaryText('Bankbeweging toegewezen: toegewezen -18415.00 · verschil 0.00'), 'Bankbeweging toegewezen: toegewezen € −18.415,00 · verschil € 0,00');
-  assert.equal(activityEntityText({ entityType: 'BANK_STATEMENT', entityId: '880', entityLabel: 'BE94731074082814 · -18415.00' }), 'BE94 7310 7408 2814 · € −18.415,00');
+  assert.equal(activitySummaryText('Bankbeweging toegewezen: toegewezen -18415.00 · verschil 0.00'), 'Bankbeweging toegewezen: toegewezen €\u00a0−18.415,00 · verschil €\u00a00,00');
+  assert.equal(activityEntityText({ entityType: 'BANK_STATEMENT', entityId: '880', entityLabel: 'BE94731074082814 · -18415.00' }), 'BE94 7310 7408 2814 · €\u00a0−18.415,00');
   assert.equal(activityEntityText(ev(1), ctx), '12-Set-Roseamor-Jerry');
   assert.equal(activityEntitySub(ev(1), ctx), 'PO-2026-025');
   assert.equal(activityEntityText(ev(1)), 'PO-2026-025');
