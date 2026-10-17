@@ -23,7 +23,8 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
 import { categoryLabel } from '../finance/cost-categories';
@@ -134,7 +135,7 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
 };
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
 /** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
-const LEGACY_BODIES = new Set<AnalysisSection>(['sales', 'inventory', 'result', 'market', 'website']);
+const LEGACY_BODIES = new Set<AnalysisSection>(['inventory', 'result', 'market', 'website']);
 /** The phone ⋯ sheet: the links the desk shows in the tool row. */
 const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
   sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
@@ -528,136 +529,160 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'sales') {
-      <section class="analysis-section" aria-labelledby="sales-analysis-title">
-        <header class="section-copy">
-          <span class="eyebrow">Verkoopanalyse</span>
-          <h2 id="sales-analysis-title">Van offerte tot betaling</h2>
-        </header>
-
-        <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark">
-            <span class="metric-card__label">Gefactureerd</span>
-            <strong>{{ salesMetrics().invoices.issuedValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().invoices.issued }} factuur/facturen incl. btw
-              @if (salesMetrics().invoices.averageClaimEur !== null) { · gem. {{ salesMetrics().invoices.averageClaimEur | eur: 0 }} }
-              @if (salesMetrics().invoices.creditNoteCount) { · waarvan gecrediteerd − {{ salesMetrics().invoices.creditedEur | eur: 0 }} ({{ salesMetrics().invoices.creditNoteCount }} {{ salesMetrics().invoices.creditNoteCount === 1 ? 'creditnota' : 'creditnota\u2019s' }}) }</p>
-          </article>
-          <article class="card metric-card metric-card--quality">
-            <span class="metric-card__label">Brutomarge</span>
-            <strong>{{ salesMetrics().invoices.missingCostLines ? '—' : (salesMetrics().invoices.marginEur | eur: 0) }}</strong>
-            <p>{{ salesMetrics().invoices.missingCostLines
-              ? salesMetrics().invoices.missingCostLines + ' factuurregel(s) zonder kost'
-              : salesMetrics().invoices.marginPct === null ? 'op uitgegeven facturen' : (salesMetrics().invoices.marginPct | pct: 1) + ' op goederen' }}</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Reguliere verkooppijplijn</span>
-            <strong>{{ salesMetrics().pipeline.calculatedValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().pipeline.count }} offerte(s) · {{ salesMetrics().pipeline.pieces | num }} stuks</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Geaccepteerd</span>
-            <strong>{{ salesMetrics().accepted.calculatedValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().accepted.count }} offerte(s) in deze periode</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Open facturen</span>
-            <strong>{{ salesMetrics().invoices.outstandingValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().invoices.outstanding }} factuur/facturen
-              @if (salesMetrics().invoices.avgDaysToPaid !== null) { · betaald na gem. {{ salesMetrics().invoices.avgDaysToPaid }} dagen }</p>
-          </article>
-          <article class="card metric-card" [class.metric-card--danger]="salesMetrics().invoices.overdue > 0">
-            <span class="metric-card__label">Vervallen</span>
-            <strong>{{ salesMetrics().invoices.overdueValueEur | eur: 0 }}</strong>
-            <p>{{ salesMetrics().invoices.overdue }} factuur/facturen na vervaldatum</p>
-          </article>
-          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'incoming', tab: 'received', from: salesFromDate() || null, to: salesToDate() || null, period: salesFromDate() || salesToDate() ? null : 'all' }"><span class="metric-card__label">Ontvangen in deze periode</span><strong>{{ incoming().receivedEur | eur: 0 }}</strong><p>{{ incoming().count }} echte betalingen op ontvangstdatum · incl. btw</p></a>
-          <a class="card metric-card" routerLink="/costs" [queryParams]="{ view: 'incoming', tab: 'received', from: salesFromDate() || null, to: salesToDate() || null, period: salesFromDate() || salesToDate() ? null : 'all' }"><span class="metric-card__label">Partnervoorschotten ontvangen</span><strong>{{ incoming().partnerAdvanceEur | eur: 0 }}</strong><p>financiering · {{ incoming().partnerSettlementEur | eur: 0 }} daarnaast uit afrekeningen</p></a>
-        </div>
-
-        <article class="card funnel-card" aria-label="Offertefunnel">
-          <header class="funnel-card__head">
-            <div><span>Offertes</span><h3>Van aangemaakt tot geaccepteerd</h3></div>
-            <small>{{ salesMetrics().funnel.created }} aangemaakt · {{ salesMetrics().funnel.closed }} gesloten · {{ salesMetrics().funnel.created - salesMetrics().funnel.closed }} nog open</small>
-          </header>
-          @for (step of funnelSteps(); track step.key) {
-            <div class="funnel-row" [class.funnel-row--accent]="step.accent">
-              <div class="funnel-row__label"><b>{{ step.label }}</b><small>{{ step.rate }}</small></div>
-              <div class="funnel-row__track"><i [style.width.%]="step.width"></i></div>
-              <b class="funnel-row__count">{{ step.count | num }}</b>
-            </div>
-          }
-          <footer class="funnel-card__foot">
-            <span>Afgewezen <b>{{ salesMetrics().funnel.rejected }}</b></span>
-            <span>Verlopen <b>{{ salesMetrics().funnel.expired }}</b></span>
-            <span>Conversie <b>{{ salesMetrics().funnel.conversionRatePct === null ? '—' : (salesMetrics().funnel.conversionRatePct | pct: 0) }}</b> van de gesloten offertes</span>
-          </footer>
-        </article>
-
-        <article class="card analysis-list trend-card">
-          <header><div><span>Verloop</span><h3>Gefactureerd per maand</h3></div><small>incl. btw · geaccepteerde offertes als referentie</small></header>
-          <div class="trend-card__body">
-            <app-trend-chart [series]="salesTrend()" prefix="€ " [decimals]="0" [height]="190"
-                             ariaLabel="Gefactureerd per maand" emptyText="Nog geen facturen of geaccepteerde offertes in deze periode" />
+        @let m = salesMetrics();
+        @let inv = m.invoices;
+        @if (loading()) {
+          <div class="an-kpis" aria-label="Verkoop laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+        } @else {
+          <div class="an-kpis">
+            <div class="an-kpi" data-kpi="revenue"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ whole(inv.revenueExclEur) }}</span>
+              <span class="an-kpi__sub">excl. btw · {{ plural(inv.issued, 'factuur', 'facturen') }}@if (inv.creditNoteCount) {, {{ plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') }} }</span>
+              <span class="an-kpi__foot">zelfde cijfer als Resultaat</span></div>
+            <div class="an-kpi" data-kpi="margin"><span class="an-kpi__label">Brutomarge</span>
+              <span class="an-kpi__value" [attr.data-tone]="!inv.missingCostLines && inv.marginEur < 0 ? 'danger' : null">{{ inv.missingCostLines ? '—' : whole(inv.marginEur) }}</span>
+              <span class="an-kpi__sub">{{ inv.missingCostLines ? plural(inv.missingCostLines, 'factuurregel', 'factuurregels') + ' zonder kost'
+                : inv.marginPct === null ? 'op uitgegeven facturen' : (inv.marginPct | pct: 1) + ' op goederen · op uitgegeven facturen' }}</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi" data-kpi="invoiced"><span class="an-kpi__label">Gefactureerd</span><span class="an-kpi__value">{{ whole(inv.issuedValueEur) }}</span>
+              <span class="an-kpi__sub">incl. btw · {{ plural(inv.issued, 'factuur', 'facturen') }}@if (inv.averageClaimEur !== null) { · gem. {{ whole(inv.averageClaimEur) }} }</span>
+              <span class="an-kpi__foot" [attr.title]="inv.creditNoteCount ? plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') : null">{{ invoicedFoot() }}</span></div>
+            <a class="an-kpi an-kpi--link" data-kpi="received" routerLink="/costs" [queryParams]="incomingQuery()">
+              <span class="an-kpi__label">Ontvangen</span><span class="an-kpi__value">{{ whole(incoming().receivedEur) }}</span>
+              <span class="an-kpi__sub">incl. btw · {{ plural(incoming().count, 'betaling', 'betalingen') }} op ontvangstdatum</span>
+              <span class="an-kpi__foot">klanten {{ whole(incoming().standardEur) }} · voorschot {{ whole(incoming().partnerAdvanceEur) }} · afrekening {{ whole(incoming().partnerSettlementEur) }}</span></a>
+            <div class="an-kpi" data-kpi="pipeline"><span class="an-kpi__label">Reguliere pijplijn</span><span class="an-kpi__value">{{ whole(m.pipeline.calculatedValueEur) }}</span>
+              <span class="an-kpi__sub">excl. btw · {{ plural(m.pipeline.count, 'open offerte', 'open offertes') }} · {{ m.pipeline.pieces | num }} st</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi" data-kpi="accepted"><span class="an-kpi__label">Geaccepteerd</span><span class="an-kpi__value">{{ whole(m.accepted.calculatedValueEur) }}</span>
+              <span class="an-kpi__sub">excl. btw · {{ plural(m.accepted.count, 'offerte', 'offertes') }} in de periode</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi" data-kpi="open"><span class="an-kpi__label">Open facturen</span><span class="an-kpi__value">{{ whole(inv.outstandingValueEur) }}</span>
+              <span class="an-kpi__sub">incl. btw · {{ plural(inv.outstanding, 'factuur', 'facturen') }}</span>
+              <span class="an-kpi__foot">@if (inv.avgDaysToPaid !== null) {betaald na gemiddeld {{ plural(inv.avgDaysToPaid, 'dag', 'dagen') }}}</span></div>
+            <div class="an-kpi" data-kpi="overdue"><span class="an-kpi__label">Vervallen</span>
+              <span class="an-kpi__value" [attr.data-tone]="inv.overdue > 0 ? 'danger' : null">{{ whole(inv.overdueValueEur) }}</span>
+              <span class="an-kpi__sub">incl. btw · {{ plural(inv.overdue, 'factuur', 'facturen') }} na vervaldatum</span>
+              <span class="an-kpi__foot" [class.is-warn]="!!overdueBefore()">@if (overdueBefore(); as before) {+ {{ before.count }} van vóór deze periode · {{ whole(before.eur) }}}</span></div>
           </div>
-        </article>
-
-        <article class="card analysis-list channel-card">
-          <header><div><span>Kanalen</span><h3>Omzet per verkoopkanaal</h3></div><small>uitgegeven facturen · excl. btw</small></header>
-          @for (channel of salesMetrics().channels; track channel.channel) {
-            <div class="channel-row">
-              <div><b>{{ channelLabel(channel.channel) }}</b><small>{{ channel.invoiceCount }} factuur/facturen · marge {{ channel.marginEur | eur: 0 }}</small></div>
-              <span class="channel-row__bar"><i [style.width.%]="channel.sharePct"></i></span>
-              <strong>{{ channel.revenueExclEur | eur: 0 }}</strong>
-              <small>{{ channel.sharePct | pct: 0 }}</small>
-            </div>
-          } @empty { <p class="list-empty">Geen uitgegeven facturen in deze periode.</p> }
-        </article>
-
-        <div class="analysis-columns analysis-columns--three">
-          <article class="card analysis-list">
-            <header><div><span>Landen</span><h3>Gefactureerd per land</h3></div><small>betalingsvorderingen · incl. btw</small></header>
-            @for (country of salesMetrics().topCountries; track country.countryCode ?? 'none') {
-              <div class="rank-row">
-                <span class="rank">{{ $index + 1 }}</span>
-                <div><b>{{ countryLabel(country.countryCode) }}</b><small>{{ country.orderCount }} factuur/facturen</small></div>
-                <strong>{{ country.calculatedValueEur | eur: 0 }}</strong>
+        }
+        <div class="an-cols">
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-funnel-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-funnel-title">Offertes</h2><span class="an-card__sub">van aangemaakt tot geaccepteerd</span>
+                @if (!loading()) { <span class="an-card__trail">{{ funnelTrail() }}</span> }</header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  <div class="an-funnel">
+                    @for (step of funnelSteps(); track step.key) {
+                      <div class="an-funnel__row" [class.an-funnel__row--accent]="step.accent">
+                        <div><b>{{ step.label }}</b><small>{{ step.rate }}</small></div>
+                        <span class="an-meter" [class.an-meter--ok]="step.accent"><i [style.width.%]="step.width"></i></span>
+                        <span class="an-funnel__n">{{ step.count | num }}</span>
+                      </div>
+                    }
+                  </div>
+                  <p class="an-funnel__foot">
+                    <span>Afgewezen <b>{{ m.funnel.rejected }}</b></span><span>Verlopen <b>{{ m.funnel.expired }}</b></span><span>Geannuleerd <b>{{ m.funnel.cancelled }}</b></span>
+                    <span>Conversie <b>{{ m.funnel.conversionRatePct === null ? '—' : (m.funnel.conversionRatePct | pct: 0) }}</b> van de gesloten offertes</span>
+                  </p>
+                }
               </div>
-            } @empty { <p class="list-empty">Geen uitgegeven facturen in deze periode.</p> }
-          </article>
-          <article class="card analysis-list">
-            <header><div><span>Klanten</span><h3>Hoogste factuurwaarde</h3></div><small>incl. btw</small></header>
-            @for (customer of salesMetrics().topCustomers; track customer.customerId ?? customer.name) {
-              <div class="rank-row">
-                <span class="rank">{{ $index + 1 }}</span>
-                <div><b>{{ customer.name }}</b><small>{{ customer.orderCount }} factuur/facturen · {{ customer.pieces | num }} stuks</small></div>
-                <strong>{{ customer.calculatedValueEur | eur: 0 }}</strong>
+            </section>
+            <section class="an-card" aria-labelledby="an-trend-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-trend-title">Gefactureerd per maand</h2>
+                <span class="an-card__trail">gefactureerd incl. btw · geaccepteerd excl. btw</span></header>
+              <div class="an-card__body an-card__pad">
+                @if (loading()) { <app-skeleton kind="card" /> } @else {
+                  <app-trend-chart [series]="salesTrend()" prefix="€ " [decimals]="0" [height]="desk.active() ? 190 : 160"
+                                   ariaLabel="Gefactureerd per maand" emptyText="Nog geen facturen of geaccepteerde offertes in deze periode" />
+                }
               </div>
-            } @empty { <p class="list-empty">Geen uitgegeven facturen in deze periode.</p> }
-          </article>
-          <article class="card analysis-list">
-            <header><div><span>Producten</span><h3>Hoogste goederenwaarde</h3></div><small>excl. vracht en btw</small></header>
-            @for (product of salesMetrics().topProducts; track product.productId) {
-              <a class="rank-row" [routerLink]="['/products', product.productId]">
-                <span class="rank">{{ $index + 1 }}</span>
-                <div><b>{{ product.name }}</b><small>{{ product.sku || 'Geen SKU' }} · {{ product.pieces | num }} stuks</small></div>
-                <strong>{{ product.calculatedGoodsValueEur | eur: 0 }}</strong>
-              </a>
-            } @empty { <p class="list-empty">Geen uitgegeven factuurregels in deze periode.</p> }
-          </article>
+            </section>
+          </div>
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-channel-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-channel-title">Omzet per kanaal</h2><span class="an-card__trail">excl. btw</span></header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                  @for (channel of m.channels; track channel.channel) {
+                    <div class="an-row an-share">
+                      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(channel.channel) }}</span>
+                        <span class="an-row__sub">{{ plural(channel.invoiceCount, 'factuur', 'facturen') }} · marge {{ whole(channel.marginEur) }}</span></span>
+                      <span class="an-meter"><i [style.width.%]="channel.sharePct"></i></span>
+                      <span class="an-row__value">{{ whole(channel.revenueExclEur) }}</span>
+                      <span class="an-row__meta">{{ channel.sharePct | pct: 0 }}</span>
+                    </div>
+                  } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
+                }
+              </div>
+            </section>
+            <section class="an-card" aria-labelledby="an-follow-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-follow-title">Opvolgen</h2><span class="an-card__sub">verkooporders die aandacht vragen</span>
+                @if (!loading()) { <span class="an-card__trail">{{ m.attentionOrders.length }}</span> }</header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  @for (order of take('follow', m.attentionOrders); track order.orderId) {
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/sales', order.orderId]">
+                      <span class="an-row__body"><span class="an-row__title">{{ order.number }}</span>
+                        <span class="an-row__sub">{{ order.customerName }} · {{ dayText(order.orderDate) }}</span>
+                        <span class="an-row__chips">@for (reason of order.reasons; track reason) { <span class="an-chip" [attr.data-tone]="order.severity === 'danger' ? 'danger' : null">{{ attentionReason(reason) }}</span> }</span></span>
+                      <span class="an-row__end"><span class="an-row__value">{{ whole(order.calculatedValueEur) }}</span></span>
+                      <span class="an-row__chev" aria-hidden="true">›</span>
+                    </a>
+                  } @empty { <p class="an-empty">Geen verkooporders vragen nu aandacht.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'follow', total: m.attentionOrders.length }" />
+                }
+              </div>
+            </section>
+          </div>
         </div>
-
-        <article class="card analysis-list attention-list">
-          <header><div><span>Opvolgen</span><h3>Verkooporders die aandacht vragen</h3></div><small>{{ salesMetrics().attentionOrders.length }} zichtbaar</small></header>
-          @for (order of salesMetrics().attentionOrders; track order.orderId) {
-            <a class="attention-row" [class.attention-row--danger]="order.severity === 'danger'"
-               [routerLink]="['/sales', order.orderId]">
-              <div><b>{{ order.number }}</b><small>{{ order.customerName }} · {{ order.orderDate | dateNl }}</small></div>
-              <div class="reason-chips">@for (reason of order.reasons; track reason) { <span>{{ attentionReason(reason) }}</span> }</div>
-              <strong>{{ order.calculatedValueEur | eur: 0 }}</strong>
-            </a>
-          } @empty { <p class="list-empty">Geen verkooporders vragen nu aandacht.</p> }
-        </article>
-      </section>
+        <div class="an-cols an-cols--3">
+          <section class="an-card" aria-labelledby="an-countries-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="an-countries-title">Landen</h2><span class="an-card__trail">incl. btw</span></header>
+            <div class="an-card__body">
+              @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                @for (country of take('countries', m.topCountries); track country.countryCode ?? 'none') {
+                  <div class="an-row" [class.mo-fade]="$index >= listLimit()">
+                    <span class="an-rank">{{ $index + 1 }}</span>
+                    <span class="an-row__body"><span class="an-row__title">{{ countryLabel(country.countryCode) }}</span><span class="an-row__sub">{{ plural(country.orderCount, 'factuur', 'facturen') }}</span></span>
+                    <span class="an-row__end"><span class="an-row__value">{{ whole(country.calculatedValueEur) }}</span></span>
+                  </div>
+                } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
+                <ng-container *ngTemplateOutlet="more; context: { key: 'countries', total: m.topCountries.length }" />
+              }
+            </div>
+          </section>
+          <section class="an-card" aria-labelledby="an-customers-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="an-customers-title">Klanten</h2><span class="an-card__trail">incl. btw</span></header>
+            <div class="an-card__body">
+              @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                @for (customer of take('customers', m.topCustomers); track customer.customerId ?? customer.name) {
+                  <div class="an-row" [class.mo-fade]="$index >= listLimit()">
+                    <span class="an-rank">{{ $index + 1 }}</span>
+                    <span class="an-row__body"><span class="an-row__title">{{ customer.name }}</span>
+                      <span class="an-row__sub">{{ plural(customer.orderCount, 'factuur', 'facturen') }} · {{ customer.pieces | num }} st</span></span>
+                    <span class="an-row__end"><span class="an-row__value">{{ whole(customer.calculatedValueEur) }}</span></span>
+                  </div>
+                } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
+                <ng-container *ngTemplateOutlet="more; context: { key: 'customers', total: m.topCustomers.length }" />
+              }
+            </div>
+          </section>
+          <section class="an-card" aria-labelledby="an-products-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="an-products-title">Producten</h2><span class="an-card__trail">goederen excl. btw</span></header>
+            <div class="an-card__body">
+              @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                @for (product of take('products', m.topProducts); track product.productId) {
+                  <a class="an-row an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', product.productId]">
+                    <span class="an-rank">{{ $index + 1 }}</span>
+                    <span class="an-row__body"><span class="an-row__title an-row__title--2">{{ product.name }}</span>
+                      <span class="an-row__sub">{{ product.sku || 'Geen SKU' }} · {{ unitWords(product.productId, product.pieces) }}</span></span>
+                    <span class="an-row__end"><span class="an-row__value">{{ whole(product.calculatedGoodsValueEur) }}</span></span>
+                    <span class="an-row__chev" aria-hidden="true">›</span>
+                  </a>
+                } @empty { <p class="an-empty">Geen uitgegeven factuurregels in deze periode.</p> }
+                <ng-container *ngTemplateOutlet="more; context: { key: 'products', total: m.topProducts.length }" />
+              }
+            </div>
+          </section>
+        </div>
       }
 
       @if (section() === 'inventory') {
@@ -1113,6 +1138,12 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       } @empty { <small>geen documenten</small> }
     </ng-template>
 
+    <ng-template #more let-key="key" let-total="total">
+      @if (total > listLimit()) {
+        <button class="an-more" type="button" [attr.aria-expanded]="openLists().has(key)" (click)="toggleList(key)">{{ openLists().has(key) ? 'Minder tonen' : 'Alle ' + total + ' tonen' }}</button>
+      }
+    </ng-template>
+
     <ng-template #phonePeriod let-basis>
       <div class="an-bar">
         <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog" (click)="sheet.set('period')">
@@ -1344,6 +1375,45 @@ export class AnalysesPage {
     from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, this.today()), openEur: openOf,
   }));
   readonly channelLabel = channelLabel;
+  /** "waarvan voorschot € 77.376 · gecrediteerd − € 80" (parts left out when zero). */
+  readonly invoicedFoot = computed(() => {
+    const invoices = this.salesMetrics().invoices;
+    return [invoices.advanceClaimEur ? `waarvan voorschot ${this.whole(invoices.advanceClaimEur)}` : '',
+      invoices.creditedEur ? `gecrediteerd ${this.whole(-invoices.creditedEur)}` : ''].filter(Boolean).join(' · ');
+  });
+  /** Ontvangen opens Kosten & bank on the incoming payments of the same period. */
+  readonly incomingQuery = computed(() => ({ view: 'incoming', tab: 'received', from: this.salesFromDate() || null, to: this.salesToDate() || null,
+    period: this.salesFromDate() || this.salesToDate() ? null : 'all' }));
+  /** Overdue invoices dated before the chosen period: Verkoop's "Vervallen" says so (critique B5.5). */
+  readonly overdueBefore = computed(() => {
+    const from = this.salesFromDate();
+    if (!from) return null;
+    const rows = overdueInvoiceRows(this.salesOrders(), this.today()).filter((row) => row.view.order.orderDate < from);
+    return rows.length ? { count: rows.length, eur: rows.reduce((sum, row) => sum + row.outstandingEur, 0) } : null;
+  });
+  /** "10 aangemaakt · 8 open · 0 gesloten · 2 geannuleerd" (critique B1, N12); the phone keeps "8 open". */
+  readonly funnelTrail = computed(() => {
+    const funnel = this.salesMetrics().funnel;
+    if (!this.desk.active()) return `${funnel.open} open`;
+    const other = funnel.created - funnel.open - funnel.closed - funnel.cancelled;
+    return [`${funnel.created} aangemaakt`, `${funnel.open} open`, `${funnel.closed} gesloten`, `${funnel.cancelled} geannuleerd`,
+      other > 0 ? `${other} overige` : ''].filter(Boolean).join(' · ');
+  });
+
+  /* Lists: 8 rows on the desk, 5 on the phone, the rest behind "Alle n tonen" (design §2.1, §2.3). */
+  readonly openLists = signal<ReadonlySet<string>>(new Set());
+  readonly listLimit = computed(() => this.desk.active() ? 8 : 5);
+  take<T>(key: string, rows: readonly T[]): readonly T[] {
+    return this.openLists().has(key) || rows.length <= this.listLimit() ? rows : rows.slice(0, this.listLimit());
+  }
+  toggleList(key: string): void {
+    this.openLists.update((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
+  }
+  /** "7.200 stuks", "1.500 displays": a count in the product's own sales unit (design §5.10). */
+  unitWords(productId: number, count: number): string {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return product ? unitCount(productSalesUnit(product), count) : `${new Intl.NumberFormat('nl-BE').format(count)} stuks`;
+  }
   readonly categoryLabel = categoryLabel;
 
   readonly inventoryMetrics = computed(() => inventoryAnalysis(

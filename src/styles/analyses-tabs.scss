@@ -157,3 +157,24 @@ app-container-cost-analysis { display: block; min-width: 0; }
   .an-phone .an-done { margin: 0 var(--ios-inset, 16px) var(--an-gap); border-radius: var(--ios-radius, 22px); background: var(--surface); }
   .an-phone .an-empty--card { margin: 0 var(--ios-inset, 16px) var(--an-gap); }
 }
+
+/* ---------- Verkoop: the quote funnel, the legend, two-line product names (critique B2.4) */
+.an-funnel { display: grid; gap: 9px; padding: 4px 16px 4px; }
+.an-funnel__row { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(0, 2fr) 44px; align-items: center; gap: 12px; }
+.an-funnel__row b { display: block; font-size: 13px; font-weight: 650; }
+.an-funnel__row small { color: var(--muted); font-size: 11.5px; }
+.an-funnel__row .an-meter { height: 10px; }
+.an-funnel__n { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.an-funnel__row--accent .an-funnel__n { color: var(--ok); }
+.an-funnel__foot { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 16px 0; padding: 10px 0 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.an-funnel__foot b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.an-legend { gap: 4px 12px; font-size: 11.5px; }
+.an-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; background: var(--tone, var(--muted)); vertical-align: -1px; }
+.an-legend .tone-grey { background: var(--muted-2); }
+.an-row__title--2 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@media (max-width: 679.98px) {
+  .an-phone .an-funnel { padding: 14px 16px 6px; }
+  .an-phone .an-funnel__row { grid-template-columns: minmax(0, 1fr) 90px 30px; gap: 10px; }
+  .an-phone .an-funnel__foot { margin: 4px 16px 0; padding: 9px 0 12px; border-top: .5px solid var(--ios-sep); font-size: 12.5px; }
+  .an-phone .an-funnel__row b { font-size: 15px; font-weight: 500; }
+}
