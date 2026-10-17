@@ -143,3 +143,9 @@ test('H3: the desk agenda gives busy days the width, merges empty runs below 128
   assert.doesNotMatch(agenda, /<app-planner-cards[^>]*mo-fade/);
   assert.match(await read('styles/home-desk.scss'), /\.home-ag__week:not\(\.home-ag__week--rows\) > \.home-ag__day \{ min-height: 132px;/);
 });
+
+test('fix round 1: the quick task saves with the app\'s verb, Opslaan', async () => {
+  const sheet = await read('app/features/dashboard/home-add-sheet.ts');
+  assert.match(sheet, /\[disabled\]="!title\(\)\.trim\(\) \|\| saving\(\)">Opslaan<\/button>/);
+  assert.doesNotMatch(sheet, /Bewaar/);
+});

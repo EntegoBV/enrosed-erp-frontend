@@ -39,7 +39,7 @@ function chipDay(iso: string): string {
           <app-icon class="home-add__quick-icon" name="check" [size]="20" />
           <input #field class="home-add__field" type="text" placeholder="Snelle taak…" aria-label="Snelle taak" autocomplete="off"
                  enterkeyhint="done" maxlength="200" [value]="title()" (input)="title.set(value($event))" />
-          <button class="ios-capsule ios-capsule--accent ios-capsule--sm" type="submit" [disabled]="!title().trim() || saving()">Bewaar</button>
+          <button class="ios-capsule ios-capsule--accent ios-capsule--sm" type="submit" [disabled]="!title().trim() || saving()">Opslaan</button>
         </form>
         <div class="ios-chips home-add__days" role="group" aria-label="Dag van de taak">
           @for (chip of days(); track chip.id) {
@@ -117,7 +117,7 @@ export class HomeAddSheet {
     this.closed.emit();
   }
 
-  /** Bewaar: the task on the chosen day; on failure the text stays for another try. */
+  /** Opslaan: the task on the chosen day; on failure the text stays for another try. */
   async save(event: Event): Promise<void> {
     event.preventDefault();
     const title = this.title().trim();
