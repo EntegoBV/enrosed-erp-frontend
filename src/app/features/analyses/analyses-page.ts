@@ -1477,10 +1477,12 @@ export class AnalysesPage {
     const rows = overdueInvoiceRows(this.salesOrders(), this.today()).filter((row) => row.view.order.orderDate < from);
     return rows.length ? { count: rows.length, eur: rows.reduce((sum, row) => sum + row.outstandingEur, 0) } : null;
   });
-  /** "10 aangemaakt · 8 open · 0 gesloten · 2 geannuleerd" (critique B1, N12); the phone keeps "8 open". */
+  /**
+   * "10 aangemaakt · 8 open · 0 gesloten · 2 geannuleerd" (critique B1, N12), on both devices: the phone's funnel
+   * foot has no "gesloten" count, so the short "8 open" dropped a figure. The trail wraps under the head there.
+   */
   readonly funnelTrail = computed(() => {
     const funnel = this.salesMetrics().funnel;
-    if (!this.desk.active()) return `${funnel.open} open`;
     const other = funnel.created - funnel.open - funnel.closed - funnel.cancelled;
     return [`${funnel.created} aangemaakt`, `${funnel.open} open`, `${funnel.closed} gesloten`, `${funnel.cancelled} geannuleerd`,
       other > 0 ? `${other} overige` : ''].filter(Boolean).join(' · ');
