@@ -29,7 +29,8 @@ test('the route, the nav link and the settings pointer', async () => {
   const routes = await read('app.routes.ts');
   assert.match(routes, /path: 'douane',\s*canActivate: \[authGuard\],\s*canDeactivate: \[unsavedChangesGuard\],\s*title: 'Douane',/);
   const nav = await read('core/platform/nav-items.ts');
-  assert.match(nav, /\{ id: 'duties', label: 'Douane', icon: 'truck', link: '\/douane', hint: 'HS-codes en invoerrechten' \}/);
+  // The foundation gave Douane its own glyph (a stamp, beside the Leveranciers lorry); the link is Inkoop's screen.
+  assert.match(nav, /\{ id: 'duties', label: 'Douane', icon: 'customs', link: '\/douane', wide: true, hint: 'HS-codes en invoerrechten' \}/);
   const settings = await read('features/settings/settings-page.ts');
   assert.match(settings, /De douanetarieven hebben nu een eigen scherm onder Inkoop\./);
   assert.match(settings, /<a class="btn btn--sm" routerLink="\/douane">Naar Douane ›<\/a>/);

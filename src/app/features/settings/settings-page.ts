@@ -20,7 +20,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import {
-  CatalogImportResult, Category, HsCode, LANGUAGES, LanguageCode,
+  CatalogImportResult, Category, LANGUAGES, LanguageCode,
   Product, ProductFamily,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
@@ -41,8 +41,6 @@ import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
 import { DateNlPipe, DateTimeNlPipe } from '../../shared/pipes';
-import { Skeleton } from '../../shared/skeleton';
-import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { CompanyStore } from './company-store';
 import { SettingsDiscounts } from './settings-discounts';
 import { SettingsOverview } from './settings-overview';
@@ -106,13 +104,11 @@ const normalizeCategoryCode = (value: string): string => value
   providers: [CompanyStore],
   imports: [
     Icon,
-    LoadError,
     NgTemplateOutlet,
     SettingsCompany,
     SettingsLegal,
     SettingsOverview,
     Segmented,
-    Skeleton,
     SettingsDiscounts,
     CategoryTranslationEditor,
     FormsModule,
@@ -233,49 +229,14 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('duties')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'duties'" aria-label="Douane">
-      @if (dutiesError(); as error) {
-        <app-load-error [message]="error" [busy]="dutiesLoading()" (retry)="loadDuties()" />
-      } @else if (dutiesLoading() && !hsCodes().length) {
-        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="4" /></div></div>
-      } @else {
-      <!-- ======================================= douanetarieven -->
-      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
-        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
+      <!-- ======================================= douanetarieven: their own screen under Inkoop since 2026-10-17; this card points there for old links -->
+      <div class="card settings-section" id="duties">
+        <div class="card__head settings-head"><h2>Douanetarieven</h2></div>
         <div class="card__body">
-          <div class="alert alert--warn" style="margin-bottom:14px">
-            <span class="alert__icon">!</span>
-            <div>
-              Kijk deze percentages na in de <b>TARIC-databank</b> van de EU. Wat hier staat is
-              configuratie, geen douaneadvies.
-            </div>
-          </div>
-          @for (code of hsCodes(); track code.code) {
-            <div style="border:1px solid var(--line);border-radius:var(--r-sm);
-                        padding:10px 12px;margin-bottom:10px">
-              <div class="row" style="margin-bottom:8px">
-                <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
-                       [ngModel]="code.code" (ngModelChange)="code.code = $event" />
-                <input class="input input--sm num right" style="max-width:80px" type="text"
-                       inputmode="decimal" aria-label="Invoerrecht"
-                       [value]="pctText(code.dutyRatePct)"
-                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
-                <span class="small muted">%</span>
-                <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
-                <button class="btn btn--sm btn--danger" type="button"
-                        (click)="removeHsCode(code)">✕</button>
-              </div>
-              <input class="input input--sm" aria-label="Omschrijving" placeholder="Omschrijving"
-                     [ngModel]="code.description" (ngModelChange)="code.description = $event" />
-            </div>
-          }
-          <p class="small muted">
-            Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
-            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
-          </p>
+          <p class="small muted">De douanetarieven hebben nu een eigen scherm onder Inkoop.</p>
+          <a class="btn btn--sm" routerLink="/douane">Naar Douane ›</a>
         </div>
       </div>
-      }
       </section>
       }
 
@@ -1490,7 +1451,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly categorySaveError = signal<string | null>(null);
   readonly categoryConflict = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
-  readonly hsCodes = signal<HsCode[]>([]);
   constructor() {
     if (this.websiteCategoryMode) {
       void this.load();
@@ -1580,7 +1540,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   private loadViewData(view: SettingsView): Promise<unknown> {
     switch (view) {
       case 'company': return this.companyStore.load();
-      case 'duties': return this.loadDuties();
+      case 'duties': return Promise.resolve();
       /* Kortingen loads itself when it first shows; a reload goes through it. */
       case 'discounts': return this.discountsEditor()?.load() ?? Promise.resolve();
       case 'device': return this.loadPushDevices();
@@ -1611,24 +1571,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       const chip = this.tabStrip()?.nativeElement.querySelector<HTMLElement>(`[data-view="${view}"]`);
       chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
-  }
-
-  readonly dutiesLoading = signal(false);
-  readonly dutiesError = signal<string | null>(null);
-
-  async loadDuties(): Promise<void> {
-    this.dutiesLoading.set(true);
-    this.dutiesError.set(null);
-    try {
-      const hsCodes = await this.catalog.hsCodes();
-      if (this.destroyed) return;
-      this.hsCodes.set(hsCodes);
-      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
-    } catch (failure: unknown) {
-      if (!this.destroyed) this.dutiesError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
-    } finally {
-      this.dutiesLoading.set(false);
-    }
   }
 
   async load(): Promise<void> {
@@ -2018,23 +1960,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       });
   }
 
-  /* -------------------------------------------------- douanetarieven */
-
-  addHsCode(): void {
-    this.hsCodes.update((codes) =>
-      [...codes, { id: null, code: '', description: '', dutyRatePct: 0 }]);
-  }
-
-  async saveHsCode(code: HsCode): Promise<void> {
-    if (!code.code.trim()) { this.ui.toast('Vul een code in', 'err'); return; }
-    await this.catalog.saveHsCode(code);
-    this.ui.toast('Tarief opgeslagen');
-    /* Only Douane: load() re-reads every opened view and would wipe an unsaved Kortingen draft. */
-    await this.loadDuties();
-  }
-
-  /** Codes as loaded from the server; anything else is an unsaved draft. */
-  private savedHsCodes = new Set<string>();
+  /* -------------------------------------------------- percentages */
 
   /* Percentages are typed the Belgian way, with a comma. A number input
      refuses "6,5" on most keyboards; a decimal text field accepts both. */
@@ -2045,21 +1971,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   pctValue(raw: string): number {
     const parsed = parseFloat(String(raw).trim().replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  removeHsCode(code: HsCode): void {
-    /* A freshly added row has nothing on the server yet: drop it locally,
-       no dialog - that was the "X does nothing" on a new tariff. */
-    if (!this.savedHsCodes.has(code.code)) {
-      this.hsCodes.update((codes) => codes.filter((candidate) => candidate !== code));
-      return;
-    }
-    this.ui.confirm(
-      { title: 'Tariefcode verwijderen',
-        message: `<b>${code.code}</b> verwijderen? Producten vallen terug op het `
-          + 'standaardpercentage van de inkooporder.',
-        confirmLabel: 'Verwijderen', danger: true },
-      async () => { await this.catalog.deleteHsCode(code.code); await this.loadDuties(); });
   }
 
   canDeactivate(): boolean | Promise<boolean> {

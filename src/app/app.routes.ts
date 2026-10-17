@@ -213,7 +213,6 @@ export const routes: Routes = [
   },
   {
     path: 'website',
-    title: 'Website beheren',
     pathMatch: 'full',
     title: 'Website',
     canActivate: [authGuard],

@@ -280,8 +280,9 @@ export function containerParts(item: Pick<ForecastItem, 'title' | 'orderId' | 's
   orders: ReadonlyMap<number, { id?: number | null; number?: string | null; alias?: string | null }>): { name: string; term: string | null } {
   if (item.orderId === null || (item.source.type !== 'container' && item.source.type !== 'advance')) return { name: item.title, term: null };
   const order = orders.get(item.orderId);
-  /* The forecast's own prefixes: the order's number, else its 'Inkoop #id' (cash-forecast-input advance rows). */
-  for (const prefix of [order?.number, `Inkoop #${item.orderId}`]) {
+  /* The forecast's own prefixes: the container's name (the Kasprognose names containers by containerName() since
+     Analyses W5c), the order's number, else its 'Inkoop #id' (cash-forecast-input advance rows). */
+  for (const prefix of [order ? containerName(order, item.orderId) : null, order?.number, `Inkoop #${item.orderId}`]) {
     if (prefix && item.title.startsWith(`${prefix} · `)) {
       return { name: containerName(order ?? null, item.orderId), term: item.title.slice(prefix.length + 3) || null };
     }
