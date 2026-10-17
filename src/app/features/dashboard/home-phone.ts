@@ -82,9 +82,12 @@ const MENU: ContextMenuItem[] = [
       <section class="ios-section home-todo" aria-labelledby="home-todo-title">
         <div class="ios-section__head ios-section__head--prominent">
           <h2 id="home-todo-title">Te doen</h2>
-          @if (data.settled() || t.count) { <span class="ios-section__trail" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
+          @if (data.tasksReady() && (data.settled() || t.count)) { <span class="ios-section__trail" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
         </div>
-        @if (t.count) {
+        <!-- One reveal (critique B2): the rows show once Te doen's sources and the Kas answered, never source by source. -->
+        @if (!data.tasksReady()) {
+          <div class="ios-group home-todo__skeleton" aria-busy="true"><app-skeleton kind="list" [rows]="3" /></div>
+        } @else if (t.count) {
           @for (group of groups(); track group.tier) {
             <p class="home-tier"><i class="wk-dot" [class]="group.tier === 'nu' ? 'tone-danger' : 'tone-amber'" aria-hidden="true"></i>{{ group.label }}</p>
             <app-home-task-cells [tasks]="group.rows" [label]="group.label" [hosts]="{ bell: bell, cards: cards }">

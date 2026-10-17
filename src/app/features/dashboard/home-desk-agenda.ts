@@ -264,7 +264,7 @@ export class HomeDeskAgenda {
       case 'afspraak': return { amount: null, text: [entry.atTime ? entry.atTime.slice(0, 5) : 'dag', entry.sub].filter(Boolean).join(' · ') };
       case 'taak': return { amount: null, text: entry.sub ?? (entry.late ? 'taak · te laat' : entry.done ? 'taak · afgevinkt' : 'taak') };
       case 'container': return { amount: null, text: entry.sub };
-      default: return { amount: entry.eur === null ? null : signed(entry.eur), text: entry.sub };
+      default: return { amount: entry.eur === null ? null : signed(entry.eur), text: [entry.term, entry.sub].filter(Boolean).join(' · ') || null };
     }
   }
 
@@ -278,7 +278,7 @@ export class HomeDeskAgenda {
   afterText(entry: AgendaEntry): string {
     const day = `${entry.milestoneKind === 'EXPECTED_ARRIVAL' ? '± ' : ''}${weekdayDayMonth(entry.date)}`;
     const title = entry.deadline && entry.sub ? `${entry.title} ${entry.sub}` : entry.title;
-    return [day, title, entry.eur === null ? null : signed(entry.eur)].filter(Boolean).join(' · ');
+    return [day, title, entry.term, entry.eur === null ? null : signed(entry.eur)].filter(Boolean).join(' · ');
   }
 
   private plannerItem(id: number): PlannerItem | null {

@@ -198,6 +198,29 @@ function brusselsDay(instant: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Brussels' }).format(new Date(instant));
 }
 
+/**
+ * How long a customer waits (design §4 #6, the rule behind "Wacht 27 werkdagen"): "< 1 u" and "17 u" within
+ * the first day, then "1 werkdag", "27 werkdagen" (Mon–Fri after the day it came in, Brussels time); `nu` from
+ * CUSTOMER_WAIT_NU_WORKDAYS. Null without a usable instant. The bell reads the same rule from
+ * shared/customer-wait.ts (a copy, kept equal by a test: the bell must not load the ranking).
+ */
+export function waitLabel(at: string | null | undefined, nowMs: number, today: string): { label: string; nu: boolean } | null {
+  const ms = at ? Date.parse(at) : Number.NaN;
+  if (Number.isNaN(ms)) return null;
+  const hours = Math.max(0, Math.floor((nowMs - ms) / 3_600_000));
+  const workdays = workdaysBetween(brusselsDay(new Date(ms).toISOString()), today);
+  const label = hours < 24 || workdays === 0
+    ? (hours < 1 ? '< 1 u' : `${hours} u`)
+    : `${workdays} ${workdays === 1 ? 'werkdag' : 'werkdagen'}`;
+  return { label, nu: workdays >= CUSTOMER_WAIT_NU_WORKDAYS };
+}
+
+/** Toevoegen's quick task (design §4 #9): from 18:00 and at the weekend the next workday is preselected, else today. */
+export function defaultTaskDay(today: string, hour: number): 'today' | 'next' {
+  const dow = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)))).getUTCDay();
+  return hour >= 18 || dow === 0 || dow === 6 ? 'next' : 'today';
+}
+
 const eurFormat = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 /** "€ 1.000", "− € 7.940". */
 export function eurText(value: number): string {
@@ -320,20 +343,22 @@ function customersTask(input: HomeTaskInput): Candidate | null {
     ...[...counts].filter(([kind]) => !known.has(kind)).sort(([a], [b]) => a.localeCompare(b))
       .map(([kind, n]) => (n === 1 ? kind.toLowerCase() : `${n} × ${kind.toLowerCase()}`)),
   ];
-  const times = items.flatMap((item) => (item.at && !Number.isNaN(Date.parse(item.at)) ? [Date.parse(item.at)] : []));
-  const oldest = times.length ? Math.min(...times) : null;
+  /* The oldest item (the first of equal instants): its wait is the row's chip, its customer is named (B-UX1). */
+  const oldest = items.reduce<{ ms: number; item: HomeTaskInput['customers'][number] } | null>((best, item) => {
+    const ms = item.at ? Date.parse(item.at) : Number.NaN;
+    return Number.isNaN(ms) || (best && best.ms <= ms) ? best : { ms, item };
+  }, null);
   let tier: Tier = 'vandaag';
   let chip: HomeTask['chip'] = { label: 'Klant wacht', tone: 'warn' };
-  if (oldest !== null) {
-    const hours = Math.max(0, Math.floor((input.nowMs - oldest) / 3_600_000));
-    const workdays = workdaysBetween(brusselsDay(new Date(oldest).toISOString()), input.today);
-    if (workdays >= CUSTOMER_WAIT_NU_WORKDAYS) tier = 'nu';
-    chip = hours < 24 || workdays === 0
-      ? { label: hours < 1 ? 'Wacht < 1 u' : `Wacht ${hours} u`, tone: tier === 'nu' ? 'danger' : 'warn' }
-      : { label: `Wacht ${workdays} ${plural(workdays, 'werkdag', 'werkdagen')}`, tone: tier === 'nu' ? 'danger' : 'warn' };
+  const wait = oldest ? waitLabel(oldest.item.at, input.nowMs, input.today) : null;
+  if (wait) {
+    if (wait.nu) tier = 'nu';
+    chip = { label: `Wacht ${wait.label}`, tone: tier === 'nu' ? 'danger' : 'warn' };
   }
+  const who = oldest?.item.customer?.trim();
   return {
-    key: 'customers', source: 'customers', tier, escalated: tier === 'nu', title: 'Klanten wachten', context: parts.join(' · '),
+    key: 'customers', source: 'customers', tier, escalated: tier === 'nu', title: 'Klanten wachten',
+    context: parts.join(' · ') + (who ? ` · de oudste: ${who}` : ''),
     chip, eur: null, count: items.length, daysLate: 0, due: null,
     verb: 'Openen', target: { kind: 'bell' }, plannerId: null, actions: SYSTEM_ACTIONS,
     detail: items.map((item) => `${item.kind}|${item.orderNumber}`).sort().join(','),
@@ -481,7 +506,7 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
     const n = input.loginRequests;
     out.push({ ...base, key: 'login', source: 'login', tier: 'vandaag', title: 'Login-aanvragen goedkeuren',
       context: 'Wachten op goedkeuring', chip: { label: 'Klant wacht', tone: 'warn' }, count: n,
-      verb: 'Bekijken', target: { kind: 'route', path: ['/klantlogins'] }, detail: String(n) });
+      verb: 'Goedkeuren', target: { kind: 'route', path: ['/klantlogins'] }, detail: String(n) });
   }
   if (input.overdueCosts && input.overdueCosts.count > 0) {
     const costs = input.overdueCosts;
@@ -501,29 +526,31 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
   if (input.purchaseCheck > 0) {
     const n = input.purchaseCheck;
     out.push({ ...base, key: 'purchase-check', source: 'purchase-check', tier: 'ooknog', title: 'Inkoop controleren',
-      context: `${n} ${plural(n, 'order', 'orders')} met een opmerking`, chip: { label: 'Nakijken', tone: 'grey' }, count: n,
-      verb: 'Bekijken', target: { kind: 'route', path: ['/purchasing'] }, detail: String(n) });
+      context: `${n} ${plural(n, 'order', 'orders')} met een opmerking`, chip: { label: 'opmerking', tone: 'grey' }, count: n,
+      verb: 'Nakijken', target: { kind: 'route', path: ['/purchasing'] }, detail: String(n) });
   }
   if (input.settlements > 0) {
     const n = input.settlements;
     out.push({ ...base, key: 'settlement', source: 'settlement', tier: 'ooknog', title: 'Veilingafrekening maken',
-      context: 'Partnercontainers ontvangen; het veilingoverzicht wacht', chip: { label: 'Afrekenen', tone: 'grey' }, count: n,
-      verb: 'Maken', target: { kind: 'route', path: ['/analyses/purchasing'] }, detail: String(n) });
+      context: 'Partnercontainers ontvangen; het veilingoverzicht wacht', chip: { label: 'ontvangen', tone: 'grey' }, count: n,
+      verb: 'Afrekenen', target: { kind: 'route', path: ['/analyses/purchasing'], query: { deel: 'partners' } }, detail: String(n) });
   }
   if (input.catalog > 0) {
     const n = input.catalog;
     out.push({ ...base, key: 'catalog', source: 'catalog', tier: 'ooknog', title: 'Websiteproducten aanvullen',
-      context: 'Nog niet publicatieklaar', chip: { label: 'Aanvullen', tone: 'grey' }, count: n,
-      verb: 'Bekijken', target: { kind: 'route', path: ['/website/products'] }, detail: String(n) });
+      context: 'Nog niet publicatieklaar', chip: { label: 'website', tone: 'grey' }, count: n,
+      verb: 'Aanvullen', target: { kind: 'route', path: ['/website/products'] }, detail: String(n) });
   }
-  const chips: Readonly<Record<HomeTaskInput['housekeeping'][number]['kind'], string>> = {
-    'bank-lines': 'Koppelen', 'recurring-due': 'Boeken', 'open-credits': 'Tegoed', regimes: 'Bevestigen',
+  /* Verb = the action, chip = the reason (design §4 #7). */
+  const looks: Readonly<Record<HomeTaskInput['housekeeping'][number]['kind'], { verb: string; chip: string }>> = {
+    'bank-lines': { verb: 'Koppelen', chip: 'laatste 3 mnd' }, 'recurring-due': { verb: 'Boeken', chip: 'staat klaar' },
+    'open-credits': { verb: 'Afhandelen', chip: 'tegoed' }, regimes: { verb: 'Bevestigen', chip: 'dit jaar' },
   };
   for (const item of input.housekeeping) {
     if (item.count <= 0) continue;
     out.push({ ...base, key: item.kind, source: item.kind, tier: 'ooknog', title: item.title, context: item.detail,
-      chip: { label: chips[item.kind], tone: 'grey' }, eur: item.eur, count: item.count,
-      verb: 'Bekijken', target: financeTarget(item.location), detail: `${item.count}|${item.eur ?? ''}` });
+      chip: { label: looks[item.kind].chip, tone: 'grey' }, eur: item.eur, count: item.count,
+      verb: looks[item.kind].verb, target: financeTarget(item.location), detail: `${item.count}|${item.eur ?? ''}` });
   }
   return out;
 }
@@ -575,6 +602,16 @@ export function homeTasks(input: HomeTaskInput): HomeTaskList {
     count, total: count + ookNog.length, complete: missing.length === 0, missing: [...missing],
     allClear: missing.length === 0 && count === 0,
   };
+}
+
+/**
+ * What the footer under the shown rows counts (critique B3): every open point not on screen - Nu/Vandaag past
+ * the cap, then Ook nog minus the `previewed` Ook nog rows the desk shows - and how many of them are Nu or
+ * Vandaag ("{m} voor vandaag"), so the phone and the desk say the same thing.
+ */
+export function othersOf(list: Pick<HomeTaskList, 'more' | 'ookNog'>, previewed = 0): { count: number; urgent: number; hidden: HomeTask[] } {
+  const hidden = [...list.more, ...list.ookNog.slice(Math.max(0, previewed))];
+  return { count: hidden.length, urgent: list.more.length, hidden };
 }
 
 /** The next Later state after one more "Later" on this task: hidden until the next workday, and counted. */

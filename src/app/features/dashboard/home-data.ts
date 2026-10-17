@@ -27,7 +27,7 @@ import { weekdayDayMonth } from '../finance/cash-format';
 import { receivableTotals } from '../finance/incoming-money';
 import { agendaModel } from './agenda-entries';
 import { localPlannerDate, purchasePlannerMilestones } from './dashboard-today-state';
-import { cashHeadline, outlookFigures } from './home-cash';
+import { SCHEDULES_WAIT_MS, TASKS_REVEAL_CAP_MS, cashHeadline, forecastGate, outlookFigures, tasksReveal } from './home-cash';
 import { monthWindows } from './home-figures';
 import { readLater, writeLater } from './home-later';
 import { coverageOf, forecastAnswer, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
@@ -58,6 +58,10 @@ const PAGE_SOURCES: readonly HomeSource[] = ['verkoop', 'inkoop', 'voorraad', 'w
   'inkomende betalingen', 'partnerfinanciering', 'klanten'];
 /** The home calls the forecast needs; any of them failing makes it partial ("Prognose onvolledig"). */
 const FORECAST_SOURCES: readonly HomeSource[] = ['verkoop', 'inkoop', 'kosten', 'inkomende betalingen', 'klanten'];
+/** The calls Te doen waits for on the first load, with the planner and the bell (§4 #4): the slow families never hold it up. */
+const TASK_SOURCES: readonly HomeSource[] = ['verkoop', 'inkoop', 'kosten', 'inkomende betalingen', 'partnerfinanciering', 'klanten'];
+/** The home calls the forecast is built from (with CashData): once all answered (ready or failed) it may be built. */
+const FORECAST_INPUTS: readonly HomeSource[] = ['verkoop', 'inkoop', 'voorraad', 'leveranciers', 'kosten', 'inkomende betalingen', 'klanten'];
 /** Named after the coverage words in the status, in this order. */
 const OTHER_SOURCES: readonly HomeSource[] = ['voorraad', 'websiteproducten', 'leveranciers', 'websitebezoek', 'klanten'];
 /** A visit older than this fetches the page data again (the old home fetched on every visit; the Agenda and Open pages sit in between). */
@@ -120,19 +124,34 @@ export class HomeData {
 
   private readonly states = signal<Record<HomeSource, SourceState>>(
     Object.fromEntries(PAGE_SOURCES.map((source) => [source, 'loading'])) as Record<HomeSource, SourceState>);
-  /** The first load is under way (nothing to show yet). */
+  /**
+   * The first load has not yet heard from Te doen's own sources (TASK_SOURCES, the planner, the bell); the
+   * figure blocks fill in per source meanwhile (§4 #4).
+   */
   readonly loading = signal(true);
-  /** A later load is under way; the last data stays on screen. */
+  /** A load is under way: the first one until every source answered, a later one with the last data on screen. */
   readonly refreshing = signal(false);
-  /** When the last load finished (epoch ms): "Alles bijgewerkt om 08:12". */
+  /** When the last load finished, every source answered (epoch ms): "Alles bijgewerkt om 08:12". */
   readonly loadedAt = signal<number | null>(null);
   private readonly loadedOnce = signal(false);
+  /** The forecast's own calls (FORECAST_INPUTS) answered once: from here the forecast may be built. */
+  private readonly inputsAnswered = signal(false);
+  /** TASKS_REVEAL_CAP_MS after the first load's task sources answered: Te doen shows without the Kasprognose (B2). */
+  private readonly revealCap = signal(false);
   private readonly bellAnswered = signal(false);
   private busy = false;
   /** Home routes on screen (enterHome): the forecast and the advance schedules follow CashData only while one is. */
   private readonly active = signal(0);
   /** The CashData round the partner financings answered in: the advance schedules load with those, never with an older visit's. */
   private readonly partnersRound = signal(0);
+  /** The round whose advance schedules answered (or were already claimed), and the round whose SCHEDULES_WAIT_MS ran out. */
+  private readonly schedulesDone = signal(0);
+  private readonly schedulesTimedOut = signal(0);
+  /** The forecast is built only with this round's advance schedules (critique B1); see forecastGate. */
+  private readonly scheduleGate = computed(() => forecastGate({
+    partnersFailed: this.states().partnerfinanciering === 'failed', partnersRound: this.partnersRound(),
+    schedulesDone: this.schedulesDone(), timedOut: this.schedulesTimedOut(),
+  }));
 
   /** One source's state. */
   stateOf(source: HomeSource): SourceState {
@@ -174,8 +193,11 @@ export class HomeData {
     purchases: this.purchases(), suppliers: this.suppliers(), products: this.products(), salesOrders: this.salesOrders(),
     customers: this.customers(), costs: this.costs(), incomingPayments: this.incomingPayments(),
   }));
-  /** The forecast's sources, once the page loaded and the bank is in. */
-  private readonly forecastSources = computed(() => (this.loadedOnce() ? this.cashData.sourcesWith(this.cashPage(), this.today()) : null));
+  /**
+   * The forecast's sources, once its own calls answered (FORECAST_INPUTS) and the bank is in. The Vooruitblik reads them
+   * at once; the forecast itself waits for the advance schedules too (scheduleGate), so the bank never waits for them.
+   */
+  private readonly forecastSources = computed(() => (this.inputsAnswered() ? this.cashData.sourcesWith(this.cashPage(), this.today()) : null));
   private readonly cashOptions = computed(() => cashOptionsOf(DEFAULT_CASH_LOCATION, this.today(), this.dismissed()));
 
   /** The Vooruitblik (Kosten & bank's equation): cheap, there as soon as the bank is. */
@@ -246,7 +268,7 @@ export class HomeData {
   readonly coverage = computed(() => this.coverageParts().covered);
 
   /** Every source has answered (or failed): from here "Niet volledig" names real failures, before it the page says "Bijwerken…". */
-  readonly settled = computed(() => !this.loading() && this.bellAnswered()
+  readonly settled = computed(() => this.loadedOnce() && !this.loading() && this.bellAnswered()
     && !this.planner.loading() && (this.planner.loaded() || !!this.planner.error())
     && this.cash().state !== 'loading' && this.cash().state !== 'computing');
 
@@ -268,6 +290,13 @@ export class HomeData {
 
   /** Nu / Vandaag / Ook nog, the cap, counts and coverage (home-priority.ts). */
   readonly tasks = computed(() => homeTasks({ ...this.taskBase(), nowMs: this.now(), later: this.laterState() }));
+
+  /**
+   * Te doen may show (critique B2): its sources answered and the Kas is past computing (or 1.5 s passed). Until then
+   * every Te doen surface - the desk card and its pill, the brief, the phone section and its count, Open punten,
+   * Alle - shows its skeleton, so the list appears once instead of growing and reordering per source.
+   */
+  readonly tasksReady = computed(() => tasksReveal({ loading: this.loading(), cashState: this.cash().state, capPassed: this.revealCap() }));
 
   /**
    * The status words: the failed coverage sources in their order (the same words as the Te doen note, from the
@@ -296,7 +325,7 @@ export class HomeData {
     effect((onCleanup) => {
       const sources = this.forecastSources();
       const options = this.cashOptions();
-      if (!sources || !this.active() || (built?.sources === sources && built.options === options)) return;
+      if (!sources || !this.active() || !this.scheduleGate() || (built?.sources === sources && built.options === options)) return;
       this.computing.set(true);
       const cancel = whenIdle(() => {
         const started = performance.now();
@@ -324,7 +353,15 @@ export class HomeData {
       const round = this.cashData.generation();
       if (round === 0 || !this.active() || this.partnersRound() !== round) return;
       const financings = this.partnerSummaries();
-      untracked(() => void this.cashData.loadSchedules(financings, round));
+      /* Done for this round also when Analyses claimed it first (loadSchedules returns at once then; a known limit). */
+      untracked(() => void this.cashData.loadSchedules(financings, round).finally(() => this.schedulesDone.set(round)));
+    });
+    /* A hung schedule call must not leave "Kasprognose wordt berekend…" on screen: the gate opens after SCHEDULES_WAIT_MS. */
+    effect((onCleanup) => {
+      const round = this.partnersRound();
+      if (round === 0) return;
+      const timer = setTimeout(() => this.schedulesTimedOut.set(round), SCHEDULES_WAIT_MS);
+      onCleanup(() => clearTimeout(timer));
     });
   }
 
@@ -361,47 +398,80 @@ export class HomeData {
     await this.fetchPage();
   }
 
+  /**
+   * The page data. The first load applies each source as it answers (§4 #4): `loading` ends once Te doen's sources,
+   * the planner and the bell answered, the forecast may be built once its own calls did, and `refreshing` and
+   * `loadedAt` wait for all. A later load keeps the last data on screen and swaps the new data in at once, as before.
+   */
   private async fetchPage(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    if (this.loadedOnce()) this.refreshing.set(true); else this.loading.set(true);
+    const first = !this.loadedOnce();
+    this.refreshing.set(true);
+    if (first) this.loading.set(true);
     this.dismissed.set(readDismissed());
+    const batch: (() => void)[] = [];
+    const land = (apply: () => void): void => { if (first) apply(); else batch.push(apply); };
+    const taskWait = new Set<string>([...TASK_SOURCES, 'planner', 'bell']);
+    const inputWait = new Set<string>(FORECAST_INPUTS);
+    const answered = (key: string): void => {
+      if (!first) return;
+      if (taskWait.delete(key) && taskWait.size === 0) this.endFirstLoad();
+      if (inputWait.delete(key) && inputWait.size === 0) this.inputsAnswered.set(true);
+    };
+    const track = <T>(source: HomeSource, call: Promise<T>, apply: (value: T) => void): Promise<void> => call.then(
+      (value) => land(() => { apply(value); this.setState(source, 'ready'); }),
+      () => land(() => this.setState(source, 'failed')),
+    ).finally(() => answered(source));
     try {
-      const [sales, purchases, products, families, suppliers, website, costs, incoming, partners, customers] = await Promise.allSettled([
-        this.salesApi.orders(), this.sourcing.purchaseOrders(), this.catalog.products(), this.catalog.productFamilies(), this.sourcing.suppliers(),
-        this.analytics.websiteReport(7), this.finance.costs(), this.salesApi.incomingPayments(), this.sourcing.partnerFinancings(),
-        this.salesApi.customers(), this.planner.reload(), this.work.refresh().then(() => this.bellAnswered.set(true)),
-      ] as const);
-      const next = { ...this.states() };
-      const take = <T>(result: PromiseSettledResult<T>, source: HomeSource, apply: (value: T) => void): void => {
-        if (result.status === 'fulfilled') { apply(result.value); next[source] = 'ready'; } else next[source] = 'failed';
-      };
-      take(sales, 'verkoop', (value) => this.salesOrders.set(value));
-      take(purchases, 'inkoop', (value) => this.purchases.set(value));
-      take(products, 'voorraad', (value) => this.products.set(value));
-      take(suppliers, 'leveranciers', (value) => this.suppliers.set(value));
-      take(website, 'websitebezoek', (value) => this.website.set(value));
-      take(costs, 'kosten', (value) => this.costs.set(value));
-      take(incoming, 'inkomende betalingen', (value) => this.incomingPayments.set(value));
-      take(partners, 'partnerfinanciering', (value) => {
-        this.partnerSummaries.set(value);
-        this.partnersRound.set(this.cashData.generation());
-      });
-      take(customers, 'klanten', (value) => this.customers.set(value));
-      take(families, 'websiteproducten', (value) => this.catalogAttention.set(value
-        .filter((family) => family.active && family.publicationIssues.length > 0).length));
-      if (families.status === 'rejected' && products.status === 'fulfilled') {
-        /* The old fallback: products not ready for publication, while the families could not load. */
-        this.catalogAttention.set(products.value.filter((product) => product.active && (product.publicationIssues?.length ?? 0) > 0).length);
-      }
-      this.states.set(next);
+      const products = this.catalog.products();
+      const families = this.catalog.productFamilies();
+      await Promise.all([
+        track('verkoop', this.salesApi.orders(), (value) => this.salesOrders.set(value)),
+        track('inkoop', this.sourcing.purchaseOrders(), (value) => this.purchases.set(value)),
+        track('voorraad', products, (value) => this.products.set(value)),
+        track('leveranciers', this.sourcing.suppliers(), (value) => this.suppliers.set(value)),
+        track('websitebezoek', this.analytics.websiteReport(7), (value) => this.website.set(value)),
+        track('kosten', this.finance.costs(), (value) => this.costs.set(value)),
+        track('inkomende betalingen', this.salesApi.incomingPayments(), (value) => this.incomingPayments.set(value)),
+        track('partnerfinanciering', this.sourcing.partnerFinancings(), (value) => {
+          this.partnerSummaries.set(value);
+          this.partnersRound.set(this.cashData.generation());
+        }),
+        track('klanten', this.salesApi.customers(), (value) => this.customers.set(value)),
+        track('websiteproducten', families, (value) => this.catalogAttention.set(value
+          .filter((family) => family.active && family.publicationIssues.length > 0).length)),
+        /* The old fallback, once both answered: products not ready for publication, while the families could not load. */
+        Promise.allSettled([products, families]).then(([productRows, familyRows]) => {
+          if (familyRows.status === 'rejected' && productRows.status === 'fulfilled') {
+            land(() => this.catalogAttention.set(productRows.value.filter((product) => product.active && (product.publicationIssues?.length ?? 0) > 0).length));
+          }
+        }),
+        this.planner.reload().catch(() => undefined).finally(() => answered('planner')),
+        this.work.refresh().then(() => this.bellAnswered.set(true)).catch(() => undefined).finally(() => answered('bell')),
+      ]);
+      for (const apply of batch) apply();
     } finally {
+      if (first) {
+        this.inputsAnswered.set(true);
+        this.endFirstLoad();
+      }
       this.loadedAt.set(Date.now());
       this.loadedOnce.set(true);
-      this.loading.set(false);
       this.refreshing.set(false);
       this.busy = false;
     }
+  }
+
+  private setState(source: HomeSource, state: SourceState): void {
+    this.states.update((states) => (states[source] === state ? states : { ...states, [source]: state }));
+  }
+
+  /** Te doen's sources answered on the first load: the list may show, at the latest TASKS_REVEAL_CAP_MS later. */
+  private endFirstLoad(): void {
+    if (!this.loading()) return;
+    this.loading.set(false);
+    setTimeout(() => this.revealCap.set(true), TASKS_REVEAL_CAP_MS);
   }
 
   /* -------------------------------------------------------------- actions */

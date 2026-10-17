@@ -7,7 +7,7 @@ import { HOME_ADD_ACTIONS, HomeAdd } from './home-add-actions';
 import type { HomeAddAction } from './home-add-actions';
 import { HomeData } from './home-data';
 import { shortDate } from './home-figures';
-import { nextWorkday } from './home-priority';
+import { defaultTaskDay, nextWorkday } from './home-priority';
 
 type DayChip = 'today' | 'next' | 'after' | 'none';
 
@@ -85,7 +85,8 @@ export class HomeAddSheet {
 
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
   readonly title = signal('');
-  readonly day = signal<DayChip>('today');
+  /** From 18:00 and at the weekend the next workday is preselected ("3 d te laat" on Monday otherwise); the sheet is made on each open. */
+  readonly day = signal<DayChip>(defaultTaskDay(this.data.today(), new Date().getHours()));
   readonly saving = signal(false);
 
   /** Vandaag · the next workday ("Morgen" when that is tomorrow) · the workday after it · Geen dag. */

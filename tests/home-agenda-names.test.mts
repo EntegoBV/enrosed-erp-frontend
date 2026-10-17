@@ -22,7 +22,7 @@ registerHooks({
     return next(specifier, context);
   },
 });
-const { agendaInputOf, containerTitleOf } = await import('../src/app/features/dashboard/home-sources.ts');
+const { agendaInputOf, containerParts, containerTitleOf } = await import('../src/app/features/dashboard/home-sources.ts');
 
 const TODAY = '2026-10-15';
 const K = 'BE94731074082814';
@@ -57,7 +57,8 @@ function forecastInput(): CashForecastInput {
 }
 
 const view = (id: number, number: string, alias: string | null) => ({ order: { id, number, alias } }) as unknown as PurchaseOrderView;
-const headline: CashHeadline = { state: 'ready', startEur: 90000, accounts: [], lowest: null, tight: null, bufferEur: 10000, warnings: [] };
+const headline: CashHeadline = { state: 'ready', startEur: 90000, accounts: [], lowest: null, tight: null, tightCount: 0, belowZeroFrom: null,
+  bufferEur: 10000, warnings: [] };
 
 test('the agenda\'s money names its containers by containerName(): Herkenbare naam, else the PO number', () => {
   const forecast = buildCashForecast(forecastInput(), { horizonEnd: horizonEndOf(TODAY, 6), scenario: false, includeStock: false, rulesOff: [],
@@ -72,15 +73,22 @@ test('the agenda\'s money names its containers by containerName(): Herkenbare na
   });
   assert.equal(input.moneySource, 'prognose');
   assert.ok(input.money.some((money: { title: string }) => money.title === 'Factuur F2026-0420'), 'other money keeps its title');
-  const titles = input.money.filter((money: { orderId: number | null }) => money.orderId !== null).map((money: { title: string }) => money.title).sort();
+  /* The name and the term apart (design §4 #11): the chip shows the name, then the amount with the term. */
+  const titles = input.money.filter((money: { orderId: number | null }) => money.orderId !== null)
+    .map((money: { title: string; term?: string | null }) => `${money.title} | ${money.term}`).sort();
   assert.deepEqual(titles, [
-    'PO-2026-043 · 70% bij vertrek', 'Partner Van Gils · Voorschot 2',
-    'Valentijn 2027 · 70% bij vertrek', 'Valentijn 2027 · Douane & transport', 'Valentijn 2027 · btw bij invoer',
+    'PO-2026-043 | 70% bij vertrek', 'Partner Van Gils | Voorschot 2',
+    'Valentijn 2027 | 70% bij vertrek', 'Valentijn 2027 | Douane & transport', 'Valentijn 2027 | btw bij invoer',
   ]);
+  /* The party is the short company name; the full one stays in the forecast. */
+  const parties = [...new Set(input.money.filter((money: { orderId: number | null }) => money.orderId === 30)
+    .map((money: { party: string | null }) => money.party))];
+  assert.ok(parties.includes('Yunnan Pubei Flowers'), JSON.stringify(parties));
+  assert.ok(parties.every((party) => party === null || party === 'Yunnan Pubei Flowers' || !party.includes(',')), JSON.stringify(parties));
   /* Daarna and the chips read the same entries. */
   const model = agendaModel(input);
   assert.equal(model.after(TODAY, 10).some((entry) => /PO-2026-0(30|47)/.test(entry.title)), false);
-  assert.ok(model.after(TODAY, 10).some((entry) => entry.title === 'Valentijn 2027 · 70% bij vertrek'));
+  assert.ok(model.after(TODAY, 10).some((entry) => entry.title === 'Valentijn 2027' && entry.term === '70% bij vertrek'));
 });
 
 test('containerTitleOf only renames container and advance titles that start with the order\'s own prefix', () => {
@@ -93,4 +101,12 @@ test('containerTitleOf only renames container and advance titles that start with
   assert.equal(containerTitleOf(item('Offerte PO-2026-030 · x', 'quote', 30), orders), 'Offerte PO-2026-030 · x');
   /* A title the forecast did not prefix stays whole. */
   assert.equal(containerTitleOf(item('Containerkosten', 'container', 30), orders), 'Containerkosten');
+});
+
+test('containerParts splits the forecast title into the container name and its term', () => {
+  const orders = new Map([[30, { id: 30, number: 'PO-2026-030', alias: 'Valentijn 2027' }]]);
+  const item = (title: string, type: string, orderId: number | null) => ({ title, orderId, source: { type, orderId: orderId ?? 0, rowId: 1 } }) as never;
+  assert.deepEqual(containerParts(item('PO-2026-030 · 1/3 bij bestelling', 'advance', 30), orders), { name: 'Valentijn 2027', term: '1/3 bij bestelling' });
+  assert.deepEqual(containerParts(item('Factuur F2026-0420', 'invoice', null), orders), { name: 'Factuur F2026-0420', term: null });
+  assert.deepEqual(containerParts(item('Containerkosten', 'container', 30), orders), { name: 'Containerkosten', term: null });
 });

@@ -208,7 +208,7 @@ export class AgendaRows {
   }
 
   subOf(entry: AgendaEntry): string | null {
-    if (entry.type !== 'taak') return entry.sub;
+    if (entry.type !== 'taak') return [entry.term, entry.sub].filter(Boolean).join(' · ') || null;
     const late = entry.late && !this.dated() ? 'te laat' : null;
     return ['Taak', late, entry.sub].filter(Boolean).join(' · ');
   }

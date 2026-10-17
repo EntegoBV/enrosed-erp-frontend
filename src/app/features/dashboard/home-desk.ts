@@ -111,10 +111,10 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
              (Emre, 2026-10-16: "gigantische white space"): Te doen with Inkoop under it, the bank, Verkoop and Resultaat
              beside it. Below 1280 px the wrappers step aside (display: contents) and the grid orders the cards. -->
         <div class="home-desk__main">
-          <section class="wk-card home-todo" aria-labelledby="home-todo-title" [attr.aria-busy]="data.loading() || null">
+          <section class="wk-card home-todo" aria-labelledby="home-todo-title" [attr.aria-busy]="!data.tasksReady() || null">
             <header class="home-todo__head">
               <h2 id="home-todo-title" class="home-desk__card-title">Vandaag te doen</h2>
-              @if (!data.loading()) { <span class="wk-pill home-todo__count" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
+              @if (data.tasksReady()) { <span class="wk-pill home-todo__count" [attr.aria-label]="t.count + ' te doen'">{{ t.count }}</span> }
               <span #whyAnchor class="wk-popover-anchor home-todo__why">
                 <button class="wk-link" type="button" aria-haspopup="dialog" [attr.aria-expanded]="whyOpen()" (click)="whyOpen.set(!whyOpen())">
                   <app-icon name="info" [size]="14" /> Waarom deze volgorde</button>
@@ -126,7 +126,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
               </span>
             </header>
 
-            @if (data.loading()) {
+            @if (!data.tasksReady()) {
               <div class="home-todo__loading" aria-label="Te doen laden"><app-skeleton kind="card" [rows]="4" /></div>
             } @else if (t.count === 0) {
               @if (t.allClear) {
@@ -168,7 +168,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
               }
             }
 
-            @if (!data.loading() && t.total > t.top.length) {
+            @if (data.tasksReady() && t.total > t.top.length) {
               <footer class="home-todo__foot">
                 <b>{{ others() }} {{ others() === 1 ? 'ander open punt' : 'andere open punten' }}</b>
                 <span [title]="othersTitles()">{{ othersTitles() }}</span>
@@ -223,6 +223,9 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
     @if (allOpen()) {
       <app-sheet title="Alle open punten" [wide]="true" (closed)="closeAll()">
         <div body class="home-all">
+          @if (!data.tasksReady()) {
+            <div class="home-todo__loading" aria-label="Open punten laden"><app-skeleton kind="card" [rows]="5" /></div>
+          } @else {
           @if (t.total === 0) {
             <p class="home-all__empty">{{ t.allClear ? 'Niets open.' : 'Nog niet alles nagekeken: niet geladen ' + t.missing.join(', ') + '.' }}</p>
           }
@@ -250,6 +253,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
               <span class="home-task__chev" aria-hidden="true">›</span>
             </li>
           </ul>
+          }
           <div class="home-all__why">
             <h3 class="home-todo__group"><b>Waarom deze volgorde</b></h3>
             <ng-container [ngTemplateOutlet]="whyText" />
@@ -342,11 +346,14 @@ export class HomeDesk {
     const cash = this.data.cash();
     const today = this.data.today();
     const planner = this.data.planner;
+    /* "Nog niet alles geladen." until Te doen shows (critique B2): the count never runs ahead of the list. */
+    const ready = this.data.tasksReady();
     return briefing({
-      count: t.count, complete: t.complete, settled: this.data.settled(), nowTime: this.data.nowTime(),
+      count: t.count, complete: ready && t.complete, settled: ready && this.data.settled(), nowTime: this.data.nowTime(),
       agenda: planner.loaded() && !planner.error() ? 'ok' : planner.error() ? 'failed' : 'loading',
       events: planner.items().filter((item) => item.kind === 'EVENT' && item.onDate === today),
       tight: cash.state === 'ready' ? cash.tight : null,
+      belowZeroFrom: cash.state === 'ready' ? cash.belowZeroFrom : null, today,
     });
   });
   /** "Alles bijgewerkt om 08:12", "Niet volledig: kosten" (with Opnieuw), or "Bijwerken…" while a load runs. */

@@ -42,7 +42,7 @@ function whyLine(line: string): { lead: string; rest: string } {
         }
       </app-ios-nav>
 
-      @if (!t.total && !data.settled()) {
+      @if (!data.tasksReady() || (!t.total && !data.settled())) {
         <div class="ios-group home-todo__skeleton" aria-busy="true"><app-skeleton kind="list" [rows]="5" /></div>
       } @else {
         @if (!t.count && data.settled()) {
@@ -101,7 +101,7 @@ export class OpenPage {
   /** "14 open · eerst wat vandaag moet, dan wie wacht". */
   readonly subtitle = computed(() => {
     const t = this.data.tasks();
-    return t.total || this.data.settled() ? `${t.total} open · eerst wat vandaag moet, dan wie wacht` : 'Laden…';
+    return this.data.tasksReady() && (t.total || this.data.settled()) ? `${t.total} open · eerst wat vandaag moet, dan wie wacht` : 'Laden…';
   });
 
   /** Nu, Vandaag (the home's rows and the ones past the cap) and Ook nog; Ook nog always, it ends with the Kosten & bank row. */
