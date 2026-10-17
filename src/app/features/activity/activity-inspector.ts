@@ -6,8 +6,8 @@ import {
   activityActionLabel, activityCategory, activityCategoryColor, activityCategoryLabel, activityEntityLabel, activityQueryParams, activityRecordPhrase, activityRoute,
 } from './activity-copy';
 import {
-  ActivityContext, ActivityOverview, ActivityRow, activityEntitySub, activityEntityText, activitySummaryText, activityValue, changePreview,
-  changesOf, isPrivateChange, longDateTime, rowTime,
+  ActivityContext, ActivityOverview, ActivityRow, activityEntitySub, activityEntityText, activityRows, activitySummaryText, activityValue,
+  changePreview, changesOf, isPrivateChange, longDateTime, relatedRows, rowTime,
 } from './activity-format';
 
 /**
@@ -21,7 +21,8 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, RouterLink],
   template: `
-    @if (row(); as r) {
+    <!-- Keyed by the row: a new selection builds the detail afresh, so it fades in every time (§3.9). -->
+    @for (r of shown(); track r.key) {
       <div class="ai mo-fade" [style.--cat]="color()">
         <header class="ai-head">
           <div class="ai-head__text">
@@ -64,11 +65,11 @@ import {
           }
         }
         @if (related().length) {
-          <section class="ai-more">
+          <section class="ai-more ai-more--rows">
             <h3>Meer aan dit record <span>{{ related().length }} geladen</span></h3>
-            @for (event of related(); track event.id) {
-              <button class="ai-mini" type="button" (click)="selectEvent.emit(event.id)">
-                <time>{{ timeOf(event.at) }}</time><span [attr.title]="preview(event) || summaryOf(event)">{{ preview(event) || summaryOf(event) }}</span><small>{{ event.actor?.displayName || 'Systeem' }}</small>
+            @for (other of related(); track other.key) {
+              <button class="ai-mini" type="button" (click)="selectEvent.emit(other.key)">
+                <time>{{ rowTimeOf(other) }}</time><span [attr.title]="miniText(other)">{{ miniText(other) }}</span><small>{{ other.events[0].actor?.displayName || 'Systeem' }}</small>
               </button>
             }
           </section>
@@ -79,31 +80,33 @@ import {
           </footer>
         }
       </div>
-    } @else if (overview(); as o) {
-      <div class="ai ai--overview mo-fade">
-        <header class="ai-head"><div class="ai-head__text"><div class="ai-kicker ai-kicker--plain">Overzicht</div>
-          <h2>{{ o.total }} activiteiten@if (o.span) { · {{ o.span }} }</h2><p>Kies een regel voor de details.</p></div></header>
-        <section class="ai-ch"><h3>Per persoon</h3>
-          @for (person of o.people; track person.name) {
-            <div class="ai-bar"><span>{{ person.name }}</span><b>{{ person.count }}</b><div class="wk-meter tone-accent"><i [style.width.%]="share(person.count, o.total)"></i></div></div>
-          }
-        </section>
-        <section class="ai-ch"><h3>Per onderdeel</h3>
-          @for (part of o.categories; track part.category) {
-            <div class="ai-bar" [style.--cat]="colorOf(part.category)"><span><i class="ai-dot"></i>{{ labelOf(part.category) }}</span><b>{{ part.count }}</b>
-              <div class="wk-meter"><i class="ai-meter-cat" [style.width.%]="share(part.count, o.total)"></i></div></div>
-          }
-        </section>
-        @if (o.records.length) {
-          <section class="ai-more"><h3>Meest gewijzigd</h3>
-            @for (record of o.records; track record.entityType + record.entityId) {
-              <button class="ai-mini ai-mini--record" type="button" (click)="filterEntity.emit(record.sample)">
-                <span>{{ recordName(record.sample) }}@if (recordSub(record.sample); as sub) { <small> · {{ sub }}</small> }</span><b>{{ record.count }}</b>
-              </button>
+    } @empty {
+      @if (overview(); as o) {
+        <div class="ai ai--overview mo-fade">
+          <header class="ai-head"><div class="ai-head__text"><div class="ai-kicker ai-kicker--plain">Overzicht</div>
+            <h2>{{ o.total }} activiteiten@if (o.span) { · {{ o.span }} }</h2><p>Kies een regel voor de details.</p></div></header>
+          <section class="ai-ch"><h3>Per persoon</h3>
+            @for (person of o.people; track person.name) {
+              <div class="ai-bar"><span>{{ person.name }}</span><b>{{ person.count }}</b><div class="wk-meter tone-accent"><i [style.width.%]="share(person.count, o.total)"></i></div></div>
             }
           </section>
-        }
-      </div>
+          <section class="ai-ch"><h3>Per onderdeel</h3>
+            @for (part of o.categories; track part.category) {
+              <div class="ai-bar" [style.--cat]="colorOf(part.category)"><span><i class="ai-dot"></i>{{ labelOf(part.category) }}</span><b>{{ part.count }}</b>
+                <div class="wk-meter"><i class="ai-meter-cat" [style.width.%]="share(part.count, o.total)"></i></div></div>
+            }
+          </section>
+          @if (o.records.length) {
+            <section class="ai-more"><h3>Meest gewijzigd</h3>
+              @for (record of o.records; track record.entityType + record.entityId) {
+                <button class="ai-mini ai-mini--record" type="button" (click)="filterEntity.emit(record.sample)">
+                  <span>{{ recordName(record.sample) }}@if (recordSub(record.sample); as sub) { <small> · {{ sub }}</small> }</span><b>{{ record.count }}</b>
+                </button>
+              }
+            </section>
+          }
+        </div>
+      }
     }
   `,
   styles: `
@@ -142,6 +145,11 @@ import {
     .ai-mini span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ai-mini small { color: var(--muted); font-size: 12px; }
     .ai-mini--record { grid-template-columns: minmax(0, 1fr) auto; }
+    /* Related rows share one time column, as wide as the widest time ("10:42–10:47" for a burst). */
+    .ai-more--rows { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; column-gap: 8px; }
+    .ai-more--rows > h3 { grid-column: 1 / -1; }
+    .ai-more--rows > .ai-mini { grid-column: 1 / -1; grid-template-columns: subgrid; }
+    .ai-mini time { white-space: nowrap; }
     .ai-foot { padding: 10px 18px 14px; border-top: 1px solid var(--line); }
     .ai-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 6px 0; font-size: 13px; }
     .ai-bar > .wk-meter { grid-column: 1 / -1; }
@@ -178,20 +186,24 @@ export class ActivityInspector {
   readonly entitySub = computed(() => { const e = this.first(); return e ? activityEntitySub(e, this.ctx()) : null; });
   readonly route = computed(() => { const e = this.first(); return e ? activityRoute(e) : null; });
   readonly query = computed(() => { const e = this.first(); return e ? activityQueryParams(e) : null; });
-  /** The other loaded events of this record (up to five). */
-  readonly related = computed(() => {
-    const row = this.row();
-    const first = this.first();
-    if (!row || !first?.entityId) return [];
-    const own = new Set(row.events.map((event) => event.id));
-    return this.events().filter((event) => !own.has(event.id) && event.entityType === first.entityType && event.entityId === first.entityId).slice(0, 5);
-  });
+  /** The selected row as a one-item list, keyed in the template so each selection fades in. */
+  readonly shown = computed(() => { const row = this.row(); return row ? [row] : []; });
+  /** The loaded events as the list shows them (a burst is one row). */
+  private readonly rows = computed(() => activityRows(this.events()));
+  /** The other loaded rows of this record (up to five); a burst is one line. */
+  readonly related = computed(() => relatedRows(this.rows(), this.row()));
 
   changes(event: ActivityEvent): ActivityChange[] { return changesOf(event); }
   isPrivate(change: ActivityChange): boolean { return isPrivateChange(change); }
   value(change: ActivityChange, value: string | null, event: ActivityEvent): string { return activityValue(change, value, event, this.ctx()); }
   preview(event: ActivityEvent): string { return changePreview(event, this.ctx()); }
   summaryOf(event: ActivityEvent): string { return activitySummaryText(event.summary); }
+  rowTimeOf(row: ActivityRow): string { return rowTime(row); }
+  /** A burst: "Inkooporder bijgewerkt · 5×"; one event: its change preview, else its summary. */
+  miniText(row: ActivityRow): string {
+    const event = row.events[0];
+    return row.events.length > 1 ? `${this.summaryOf(event)} · ${row.events.length}×` : this.preview(event) || this.summaryOf(event);
+  }
   recordName(event: ActivityEvent): string { return activityEntityText(event, this.ctx()) || activityEntityLabel(event); }
   recordSub(event: ActivityEvent): string | null { return activityEntitySub(event, this.ctx()); }
   colorOf(category: ActivityCategory): string { return activityCategoryColor(category); }

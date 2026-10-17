@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { ActivityEvent } from '../src/app/core/api/models.ts';
 import {
   activityDays, activityEntitySub, activityEntityText, activityFiltersFromQuery, activityOverview, activityQueryFromFilters, activityRows,
-  activitySummaryText, activityValue, categoryRequest, changePreview, changesOf, dayLabel, keepForChip, nlNumber, rowTime, todayEvents,
+  activitySummaryText, activityValue, categoryRequest, changePreview, changesOf, dayLabel, keepForChip, nlNumber, relatedRows, rowTime, todayEvents,
 } from '../src/app/features/activity/activity-format.ts';
 
 const at = (h: number, m: number, day = 16) => new Date(2026, 9, day, h, m).toISOString();
@@ -122,4 +122,26 @@ test('names behind the ids: read again after a failure, when old, or when a name
   assert.equal(namesReloadDue(state({ missing: true }), now), false, 'a missing order waits a minute');
   assert.equal(namesReloadDue(state({ missing: true, loadedAt: now - NAMES_MISSING_RETRY_MS - 1 }), now), true, 'a new order gets its name');
   assert.deepEqual(purchaseOrderIds([ev(1), ev(2), ev(3, { entityType: 'PRODUCT', entityId: '9' }), ev(4, { entityId: null })]), ['62']);
+});
+
+test('"Meer aan dit record" lists the other rows of the record: a burst once, never its single events', () => {
+  const events = [
+    ev(20, { action: 'STATUS_CHANGED', at: at(10, 48) }),
+    ev(19, { at: at(10, 47) }), ev(18, { at: at(10, 46) }), ev(17, { at: at(10, 45) }), ev(16, { at: at(10, 44) }), ev(15, { at: at(10, 42) }),
+    ev(14, { entityId: '63', at: at(10, 30) }),
+    ev(13, { action: 'CREATED', at: at(9, 0) }),
+  ];
+  const rows = activityRows(events);
+  const status = rows[0];
+  const related = relatedRows(rows, status);
+  assert.deepEqual(related.map((row) => row.key), [19, 13]);
+  assert.equal(related[0].events.length, 5);
+  assert.equal(rowTime(related[0]), '10:42–10:47');
+  /* From the burst: the status change and the creation, not the burst itself. */
+  assert.deepEqual(relatedRows(rows, related[0]).map((row) => row.key), [20, 13]);
+  assert.deepEqual(relatedRows(rows, rows.find((row) => row.key === 14)!), []);
+  assert.deepEqual(relatedRows(rows, null), []);
+  assert.deepEqual(relatedRows(rows, { key: 99, events: [ev(99, { entityId: null })] }), []);
+  assert.equal(relatedRows(activityRows([20, 18, 16, 14, 12, 10, 8].map((id, i) => ev(id, { action: 'CREATED', at: at(10, 50 - i) }))),
+    { key: 1, events: [ev(1)] }).length, 5);
 });

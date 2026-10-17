@@ -253,6 +253,17 @@ export function activityRows(events: readonly ActivityEvent[], windowMin = 15): 
   return rows;
 }
 
+/**
+ * "Meer aan dit record": the other rows of the same record, newest first,
+ * at most `max`. A burst stays one row ("10:42–10:47 · 5×"), as in the list.
+ */
+export function relatedRows(rows: readonly ActivityRow[], row: ActivityRow | null, max = 5): ActivityRow[] {
+  const first = row?.events[0];
+  if (!row || !first?.entityId) return [];
+  return rows.filter((other) => other.key !== row.key
+    && other.events[0].entityType === first.entityType && other.events[0].entityId === first.entityId).slice(0, max);
+}
+
 /** "12:18", or "10:42–10:47" for a burst. */
 export function rowTime(row: ActivityRow): string {
   const time = (at: string) => { const d = new Date(at); return Number.isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
