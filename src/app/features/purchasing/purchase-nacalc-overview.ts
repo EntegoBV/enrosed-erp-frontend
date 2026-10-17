@@ -9,7 +9,7 @@ import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  nacalcPartnerLine, nacalcPartnerShortage, nacalcPhoneNotes, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
+  nacalcPartnerLine, nacalcPartnerShortage, pctLabel, nacalcPhoneNotes, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
   type NacalcPayeeRow, type NacalcSetBasis, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
@@ -236,8 +236,8 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
             <div class="ios-section__head"><h2>Partner</h2></div>
             <div class="ios-group">
               <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Partner financiert</span>@if (partner.basisEur !== null) { <span class="ios-cell__sub np-wrap">op {{ partner.basisEur | eur }} incl. Enrosed kost en aparte kosten</span> }</span>
-                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ partner.costPct }} %@if (partner.advanceEur !== null) { · {{ partner.advanceEur | eur }} }</span></span></div>
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Resultaat voor ENROSED</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ partner.sharePct }} %</span></span></div>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ pctLabel(partner.costPct) }}@if (partner.advanceEur !== null) { · {{ partner.advanceEur | eur }} }</span></span></div>
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Resultaat voor ENROSED</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ pctLabel(partner.sharePct) }}</span></span></div>
               @if (partnerState() === 'loading') {
                 <div class="ios-cell np-skeleton"><app-skeleton kind="lines" [rows]="2" /></div>
               } @else if (partnerState() === 'error') {
@@ -358,6 +358,7 @@ export class PurchaseNacalcOverview {
   }
   readonly partnerLine = (partner: NonNullable<PurchaseNacalc['partner']>, head: PurchaseNacalc['headline']) => nacalcPartnerLine(partner, head, true);
   readonly partnerShortage = nacalcPartnerShortage;
+  readonly pctLabel = pctLabel;
 
   /**
    * The agreement in one line; the eindkost only when it differs from it (the

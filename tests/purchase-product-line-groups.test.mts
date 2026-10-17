@@ -3,6 +3,8 @@ import test from 'node:test';
 import type { Category, LandedCostLine, Product, ProductFamily } from '../src/app/core/api/models.ts';
 import {
   PURCHASE_LINES_WITHOUT_CATEGORY,
+  landedRangeText,
+  landedUnitRange,
   orderPurchaseProductLines,
   purchaseLineCategoryOptions,
   purchaseLineSections,
@@ -74,7 +76,23 @@ test('product lines become family cards with ordered colour variants, swatches a
     cbm: 0.9,
     totalEur: 48,
     averageUnitEur: 1,
+    unitMinEur: 0,
+    unitMaxEur: 0,
   });
+});
+
+test('a series shows its landed figure per unit as one figure or as the range of its variants, never the average (F17)', () => {
+  const categories = [category(10, 'Foam', 10)];
+  const products = [product(1, 10, 7, 'foam-rose', 1, 'Blauw'), product(2, 10, 7, 'foam-rose', 2, 'Wit'), product(3, 10, 7, 'foam-rose', 3, 'Rood')];
+  const priced = (productId: number, quantity: number, landedUnitEur: number) => ({ ...line(productId, quantity), landedUnitEur }) as LandedCostLine;
+  const equal = purchaseLineSections([priced(1, 10, 1.9971), priced(2, 20, 1.9973)], products, categories, [], null)[0].families[0];
+  assert.deepEqual([equal.unitMinEur, equal.unitMaxEur], [1.9971, 1.9973]);
+  assert.equal(plain(landedRangeText(equal.unitMinEur, equal.unitMaxEur)), '€ 1,998', 'within € 0,0005: one figure');
+  const spread = purchaseLineSections([priced(1, 10, 3.1241), priced(2, 20, 10.8589), priced(3, 0, 99)], products, categories, [], null)[0].families[0];
+  assert.deepEqual([spread.unitMinEur, spread.unitMaxEur], [3.1241, 10.8589], 'a line without a quantity does not count');
+  assert.equal(plain(landedRangeText(spread.unitMinEur, spread.unitMaxEur)), '€ 3,125 – € 10,859', 'rounded up like eurUp: 3');
+  assert.deepEqual(landedUnitRange([]), { minEur: 0, maxEur: 0 });
+  assert.equal(plain(landedRangeText(0, 0)), '€ 0,000');
 });
 
 test('standalone products never merge and family labels work before metadata arrives', () => {
@@ -94,6 +112,8 @@ test('standalone products never merge and family labels work before metadata arr
     { key: 'product-4', label: 'Product 4' },
   ]);
 });
+
+const plain = (text: string): string => text.replace(/[\u00a0\u202f]/g, ' ');
 
 function category(id: number, name: string, position: number): Category {
   return { id, name, position } as Category;
@@ -126,3 +146,12 @@ function product(
 function line(productId: number, quantity = 1, cartons = 1, cbm = 0.1, totalEur = 0): LandedCostLine {
   return { productId, productName: `Product ${productId}`, quantity, cartons, cbm, totalEur } as LandedCostLine;
 }
+
+test('the view, the editor and the desk show a series as one figure or a range, never "Gem. geland" (F17)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  for (const file of ['purchase-view.ts', 'purchase-editor.ts', 'purchase-desk.ts']) {
+    const source = await readFile(new URL(`../src/app/features/purchasing/${file}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /Gem\. geland|averageUnitEur \| eurUp/, file);
+    assert.match(source, /landedRangeText\(/, file);
+  }
+});

@@ -44,6 +44,7 @@ import { SalesCreditNoteSheet } from '../sales/sales-credit-note-sheet';
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { purchaseColourHex, purchaseLineSections } from './purchase-line-display';
+import { landedRangeText } from './purchase-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { containerName } from './container-name';
 import { BankingApi, type BankStatementLine } from '../../core/api/banking-api';
@@ -339,8 +340,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                           <span class="ios-cell__sub mpo-wrap">{{ group.totals.pieces | num }} st · {{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</span>
                         </span>
                         <span class="ios-cell__trail">
-                          <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? (group.totals.averageUnitEur | eurUp: 3) : (group.totals.totalEur | eur) }}</span>
-                          <span class="ios-cell__meta">{{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}</span>
+                          <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? landedRangeText(group.totals.unitMinEur, group.totals.unitMaxEur) : (group.totals.totalEur | eur) }}</span>
+                          <span class="ios-cell__meta">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</span>
                         </span>
                         <app-icon class="ios-cell__chev" [name]="group.standalone ? 'chevron-right' : productGroupOpen(group.key) ? 'chevron-up' : 'chevron-down'" [size]="16" />
                       </button>
@@ -1134,6 +1135,8 @@ export class PurchaseView {
 
   /** Cost breakdown as totals or per piece. */
   readonly perPiece = signal(true);
+  /** A series' landed figure per unit: one figure, or the range of its variants (F17). */
+  readonly landedRangeText = landedRangeText;
 
   /** Two decimals for totals, four for per-piece - tiny numbers need them. */
   readonly decimals = computed(() => this.perPiece() ? 3 : 2);

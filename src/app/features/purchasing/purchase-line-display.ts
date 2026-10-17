@@ -28,6 +28,9 @@ export interface PurchaseLineTotals {
   goodsEur: number;
   totalEur: number;
   averageUnitEur: number;
+  /** Lowest and highest landed figure per unit of the lines with a quantity (F17); 0 without one. */
+  unitMinEur: number;
+  unitMaxEur: number;
 }
 
 /** One customer-facing model and the colour/size SKUs ordered from it. */
@@ -250,9 +253,12 @@ function sumTotals(lines: readonly LandedCostLine[]): PurchaseLineTotals {
     goodsEur: sum.goodsEur + finite(line.goodsEur),
     totalEur: sum.totalEur + finite(line.totalEur),
   }), { pieces: 0, cartons: 0, cbm: 0, goodsEur: 0, totalEur: 0 });
+  const units = lines.filter((line) => finite(line.quantity) > 0 && Number.isFinite(line.landedUnitEur)).map((line) => Number(line.landedUnitEur));
   return {
     ...totals,
     averageUnitEur: totals.pieces > 0 ? totals.totalEur / totals.pieces : 0,
+    unitMinEur: units.length ? Math.min(...units) : 0,
+    unitMaxEur: units.length ? Math.max(...units) : 0,
   };
 }
 

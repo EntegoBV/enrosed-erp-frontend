@@ -50,7 +50,7 @@ type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 type DeskRow =
   | { kind: 'section'; key: string; label: string; count: number }
   | { kind: 'group'; key: string; groupKey: string; label: string; lines: LandedCostLine[]; pieces: number;
-      cartons: number; cbm: number; goodsEur: number; averageUnitEur: number; totalEur: number; leadProductId: number }
+      cartons: number; cbm: number; goodsEur: number; unitMinEur: number; unitMaxEur: number; totalEur: number; leadProductId: number }
   | { kind: 'line'; key: string; line: LandedCostLine; variant: boolean };
 
 /**
@@ -266,7 +266,7 @@ type DeskRow =
                         <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
                         <td class="c-price"></td>
                         <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eurUp: decimals() }}</td>
-                        <td class="c-money num c-money--total">{{ perPiece() ? (row.averageUnitEur | eurUp: 3) : (row.totalEur | eur) }}</td>
+                        <td class="c-money num c-money--total">{{ perPiece() ? landedRangeText(row.unitMinEur, row.unitMaxEur) : (row.totalEur | eur) }}</td>
                         @if (editing()) { <td class="c-act"></td> }
                       </tr>
                     }
@@ -1462,7 +1462,7 @@ export class PurchaseDesk extends PurchaseEditor {
             kind: 'group', key: 'g:' + family.key, groupKey: family.key, label: family.label,
             lines: family.lines, pieces: family.pieces, cartons: family.cartons, cbm: family.cbm,
             goodsEur: family.lines.reduce((sum, line) => sum + line.goodsEur, 0),
-            averageUnitEur: family.averageUnitEur, totalEur: family.totalEur,
+            unitMinEur: family.unitMinEur, unitMaxEur: family.unitMaxEur, totalEur: family.totalEur,
             leadProductId: family.lines[0].productId,
           });
           if (folded.has(family.key)) continue;

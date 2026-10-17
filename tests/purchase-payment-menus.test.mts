@@ -97,3 +97,11 @@ test("a payment fully on the bank offers 'Transactie toevoegen…' (the server's
   assert.equal(menus['transferAddable'](row({ parts: [linkedPart], creditOffset: { creditId: 1, sourceOrderId: 4, sourceOrderNumber: 'INK-9', paymentId: 1, amountEur: 100 } })), false);
   assert.equal(menus['todoCopy']({ kind: 'proof', key: 'p', count: 1 }).detail, 'Koppel de banktransactie', 'short enough for the phone row');
 });
+
+test('a bridge amount carries its sign in front of the euro: − € 0,01, never € -0,01 (Inkoop redesign F25)', () => {
+  const plain = (text: string): string => text.replace(/[  ]/g, ' ');
+  assert.equal(plain(menus['signedEur'](-0.01)), '− € 0,01');
+  assert.equal(plain(menus['signedEur'](1234.5)), '€ 1.234,50');
+  assert.equal(plain(menus['signedEur'](-0.001)), '€ 0,00', 'less than a cent is no amount');
+  assert.equal(plain(menus['signedEur'](Number.NaN)), '€ 0,00');
+});

@@ -30,6 +30,9 @@ export interface PurchaseLineFamilyGroup {
   cbm: number;
   totalEur: number;
   averageUnitEur: number;
+  /** Lowest and highest landed figure per unit of the lines with a quantity (F17); 0 without one. */
+  unitMinEur: number;
+  unitMaxEur: number;
 }
 
 export interface PurchaseLineSection {
@@ -142,6 +145,8 @@ export function purchaseLineSections(
         cbm: 0,
         totalEur: 0,
         averageUnitEur: 0,
+        unitMinEur: 0,
+        unitMaxEur: 0,
       };
       section.families.push(group);
     }
@@ -151,6 +156,9 @@ export function purchaseLineSections(
     group.cbm += finite(line.cbm);
     group.totalEur += finite(line.totalEur);
     group.averageUnitEur = group.pieces > 0 ? group.totalEur / group.pieces : 0;
+    const range = landedUnitRange(group.lines);
+    group.unitMinEur = range.minEur;
+    group.unitMaxEur = range.maxEur;
     addSwatch(group.swatches, product);
   }
   return [...sections.values()];
@@ -292,4 +300,26 @@ function fallbackProductFamilyName(product: Product | null | undefined, fallback
 
 function sentenceCase(value: string): string {
   return value ? value[0].toLocaleUpperCase('nl-BE') + value.slice(1) : value;
+}
+
+/** The landed figure per unit of the lines that carry a quantity: the lowest and the highest (F17). */
+export function landedUnitRange(lines: readonly Pick<LandedCostLine, 'quantity' | 'landedUnitEur'>[]): { minEur: number; maxEur: number } {
+  const units = lines
+    .filter((line) => Number(line.quantity) > 0 && Number.isFinite(line.landedUnitEur))
+    .map((line) => Number(line.landedUnitEur));
+  if (!units.length) return { minEur: 0, maxEur: 0 };
+  return { minEur: Math.min(...units), maxEur: Math.max(...units) };
+}
+
+const LANDED_UNIT = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 3, maximumFractionDigits: 3 });
+/** As the eurUp pipe: three decimals, rounded up with a hair of tolerance. */
+const landedUnit = (value: number): string => LANDED_UNIT.format((Math.ceil((Number(value) || 0) * 1000 - 1e-7) / 1000) || 0);
+
+/**
+ * A series' landed figure per unit: one figure when every variant lands on the
+ * same cost (within € 0,0005), else '€ a – € b' — never the average (F17).
+ */
+export function landedRangeText(minEur: number, maxEur: number): string {
+  if (Math.abs((Number(maxEur) || 0) - (Number(minEur) || 0)) < 0.0005) return landedUnit(maxEur);
+  return `${landedUnit(Math.min(minEur, maxEur))} – ${landedUnit(Math.max(minEur, maxEur))}`;
 }

@@ -19,7 +19,7 @@ import {
   type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
-  creditMenuItems, formatEur, invoiceMenuItems, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems,
+  creditMenuItems, formatEur, signedEur, invoiceMenuItems, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems,
   termPayment, todoCopy,
 } from './purchase-payment-menus';
 import { invoiceCoverage, invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
@@ -481,9 +481,9 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                       <dl class="wk-equation">
                         @for (row of book.bridge.rows; track row.key) {
                           @if (row.subtotal) {
-                            <div class="is-sub pw-bridge__subtotal"><dt><span class="wk-equation__op" aria-hidden="true">=</span>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                            <div class="is-sub pw-bridge__subtotal"><dt><span class="wk-equation__op" aria-hidden="true">=</span>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ signedEur(row.amountEur) }}</dd></div>
                           } @else {
-                            <div><dt>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                            <div><dt>{{ row.label }}@if (row.note) { <span class="wk-td__sub">{{ row.note }}</span> }</dt><dd>{{ signedEur(row.amountEur) }}</dd></div>
                           }
                         }
                         @if (book.bridge.consistent) {
@@ -503,7 +503,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
             </div>
             <footer class="wk-statusbar pw-status">
               <span>{{ sum.paymentCount }} {{ sum.paymentCount === 1 ? 'betaling' : 'betalingen' }}@if (sum.missingProofCount) { · {{ sum.missingProofCount }} zonder betaalbewijs } · in euro zoals geboekt</span>
-              <span class="wk-statusbar__end pw-keys"><kbd class="wk-kbd">N</kbd> nieuw · <kbd class="wk-kbd">A</kbd> afrekenen · <kbd class="wk-kbd">↩</kbd> aanpassen · <kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> weergave</span>
+              <span class="wk-statusbar__end pw-keys"><kbd class="wk-kbd">N</kbd> nieuw · <kbd class="wk-kbd">A</kbd> afrekenen · <kbd class="wk-kbd">↩</kbd> aanpassen · <kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> <kbd class="wk-kbd">⌥3</kbd> weergave</span>
             </footer>
           }
         }
@@ -521,6 +521,8 @@ export class PurchasePaymentWorkbench {
   private readonly ui = inject(Ui);
 
   readonly ledger = input<PaymentLedger | null>(null);
+  /** '− € 0,01' in the bridge (F25). */
+  readonly signedEur = signedEur;
   readonly state = input<'loading' | 'refreshing' | 'error' | 'ready'>('ready');
   readonly error = input<string | null>(null);
   readonly busy = input(false);

@@ -4,7 +4,7 @@ import {
   alsoContainerOptions, alsoNotice, alsoPartAs, alsoPartChoices, alsoPartFor, alsoPartKey, alsoTotalEur, alsoWrites, rebalancedGoods,
 } from '../src/app/features/purchasing/purchase-also-containers.ts';
 
-/* "Deze transactie dekt ook andere containers" (owner addition 2026-10-15): Yunnan Pubei's PO-43/44/45, 30 % of all three in one transfer. */
+/* "Verdelen over containers" on a new payment (owner addition 2026-10-15; the switch was "Deze transactie dekt ook andere containers" until 2026-10-17): Yunnan Pubei's PO-43/44/45, 30 % of all three in one transfer. */
 const term = (orderId: number, due: string | null, remainingEur: number, extra: Record<string, unknown> = {}) => ({
   key: `container:${orderId}:SUPPLIER:${due}`, orderId, orderNumber: `PO-2026-0${orderId}`, alias: null, status: 'BESTELD', archived: false, payee: 'SUPPLIER',
   termLabel: due === 'ORDERED' ? '30% bij bestelling' : due === 'SHIPPED' ? '70% bij vertrek' : null, due, plannedEur: remainingEur, paidEur: 0, remainingEur,

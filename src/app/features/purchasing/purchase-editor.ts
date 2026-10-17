@@ -104,7 +104,7 @@ import { receiptLineMetrics, receiptMetrics } from '../analyses/receipt-metrics'
 import { cartonQuantityNotice } from '../../shared/carton-quantity-notice';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { latestOwnFreightQuote, purchaseFxDefaults, purchaseFxReference } from './purchase-price-context';
-import { purchaseLineSections } from './purchase-product-line-groups';
+import { landedRangeText, purchaseLineSections } from './purchase-product-line-groups';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
@@ -437,8 +437,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             <span class="ios-cell__sub mpo-wrap">{{ familyGroup.pieces | num }} st · {{ familyGroup.cartons | num }} dozen · {{ familyGroup.cbm | cbm }}</span>
                           </span>
                           <span class="ios-cell__trail">
-                            <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? (familyGroup.averageUnitEur | eurUp: 3) : (familyGroup.totalEur | eur) }}</span>
-                            <span class="ios-cell__meta">{{ perPiece() ? 'Gem. geland / stuk' : 'Totaal geland' }}</span>
+                            <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? landedRangeText(familyGroup.unitMinEur, familyGroup.unitMaxEur) : (familyGroup.totalEur | eur) }}</span>
+                            <span class="ios-cell__meta">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</span>
                           </span>
                         </div>
                         @for (line of familyGroup.lines; track line.productId) {
@@ -1309,6 +1309,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 export class PurchaseEditor {
   /** One name for the container in sales texts: alias, else number. */
   readonly containerName = containerName;
+  /** A series' landed figure per unit: one figure, or the range of its variants (F17). */
+  readonly landedRangeText = landedRangeText;
   readonly desktop = inject(DesktopViewport);
   readonly pdfOpen = signal(false);
   /** The container as an offer: the sheet that picks the customer and opens the new quote. */

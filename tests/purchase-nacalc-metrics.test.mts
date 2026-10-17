@@ -15,7 +15,7 @@ import {
 import { NACALC_LABEL, NACALC_PILL, purchaseNacalcSummary } from '../src/app/features/purchasing/purchase-payment-result-metrics.ts';
 import {
   NACALC_REASON_LABEL, nacalcActionLabel, nacalcAgreedSub, nacalcBridge, nacalcPartnerLine, nacalcProductCount, nacalcProductSub, nacalcProductUnit,
-  nacalcPhoneNotes, nacalcReason, nacalcReceiptUnitLine, nacalcUnitBasis, paymentFxEur, purchaseNacalc, type PurchaseNacalc,
+  nacalcPhoneNotes, nacalcReason, nacalcReceiptUnitLine, nacalcUnitBasis, ownerWords, paymentFxEur, pctLabel, purchaseNacalc, type PurchaseNacalc,
 } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 
 type Stream = PurchaseReconciliationStream;
@@ -527,8 +527,8 @@ test('the koersverschil is the bank euro amount against the order rate: zero for
 test('the partner block: defaults, the advance on the pricing basis, financing when loaded, the short-delivery handoff after an invoiced advance', () => {
   const { view, payments } = transit();
   const partner = story(view, payments).partner!;
-  assert.deepEqual([partner.costPct, partner.sharePct, partner.basisEur, partner.advanceEur, partner.unitEur, partner.shortPieces, partner.ordered, partner.financing, partner.shortageAfterAdvance],
-    [20, 50, 75054.31, 15010.86, 12.6267, 0, 5560, null, false]);
+  assert.deepEqual([partner.costPct, partner.sharePct, partner.basisEur, partner.advanceEur, partner.unitEur, partner.perProduct, partner.shortPieces, partner.ordered, partner.financing, partner.shortageAfterAdvance],
+    [20, 50, 75054.31, 15010.86, null, true, 0, 5560, null, false], 'three products: no container average (F15)');
   const financing = { committedAdvanceEur: 15000, invoicedAdvanceEur: 12396.69, receivedAdvanceEur: 15000, openAdvanceEur: 0, ownExposureEur: 49780.5,
     settlementInvoiceNumber: 'INV-2026-053', settlementComplete: false, creditEur: 0, unbilledAdvanceCount: 0 } as PartnerFinancing;
   const loaded = story(view, payments, financing);
@@ -796,4 +796,41 @@ test('an older response without the per-display fields reads per stuk, as before
   assert.deepEqual([head.setBasis, head.unitLabel, head.stripUnitEur, head.pieceEur], ['PIECE', 'Per stuk', 12.6267, 12.6267]);
   assert.equal(nacalcUnitBasis(head), '5.560 bestelde stuks · incl. inspectie');
   assert.deepEqual(plain(nacalcProductUnit(story(transit().view, null).products[0], 'PIECE')), { main: '€ 22,0247', amount: '€ 22,0247', per: null, sub: null });
+});
+
+/* ---- Inkoop redesign I4 (2026-10-17): partner words, owner words in the server notes */
+
+test('a partner container with more than one product settles per product: no container average in the partner sentence (F15)', () => {
+  const { view, payments } = transit();
+  const result = story(view, payments);
+  const partner = result.partner!;
+  assert.equal(partner.unitEur, null);
+  assert.equal(plain(nacalcPartnerLine(partner, result.headline)),
+    'Bij de veilingafrekening betaalt de partner de eindkost van de verkochte stuks, per product, plus 50 % van het resultaat; het voorschot wordt dan verrekend.');
+  assert.equal(nacalcPartnerLine(partner, result.headline, true), 'eindkost van de verkochte stuks, per product + 50 % resultaat; voorschot verrekend');
+  const one = transit();
+  one.view.reconciliation!.lines.splice(1);
+  const single = story(one.view, one.payments).partner!;
+  assert.deepEqual([single.unitEur, single.perProduct], [12.6267, false], 'one product keeps its figure');
+  const odd = { ...single, sharePct: 51.0204 };
+  assert.match(plain(nacalcPartnerLine(odd, result.headline)), /plus 51,02 % van het resultaat/);
+});
+
+test('percentages the Belgian way with up to two decimals (F14)', () => {
+  assert.deepEqual([pctLabel(51.0204), pctLabel(50), pctLabel(48.98), pctLabel(12.5), pctLabel(null), pctLabel(100)].map(text => text.replace(/\u00a0/g, ' ')),
+    ['51,02 %', '50 %', '48,98 %', '12,5 %', '0 %', '100 %']);
+});
+
+test('the server notes in the owner\'s words: Afspraak, never budget; the richer cost-price note of the client replaces the one of the server (F16)', () => {
+  assert.equal(ownerWords('Budget op bestelde aantallen en vastgelegde orderkoersen; betalingen op hun opgeslagen eurowaarde.'),
+    'Afspraak op bestelde aantallen en vastgelegde orderkoersen; betalingen op hun opgeslagen eurowaarde.');
+  assert.equal(ownerWords('Bij oudere regels ontbreekt het oorspronkelijke bestelde aantal; voor die regels is het huidige aantal als budgetbasis gebruikt.'),
+    'Bij oudere regels ontbreekt het oorspronkelijke bestelde aantal; voor die regels is het huidige aantal als basis voor de afspraak gebruikt.');
+  const { view, payments } = transit();
+  view.reconciliation!.notes = ['Budget op bestelde aantallen en vastgelegde orderkoersen; betalingen op hun opgeslagen eurowaarde.',
+    'Deze analyse wijzigt geen productkostprijzen of historische voorraadwaardering.'];
+  const notes = story(view, payments).notes;
+  assert.equal(notes[0], 'Afspraak op bestelde aantallen en vastgelegde orderkoersen; betalingen op hun opgeslagen eurowaarde.');
+  assert.equal(notes.filter(note => /wijzigt geen productkostprijzen/.test(note)).length, 1, 'one sentence about cost prices, the client\'s');
+  assert.ok(!notes.some(note => /[Bb]udget/.test(note)));
 });

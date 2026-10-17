@@ -10,6 +10,7 @@ import { PartnerAdvanceSchedule } from './partner-advance-schedule';
 import { scheduleConceptNote } from './partner-advance-schedule-state';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { creditNoteStatusLabel } from '../sales/sales-credit-note';
+import { pctLabel } from './purchase-nacalc-metrics';
 
 /** One receipt ledger, shown from the partner invoice and the container alike. */
 @Component({
@@ -26,8 +27,8 @@ import { creditNoteStatusLabel } from '../sales/sales-credit-note';
           <section class="money-section" aria-label="Financieringsafspraak">
             <h4><span class="step">1</span> Financieringsafspraak</h4>
             <div class="agreement-grid">
-              <div><small>Partner financiert</small><strong>{{ summary.costPct | num }}%</strong><b>{{ summary.committedAdvanceEur | eur }}</b><span>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'van het inkooptotaal incl. aparte kosten, excl. btw' : summary.financingBasis === 'EXTERNAL_FORECAST' ? 'volgens de opgeslagen historische externe kostenbasis, excl. btw' : 'volgens de opgeslagen financieringsafspraak, excl. btw' }}</span></div>
-              <div><small>Veilingresultaat voor ENROSED</small><strong>{{ summary.profitSharePct | num }}%</strong><b>{{ 100 - summary.profitSharePct | num }}% voor de partner</b><span>Verdeling van winst of verlies na de veiling</span></div>
+              <div><small>Partner financiert</small><strong>{{ pctLabel(summary.costPct) }}</strong><b>{{ summary.committedAdvanceEur | eur }}</b><span>{{ summary.financingBasis === 'PURCHASE_TOTAL_WITH_SEPARATE_COSTS' ? 'van het inkooptotaal incl. aparte kosten, excl. btw' : summary.financingBasis === 'EXTERNAL_FORECAST' ? 'volgens de opgeslagen historische externe kostenbasis, excl. btw' : 'volgens de opgeslagen financieringsafspraak, excl. btw' }}</span></div>
+              <div><small>Veilingresultaat voor ENROSED</small><strong>{{ pctLabel(summary.profitSharePct) }}</strong><b>{{ pctLabel(100 - summary.profitSharePct) }} voor de partner</b><span>Verdeling van winst of verlies na de veiling</span></div>
             </div>
             <p class="partner-money__hint">De partner stort aan ENROSED. Zijn financieringsaandeel en de verdeling van het veilingresultaat zijn twee afzonderlijke afspraken.</p>
           </section>
@@ -49,7 +50,7 @@ import { creditNoteStatusLabel } from '../sales/sales-credit-note';
                 <div class="partner-shortage__head"><span aria-hidden="true">↩</span>Tekort na ontvangst</div>
                 @switch (card.kind) {
                   @case ('credit') {
-                    <p>{{ card.missing + card.damaged | num }} stuks minder ontvangen dan gefinancierd ({{ card.missing | num }} ontbreken · {{ card.damaged | num }} beschadigd). Voorschot gefinancierd {{ card.financedEur | eur }} · afgesproken deel na ontvangst {{ card.agreedEur | eur }} ({{ card.pct | num }} % van {{ card.basisEur | eur }}) · <b>{{ card.overEur | eur }} te veel</b>, excl. btw.</p>
+                    <p>{{ card.missing + card.damaged | num }} stuks minder ontvangen dan gefinancierd ({{ card.missing | num }} ontbreken · {{ card.damaged | num }} beschadigd). Voorschot gefinancierd {{ card.financedEur | eur }} · afgesproken deel na ontvangst {{ card.agreedEur | eur }} ({{ pctLabel(card.pct) }} van {{ card.basisEur | eur }}) · <b>{{ card.overEur | eur }} te veel</b>, excl. btw.</p>
                     @if (card.concept) {
                       <p>Creditnota <a [routerLink]="['/sales', card.concept.id]">{{ card.concept.number }}</a> in concept · <a [routerLink]="['/sales', card.concept.id]">open ›</a></p>
                     } @else {
@@ -109,6 +110,8 @@ export class PurchasePartnerPayments {
   readonly order = input.required<PurchaseOrder>();
   readonly docs = input<SalesOrderView[]>([]);
   readonly advanceBasisEur = input<number | null>(null);
+  /** '51,02 %', '50 %' (F14). */
+  readonly pctLabel = pctLabel;
   readonly changed = output<void>();
   readonly quote = output<void>();
   /** Lead seam: the host mounts app-sales-credit-note-sheet in partner mode on this. */

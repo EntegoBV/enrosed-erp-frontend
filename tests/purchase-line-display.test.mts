@@ -91,6 +91,8 @@ test('family header uses canonical name, featured photo, swatches and aggregate 
     goodsEur: 280,
     totalEur: 340,
     averageUnitEur: 1.7,
+    unitMinEur: 0,
+    unitMaxEur: 0,
   });
 });
 
