@@ -19,6 +19,11 @@
  *   the ids started at 1 again), restarts the stack there, because we
  *   cannot know what lies below it.
  *
+ * The screen below is the first entry under the current one that shows
+ * another screen: the sections of one screen (/analyses/:section, whose
+ * strip pushes an entry per section) count as one, as iOS never pushes for
+ * in-screen sections. Back goes there in one step (history.go(-n)).
+ *
  * lastUrlFor(path) keeps the last full URL seen per path, so "way up" can
  * return to the list with its filters (/sales?tab=facturen&scope=PARTNER)
  * when history cannot. Pure and import-free: node-tested.
@@ -95,19 +100,46 @@ export function navEntryBelow(stack: NavStack): NavEntry | null {
   return stack.index > 0 ? stack.entries[stack.index - 1] : null;
 }
 
+/** Screens whose sections are routes of their own: one screen for the way back. */
+const SECTIONED_SCREENS: readonly string[] = ['/analyses'];
+
+/**
+ * Which screen a URL shows, for "the screen below": the URL itself, or the
+ * sectioned screen it is a section of (/analyses/sales → /analyses). A
+ * query-only change stays another entry: /settings?sectie=… is a view of
+ * its own, reached from the overview at /settings.
+ */
+export function navScreen(url: string): string {
+  const path = navPath(url);
+  const sectioned = SECTIONED_SCREENS.find((root) => path === root || path.startsWith(root + '/'));
+  return sectioned ?? url;
+}
+
+/** The first entry below the current one that shows another screen, and how many steps back it lies. */
+export function screenBelow(stack: NavStack): { entry: NavEntry; steps: number } | null {
+  const current = currentNavEntry(stack);
+  if (!current) return null;
+  const screen = navScreen(current.url);
+  for (let at = stack.index - 1; at >= 0; at--) {
+    if (navScreen(stack.entries[at].url) !== screen) return { entry: stack.entries[at], steps: stack.index - at };
+  }
+  return null;
+}
+
 /** The last full URL seen for a path (its query and fragment included), or null. */
 export function lastUrlFor(stack: NavStack, path: string): string | null {
   return stack.lastUrls[navPath(path)] ?? null;
 }
 
 /**
- * How to go up to a parent screen: history back when the screen below is
- * that parent (filters and scroll kept), otherwise a navigation to the last
- * URL seen for the parent's path, or the parent URL itself.
+ * How to go up to a parent screen: history back (steps entries) when the
+ * screen below is that parent (filters and scroll kept), otherwise a
+ * navigation to the last URL seen for the parent's path, or the parent URL
+ * itself.
  */
-export function upTarget(stack: NavStack, parentUrl: string): { back: true } | { back: false; url: string } {
-  const below = navEntryBelow(stack);
+export function upTarget(stack: NavStack, parentUrl: string): { back: true; steps: number } | { back: false; url: string } {
+  const below = screenBelow(stack);
   const parentPath = navPath(parentUrl);
-  if (below && navPath(below.url) === parentPath) return { back: true };
+  if (below && navPath(below.entry.url) === parentPath) return { back: true, steps: below.steps };
   return { back: false, url: lastUrlFor(stack, parentPath) ?? parentUrl };
 }

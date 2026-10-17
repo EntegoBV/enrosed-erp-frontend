@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  currentNavEntry, emptyNavStack, lastUrlFor, navEntryBelow, recordNavigation, upTarget,
+  currentNavEntry, emptyNavStack, lastUrlFor, navEntryBelow, navScreen, recordNavigation, screenBelow, upTarget,
 } from '../src/app/core/platform/nav-history.ts';
+import { screenLabel } from '../src/app/core/platform/return-label.ts';
 import type { NavRecord, NavStack } from '../src/app/core/platform/nav-history.ts';
 
 function play(records: NavRecord[]): NavStack {
@@ -57,7 +58,7 @@ test('going back to the same screen twice keeps the stack: the restored entry ta
   assert.deepEqual(stack.entries.map((e) => [e.id, e.url]), [[1, '/purchasing?status=open'], [6, '/purchasing/62'], [5, '/products/6']]);
   assert.equal(currentNavEntry(stack)?.url, '/purchasing/62');
   assert.equal(navEntryBelow(stack)?.url, '/purchasing?status=open');
-  assert.deepEqual(upTarget(stack, '/purchasing'), { back: true });
+  assert.deepEqual(upTarget(stack, '/purchasing'), { back: true, steps: 1 });
   /* and forward again, then back to the list, all by the rewritten ids */
   const forward = recordNavigation(stack, { id: 7, url: '/products/6', trigger: 'popstate', restoredId: 5 });
   assert.equal(navEntryBelow(forward)?.url, '/purchasing/62');
@@ -94,11 +95,35 @@ test('the last URL per path keeps the list filters, query-only changes included'
 
 test('way up: history back when the screen below is the parent, else the last parent URL or the parent', () => {
   const fromList = play([go(1, '/sales?tab=facturen'), go(2, '/sales/79')]);
-  assert.deepEqual(upTarget(fromList, '/sales'), { back: true });
+  assert.deepEqual(upTarget(fromList, '/sales'), { back: true, steps: 1 });
 
   const fromHome = play([go(1, '/sales?tab=facturen'), go(2, '/dashboard'), go(3, '/sales/79')]);
   assert.deepEqual(upTarget(fromHome, '/sales'), { back: false, url: '/sales?tab=facturen' });
 
   const deepLink = play([go(1, '/sales/79')]);
   assert.deepEqual(upTarget(deepLink, '/sales'), { back: false, url: '/sales' });
+});
+
+test('the sections of Analyses are one screen: back skips them in one step to Meer', () => {
+  /* Meer › Analyses › Kasprognose, then Verkoop, then Resultaat: the strip pushes per section. */
+  const stack = play([go(1, '/more'), go(2, '/analyses/overview'), go(3, '/analyses/cash'), go(4, '/analyses/sales'), go(5, '/analyses/result')]);
+  const below = screenBelow(stack);
+  assert.equal(below?.entry.url, '/more');
+  assert.equal(below?.steps, 4);
+  assert.equal(screenLabel(below!.entry.url), 'Meer');
+  /* the plain entry below is still a section (what location.back() would reach) */
+  assert.equal(navEntryBelow(stack)?.url, '/analyses/sales');
+  /* a deep link into a section, then more sections: nothing below, the back control falls back to Meer */
+  assert.equal(screenBelow(play([go(1, '/analyses/cash'), go(2, '/analyses/sales')])), null);
+  assert.equal(navScreen('/analyses'), '/analyses');
+  assert.equal(navScreen('/analyses/sales?periode=jaar'), '/analyses');
+});
+
+test('other screens stay entries of their own: settings views, a product after a product, the editor after the order', () => {
+  /* /settings?sectie=… is a view reached from the overview: back returns to the overview. */
+  assert.equal(screenBelow(play([go(1, '/more'), go(2, '/settings'), go(3, '/settings?sectie=discounts')]))?.entry.url, '/settings');
+  assert.equal(screenBelow(play([go(1, '/products/5'), go(2, '/products/6')]))?.entry.url, '/products/5');
+  const editor = play([go(1, '/sales'), go(2, '/sales/79'), go(3, '/sales/79/edit')]);
+  assert.deepEqual(screenBelow(editor), { entry: { id: 2, url: '/sales/79' }, steps: 1 });
+  assert.deepEqual(upTarget(play([go(1, '/purchasing'), go(2, '/purchasing/62')]), '/purchasing'), { back: true, steps: 1 });
 });
