@@ -1398,16 +1398,22 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     void editor.save();
   }
 
-  /** ⌘S / Ctrl+S on the desk saves the open view, also while typing; not behind another component's overlay. */
+  /**
+   * ⌘S / Ctrl+S on the desk saves the open view, also while typing. The
+   * shortcut sheet lists it for every /settings view, so it never opens the
+   * browser's "Save page as…", also on a view without an editor or behind an
+   * overlay. In the legal edit sheet it saves that text; behind any other
+   * overlay (a confirm, the product picker) it does nothing.
+   */
   @HostListener('document:keydown', ['$event'])
   saveShortcut(event: KeyboardEvent): void {
     if (this.websiteCategoryMode || event.key.toLowerCase() !== 's' || event.altKey || event.shiftKey) return;
     if (!(event.metaKey || event.ctrlKey) || !this.desktop.active()) return;
-    const editor = this.activeEditor();
-    if (!editor) return;
-    if (keyContext(event, this.host.nativeElement).overlayOpen) return;
     event.preventDefault();
-    if (editor.dirty() && !editor.saving()) void editor.save();
+    const legal = this.view() === 'legal' ? this.legalEditor() : undefined;
+    const editor = legal?.editing() && !this.ui.confirmRequest() ? legal
+      : keyContext(event, this.host.nativeElement).overlayOpen ? null : this.activeEditor();
+    if (editor?.dirty() && !editor.saving()) void editor.save();
   }
 
   /** Leaving /settings with unsaved views: Opslaan saves them all, Niet opslaan drops them. */
