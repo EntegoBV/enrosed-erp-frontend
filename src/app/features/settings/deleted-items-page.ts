@@ -75,8 +75,9 @@ import {
                 @for (item of visible(); track item.id) {
                   <button class="wk-tr wk-tr--link trash-row" type="button" [animate.leave]="leaveClass(item)" [disabled]="restoringId() !== null"
                           [attr.aria-label]="label(item.type) + ' ' + item.number + ' bekijken'" (click)="open(item)">
-                    <span class="wk-td"><b>{{ docName(item) }}</b>
-                      <span class="wk-td__sub">{{ label(item.type) }} · {{ status(item.status) }}@if (docSub(item); as sub) { · {{ sub }} }</span>
+                    <!-- Wraps rather than cuts: once a PO is named, its number joins the sub line and must stay whole at 1100. -->
+                    <span class="wk-td wk-td--wrap"><b>{{ docName(item) }}</b>
+                      <span class="wk-td__sub trash-wrap">{{ label(item.type) }} · {{ status(item.status) }}@if (docSub(item); as sub) { · <span class="trash-nr">{{ sub }}</span> }</span>
                       @if (!item.restoreAllowed) {
                         <span class="wk-td__sub trash-why"><span class="wk-pill tone-warn">Niet herstelbaar</span>@if (item.blockReason) { {{ item.blockReason }} }</span>
                       }
@@ -195,6 +196,7 @@ import {
     .trash-phone__chips { margin: 0 -12px 8px; padding-inline: 12px; }
     .trash-why { white-space: normal; overflow-wrap: anywhere; }
     .trash-wrap { white-space: normal; overflow-wrap: anywhere; }
+    .trash-nr { white-space: nowrap; }
     .deleted-attachments li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0}.deleted-attachments li>span{flex:1;min-width:120px;overflow-wrap:anywhere}.deleted-attachments .btn{min-height:44px}.deleted-attachments li>small{flex-basis:100%;color:var(--danger);font-size:11px;line-height:1.6}
     .deleted-error{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:14px;border-radius:12px;line-height:1.5;font-size:12px;background:var(--surface-2);color:var(--danger)}.deleted-error>span{flex:1;min-width:0;overflow-wrap:anywhere}
     .deleted-detail{display:grid;gap:18px}.deleted-detail h3{margin:0 0 10px;font-size:13px}.deleted-readonly{margin:0;font-size:12px;color:var(--muted)}
