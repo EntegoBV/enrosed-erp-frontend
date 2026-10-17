@@ -1530,12 +1530,14 @@ and on copies. Without the blocks (older backend) every screen is as before.
   and a re-applied container's earlier rows stay listed with a note);
   `emptyCostHistory` names the source of a cost set before the history.
 - `app-product-cost-history-sheet` is the one way into the history: the desk
-  Kostprijs KPI and Prijs & marge 'Kostprijshistoriek ›', the phone Kostprijs
-  and Bron tiles, the editor's Inkoop row (only with a cost) and every row of
-  the apply sheet (stacked on top; Escape closes only the top). A row links
-  to its container unless it is the one the sheet came from or it is gone
-  ('PO-… verwijderd', no link). The Opbouw (Catalogusprijs KPI, Opbouw tonen,
-  phone Marge tile) keeps its own Historiek tab.
+  hero's Kostprijs › figure (`pdk-kpi`) and the Prijs & marge flow's
+  'Historiek ›', the phone hero's 'Kostprijs ›' figure and the Kostprijs cell
+  of Prijs & marge (which also names the source), the editor's Inkoop row
+  (only with a cost) and every row of the apply sheet (stacked on top; Escape
+  closes only the top). A row links to its container unless it is the one the
+  sheet came from or it is gone ('PO-… verwijderd', no link). The Opbouw
+  (Catalogusprijs and Marge figures, Opbouw tonen, the phone's ⋯ Prijsopbouw)
+  keeps its own Historiek tab.
 - Kostprijzen toepassen (`purchase-apply-costs.ts`, pure, +
   `app-purchase-apply-costs-sheet`, hosted once by PurchaseEditor and
   PurchaseDesk, which extends it): `apply()` saves a dirty draft first,
@@ -1552,10 +1554,12 @@ and on copies. Without the blocks (older backend) every screen is as before.
   purchase-apply-costs.
 
 ### Products
-- List (search, skeletons) → view first: price and margin (intern) in
-  the title line, snap carousel with corner expand icon, lightbox with
-  download (originals are print quality), bento tiles, barcode placement:
-  piece EAN with the product, outer ITF-14 with the carton.
+- Producten (was "Catalogus"; Catalogus PDF is the PDF studio): on the desk
+  one kit table (`ProductListTable`), on the phone inset groups; the product
+  page is ProductDesk from 680 px and ProductView (phone) below. See
+  "Producten & voorraad (2026-10-17)" below for the screens of the
+  2026-10-17 round; barcode placement stays: piece EAN with the product,
+  outer ITF-14 with the carton.
 - Editor behind Bewerken; EXW price with currency select; CSV
   master-data and translations import/export live in Settings.
 - Photos (editor section "Foto's", rebuilt 2026-10-12): a product saved
@@ -1800,6 +1804,102 @@ names a display step with the existing `salesUnitsPerDisplay` key), the
 per-line "{n} dozen" stays (logistics), digital signing, change
 proposals with "wij kijken ernaar" status, PDF download. Terms/privacy
 page NL/EN.
+
+## Producten & voorraad (2026-10-17)
+The area round on top of the redesign foundation (`work/redesign-products`,
+contract `redesign/products/design.md` + `critique.md`).
+
+- **Styles.** One partial per screen in `src/styles/products/`. The big
+  screens' partials (`_list` through the empty `ProductListStyles`
+  component at the end of the list's template, `_booking`, `_product-desk` +
+  `_product-desk-kept`, `_product-phone`, `_stock`) are the `styleUrl(s)` of
+  a component of their screen with `ViewEncapsulation.None`, so they arrive
+  with the screen's lazy chunk: the initial bundle sits at its 1 MB error budget and
+  every global byte counts. Only `_small-pages` loads globally (through
+  `styles/products.scss`, one line in `styles.scss`). Every rule is scoped
+  under its host element (`app-product-list`, `app-product-list-table`,
+  `app-product-desk`, `app-product-view`, `app-stock-page`,
+  `app-stock-booking-sheet`, …); kit classes are never restyled bare; each
+  stylesheet stays under the 16 kB component budget. The components
+  `ProductList`, `ProductDesk`, `ProductView`, `StockPage`,
+  `StockBookingSheet` and the barcode page have no styles array. Each
+  screen package touched only its own files; the PAGE_SHORTCUTS rows came in
+  one commit of their own, so any screen reverts alone.
+- **Producten list** (`product-list.ts`, desk table `product-list-table.ts`,
+  presentational with a `ProductListTableHost` interface). State in the
+  address bar (`product-list-query.ts`, node-tested): `?q=` (300 ms after
+  typing) `&categorie=<id|geen>&status=aandacht|website|orderapp|inactief
+  &volgorde=naam|naam-za|sku|voorraad-hoog|voorraad-laag|prijs-laag|
+  prijs-hoog|kost-laag|kost-hoog&open=f12,p33`, defaults left out, read once
+  and written with `Location.replaceState`. Desk ≥1360: photo · Product ·
+  Voorraad · Onderweg · Kostprijs · Catalogusprijs · Marge · Publicatie ·
+  actions; 900–1359 Onderweg folds under Voorraad with its date and the
+  aandacht/Inactief pills sit after the name; 680–899 the phone rows in
+  cards. The whole series head folds (never opens the lead). Aandacht counts
+  rows with the filter's own predicate. Keyboard: roving tabindex, ↑ ↓, → ←,
+  Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
+  filter sheet (Publicatie, Volgorde), category chips + Aandacht, the swipe
+  rows laid out as `plp-row` (names never clamped; "+n" with its date).
+  Default order label: "Standaardvolgorde (voorraad eerst)".
+- **`product-figures.ts`** (node-tested): `productMargin` (the desk
+  rounding), `onderwegSummary` (series sum, earliest date, each order once),
+  `stockValue` (rows without cost counted apart), `locationValues`,
+  `totalsByProduct`, `locationSplit`. Sums are unit-safe: quantities only
+  within one product or series, euros across products.
+- **Voorraad boeken** (`stock-booking.ts` model, node-tested;
+  `app-stock-booking-sheet`): the only booking UI. Hertelling, Beschadigd,
+  Te weinig, Demo, Verplaatsen (2+ locations); `parseCount` (whole, not
+  negative, "1.000"/"1 000" = 1000); preview before saving; an explicit
+  button. Hosts: ProductDesk/ProductView (pass their received containers),
+  StockPage (stacked over the product sheet), the editor's Voorraad tab
+  ("Verplaatsen", "Stuk / demo", `?action=damaged|demo`). Without
+  `containers` the sheet loads them once for damage/shortage. `(booked)`
+  carries kind, delta, location, containerId and the returned product.
+  Booking on blur exists only in /stock "Aantallen bewerken" (guarded,
+  toast with Ongedaan maken that books back only while the figure stands,
+  reference "Ongedaan gemaakt") and the editor's guarded stock tiles.
+  `received-containers.ts` names containers with `containerName()`.
+- **Families cache**: `CatalogApi.productFamilies({ maxAgeMs })`
+  (`core/api/request-cache.ts` `cachedOnce`): opt-in 20 s reuse for the
+  products screens (list, product page navigation, editor variant group,
+  /stock); without options one request per call (a request in flight is
+  shared); every CatalogApi POST/PUT/PATCH/DELETE clears it; each caller gets
+  a `structuredClone`.
+- **Product page, desk** (`product-desk.ts`): light hero card (no
+  `.desk-hero`): photo, identity, series chips with all-location totals (one
+  `stockLevels()` request), strip of six figure buttons; cards in two
+  self-stacking columns from 1200 (`ng-template`s placed by a media signal),
+  one column below in a fixed order; Prijs & marge flow (3 + 2 below 1360),
+  Omdoos & logistiek its own card, Afspraken folded to 136 px; Documenten
+  summarises managed product photos in one row. Keys E, B, ⌥ ← / ⌥ →. Ids
+  `pd-price`, `pd-stock`, `pd-web`, `pd-agreements`, `pd-media`, `pd-issues`.
+- **Product page, phone** (`product-view.ts`): `app-ios-nav customLarge`
+  with the product as its hero card (`pph-card`, 2 × 2 figures), the page
+  root `.ios-page.pd-phone` with the bar and every sheet as direct
+  children; back from `NavHistory` (capsule, a circle when condensed;
+  Bewerken becomes a pencil circle then); inset sections incl. a read-only
+  Website & publicatie (`publication-groups.ts`). No Bewerken dock. Ids
+  `product-overview`, `stock-card`, `product-core`, `product-packaging`,
+  `product-media`, `product-agreements`, `product-publication`,
+  `product-issues`.
+- **Voorraad** (`stock-page.ts`): value summary (Waarde tegen kostprijs over
+  all locations, per location, Onderweg, Zonder kostprijs), location
+  segment, Categorie ▾, Leeg verbergen, kit table with `--wk-cols` bound by
+  the component (B4 column sets), group rows with their € value, demo fold
+  with its own value (the parts add up to the total), units per product.
+  `?locatie=&q=&categorie=`. /stock itself lights the Producten phone tab;
+  its back falls back to "‹ Producten".
+- **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
+  (`features/settings/barcode-usage.ts`, node-tested, built from
+  `catalog.products()`).
+- **Cross-area note (Analyses):** Analyses › Voorraadwaarde multiplies
+  `product.stockQuantity` (the warehouse only) by the cost; Voorraad › Waarde
+  tegen kostprijs uses every location. They differ by the sales points'
+  stock; the Zaltbommel cell of the Voorraad summary equals the Analyses
+  figure. The Analyses area should switch to all-location levels.
+- **Not done in this round** (left for later): the editor refinements
+  (P7: toolbar crumb, one-row hero with Kostprijs and Marge, the rail from
+  1400), the Catalogusdata link to Catalogusteksten in settings.
 
 ## Gotchas learned the hard way
 
