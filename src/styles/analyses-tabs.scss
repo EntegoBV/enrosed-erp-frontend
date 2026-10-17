@@ -171,6 +171,8 @@ app-container-cost-analysis { display: block; min-width: 0; }
   .an-phone .an-bar--seg { margin-bottom: 12px; overflow: visible; }
   .an-phone .an-parts { flex: 1; }
   .an-phone .an-parts .ios-seg__opt { font-size: 12.5px; padding: 0 4px; }
+  /* Below 380 px (81 px a segment at 360) 'Afwijkingen' needs the last pixels: the finance 'Betaald op' pattern (critique N18). */
+  @media (max-width: 379.98px) { .an-phone .an-parts .ios-seg__opt { padding-inline: 2px; letter-spacing: -.01em; } }
   .an-focus-chip { flex: none; min-height: 32px; font-size: 13px; }
   .an-phone .an-order { scroll-margin-top: calc(44px + var(--safe-t, 0px) + 12px); }
   .an-phone .an-order.is-focus .an-card__body { box-shadow: 0 0 0 2px var(--rose); }
