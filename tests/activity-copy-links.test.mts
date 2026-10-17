@@ -31,3 +31,18 @@ test('a deleted entry links nowhere', () => {
   assert.equal(activityQueryParams(event('COMPANY_COST', '12', 'DELETED')), null);
   assert.equal(activityRoute(event('BANK_STATEMENT', null)), null);
 });
+
+test('customers, suppliers and planner items link (bug 13); costs and bank are Kosten & bank even when filed as OTHER', async () => {
+  const { activityCategoryIcon } = await import('../src/app/features/activity/activity-copy.ts');
+  const customer = { ...event('CUSTOMER'), entityLabel: 'Bloemen Verhoeven BV' };
+  assert.deepEqual(activityRoute(customer), ['/customers']);
+  assert.deepEqual(activityQueryParams(customer), { q: 'Bloemen Verhoeven BV' });
+  const supplier = { ...event('SUPPLIER'), entityLabel: 'Yunnan Pubei' };
+  assert.deepEqual(activityRoute(supplier), ['/suppliers']);
+  assert.deepEqual(activityQueryParams(supplier), { q: 'Yunnan Pubei' });
+  assert.deepEqual(activityRoute(event('PLANNER_ITEM')), ['/dashboard/agenda']);
+  assert.equal(activityQueryParams(event('PLANNER_ITEM')), null);
+  assert.equal(activityCategory({ ...event('BANK_STATEMENT'), category: 'OTHER' }), 'FINANCE');
+  assert.equal(activityCategory({ ...event('PRODUCT'), category: 'OTHER' }), 'OTHER');
+  assert.equal(activityCategoryIcon('PLANNING'), 'calendar');
+});

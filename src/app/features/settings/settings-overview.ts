@@ -23,6 +23,8 @@ import {
 } from './company-fields';
 import { WebsitePriceStore } from './website-price-store';
 import { WebsiteSyncStore } from './website-sync-store';
+import { ActivityNames } from '../activity/activity-names';
+import { activityEntityText, activitySummaryText } from '../activity/activity-format';
 
 /** One data source of the overview: its value, or why it is missing. A reload keeps the value on screen. */
 class Source<T> {
@@ -357,6 +359,8 @@ export class SettingsOverview {
   private readonly pushSetup = inject(PushSetup);
   private readonly theme = inject(Theme);
   private readonly document = inject(DOCUMENT);
+  /** Container and supplier names for the Logboek mini rows (shared with the Logboek, loaded after the rows show). */
+  private readonly names = inject(ActivityNames);
 
   /** True while the overview is the open view: each time it turns true, every value is read again. */
   readonly active = input(true);
@@ -448,7 +452,7 @@ export class SettingsOverview {
       case 'categories': void this.categories.load(() => this.catalog.categories()); break;
       case 'trash': void this.trash.load(() => this.deleted.list()); break;
       case 'devices': void this.devices.load(() => this.pushSetup.devices()); break;
-      case 'activity': void this.activity.load(() => this.activityApi.list({ limit: 50 })); break;
+      case 'activity': void this.activity.load(() => this.activityApi.list({ limit: 50 })).then(() => void this.names.load()); break;
       case 'staff': void this.staff.load(() => this.staffApi.accounts()); break;
     }
   }
@@ -469,7 +473,8 @@ export class SettingsOverview {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   }
 
+  /** "Inkooporder bijgewerkt · 12-Set-Roseamor-Jerry": the Logboek's own words and names. */
   miniText(event: ActivityEvent): string {
-    return [event.summary, event.entityLabel].filter(Boolean).join(' · ');
+    return [activitySummaryText(event.summary), activityEntityText(event, this.names.context())].filter(Boolean).join(' · ');
   }
 }

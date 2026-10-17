@@ -27,6 +27,8 @@ const ACTION_LABELS: Record<string, string> = {
   IDENTITY_FINALIZED: 'Identiteit vastgelegd',
 };
 
+const FINANCE_TYPES = new Set(['COMPANY_COST', 'RECURRING_COST', 'BANK_BALANCE', 'BANK_STATEMENT']);
+
 const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
   SALES_ORDER: 'SALES',
   PURCHASE_ORDER: 'PURCHASING',
@@ -56,7 +58,7 @@ const CATEGORY_ICONS: Record<ActivityCategory, string> = {
   PURCHASING: 'purchase',
   CATALOGUE: 'products',
   RELATIONS: 'customers',
-  PLANNING: 'activity',
+  PLANNING: 'calendar',
   FINANCE: 'exchange',
   OTHER: 'more',
 };
@@ -67,6 +69,8 @@ export function activityActionLabel(action: string): string {
 }
 
 export function activityCategory(event: ActivityEvent): ActivityCategory {
+  /* Costs and bank are always Kosten & bank, also while the backend still files them under OTHER. */
+  if (FINANCE_TYPES.has(event.entityType.trim().toUpperCase())) return 'FINANCE';
   if (event.category && CATEGORY_LABELS[event.category]) return event.category;
   return ENTITY_CATEGORIES[event.entityType.trim().toUpperCase()] ?? 'OTHER';
 }
@@ -106,10 +110,12 @@ export function activityRoute(event: ActivityEvent): string[] | null {
   if (type === 'PRODUCT') return ['/products', String(event.entityId)];
   if (type === 'PRODUCT_FAMILY') return ['/website/products'];
   if (FINANCE_TYPES.has(type)) return ['/costs'];
+  if (type === 'CUSTOMER') return ['/customers'];
+  if (type === 'SUPPLIER') return ['/suppliers'];
+  if (type === 'PLANNER_ITEM') return ['/dashboard/agenda'];
   return null;
 }
 
-const FINANCE_TYPES = new Set(['COMPANY_COST', 'RECURRING_COST', 'BANK_BALANCE', 'BANK_STATEMENT']);
 
 /**
  * The query that goes with activityRoute: Kosten & bank keeps its section
@@ -123,5 +129,22 @@ export function activityQueryParams(event: ActivityEvent): Record<string, string
   if (type === 'RECURRING_COST') return { view: 'costs', tab: 'recurring' };
   if (type === 'BANK_BALANCE') return { view: 'bank' };
   if (type === 'BANK_STATEMENT') return { view: 'bank', tab: 'movements' };
+  /* Customers and suppliers open their list searched on the record's name. */
+  if ((type === 'CUSTOMER' || type === 'SUPPLIER') && event.entityLabel?.trim()) return { q: event.entityLabel.trim() };
   return null;
+}
+
+const CATEGORY_COLORS: Record<ActivityCategory, string> = {
+  SALES: '#b75b72',
+  PURCHASING: '#aa793d',
+  CATALOGUE: '#7970a8',
+  RELATIONS: '#4d8580',
+  PLANNING: '#5e789d',
+  FINANCE: '#2f7d5a',
+  OTHER: '#7c7c84',
+};
+
+/** The category's colour (tiles, dots and the inspector kicker). */
+export function activityCategoryColor(category: ActivityCategory): string {
+  return CATEGORY_COLORS[category];
 }

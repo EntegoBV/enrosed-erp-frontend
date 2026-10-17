@@ -1,389 +1,422 @@
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivityApi } from '../../core/api/activity-api';
-import { ActivityCategory, ActivityChange, ActivityEvent } from '../../core/api/models';
+import { ActivityCategory, ActivityEvent } from '../../core/api/models';
+import { StaffContactsApi } from '../../core/api/staff-contacts-api';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
+import { keyContext } from '../../shared/key-context';
+import { LoadError } from '../../shared/load-error';
 import { PageHeader } from '../../shared/page-header';
+import { SegmentOption, Segmented } from '../../shared/segmented';
+import { Skeleton } from '../../shared/skeleton';
+import { Sheet } from '../../shared/ui';
 import {
-  activityActionLabel,
-  activityCategory,
-  activityCategoryIcon,
-  activityCategoryLabel,
-  activityEntityLabel,
-  activityQueryParams,
-  activityRoute,
+  activityActionLabel, activityCategory, activityCategoryColor, activityCategoryIcon, activityCategoryLabel, activityEntityLabel,
 } from './activity-copy';
+import {
+  ActivityFilters, ActivityRow, CategoryChip, activityDays, activityEntityText, activityFiltersFromQuery, activityQueryFromFilters,
+  activityRows, activitySummaryText, categoryRequest, changePreview, keepForChip, rowTime, todayEvents,
+} from './activity-format';
+import { ActivityInspector } from './activity-inspector';
+import { ActivityNames } from './activity-names';
 
-type CategoryFilter = 'ALL' | ActivityCategory;
+/** Whether the backend knows the FINANCE category; learned once per app visit (B4). */
+let financeSupported: boolean | null = null;
 
-interface ActivityDayGroup {
-  key: string;
-  label: string;
-  events: ActivityEvent[];
-}
+const CHIP_ORDER: readonly CategoryChip[] = ['ALL', 'SALES', 'PURCHASING', 'CATALOGUE', 'RELATIONS', 'PLANNING', 'FINANCE', 'OTHER'];
+/** A filtered page shorter than this fetches on by itself (at most four extra pages per action). */
+const MIN_ROWS = 20;
+const MAX_EXTRA_PAGES = 4;
 
+/**
+ * Logboek: every logged event, newest first, as dense rows (a burst of the
+ * same edit is one row), filtered by category and person in the URL
+ * (?soort=&wie=&type=&id=). A row opens its detail: a drawer on the desk, a
+ * sheet on the phone. Values read as everywhere else in the ERP; purchase
+ * orders by their container name.
+ */
 @Component({
   selector: 'app-activity-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, FormsModule, RouterLink, Icon, PageHeader],
+  imports: [ActivityInspector, ContextMenu, Icon, LoadError, PageHeader, Segmented, Sheet, Skeleton],
   template: `
-    <app-page-header title="Logboek" subtitle="Alle wijzigingen, duidelijk per onderdeel" />
+    <app-page-header title="Logboek" [subtitle]="subtitle()">
+      @if (desktop.active()) {
+        <app-segmented label="Medewerker" [options]="actorOptions()" [value]="filters().actor ?? 'ALL'" (changed)="setActor($event)" />
+      } @else {
+        <button class="btn" type="button" aria-haspopup="menu" (click)="actorMenu.set(true)">{{ actorLabel() }} ▾</button>
+      }
+    </app-page-header>
 
-    <main class="content activity-page" [attr.aria-busy]="loading() || loadingMore()">
-      <section class="card activity-controls" aria-labelledby="activity-filter-title">
-        <div class="activity-controls__head">
-          <div>
-            <span class="eyebrow">Overzicht</span>
-            <h2 id="activity-filter-title">Wat wil je bekijken?</h2>
+    <main class="content log-page" [attr.aria-busy]="loading() || loadingMore()">
+      @if (desktop.active()) {
+        <nav class="wk-subbar" aria-label="Onderdeel">
+          <div class="wk-chips log-chips">
+            @if (entityChip(); as chip) {
+              <span class="wk-chip is-on">Alleen: {{ chip }}<button class="wk-chip__x" type="button" aria-label="Filter op record wissen" (click)="clearEntity()"><app-icon name="close" [size]="11" /></button></span>
+            }
+            @for (chip of chips; track chip) {
+              <button class="wk-chip" type="button" [class.is-on]="filters().category === chip" [attr.aria-pressed]="filters().category === chip" (click)="setCategory(chip)">
+                @if (chip !== 'ALL') { <i class="wk-dot" [style.--tone]="colorOf(chip)"></i> }{{ chipLabel(chip) }}</button>
+            }
           </div>
-          <div class="activity-actor" [class.activity-actor--on]="actor() !== 'ALL'">
-            <span>Medewerker</span>
-            <b>{{ actorLabel() }}</b>
-            <select aria-label="Filter logboek op medewerker" [ngModel]="actor()"
-                    (ngModelChange)="changeActor($event)">
-              <option value="ALL">Iedereen</option>
-              <option value="emre">Emre</option>
-              <option value="berat">Berat</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="category-grid" role="group" aria-label="Filter op categorie">
-          @for (option of categoryOptions; track option.value) {
-            <button type="button" class="category-filter"
-                    [class.category-filter--active]="category() === option.value"
-                    [attr.aria-pressed]="category() === option.value"
-                    (click)="changeCategory(option.value)">
-              <span class="category-filter__icon" aria-hidden="true">
-                <app-icon [name]="option.icon" [size]="17" />
-              </span>
-              <span>{{ option.label }}</span>
-            </button>
+          <span class="wk-subbar__end">{{ todayText() }}</span>
+        </nav>
+      } @else {
+        <div class="ios-chips log-phone-chips" role="group" aria-label="Onderdeel">
+          @if (entityChip(); as chip) {
+            <button class="ios-chip" type="button" aria-pressed="true" (click)="clearEntity()">Alleen: {{ chip }} ✕</button>
+          }
+          @for (chip of chips; track chip) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="filters().category === chip" (click)="setCategory(chip)">
+              @if (chip !== 'ALL') { <i class="log-dot" [style.background]="colorOf(chip)"></i> }{{ chipLabel(chip) }}</button>
           }
         </div>
-      </section>
+      }
 
-      @if (loading()) {
-        <div class="activity-loading" role="status" aria-live="polite">
-          <span class="activity-loading__pulse" aria-hidden="true"></span>
-          Logboek laden…
-        </div>
-      } @else if (error()) {
-        <div class="card activity-error" role="alert">
-          <div><b>Logboek niet beschikbaar</b><p>{{ error() }}</p></div>
-          <button class="btn btn--sm" type="button" (click)="reload()">Opnieuw</button>
-        </div>
-      } @else {
-        <div class="activity-result-head">
-          <p><b>{{ items().length }}</b> {{ items().length === 1 ? 'activiteit' : 'activiteiten' }} geladen</p>
-          <span>Nieuwste eerst</span>
-        </div>
-
-        <section class="activity-feed" aria-label="Activiteiten">
-          @for (group of dayGroups(); track group.key) {
-            <section class="activity-day" [attr.aria-labelledby]="'activity-day-' + group.key">
-              <header class="activity-day__head">
-                <h2 [id]="'activity-day-' + group.key">{{ group.label }}</h2>
-                <span>{{ group.events.length }}</span>
-              </header>
-
-              <div class="activity-day__events">
-                @for (event of group.events; track event.id) {
-                  <article class="card activity-event" [attr.data-category]="categoryOf(event)">
-                    <div class="activity-event__rail" aria-hidden="true">
-                      <span class="activity-event__icon">
-                        <app-icon [name]="categoryIcon(event)" [size]="18" />
-                      </span>
-                    </div>
-
-                    <div class="activity-event__body">
-                      <div class="activity-event__meta">
-                        <span>{{ categoryName(event) }}</span>
-                        <i aria-hidden="true"></i>
-                        <span>{{ actionName(event.action) }}</span>
-                        <time [attr.datetime]="event.at">{{ event.at | date:'HH:mm' }}</time>
-                      </div>
-
-                      <h3>{{ event.summary }}</h3>
-
-                      @if (event.entityLabel) {
-                        @if (routeOf(event); as target) {
-                          <a class="activity-event__entity" [routerLink]="target" [queryParams]="queryOf(event)">
-                            <span>{{ entityKind(event) }}</span>
-                            <b>{{ event.entityLabel }}</b>
-                            <span class="activity-event__link-mark" aria-hidden="true"></span>
-                          </a>
-                        } @else {
-                          <div class="activity-event__entity activity-event__entity--static">
-                            <span>{{ entityKind(event) }}</span>
-                            <b>{{ event.entityLabel }}</b>
-                          </div>
-                        }
-                      }
-
-                      @if (changesOf(event).length) {
-                        <div class="activity-changes" [attr.aria-label]="changesOf(event).length + ' wijzigingen'">
-                          <div class="activity-changes__title">
-                            <b>Wat is gewijzigd</b>
-                            <span>{{ changesOf(event).length }} {{ changesOf(event).length === 1 ? 'veld' : 'velden' }}</span>
-                          </div>
-                          <dl>
-                            @for (change of visibleChanges(event); track change.field) {
-                              <div class="activity-change">
-                                <dt>{{ change.label }}</dt>
-                                @if (change.beforeValue === null && change.afterValue === null) {
-                                  <dd class="activity-change__private">Inhoud aangepast</dd>
-                                } @else {
-                                  <dd>
-                                    <span><small>Van</small>{{ changeValue(change.beforeValue) }}</span>
-                                    <span><small>Naar</small>{{ changeValue(change.afterValue) }}</span>
-                                  </dd>
-                                }
-                              </div>
-                            }
-                          </dl>
-                          @if (changesOf(event).length > detailLimit) {
-                            <button type="button" class="activity-changes__more" (click)="toggleDetails(event.id)">
-                              {{ detailsExpanded(event.id)
-                                ? 'Minder tonen'
-                                : (changesOf(event).length - detailLimit) + ' meer wijzigingen tonen' }}
-                            </button>
-                          }
-                        </div>
-                      }
-
-                      <footer>
-                        <span class="activity-event__avatar" aria-hidden="true">{{ actorInitial(event) }}</span>
-                        <span>{{ actorName(event) }}</span>
-                      </footer>
-                    </div>
-                  </article>
-                }
-              </div>
-            </section>
-          } @empty {
-            <div class="empty activity-empty">
-              <div class="empty__icon" aria-hidden="true">✓</div>
-              <div class="empty__title">Geen activiteiten gevonden</div>
-              <p>Pas de categorie of medewerker aan om andere gebeurtenissen te bekijken.</p>
-            </div>
+      @if (loading() && !items().length) {
+        @if (desktop.active()) { <div class="wk-card"><app-skeleton kind="table" [rows]="8" /></div> }
+        @else { <app-skeleton kind="group" [rows]="6" /> }
+      } @else if (error(); as message) {
+        <app-load-error title="Logboek niet beschikbaar" [message]="message" [busy]="loading()" (retry)="reload()" />
+      } @else if (!rows().length) {
+        @if (desktop.active()) {
+          <div class="wk-card"><div class="wk-empty"><div class="wk-empty__icon"><app-icon name="activity" [size]="22" /></div>
+            <h2 class="wk-empty__title">Geen activiteiten gevonden</h2><p class="wk-empty__text">Kies een ander onderdeel of een andere medewerker.</p></div></div>
+        } @else {
+          <div class="ios-empty"><div class="ios-empty__icon"><app-icon name="activity" [size]="26" /></div>
+            <h2 class="ios-empty__title">Geen activiteiten gevonden</h2><p class="ios-empty__text">Kies een ander onderdeel of een andere medewerker.</p></div>
+        }
+      } @else if (desktop.active()) {
+        <section class="wk-card log-card" aria-label="Activiteiten">
+          @for (day of days(); track day.key) {
+            <div class="log-day" role="heading" aria-level="2">{{ day.label }} <span>· {{ day.count }}</span></div>
+            @for (row of day.rows; track row.key) {
+              <button class="wk-tr wk-tr--link log-row" type="button" [attr.data-row]="row.key" [attr.aria-selected]="selectedKey() === row.key"
+                      [style.--cat]="rowColor(row)" (click)="select(row)">
+                <span class="log-time">{{ time(row) }}</span>
+                <span class="log-tile" aria-hidden="true"><app-icon [name]="rowIcon(row)" [size]="16" /></span>
+                <span class="log-main">
+                  <b [attr.title]="rowSummary(row)">{{ rowSummary(row) }}@if (row.events.length > 1) { <i> · {{ row.events.length }}×</i> }</b>
+                  <span [attr.title]="rowLine(row)">{{ rowRecord(row) }}@if (rowPreview(row); as preview) { — <em>{{ preview }}</em> }</span>
+                </span>
+                <span class="log-actor"><span class="log-av" aria-hidden="true">{{ initial(row) }}</span>{{ actorName(row) }}</span>
+              </button>
+            }
           }
         </section>
+      } @else {
+        @for (day of days(); track day.key) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>{{ day.label }} · {{ day.count }}</h2></div>
+            <div class="ios-group ios-group--icons">
+              @for (row of day.rows; track row.key) {
+                <button class="ios-cell log-cell" type="button" (click)="select(row)">
+                  <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [style.--tone]="rowColor(row)" aria-hidden="true"><app-icon [name]="rowIcon(row)" [size]="17" /></span></span>
+                  <span class="ios-cell__body">
+                    <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ rowSummary(row) }}@if (row.events.length > 1) { · {{ row.events.length }}× }</span>
+                    <span class="ios-cell__sub ios-cell__sub--2">{{ rowName(row) }} · {{ actorName(row) }}</span>
+                    @if (rowPreview(row); as preview) { <span class="ios-cell__sub ios-cell__sub--2">{{ preview }}</span> }
+                  </span>
+                  <span class="ios-cell__trail"><span class="ios-cell__meta log-cell__time">{{ time(row) }}</span></span>
+                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                </button>
+              }
+            </div>
+          </section>
+        }
+      }
 
-        @if (nextBefore() !== null) {
-          <button class="btn activity-more" type="button" [disabled]="loadingMore()" (click)="loadMore()">
-            {{ loadingMore() ? 'Laden…' : 'Meer laden' }}
-          </button>
+      @if (rows().length) {
+        @if (moreError()) {
+          <div class="log-more log-more--error" role="alert"><span>Meer activiteiten laden is niet gelukt.</span>
+            <button class="wk-btn wk-btn--sm" type="button" [disabled]="loadingMore()" (click)="loadMore()">Opnieuw proberen</button></div>
+        } @else if (nextBefore() !== null) {
+          <div class="log-more"><button class="wk-btn" type="button" [disabled]="loadingMore()" (click)="loadMore()">{{ loadingMore() ? 'Laden…' : 'Meer laden' }}</button></div>
         }
       }
     </main>
+
+    <!-- Overlays at page-host level (trap rule): the desk drawer, the phone sheet and the actor menu -->
+    @if (selectedRow(); as row) {
+      @if (desktop.active()) {
+        <aside class="wk-inspector wk-inspector--drawer log-drawer" aria-label="Details">
+          <app-activity-inspector layout="drawer" [row]="row" [events]="items()" [ctx]="names.context()"
+                                  (selectEvent)="selectEvent($event)" (filterEntity)="filterEntity($event)" (closed)="selectedKey.set(null)" />
+        </aside>
+      } @else {
+        <app-sheet [title]="rowAction(row)" variant="ios" (closed)="selectedKey.set(null)">
+          <div body><app-activity-inspector layout="sheet" [row]="row" [events]="items()" [ctx]="names.context()"
+                                            (selectEvent)="selectEvent($event)" (filterEntity)="filterEntity($event)" /></div>
+        </app-sheet>
+      }
+    }
+    @if (actorMenu()) {
+      <app-context-menu variant="ios" title="Medewerker" [items]="actorItems()" cancelLabel="Annuleren"
+                        (pick)="setActor($event.id); actorMenu.set(false)" (closed)="actorMenu.set(false)" />
+    }
   `,
   styles: `
-    .activity-page{max-width:1040px;container:activity-page / inline-size}.activity-controls{display:grid;gap:16px;margin-bottom:20px;padding:17px}.activity-controls__head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px}.eyebrow{color:var(--rose);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.activity-controls h2{margin-top:3px;font-size:18px}.activity-actor{position:relative;display:grid;min-width:142px;min-height:48px;align-content:center;padding:7px 34px 7px 12px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}.activity-actor>span{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}.activity-actor>b{margin-top:1px;color:var(--ink-2);font-size:12.5px}.activity-actor--on{border-color:var(--rose-line);background:var(--rose-soft)}.activity-actor select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}.activity-actor:after{content:'';position:absolute;right:14px;top:50%;width:7px;height:7px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:translateY(-70%) rotate(45deg)}
-    .category-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.category-filter{display:flex;min-height:44px;align-items:center;gap:9px;padding:7px 11px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--muted);font:inherit;font-size:12px;font-weight:700;text-align:left;cursor:pointer;transition:border-color .16s ease,background .16s ease,color .16s ease,transform .16s ease}.category-filter:hover{border-color:var(--rose-line);color:var(--ink-2);transform:translateY(-1px)}.category-filter--active{border-color:var(--rose-line);background:var(--rose-soft);color:var(--rose-dark)}.category-filter__icon{display:grid;width:28px;height:28px;flex:0 0 auto;place-items:center;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);border-radius:9px;background:var(--surface)}
-    .activity-result-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 10px;color:var(--muted);font-size:11.5px}.activity-result-head b{color:var(--ink-2)}.activity-feed{display:grid;gap:22px}.activity-day{display:grid;gap:9px}.activity-day__head{display:flex;align-items:center;gap:9px;padding:0 3px}.activity-day__head h2{color:var(--ink-2);font-size:13px;text-transform:capitalize}.activity-day__head span{display:grid;min-width:22px;height:22px;place-items:center;border-radius:7px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750}.activity-day__events{display:grid;gap:9px}
-    .activity-event{--activity-accent:var(--rose);display:grid;grid-template-columns:44px minmax(0,1fr);gap:13px;padding:16px 17px;border-left:3px solid var(--activity-accent)}.activity-event[data-category=SALES]{--activity-accent:#b75b72}.activity-event[data-category=PURCHASING]{--activity-accent:#aa793d}.activity-event[data-category=CATALOGUE]{--activity-accent:#7970a8}.activity-event[data-category=RELATIONS]{--activity-accent:#4d8580}.activity-event[data-category=PLANNING]{--activity-accent:#5e789d}.activity-event[data-category=OTHER]{--activity-accent:#7c7c84}.activity-event__rail{display:flex;justify-content:center}.activity-event__icon{display:grid;width:40px;height:40px;place-items:center;border:1px solid color-mix(in srgb,var(--activity-accent) 24%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--activity-accent) 8%,var(--surface));color:var(--activity-accent)}.activity-event__body{min-width:0}.activity-event__meta{display:flex;align-items:center;gap:7px;color:var(--activity-accent);font-size:9.5px;font-style:normal;font-weight:800;letter-spacing:.075em;text-transform:uppercase}.activity-event__meta i{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.45}.activity-event__meta time{margin-left:auto;color:var(--muted);font-weight:650;letter-spacing:0}.activity-event h3{margin-top:4px;font-size:15px;line-height:1.38}.activity-event__entity{display:inline-grid;grid-template-columns:auto minmax(0,auto) 10px;align-items:center;gap:7px;max-width:100%;margin-top:9px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink-2);font-size:11px;text-decoration:none}.activity-event__entity>span:first-child{color:var(--muted);font-weight:650}.activity-event__entity b{overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}.activity-event a.activity-event__entity:hover{border-color:var(--rose-line);color:var(--rose-dark)}.activity-event__link-mark{width:6px;height:6px;border-top:1.5px solid currentColor;border-right:1.5px solid currentColor;transform:rotate(45deg)}.activity-event__entity--static{grid-template-columns:auto minmax(0,auto)}
-    .activity-changes{margin-top:12px;padding:11px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}.activity-changes__title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}.activity-changes__title b{font-size:11.5px}.activity-changes__title span{color:var(--muted);font-size:10px}.activity-changes dl{display:grid}.activity-change{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(0,1.3fr);gap:12px;padding:8px 0}.activity-change+.activity-change{border-top:1px solid var(--line)}.activity-change dt{color:var(--ink-2);font-size:11px;font-weight:700}.activity-change dd{display:grid;grid-template-columns:1fr 1fr;gap:7px;min-width:0;margin:0}.activity-change dd>span{min-width:0;color:var(--ink-2);font-size:11px;overflow-wrap:anywhere}.activity-change dd small{display:block;margin-bottom:2px;color:var(--muted);font-size:8px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.activity-change__private{display:block!important;color:var(--muted)!important;font-style:italic}.activity-changes__more{min-height:34px;margin-top:4px;padding:4px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:750;cursor:pointer}
-    .activity-event footer{display:flex;align-items:center;gap:7px;margin-top:11px;color:var(--muted);font-size:10.5px}.activity-event__avatar{display:grid;width:24px;height:24px;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-2);font-size:9px;font-weight:800;text-transform:uppercase}.activity-loading{display:flex;min-height:220px;align-items:center;justify-content:center;gap:9px;color:var(--muted);font-size:13px}.activity-loading__pulse{width:9px;height:9px;border-radius:50%;background:var(--rose);animation:activity-pulse 1s ease-in-out infinite}.activity-error{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px}.activity-error b{font-size:14px}.activity-error p{color:var(--muted);font-size:12px}.activity-empty{padding-block:56px}.activity-empty p{max-width:390px;margin:5px auto 0;color:var(--muted);font-size:12px;text-align:center}.activity-more{display:block;margin:20px auto 0}.activity-more:disabled{opacity:.55}@keyframes activity-pulse{50%{opacity:.35;transform:scale(.75)}}
-    @container activity-page (min-width:700px){.category-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-    @container activity-page (min-width:960px){.category-grid{grid-template-columns:repeat(7,minmax(0,1fr))}}
-    @media(min-width:820px){.activity-event{grid-template-columns:50px minmax(0,1fr);padding:18px 20px}.activity-event__icon{width:44px;height:44px;border-radius:13px}.activity-event h3{font-size:16px}}
-    @media(max-width:560px){.activity-controls{margin-inline:-2px;padding:14px}.activity-controls__head{align-items:stretch;flex-direction:column}.activity-actor{width:100%}.category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.activity-event{grid-template-columns:34px minmax(0,1fr);gap:10px;padding:14px 12px}.activity-event__icon{width:32px;height:32px;border-radius:10px}.activity-event__meta{flex-wrap:wrap}.activity-event__meta time{margin-left:0}.activity-event h3{font-size:14px}.activity-change{grid-template-columns:1fr;gap:4px}.activity-event__entity{width:100%;grid-template-columns:auto minmax(0,1fr) 10px}.activity-result-head{align-items:flex-start}.activity-day__head{padding-inline:1px}}
-    @media(max-width:340px){.category-grid{grid-template-columns:1fr}.activity-event{grid-template-columns:1fr}.activity-event__rail{justify-content:flex-start}.activity-event__meta time{width:100%}.activity-change dd{grid-template-columns:1fr}}
-    @media(prefers-reduced-motion:reduce){.activity-loading__pulse{animation:none}.category-filter{transition:none}}
+    .log-page { max-width: 1240px; }
+    .log-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .log-chips .wk-dot { width: 8px; height: 8px; }
+    .log-card { --wk-cols: 84px 28px minmax(0, 1fr) 112px; overflow: clip; }
+    .log-day { position: sticky; top: var(--wk-sticky-top, 0px); z-index: 2; display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 16px;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 70%, var(--bg)); color: var(--ink-2);
+      font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .log-day span { color: var(--muted); font-weight: 650; }
+    .log-row { width: 100%; min-height: 56px; border-width: 0 0 1px; font: inherit; text-align: left; }
+    .log-row:hover { background: var(--surface-2); }
+    .log-time { color: var(--muted); font: 500 12.5px var(--mono, ui-monospace, monospace); white-space: nowrap; }
+    .log-tile { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--cat) 13%, var(--surface)); color: var(--cat); }
+    .log-main { display: grid; min-width: 0; }
+    .log-main b { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .log-main b i { color: var(--muted); font-style: normal; }
+    .log-main > span { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .log-main em { color: var(--ink-2); font-style: normal; }
+    .log-actor { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink-2); font-size: 13px; }
+    .log-av { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface-2); font-size: 10px; font-weight: 800; }
+    .log-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px; }
+    .log-more--error { color: var(--danger); font-size: 13px; }
+    .log-drawer { --wk-status-h: 0px; overflow-y: auto; }
+    .log-phone-chips { margin: 0 -12px 12px; padding-inline: 12px; }
+    .log-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+    .ios-chip[aria-pressed=true] .log-dot { box-shadow: 0 0 0 1.5px #fff; }
+    .log-cell { align-items: flex-start; }
+    .log-cell__time { font-family: var(--mono, ui-monospace, monospace); }
+    @media (max-width: 679px) { .log-page { --ios-inset: 0px; } }
   `,
 })
 export class ActivityPage {
+  readonly desktop = inject(DesktopViewport);
+  readonly names = inject(ActivityNames);
   private readonly api = inject(ActivityApi);
+  private readonly staff = inject(StaffContactsApi);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  readonly detailLimit = 3;
-  readonly categoryOptions: ReadonlyArray<{ value: CategoryFilter; label: string; icon: string }> = [
-    { value: 'ALL', label: 'Alles', icon: 'activity' },
-    { value: 'SALES', label: 'Verkoop', icon: 'sales' },
-    { value: 'PURCHASING', label: 'Inkoop', icon: 'purchase' },
-    { value: 'CATALOGUE', label: 'Producten', icon: 'products' },
-    { value: 'RELATIONS', label: 'Relaties', icon: 'customers' },
-    { value: 'PLANNING', label: 'Planning', icon: 'activity' },
-    { value: 'FINANCE', label: 'Kosten', icon: 'exchange' },
-    { value: 'OTHER', label: 'Overig', icon: 'more' },
-  ];
+  readonly chips = CHIP_ORDER;
+  private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  /** The filters live in the URL: ?soort=PURCHASING&wie=berat&type=PURCHASE_ORDER&id=62. */
+  readonly filters = computed<ActivityFilters>(() => {
+    const params = this.query();
+    return activityFiltersFromQuery({ soort: params.get('soort'), wie: params.get('wie'), type: params.get('type'), id: params.get('id') });
+  });
 
-  readonly actor = signal<'ALL' | 'emre' | 'berat'>('ALL');
-  readonly category = signal<CategoryFilter>('ALL');
   readonly items = signal<ActivityEvent[]>([]);
   readonly nextBefore = signal<number | null>(null);
   readonly loading = signal(true);
   readonly loadingMore = signal(false);
-  readonly error = signal('');
-  readonly expandedDetails = signal<ReadonlySet<number>>(new Set());
-  readonly dayGroups = computed(() => groupByDay(this.items()));
+  readonly error = signal<string | null>(null);
+  readonly moreError = signal(false);
+  readonly selectedKey = signal<number | null>(null);
+  readonly actorMenu = signal(false);
+  private readonly accounts = signal<{ username: string; displayName: string }[]>([
+    { username: 'emre', displayName: 'Emre' }, { username: 'berat', displayName: 'Berat' },
+  ]);
   private requestId = 0;
 
+  readonly rows = computed(() => activityRows(this.items()));
+  readonly days = computed(() => activityDays(this.rows()));
+  readonly selectedRow = computed(() => {
+    const key = this.selectedKey();
+    return key === null ? null : this.rows().find((row) => row.key === key) ?? null;
+  });
+  readonly subtitle = computed(() => `${this.items().length} geladen · nieuwste eerst`);
+  readonly todayText = computed(() => `${todayEvents(this.items())} vandaag`);
+  readonly actorOptions = computed<SegmentOption[]>(() => [
+    { id: 'ALL', label: 'Iedereen' },
+    ...this.accounts().map((account) => ({ id: account.username, label: account.displayName })),
+    { id: 'systeem', label: 'Systeem' },
+  ]);
+  readonly actorLabel = computed(() => this.actorOptions().find((option) => option.id === (this.filters().actor ?? 'ALL'))?.label ?? 'Iedereen');
+  readonly actorItems = computed<ContextMenuItem[]>(() => this.actorOptions().map((option) => ({
+    id: option.id, label: option.label, checked: option.id === (this.filters().actor ?? 'ALL'),
+  })));
+  /** "Inkooporder 12-Set-Roseamor-Jerry" while the list is narrowed to one record. */
+  readonly entityChip = computed(() => {
+    const filters = this.filters();
+    if (!filters.entityType || !filters.entityId) return null;
+    const sample = this.items().find((event) => event.entityType === filters.entityType && event.entityId === filters.entityId);
+    if (!sample) return `${filters.entityType.toLowerCase().replaceAll('_', ' ')} #${filters.entityId}`;
+    return `${activityEntityLabel(sample)} ${activityEntityText(sample, this.names.context())}`;
+  });
+
   constructor() {
-    void this.load();
+    this.staff.accounts().then((accounts) => { if (accounts.length) this.accounts.set(accounts); }, () => undefined);
+    effect(() => {
+      const filters = this.filters();
+      untracked(() => void this.load(filters));
+    });
   }
 
-  actorLabel(): string {
-    return this.actor() === 'ALL' ? 'Iedereen' : this.actor() === 'emre' ? 'Emre' : 'Berat';
+  /* ------------------------------------------------------------ filters */
+
+  private navigate(next: ActivityFilters): void {
+    this.selectedKey.set(null);
+    void this.router.navigate([], { relativeTo: this.route, queryParams: activityQueryFromFilters(next), replaceUrl: true });
   }
 
-  actorName(event: ActivityEvent): string {
-    return event.actor?.displayName || 'Systeem';
+  setCategory(chip: CategoryChip): void {
+    if (chip !== this.filters().category) this.navigate({ ...this.filters(), category: chip });
   }
 
-  actorInitial(event: ActivityEvent): string {
-    return this.actorName(event).trim().charAt(0) || '•';
+  setActor(value: string): void {
+    const actor = value === 'ALL' ? null : value;
+    if (actor !== this.filters().actor) this.navigate({ ...this.filters(), actor });
   }
 
-  actionName(action: string): string {
-    return activityActionLabel(action);
+  filterEntity(event: ActivityEvent): void {
+    if (event.entityId) this.navigate({ ...this.filters(), entityType: event.entityType, entityId: event.entityId });
   }
 
-  entityKind(event: ActivityEvent): string {
-    return activityEntityLabel(event);
+  clearEntity(): void {
+    this.navigate({ ...this.filters(), entityType: null, entityId: null });
   }
 
-  categoryOf(event: ActivityEvent): ActivityCategory {
-    return activityCategory(event);
-  }
-
-  categoryName(event: ActivityEvent): string {
-    return activityCategoryLabel(this.categoryOf(event));
-  }
-
-  categoryIcon(event: ActivityEvent): string {
-    return activityCategoryIcon(this.categoryOf(event));
-  }
-
-  routeOf(event: ActivityEvent): string[] | null {
-    return activityRoute(event);
-  }
-
-  queryOf(event: ActivityEvent): Record<string, string> | null {
-    return activityQueryParams(event);
-  }
-
-  /** Older entries could carry a value that "changed" into itself; those pairs say nothing. */
-  changesOf(event: ActivityEvent): ActivityChange[] {
-    return (event.changes ?? []).filter((change) => change.beforeValue !== change.afterValue
-      || (change.beforeValue === null && change.afterValue === null));
-  }
-
-  visibleChanges(event: ActivityEvent): ActivityChange[] {
-    const changes = this.changesOf(event);
-    return this.detailsExpanded(event.id) ? changes : changes.slice(0, this.detailLimit);
-  }
-
-  detailsExpanded(eventId: number): boolean {
-    return this.expandedDetails().has(eventId);
-  }
-
-  toggleDetails(eventId: number): void {
-    const next = new Set(this.expandedDetails());
-    next.has(eventId) ? next.delete(eventId) : next.add(eventId);
-    this.expandedDetails.set(next);
-  }
-
-  changeValue(value: string | null): string {
-    return value === null || value.trim() === '' ? 'Niet ingevuld' : value;
-  }
-
-  changeActor(value: 'ALL' | 'emre' | 'berat'): void {
-    this.actor.set(value);
-    void this.load();
-  }
-
-  changeCategory(value: CategoryFilter): void {
-    if (value === this.category()) return;
-    this.category.set(value);
-    void this.load();
-  }
+  /* ------------------------------------------------------------ loading */
 
   reload(): void {
-    void this.load();
+    void this.load(this.filters());
   }
 
-  async loadMore(): Promise<void> {
-    const before = this.nextBefore();
-    if (before === null || this.loadingMore()) return;
-    const requestId = this.requestId;
-    const filters = this.filters();
-    this.loadingMore.set(true);
+  /** One page, filtered for the chip (B4); a short filtered page fetches on by itself. */
+  private async fetchPage(filters: ActivityFilters, before?: number): Promise<{ items: ActivityEvent[]; nextBefore: number | null }> {
+    let request = categoryRequest(filters.category, financeSupported);
+    const ask = () => this.api.list({
+      actor: filters.actor ?? undefined, category: request.category,
+      entityType: filters.entityType ?? undefined, entityId: filters.entityId ?? undefined, before, limit: 50,
+    });
+    let page;
     try {
-      const page = await this.api.list({ ...filters, before, limit: 50 });
-      if (requestId !== this.requestId) return;
-      this.items.update((current) => [...current, ...page.items]);
-      this.nextBefore.set(page.nextBefore);
-    } catch {
-      if (requestId !== this.requestId) return;
-      this.error.set('Meer activiteiten laden is niet gelukt.');
-    } finally {
-      if (requestId === this.requestId) this.loadingMore.set(false);
+      page = await ask();
+      if (request.category === 'FINANCE') financeSupported = true;
+    } catch (failure: unknown) {
+      if (request.category !== 'FINANCE' || (failure as { status?: number })?.status !== 400) throw failure;
+      financeSupported = false;
+      request = categoryRequest(filters.category, financeSupported);
+      page = await ask();
     }
+    return { items: page.items.filter((event) => keepForChip(event, request.keep)), nextBefore: page.nextBefore };
   }
 
-  private filters(): { actor?: string; category?: ActivityCategory } {
-    const category = this.category();
-    return {
-      actor: this.actor() === 'ALL' ? undefined : this.actor(),
-      category: category === 'ALL' ? undefined : category,
-    };
+  /** Fetches on while a filtered result is short (at most four extra pages per action). */
+  private async fillUp(filters: ActivityFilters, page: { items: ActivityEvent[]; nextBefore: number | null }, id: number) {
+    let extra = 0;
+    while (page.items.length < MIN_ROWS && page.nextBefore !== null && extra < MAX_EXTRA_PAGES && id === this.requestId) {
+      const next = await this.fetchPage(filters, page.nextBefore);
+      page = { items: [...page.items, ...next.items], nextBefore: next.nextBefore };
+      extra++;
+    }
+    return page;
   }
 
-  private async load(): Promise<void> {
-    const requestId = ++this.requestId;
+  private async load(filters: ActivityFilters): Promise<void> {
+    const id = ++this.requestId;
     this.loading.set(true);
     this.loadingMore.set(false);
-    this.error.set('');
-    this.expandedDetails.set(new Set());
+    this.error.set(null);
+    this.moreError.set(false);
     try {
-      const page = await this.api.list({ ...this.filters(), limit: 50 });
-      if (requestId !== this.requestId) return;
+      const page = await this.fillUp(filters, await this.fetchPage(filters), id);
+      if (id !== this.requestId) return;
       this.items.set(page.items);
       this.nextBefore.set(page.nextBefore);
+      void this.names.load();
     } catch {
-      if (requestId !== this.requestId) return;
+      if (id !== this.requestId) return;
       this.items.set([]);
       this.nextBefore.set(null);
       this.error.set('Controleer je verbinding en probeer opnieuw.');
     } finally {
-      if (requestId === this.requestId) this.loading.set(false);
+      if (id === this.requestId) this.loading.set(false);
     }
   }
-}
 
-function groupByDay(events: ActivityEvent[]): ActivityDayGroup[] {
-  const groups = new Map<string, ActivityDayGroup>();
-  for (const event of events) {
-    const at = new Date(event.at);
-    const key = Number.isNaN(at.getTime()) ? 'unknown' : localDayKey(at);
-    const existing = groups.get(key);
-    if (existing) {
-      existing.events.push(event);
-    } else {
-      groups.set(key, { key, label: dayLabel(at), events: [event] });
+  /** A failure here stays inline: the loaded list stays (bug 11). */
+  async loadMore(): Promise<void> {
+    const before = this.nextBefore();
+    if (before === null || this.loadingMore()) return;
+    const id = this.requestId;
+    const filters = this.filters();
+    this.loadingMore.set(true);
+    this.moreError.set(false);
+    try {
+      const page = await this.fillUp(filters, await this.fetchPage(filters, before), id);
+      if (id !== this.requestId) return;
+      this.items.update((current) => [...current, ...page.items]);
+      this.nextBefore.set(page.nextBefore);
+    } catch {
+      if (id === this.requestId) this.moreError.set(true);
+    } finally {
+      if (id === this.requestId) this.loadingMore.set(false);
     }
   }
-  return [...groups.values()];
-}
 
-function localDayKey(date: Date): string {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0')].join('-');
-}
+  /* -------------------------------------------------------------- rows */
 
-function dayLabel(date: Date): string {
-  if (Number.isNaN(date.getTime())) return 'Datum onbekend';
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const key = localDayKey(date);
-  if (key === localDayKey(today)) return 'Vandaag';
-  if (key === localDayKey(yesterday)) return 'Gisteren';
-  const label = new Intl.DateTimeFormat('nl-BE', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  }).format(date);
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  select(row: ActivityRow): void {
+    this.selectedKey.set(row.key);
+  }
+
+  /** "Meer aan dit record": select the row that holds this event. */
+  selectEvent(eventId: number): void {
+    const row = this.rows().find((candidate) => candidate.events.some((event) => event.id === eventId));
+    if (row) this.selectedKey.set(row.key);
+  }
+
+  private categoryOf(row: ActivityRow): ActivityCategory {
+    return activityCategory(row.events[0]);
+  }
+
+  chipLabel(chip: CategoryChip): string {
+    return chip === 'ALL' ? 'Alles' : activityCategoryLabel(chip);
+  }
+
+  colorOf(chip: CategoryChip): string {
+    return chip === 'ALL' ? 'var(--muted)' : activityCategoryColor(chip);
+  }
+
+  rowColor(row: ActivityRow): string { return activityCategoryColor(this.categoryOf(row)); }
+  rowIcon(row: ActivityRow): string { return activityCategoryIcon(this.categoryOf(row)); }
+  rowSummary(row: ActivityRow): string { return activitySummaryText(row.events[0].summary); }
+  rowAction(row: ActivityRow): string { return activityActionLabel(row.events[0].action); }
+  time(row: ActivityRow): string { return rowTime(row); }
+  actorName(row: ActivityRow): string { return row.events[0].actor?.displayName || 'Systeem'; }
+  initial(row: ActivityRow): string { return this.actorName(row).trim().charAt(0).toUpperCase() || '•'; }
+
+  /** "12-Set-Roseamor-Jerry" (container name) or the logged label. */
+  rowName(row: ActivityRow): string {
+    return activityEntityText(row.events[0], this.names.context()) || activityEntityLabel(row.events[0]);
+  }
+
+  /** "Inkooporder · 12-Set-Roseamor-Jerry". */
+  rowRecord(row: ActivityRow): string {
+    const event = row.events[0];
+    const name = activityEntityText(event, this.names.context());
+    return name ? `${activityEntityLabel(event)} · ${name}` : activityEntityLabel(event);
+  }
+
+  /** The whole second line, for its title when it is cut. */
+  rowLine(row: ActivityRow): string {
+    const preview = this.rowPreview(row);
+    return preview ? `${this.rowRecord(row)} — ${preview}` : this.rowRecord(row);
+  }
+
+  /** The newest event's changes; a burst shows its newest edit. */
+  rowPreview(row: ActivityRow): string {
+    return changePreview(row.events[0], this.names.context());
+  }
+
+  /** Esc closes the drawer (desk); keys never act while typing or behind another overlay. */
+  @HostListener('document:keydown.escape', ['$event'])
+  escape(event: Event): void {
+    if (!this.desktop.active() || this.selectedKey() === null) return;
+    const context = keyContext(event as KeyboardEvent, null);
+    if (context.typing) return;
+    this.selectedKey.set(null);
+  }
 }
