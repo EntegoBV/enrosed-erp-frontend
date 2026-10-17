@@ -308,9 +308,12 @@ export class DouanePage implements HasUnsavedChanges {
   readonly menu = signal<{ code: HsCode; anchor: MenuPoint | null } | null>(null);
   readonly menuItems: ContextMenuItem[] = [{ id: 'delete', label: 'Verwijderen…', iconName: 'trash', hint: 'Na bevestiging', danger: true }];
 
+  /** The search's rows; the open row stays among them whatever the query, so its strip and its keys never disappear. */
   readonly rows = computed(() => {
     const query = this.query();
-    return this.codes().filter((code) => matchesTariff(code, query)).sort((a, b) => normalizeHs(a.code).localeCompare(normalizeHs(b.code)) || a.code.localeCompare(b.code));
+    const open = this.editing()?.key;
+    return this.codes().filter((code) => code.code === open || matchesTariff(code, query))
+      .sort((a, b) => normalizeHs(a.code).localeCompare(normalizeHs(b.code)) || a.code.localeCompare(b.code));
   });
   readonly counts = computed(() => countByCode(this.products(), this.codes()));
   readonly missing = computed(() => withoutCode(this.products()));
@@ -441,11 +444,17 @@ export class DouanePage implements HasUnsavedChanges {
     this.menu.set({ code, anchor: { x: rect.left, y: rect.bottom + 4 } });
   }
 
-  /** In the open row: Enter saves, Esc cancels (unless a sheet or menu is open). */
+  /**
+   * In the open row: Enter in a field saves, Esc cancels (unless a sheet or menu is open).
+   * The strip's buttons keep their own Enter: on Annuleren it cancels, never saves.
+   */
   editKey(event: KeyboardEvent): void {
     if (document.querySelector('.overlay, .cm, [data-kit-overlay]')) return;
-    if (event.key === 'Enter') { event.preventDefault(); void this.save(); }
-    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.cancel(); }
+    if (event.key === 'Enter') {
+      if ((event.target as Element | null)?.tagName !== 'INPUT') return;
+      event.preventDefault();
+      void this.save();
+    } else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); this.cancel(); }
   }
 
   escapeSearch(event: Event): void {
