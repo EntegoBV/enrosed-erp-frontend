@@ -48,6 +48,9 @@
 
 /* ---------- Containerkost (app-container-cost-analysis, critique N4: no component styles) */
 app-container-cost-analysis { display: block; min-width: 0; }
+/* Figure labels stay on one line at 1100 (critique N2): below 1280 the qualifier "externe kost" moves into the sub. */
+.cc .cc-narrow { display: none; }
+@media (min-width: 680px) and (max-width: 1279.98px) { .cc .cc-wide { display: none; } .cc .cc-narrow { display: inline; } }
 .cc-pay__amount { display: grid; gap: 4px; }
 .cc-pay__amount > span { color: var(--muted); font-size: 12px; }
 .cc-pay__amount > strong { color: var(--rose-dark); font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.025em; line-height: 1.15; }

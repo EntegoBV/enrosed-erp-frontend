@@ -58,14 +58,14 @@ import { plural } from './analyses-words';
         @let total = totals();
         @let payment = paymentTotals();
         <div class="an-kpis an-kpis--cents">
-          <div class="an-kpi"><span class="an-kpi__label">Afgesproken externe kost</span><span class="an-kpi__value">{{ total.plannedEur | eur }}</span>
-            <span class="an-kpi__sub">{{ plural(rows().length, 'container', 'containers') }} in dit overzicht</span><span class="an-kpi__foot"></span></div>
+          <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">Afgesproken externe kost</span><span class="cc-narrow">Afgesproken</span></span><span class="an-kpi__value">{{ total.plannedEur | eur }}</span>
+            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(rows().length, 'container', 'containers') }} in dit overzicht</span><span class="an-kpi__foot"></span></div>
           <div class="an-kpi"><span class="an-kpi__label">Werkelijk betaald</span><span class="an-kpi__value">{{ total.paidEur | eur }}</span>
             <span class="an-kpi__sub">opgeslagen eurobedragen van betalingen</span><span class="an-kpi__foot"></span></div>
           <div class="an-kpi"><span class="an-kpi__label">Nog te betalen</span><span class="an-kpi__value">{{ total.remainingEur | eur }}</span>
             <span class="an-kpi__sub">{{ plural(total.provisionalCount, 'container', 'containers') }} nog voorlopig</span><span class="an-kpi__foot"></span></div>
-          <div class="an-kpi"><span class="an-kpi__label">{{ total.provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><span class="an-kpi__value">{{ total.forecastEur | eur }}</span>
-            <span class="an-kpi__sub">{{ plural(total.finalizedCount, 'container', 'containers') }} volledig afgerekend</span><span class="an-kpi__foot"></span></div>
+          <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">{{ total.provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><span class="cc-narrow">{{ total.provisionalCount ? 'Verwachte kost' : 'Definitieve kost' }}</span></span><span class="an-kpi__value">{{ total.forecastEur | eur }}</span>
+            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(total.finalizedCount, 'container', 'containers') }} volledig afgerekend</span><span class="an-kpi__foot"></span></div>
         </div>
         <div class="an-cols">
           <div class="an-col">
