@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  dayMonth, daysLabel, eurShort, monthLabel, monthShort, plural, rangeLabel, rangeLabelShort, weekdayDayMonth, wholeNumber,
+  dayMonth, daysLabel, eurShort, monthLabel, monthShort, plural, rangeLabel, rangeLabelShort, weekdayDayMonth, wholeNumber, yearSpans,
 } from '../src/app/features/analyses/analyses-words.ts';
 
 test('plurals say one word, never "factuur/facturen" or "offerte(s)"', () => {
@@ -92,4 +92,12 @@ test('Resultaat month bars: margin up, own costs down from one zero line, three 
   assert.equal(october.marginTop, geometry.zeroPct, 'a loss hangs from the zero line');
   assert.equal(Math.round(october.costHeight * 100) / 100, 18.43);
   assert.deepEqual(monthBars([{ month: '2026-01', marginEur: 0, costsEur: 0, resultEur: 0 }]).ticks.map((tick) => tick.value), [0]);
+});
+
+test('month bars over several years get a year band; one year gets none', () => {
+  assert.deepEqual(yearSpans(['2026-01', '2026-02', '2026-03']), []);
+  assert.deepEqual(yearSpans([]), []);
+  const months = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
+  assert.deepEqual(yearSpans(months), [{ year: '2025', start: 0, span: 4 }, { year: '2026', start: 4, span: 10 }]);
+  assert.deepEqual(yearSpans(['2025-12', '2026-01']), [{ year: '2025', start: 0, span: 1 }, { year: '2026', start: 1, span: 1 }]);
 });

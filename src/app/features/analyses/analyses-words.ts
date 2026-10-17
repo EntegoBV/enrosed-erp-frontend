@@ -47,6 +47,22 @@ export function monthShort(month: string): string {
   return index >= 0 && index < 12 ? MONTHS_SHORT[index] : month;
 }
 
+/**
+ * The year band under month bars that span more than one calendar year: one
+ * entry per year with its first bar (0-based) and its number of bars, so
+ * "sep okt … sep okt" reads which September is which. One year: none.
+ */
+export function yearSpans(months: readonly string[]): { year: string; start: number; span: number }[] {
+  const spans: { year: string; start: number; span: number }[] = [];
+  months.forEach((month, index) => {
+    const year = month.slice(0, 4);
+    const last = spans[spans.length - 1];
+    if (last && last.year === year) last.span += 1;
+    else spans.push({ year, start: index, span: 1 });
+  });
+  return spans.length > 1 ? spans : [];
+}
+
 /** "2026-10-16" → "16 okt" (with the year when it differs from `year`). */
 export function dayMonth(day: string, year?: string): string {
   if (!validDay(day)) return '';

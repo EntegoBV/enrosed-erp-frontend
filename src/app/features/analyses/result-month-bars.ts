@@ -1,14 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { ResultMonthRow } from './analysis-metrics';
 import { eurK } from '../finance/cash-format';
-import { monthBars, monthLabel, monthShort } from './analyses-words';
+import { monthBars, monthLabel, monthShort, yearSpans } from './analyses-words';
 
 /**
  * Resultaat › "Marge en kosten per maand" (design §3.6): per month the
  * margin on goods (accent above zero, danger below) beside the own costs
  * (warn, hanging below zero), one zero line and three ticks; the desk shows
  * each month's result under its label. Every month of the period is there,
- * empty ones as bars of 0. Styles: analyses-tabs.scss (.an-mbars).
+ * empty ones as bars of 0; a period over several years adds a year band. Styles: analyses-tabs.scss (.an-mbars).
  */
 @Component({
   selector: 'app-an-month-bars',
@@ -35,6 +35,12 @@ import { monthBars, monthLabel, monthShort } from './analyses-words';
         <span>{{ short(bar.month) }}@if (!compact()) { <b [class.neg]="bar.resultEur < 0">{{ k(bar.resultEur) }}</b> }</span>
       }
     </div>
+    @if (years().length) {
+      <!-- More than one calendar year: a year band under the months, so two Septembers are never the same word. -->
+      <div class="an-mbars__years" aria-hidden="true" [style.--n]="g.bars.length">
+        @for (year of years(); track year.year) { <span [style.grid-column]="(year.start + 1) + ' / span ' + year.span">{{ year.year }}</span> }
+      </div>
+    }
   `,
 })
 export class ResultMonthBars {
@@ -44,6 +50,7 @@ export class ResultMonthBars {
   readonly compact = input(false);
 
   readonly geometry = computed(() => monthBars(this.months()));
+  readonly years = computed(() => yearSpans(this.months().map((row) => row.month)));
   readonly ariaLabel = computed(() => {
     const months = this.months();
     return months.length ? `Marge en eigen kosten per maand, ${monthLabel(months[0].month)} tot ${monthLabel(months[months.length - 1].month)}` : 'Marge en eigen kosten per maand';
