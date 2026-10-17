@@ -81,6 +81,7 @@ app-stock-page .sk-group__label { grid-column: 1; font-size: 11.5px; letter-spac
 app-stock-page .sk-group .wk-group__count { font-size: 12px; letter-spacing: 0; text-transform: none; }
 app-stock-page .sk-gvalue { justify-self: end; padding-right: 76px; color: var(--ink-2); font-weight: 700; font-variant-numeric: tabular-nums; }
 @media (max-width: 1359.98px) { app-stock-page .sk-gvalue { padding-right: 68px; } }
+app-stock-page .sk-gvalue.none { color: var(--muted-2); font-weight: 500; }
 /* A location's name in its header wraps instead of being cut. */
 app-stock-page .sk-th-wrap { white-space: normal; line-height: 1.2; text-align: right; }
 app-stock-page .sk-group .wk-group__toggle[aria-expanded=false] app-icon { transform: rotate(-90deg); }

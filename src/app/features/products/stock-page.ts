@@ -23,7 +23,7 @@ import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { productSalesUnit, unitCount } from './product-sales-unit';
 import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from './stock-booking';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
-import { distinctOrderCount, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
+import { distinctOrderCount, knownValueSum, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
 
 interface StockRow {
   product: Product;
@@ -49,7 +49,8 @@ interface StockGroup {
   demo: boolean;
 }
 
-interface StockSection { key: string; name: string | null; groups: StockGroup[]; count: number; value: number }
+/** value: null when nothing in the section has a cost (it reads "—", never "€ 0"). */
+interface StockSection { key: string; name: string | null; groups: StockGroup[]; count: number; value: number | null }
 
 type StockSort = 'STOCK_SMART' | 'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED' | 'VALUE_DESC' | 'VALUE_ASC';
 
@@ -137,7 +138,10 @@ function mediaSignal(query: string) {
 
         @if (editing()) {
           <div class="sk-editbar" role="status">
-            <span>Typ het getelde aantal en verlaat het veld: het boekt meteen als correctie. Leeg of ongeldig zet het oude aantal terug.</span>
+            <!-- Below 1360 with three or more locations the columns fold into the segment: there is a location to choose first (B4). -->
+            <span>{{ shownLocations().length
+              ? 'Typ het getelde aantal en verlaat het veld: het boekt meteen als correctie. Leeg of ongeldig zet het oude aantal terug.'
+              : 'Kies een locatie in de keuzebalk om te tellen. Typ dan het getelde aantal en verlaat het veld: het boekt meteen als correctie.' }}</span>
             <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
           </div>
         }
@@ -174,7 +178,7 @@ function mediaSignal(query: string) {
                 @if (section.name !== null) {
                   <div class="wk-group sk-group" role="row">
                     <span class="wk-group__label sk-group__label" role="cell">{{ section.name }} <span class="wk-group__count">{{ section.count }} product{{ section.count === 1 ? '' : 'en' }}</span></span>
-                    <span class="sk-gvalue" role="cell">{{ section.value | eur: 0 }}</span>
+                    <span class="sk-gvalue" role="cell" [class.none]="section.value === null">{{ section.value === null ? '—' : (section.value | eur: 0) }}</span>
                   </div>
                 }
                 @for (group of section.groups; track group.key) {
@@ -186,7 +190,7 @@ function mediaSignal(query: string) {
                   <span class="wk-group__label sk-group__label" role="cell">
                     <button class="wk-group__toggle" type="button" [attr.aria-expanded]="showDemo()" aria-label="Demoproducten tonen of verbergen" (click)="demoOpen.set(!showDemo())"><app-icon name="chevron-down" [size]="14" /></button>
                     Demoproducten <span class="wk-group__count">{{ demoCount() }}</span></span>
-                  <span class="sk-gvalue" role="cell">{{ demoValue() | eur: 0 }}</span>
+                  <span class="sk-gvalue" role="cell" [class.none]="demoValue() === null">{{ demoValue() === null ? '—' : (demoValue() | eur: 0) }}</span>
                 </div>
                 @if (showDemo()) {
                   @for (group of demoGroups(); track group.key) {
@@ -227,7 +231,7 @@ function mediaSignal(query: string) {
           @for (section of sections(); track section.key) {
             <section class="ios-section">
               @if (section.name !== null) {
-                <div class="ios-section__head"><h2>{{ section.name }}</h2><span class="ios-section__trail">{{ section.value | eur: 0 }}</span></div>
+                <div class="ios-section__head"><h2>{{ section.name }}</h2><span class="ios-section__trail">{{ section.value === null ? '—' : (section.value | eur: 0) }}</span></div>
               }
               <div class="ios-group ios-group--thumbs">
                 @for (group of section.groups; track group.key) {
@@ -248,7 +252,7 @@ function mediaSignal(query: string) {
           @if (demoGroups().length) {
             <section class="ios-section">
               <button class="ios-section__head skp-demo__head" type="button" [attr.aria-expanded]="showDemo()" (click)="demoOpen.set(!showDemo())">
-                <h2>Demoproducten</h2><span class="ios-section__trail">{{ demoValue() | eur: 0 }}</span></button>
+                <h2>Demoproducten</h2><span class="ios-section__trail">{{ demoValue() === null ? '—' : (demoValue() | eur: 0) }}</span></button>
               @if (showDemo()) {
                 <div class="ios-group ios-group--thumbs">
                   @for (group of demoGroups(); track group.key) {
@@ -451,7 +455,7 @@ function mediaSignal(query: string) {
               </a>
             }
           </div>
-          <p class="hint">Tik een locatie aan voor een hertelling.</p>
+          <p class="hint">{{ desktop.active() ? 'Klik' : 'Tik' }} een locatie aan voor een hertelling.</p>
 
           <div class="book-actions" role="group" aria-label="Acties">
             <button class="book-action" type="button" (click)="openBooking(book.row, 'RECOUNT', view())">
@@ -803,14 +807,14 @@ export class StockPage {
   readonly demoGroups = computed(() => this.groups().filter((group) => group.demo));
   readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0);
   readonly demoCount = computed(() => this.demoGroups().reduce((sum, group) => sum + group.rows.length, 0));
-  readonly demoValue = computed(() => this.demoGroups().reduce((sum, group) => sum + (group.value ?? 0), 0));
+  readonly demoValue = computed(() => knownValueSum(this.demoGroups().map((group) => group.value)));
 
   /** The groups cut into category sections with their value, in the categories' own order; a search shows one list. */
   readonly sections = computed<StockSection[]>(() => {
     const groups = this.groups().filter((group) => !group.demo);
     if (!groups.length) return [];
     const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
-    const value = (list: StockGroup[]) => Math.round(list.reduce((sum, group) => sum + (group.value ?? 0), 0) * 100) / 100;
+    const value = (list: StockGroup[]) => knownValueSum(list.map((group) => group.value));
     if (this.query().trim() || this.categoryFilter() !== null) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
     const order = new Map(this.categories().map((category, index) => [category.id, index]));
     const byCategory = new Map<number | null, StockGroup[]>();
@@ -1082,10 +1086,21 @@ export class StockPage {
     }
   }
 
-  /** Puts the old figure back, only while the booked figure still stands. */
+  /**
+   * Puts the old figure back, only while the booked figure still stands on
+   * the server: a sale, a receipt or a booking from another screen or device
+   * since then is never erased by the absolute write.
+   */
   private async undoQuantity(productId: number, locationId: number, before: number, booked: number): Promise<void> {
-    const current = this.levels().find((level) => level.productId === productId && level.locationId === locationId)?.quantity ?? 0;
+    let current: number;
+    try {
+      current = (await this.catalog.productStock(productId)).find((level) => level.locationId === locationId)?.quantity ?? 0;
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err');
+      return;
+    }
     if (!undoAllowed(current, booked)) {
+      this.storeLevel(productId, locationId, current);
       this.ui.toast('Niet teruggezet: het aantal is intussen gewijzigd', 'err');
       return;
     }

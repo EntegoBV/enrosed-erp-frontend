@@ -93,6 +93,22 @@ export function stockValue(rows: readonly ValueRow[]): StockValue {
   return { value: cents / 100, withoutCost };
 }
 
+/**
+ * A group's value: the sum of the values that are known, to the cent; null
+ * when none is, so a category whose stock has no cost reads "—" (unknown)
+ * instead of "€ 0" (worthless).
+ */
+export function knownValueSum(values: readonly (number | null | undefined)[]): number | null {
+  let cents = 0;
+  let known = false;
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    known = true;
+    cents += Math.round(value * 100);
+  }
+  return known ? cents / 100 : null;
+}
+
 /** One location's stock level of one product. */
 export interface LevelLike {
   productId: number;
