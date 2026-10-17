@@ -139,19 +139,25 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
         <div id="mpo-panes" class="mpo-panes">
           <!-- ===== Overzicht ===== -->
           <section class="mpo-pane" id="mpo-pane-overzicht" role="tabpanel" aria-label="Overzicht" [hidden]="activeTab() !== 'overzicht'">
+            <!-- Lading in the container's own word (stuks / displays), Volume, and the third figure across the width (Inkoop redesign I5). -->
             <div class="ios-figures mpo-figures">
-              <div><small>Lading</small><strong>{{ data.costing.totals.pieces | num }} st</strong><small>{{ data.costing.totals.cartons | num }} dozen</small></div>
+              <div><small>Lading</small><strong>{{ data.costing.totals.pieces | num }}</strong><small>{{ ladingWord() }} · {{ data.costing.totals.cartons | num }} dozen</small></div>
               <div><small>Volume</small><strong>{{ data.costing.totals.cbm | cbm }}</strong>
                 @if (isDdp()) { <small>geleverd DDP</small> } @else if (data.costing.containerFill; as fill) { <small>van {{ fill.capacityCbm }} m³</small> }</div>
               @if (!isDdp() && data.costing.containerFill; as fill) {
-                <div><small>Vulling</small>
-                  <strong [class.fill-pct--over]="fill.fillPercent > 100 && fill.fillPercent <= 105" [class.fill-pct--danger]="fill.fillPercent > 105"
-                          [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | pct: 0 }}</strong>
-                  <small>@if (fill.fillPercent > 100) { {{ fill.overflowCbm | cbm }} te veel } @else { {{ fill.freeCbm | cbm }} vrij }</small></div>
+                @let over = fill.fillPercent > 100 && fill.fillPercent <= 105;
+                @let danger = fill.fillPercent > 105;
+                <div class="mpo-fillrow"><small>Vulling</small>
+                  <span class="mpo-fillrow__line">
+                    <strong [class.fill-pct--over]="over" [class.fill-pct--danger]="danger"
+                            [class.fill-pct--full]="fill.overflowCbm <= 0 && fill.fillPercent >= 97">{{ fill.fillPercent | pct: 0 }}</strong>
+                    <i class="wk-meter mpo-fillrow__meter" [class]="danger ? 'tone-danger' : over ? 'tone-warn' : 'tone-ok'" aria-hidden="true"><i [style.width.%]="fill.fillPercent > 100 ? 100 : fill.fillPercent"></i></i>
+                    <small>@if (fill.fillPercent > 100) { {{ fill.overflowCbm | cbm }} te veel } @else { {{ fill.freeCbm | cbm }} vrij }</small>
+                  </span></div>
               } @else if (isDdp()) {
-                <div><small>Prijsbasis</small><strong>DDP</strong><small>transport en rechten in de prijs</small></div>
+                <div class="mpo-fillrow"><small>Prijsbasis</small><span class="mpo-fillrow__line"><strong>DDP</strong><small>transport en rechten in de prijs</small></span></div>
               } @else {
-                <div><small>Productregels</small><strong>{{ data.costing.lines.length }} regels</strong></div>
+                <div class="mpo-fillrow"><small>Productregels</small><span class="mpo-fillrow__line"><strong>{{ data.costing.lines.length }} regels</strong></span></div>
               }
             </div>
 
@@ -216,10 +222,13 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <span class="ios-cell__body"><span class="ios-cell__title">PDF downloaden</span></span>
                   <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                 </button>
-                <button class="ios-cell" type="button" [disabled]="!quoteLinesOf(data).length" (click)="quoteOpen.set(true)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</span></span>
-                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                </button>
+                <!-- A partner container makes its advance invoices in the partner panel on this tab; the ⋯ menu keeps the entry too. -->
+                @if (!data.order.partnerCustomerId) {
+                  <button class="ios-cell" type="button" [disabled]="!quoteLinesOf(data).length" (click)="quoteOpen.set(true)">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Verkoopofferte maken</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                }
               </div>
             </section>
 
@@ -666,27 +675,27 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                                 (closed)="pdfOpen.set(false)" />
       }
       @if (issue(); as report) {
-        <app-sheet [title]="'Schade of tekort · ' + report.productName" (closed)="issue.set(null)">
-          <div body>
-            <div class="per-toggle" role="group" aria-label="Wat is er aan de hand?">
-              <button type="button" [class.on]="report.kind === 'DAMAGED'"
-                      (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
-              <button type="button" [class.on]="report.kind === 'SHORT'"
-                      (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
+        <app-sheet title="Schade of tekort" variant="ios" (closed)="issue.set(null)">
+          <div body class="mpo-sheet">
+            <!-- The product under the title: a long name wraps here instead of being cut in the sheet's head. -->
+            <p class="mpo-sheet__lead">{{ report.productName }}</p>
+            <div class="mpo-sheet__seg"><app-segmented variant="ios" label="Wat is er aan de hand?" [options]="issueKinds" [value]="report.kind"
+                                                       (changed)="issue.set({ ...report, kind: $event === 'SHORT' ? 'SHORT' : 'DAMAGED' })" /></div>
+            <div class="ios-group">
+              <label class="ios-cell mpo-field-row" for="pv-issue-qty">
+                <span class="ios-cell__body"><span class="ios-cell__title">Aantal stuks</span></span>
+                <input class="mpo-input" id="pv-issue-qty" type="number" min="1" step="1" inputmode="numeric" required
+                       [value]="report.quantity || ''" (input)="issue.set({ ...report, quantity: +$any($event.target).value })" />
+              </label>
             </div>
-            <div class="field mt-12">
-              <label class="req" for="pv-issue-qty">Aantal stuks</label>
-              <input class="input num right" id="pv-issue-qty" type="number" min="1" step="1" inputmode="numeric"
-                     [value]="report.quantity || ''" (input)="issue.set({ ...report, quantity: +$any($event.target).value })" />
-            </div>
-            <div class="field mt-8">
-              <label for="pv-issue-note">Wat was er mis? <span class="opt"></span></label>
-              <textarea class="textarea" id="pv-issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten"
-                        [value]="report.note" (input)="issue.set({ ...report, note: $any($event.target).value })"></textarea>
-              <span class="hint">Blijft bij het product staan en komt op de volgende leveranciersorder.</span>
-            </div>
+            <section class="ios-section">
+              <div class="ios-section__head"><h2><label for="pv-issue-note">Wat was er mis?</label></h2></div>
+              <div class="ios-group"><textarea class="mpo-note" id="pv-issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten"
+                        [value]="report.note" (input)="issue.set({ ...report, note: $any($event.target).value })"></textarea></div>
+              <p class="ios-section__foot">Blijft bij het product staan en komt op de volgende leveranciersorder.</p>
+            </section>
             @if (issueLine(); as line) {
-              <p class="hint mt-8">
+              <p class="ios-section__foot">
                 @if (report.kind === 'DAMAGED') {
                   Nu {{ line.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen; wat erbij komt gaat als beschadigd uit de voorraad.
                 } @else {
@@ -1375,6 +1384,13 @@ export class PurchaseView {
   }
 
   readonly amountModes: SegmentOption[] = [{ id: 'total', label: 'Totaal' }, { id: 'piece', label: 'Per stuk' }];
+  /** Lading in the container's own word (F18): stuks, displays, or both. */
+  readonly ladingWord = computed(() => {
+    const basis = this.view()?.reconciliation?.totals?.setBasis;
+    return basis === 'DISPLAY' ? 'displays' : basis === 'MIXED' ? 'stuks en displays' : 'stuks';
+  });
+  /** Schade of tekort: what happened, as the kit's segmented (Inkoop redesign I5). */
+  readonly issueKinds: SegmentOption[] = [{ id: 'DAMAGED', label: 'Beschadigd' }, { id: 'SHORT', label: 'Minder aangekomen' }];
   readonly lineModes: SegmentOption[] = [{ id: 'piece', label: 'Per stuk' }, { id: 'line', label: 'Hele regel' }];
 
   /* ---- a product line in a sheet --------------------------------------- */

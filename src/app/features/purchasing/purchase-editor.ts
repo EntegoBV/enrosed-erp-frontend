@@ -254,7 +254,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   </label>
                   <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-alias">
                     <span class="ios-cell__body"><span class="ios-cell__title">Herkenbare naam</span>
-                      <span class="ios-cell__sub mpo-wrap">Om calculatievarianten uit elkaar te houden</span></span>
+                      <span class="ios-cell__sub mpo-wrap">De titel van deze container in de hele ERP.</span></span>
                     <input class="mpo-input mpo-input--wide" id="po-alias" type="text" autocomplete="off" [ngModel]="data.order.alias"
                            (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
                   </label>
@@ -1018,31 +1018,31 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (issue(); as report) {
-        <app-sheet [title]="'Schade of tekort · ' + (issueLine()?.productName ?? '')" (closed)="issue.set(null)">
-          <div body>
-            <div class="per-toggle issue-kind" role="group" aria-label="Wat is er aan de hand?">
-              <button type="button" [class.on]="report.kind === 'DAMAGED'"
-                      (click)="issue.set({ ...report, kind: 'DAMAGED' })">Beschadigd</button>
-              <button type="button" [class.on]="report.kind === 'SHORT'"
-                      (click)="issue.set({ ...report, kind: 'SHORT' })">Minder aangekomen</button>
+        <app-sheet title="Schade of tekort" variant="ios" (closed)="issue.set(null)">
+          <div body class="mpo-sheet">
+            <!-- The product under the title: a long name wraps here instead of being cut in the sheet's head. -->
+            @if (issueLine()?.productName; as name) { <p class="mpo-sheet__lead">{{ name }}</p> }
+            <div class="mpo-sheet__seg"><app-segmented variant="ios" label="Wat is er aan de hand?" [options]="issueKinds" [value]="report.kind"
+                                                       (changed)="issue.set({ ...report, kind: $event === 'SHORT' ? 'SHORT' : 'DAMAGED' })" /></div>
+            <div class="ios-group">
+              <label class="ios-cell mpo-field-row" for="issue-qty">
+                <span class="ios-cell__body"><span class="ios-cell__title">Aantal stuks</span></span>
+                <input class="mpo-input" id="issue-qty" type="number" min="1" step="1" inputmode="numeric" required
+                       [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
+              </label>
             </div>
-            <div class="field mt-12">
-              <label class="req" for="issue-qty">Aantal stuks</label>
-              <input class="input num right" id="issue-qty" type="number" min="1" step="1" inputmode="numeric"
-                     [ngModel]="report.quantity || null" (ngModelChange)="issue.set({ ...report, quantity: +$event })" />
-            </div>
-            <div class="field mt-8">
-              <label for="issue-note">Wat was er mis? <span class="opt"></span></label>
-              <textarea class="textarea" id="issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
-                        [ngModel]="report.note" (ngModelChange)="issue.set({ ...report, note: $event })"></textarea>
-              <span class="hint">Blijft bij het product staan en komt als waarschuwing op de volgende leveranciersorder.</span>
-            </div>
+            <section class="ios-section">
+              <div class="ios-section__head"><h2><label for="issue-note">Wat was er mis?</label></h2></div>
+              <div class="ios-group"><textarea class="mpo-note" id="issue-note" rows="2" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                        [ngModel]="report.note" (ngModelChange)="issue.set({ ...report, note: $event })"></textarea></div>
+              <p class="ios-section__foot">Blijft bij het product staan en komt als waarschuwing op de volgende leveranciersorder.</p>
+            </section>
             @if (issueLine(); as line) {
               @if (report.kind === 'DAMAGED') {
-                <p class="hint mt-8">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.
+                <p class="ios-section__foot">Nu {{ orderLine(line.productId)?.damagedQuantity ?? 0 }} beschadigd van {{ line.quantity | num }} ontvangen.
                   {{ report.quantity > 0 ? 'Er komen ' + report.quantity + ' bij; die gaan als beschadigd uit de voorraad.' : '' }}</p>
               } @else {
-                <p class="hint mt-8">Ontvangen telt nu {{ line.quantity | num }} stuks.
+                <p class="ios-section__foot">Ontvangen telt nu {{ line.quantity | num }} stuks.
                   {{ report.quantity > 0 ? 'Wordt ' + (line.quantity - report.quantity) + '; het verschil gaat uit de voorraad.' : '' }}</p>
               }
             }
@@ -1105,47 +1105,51 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-file-picker title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
       }
       @if (addingDocument(); as doc) {
-        <app-sheet title="Document toevoegen" (closed)="closeDocument()">
-          <div body [attr.inert]="uploadingDocument() ? '' : null">
-            <div class="form-grid">
-              <div class="field">
-                <label for="doc-kind">Soort</label>
-                <select class="select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
-                  @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
-                </select>
-                @if (roundOnServer()) { <span class="hint">Een betaalbewijs voeg je toe bij de betaling zelf (Aanpassen).</span> }
-              </div>
-              <div class="field">
-                <label for="doc-label">Omschrijving <span class="opt"></span></label>
-                <input class="input" id="doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
-                       [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
-              </div>
-              @if (doc.kind === 'PAYMENT_PROOF' && (payments() ?? []).length) {
-                <div class="field span-2">
-                  <label for="doc-payment">Hoort bij betaling <span class="opt"></span></label>
-                  <select class="select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
-                    <option value="">— geen —</option>
-                    @for (payment of payments() ?? []; track payment.id) {
-                      <option [value]="payment.id">{{ paymentOptionLabel(payment) }}</option>
-                    }
+        <app-sheet title="Document toevoegen" variant="ios" (closed)="closeDocument()">
+          <div body class="mpo-sheet" [attr.inert]="uploadingDocument() ? '' : null">
+            <section class="ios-section">
+              <div class="ios-group">
+                <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-kind">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Soort</span></span>
+                  <select class="mpo-input mpo-input--wide" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
+                    @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
                   </select>
-                </div>
-              }
-              <div class="field span-2">
-                @if (doc.kind === 'PAYMENT_PROOF') {
-                  <app-payment-proof-picker [files]="doc.files ?? []" [maxFiles]="proofSlots(doc.paymentId)" [disabled]="uploadingDocument()"
-                    (filesChange)="addingDocument.set({ ...doc, files: $event, file: null })" />
-                } @else {
-                  <label for="doc-file">Bestand</label>
-                <div class="doc-source">
-                  <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
-                         (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
-                  <button class="btn" type="button" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
-                </div>
-                <span class="hint">{{ doc.file ? doc.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</span>
+                </label>
+                <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-label">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Omschrijving</span></span>
+                  <input class="mpo-input mpo-input--wide" id="doc-label" placeholder="bijv. KBC 23/08, factuur 2e helft"
+                         [ngModel]="doc.label" (ngModelChange)="addingDocument.set({ ...doc, label: $event })" />
+                </label>
+                @if (doc.kind === 'PAYMENT_PROOF' && (payments() ?? []).length) {
+                  <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-payment">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Hoort bij betaling</span></span>
+                    <select class="mpo-input mpo-input--wide" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
+                      <option value="">— geen —</option>
+                      @for (payment of payments() ?? []; track payment.id) {
+                        <option [value]="payment.id">{{ paymentOptionLabel(payment) }}</option>
+                      }
+                    </select>
+                  </label>
                 }
               </div>
-            </div>
+              @if (roundOnServer()) { <p class="ios-section__foot">Een betaalbewijs voeg je toe bij de betaling zelf (Aanpassen).</p> }
+            </section>
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>@if (doc.kind === 'PAYMENT_PROOF') { Betaalbewijs } @else { <label for="doc-file">Bestand</label> }</h2></div>
+              @if (doc.kind === 'PAYMENT_PROOF') {
+                <div class="mpo-docpick"><app-payment-proof-picker [files]="doc.files ?? []" [maxFiles]="proofSlots(doc.paymentId)" [disabled]="uploadingDocument()"
+                  (filesChange)="addingDocument.set({ ...doc, files: $event, file: null })" /></div>
+              } @else {
+                <div class="ios-group mpo-docpick">
+                  <div class="doc-source">
+                    <input class="input" id="doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.csv"
+                           (change)="addingDocument.set({ ...doc, file: $any($event.target).files?.[0] ?? null })" />
+                    <button class="btn" type="button" (click)="libraryOpen.set(true)">Uit bibliotheek</button>
+                  </div>
+                </div>
+                <p class="ios-section__foot">{{ doc.file ? doc.file.name + ' · ' : '' }}PDF, foto of Office-bestand, tot 25 MB.</p>
+              }
+            </section>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="closeDocument()">Annuleren</button>
@@ -1165,89 +1169,101 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       @if (receiving(); as draft) {
         <!-- The container is in. Count what is there, note what broke, say
              what was paid, and decide whether the shelf gets it now. -->
-        <app-sheet title="Container ontvangen" [wide]="true" (closed)="receiving.set(null)">
-          <div body>
-            <div class="field">
-              <label for="rc-date">Ontvangen op</label>
-              <app-date-field fieldId="rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
-              <span class="hint">Standaard vandaag; pas aan als de container eerder binnenkwam.</span>
-            </div>
-            <p class="hint">Vul per product in wat er werkelijk in de container zat. Staat alles zoals
-              besteld, dan hoef je niets te wijzigen.</p>
+        <app-sheet title="Container ontvangen" variant="ios" (closed)="receiving.set(null)">
+          <div body class="mpo-sheet mpo-receive">
+            <section class="ios-section">
+              <div class="ios-group">
+                <div class="ios-cell mpo-field-row">
+                  <span class="ios-cell__body"><label class="ios-cell__title" for="rc-date">Ontvangen op</label></span>
+                  <app-date-field fieldId="rc-date" [value]="draft.receivedOn ?? ''" (valueChange)="receiving.set({ ...draft, receivedOn: $event })" />
+                </div>
+              </div>
+              <p class="ios-section__foot">Standaard vandaag; pas aan als de container eerder binnenkwam. Vul per product in wat er werkelijk in de container zat. Staat alles zoals
+                besteld, dan hoef je niets te wijzigen.</p>
+            </section>
             @if (receiveSummary(); as summary) {
-              <div class="receive-preview" aria-label="Voorbeeld van de ontvangstsamenvatting">
-                <span><small>Bruikbaar</small><b>{{ summary.usablePieces | num }} st</b></span>
-                <span><small>Ontbreekt</small><b [class.warn-text]="summary.missingPieces">{{ summary.missingPieces | num }} st</b></span>
-                <span><small>Beschadigd</small><b [class.danger-text]="summary.damagedPieces">{{ summary.damagedPieces | num }} st</b></span>
-                <span><small>Inkoopimpact</small><b>{{ summary.totalLossValueEur | eur: 0 }}</b></span>
-                @if (!summary.valuationComplete) {
-                  <p>{{ summary.unvaluedLossPieces | num }} afwijkende stuks hebben nog geen inkoopwaarde.</p>
+              <div class="ios-figures mpo-receive__figures" aria-label="Voorbeeld van de ontvangstsamenvatting">
+                <div><small>Bruikbaar</small><strong>{{ summary.usablePieces | num }} st</strong></div>
+                <div><small>Ontbreekt</small><strong [class.warn-text]="summary.missingPieces">{{ summary.missingPieces | num }} st</strong></div>
+                <div><small>Beschadigd</small><strong [class.danger-text]="summary.damagedPieces">{{ summary.damagedPieces | num }} st</strong></div>
+                <div><small>Inkoopimpact</small><strong>{{ summary.totalLossValueEur | eur: 0 }}</strong></div>
+              </div>
+              @if (!summary.valuationComplete) {
+                <p class="ios-section__foot">{{ summary.unvaluedLossPieces | num }} afwijkende stuks hebben nog geen inkoopwaarde.</p>
+              }
+            }
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Per product</h2><span class="ios-section__trail">{{ draft.lines.length }}</span></div>
+              <div class="ios-group">
+                @for (line of draft.lines; track line.productId) {
+                  <!-- The ordered count first: it is what the count is held against (B6); only the SKU may give way. -->
+                  <div class="mpo-rline" [class.mpo-rline--short]="line.received < line.ordered" [class.mpo-rline--damaged]="line.damaged > 0">
+                    <span class="mpo-rline__title">{{ line.name }}</span>
+                    <span class="mpo-rline__sub"><b>besteld {{ line.ordered | num }}</b>@if (line.sku) { <span class="mpo-rline__sku" [title]="line.sku">&nbsp;· {{ line.sku }}</span> }</span>
+                    <label class="receive-line__field">
+                      <span>Ontvangen</span>
+                      <input class="mpo-input" type="number" min="0" step="1" inputmode="numeric"
+                             [ngModel]="line.received" (ngModelChange)="setReceived(line.productId, +$event)" />
+                    </label>
+                    <label class="receive-line__field">
+                      <span>Beschadigd</span>
+                      <input class="mpo-input" type="number" min="0" step="1" inputmode="numeric"
+                             [ngModel]="line.damaged" (ngModelChange)="setDamaged(line.productId, +$event)" />
+                    </label>
+                    @if (line.received !== line.ordered || line.damaged > 0) {
+                      <label class="receive-line__field receive-line__field--note">
+                        <span>Wat was er mis?</span>
+                        <textarea class="mpo-input mpo-rline__note" rows="2" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                                  [ngModel]="line.note" (ngModelChange)="setIssueNote(line.productId, $event)"></textarea>
+                      </label>
+                      <span class="receive-line__note">
+                        @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
+                        @if (line.received > line.ordered) { {{ line.received - line.ordered | num }} te veel }
+                        @if (line.damaged > 0) { · {{ line.damaged | num }} kapot }
+                        @if (receiptLineImpact(line); as impact) { · {{ impact | eur: 2 }} inkoopimpact }
+                      </span>
+                    }
+                  </div>
                 }
               </div>
-            }
-            <div class="receive-lines">
-              @for (line of draft.lines; track line.productId) {
-                <div class="receive-line" [class.receive-line--short]="line.received < line.ordered"
-                     [class.receive-line--damaged]="line.damaged > 0">
-                  <div class="receive-line__name">
-                    <b>{{ line.name }}</b>
-                    <small>{{ line.sku }} · besteld {{ line.ordered | num }}</small>
-                  </div>
-                  <label class="receive-line__field">
-                    <span>Ontvangen</span>
-                    <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
-                           [ngModel]="line.received" (ngModelChange)="setReceived(line.productId, +$event)" />
-                  </label>
-                  <label class="receive-line__field">
-                    <span>Beschadigd</span>
-                    <input class="input num right" type="number" min="0" step="1" inputmode="numeric"
-                           [ngModel]="line.damaged" (ngModelChange)="setDamaged(line.productId, +$event)" />
-                  </label>
-                  @if (line.received !== line.ordered || line.damaged > 0) {
-                    <label class="receive-line__field receive-line__field--note">
-                      <span>Wat was er mis?</span>
-                      <input class="input" type="text" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
-                             [ngModel]="line.note" (ngModelChange)="setIssueNote(line.productId, $event)" />
-                    </label>
-                  }
-                  @if (line.received !== line.ordered || line.damaged > 0) {
-                    <span class="receive-line__note">
-                      @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
-                      @if (line.received > line.ordered) { {{ line.received - line.ordered | num }} te veel }
-                      @if (line.damaged > 0) { · {{ line.damaged | num }} kapot }
-                      @if (receiptLineImpact(line); as impact) { · {{ impact | eur: 2 }} inkoopimpact }
-                    </span>
-                  }
-                </div>
-              }
-            </div>
+            </section>
 
-            <div class="receive-balance mt-12" aria-label="Betalingen bij ontvangst">
-              <b>Betalingen bij ontvangst</b>
-              <small>Leverancier: {{ paidTotalEur() | eur }} betaald van {{ supplierOwed() | eur }} · {{ remainingEur() | eur }} open</small>
-              @for (open of receiveOpenPayees(); track open.label) { <small>{{ open.label }}: {{ open.openEur | eur }} open</small> }
-              @if (remainingEur() > 0.005) {
-                <label class="receive-balance__final">
-                  <input type="checkbox" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" />
-                  <span>Na ontvangst de slotbetaling van <b>{{ remainingEur() | eur }}</b> controleren en een banktransactie kiezen</span>
-                </label>
-              }
-              <span class="hint">Douane, transport en inspectie noteer je apart bij Betalingen.</span>
-            </div>
+            <section class="ios-section" aria-label="Betalingen bij ontvangst">
+              <div class="ios-section__head"><h2>Betalingen bij ontvangst</h2></div>
+              <div class="ios-group">
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Leverancier</span>
+                  <span class="ios-cell__sub mpo-wrap">{{ paidTotalEur() | eur }} betaald van {{ supplierOwed() | eur }} · {{ remainingEur() | eur }} open</span></span></div>
+                @for (open of receiveOpenPayees(); track open.label) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ open.label }}</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value">{{ open.openEur | eur }} open</span></span></div>
+                }
+                @if (remainingEur() > 0.005) {
+                  <label class="ios-cell mpo-field-row">
+                    <span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Na ontvangst de slotbetaling van <b>{{ remainingEur() | eur }}</b> controleren en een banktransactie kiezen</span></span>
+                    <input class="ios-switch" type="checkbox" role="switch" [ngModel]="draft.finalPayment" (ngModelChange)="receiving.set({ ...draft, finalPayment: $event })" />
+                  </label>
+                }
+              </div>
+              <p class="ios-section__foot">Douane, transport en inspectie noteer je apart bij Betalingen.</p>
+            </section>
 
-            <div class="field mt-12">
-              <label for="rc-note">Opmerking bij de ontvangst <span class="opt"></span></label>
-              <textarea class="textarea" id="rc-note" rows="2" [ngModel]="draft.note"
+            <section class="ios-section">
+              <div class="ios-section__head"><h2><label for="rc-note">Opmerking bij de ontvangst</label></h2></div>
+              <div class="ios-group"><textarea class="mpo-note" id="rc-note" rows="2" [ngModel]="draft.note"
                         (ngModelChange)="receiving.set({ ...draft, note: $event })"
-                        placeholder="Bijv. doos 3 nat aangekomen, foto's gemaild naar leverancier"></textarea>
-              <span class="hint">Komt met de datum in de notitie van de order; tekorten en schade worden er automatisch bij gezet.</span>
-            </div>
+                        placeholder="Bijv. doos 3 nat aangekomen, foto's gemaild naar leverancier"></textarea></div>
+              <p class="ios-section__foot">Komt met de datum in de notitie van de order; tekorten en schade worden er automatisch bij gezet.</p>
+            </section>
 
-            <label class="switch-row mt-12">
-              <span><b>Meteen bijboeken op {{ receivingLocationName(data.order.receivingLocationId) }}</b>
-                <small>Ontvangen min beschadigd gaat in de voorraad. Uit: later via "Voorraad bijboeken".</small></span>
-              <input type="checkbox" [ngModel]="draft.bookStock" (ngModelChange)="receiving.set({ ...draft, bookStock: $event })" />
-            </label>
+            <section class="ios-section">
+              <div class="ios-group">
+                <label class="ios-cell mpo-field-row">
+                  <span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Meteen bijboeken op {{ receivingLocationName(data.order.receivingLocationId) }}</span>
+                    <span class="ios-cell__sub mpo-wrap">Ontvangen min beschadigd gaat in de voorraad. Uit: later via "Voorraad bijboeken".</span></span>
+                  <input class="ios-switch" type="checkbox" role="switch" [ngModel]="draft.bookStock" (ngModelChange)="receiving.set({ ...draft, bookStock: $event })" />
+                </label>
+              </div>
+            </section>
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="receiving.set(null)">Annuleren</button>
@@ -1434,6 +1450,8 @@ export class PurchaseEditor {
 
   readonly statusTone = statusTone;
   readonly statusText = statusLabel;
+  /** Schade of tekort: what happened, as the kit's segmented (the iOS sheets of Inkoop redesign I5). */
+  readonly issueKinds: SegmentOption[] = [{ id: 'DAMAGED', label: 'Beschadigd' }, { id: 'SHORT', label: 'Minder aangekomen' }];
   readonly STEP_BUTTON = STEP_BUTTON;
 
   /** The save bar's step when nothing is unsaved: an empty concept asks for products first. */
