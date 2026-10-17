@@ -177,6 +177,7 @@ export const routes: Routes = [
   {
     path: 'website',
     pathMatch: 'full',
+    title: 'Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-admin-page')
@@ -184,6 +185,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/layout',
+    title: 'Homepage · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -192,6 +194,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/texts',
+    title: 'Teksten · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -200,6 +203,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/products',
+    title: 'Producten · Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-products-page')
@@ -207,6 +211,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/categories',
+    title: 'Categorieën · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { websiteCategoryMode: true },
@@ -215,6 +220,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/seo',
+    title: 'SEO · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { seoMode: true },
@@ -224,6 +230,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/publication',
+    title: 'Publicatie · Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-publication-page')

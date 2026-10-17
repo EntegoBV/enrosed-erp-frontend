@@ -30,6 +30,8 @@ test('every state has one label, a moment and at most one action', () => {
   assert.deepEqual([queued.tone, queued.label, queued.moment, queued.action], ['warn', 'In wachtrij', 'sinds 09:01', null]);
   const triggered = copy(status('TRIGGERED', { hookAcceptedAt: at(17, 9, 2) }));
   assert.deepEqual([triggered.label, triggered.moment], ['Wordt bijgewerkt', 'update geaccepteerd 09:02']);
+  assert.equal(triggered.shortLabel, 'Bezig', 'a narrow figure tile gets a short word');
+  for (const value of [live, queued, triggered]) assert.ok(value.shortLabel.length <= 11, value.shortLabel);
   const failed = copy(status('FAILED_OR_STALE', { lastAttemptAt: at(17, 9, 3), lastError: 'Hook 500', nextAttemptAt: at(17, 9, 13) }));
   assert.deepEqual([failed.tone, failed.label, failed.moment, failed.actionLabel, failed.error, failed.nextAttempt],
     ['danger', 'Actie nodig', 'laatste poging 09:03', 'Opnieuw proberen', 'Hook 500', 'volgende automatische poging 09:13']);

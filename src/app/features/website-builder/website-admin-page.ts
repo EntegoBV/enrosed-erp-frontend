@@ -1,146 +1,313 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ViewEncapsulation,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
-import { PageHeader } from '../../shared/page-header';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Icon } from '../../shared/icon';
+import { IosNav } from '../../shared/ios-nav';
+import { Skeleton } from '../../shared/skeleton';
+import { websiteSyncCopy } from '../settings/website-sync-copy';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
+import { WebsiteSyncStore } from '../settings/website-sync-store';
+import { TODO_SECTION_ORDER, WEBSITE_LANGUAGE_ORDER, plural } from './website-attention';
+import { WebsitePhoneBack } from './website-phone-back';
+import { WebsiteRecent } from './website-recent';
+import { WebsiteStatusBar } from './website-status-bar';
+import { WebsiteStore } from './website-store';
 import { WebsiteTranslationQueue } from './website-translation-queue';
 
+const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
+  : environment.environmentLabel === 'LOCAL' ? 'lokale website'
+    : (() => { try { return new URL(environment.websitePreviewUrl).host; } catch { return 'website'; } })();
+
+/**
+ * Overzicht of Website beheren (/website): the figures of the website in
+ * one strip (each a link), what has to be done (Te doen, one row per reeks,
+ * category or text), what changed lately, what stands live and the texts
+ * per language. All from WebsiteStore; the phone shows the same as widgets
+ * and inset groups under a large title.
+ */
 @Component({
   selector: 'app-website-admin-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterLink, WebsiteSyncStatus, WebsiteTranslationQueue],
+  encapsulation: ViewEncapsulation.None,
+  styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-overview.scss'],
+  imports: [Icon, IosNav, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus, WebsiteTranslationQueue],
   template: `
-    <app-page-header
-      title="Website beheren"
-      subtitle="Eén werkplek voor inhoud, producten, vindbaarheid en publicatie."
-      [showBell]="false"
-    >
-      <a class="btn btn--primary btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        {{ previewSiteLabel }} openen ↗
-      </a>
-    </app-page-header>
+    @if (desk.active()) {
+      <div class="wk-page ws-page">
+        <header class="wk-toolbar">
+          <div class="wk-toolbar__lead">
+            <h1 class="wk-toolbar__title">Overzicht</h1>
+            <span class="ws-sub" [attr.title]="subtitle()">{{ subtitle() }}</span>
+          </div>
+          <div class="wk-toolbar__tools">
+            <button class="wk-btn" type="button" [class.is-busy]="refreshing()" [disabled]="refreshing()" (click)="refresh()">
+              <app-icon name="refresh" [size]="16" />Vernieuwen
+            </button>
+          </div>
+        </header>
 
-    <main class="content website-home">
-      <section class="workspace-intro">
-        <div>
-          <span class="eyebrow">Website workspace</span>
-          <h2>Kies wat u wilt aanpassen</h2>
-          <p>
-            De website gebruikt productdata uit het ERP. Publieke teksten en SEO hebben
-            hier hun eigen duidelijke plek; interne namen, prijzen en factuurdata blijven intact.
-          </p>
+        <div class="wk-notices">
+          <nav class="ws-figs" aria-label="De website in cijfers">
+            <a class="ws-fig" routerLink="/website/publication">
+              <span class="ws-fig__label">Website</span>
+              <span class="ws-fig__value">
+                @if (sync.status() || sync.loadError()) {
+                  <i class="ws-dot" [class]="'ws-dot is-' + syncCopy().tone" aria-hidden="true"></i><span class="ws-long">{{ syncCopy().label }}</span><span class="ws-short">{{ syncCopy().shortLabel }}</span>
+                } @else { — }
+              </span>
+              <span class="ws-fig__sub" [attr.title]="syncCopy().label + (syncCopy().moment ? ' · ' + syncCopy().moment : '')">{{ syncCopy().moment ?? '' }}</span>
+            </a>
+            <a class="ws-fig" routerLink="/website/products">
+              <span class="ws-fig__label">Producten</span>
+              <span class="ws-fig__value">{{ store.families() ? counts().live + ' live' : '—' }}</span>
+              <span class="ws-fig__sub">
+                @if (store.families()) {
+                  <span class="ws-long">{{ counts().concept }} concept · {{ attentionText(counts().attention) }}</span>
+                  <span class="ws-short">{{ counts().concept }} concept · {{ counts().attention }} aandacht</span>
+                }
+              </span>
+            </a>
+            <a class="ws-fig" routerLink="/website/layout">
+              <span class="ws-fig__label">Homepage</span>
+              @if (store.homepageSummary(); as home) {
+                <span class="ws-fig__value"><span class="ws-long">{{ home.draftVisible }} van {{ home.total }} blokken</span><span class="ws-short">{{ home.draftVisible }} van {{ home.total }}</span></span>
+                <span class="ws-fig__sub" [class.is-warn]="home.differs">
+                  <span class="ws-long">{{ home.differs ? 'Concept klaar om te publiceren' : 'Gelijk aan live' }}</span>
+                  <span class="ws-short">blokken · {{ home.differs ? 'concept klaar' : 'gelijk aan live' }}</span>
+                </span>
+              } @else {
+                <span class="ws-fig__value">—</span><span class="ws-fig__sub"></span>
+              }
+            </a>
+            <a class="ws-fig" routerLink="/website/texts">
+              <span class="ws-fig__label">Teksten</span>
+              <span class="ws-fig__value">{{ store.content() ? counts().textsPercent + ' %' : '—' }}</span>
+              <span class="ws-fig__sub" [class.is-warn]="counts().textsMissing > 0">
+                @if (store.content()) {
+                  @if (counts().textsMissing) { {{ fieldsText(counts().textsMissing) }} }
+                  @else {
+                    <span class="ws-long">{{ counts().textGroups }} tekstgroepen · {{ languageCount }} talen</span>
+                    <span class="ws-short">{{ counts().textGroups }} groepen · {{ languageCount }} talen</span>
+                  }
+                }
+              </span>
+            </a>
+            <a class="ws-fig" routerLink="/website/seo">
+              <span class="ws-fig__label">SEO</span>
+              <span class="ws-fig__value">{{ store.families() ? counts().seoOk + ' / ' + counts().seoTotal : '—' }}</span>
+              <span class="ws-fig__sub">@if (store.families()) { <span class="ws-long">reeksen </span>zonder aandachtspunt }</span>
+            </a>
+          </nav>
         </div>
-        <aside role="note">
-          <b>Merchandising-richting</b>
-          <span>Glass bowls zijn de bestsellers en verdienen de meeste zichtbaarheid. Soap- en foamrozen blijven een ondersteunende collectie. Collectiebeelden komen van de featured SKU; vaste homepage-highlights volgen hun eigen websitecomponent.</span>
-        </aside>
-      </section>
 
-      <section class="workspace-grid" aria-label="Website beheertaken">
-        <a class="workspace-card workspace-card--primary" routerLink="/website/layout">
-          <span aria-hidden="true">01</span>
-          <div><b>Homepage-indeling &amp; live voorbeeld</b><small>Zet onderdelen in de juiste volgorde, verberg wat minder belangrijk is en controleer de {{ previewSiteName }}.</small></div>
-          <strong>Indeling openen →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/website/texts">
-          <span aria-hidden="true">02</span>
-          <div><b>Websiteteksten &amp; vertalingen</b><small>Homepage, navigatie, footer, juridische pagina’s en algemene labels in acht talen.</small></div>
-          <strong>Teksten beheren →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/website/seo">
-          <span aria-hidden="true">03</span>
-          <div><b>SEO</b><small>Controleer algemene paginatitels, ontbrekende product-SEO en verdachte Engelse titels zonder teksten automatisch te veranderen.</small></div>
-          <strong>SEO controleren →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/website/products">
-          <span aria-hidden="true">04</span>
-          <div><b>Publieke productinhoud</b><small>Kies een product voor websitenaam, beschrijving, foto’s, product-SEO en vertalingen.</small></div>
-          <strong>Product kiezen →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/website/categories">
-          <span aria-hidden="true">05</span>
-          <div><b>Categorieën &amp; websitemenu</b><small>Bepaal volgorde, collectiebeeld en korte namen voor desktop, mobiel en footer.</small></div>
-          <strong>Categorieën beheren →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/website/publication">
-          <span aria-hidden="true">06</span>
-          <div><b>Publicatie &amp; synchronisatie</b><small>Controleer of opgeslagen wijzigingen al in Vercel zijn verwerkt en herstel een mislukte update.</small></div>
-          <strong>Status bekijken →</strong>
-        </a>
-        <a class="workspace-card" routerLink="/settings" [queryParams]="{ sectie: 'website' }">
-          <span aria-hidden="true">07</span>
-          <div><b>Prijzen op de website</b><small>Kies of bezoekers prijzen zien op de productpagina’s en in het offerte- en bestelscherm.</small></div>
-          <strong>Prijsweergave instellen →</strong>
-        </a>
-      </section>
-
-      <app-website-translation-queue />
-
-      <section class="publication-card card" aria-labelledby="publication-overview-title">
-        <div class="publication-card__head">
-          <div><span class="eyebrow">Laatste stap</span><h2 id="publication-overview-title">Is de website bijgewerkt?</h2></div>
-          <a class="btn" routerLink="/website/publication">Volledige publicatiestatus</a>
+        <div class="wk-body">
+          <div class="wk-pane">
+            <div class="ws-scroll">
+              <div class="ws-cols">
+                <div class="ws-col">
+                  <app-website-translation-queue layout="card" />
+                  @if (!recentRight()) { <app-website-recent layout="card" [limit]="recentLimit()" [fetchLimit]="12" /> }
+                </div>
+                <div class="ws-col">
+                  <section class="ws-card ws-c-live" aria-labelledby="ws-live-title">
+                    <header class="ws-card-head">
+                      <h2 id="ws-live-title">Live op de website</h2>
+                      <span class="ws-tools"><a class="wk-link" routerLink="/website/publication">Publicatie ›</a></span>
+                    </header>
+                    @if (showLiveState()) {
+                      <div class="ws-live" role="status">
+                        <span class="ws-live__state" [class]="'ws-live__state is-' + syncCopy().tone"><i aria-hidden="true"></i>{{ syncCopy().label }}</span>
+                        <span class="ws-live__detail">{{ syncCopy().detail }}@if (syncCopy().moment; as moment) { · {{ moment }} }</span>
+                        @if (syncCopy().nextAttempt; as next) { <span class="ws-live__detail">{{ next }}</span> }
+                        @if (syncCopy().error; as error) { <span class="ws-live__error">{{ error }}</span> }
+                        @if (syncCopy().action; as action) {
+                          @if (action === 'todo') {
+                            <a class="wk-btn wk-btn--sm" routerLink="/website" fragment="translation-work">{{ syncCopy().actionLabel }}</a>
+                          } @else {
+                            <button class="wk-btn wk-btn--sm" type="button" [disabled]="sync.loading() || sync.retrying()"
+                                    (click)="action === 'retry' ? sync.retry() : sync.load()">{{ syncCopy().actionLabel }}</button>
+                          }
+                        }
+                      </div>
+                    }
+                    <dl class="ws-kv">
+                      <div>
+                        <dt>Categorieën</dt>
+                        <dd>@if (store.categories(); as list) {
+                          {{ list.length }} in het menu
+                          <small>{{ counts().categoriesMissing ? counts().categoriesMissing + ' met ontbrekende talen' : 'Alle ' + languageCount + ' talen compleet' }}</small>
+                        } @else { — }</dd>
+                      </div>
+                      <div>
+                        <dt>Bekijken</dt>
+                        <dd><a [href]="siteUrl" target="_blank" rel="noopener">{{ siteName }} <app-icon name="external" [size]="12" /></a></dd>
+                      </div>
+                    </dl>
+                  </section>
+                  @if (recentRight()) { <app-website-recent layout="card" [limit]="recentLimit()" [fetchLimit]="12" /> }
+                  <section class="ws-card ws-c-langs" aria-labelledby="ws-langs-title">
+                    <header class="ws-card-head">
+                      <h2 id="ws-langs-title">Websiteteksten per taal</h2>
+                      @if (store.content()) { <span class="ws-count">{{ counts().textGroups }} groepen</span> }
+                    </header>
+                    @if (store.content()) {
+                      <div class="ws-langgrid">
+                        @for (row of perLanguage(); track row.code) {
+                          <div [class.is-short]="row.complete < row.total">
+                            <b>{{ row.code }}@if (row.complete === row.total) {<em aria-label="compleet">✓</em>}</b>
+                            <small>{{ row.complete }} van {{ row.total }}</small>
+                          </div>
+                        }
+                      </div>
+                    } @else {
+                      <div class="ws-scroll"><app-skeleton kind="lines" [rows]="3" /></div>
+                    }
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <app-website-sync-status />
-      </section>
-    </main>
-  `,
-  styles: `
-    :host { display: block; }
-    .website-home { max-width: 1540px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
-    .workspace-intro {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .55fr); gap: 18px;
-      align-items: stretch; margin-bottom: 18px;
-    }
-    .workspace-intro > div { padding: 24px 26px; border-radius: var(--r); background: var(--ink); color: #fff; }
-    .eyebrow { color: var(--rose); font-size: 11px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
-    .workspace-intro h2 { margin-top: 6px; font-size: clamp(25px, 2.2vw, 36px); line-height: 1.08; }
-    .workspace-intro p { max-width: 72ch; margin-top: 9px; color: rgb(255 255 255 / 72%); font-size: 16px; line-height: 1.55; }
-    .workspace-intro aside {
-      display: grid; align-content: center; gap: 7px; padding: 22px 24px; border: 1px solid var(--rose-line);
-      border-radius: var(--r); background: var(--rose-soft);
-    }
-    .workspace-intro aside b { color: var(--rose-dark); font-size: 18px; }
-    .workspace-intro aside span { color: var(--ink-2); font-size: 15px; line-height: 1.5; }
-    .workspace-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .workspace-card {
-      display: grid; min-height: 230px; align-content: start; gap: 16px; padding: 20px;
-      border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
-      color: var(--ink); text-decoration: none; box-shadow: var(--sh-1);
-    }
-    .workspace-card > span { color: var(--rose-dark); font-size: 12px; font-weight: 850; letter-spacing: .1em; }
-    .workspace-card > div { display: grid; gap: 7px; }
-    .workspace-card b { font-size: 20px; line-height: 1.25; }
-    .workspace-card small { color: var(--muted); font-size: 15px; line-height: 1.5; }
-    .workspace-card strong { align-self: end; margin-top: auto; color: var(--rose-dark); font-size: 14px; }
-    .workspace-card:hover { border-color: var(--rose-line); transform: translateY(-1px); box-shadow: var(--sh-2); }
-    .workspace-card--primary { background: color-mix(in srgb, var(--rose-soft) 75%, var(--surface)); border-color: var(--rose-line); }
-    .workspace-card:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
-    .publication-card { margin-top: 18px; padding: 18px; }
-    .publication-card__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-    .publication-card__head h2 { margin-top: 3px; font-size: 22px; }
-    .publication-card__head .btn { min-height: 48px; }
-    .publication-card app-website-sync-status { display: block; }
 
-    @media (max-width: 1100px) {
-      .workspace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 760px) {
-      .website-home { padding-inline: 12px; }
-      .workspace-intro, .workspace-grid { grid-template-columns: 1fr; }
-      .workspace-card { min-height: 0; }
-      .publication-card__head { align-items: stretch; flex-direction: column; }
-      .publication-card__head .btn { width: 100%; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .workspace-card:hover { transform: none; }
+        <app-website-status-bar [text]="statusLine()" />
+      </div>
+    } @else {
+      <div class="ios-page ws-ios">
+        <app-ios-nav title="Website" [backLabel]="back.label()" [backUrl]="back.url()" [backAriaLabel]="back.aria()">
+          <app-website-sync-status caption variant="chip" />
+        </app-ios-nav>
+        <app-website-sync-status variant="banner" />
+
+        <div class="ios-widgets">
+          <a class="ios-widget" routerLink="/website/products" [replaceUrl]="true" [info]="tabInfo">
+            <span class="ios-widget__label"><app-icon name="products" [size]="14" />Producten</span>
+            <span class="ios-widget__value">{{ store.families() ? counts().live + ' live' : '—' }}</span>
+            <span class="ios-widget__sub">{{ store.families() ? counts().concept + ' concept' : '' }}</span>
+          </a>
+          <a class="ios-widget" routerLink="/website/layout" [replaceUrl]="true" [info]="tabInfo">
+            <span class="ios-widget__label"><app-icon name="layers" [size]="14" />Homepage</span>
+            @if (store.homepageSummary(); as home) {
+              <span class="ios-widget__value">{{ home.draftVisible }} van {{ home.total }}</span>
+              <span class="ios-widget__sub">{{ home.differs ? 'Concept klaar' : 'Gelijk aan live' }}</span>
+            } @else { <span class="ios-widget__value">—</span> }
+          </a>
+          <a class="ios-widget" routerLink="/website/texts" [replaceUrl]="true" [info]="tabInfo">
+            <span class="ios-widget__label"><app-icon name="document" [size]="14" />Teksten</span>
+            <span class="ios-widget__value">{{ store.content() ? counts().textsPercent + ' %' : '—' }}</span>
+            <span class="ios-widget__sub">@if (store.content()) { {{ counts().textsMissing ? fieldsText(counts().textsMissing) : counts().textGroups + ' groepen · ' + languageCount + ' talen' }} }</span>
+          </a>
+          <a class="ios-widget" routerLink="/website/seo">
+            <span class="ios-widget__label"><app-icon name="search" [size]="14" />SEO</span>
+            <span class="ios-widget__value">{{ store.families() ? counts().seoOk + ' / ' + counts().seoTotal : '—' }}</span>
+            <span class="ios-widget__sub">zonder aandachtspunt</span>
+          </a>
+        </div>
+
+        <app-website-translation-queue layout="group" />
+        <app-website-recent layout="group" [limit]="5" [fetchLimit]="5" />
+      </div>
     }
   `,
 })
 export class WebsiteAdminPage {
-  readonly previewBaseUrl = environment.websitePreviewUrl;
-  readonly previewSiteLabel = environment.environmentLabel === 'TEST'
-    ? 'Testsite'
-    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
-  readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
+  readonly desk = inject(DesktopViewport);
+  readonly store = inject(WebsiteStore);
+  readonly sync = inject(WebsiteSyncStore);
+  readonly back = inject(WebsitePhoneBack);
+  private readonly route = inject(ActivatedRoute);
+  private readonly recent = viewChild(WebsiteRecent);
+
+  readonly languageCount = WEBSITE_LANGUAGE_ORDER.length;
+  readonly siteUrl = environment.websitePreviewUrl;
+  readonly siteName = SITE_NAME;
+  readonly tabInfo = { nav: 'tab' };
+  readonly counts = this.store.counts;
+  readonly refreshing = computed(() => Object.values(this.store.loading()).some(Boolean));
+
+  readonly syncCopy = computed(() => websiteSyncCopy({
+    status: this.sync.status(), loading: this.sync.loading(), loadError: this.sync.loadError(), pollEnded: this.sync.pollEnded(),
+  }));
+  /** The Live card repeats the state only when it is not simply live (the strip already says Live). */
+  readonly showLiveState = computed(() => !!(this.sync.status() || this.sync.loadError()) && this.syncCopy().tone !== 'ok');
+
+  readonly subtitle = computed(() => {
+    const parts = [SITE_NAME];
+    if (this.store.families()) parts.push(plural(this.counts().families, 'productreeks', 'productreeksen'));
+    parts.push(`${this.languageCount} talen`);
+    return parts.join(' · ');
+  });
+
+  readonly statusLine = computed(() => [
+    this.store.families() ? plural(this.counts().families, 'productreeks', 'productreeksen') : null,
+    this.store.categories() ? plural(this.store.categories()!.length, 'categorie', 'categorieën') : null,
+    this.store.content() ? plural(this.counts().textGroups, 'tekstgroep', 'tekstgroepen') : null,
+    this.store.homepageSummary() ? `${this.store.homepageSummary()!.total} homepageblokken` : null,
+  ].filter(Boolean).join(' · '));
+
+  readonly perLanguage = computed(() => {
+    const required = this.store.groups().filter((group) => group.required);
+    return WEBSITE_LANGUAGE_ORDER.map((code) => ({ code, total: required.length,
+      complete: required.filter((group) => !group.missingLanguages.includes(code)).length }));
+  });
+
+  /** 12 recent rows when Te doen is short (fewer than 3 rows), else 8. */
+  readonly recentLimit = computed(() => this.store.todos().length < 3 ? 12 : 8);
+
+  /**
+   * Balance (critique N29): "Recent gewijzigd" goes under the right column when
+   * the left one would end more than 240 px lower. Decided once, from the Te
+   * doen count after loading; never reflowed afterwards.
+   */
+  readonly recentRight = signal(false);
+  private balanced = false;
+
+  constructor() {
+    this.store.ensure();
+    effect(() => {
+      const ready = (['families', 'categories', 'content'] as const).every((part) => this.store.has(part));
+      if (!ready || this.balanced) return;
+      this.balanced = true;
+      const todos = this.store.todos();
+      untracked(() => {
+        const rows = Math.min(todos.length, 12);
+        const sections = TODO_SECTION_ORDER.filter((section) => todos.some((row) => row.section === section)).length;
+        const todoHeight = todos.length ? 48 + sections * 30 + rows * 52 + (todos.length > 12 ? 40 : 0) : 190;
+        const recentHeight = 48 + this.recentLimit() * 53;
+        const liveHeight = 48 + (this.showLiveState() ? 120 : 0) + 2 * 40;
+        const langsHeight = 48 + 3 * 52;
+        const left = todoHeight + 16 + recentHeight;
+        const right = liveHeight + 16 + langsHeight;
+        const moved = Math.abs(todoHeight - (right + 16 + recentHeight));
+        this.recentRight.set(left - right > 240 && moved < left - right);
+        if (this.route.snapshot.fragment === 'translation-work' && !this.desk.active()) {
+          queueMicrotask(() => document.getElementById('translation-work')?.scrollIntoView({ block: 'start' }));
+        }
+      });
+    });
+  }
+
+  refresh(): void {
+    void this.store.refresh();
+    void this.sync.load();
+    void this.recent()?.load();
+  }
+
+  attentionText(count: number): string {
+    return `${count} ${count === 1 ? 'vraagt' : 'vragen'} aandacht`;
+  }
+
+  fieldsText(count: number): string {
+    return `${plural(count, 'verplicht veld', 'verplichte velden')} leeg`;
+  }
 }

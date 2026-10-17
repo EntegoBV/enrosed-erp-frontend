@@ -13,6 +13,8 @@ export type WebsiteSyncAction = 'refresh' | 'retry' | 'todo' | 'reload';
 export interface WebsiteSyncCopy {
   tone: WebsiteSyncTone;
   label: string;
+  /** At most 11 characters, for a narrow figure tile: "Bezig", "Actie nodig". */
+  shortLabel: string;
   /** Short, lower case: "sinds 16/10 23:40", "update geaccepteerd 23:41". */
   moment: string | null;
   /** One sentence for the card, the Live card and Publicatie. */
@@ -65,7 +67,17 @@ function withMoment(prefix: string, value: string | null, now: Date): string | n
   return moment ? `${prefix} ${moment}` : null;
 }
 
+const SHORT_LABELS: Record<string, string> = {
+  'Status niet geladen': 'Onbekend', 'Status ophalen': '—', 'Wacht op vertalingen': 'Vertalingen',
+  'In wachtrij': 'In wachtrij', 'Wordt bijgewerkt': 'Bezig', 'Actie nodig': 'Actie nodig', 'Niet automatisch': 'Handmatig', Live: 'Live',
+};
+
 export function websiteSyncCopy(input: WebsiteSyncInput): WebsiteSyncCopy {
+  const copy = syncCopyOf(input);
+  return { ...copy, shortLabel: SHORT_LABELS[copy.label] ?? copy.label };
+}
+
+function syncCopyOf(input: WebsiteSyncInput): Omit<WebsiteSyncCopy, 'shortLabel'> {
   const now = input.now ?? new Date();
   const base = { error: null, nextAttempt: null, needsBanner: true } as const;
   if (input.loadError) {

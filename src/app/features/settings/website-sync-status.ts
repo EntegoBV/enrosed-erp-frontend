@@ -21,7 +21,8 @@ let nextTitleId = 0;
  * The website rebuild status, from the one WebsiteSyncStore of the app.
  * - card: Settings › Website · Prijzen and the quote settings (the full block);
  * - bar: the desk status bar of Website beheren ("● Live sinds 16/10 23:40 Vernieuwen");
- * - chip: the phone capsule under a large title, a link to Publicatie;
+ * - chip: the phone capsule under a large title, a link to Publicatie; it
+ *   steps aside while the banner shows, so the state is said once;
  * - banner: the phone banner, rendered only while the website is not live.
  * The words come from website-sync-copy.ts, so the variants cannot disagree.
  */
@@ -46,10 +47,12 @@ let nextTitleId = 0;
         </span>
       }
       @case ('chip') {
+        @if (!copy().needsBanner) {
         <a class="ws-chip" [class]="'ws-chip is-' + copy().tone" routerLink="/website/publication"
            [attr.aria-label]="'Website: ' + copy().label + (copy().moment ? ', ' + copy().moment : '')">
           <i aria-hidden="true"></i><span>{{ copy().label }}@if (copy().moment; as moment) { · {{ moment }} }</span>
         </a>
+        }
       }
       @case ('banner') {
         @if (copy().needsBanner) {

@@ -1,0 +1,84 @@
+/* Website beheren · Overzicht (/website). Loaded with the page (encapsulation None), next to website-workspace.scss. */
+
+/* figures strip: five links, never cut at 1100 (critique B4) */
+.ws-figs{display:flex;align-items:stretch;border-bottom:1px solid var(--line);background:var(--surface)}
+.ws-fig{position:relative;display:grid;align-content:center;gap:1px;flex:1 1 0;min-width:0;padding:12px 20px;color:inherit;text-decoration:none;transition:background var(--dur-1,120ms) var(--ease-out,ease)}
+.ws-fig+.ws-fig::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:1px;background:var(--line)}
+.ws-fig:hover{background:var(--surface-2)}
+.ws-fig:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+.ws-fig__label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;font-weight:600;white-space:nowrap}
+.ws-fig__value{display:flex;align-items:center;min-width:0;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.015em;white-space:nowrap}
+.ws-fig__sub{min-width:0;overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.ws-fig__sub.is-warn{color:var(--warn)}
+.ws-dot{display:inline-block;flex:none;width:9px;height:9px;margin-right:8px;border-radius:50%;background:var(--ok)}
+.ws-dot.is-warn{background:var(--warn)}.ws-dot.is-danger{background:var(--danger)}.ws-dot.is-muted{background:var(--muted-2)}
+@media (max-width:1347.98px){
+ .ws-fig{padding:10px 14px}
+ .ws-fig__value{font-size:17px;white-space:normal;line-height:1.15}
+ .ws-fig__sub{white-space:normal;line-height:1.3}
+}
+
+/* two self-stacking columns; one column below 1060 */
+.ws-cols{display:grid;grid-template-columns:minmax(0,1fr) 400px;align-items:start;gap:16px}
+.ws-col{display:grid;align-content:start;gap:16px;min-width:0}
+@media (max-width:1347.98px){.ws-cols{grid-template-columns:minmax(0,1fr) 340px}}
+@media (max-width:1059.98px){
+ .ws-cols{grid-template-columns:minmax(0,1fr)}
+ .ws-col{display:contents}
+ .ws-c-todo{order:1}.ws-c-live{order:2}.ws-c-recent{order:3}.ws-c-langs{order:4}
+}
+
+/* Te doen */
+.ws-todo-card{scroll-margin-top:16px}
+.ws-sect{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 16px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 70%,var(--bg));color:var(--ink-2);font-size:12px;font-weight:700}
+.ws-sect span{color:var(--muted);font-weight:600}
+.ws-todo{display:grid;grid-template-columns:minmax(0,1fr) auto 18px;align-items:center;gap:12px;min-height:48px;padding:6px 12px 6px 16px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none;transition:background var(--dur-1,120ms) var(--ease-out,ease)}
+.ws-todo--kind{grid-template-columns:76px minmax(0,1fr) auto 18px}
+.ws-todo:hover{background:var(--surface-2)}
+.ws-todo:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+.ws-todo .wk-pill{justify-self:start}
+.ws-todo__body{display:grid;gap:1px;min-width:0}
+.ws-todo__title{overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.ws-todo__detail{display:-webkit-box;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ws-todo>app-icon{color:var(--muted-2)}
+.ws-langs{display:flex;flex-wrap:nowrap;gap:3px}
+.ws-lang{display:inline-grid;place-items:center;min-width:24px;height:20px;padding:0 5px;border-radius:6px;background:var(--warn-soft);color:var(--warn);font-size:10.5px;font-weight:750;letter-spacing:.02em}
+.ws-lang--more{background:#f1ede9;color:var(--ink-2)}
+@media (max-width:1347.98px){.ws-lang--wide{display:none}}
+.ws-todo-more{display:block;width:100%;min-height:40px;padding:0 16px;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:13px;font-weight:650;text-align:left;cursor:pointer}
+.ws-todo-more:hover{background:var(--surface-2)}
+.ws-todo-card .wk-banner--inset{margin:12px 16px 0}
+.ws-todo-card .wk-empty{padding:28px 24px}
+.ws-todo-card app-skeleton{display:block;padding:8px 16px}
+
+/* Recent gewijzigd */
+.ws-recent{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.ws-recent:last-child{border-bottom:0}
+.ws-recent b{overflow:hidden;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.ws-recent small{grid-column:1;overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.ws-recent time{grid-row:1/span 2;grid-column:2;align-self:center;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Live op de website */
+.ws-live{display:grid;gap:4px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.ws-live__state{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700}
+.ws-live__state i{width:10px;height:10px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 16%,transparent)}
+.ws-live__state.is-danger i{background:var(--danger);box-shadow:0 0 0 4px color-mix(in srgb,var(--danger) 16%,transparent)}
+.ws-live__state.is-muted i{background:var(--muted-2);box-shadow:none}
+.ws-live__detail{color:var(--muted);font-size:13px;line-height:1.45}
+.ws-live__error{color:var(--danger);font-size:12.5px}
+.ws-live .wk-btn{justify-self:start;margin-top:6px}
+
+/* Websiteteksten per taal */
+.ws-langgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line)}
+.ws-langgrid>div{display:grid;padding:9px 14px;background:var(--surface)}
+.ws-langgrid b{font-size:12.5px;font-weight:700}.ws-langgrid b em{margin-left:5px;color:var(--ok);font-style:normal}
+.ws-langgrid small{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.ws-langgrid .is-short b,.ws-langgrid .is-short small{color:var(--warn)}
+
+/* phone */
+.ws-ios .ios-widget{min-height:88px}
+.ws-ios .ios-widget__sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-ph-langs{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.ws-ph-langs .ws-lang{height:18px;min-width:22px;font-size:10px}
+.ws-ios .ws-todo-cell{align-items:flex-start;padding-top:10px;padding-bottom:10px}
+.ws-ios .ws-todo-cell .ios-cell__chev{align-self:center}
