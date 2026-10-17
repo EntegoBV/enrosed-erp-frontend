@@ -264,7 +264,7 @@ const LONG_LABELS: Record<LongField, string> = {
     @if (longOpen(); as key) {
       <app-sheet [title]="longLabel(key)" variant="ios" [wide]="true" (closed)="longOpen.set(null)">
         <div body class="set-long">
-          <textarea class="set-textarea set-textarea--sheet" [attr.aria-label]="longLabel(key)" [value]="longText()"
+          <textarea class="set-textarea set-textarea--sheet" rows="8" [attr.aria-label]="longLabel(key)" [value]="longText()"
                     (input)="longText.set($any($event.target).value)"></textarea>
           @if (key === 'documentFooter' || key === 'documentFooterEn') {
             <p class="set-hint">{{ key === 'documentFooter' ? 'Leeg · er komt geen extra regel onder documenten.' : 'Andere talen dan Nederlands gebruiken deze tekst; leeg = de Nederlandse.' }}</p>
@@ -362,8 +362,12 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-switch-cell { cursor: pointer; }
     .set-wrap { white-space: normal; overflow-wrap: anywhere; }
     .set-staff-phone { padding: 12px 16px; }
-    .set-long { display: grid; gap: 8px; }
-    .set-textarea--sheet { min-height: 40vh; max-height: none; font-size: 16px; field-sizing: fixed; }
+    /* One column: the textarea full width, the hint and "Voorstel invullen" under it (not in the desk hint column). */
+    .set-long { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 8px; }
+    .set-long > .set-textarea, .set-long > .set-hint { grid-column: 1; justify-self: stretch; }
+    .set-textarea--sheet { min-height: 0; max-height: none; font-size: 16px; field-sizing: fixed; }
+    /* The phone sheet body has no side padding (it expects inset groups): this text brings its own 16 px gutter. */
+    @media (max-width: 679.98px) { .set-long { padding-inline: 16px; } }
     .set-long__foot { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
     .set-long__foot .btn { min-height: 44px; }
   `,

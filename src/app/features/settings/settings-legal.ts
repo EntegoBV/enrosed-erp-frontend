@@ -179,6 +179,8 @@ export const LEGAL_LANGUAGES: readonly SegmentOption[] = [
     .legal__hint { margin: 0; color: var(--muted); font-size: 12.5px; }
     .legal__sheet-foot { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
     .legal__sheet-foot .btn { min-height: 44px; }
+    /* The phone sheet body has no side padding (it expects inset groups): reading text and the editor bring their own 16 px gutter. */
+    @media (max-width: 679.98px) { .legal__read--sheet, .legal__edit { padding-inline: 16px; } }
   `,
 })
 export class SettingsLegal implements SettingsEditor {
