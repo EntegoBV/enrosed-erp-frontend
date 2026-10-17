@@ -36,6 +36,8 @@ export interface SupplierOverview {
   /** Not received yet (concept, besteld, vertrokken). */
   running: number;
   received: number;
+  /** In the archive: counted in the money and in the containers, named apart in the line under the count. */
+  archived: number;
   nowEur: number;
   laterEur: number;
   /** Open supplier credits (tegoed) over its containers, in euro. */
@@ -87,7 +89,7 @@ export function supplierOverview(views: readonly PurchaseOrderView[],
     const order = view.order;
     let row = out.get(order.supplierId);
     if (!row) {
-      row = { supplierId: order.supplierId, containers: [], running: 0, received: 0, nowEur: 0, laterEur: 0, creditOpenEur: 0, lastOrderDate: null };
+      row = { supplierId: order.supplierId, containers: [], running: 0, received: 0, archived: 0, nowEur: 0, laterEur: 0, creditOpenEur: 0, lastOrderDate: null };
       out.set(order.supplierId, row);
       sums.set(order.supplierId, { now: 0, later: 0, credit: 0 });
     }
@@ -101,10 +103,9 @@ export function supplierOverview(views: readonly PurchaseOrderView[],
     sum.now += cents(payment?.nowEur);
     sum.later += cents(payment?.laterEur);
     sum.credit += openCreditCents(view);
-    if (!order.archivedAt) {
-      if (order.status === 'ONTVANGEN') row.received++;
-      else row.running++;
-    }
+    if (order.archivedAt) row.archived++;
+    else if (order.status === 'ONTVANGEN') row.received++;
+    else row.running++;
     if (order.orderDate && (!row.lastOrderDate || order.orderDate > row.lastOrderDate)) row.lastOrderDate = order.orderDate;
   }
   for (const row of out.values()) {
@@ -117,9 +118,10 @@ export function supplierOverview(views: readonly PurchaseOrderView[],
   return out;
 }
 
-/** '3 lopend · 2 ontvangen', the parts that are there. */
-export function containerCounts(row: Pick<SupplierOverview, 'running' | 'received'> | undefined): string {
+/** '3 lopend · 2 ontvangen · 1 gearchiveerd', the parts that are there: together they add up to the count above them. */
+export function containerCounts(row: Pick<SupplierOverview, 'running' | 'received'> & Partial<Pick<SupplierOverview, 'archived'>> | undefined): string {
   if (!row) return 'nog geen containers';
-  const parts = [row.running ? `${row.running} lopend` : '', row.received ? `${row.received} ontvangen` : ''].filter(Boolean);
+  const parts = [row.running ? `${row.running} lopend` : '', row.received ? `${row.received} ontvangen` : '',
+    row.archived ? `${row.archived} gearchiveerd` : ''].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'gearchiveerd';
 }

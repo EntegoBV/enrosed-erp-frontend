@@ -163,7 +163,7 @@ function blank(): Supplier {
                     @for (container of row!.containers; track container.id) {
                       <a class="wk-tr wk-tr--link sup-crow" role="row" [routerLink]="['/purchasing', container.id]">
                         <span class="wk-td wk-td--wrap sup-cell" role="cell"><b class="sup-name">{{ container.name }}</b>
-                          <span class="sup-sub">{{ containerSub(container) }}@if (container.partner) { <span class="sup-tag">Partner</span> }</span></span>
+                          <span class="sup-sub">{{ containerSub(container) }}@if (container.partner) { <span class="sup-tag">Partner</span> }@if (container.archived) { <span class="sup-tag sup-tag--muted">Gearchiveerd</span> }</span></span>
                         <span class="wk-td wk-td--wrap sup-cell" role="cell"><span class="wk-pill" [class]="statusTone(container.status)">{{ statusText(container.status) }}</span>
                           <span class="sup-sub">{{ container.status === 'ONTVANGEN' && container.receivedOn ? 'ontvangen ' + (container.receivedOn | dateNl) : (container.orderDate | dateNl) }}</span></span>
                         <span class="wk-td wk-td--num sup-total" role="cell">{{ container.totalEur | eur: 0 }}</span>
@@ -311,7 +311,7 @@ function blank(): Supplier {
                       <a class="ios-cell" [routerLink]="['/purchasing', container.id]" (click)="close()">
                         <span class="ios-cell__body">
                           <span class="ios-cell__title sup-wrap">{{ container.name }}</span>
-                          <span class="ios-cell__sub sup-wrap">{{ container.number }} · {{ statusText(container.status) }}@if (container.partner) { · Partner }</span>
+                          <span class="ios-cell__sub sup-wrap">{{ container.number }} · {{ statusText(container.status) }}@if (container.partner) { · Partner }@if (container.archived) { · gearchiveerd }</span>
                         </span>
                         <span class="ios-cell__trail">
                           <span class="ios-cell__value ios-cell__value--strong">{{ container.totalEur | eur: 0 }}</span>

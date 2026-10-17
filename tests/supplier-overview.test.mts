@@ -38,14 +38,18 @@ test('per supplier: containers newest first, now and later summed, credits, lope
   const yunnan = overview.get(8)!;
   assert.deepEqual(yunnan.containers.map((row) => row.name), ['12-Set-Roseamor-Jerry', 'PO-2026-011', 'PO-2026-05', 'PO-2026-03']);
   assert.deepEqual([yunnan.nowEur, yunnan.laterEur, yunnan.creditOpenEur], [11930.38, 22842.76, 165.5]);
-  assert.deepEqual([yunnan.running, yunnan.received, yunnan.lastOrderDate], [2, 1, '2026-10-16'], 'the archived one counts in money, not in lopend/ontvangen');
-  assert.equal(containerCounts(yunnan), '2 lopend · 1 ontvangen');
+  assert.deepEqual([yunnan.running, yunnan.received, yunnan.archived, yunnan.lastOrderDate], [2, 1, 1, '2026-10-16'], 'the archived one counts in money, not in lopend/ontvangen');
+  // The big figure is containers.length (4): the line under it adds up to it.
+  assert.equal(yunnan.containers.length, yunnan.running + yunnan.received + yunnan.archived);
+  assert.equal(containerCounts(yunnan), '2 lopend · 1 ontvangen · 1 gearchiveerd');
+  assert.deepEqual(yunnan.containers.map((row) => row.archived), [false, false, false, true], 'the containers table marks it');
   assert.deepEqual(yunnan.containers[1].payment, { state: 'due', nowEur: 509, laterEur: 0 });
   assert.equal(yunnan.containers[1].partner, true);
   const mock = overview.get(7)!;
   assert.deepEqual([mock.running, mock.received, mock.nowEur, mock.containers[0].payment?.state], [1, 0, 0, 'concept']);
   assert.equal(containerCounts(undefined), 'nog geen containers');
   assert.equal(containerCounts({ running: 0, received: 0 }), 'gearchiveerd');
+  assert.equal(containerCounts({ running: 0, received: 0, archived: 3 }), '3 gearchiveerd');
 });
 
 test('Nieuwe calculatie opens the Inkoop list\'s sheet with the supplier chosen, then leaves the address (F19)', async () => {
