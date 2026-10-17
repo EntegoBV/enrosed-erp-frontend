@@ -1,0 +1,93 @@
+/* Website beheren · the translation workspace in its split (Teksten, SEO) and inline (Homepage inspector)
+   layouts. ContentTranslationWorkspace renders this ws-* markup only for those layouts; its own component
+   styles keep serving the card (Cataloguslabels). Loaded by the pages that use the layouts. */
+
+.ws-ct{min-width:0;min-height:0}
+.ws-ct--split{display:grid;grid-template-columns:360px minmax(0,1fr);height:100%;min-height:0}
+@media (max-width:1347.98px){.ws-ct--split{grid-template-columns:300px minmax(0,1fr)}}
+@media (max-width:899.98px){.ws-ct--split{grid-template-columns:260px minmax(0,1fr)}}
+.ws-texts__list{min-height:0;overflow:auto;overscroll-behavior:contain;border-right:1px solid var(--line);background:var(--surface)}
+.ws-texts__ed{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--wk-bg);container:ws-ed / inline-size}
+.ws-ct--inline .ws-texts__ed{overflow:visible;background:none;container:none}
+
+/* list: one sticky header per site part, closed parts as one row */
+.ws-area{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:6px;width:100%;min-height:34px;padding:0 14px 0 10px;border:0;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 80%,var(--bg));color:var(--ink-2);font:inherit;font-size:11.5px;font-weight:750;letter-spacing:.04em;text-align:left;text-transform:uppercase;cursor:pointer}
+.ws-area>span{margin-left:auto;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none;white-space:nowrap}
+.ws-area>span.is-warn{color:var(--warn)}
+.ws-area__chev{color:var(--muted-2);transition:transform var(--dur-1,120ms) var(--ease-out,ease)}
+.ws-area[aria-expanded=true] .ws-area__chev{transform:rotate(90deg)}
+.ws-area:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+.ws-area__body{animation:mo-fade-in var(--dur-2,200ms) var(--ease-out,ease)}
+.ws-sub-area{padding:8px 14px 3px;color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.ws-grp{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;min-height:36px;padding:0 14px;border:0;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.ws-grp:hover{background:var(--surface-2)}
+.ws-grp.is-sel{background:var(--rose-soft);box-shadow:inset 3px 0 0 var(--rose);font-weight:650}
+.ws-grp:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+.ws-grp__label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-grp em{color:var(--ok);font-size:12px;font-style:normal;font-weight:700}
+.ws-grp__miss{display:inline-grid;place-items:center;min-width:20px;height:18px;padding:0 6px;border-radius:9px;background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:750}
+.ws-grp__opt{color:var(--muted);font-size:11px}
+.ws-texts__foot{padding:10px 14px 16px;color:var(--muted);font-size:12px}
+.ws-ct-empty{padding:32px 20px}
+
+/* editor */
+.ws-ed{display:grid;align-content:start;gap:14px;width:100%;max-width:880px;margin:0 auto;padding:18px 24px 28px}
+.ws-ct--inline .ws-ed{max-width:none;padding:0}
+.ws-ed__card{min-width:0;margin:0;padding:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.ws-ct--inline .ws-ed__card{border:0;border-radius:0}
+.ws-ed__head{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.ws-ed__titles{display:grid;flex:1;gap:2px;min-width:0}
+.ws-ed__eyebrow{color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.ws-ed__head h2{margin:0;font-size:18px;font-weight:720;letter-spacing:-.015em;line-height:1.25;overflow-wrap:anywhere}
+.ws-ed__head small{color:var(--muted);font-size:12.5px}
+.ws-ed__tools{display:flex;flex:none;align-items:center;gap:6px}
+@container ws-ed (max-width:639.98px){.ws-ed__codex{width:26px;padding:0}.ws-ed__codex-text{display:none}}
+.ws-legal{margin:12px 16px 0}
+.ws-langchips{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px;padding:12px 16px 0}
+.ws-ct--inline .ws-langchips{padding:10px 0 0}
+.ws-lc{display:inline-flex;align-items:center;justify-content:center;gap:3px;min-width:0;height:28px;padding:0 2px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:11.5px;font-weight:700;letter-spacing:.02em;cursor:pointer}
+.ws-lc i{color:var(--ok);font-size:10px;font-style:normal}
+.ws-lc .ws-lc__dot{width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.ws-lc.is-missing{border-color:#f0dcbc;background:var(--warn-soft);color:var(--warn)}
+.ws-lc.is-sel{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.ws-lc:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
+.ws-src{margin:12px 16px 0;padding:9px 11px;border-radius:9px;background:var(--surface-2);font-size:13px;line-height:1.45}
+.ws-ct--inline .ws-src{margin-inline:0}
+.ws-src small,.ws-field small{display:block;margin-bottom:3px;color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+.ws-src p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.ws-src .ws-src--empty{color:var(--muted)}
+.ws-field{display:block;margin:12px 16px 0}
+.ws-ct--inline .ws-field{margin-inline:0}
+.ws-field small{color:var(--ink-2)}
+.ws-textarea{display:block;width:100%;min-height:calc(5lh + 20px);max-height:calc(12lh + 20px);padding:9px 11px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:13.5px;line-height:1.45;resize:vertical;field-sizing:content;outline:none}
+.ws-textarea:focus{border-color:var(--rose);box-shadow:var(--wk-focus)}
+.ws-next{display:inline-flex;align-items:center;gap:4px;margin:8px 16px 0;padding:2px 0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:12.5px;cursor:pointer}
+.ws-ct--inline .ws-next{margin-inline:0}
+.ws-ed__msg{margin:12px 16px 0}
+.ws-edfoot{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 16px;border-top:1px solid var(--line);background:var(--surface-2)}
+.ws-ct--inline .ws-edfoot{position:static;margin-inline:-14px;padding-inline:14px}
+.ws-edfoot__state{flex:1;min-width:0;color:var(--muted);font-size:12px;line-height:1.35}
+.ws-edfoot__why{color:var(--warn);font-weight:650}
+.ws-kbd-on-primary{border-color:rgb(255 255 255/40%);background:transparent;color:rgb(255 255 255/85%)}
+.ws-ed__advanced .advanced-panel{margin:0}
+.ws-ed__all{overflow:hidden;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.ws-ed__all h3{margin:0;padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
+.ws-allrow{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:34px;padding:0 16px;border:0;border-bottom:1px solid var(--line);background:none;color:inherit;font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+.ws-allrow:last-child{border-bottom:0}
+.ws-allrow:hover{background:var(--surface-2)}
+.ws-allrow.is-sel{background:var(--rose-soft)}
+.ws-allrow b{font-size:11.5px}
+.ws-allrow span{overflow:hidden;color:var(--ink-2);text-overflow:ellipsis;white-space:nowrap}
+.ws-allrow em{color:var(--ok);font-style:normal;font-weight:700}
+.ws-allrow small{color:var(--warn);font-size:11.5px}
+.ws-ed__note{margin:0;color:var(--muted);font-size:12.5px}
+
+/* inline: the block's groups as a compact list (7 rows visible) */
+.ws-inline-list{max-height:calc(7 * 36px);overflow:auto;border:1px solid var(--line);border-radius:10px}
+.ws-inline-list .ws-grp:last-child{border-bottom:0}
+
+/* loading */
+.ws-ct-loading{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;padding:18px 20px}
+.ws-ct-loading span{display:block;height:14px;margin-bottom:14px;border-radius:7px;background:linear-gradient(90deg,var(--surface-2),color-mix(in srgb,var(--surface-2) 60%,#fff),var(--surface-2));background-size:200% 100%;animation:skel-shimmer 1.4s ease-in-out infinite}
+.ws-ct-loading__ed span:first-child{width:40%;height:20px}
+.ws-ct-state{padding:40px 20px}
