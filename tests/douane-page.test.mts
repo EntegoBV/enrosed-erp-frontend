@@ -34,6 +34,9 @@ test('the route, the nav link and the settings pointer', async () => {
   assert.match(settings, /De douanetarieven hebben nu een eigen scherm onder Inkoop\./);
   assert.match(settings, /<a class="btn btn--sm" routerLink="\/douane">Naar Douane ›<\/a>/);
   assert.doesNotMatch(settings, /saveHsCode|removeHsCode|addHsCode|hsCodes\(\)/, 'the old editor is gone from Instellingen');
+  // The phone's Meer opens Douane itself, not Instellingen's pointer card (with the foundation tip, Meer renders NAV_GROUPS).
+  const more = await read('features/more/more-page.ts');
+  assert.doesNotMatch(more, /sectie: 'duties'/);
 });
 
 test('the saved row fades back: the transition is on the row, not on the class that goes', async () => {

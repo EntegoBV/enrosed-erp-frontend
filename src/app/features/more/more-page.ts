@@ -160,7 +160,7 @@ import { WorkQueue } from '../../core/api/work-queue';
               <div class="list-item__meta">Contacten, valuta en levertijden</div></div>
             <span class="list-item__chev">›</span>
           </a>
-          <a class="list-item" [routerLink]="['/settings']" [queryParams]="{ sectie: 'duties' }">
+          <a class="list-item" routerLink="/douane">
             <span class="thumb thumb--placeholder"><app-icon name="truck" /></span>
             <div class="list-item__body"><div class="list-item__title">Douane</div>
               <div class="list-item__meta">HS-codes en invoerrechten</div></div>
