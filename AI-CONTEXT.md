@@ -854,6 +854,70 @@ cijfers'.
 - `home-figures.ts` (pure): month windows that follow the day, Δ%, bars,
   next container events, the desk briefing, greeting, week number, the
   Markt quote (own forwarder routes only, never an index in points).
+- **Redesign round (2026-10-17, `redesign/home` design + critique)**:
+  - *Loading.* The first load applies each source as it answers: `loading`
+    ends once Te doen's own sources (verkoop, inkoop, kosten, inkomende
+    betalingen, partnerfinanciering, klanten), the planner and the bell
+    answered; `refreshing` and `loadedAt` ("Alles bijgewerkt om") wait for
+    all, `settled` too. A later load still swaps everything in at once.
+    Every Te doen surface (desk card and pill, brief, phone section and
+    count, Open punten, Alle) waits for `HomeData.tasksReady` - the task
+    sources and a Kas past computing, or 1.5 s (`tasksReveal`) - so the list
+    shows once instead of growing per source.
+  - *Schedules gate.* `forecastSources` (bank, Vooruitblik) is there once the
+    forecast's own calls answered; the forecast itself is built only when
+    `forecastGate` opens: this CashData round's advance schedules answered
+    (`schedulesDone`), or partner financing failed, or 4 s passed. Without
+    the schedules the undated advances are missing and the lowest point is
+    wrong for half a second. Known limit: when Analyses already claimed the
+    round, `loadSchedules` returns at once and the gate opens early;
+    `cash-sources.ts` stays untouched.
+  - *Agenda money.* The open-credit row and the advances without a due day
+    (EXPECTED, not overdue) leave the calendar - the forecast parks them on
+    today; their sum is `agendaModel.undated` ({count, eur}, incl. btw, per
+    schedule row - not the Te doen row's per-container count). Money titles
+    are the container name with the term apart (`containerParts` →
+    `AgendaEntry.term`); parties short.
+  - *Words.* `shortCompany` (home-figures): cut at the comma, drop legal
+    words, cut at the generic tail, keep ≥ 2 words, never touch ≤ 2 words;
+    the full name stays in title/aria. Ook nog: verb = action, chip = reason
+    (Koppelen/laatste 3 mnd, Boeken/staat klaar, Afhandelen/tegoed,
+    Bevestigen/dit jaar, Nakijken/opmerking, Afrekenen/ontvangen,
+    Aanvullen/website); login Goedkeuren; krap keeps Bekijken. Klanten
+    wachten names "de oudste: {klant}". The brief: "… en zakt op ma 4
+    januari onder nul." / "De bank staat nu onder nul." (`belowZeroFrom`),
+    the Kas "· nog 1 periode" (`tightCount`). Toevoegen preselects the next
+    workday from 18:00 and at the weekend (`defaultTaskDay`).
+  - *Wait.* `shared/customer-wait.ts` is the one wait rule the bell reads
+    ("< 1 u", "17 u", "1 werkdag", "27 werkdagen"; "vandaag 14:02",
+    "gisteren", "di 13 okt"); home-priority keeps a copy (node-tested, no
+    runtime imports) held equal by `tests/customer-wait.test.mts`. The bell
+    sheet: summary + Vernieuwen, no foot, oldest first, one button per row
+    with the ✕ beside it, ios variant with inset groups on the phone.
+  - *Desk page.* `app-page-header` "Dashboard" + "vrijdag 16 oktober · week
+    42", the status pill (nowrap, its words give way, Opnieuw stays), one
+    "Nieuw" button, the toolbar bell; the brief starts with the greeting
+    (none before 06:00). From 1280 px (`HomeWide`, one matchMedia for the
+    page and its Agenda card) both columns end on one line: Inkoop takes the
+    rest on the left; Kas, Verkoop and Resultaat share it on the right, each
+    with its figure row at its foot. On a short day Te doen shows the first
+    `min(Ook nog, 6 − shown)` Ook nog rows (the normal row, never counted in
+    the pill or the cap); the footer counts what is still hidden and "{m}
+    voor vandaag". Never ship the stretch rule without that preview (it
+    keeps every band ≤ 70 px; measured ≤ 38 px). 900-1279: Kas over two rows
+    beside Verkoop and Resultaat; 680-899 one column. Meer cijfers rows do
+    not stretch; Search Console spans two columns, Markt is one strip.
+  - *Figure blocks.* No dark card: a negative value is red (`.is-neg`). The
+    small blocks are value + `.home-w__kv` rows (labels wrap, values never);
+    the phone has shorter labels with the long ones in title; "Zonder kost"
+    and "Afrekeningen nog te maken" only when they count. Inkoop shows the
+    supplier short (phone: name, then supplier and "aankomst (verwacht) …").
+    The phone hero names the reading age. Figures that land with the
+    forecast fade in once (`.mo-fade`).
+  - *Hidden host bell.* The home pages keep an `app-notification-bell
+    class="home-bell-host"` for the Klanten wachten sheet; its button is
+    hidden with `.home-bell-host > .bell { display: none !important }` (the
+    bell's own component rule would otherwise show it).
 - The full market page is Analyses › Markt (`/analyses/market`,
   `analyses/market-analysis.ts`): ECB exchange rates (EUR↔USD, EUR↔CNY; tap
   flips the pair) with a half-year sparkline, month tick labels showing the
