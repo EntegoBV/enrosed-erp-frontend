@@ -56,7 +56,10 @@ app-analyses-page { display: block; }
 .an-kpi__foot.is-warn { color: var(--warn); }
 a.an-kpi--link:hover { border-color: var(--rose-line); }
 .an-kpi--link::after { content: '›'; position: absolute; top: 11px; right: 14px; color: var(--muted-2); font-size: 16px; font-weight: 600; }
-.an-kpi--loading > span { display: block; height: 10px; border-radius: 99px; background: var(--surface-2); animation: an-pulse 1.1s ease-in-out infinite; }
+/* Figure placeholders load like app-skeleton's bars: the same tint and the shared skel-shimmer (styles.scss), no keyframe of their own. */
+.an-kpi--loading > span { position: relative; display: block; overflow: hidden; height: 10px; border-radius: 99px; background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.an-kpi--loading > span::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 65%, transparent), transparent); animation: skel-shimmer 1.4s infinite; }
 .an-kpi--loading > span:nth-child(1) { width: 42%; }
 .an-kpi--loading > span:nth-child(2) { width: 65%; height: 24px; }
 .an-kpi--loading > span:nth-child(3) { width: 82%; height: 9px; }
