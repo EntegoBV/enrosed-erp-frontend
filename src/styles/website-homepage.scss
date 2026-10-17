@@ -9,8 +9,10 @@
 .ws-hp__insp{background:var(--wk-bg)}
 .ws-hp__prev{display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--surface)}
 .ws-hp:not(.ws-hp--three) .ws-hp__prev{display:none;border-left:0}
-.ws-hp--preview .ws-hp__insp{display:none}
-.ws-hp--preview .ws-hp__prev{display:flex}
+/* "Voorbeeld" below the three columns: the preview takes the inspector's place. Same weight (0,3,0) as the
+   rule above and later, so it wins; a plain .ws-hp--preview .ws-hp__prev (0,2,0) left both columns hidden. */
+.ws-hp.ws-hp--preview .ws-hp__insp{display:none}
+.ws-hp.ws-hp--preview .ws-hp__prev{display:flex}
 .ws-hp__pad{padding:16px}
 
 /* block list */
