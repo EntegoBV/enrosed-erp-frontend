@@ -186,6 +186,15 @@ app-container-cost-analysis { display: block; min-width: 0; }
 a.an-row--link { color: inherit; text-decoration: none; }
 @media (max-width: 679.98px) { .an-phone .an-quality { margin: -14px calc(var(--ios-inset, 16px) + 16px) var(--an-gap); font-size: 13px; } }
 
+/* ---------- Bezoekers (critique N4: these replace component rules) */
+app-website-analytics .an-bar { margin-bottom: 6px; }
+app-website-analytics .an-kpis { margin-top: 8px; }
+app-website-analytics .an-kpi__foot.is-ok { color: var(--ok); }
+app-website-analytics .wa__plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+app-website-analytics .wa__yaxis { display: flex; flex-direction: column; justify-content: space-between; min-width: 28px; color: var(--muted);
+  font-size: 10.5px; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; }
+@media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { margin-inline: 0; } }
+
 /* ---------- Resultaat: five figures only from 1280; narrower 3 + 2 without a hole (critique B2.3) */
 .an-kpis--5 { --an-cols: 5; }
 @media (min-width: 680px) and (max-width: 1279.98px) {

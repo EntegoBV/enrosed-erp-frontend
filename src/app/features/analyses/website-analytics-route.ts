@@ -12,3 +12,8 @@ export function websiteAnalyticsRouteState(params: Pick<ParamMap, 'getAll'>): { 
     ? Number(periods[0]) : 30;
   return { source, days };
 }
+
+/** The query a selection writes back (replaceUrl, merged): the defaults leave the address clean. */
+export function websiteAnalyticsQuery(source: WebsiteAnalyticsSource, days: number): { source: string | null; days: string | null } {
+  return { source: source === 'INTERNAL' ? null : source, days: days === 30 ? null : String(days) };
+}
