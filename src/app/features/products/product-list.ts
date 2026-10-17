@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Location, NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -18,7 +18,14 @@ import { salesPhotoUrl } from '../../shared/sales-photo';
 import { productSalesUnit } from './product-sales-unit';
 import { PhotoExportSheet } from './photo-export-sheet';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
-import { SORT_OPTIONS, type ListSort } from './product-list-query';
+import {
+  SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, type ListCategory, type ListSort, type ListStatus,
+} from './product-list-query';
+import { onderwegSummary, type Onderweg } from './product-figures';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import { Sheet } from '../../shared/ui';
+import { ProductListStyles } from './product-list-styles';
 
 /**
  * One row in the list: a product on its own, or a series (family) that
@@ -69,177 +76,275 @@ interface ProductSwipe {
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
-    PhotoExportSheet, LoadError],
+    PhotoExportSheet, LoadError, ContextMenu, Sheet,
+    ProductListStyles],
   template: `
-    <app-page-header title="Producten" [subtitle]="loading() || loadError() ? '' : products().length + ' producten'">
-      <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
-        <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
-      </a>
-      <button class="btn btn--sm btn--icon-mobile" type="button" title="Foto’s exporteren"
-              aria-label="Foto’s exporteren" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
-        <app-icon name="media" [size]="18" /><span class="hide-mobile">Foto’s exporteren</span>
-      </button>
-      <a class="btn btn--primary btn--sm hide-mobile" routerLink="/products/new">+ Nieuw</a>
+    <app-page-header title="Producten" [subtitle]="listSubtitle()">
+      @if (desktop.active()) {
+        <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
+          <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
+        </a>
+        <button class="btn btn--sm btn--icon-mobile" type="button" title="Foto’s exporteren"
+                aria-label="Foto’s exporteren" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
+          <app-icon name="media" [size]="18" /><span class="hide-mobile">Foto’s exporteren</span>
+        </button>
+        <a class="btn btn--primary btn--sm hide-mobile" routerLink="/products/new">+ Nieuw</a>
+      } @else {
+        <!-- Voorraad is one tap from the list; the PDF and the photo export sit behind ⋯. -->
+        <a class="btn btn--sm btn--icon-mobile" routerLink="/stock" title="Voorraad" aria-label="Voorraad">
+          <app-icon name="stock" [size]="18" />
+        </a>
+        <button class="btn btn--sm btn--icon-mobile" type="button" title="Meer" aria-label="Meer acties"
+                aria-haspopup="menu" (click)="moreMenuOpen.set(true)">
+          <app-icon name="more" [size]="18" />
+        </button>
+      }
     </app-page-header>
 
-    <div class="content">
-      <section class="catalog-tools" aria-label="Producten zoeken en filteren">
-        <div class="catalog-search">
-          <label class="sr-only" for="catalog-search-input">Zoeken</label>
-          <svg class="catalog-search__icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="6.5" />
-            <path d="m16 16 4 4" />
-          </svg>
-          <input class="input catalog-search__input" id="catalog-search-input" type="search"
-                 placeholder="Zoek naam, SKU, kleur of barcode…"
-                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
-          @if (query()) {
-            <button class="catalog-search__clear" type="button" aria-label="Zoekopdracht wissen"
-                    (click)="query.set('')">×</button>
-          }
-        </div>
-
-        <!-- Filters and sorting fold away behind one button: the search box
-             is what you reach for; the rest is there when you need it. -->
-        <button class="filter-toggle" type="button"
-                [class.filter-toggle--active]="activeFilterCount() > 0"
-                [attr.aria-expanded]="filtersOpen()"
-                (click)="filtersOpen.set(!filtersOpen())">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 6h16M7 12h10M10 18h4" />
-          </svg>
-          <span class="hide-mobile">Filters</span>
-          @if (activeFilterCount(); as n) {
-            <b class="filter-toggle__count">{{ n }}</b>
-          }
-          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
-        </button>
-
-        @if (filtersOpen()) {
-        <div class="filter-grid">
-          <label class="filter-field">
-            <span class="filter-field__label">Categorie</span>
-            <select class="select filter-field__select" aria-label="Filter op categorie"
-                    [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
-              <option [ngValue]="null">Alle categorieën</option>
-              @for (category of categories(); track category.id) {
-                <option [ngValue]="category.id">{{ category.name }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="filter-field">
-            <span class="filter-field__label">Publicatie</span>
-            <select class="select filter-field__select" aria-label="Filter op publicatiestatus"
-                    [disabled]="familyLoading() || familyLoadError()"
-                    [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
-              <option value="ALL">Alle statussen</option>
-              <option value="NEEDS_WORK">Aandacht nodig</option>
-              <option value="WEBSITE">Website live</option>
-              <option value="ORDER_APP">Orderapp live</option>
-              <option value="INACTIVE">Inactief</option>
-            </select>
-          </label>
-
-          <!-- Sorting as a compact icon control: on a phone a third full
-               select pushed the filter bar onto a second row. -->
-          <div class="filter-field filter-sort">
-            <span class="filter-field__label" aria-hidden="true">Sorteren</span>
-            <div class="filter-sort__box">
-              <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
-              </svg>
-              <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
-              <select class="filter-sort__native" aria-label="Sorteren"
-                      [title]="'Sorteren: ' + sortLabel()"
-                      [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
-                @for (option of sortOptions(); track option.key) {
-                  <option [value]="option.key">{{ option.label }}</option>
-                }
-              </select>
-            </div>
-          </div>
-
-        </div>
-
-        }
-
-        @if (filtersOpen() || hasFilters()) {
-          <div class="filter-summary" aria-live="polite">
-            <span><strong>{{ filtered().length }}</strong> van {{ products().length }} producten</span>
-            @if (hasFilters()) {
-              <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
+    @if (desktop.active()) {
+      <div class="content">
+        <section class="catalog-tools" aria-label="Producten zoeken en filteren">
+          <div class="catalog-search">
+            <label class="sr-only" for="catalog-search-input">Zoeken</label>
+            <svg class="catalog-search__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4 4" />
+            </svg>
+            <input class="input catalog-search__input" id="catalog-search-input" type="search"
+                   placeholder="Zoek naam, SKU, kleur of barcode…"
+                   [ngModel]="query()" (ngModelChange)="setQuery($event)" />
+            @if (query()) {
+              <button class="catalog-search__clear" type="button" aria-label="Zoekopdracht wissen"
+                      (click)="setQuery('')">×</button>
             }
           </div>
+
+          <!-- Filters and sorting fold away behind one button: the search box
+               is what you reach for; the rest is there when you need it. -->
+          <button class="filter-toggle" type="button"
+                  [class.filter-toggle--active]="activeFilterCount() > 0"
+                  [attr.aria-expanded]="filtersOpen()"
+                  (click)="filtersOpen.set(!filtersOpen())">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M7 12h10M10 18h4" />
+            </svg>
+            <span class="hide-mobile">Filters</span>
+            @if (activeFilterCount(); as n) {
+              <b class="filter-toggle__count">{{ n }}</b>
+            }
+            <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+          </button>
+
+          @if (filtersOpen()) {
+          <div class="filter-grid">
+            <label class="filter-field">
+              <span class="filter-field__label">Categorie</span>
+              <select class="select filter-field__select" aria-label="Filter op categorie"
+                      [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
+                <option [ngValue]="null">Alle categorieën</option>
+                @for (category of categories(); track category.id) {
+                  <option [ngValue]="category.id">{{ category.name }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span class="filter-field__label">Publicatie</span>
+              <select class="select filter-field__select" aria-label="Filter op publicatiestatus"
+                      [disabled]="familyLoading() || familyLoadError()"
+                      [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+                <option value="ALL">Alle statussen</option>
+                <option value="NEEDS_WORK">Aandacht nodig</option>
+                <option value="WEBSITE">Website live</option>
+                <option value="ORDER_APP">Orderapp live</option>
+                <option value="INACTIVE">Inactief</option>
+              </select>
+            </label>
+
+            <!-- Sorting as a compact icon control: on a phone a third full
+                 select pushed the filter bar onto a second row. -->
+            <div class="filter-field filter-sort">
+              <span class="filter-field__label" aria-hidden="true">Sorteren</span>
+              <div class="filter-sort__box">
+                <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
+                </svg>
+                <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
+                <select class="filter-sort__native" aria-label="Sorteren"
+                        [title]="'Sorteren: ' + sortLabel()"
+                        [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
+                  @for (option of sortOptions(); track option.key) {
+                    <option [value]="option.key">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+          </div>
+
+          }
+
+          @if (filtersOpen() || hasFilters()) {
+            <div class="filter-summary" aria-live="polite">
+              <span><strong>{{ filtered().length }}</strong> van {{ products().length }} producten</span>
+              @if (hasFilters()) {
+                <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
+              }
+            </div>
+          }
+          @if (familyLoadError()) {
+            <div class="family-load-warning" role="alert">
+              <span>Publicatiestatus en varianten zijn niet geladen.</span>
+              <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
+                      (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
+            </div>
+          }
+        </section>
+
+        @for (section of sections(); track section.key) {
+          <!-- One card per category, its name above the white: the eye finds
+               "Glas" faster than it reads twelve product names. -->
+          <section class="section" [style.animation-delay.ms]="$index * 40">
+            @if (section.name !== null) {
+              <h2 class="section-head">
+                <span>{{ section.name }}</span>
+                <small>{{ section.count }}</small>
+              </h2>
+            }
+            <div class="card">
+              <div class="list">
+              @for (group of section.groups; track group.key) {
+                <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+              }
+              </div>
+            </div>
+          </section>
+        } @empty {
+          <div class="card">
+            <div class="list">
+              @if (loadError(); as error) {
+                <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+              } @else if (loading()) {
+                <app-skeleton kind="list" [rows]="6" />
+              } @else {
+                <div class="empty">
+                  <div class="empty__icon">◈</div>
+                  <div class="empty__title">Geen producten gevonden</div>
+                  <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
+                </div>
+              }
+            </div>
+          </div>
         }
+      </div>
+
+      @if (demoGroups().length && !loading()) {
+        <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
+             so the working list stays about sellable stock. -->
+        <div class="content demo-fold-wrap">
+          <section class="section section--demo">
+            <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
+                    (click)="demoOpen.set(!showDemoFold())">
+              <span class="demo-chip">demo</span>
+              <span class="demo-fold__label">Demoproducten</span>
+              <small>{{ demoCount() }}</small>
+              <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
+            </button>
+            @if (showDemoFold()) {
+              <div class="card">
+                <div class="list">
+                  @for (group of demoGroups(); track group.key) {
+                    <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+                  }
+                </div>
+              </div>
+            }
+          </section>
+        </div>
+      }
+    } @else {
+      <div class="content plp">
+        <div class="ios-search plp-search">
+          <label class="ios-search__field"><app-icon name="search" [size]="16" />
+            <input type="search" placeholder="Zoek naam, SKU of barcode" aria-label="Producten zoeken"
+                   [value]="query()" (input)="setQuery($any($event.target).value)" />
+            <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="14" /></button>
+          </label>
+          <button class="ios-circle plp-filter" type="button" aria-label="Filters en volgorde" aria-haspopup="dialog"
+                  (click)="filterSheetOpen.set(true)">
+            <app-icon name="filter" [size]="18" />
+            @if (sheetFilterCount(); as n) { <span class="ios-count plp-filter__badge">{{ n }}</span> }
+          </button>
+        </div>
+        <div class="ios-chips plp-chips" role="group" aria-label="Categorie en aandacht">
+          <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="setCategory(null)">Alle</button>
+          @for (chip of categoryChips(); track chip.key) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === chip.id" (click)="setCategory(chip.id)">
+              {{ chip.label }} <span class="plp-chip-count">{{ chip.count }}</span>
+            </button>
+          }
+          @if (attentionCount() !== null) {
+            <button class="ios-chip plp-chip--warn" type="button" [attr.aria-pressed]="statusFilter() === 'NEEDS_WORK'" (click)="toggleAttention()">
+              Aandacht @if (attentionCount()) { <span class="ios-chip__badge plp-chip__badge--warn">{{ attentionCount() }}</span> }
+            </button>
+          }
+        </div>
         @if (familyLoadError()) {
-          <div class="family-load-warning" role="alert">
+          <div class="family-load-warning plp-warning" role="alert">
             <span>Publicatiestatus en varianten zijn niet geladen.</span>
             <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
                     (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
           </div>
         }
-      </section>
 
-      @for (section of sections(); track section.key) {
-        <!-- One card per category, its name above the white: the eye finds
-             "Glas" faster than it reads twelve product names. -->
-        <section class="section" [style.animation-delay.ms]="$index * 40">
-          @if (section.name !== null) {
-            <h2 class="section-head">
-              <span>{{ section.name }}</span>
-              <small>{{ section.count }}</small>
-            </h2>
-          }
-          <div class="card">
-            <div class="list">
-            @for (group of section.groups; track group.key) {
-              <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+        @for (section of sections(); track section.key) {
+          <section class="ios-section">
+            @if (section.name !== null) {
+              <div class="ios-section__head"><h2>{{ section.name }}</h2><span class="ios-section__trail">{{ section.count }}</span></div>
             }
+            <div class="ios-group ios-group--thumbs">
+              @for (group of section.groups; track group.key) {
+                <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
+              }
             </div>
-          </div>
-        </section>
-      } @empty {
-        <div class="card">
-          <div class="list">
-            @if (loadError(); as error) {
-              <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
-            } @else if (loading()) {
-              <app-skeleton kind="list" [rows]="6" />
-            } @else {
-              <div class="empty">
-                <div class="empty__icon">◈</div>
-                <div class="empty__title">Geen producten gevonden</div>
-                <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
-              </div>
-            }
-          </div>
-        </div>
-      }
-    </div>
+          </section>
+        } @empty {
+          @if (loadError(); as error) {
+            <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+          } @else if (loading()) {
+            <app-skeleton kind="group" [rows]="6" />
+          } @else if (products().length) {
+            <div class="ios-empty">
+              <span class="ios-empty__icon"><app-icon name="search" [size]="26" /></span>
+              <p class="ios-empty__title">Geen producten gevonden</p>
+              <p class="ios-empty__text">Pas je zoekopdracht of filters aan.</p>
+              <button class="ios-capsule ios-capsule--tinted" type="button" (click)="resetFilters()">Filters wissen</button>
+            </div>
+          } @else if (!demoGroups().length) {
+            <div class="ios-empty">
+              <span class="ios-empty__icon"><app-icon name="products" [size]="26" /></span>
+              <p class="ios-empty__title">Nog geen producten</p>
+              <p class="ios-empty__text">Voeg je eerste product toe; kleuren en maten hang je daarna aan de reeks.</p>
+              <a class="ios-capsule ios-capsule--tinted" routerLink="/products/new">+ Nieuw product</a>
+            </div>
+          }
+        }
 
-    @if (demoGroups().length && !loading()) {
-      <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
-           so the working list stays about sellable stock. -->
-      <div class="content demo-fold-wrap">
-        <section class="section section--demo">
-          <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
-                  (click)="demoOpen.set(!showDemoFold())">
-            <span class="demo-chip">demo</span>
-            <span class="demo-fold__label">Demoproducten</span>
-            <small>{{ demoCount() }}</small>
-            <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
-          </button>
-          @if (showDemoFold()) {
-            <div class="card">
-              <div class="list">
+        @if (demoGroups().length && !loading()) {
+          <section class="ios-section plp-demo">
+            <button class="ios-section__head plp-demo__head" type="button" [attr.aria-expanded]="showDemoFold()" (click)="demoOpen.set(!showDemoFold())">
+              <h2>Demoproducten</h2>
+              <span class="ios-section__trail">{{ demoCount() }} <app-icon class="plp-demo__chev" [class.plp-demo__chev--open]="showDemoFold()" name="chevron-down" [size]="14" /></span>
+            </button>
+            @if (showDemoFold()) {
+              <div class="ios-group ios-group--thumbs">
                 @for (group of demoGroups(); track group.key) {
-                  <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
+                  <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
                 }
               </div>
-            </div>
-          }
-        </section>
+            }
+          </section>
+        }
       </div>
     }
 
@@ -448,11 +553,176 @@ interface ProductSwipe {
       </div>
     </ng-template>
 
+    <ng-template #phoneGroup let-group>
+      @if (group.products.length === 1) {
+        <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: group.products[0], nested: false }" />
+      } @else {
+        <!-- The series head folds its colours open in place; the whole row is the toggle. -->
+        @let onway = groupOnderweg(group);
+        <button class="plp-row plp-head" type="button" [class.plp-head--open]="isOpen(group)"
+                [attr.aria-expanded]="isOpen(group)" (click)="toggle(group)">
+          @if (group.photo) {
+            <img class="ios-thumb" [appAuthSrc]="group.photo" [alt]="group.name" draggable="false" />
+          } @else {
+            <span class="ios-thumb plp-thumb--empty" aria-hidden="true">◈</span>
+          }
+          <span class="plp-body">
+            <span class="plp-name">{{ group.name }}</span>
+            <span class="plp-meta">
+              <span>{{ groupSummary(group) }}</span>
+              @if (group.colours.length) {
+                <span class="plp-dots" aria-hidden="true">
+                  @for (colour of group.colours.slice(0, 8); track colour.name) {
+                    <i [style.background]="colour.hex || 'var(--surface-2)'" [class.plp-dot--empty]="!colour.hex"></i>
+                  }
+                  @if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }
+                </span>
+              }
+              <app-icon class="plp-chev" name="chevron-down" [size]="14" />
+            </span>
+            @if (groupAllDemo(group) || groupAttention(group)) {
+              <span class="plp-chips-line">
+                @if (groupAllDemo(group)) { <span class="plp-chip plp-chip--demo">demo</span> }
+                @if (groupAttention(group); as attention) { <span class="plp-chip" [attr.title]="groupTooltip(group)">{{ attention }}</span> }
+              </span>
+            }
+            <span class="plp-price">
+              @if (salesPrice(group.lead); as price) {
+                <span class="plp-nw"><b>{{ price | eur }}</b>@if (group.priceVaries) {<i class="plp-varies" title="Verschilt per variant">≠</i>} per {{ salesUnit(group.lead).singular }}</span>
+              } @else { <span>Nog geen prijs</span> }
+              @if (purchasePrice(group.lead); as cost) {
+                · <span class="plp-nw">kost {{ cost | eur }}@if (group.costVaries) {<i class="plp-varies" title="Verschilt per variant">≠</i>}</span>
+              }
+            </span>
+          </span>
+          <span class="plp-end" [attr.aria-label]="endLabel(group.stock, group.lead, onway)">
+            <strong [class.zero]="!group.stock">{{ stockLabel(group.stock) }}</strong>
+            <small>{{ group.stock === 1 ? salesUnit(group.lead).singular : salesUnit(group.lead).plural }}</small>
+            @if (onway) {
+              <span class="exp">+{{ onway.quantity | num }}</span>
+              @if (onway.earliest) { <small class="plp-date">{{ onway.earliest | dateNl }}</small> }
+            }
+          </span>
+        </button>
+        @if (isOpen(group)) {
+          @for (product of group.products; track product.id) {
+            <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: product, nested: true }" />
+          }
+        }
+      }
+    </ng-template>
+
+    <ng-template #phoneRow let-product let-nested="nested">
+      @let exp = expectedFor(product);
+      <div class="swipe plp-swipe" [class.plp-swipe--nested]="nested"
+           [class.swipe--open]="swiped() === product.id"
+           [class.swipe--dragging]="draggingProductId() === product.id"
+           [style.--swipe-offset]="draggingProductId() === product.id ? swipeOffset() + 'px' : null"
+           [animate.enter]="nested ? 'mo-enter' : ''" [animate.leave]="removingId() === product.id ? 'mo-leave' : ''">
+        <a class="swipe__row plp-row" [class.plp-row--nested]="nested" [class.plp-row--inactive]="!product.active"
+           [routerLink]="['/products', product.id]"
+           (pointerdown)="startSwipe($event, product)"
+           (pointermove)="moveSwipe($event, product)"
+           (pointerup)="finishSwipe($event)"
+           (pointercancel)="cancelSwipe($event)"
+           (dragstart)="$event.preventDefault()"
+           (click)="blockWhenSwiped($event, product.id)">
+          @if (salesPhotoUrl(product); as photo) {
+            <img class="ios-thumb" [class.ios-thumb--sm]="nested" [appAuthSrc]="photo" [alt]="product.name" draggable="false" />
+          } @else {
+            <span class="ios-thumb plp-thumb--empty" [class.ios-thumb--sm]="nested" aria-hidden="true">◈</span>
+          }
+          <span class="plp-body">
+            @if (nested) {
+              <span class="plp-name plp-name--variant">
+                @if (colourHex(product); as hex) { <i class="plp-cdot" [style.background]="hex" aria-hidden="true"></i> }
+                {{ variantLabel(product) || product.name }}
+              </span>
+              <span class="plp-meta mono">{{ product.sku || 'Geen SKU' }}</span>
+            } @else {
+              <span class="plp-name">{{ product.name }}</span>
+              <span class="plp-meta">{{ productMeta(product) }}</span>
+            }
+            @if (product.demo || attentionLabel(product, nested)) {
+              <span class="plp-chips-line">
+                @if (product.demo) { <span class="plp-chip plp-chip--demo">demo</span> }
+                @if (attentionLabel(product, nested); as attention) {
+                  <span class="plp-chip" [class.plp-chip--muted]="!product.active"
+                        [attr.title]="product.active ? issueTooltip(product, nested) : null">{{ attention }}</span>
+                }
+              </span>
+            }
+            <span class="plp-price">
+              @if (salesPrice(product); as price) { <span class="plp-nw"><b>{{ price | eur }}</b> per {{ salesUnit(product).singular }}</span> } @else { <span>Nog geen prijs</span> }
+              @if (purchasePrice(product); as cost) { · <span class="plp-nw">kost {{ cost | eur }}</span> }
+            </span>
+          </span>
+          <span class="plp-end" [attr.title]="stockBreakdown(product)"
+                [attr.aria-label]="endLabel(stockOf(product), product, exp ? { quantity: exp.quantity, earliest: exp.expectedArrival } : null)">
+            <strong [class.zero]="!stockOf(product)">{{ stockLabel(stockOf(product)) }}</strong>
+            <small>{{ stockOf(product) === 1 ? salesUnit(product).singular : salesUnit(product).plural }}</small>
+            @if (exp) {
+              <span class="exp" [attr.title]="'Op ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }}</span>
+              @if (exp.expectedArrival) { <small class="plp-date">{{ exp.expectedArrival | dateNl }}</small> }
+            }
+          </span>
+        </a>
+        <button class="swipe__delete" type="button"
+                [disabled]="deleting() !== null"
+                [attr.aria-label]="'Product ' + product.name + ' verwijderen'"
+                [attr.title]="'Product verwijderen'"
+                (focus)="revealDelete(product.id)"
+                (keydown.escape)="closeDelete($event)"
+                (click)="remove(product)">
+          <app-icon name="trash" [size]="20" />
+        </button>
+      </div>
+    </ng-template>
+
     <a class="fab" routerLink="/products/new">+ Product</a>
 
     @if (photoExportOpen()) {
       <app-photo-export-sheet (closed)="photoExportOpen.set(false)" />
     }
+    @if (moreMenuOpen()) {
+      <app-context-menu title="Producten" variant="ios" cancelLabel="Annuleren" [items]="moreItems" (pick)="pickMore($event)" (closed)="moreMenuOpen.set(false)" />
+    }
+    @if (filterSheetOpen()) {
+      <app-sheet variant="ios" title="Filters en volgorde" (closed)="filterSheetOpen.set(false)">
+        <div body class="plp-sheet">
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Publicatie</h2></div>
+            <div class="ios-group" role="radiogroup" aria-label="Publicatie">
+              @for (option of statusOptions; track option.key) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="statusFilter() === option.key"
+                        [disabled]="familyLoadError() && option.key !== 'ALL'" (click)="statusFilter.set(option.key)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                  @if (statusFilter() === option.key) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+          </section>
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Volgorde</h2></div>
+            <div class="ios-group" role="radiogroup" aria-label="Volgorde">
+              @for (option of sortOptions(); track option.key) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="sortKey() === option.key" (click)="sortKey.set(option.key)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                  @if (sortKey() === option.key) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+          </section>
+        </div>
+        <div foot style="display:contents">
+          @if (sheetFilterCount()) { <button class="btn" type="button" (click)="clearSheetFilters()">Filters wissen</button> }
+          <span class="spacer"></span>
+          <button class="btn btn--primary" type="button" (click)="filterSheetOpen.set(false)">Klaar</button>
+        </div>
+      </app-sheet>
+    }
+    <!-- The list's partial arrives with this lazy chunk (see ProductListStyles). -->
+    <app-product-list-styles />
   `,
   styles: `
     .catalog-tools {
@@ -662,12 +932,6 @@ interface ProductSwipe {
     .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
       border: 1px solid rgb(0 0 0 / 14%); }
 
-    /* Phone: "te verwachten" wraps instead of running into the colour dots. */
-    @media (max-width: 679px) {
-      .stock-expected { white-space: normal; max-width: 82px; text-align: right; line-height: 1.2; }
-      /* Two icon actions plus the bell: 36 px each keeps "Catalogus" whole at 375 px. */
-      .btn--icon-mobile { min-width: 36px; padding: 0 8px; }
-    }
   `,
 })
 export class ProductList {
@@ -679,10 +943,29 @@ export class ProductList {
   /** What each price is for: "per diamant", "per display". */
   readonly salesUnit = productSalesUnit;
 
+  readonly desktop = inject(DesktopViewport);
+  private readonly location = inject(Location);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
   readonly query = signal('');
-  readonly categoryFilter = signal<number | null>(null);
-  readonly statusFilter = signal<'ALL' | 'NEEDS_WORK' | 'WEBSITE' | 'ORDER_APP' | 'INACTIVE'>('ALL');
+  /** The search as the address bar has it: written 300 ms after the typing stops. */
+  private readonly urlQuery = signal('');
+  private queryTimer: ReturnType<typeof setTimeout> | null = null;
+  readonly categoryFilter = signal<ListCategory>(null);
+  readonly statusFilter = signal<ListStatus>('ALL');
   readonly sortKey = signal<SortKey>('STOCK_SMART');
+  readonly statusOptions = STATUS_OPTIONS;
+  /** Phone: the ⋯ menu in the bar and the "Filters en volgorde" sheet. */
+  readonly moreMenuOpen = signal(false);
+  readonly filterSheetOpen = signal(false);
+  readonly moreItems: ContextMenuItem[] = [
+    { id: 'pdf', label: 'Catalogus PDF', iconName: 'pdf' },
+    { id: 'photos', label: 'Foto’s exporteren', iconName: 'media' },
+  ];
+  /** The row being deleted: only that one leaves with motion, never rows a filter hides. */
+  readonly removingId = signal<number | null>(null);
   readonly filtersOpen = signal(false);
   /** The photo ZIP export sheet (also reachable from Instellingen → Catalogusdata). */
   readonly photoExportOpen = signal(false);
@@ -720,7 +1003,129 @@ export class ProductList {
   constructor() {
     /* Names the unit under each price ("per diamant"); "per stuk" until it arrives. */
     void this.catalog.unitNames().catch(() => undefined);
+    /* The list opens as the address says (back from a product restores it), then writes every change back. */
+    const initial = readListQuery(this.route.snapshot.queryParams);
+    this.query.set(initial.q);
+    this.urlQuery.set(initial.q);
+    this.categoryFilter.set(initial.category);
+    this.statusFilter.set(initial.status);
+    this.sortKey.set(initial.sort);
+    this.openOverrides.set(new Map(initial.open.map((key) => [key, true])));
+    effect(() => {
+      const search = listQueryString({
+        q: this.urlQuery(),
+        category: this.categoryFilter(),
+        status: this.familyLoadError() ? 'ALL' : this.statusFilter(),
+        sort: this.sortKey(),
+        open: [...this.openOverrides()].filter(([, open]) => open).map(([key]) => key),
+      });
+      untracked(() => this.writeUrl(search));
+    });
+    this.destroyRef.onDestroy(() => { if (this.queryTimer !== null) clearTimeout(this.queryTimer); });
     void this.load();
+  }
+
+  /** Location.replaceState: no history entry and no navigation, only while the list is the screen. */
+  private writeUrl(search: string): void {
+    const [path, current = ''] = this.location.path().split('?');
+    if (path !== '/products' || !this.router.url.startsWith('/products')) return;
+    if ((current ? `?${current}` : '') === search) return;
+    this.location.replaceState('/products', search.slice(1));
+  }
+
+  setQuery(value: string): void {
+    this.query.set(value);
+    if (this.queryTimer !== null) clearTimeout(this.queryTimer);
+    this.queryTimer = setTimeout(() => { this.queryTimer = null; this.urlQuery.set(value); }, 300);
+  }
+
+  setCategory(category: ListCategory): void {
+    this.categoryFilter.set(category);
+  }
+
+  /** Aandacht and the Publicatie choice set the same filter: one replaces the other. */
+  toggleAttention(): void {
+    this.statusFilter.set(this.statusFilter() === 'NEEDS_WORK' ? 'ALL' : 'NEEDS_WORK');
+  }
+
+  pickMore(item: ContextMenuItem): void {
+    this.moreMenuOpen.set(false);
+    if (item.id === 'pdf') void this.router.navigateByUrl('/catalog-export');
+    else if (item.id === 'photos') this.photoExportOpen.set(true);
+  }
+
+  /** The phone filter badge: publication (other than Aandacht, which has its chip) and order off their default. */
+  readonly sheetFilterCount = computed(() =>
+    (!this.familyLoadError() && this.statusFilter() !== 'ALL' && this.statusFilter() !== 'NEEDS_WORK' ? 1 : 0)
+    + (this.sortKey() !== 'STOCK_SMART' ? 1 : 0));
+
+  clearSheetFilters(): void {
+    if (this.statusFilter() !== 'NEEDS_WORK') this.statusFilter.set('ALL');
+    this.sortKey.set('STOCK_SMART');
+  }
+
+  /** "78 producten · 30 reeksen": reeksen are series of two or more; empty while loading. */
+  readonly listSubtitle = computed(() => {
+    if (this.loading() || this.loadError()) return '';
+    const families = new Map<number, number>();
+    for (const product of this.products()) {
+      if (product.familyId != null) families.set(product.familyId, (families.get(product.familyId) ?? 0) + 1);
+    }
+    const series = [...families.values()].filter((count) => count >= 2).length;
+    const count = this.products().length;
+    return `${count} product${count === 1 ? '' : 'en'}${series ? ` · ${series} reeks${series === 1 ? '' : 'en'}` : ''}`;
+  });
+
+  /** The category chips with their product counts, in the categories' own order; "Zonder categorie" when any. */
+  readonly categoryChips = computed(() => {
+    const counts = new Map<number | null, number>();
+    for (const product of this.products()) {
+      if (product.demo) continue;
+      const id = product.categoryId ?? null;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const chips: { key: string; id: ListCategory; label: string; count: number }[] = this.categories()
+      .filter((category) => category.id !== null && counts.has(category.id))
+      .map((category) => ({ key: `c${category.id}`, id: category.id!, label: category.name, count: counts.get(category.id!) ?? 0 }));
+    if (counts.has(null)) chips.push({ key: 'none', id: 'none', label: 'Zonder categorie', count: counts.get(null) ?? 0 });
+    return chips;
+  });
+
+  /**
+   * Aandacht: the rows (series heads and single products, demo excluded) the
+   * NEEDS_WORK filter shows with today's category and search; null while the
+   * publication state is not known.
+   */
+  readonly attentionCount = computed<number | null>(() => {
+    if (this.familyLoading() || this.familyLoadError()) return null;
+    const groups = new Map<string, boolean>();
+    for (const product of this.products()) {
+      if (!this.passes(product, this.categoryFilter(), this.query().toLowerCase().trim(), 'NEEDS_WORK')) continue;
+      const key = product.familyId == null ? `p${product.id}` : `f${product.familyId}`;
+      groups.set(key, (groups.get(key) ?? true) && !!product.demo);
+    }
+    return [...groups.values()].filter((allDemo) => !allDemo).length;
+  });
+
+  /** What a series has on the way: the sum, the earliest date, its orders. */
+  groupOnderweg(group: ProductGroup): Onderweg | null {
+    return onderwegSummary(group.products.map((product) => this.expectedFor(product)));
+  }
+
+  /** The end column read aloud: "6.000 bowls, +15.000 verwacht, 20/12/2026". */
+  endLabel(stock: number, product: Product, onway: { quantity: number; earliest: string | null } | null): string {
+    const unit = this.salesUnit(product);
+    const parts = [`${this.stockLabel(stock)} ${stock === 1 ? unit.singular : unit.plural}`];
+    if (onway) {
+      parts.push(`+${onway.quantity.toLocaleString('nl-BE')} verwacht`);
+      if (onway.earliest) parts.push(onway.earliest.split('-').reverse().join('/'));
+    }
+    return parts.join(', ');
+  }
+
+  /** A loose product's line under its name: "{kleur} · {SKU}". */
+  productMeta(product: Product): string {
+    return [this.variantLabel(product), product.sku || 'Geen SKU'].filter(Boolean).join(' · ');
   }
 
   reload(): void {
@@ -785,22 +1190,25 @@ export class ProductList {
     const needle = this.query().toLowerCase().trim();
     const category = this.categoryFilter();
     const status = this.familyLoadError() ? 'ALL' : this.statusFilter();
-    return this.products().filter((product) => {
-      if (category !== null && product.categoryId !== category) return false;
-      if (status === 'NEEDS_WORK' && (!product.active || !this.publicationIssues(product).length)) return false;
-      if (status === 'WEBSITE'
-          && (!this.publicationActive(product) || this.websiteStatus(product) !== 'PUBLISHED')) return false;
-      if (status === 'ORDER_APP'
-          && (!this.publicationActive(product) || this.orderAppStatus(product) !== 'PUBLISHED')) return false;
-      if (status === 'INACTIVE' && product.active) return false;
-      if (!needle) return true;
-      return [
-        product.sku, product.name, product.colour, product.variantSize,
-        product.barcodeInner, product.barcodeOuter, product.hsCode,
-        this.familyFor(product)?.name, this.familyFor(product)?.familyKey,
-      ].join(' ').toLowerCase().includes(needle);
-    });
+    return this.products().filter((product) => this.passes(product, category, needle, status));
   });
+
+  /** One predicate for the list and for the Aandacht count, so the chip always equals the rows it shows. */
+  private passes(product: Product, category: ListCategory, needle: string, status: ListStatus): boolean {
+    if (category === 'none' ? product.categoryId != null : category !== null && product.categoryId !== category) return false;
+    if (status === 'NEEDS_WORK' && (!product.active || !this.publicationIssues(product).length)) return false;
+    if (status === 'WEBSITE'
+        && (!this.publicationActive(product) || this.websiteStatus(product) !== 'PUBLISHED')) return false;
+    if (status === 'ORDER_APP'
+        && (!this.publicationActive(product) || this.orderAppStatus(product) !== 'PUBLISHED')) return false;
+    if (status === 'INACTIVE' && product.active) return false;
+    if (!needle) return true;
+    return [
+      product.sku, product.name, product.colour, product.variantSize,
+      product.barcodeInner, product.barcodeOuter, product.hsCode,
+      this.familyFor(product)?.name, this.familyFor(product)?.familyKey,
+    ].join(' ').toLowerCase().includes(needle);
+  }
 
   /**
    * Products folded per series. Search keeps a series open so the hit is
@@ -1176,6 +1584,7 @@ export class ProductList {
         this.deleting.set(productId);
         try {
           await this.catalog.deleteProduct(productId);
+          this.removingId.set(productId);
           this.products.update((products) => products.filter((item) => item.id !== productId));
           if (family?.id !== null && family?.id !== undefined) {
             this.families.update((families) => families.map((item) => item.id === family.id
@@ -1187,6 +1596,7 @@ export class ProductList {
           this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
         } finally {
           this.deleting.set(null);
+          setTimeout(() => this.removingId.set(null), 400);
         }
       },
     );

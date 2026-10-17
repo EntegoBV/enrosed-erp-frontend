@@ -1,15 +1,17 @@
 @use 'sass:meta';
 
 /* ==========================================================================
-   Producten & voorraad (2026-10-17): one partial per screen, desk and phone
-   blocks inside each, every rule scoped under its host element. A package
-   of the round writes only its own screen file, so each screen reverts on
-   its own. Never restyle a bare kit class here; override kit custom
-   properties under the host instead.
+   Producten & voorraad (2026-10-17): one partial per screen in
+   styles/products/, desk and phone blocks inside each, every rule scoped
+   under its host element. A package of the round writes only its own screen
+   file, so each screen reverts on its own. Never restyle a bare kit class
+   there; override kit custom properties under the host instead.
+
+   The big screens' partials do NOT load here: the initial bundle sits at its
+   1 MB error budget (the list partial alone pushed the production build
+   over it), so _list (through ProductListStyles), _booking, _product-desk,
+   _product-phone and _stock are the styleUrl of a component of their screen
+   (ViewEncapsulation.None) and arrive with that screen's lazy chunk. Only
+   the small pages load here.
    ========================================================================== */
-@include meta.load-css('products/list');
-@include meta.load-css('products/product-desk');
-@include meta.load-css('products/product-phone');
-@include meta.load-css('products/booking');
-@include meta.load-css('products/stock');
 @include meta.load-css('products/small-pages');
