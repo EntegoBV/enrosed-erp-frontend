@@ -50,7 +50,7 @@ import { Skeleton } from '../../shared/skeleton';
               <a class="ios-cell" routerLink="/website/products" [queryParams]="queryOf(item)">
                 <span class="ios-cell__body">
                   <span class="ios-cell__title ios-cell__title--2">{{ item.entityLabel || 'Productreeks' }}</span>
-                  <span class="ios-cell__sub">{{ lineOf(item) }}</span>
+                  <span class="ios-cell__sub ios-cell__sub--wrap">{{ lineOf(item) }}</span>
                 </span>
                 <span class="ios-cell__trail"><span class="ios-cell__meta">{{ timeOf(item.at) }}</span></span>
               </a>

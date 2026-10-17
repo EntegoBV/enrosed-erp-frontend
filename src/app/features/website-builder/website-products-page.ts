@@ -168,10 +168,10 @@ interface ProductRow extends ProductViewRow {
         <header class="wk-toolbar">
           <div class="wk-toolbar__lead">
             <h1 class="wk-toolbar__title">Producten</h1>
-            <span class="ws-sub">{{ subtitle() }}</span>
+            <span class="ws-sub" [attr.title]="subtitle() || null">{{ subtitle() }}</span>
           </div>
           <div class="wk-toolbar__tools">
-            <label class="wk-search ws-search">
+            <label class="wk-search wk-search--collapsible ws-search">
               <app-icon name="search" [size]="15" />
               <input #search type="search" data-page-search placeholder="Zoek reeks of webadres" aria-label="Zoek reeks of webadres"
                      [value]="query()" (input)="query.set($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
