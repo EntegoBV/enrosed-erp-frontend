@@ -20,6 +20,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import {
   ContentTranslationGroup,
+  ContentTranslationOverview,
   ContentTranslationScope,
   ContentTranslationText,
   LanguageCode,
@@ -416,7 +417,7 @@ const PREFIX_LABELS: Record<string, string> = {
               @for (section of areaSections(); track section.area.key) {
                 <button class="ws-area" type="button" [attr.aria-expanded]="section.open" (click)="toggleArea(section.area.key)">
                   <app-icon name="chevron-right" [size]="13" class="ws-area__chev" />{{ section.area.label }}
-                  <span [class.is-warn]="section.missing > 0">{{ section.total }} · @if (section.missing) { {{ section.missing }} ontbreken } @else { ✓ }</span>
+                  <span [class.is-warn]="section.missing > 0">{{ section.total }} · @if (section.missing) { {{ plural(section.missing, 'ontbreekt', 'ontbreken') }} } @else { ✓ }</span>
                 </button>
                 @if (section.open) {
                   <div class="ws-area__body">
@@ -424,7 +425,7 @@ const PREFIX_LABELS: Record<string, string> = {
                       @if (row.subArea) { <div class="ws-sub-area">{{ row.subArea }}</div> }
                       <button class="ws-grp" type="button" [class.is-sel]="isSelected(row.group)" [attr.aria-current]="isSelected(row.group) ? 'true' : null"
                               [attr.data-key]="row.group.key" [attr.tabindex]="rowTabStop() === row.group.key ? 0 : -1"
-                              [attr.title]="row.group.key" (click)="pick(row.group)">
+                              [attr.title]="row.label + ' · ' + row.group.key" (click)="pick(row.group)">
                         <span class="ws-grp__label">{{ row.label }}</span>
                         @if (!row.group.required) { <small class="ws-grp__opt">opt.</small> }
                         @else if (row.group.missingLanguages.length) { <small class="ws-grp__miss">{{ row.group.missingLanguages.length }}</small> }
@@ -443,7 +444,7 @@ const PREFIX_LABELS: Record<string, string> = {
               @for (group of inlineGroups(); track group.key) {
                 <button class="ws-grp" type="button" role="listitem" [class.is-sel]="isSelected(group)" [attr.aria-current]="isSelected(group) ? 'true' : null"
                         [attr.data-key]="group.key" [attr.tabindex]="rowTabStop() === group.key ? 0 : -1"
-                        [attr.title]="group.key" (click)="pick(group)">
+                        [attr.title]="labelOf(group) + ' · ' + group.key" (click)="pick(group)">
                   <span class="ws-grp__label">{{ labelOf(group) }}</span>
                   @if (!group.required) { <small class="ws-grp__opt">opt.</small> }
                   @else if (group.missingLanguages.length) { <small class="ws-grp__miss">{{ group.missingLanguages.length }}</small> }
@@ -818,6 +819,8 @@ export class ContentTranslationWorkspace {
   readonly contentSaved = output<ContentTranslationGroup | null>();
   /** The selected group's key, for the page's ?key= address. */
   readonly selectedKeyChange = output<string | null>();
+  /** The "Geavanceerd" panel opened or closed here, so the page's toggle shows the same. */
+  readonly advancedChange = output<boolean>();
   readonly scope = signal<ContentTranslationScope>('WEBSITE');
   readonly groups = signal<ContentTranslationGroup[]>([]);
   readonly draft = signal<ContentTranslationGroup | null>(null);
@@ -1028,6 +1031,7 @@ export class ContentTranslationWorkspace {
       });
     });
     effect(() => this.dirtyChange.emit(this.hasPendingChanges()));
+    effect(() => this.advancedChange.emit(this.advancedOpen()));
     effect(() => this.busyChange.emit(this.busy()));
   }
 
@@ -1039,9 +1043,17 @@ export class ContentTranslationWorkspace {
       const scopes: ContentTranslationScope[] = this.lockScope()
         ? [this.initialScope()]
         : ['WEBSITE', 'CATALOG'];
-      /* The website's 654 text groups are about 700 kB: split and inline take them from the shared store when it is young. */
-      const fromStore = this.layout() !== 'card' && scopes.length === 1 && scopes[0] === 'WEBSITE'
-        && this.store.isFresh('content') ? this.store.content() : null;
+      /*
+       * The website's 654 text groups are about 700 kB: split and inline wait
+       * for the shared store (its request under way, or a young answer)
+       * instead of fetching beside it; only when the store has nothing do
+       * they ask themselves (the error then shows here, with its retry).
+       */
+      let fromStore: ContentTranslationOverview | null = null;
+      if (this.layout() !== 'card' && scopes.length === 1 && scopes[0] === 'WEBSITE') {
+        await this.store.ensure(['content']);
+        fromStore = this.store.content();
+      }
       const overviews = fromStore ? [fromStore] : await Promise.all(scopes.map((scope) =>
         this.catalog.contentTranslations(scope)));
       if (!fromStore) scopes.forEach((scope, index) => { if (scope === 'WEBSITE') this.store.setContent(overviews[index]); });
@@ -1072,6 +1084,8 @@ export class ContentTranslationWorkspace {
         ?? (this.lockPrefix() || hasSelectedKeyFilter
           ? null
           : groups.find((group) => group.scope === this.scope()) ?? groups[0]);
+      /* Only a group the address asked for takes the focus; the first group of a plain visit does not (its ?key= follows). */
+      if (selected && this.layout() !== 'card' && selected.key !== initialKey) this.focusedInitialKey = selected.key;
       this.setSelected(selected ?? null);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
@@ -1215,8 +1229,6 @@ export class ContentTranslationWorkspace {
     event.preventDefault();
     const target = rows[next];
     if (!target || next === index) return;
-    /* The address follows the choice (?key=); that must not pull the focus into the text field while arrowing. */
-    if (!this.hasPendingChanges() && !this.busy()) this.focusedInitialKey = target.key;
     this.pick(target);
     if (!this.isSelected(target)) return;
     afterNextRender({ read: () => this.host.nativeElement.querySelector<HTMLElement>(`.ws-grp[data-key="${CSS.escape(target.key)}"]`)?.focus() }, { injector: this.injector });
@@ -1229,7 +1241,10 @@ export class ContentTranslationWorkspace {
       this.ui.toast('Sla de tekst eerst op of herstel de wijziging.', 'err');
       return;
     }
-    this.advancedOpen.set(false);
+    /* The address follows the pick (?key=); that must not pull the focus into the text field. */
+    if (this.layout() !== 'card') this.focusedInitialKey = group.key;
+    /* split: the page's "Geavanceerd" stays open across groups (it follows showAdvanced). */
+    if (this.layout() !== 'split' || !this.showAdvanced()) this.advancedOpen.set(false);
     this.setSelected(group);
   }
 

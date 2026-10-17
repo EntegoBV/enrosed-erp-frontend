@@ -10,27 +10,31 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { ContentTranslationGroup, LANGUAGES, LanguageCode } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { NavHistory } from '../../core/platform/nav-history-service';
 import { capsuleLabel, screenLabel } from '../../core/platform/return-label';
 import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
+import { LoadError } from '../../shared/load-error';
 import { PageHeader } from '../../shared/page-header';
 import { SegmentOption, Segmented } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui, confirmLeave } from '../../shared/ui';
 import { ContentTranslationWorkspace } from '../settings/content-translation-workspace';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
+import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { WEBSITE_LANGUAGE_ORDER, missingPerLanguage, plural } from './website-attention';
 import { WebsitePhoneBack } from './website-phone-back';
 import { SeoFilter, WebsiteProductSeoAudit, productSeoRows } from './website-product-seo-audit';
 import { WebsiteStatusBar } from './website-status-bar';
 import { WebsiteStore } from './website-store';
+import { textsBackTarget } from './website-texts-nav';
 import { displayLabel, groupByArea, homeSubArea, websiteTextArea, websiteTextAreas } from './website-text-areas';
 
 const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
@@ -49,7 +53,7 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-texts.scss', '../../../styles/website-texts-page.scss'],
-  imports: [ContentTranslationWorkspace, ContextMenu, Icon, IosNav, NgTemplateOutlet, PageHeader, RouterLink, Segmented, Skeleton, WebsiteProductSeoAudit, WebsiteStatusBar, WebsiteSyncStatus],
+  imports: [ContentTranslationWorkspace, ContextMenu, Icon, IosNav, LoadError, NgTemplateOutlet, PageHeader, RouterLink, Segmented, Skeleton, WebsiteProductSeoAudit, WebsiteStatusBar, WebsiteSyncStatus],
   template: `
     @if (catalogMode) {
       <app-page-header title="Cataloguslabels" subtitle="Algemene labels voor de PDF-catalogus, los van de website."
@@ -129,7 +133,8 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
               [initialPrefix]="seoMode ? 'meta' : 'ALL'" [lockPrefix]="seoMode" [allowAdvanced]="!seoMode"
               [initialLanguage]="initialLanguage" [initialKey]="routeKey()" [searchQuery]="query()"
               [onlyMissing]="textFilter() === 'missing'" [missingLanguage]="language()" [showAdvanced]="advanced()"
-              (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved($event)" (selectedKeyChange)="keyChanged($event)" />
+              (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved()" (selectedKeyChange)="keyChanged($event)"
+              (advancedChange)="advanced.set($event)" />
           }
         </div>
         <app-website-status-bar [text]="statusText()" [hint]="seoMode && seoTab() === 'producten' ? '/ zoeken' : '↑↓ groep · [ ] taal · ⌘S opslaan · / zoeken'" />
@@ -151,8 +156,12 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
           }
           @default {
             @if (seoMode) {
-              <app-ios-nav title="SEO" [subtitle]="seoLiveLine()" backLabel="Overzicht" backUrl="/website" backAriaLabel="Terug naar Overzicht">
-                <div below class="ios-subbar"><app-segmented variant="ios" label="Soort pagina" semantics="tabs" [options]="seoTabsPhone()" [value]="seoTab()" (changed)="setSeoTab($any($event))" /></div>
+              <app-ios-nav title="SEO" [subtitle]="seoLiveLine()" backLabel="Overzicht" backAriaLabel="Terug naar Overzicht" (back)="leaveSeo()">
+                <div below class="ios-subbar ws-ph-subbar">
+                  <app-segmented variant="ios" label="Soort pagina" semantics="tabs" [options]="seoTabsPhone()" [value]="seoTab()" (changed)="setSeoTab($any($event))" />
+                  <div class="ios-search ws-ph-search"><span class="ios-search__field"><app-icon name="search" [size]="16" />
+                    <input type="search" placeholder="Zoek reeks of SEO-titel" aria-label="Zoek reeks of SEO-titel" [value]="query()" (input)="query.set($any($event.target).value)" /></span></div>
+                </div>
               </app-ios-nav>
             } @else {
               <app-ios-nav title="Teksten" [subtitle]="subtitleLong()" [backLabel]="back.label()" [backUrl]="back.url()" [backAriaLabel]="back.aria()">
@@ -164,69 +173,20 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
             }
           }
         }
-        <div class="ws-ph-view" [class]="'ws-ph-view ' + viewMotion()">
-          @if (view() !== 'editor') { <app-website-sync-status variant="banner" /> }
-          @if (!store.content() && !(seoMode && seoTab() === 'producten')) {
-            <app-skeleton kind="group" [rows]="8" />
-          } @else {
-            @switch (view()) {
-              @case ('parts') {
-                @if (seoMode) {
-                  <app-website-product-seo-audit layout="phone" filter="alles" [query]="query()" />
-                } @else if (query().trim()) {
-                  <section class="ios-section"><div class="ios-group">
-                    @for (group of searchHits(); track group.key) {
-                      <button class="ios-cell" type="button" (click)="openGroup(group)">
-                        <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub">{{ areaOf(group) }}</span></span>
-                        <ng-container *ngTemplateOutlet="groupValue; context: { $implicit: group }" />
-                      </button>
-                    } @empty { <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen tekstgroepen voor deze zoekopdracht.</span></span></div> }
-                  </div></section>
-                } @else {
-                  @if (perLanguage().length) {
-                    <div class="ios-banner" role="status"><span>Ontbreekt per taal:
-                      @for (row of perLanguage(); track row.code) { <button class="ws-ph-lang" type="button" (click)="filterLanguage(row.code)">{{ row.code }} {{ row.missing }}</button> }</span></div>
-                  }
-                  <section class="ios-section"><div class="ios-group">
-                    @for (part of parts(); track part.key) {
-                      <button class="ios-cell" type="button" (click)="openArea(part.key)">
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ part.label }}</span></span>
-                        <span class="ios-cell__value" [class.ws-warn-text]="part.missing > 0">{{ part.missing ? plural(part.missing, 'ontbreekt', 'ontbreken') : part.total + ' ✓' }}</span>
-                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
-                      </button>
-                    }
-                  </div></section>
-                }
-              }
-              @case ('area') {
-                @if (seoMode && seoTab() === 'producten') {
-                  <app-website-product-seo-audit layout="phone" filter="alles" [query]="query()" />
-                } @else {
-                  @for (sub of areaSections(); track sub.label) {
-                    <section class="ios-section">
-                      @if (sub.label) { <div class="ios-section__head"><h2>{{ sub.label }}</h2></div> }
-                      <div class="ios-group">
-                        @for (group of sub.groups; track group.key) {
-                          <button class="ios-cell" type="button" (click)="openGroup(group)">
-                            <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub">{{ dutchOf(group) }}</span></span>
-                            <ng-container *ngTemplateOutlet="groupValue; context: { $implicit: group }" />
-                          </button>
-                        }
-                      </div>
-                    </section>
-                  }
-                }
-              }
-            }
-          }
-          @if (editorKey()) {
-            <div class="ws-ph-editor" [class.ws-ct-parked]="view() !== 'editor'">
-              <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="true"
-                [keyPrefixes]="[editorKey()!]" [initialKey]="editorKey()" [initialLanguage]="initialLanguage"
-                (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved($event)" />
-            </div>
-          }
-        </div>
+        @if (view() !== 'editor') { <app-website-sync-status variant="banner" /> }
+        <!-- one wrapper per view (a @switch case each), so every push and pop animates; the editor lives outside them -->
+        @switch (view()) {
+          @case ('parts') { <div class="ws-ph-view" [class]="'ws-ph-view ' + viewMotion()"><ng-container *ngTemplateOutlet="phoneList; context: { $implicit: 'parts' }" /></div> }
+          @case ('area') { <div class="ws-ph-view" [class]="'ws-ph-view ' + viewMotion()"><ng-container *ngTemplateOutlet="phoneList; context: { $implicit: 'area' }" /></div> }
+        }
+        @if (editorKey()) {
+          <!-- mounted once opened (a dirty text survives a step back); outside the views and never animated while dirty, so its fixed save bar never moves -->
+          <div class="ws-ph-editor" [class]="'ws-ph-editor ' + (view() !== 'editor' ? 'ws-ct-parked' : dirty() ? '' : viewMotion())">
+            <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="true"
+              [keyPrefixes]="[editorKey()!]" [initialKey]="editorKey()" [initialLanguage]="initialLanguage" [missingLanguage]="language()"
+              (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved()" />
+          </div>
+        }
       </div>
     }
 
@@ -234,6 +194,69 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
       <app-context-menu title="Tekstgroep" variant="ios" cancelLabel="Annuleren" [items]="editorMenuItems()"
                         (pick)="editorAction($event)" (closed)="editorMenu.set(false)" />
     }
+
+    <ng-template #phoneList let-current>
+      @if (seoMode && seoTab() === 'producten') {
+        @if (store.families()) {
+          <div class="ios-chips ws-ph-chips" role="group" aria-label="Filter">
+            @for (option of seoFilterOptions(); track option.id) {
+              <button class="ios-chip" type="button" [attr.aria-pressed]="seoFilter() === option.id" (click)="seoFilter.set(option.id)">
+                {{ option.label }} <span class="ws-chip-count">{{ option.count }}</span>
+              </button>
+            }
+          </div>
+        }
+        <app-website-product-seo-audit layout="phone" [filter]="seoFilter()" [query]="query()" />
+      } @else if (store.errors().content && !store.content()) {
+        <app-load-error title="Teksten konden niet worden geladen" [message]="store.errors().content!" [busy]="store.isLoading('content')" (retry)="store.refresh(['content'])" />
+      } @else if (!store.content()) {
+        <app-skeleton kind="group" [rows]="8" />
+      } @else {
+        @switch (current) {
+          @case ('parts') {
+            @if (query().trim()) {
+              <section class="ios-section"><div class="ios-group">
+                @for (group of searchHits(); track group.key) {
+                  <button class="ios-cell" type="button" (click)="openGroup(group)">
+                    <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub">{{ areaOf(group) }}</span></span>
+                    <ng-container *ngTemplateOutlet="groupValue; context: { $implicit: group }" />
+                  </button>
+                } @empty { <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen tekstgroepen voor deze zoekopdracht.</span></span></div> }
+              </div></section>
+            } @else {
+              @if (perLanguage().length) {
+                <div class="ios-banner" role="status"><span>Ontbreekt per taal:
+                  @for (row of perLanguage(); track row.code) { <button class="ws-ph-lang" type="button" (click)="filterLanguage(row.code)">{{ row.code }} {{ row.missing }}</button> }</span></div>
+              }
+              <section class="ios-section"><div class="ios-group">
+                @for (part of parts(); track part.key) {
+                  <button class="ios-cell" type="button" (click)="openArea(part.key)">
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ part.label }}</span></span>
+                    <span class="ios-cell__value" [class.ws-warn-text]="part.missing > 0">{{ part.missing ? plural(part.missing, 'ontbreekt', 'ontbreken') : part.total + ' ✓' }}</span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
+                  </button>
+                }
+              </div></section>
+            }
+          }
+          @case ('area') {
+            @for (sub of areaSections(); track sub.label) {
+              <section class="ios-section">
+                @if (sub.label) { <div class="ios-section__head"><h2>{{ sub.label }}</h2></div> }
+                <div class="ios-group">
+                  @for (group of sub.groups; track group.key) {
+                    <button class="ios-cell" type="button" (click)="openGroup(group)">
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub" [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</span></span>
+                      <ng-container *ngTemplateOutlet="groupValue; context: { $implicit: group }" />
+                    </button>
+                  }
+                </div>
+              </section>
+            }
+          }
+        }
+      }
+    </ng-template>
 
     <ng-template #groupValue let-group>
       <span class="ios-cell__value" [class.ws-warn-text]="group.required && group.missingLanguages.length">
@@ -247,6 +270,9 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
+  private readonly location = inject(Location);
+  private readonly nav = inject(NavHistory);
+  private readonly sync = inject(WebsiteSyncStore);
   readonly desk = inject(DesktopViewport);
   readonly store = inject(WebsiteStore);
   readonly back = inject(WebsitePhoneBack);
@@ -363,16 +389,23 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
     const group = this.editorGroup();
     return group ? `${LANGUAGE_COUNT - group.missingLanguages.length} van ${LANGUAGE_COUNT} talen` : '';
   });
-  /** Back from the editor: the page it came from (returnTo, e.g. a homepage block) or its site part. */
+  /**
+   * Back from the editor, named for where it goes: the page it came from
+   * (returnTo, e.g. a homepage block), the Teksten list it was opened from
+   * (search hits, the language banner), else its site part (design §3.4).
+   */
   readonly editorBack = computed(() => {
     if (this.returnPath) {
       const name = screenLabel(this.returnPath) === 'Website' && this.returnPath.startsWith('/website/layout') ? 'Homepage' : screenLabel(this.returnPath) || 'Terug';
       return { name, label: capsuleLabel(name) };
     }
+    if (this.pushedFrom() === 'parts' && !this.seoMode) return { name: 'Teksten', label: 'Teksten' };
     const group = this.editorGroup();
     const name = group ? websiteTextArea(group.key).label : 'Teksten';
     return { name, label: capsuleLabel(name) };
   });
+  /** The phone list the editor was pushed from, or null when it was opened by a link. */
+  private readonly pushedFrom = signal<'parts' | 'area' | null>(null);
 
   constructor() {
     if (!this.catalogMode) void this.store.ensure(this.seoMode ? ['families', 'content'] : ['content']);
@@ -425,12 +458,24 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
     }
   }
 
+  /**
+   * Productpagina’s · Algemene pagina’s. A query change does not run
+   * canDeactivate, and on the desk the switch removes the text editor: an
+   * unsaved text holds the switch, with the same toast as another group.
+   */
   setSeoTab(tab: 'producten' | 'paginas'): void {
+    if (tab === this.seoTab() || this.busy()) return;
+    if (this.dirty()) {
+      this.ui.toast('Sla de tekst eerst op of herstel de wijziging.', 'err');
+      return;
+    }
+    this.viewMotion.set('');
     void this.router.navigate([], { relativeTo: this.route, queryParams: { tab, key: null, gebied: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
-  saved(group: ContentTranslationGroup | null): void {
-    if (group) this.store.patchContentGroup(group);
+  /** A saved, created or deleted group (the workspace patched the store): the website update it started shows in the status. */
+  saved(): void {
+    void this.sync.load();
   }
 
   editorMenuItems(): ContextMenuItem[] {
@@ -465,27 +510,41 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
       this.ui.toast('Sla de tekst eerst op of herstel de wijziging.', 'err');
       return;
     }
+    this.pushedFrom.set(this.view() === 'area' ? 'area' : 'parts');
     this.editorKey.set(group.key);
     this.viewMotion.set('mo-push-view');
-    this.pushedFromList = true;
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { key: group.key, gebied: websiteTextArea(group.key).key }, queryParamsHandling: 'merge' });
+    /* SEO's page texts live under ?tab=paginas, which is their list already. */
+    const gebied = this.seoMode ? null : websiteTextArea(group.key).key;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { key: group.key, gebied }, queryParamsHandling: 'merge' });
   }
-  private pushedFromList = false;
 
-  /** Back pops the entry when this page pushed it, else replaces (never a loop through history). */
+  /**
+   * Back goes where the control says (critique N11.2): the returnTo page,
+   * the list the editor was pushed from, the editor's site part, or the
+   * Teksten list. When that screen is the entry below, history goes back
+   * (no duplicate entry); otherwise the address is replaced (never a loop).
+   */
   goBack(): void {
     this.viewMotion.set('mo-pop-view');
-    if (this.view() === 'editor' && this.returnPath && !this.pushedFromList) {
-      void this.router.navigateByUrl(this.returnPath, { replaceUrl: true });
-      return;
-    }
-    if (this.pushedFromList) {
-      this.pushedFromList = this.view() === 'editor' && !!this.params().get('gebied');
-      history.back();
-      return;
-    }
-    const params = this.view() === 'editor' ? { key: null } : { gebied: null, tab: this.seoMode ? null : undefined };
-    void this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
+    const key = this.editorKey();
+    const target = textsBackTarget({ view: this.view(), seoMode: this.seoMode, returnPath: this.returnPath,
+      pushedFrom: this.pushedFrom(), editorArea: key ? websiteTextArea(key).key : null });
+    const url = target.kind === 'url' ? target.url : this.urlWith(target.query);
+    this.backTo(url, url !== '/website');
+  }
+
+  /** SEO's back control on both of its tabs: Overzicht (a new entry, like the other tab roots, unless it is the one below). */
+  leaveSeo(): void {
+    this.backTo('/website', false);
+  }
+
+  private backTo(url: string, replaceUrl = true): void {
+    if (this.nav.below() === url) this.location.back();
+    else void this.router.navigateByUrl(url, { replaceUrl });
+  }
+
+  private urlWith(queryParams: Record<string, string | null>): string {
+    return this.router.createUrlTree([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge' }).toString();
   }
 
   labelOf(group: ContentTranslationGroup): string {

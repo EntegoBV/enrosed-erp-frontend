@@ -3,6 +3,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type { LanguageCode, ProductFamily } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
+import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { WEBSITE_LANGUAGE_ORDER, familyProductId, seoAttention, websiteStatusWord } from './website-attention';
 import { publicFamilyName } from './website-family-label';
@@ -48,9 +49,11 @@ export function productSeoRows(families: readonly ProductFamily[]): ProductSeoRo
   selector: 'app-website-product-seo-audit',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
-  imports: [Icon, NgTemplateOutlet, RouterLink, Skeleton],
+  imports: [Icon, LoadError, NgTemplateOutlet, RouterLink, Skeleton],
   template: `
-    @if (!store.families()) {
+    @if (store.errors().families && !store.families()) {
+      <app-load-error title="Publieke producten konden niet worden geladen" [message]="store.errors().families!" [busy]="store.isLoading('families')" (retry)="store.refresh(['families'])" />
+    } @else if (!store.families()) {
       @if (layout() === 'desk') { <div class="wk-card"><app-skeleton kind="table" [rows]="10" /></div> } @else { <app-skeleton kind="group" [rows]="6" /> }
     } @else if (layout() === 'desk') {
       @if (visible().length) {
@@ -88,6 +91,7 @@ export function productSeoRows(families: readonly ProductFamily[]): ProductSeoRo
             <a class="ios-cell" [routerLink]="row.productId ? ['/products', row.productId, 'translations'] : null" [class.ws-cell-static]="!row.productId">
               <span class="ios-cell__body">
                 <span class="ios-cell__title ios-cell__title--2">{{ row.publicName }}</span>
+                <span class="ios-cell__sub ws-ph-url" [class.ws-url--none]="!row.family.publicHandle">{{ row.family.publicHandle ? '/products/' + row.family.publicHandle : 'Nog geen webadres' }}</span>
                 <span class="ios-cell__sub ios-cell__sub--wrap">{{ row.missingLanguages.length ? 'Ontbreekt: ' + row.missingLanguages.join(', ') : 'EN: ' + (row.englishTitle || 'Ontbreekt') }}</span>
                 @if (row.suspiciousEnglish) { <span class="ios-cell__sub ws-warn-text">Mogelijk Nederlands — controleren</span> }
                 @if (!row.productId) { <span class="ios-cell__sub">Geen gekoppelde variant</span> }

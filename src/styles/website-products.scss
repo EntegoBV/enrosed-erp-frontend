@@ -1,16 +1,8 @@
 /* Website beheren · Producten (/website/products). Loaded with the page (encapsulation None). */
 
 .ws-search{width:260px}
-.ws-filterbar{display:flex;align-items:center;gap:12px;min-width:0;min-height:48px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--surface)}
-.ws-filterbar .wk-chips{flex-wrap:nowrap;min-width:0;overflow-x:auto;scrollbar-width:none}
-.ws-filterbar .wk-chips::-webkit-scrollbar{display:none}
-.ws-filter-count{flex:none;margin-left:auto}
-.ws-chip-count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
-.wk-chip[aria-pressed=true] .ws-chip-count{color:inherit;opacity:.75}
-.ws-filter-count{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* the table: 50 px rows; the webadres column leaves while the inspector is docked or the pane is narrow */
-.ws-table-card{overflow:clip}
 .ws-products{--wk-cols:36px minmax(0,1fr) minmax(0,.7fr) 132px 44px 44px 84px 16px;--wk-row-h:50px}
 @container wk-pane (max-width:1023.98px){.ws-products{--wk-cols:36px minmax(0,1fr) 132px 44px 44px 84px 16px}}
 .wk-body--split .ws-products{--wk-cols:36px minmax(0,1fr) 132px 44px 44px 84px 16px}
@@ -22,11 +14,7 @@
 .ws-thumb{display:block;width:36px;height:36px;border-radius:9px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);object-fit:cover}
 .ws-thumb--none{background:repeating-linear-gradient(135deg,#f1ece7 0 6px,#e8e2dc 6px 12px)}
 .ws-thumb--lg{width:100%;height:100%;border-radius:14px}
-.ws-name{display:grid;gap:0}
-.ws-name b{display:block;overflow:hidden;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
-.ws-name small{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 .ws-url{display:block;overflow:hidden;color:var(--muted);font:12px var(--mono);text-overflow:ellipsis;white-space:nowrap}
-.ws-url--none{font-family:var(--font);font-style:italic;color:var(--muted)}
 .ws-mono{font:12.5px var(--mono);overflow-wrap:anywhere}
 .ws-status{display:flex;align-items:center;gap:8px;overflow:visible}
 .ws-pill--danger{border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:transparent;color:var(--danger)}
@@ -65,10 +53,6 @@
 .ws-insp-foot .wk-btn--primary{grid-column:1/-1}
 
 /* phone */
-.ws-ph-subbar{padding-bottom:4px}
-.ws-ph-subbar .ios-chips{margin:8px calc(var(--ios-inset) * -1) 0;padding-bottom:6px}
-.ws-ph-chips .ws-chip-count{font-size:12.5px}
-.ws-ph-chips .ios-chip[aria-pressed=true] .ws-chip-count{color:rgb(255 255 255/80%)}
 .ws-ios .ios-group--thumbs .ios-cell{min-height:64px}
 .ws-ios .ios-thumb.ws-thumb--none{display:block}
 .ws-ph-under{margin-top:-8px}
@@ -77,4 +61,3 @@
 .ws-sheet-photo img{display:block;width:100%;height:170px;object-fit:contain}
 .ws-sheet .ios-section__foot .ws-hint{font-size:12.5px}
 .ws-sheet .ws-issues ul{font-size:13px}
-.ws-ph-url{font:13px var(--mono);white-space:normal;overflow-wrap:anywhere}
