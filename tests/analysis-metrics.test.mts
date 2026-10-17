@@ -124,6 +124,8 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     rejected: 1,
     expired: 1,
     closed: 3,
+    open: 2,
+    cancelled: 0,
     sendRatePct: 80,
     viewRatePct: 50,
     conversionRatePct: (1 / 3) * 100,
@@ -149,6 +151,8 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     missingCostLines: 0,
     creditedEur: 0,
     creditNoteCount: 0,
+    revenueExclEur: 1_500,
+    advanceClaimEur: 0,
   });
   assert.deepEqual(result.topCustomers, [{
     customerId: 1,
@@ -551,4 +555,57 @@ test('piecesSoldByProduct counts the pieces of issued regular invoices in the wi
   assert.deepEqual([...sold].sort(([left], [right]) => left - right), [[1, 35], [2, 13]]);
   assert.equal(piecesSoldByProduct(sales, '2026-06-01', 1).get(1), 5);
   assert.equal(piecesSoldByProduct([], '2026-06-01', 90).size, 0);
+});
+
+test('the funnel adds up: open, closed, cancelled and the rest make the created count', () => {
+  const rows = [
+    salesRow({ id: 1 }),
+    salesRow({ id: 2, status: 'VERZONDEN', sent: true }),
+    salesRow({ id: 3, status: 'WIJZIGING_GEVRAAGD', sent: true }),
+    salesRow({ id: 4, status: 'GEACCEPTEERD', sent: true }),
+    salesRow({ id: 5, status: 'AFGEWEZEN', sent: true }),
+    salesRow({ id: 6, status: 'GEANNULEERD' }),
+    salesRow({ id: 7, status: 'GEANNULEERD', sent: true }),
+  ];
+  const { funnel, pipeline } = salesAnalysis(rows, [], { from: '2026-01-01', to: '2026-12-31', today: '2026-06-01' });
+  assert.equal(funnel.created, 7);
+  assert.equal(funnel.open, 3, 'nog open = the open statuses, the pipeline count');
+  assert.equal(funnel.open, pipeline.count);
+  assert.equal(funnel.closed, 2);
+  assert.equal(funnel.cancelled, 2);
+  assert.equal(funnel.created - funnel.open - funnel.closed - funnel.cancelled, 0, 'nothing left over on this fixture');
+});
+
+test('Omzet excl. btw and the advance share of Gefactureerd are their own figures', () => {
+  const invoice = salesRow({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', total: 1000, claim: 1210, margin: 200 });
+  const regularAdvance = salesRow({ id: 2, docType: 'FACTUUR', status: 'VERZONDEN', total: 300, claim: 363 });
+  regularAdvance.advanceBilling = { stage: 'ADVANCE', quoteId: 9, quoteNumber: 'OFF-9', percentage: 30, amountExclEur: 300 } as SalesOrderView['advanceBilling'];
+  const partnerAdvance = salesRow({ id: 3, docType: 'FACTUUR', status: 'VERZONDEN', total: 5000, claim: 5000 });
+  partnerAdvance.order.purpose = 'PARTNER_ADVANCE';
+  partnerAdvance.order.partnerPurchaseOrderId = 4;
+  const concept = salesRow({ id: 4, docType: 'FACTUUR', status: 'CONCEPT', total: 700, claim: 847 });
+  const { invoices } = salesAnalysis([invoice, regularAdvance, partnerAdvance, concept], [], { from: '2026-01-01', to: '2026-12-31', today: '2026-06-01' });
+  assert.equal(invoices.issuedValueEur, 6573);
+  assert.equal(invoices.advanceClaimEur, 5363, 'the regular voorschotfactuur and the partner voorschot, incl. btw');
+  assert.equal(invoices.revenueExclEur, 1300, 'a partner advance is financing, no revenue; the regular advance is revenue as the server recognises it');
+});
+
+test('Resultaat counts a credit note apart, per channel too, and shows every month of the period up to today', () => {
+  const invoice = salesRow({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', date: '2026-03-05', total: 1000, margin: 300 });
+  const second = salesRow({ id: 2, docType: 'FACTUUR', status: 'VERZONDEN', date: '2026-05-10', total: 400, margin: 100 });
+  const credit = salesRow({ id: 3, docType: 'FACTUUR', status: 'UITGEREIKT', date: '2026-05-20', total: 100, margin: 30 });
+  credit.order = { ...credit.order, docType: 'CREDITNOTA' } as SalesOrderView['order'];
+  credit.accounting = { recognizedRevenueEur: -100, recognizedCostEur: -70, recognizedProfitEur: -30, recognizedQuantity: 0 };
+  const result = resultAnalysis([invoice, second, credit], [], [], { from: '2026-01-01', to: '2026-06-15', today: '2026-06-15' });
+  assert.equal(result.invoiceCount, 2, 'the credit note is no invoice');
+  assert.equal(result.creditNoteCount, 1);
+  assert.deepEqual(result.byChannel.map((row) => [row.channel, row.invoiceCount, row.revenueEur]), [['DIRECT', 2, 1300]]);
+  assert.deepEqual(result.monthly.map((row) => [row.month, row.revenueEur, row.marginEur]),
+    [['2026-01', 0, 0], ['2026-02', 0, 0], ['2026-03', 1000, 300], ['2026-04', 0, 0], ['2026-05', 300, 70], ['2026-06', 0, 0]]);
+  const future = resultAnalysis([invoice], [], [], { from: '2026-01-01', to: '2026-12-31', today: '2026-04-02' });
+  assert.deepEqual(future.monthly.map((row) => row.month), ['2026-01', '2026-02', '2026-03', '2026-04'], 'never past today');
+  const allYears = resultAnalysis([invoice], [], [], { today: '2026-05-02' });
+  assert.deepEqual(allYears.monthly.map((row) => row.month), ['2026-03', '2026-04', '2026-05'], 'all years: from the first data month');
+  const plain = resultAnalysis([invoice, second], [], [], { from: '2026-01-01', to: '2026-06-15' });
+  assert.deepEqual(plain.monthly.map((row) => row.month), ['2026-03', '2026-05'], 'without today only the months with data, as before');
 });
