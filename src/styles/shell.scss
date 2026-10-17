@@ -8,6 +8,12 @@
 /* A narrower page for forms and settings (opt-in): <div class="content content--narrow">. */
 .content.content--narrow { max-width: 960px; }
 
+/* The website workspace's side while its chunk loads (app.ts @defer): the same dark strip or rail. */
+.website-sidebar-placeholder { flex: none; width: 100%; min-height: 64px; background: #171311; }
+@media (min-width: 960px) {
+  .website-sidebar-placeholder { width: 292px; flex: 0 0 292px; min-height: 100dvh; }
+}
+
 /* ------------------------------------------------- page header, all sizes
    app-page-header renders .appbar (the bar), and on the phone the large
    title after it. Trap rule: .appbar holds the bell's sheet, so it never

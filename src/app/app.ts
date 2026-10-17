@@ -42,12 +42,14 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
   template: `
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
          [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()" [class.shell--home]="homeRoute()">
+      <!-- The workspace sides load with their workspace (@defer): they are a third of the
+           first screen's script otherwise. A dark placeholder holds their place meanwhile. -->
       @if (websiteWorkspace()) {
-        <app-website-admin-nav />
+        @defer (on immediate) { <app-website-admin-nav /> } @placeholder { <div class="website-sidebar-placeholder" aria-hidden="true"></div> }
       } @else if (filesWorkspace()) {
-        <app-files-admin-nav />
+        @defer (on immediate) { <app-files-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
       } @else if (financeWorkspace()) {
-        <app-finance-admin-nav />
+        @defer (on immediate) { <app-finance-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
       } @else if (!bare()) {
         <!-- Keyboard: the first stop skips the navigation (visible on focus). -->
         <a class="skip-link" href="#inhoud" (click)="skipToContent($event)">Naar de inhoud</a>
