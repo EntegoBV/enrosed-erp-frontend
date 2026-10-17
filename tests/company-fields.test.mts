@@ -144,3 +144,14 @@ test('legal texts: version line, word count, built-in stays null', async () => {
   assert.equal(legalSaveValue('Eigen tekst', 'Ingebouwd'), 'Eigen tekst');
   assert.equal(legalSaveValue('Eigen tekst', null), 'Eigen tekst');
 });
+
+test('blur tidies the phone and the website only after typing (tabbing through never dirties the form)', async () => {
+  const { tidiedOnBlur } = await import('../src/app/features/settings/company-fields.ts');
+  assert.equal(tidiedOnBlur('website', 'ENROSED.COM', false), null);
+  assert.equal(tidiedOnBlur('phone', '0470024207', false), null);
+  assert.equal(tidiedOnBlur('website', 'ENROSED.COM', true), 'enrosed.com');
+  assert.equal(tidiedOnBlur('website', 'enrosed.com', true), null);
+  assert.equal(tidiedOnBlur('phone', '0470024207', true), '+32 470 02 42 07');
+  assert.equal(tidiedOnBlur('phone', '+32 470 02 42 07', true), null);
+  assert.equal(tidiedOnBlur('city', 'mol', true), null);
+});

@@ -309,6 +309,22 @@ export function websiteDisplay(value: string | null | undefined): string {
   return (host + path).replace(/\/+$/, '');
 }
 
+/**
+ * The value a field gets when it loses focus: the phone and the website are
+ * tidied ("+32 470 02 42 07", "enrosed.com"), but only when he typed in the
+ * field during that focus. Tabbing through the form never changes a value,
+ * so it never marks the form dirty. null = leave the value as it is.
+ */
+export function tidiedOnBlur(field: string, value: string | null | undefined, typed: boolean): string | null {
+  if (!typed) return null;
+  if (field === 'phone') return belgianPhoneHint(value).display;
+  if (field === 'website') {
+    const display = websiteDisplay(value);
+    return display !== (value ?? '') ? display : null;
+  }
+  return null;
+}
+
 /** {jaar} → the year, {nr:3} → 001, {nr} → 1. */
 export function patternPreview(pattern: string, year: number, n: number): string {
   return pattern

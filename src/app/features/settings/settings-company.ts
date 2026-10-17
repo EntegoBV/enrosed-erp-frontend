@@ -13,7 +13,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { CompanyStore } from './company-store';
 import {
   COMPANY_DEFAULTS, CompanyErrors, CompanyField, FOOTER_PROPOSAL, NumberSeries, belgianPhoneHint, companyDirtyFields,
-  companyPatch, companyRequiredErrors, ibanDisplay, numberPreview, partnerPatternWarning, rebaseCompanyDraft, websiteDisplay,
+  companyPatch, companyRequiredErrors, ibanDisplay, numberPreview, partnerPatternWarning, rebaseCompanyDraft, tidiedOnBlur,
 } from './company-fields';
 import { SettingsEditor, dirtyStatusText } from './settings-editor';
 
@@ -83,7 +83,7 @@ const LONG_LABELS: Record<LongField, string> = {
                     <input class="set-input" [class.mono]="f.mono" [id]="'co-' + f.key" [type]="f.type ?? 'text'"
                            [attr.maxlength]="f.max ?? null" [attr.placeholder]="f.placeholder ?? null"
                            [attr.aria-invalid]="errorOf(f.key) ? 'true' : null" [value]="textOf(d, f.key)"
-                           (focus)="focused.set(f.key)" (input)="set(f.key, inputValue($event, f))" (blur)="blurred(f.key)" />
+                           (focus)="focusIn(f.key)" (input)="typeIn(f.key, inputValue($event, f))" (blur)="blurred(f.key)" />
                     @if (errorOf(f.key); as error) {
                       <p class="set-hint set-hint--err mo-fade" role="alert">{{ error }}</p>
                     } @else if (hintOf(f.key)) {
@@ -180,7 +180,7 @@ const LONG_LABELS: Record<LongField, string> = {
                     <input [class.mono]="f.mono" [type]="f.type ?? 'text'" [attr.maxlength]="f.max ?? null"
                            [attr.placeholder]="f.placeholder ?? null" [attr.aria-invalid]="errorOf(f.key) ? 'true' : null"
                            [attr.data-co-field]="f.key" [value]="textOf(d, f.key)"
-                           (focus)="focused.set(f.key)" (input)="set(f.key, inputValue($event, f))" (blur)="blurred(f.key)" />
+                           (focus)="focusIn(f.key)" (input)="typeIn(f.key, inputValue($event, f))" (blur)="blurred(f.key)" />
                     @if (errorOf(f.key); as error) { <small class="p-sub p-sub--err" role="alert">{{ error }}</small> }
                     @else if (hintOf(f.key)) { <small class="p-sub p-sub--warn">{{ hintOf(f.key) }}</small> }
                     @else if (f.hint) { <small class="p-sub">{{ f.hint }}</small> }
@@ -475,17 +475,26 @@ export class SettingsCompany implements SettingsEditor {
     this.set(key, value === null || Number.isFinite(value) ? value : null);
   }
 
+  /** Fields typed in during their current focus: only those are tidied on blur. */
+  private readonly typed = new Set<CompanyField>();
+
+  focusIn(key: CompanyField): void {
+    this.focused.set(key);
+    this.typed.delete(key);
+  }
+
+  typeIn(key: CompanyField, value: string): void {
+    this.typed.add(key);
+    this.set(key, value);
+  }
+
   blurred(key: CompanyField): void {
     if (this.focused() === key) this.focused.set(null);
     const draft = this.draft();
+    const typed = this.typed.delete(key);
     if (!draft) return;
-    if (key === 'phone') {
-      const display = belgianPhoneHint(draft.phone).display;
-      if (display) this.set('phone', display);
-    } else if (key === 'website') {
-      const display = websiteDisplay(draft.website);
-      if (display !== (draft.website ?? '')) this.set('website', display);
-    }
+    const tidied = tidiedOnBlur(key, draft[key] as string | null, typed);
+    if (tidied !== null) this.set(key, tidied);
   }
 
   isDirty(key: CompanyField): boolean {
