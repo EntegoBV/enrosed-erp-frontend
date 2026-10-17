@@ -128,9 +128,10 @@ const MAX_EXTRA_PAGES = 4;
                 <button class="ios-cell log-cell" type="button" (click)="select(row)">
                   <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft" [style.--tone]="rowColor(row)" aria-hidden="true"><app-icon [name]="rowIcon(row)" [size]="17" /></span></span>
                   <span class="ios-cell__body">
-                    <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ rowSummary(row) }}@if (row.events.length > 1) { · {{ row.events.length }}× }</span>
-                    <span class="ios-cell__sub ios-cell__sub--2">{{ rowName(row) }} · {{ actorName(row) }}</span>
-                    @if (rowPreview(row); as preview) { <span class="ios-cell__sub ios-cell__sub--2">{{ preview }}</span> }
+                    <!-- Whole, never clamped: a phone has no title tooltip, and the base event card showed the summary whole. -->
+                    <span class="ios-cell__title ios-cell__title--strong log-wrap">{{ rowSummary(row) }}@if (row.events.length > 1) { · {{ row.events.length }}× }</span>
+                    <span class="ios-cell__sub log-wrap">{{ rowName(row) }} · {{ actorName(row) }}</span>
+                    @if (rowPreview(row); as preview) { <span class="ios-cell__sub log-wrap">{{ preview }}</span> }
                   </span>
                   <span class="ios-cell__trail"><span class="ios-cell__meta log-cell__time">{{ time(row) }}</span></span>
                   <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
@@ -202,6 +203,7 @@ const MAX_EXTRA_PAGES = 4;
     .log-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
     .ios-chip[aria-pressed=true] .log-dot { box-shadow: 0 0 0 1.5px #fff; }
     .log-cell { align-items: flex-start; }
+    .log-wrap { white-space: normal; overflow-wrap: anywhere; }
     .log-cell__time { font-family: var(--mono, ui-monospace, monospace); }
     @media (max-width: 679px) { .log-page { --ios-inset: 0px; } }
   `,
