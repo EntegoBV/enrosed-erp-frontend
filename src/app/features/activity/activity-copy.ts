@@ -101,6 +101,27 @@ export function activityEntityLabel(event: ActivityEvent): string {
   return event.entityType.replaceAll('_', ' ').toLocaleLowerCase('nl-BE');
 }
 
+/** The kind of record behind a type, for a filter on a record that is not among the loaded events ("Inkooporder"). */
+export function activityKindLabel(entityType: string): string {
+  /* A sales order is a quote or an invoice; without its event the neutral word. */
+  if (entityType.trim().toUpperCase() === 'SALES_ORDER') return 'Verkoopdocument';
+  return activityEntityLabel({ entityType, entityLabel: null, summary: '' } as unknown as ActivityEvent);
+}
+
+/** "Inkooporder #62": the record filter's chip while its events are not loaded. */
+export function activityRecordChip(entityType: string, entityId: string): string {
+  return `${activityKindLabel(entityType)} #${entityId}`;
+}
+
+/** "deze inkooporder", "dit product", "dit agendapunt": the record of an event with the right Dutch article. */
+export function activityRecordPhrase(event: ActivityEvent): string {
+  const type = event.entityType.trim().toUpperCase();
+  if (type === 'PRODUCT') return 'dit product';
+  if (type === 'PLANNER_ITEM') return 'dit agendapunt';
+  if (type === 'BANK_BALANCE') return 'dit banksaldo';
+  return `deze ${activityEntityLabel(event).toLocaleLowerCase('nl-BE')}`;
+}
+
 export function activityRoute(event: ActivityEvent): string[] | null {
   if (event.action.trim().toUpperCase() === 'DELETED') return null;
   if (event.entityId === null) return null;

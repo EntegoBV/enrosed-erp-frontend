@@ -16,7 +16,7 @@ import { Sheet } from '../../shared/ui';
 import { WK_DOCK_MIN_PX, elementWidth } from '../../shared/workspace-layout';
 import {
   activityActionLabel, activityCategory, activityCategoryColor, activityCategoryIcon, activityCategoryLabel, activityEntityLabel,
-  activityQueryParams, activityRoute,
+  activityQueryParams, activityRecordChip, activityRoute,
 } from './activity-copy';
 import {
   ActivityFilters, ActivityRow, CategoryChip, activityDays, activityEntityText, activityFiltersFromQuery, activityQueryFromFilters,
@@ -263,7 +263,7 @@ export class ActivityPage {
     const filters = this.filters();
     if (!filters.entityType || !filters.entityId) return null;
     const sample = this.items().find((event) => event.entityType === filters.entityType && event.entityId === filters.entityId);
-    if (!sample) return `${filters.entityType.toLowerCase().replaceAll('_', ' ')} #${filters.entityId}`;
+    if (!sample) return activityRecordChip(filters.entityType, filters.entityId);
     return `${activityEntityLabel(sample)} ${activityEntityText(sample, this.names.context())}`;
   });
 

@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { ActivityCategory, ActivityChange, ActivityEvent } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
 import {
-  activityActionLabel, activityCategory, activityCategoryColor, activityCategoryLabel, activityEntityLabel, activityQueryParams, activityRoute,
+  activityActionLabel, activityCategory, activityCategoryColor, activityCategoryLabel, activityEntityLabel, activityQueryParams, activityRecordPhrase, activityRoute,
 } from './activity-copy';
 import {
   ActivityContext, ActivityOverview, ActivityRow, activityEntitySub, activityEntityText, activitySummaryText, activityValue, changePreview,
@@ -75,7 +75,7 @@ import {
         }
         @if (r.events[0].entityId) {
           <footer class="ai-foot">
-            <button class="wk-link" type="button" (click)="filterEntity.emit(r.events[0])">Alle wijzigingen aan deze {{ kind().toLowerCase() }} ›</button>
+            <button class="wk-link" type="button" (click)="filterEntity.emit(r.events[0])">Alle wijzigingen aan {{ recordPhrase() }} ›</button>
           </footer>
         }
       </div>
@@ -172,6 +172,8 @@ export class ActivityInspector {
   readonly longDate = computed(() => { const e = this.first(); return e ? longDateTime(e.at) : ''; });
   readonly when = computed(() => { const r = this.row(); return r ? rowTime(r) : ''; });
   readonly kind = computed(() => { const e = this.first(); return e ? activityEntityLabel(e) : ''; });
+  /** "deze inkooporder", "dit product": the foot link's words. */
+  readonly recordPhrase = computed(() => { const e = this.first(); return e ? activityRecordPhrase(e) : ''; });
   readonly entityName = computed(() => { const e = this.first(); return e ? activityEntityText(e, this.ctx()) : ''; });
   readonly entitySub = computed(() => { const e = this.first(); return e ? activityEntitySub(e, this.ctx()) : null; });
   readonly route = computed(() => { const e = this.first(); return e ? activityRoute(e) : null; });
