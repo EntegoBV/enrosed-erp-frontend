@@ -147,3 +147,35 @@ test('a container row names its payee\'s primary invoice; the inspection via the
   assert.deepEqual(plain.find((row) => row.payee === 'SEPARATE') && [plain.find((row) => row.payee === 'SEPARATE')!.invoiceNumber, plain.find((row) => row.payee === 'SEPARATE')!.viaSupplier], [null, false]);
   assert.equal(containerPayables([order(5, 'BESTELD', [stream('SUPPLIER', 100)])])[0].invoiceNumber, null, 'an older server sends no invoices');
 });
+
+test('with the Kaslijn\'s days, container terms are dated: Binnenkort within 30 days, Later by date; a reached term stays Nu', () => {
+  const terms = [term('ORDERED', 300), term('SHIPPED', 300), term('ARRIVED', 300)];
+  const rows = containerPayables([order(1, 'BESTELD', [stream('SUPPLIER', 900), stream('LOGISTICS', 50)], terms)]);
+  const containerDates = new Map([
+    ['container:1:SUPPLIER:ORDERED', { date: '2026-09-24', certainty: 'FIXED' as const, overdue: false, originalDate: null }],
+    ['container:1:SUPPLIER:SHIPPED', { date: '2026-09-30', certainty: 'ESTIMATED' as const, overdue: false, originalDate: null }],
+    ['container:1:SUPPLIER:ARRIVED', { date: '2026-11-07', certainty: 'ESTIMATED' as const, overdue: false, originalDate: null }],
+    ['container:1:LOGISTICS', { date: '2026-11-09', certainty: 'ESTIMATED' as const, overdue: false, originalDate: null }],
+  ]);
+  const dated = payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: rows, containerDates });
+  assert.deepEqual(dated.map((row) => [row.key.split(':').slice(2).join(':'), row.bucket, row.date, row.dueWord, row.dateCertainty]), [
+    ['SUPPLIER:ORDERED', 'now', '2026-09-24', 'bij bestelling', 'FIXED'],
+    ['SUPPLIER:SHIPPED', 'soon', '2026-09-30', 'bij vertrek', 'ESTIMATED'],
+    ['SUPPLIER:ARRIVED', 'later', '2026-11-07', 'bij aankomst', 'ESTIMATED'],
+    ['LOGISTICS', 'later', '2026-11-09', 'na aankomst', 'ESTIMATED'],
+  ]);
+  const totals = payableTotals(dated);
+  assert.deepEqual([totals.containerNowEur, totals.containerSoonEur, totals.containerLaterEur], [300, 300, 350]);
+  /* Without the map (the Vooruitblik) nothing changes: undated, Nu or Later, containerSoonEur 0. */
+  const plain = payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: rows });
+  assert.deepEqual(plain.map((row) => [row.bucket, row.date]), [['now', null], ['later', null], ['later', null], ['later', null]]);
+  assert.equal(payableTotals(plain).containerSoonEur, 0);
+  assert.equal(payableTotals(plain).containerLaterEur, 650);
+});
+
+test('a term whose planned day passed while the order is still Besteld keeps that day as plannedDate; the payee words', () => {
+  const [row] = containerPayables([order(2, 'BESTELD', [stream('SEPARATE', 80)])]);
+  const containerDates = new Map([['container:2:SEPARATE', { date: '2026-09-24', certainty: 'ESTIMATED' as const, overdue: true, originalDate: '2026-09-10' }]]);
+  const [dated] = payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: [{ ...row, bucket: 'later' }], containerDates });
+  assert.deepEqual([dated.bucket, dated.date, dated.plannedDate, dated.dueWord], ['soon', '2026-09-24', '2026-09-10', 'voor vertrek']);
+});

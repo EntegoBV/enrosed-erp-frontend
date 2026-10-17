@@ -12,6 +12,9 @@ import { EurPipe } from '../../shared/pipes';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { FinanceState } from './finance-state';
 import { bankAccountKey } from './bank-reconciliation';
+import { bankTextOf, type BankText } from './bank-text';
+import { signedEur as signedMoney } from './finance-format';
+import { containerName } from '../purchasing/container-name';
 import { paymentLocalDay, paymentMomentLabel } from './incoming-money';
 import { cashTotalOf, openOf } from './finance-metrics';
 import { containerPayables } from './payables';
@@ -32,7 +35,8 @@ import {
 type DirectionFilter = 'ALL' | 'INCOMING' | 'OUTGOING';
 /** UNLINKED_IN is the retained URL-compatible name for all transactions still to link. */
 type LinkFilter = 'ALL' | 'LINKED' | 'UNLINKED' | 'UNLINKED_IN';
-interface LinkedDocument { kind: 'cost' | 'container' | 'invoice'; id: number; label: string; }
+/** `number` is a container's PO number: the search finds a linked line by it, whatever the label shows (B9). */
+interface LinkedDocument { kind: 'cost' | 'container' | 'invoice'; id: number; label: string; number?: string; }
 interface OutgoingMatch { ownerId: number; key: string; kind: 'cost' | 'purchase'; id: number; title: string; detail: string; paidOn: string; amountEur: number;
   /** A purchase payment that is one transfer of a payment paid in parts. */
   grouped?: boolean; }
@@ -222,6 +226,19 @@ export class BankMovementPanel {
   /** 'compact': the cockpit's list next to the rail (12 rows, no Koppeling or Saldo, its own filter, 'Alle transacties ›'). */
   readonly mode = input<'full' | 'compact'>('full');
   readonly compact = computed(() => this.mode() === 'compact');
+  /** The clean words of every line (bankTextOf): a short title and the useful part of the reference; the raw text stays in the detail. */
+  private readonly texts = computed(() => new Map<number, BankText>(this.state.bankStatements().map(line => [line.id, bankTextOf(line)])));
+  textOf(row: BankStatementLine): BankText { return this.texts().get(row.id) ?? bankTextOf(row); }
+  titleOf(row: BankStatementLine): string { return this.textOf(row).title; }
+  /** "Verschil − € 0,01": signed, the sign before the euro. */
+  verschil(row: BankStatementLine): string { return `Verschil ${signedMoney(row.allocationDifferenceEur ?? 0)}`; }
+  /** The names of the containers a line paid, in PO-number order. */
+  containerNames(documents: readonly LinkedDocument[]): string[] {
+    return documents.map(document => {
+      const payment = this.state.payments().find(item => item.orderId === document.id);
+      return { number: payment?.orderNumber ?? '', name: containerName({ id: document.id, number: payment?.orderNumber, alias: payment?.orderAlias }) };
+    }).sort((a, b) => a.number.localeCompare(b.number, 'nl', { numeric: true }) || a.name.localeCompare(b.name, 'nl')).map(row => row.name);
+  }
   private readonly api = inject(BankingApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);

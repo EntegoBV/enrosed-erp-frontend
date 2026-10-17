@@ -866,6 +866,24 @@ function baseItems(input: CashForecastInput): ForecastItem[] {
   return drafts.map((draft) => itemOf(draft, today));
 }
 
+/** The day of one open container row as the Kaslijn dates it: originalDate is the rule's day before it was clamped to today. */
+export interface ContainerDueDate { date: Iso; certainty: ForecastCertainty; overdue: boolean; originalDate: Iso | null }
+
+/**
+ * Every open container row's day and certainty, by its payables key (the
+ * Kaslijn's own rule, no horizon), so Te betalen dates its terms as the
+ * Kaslijn does. Additive: the forecast itself never reads it. The import
+ * VAT items are left out (they are no payables row).
+ */
+export function containerDueDates(input: CashForecastInput): Map<string, ContainerDueDate> {
+  const dates = new Map<string, ContainerDueDate>();
+  for (const item of baseItems(input)) {
+    if (item.source.type !== 'container' || !item.key.startsWith('container:')) continue;
+    dates.set(item.key, { date: item.date, certainty: item.certainty, overdue: item.overdue, originalDate: item.originalDate });
+  }
+  return dates;
+}
+
 function storedMap(input: CashForecastInput): Map<number, PurchaseOrderForecast> {
   return new Map((input.stored ?? []).map((row) => [row.orderId, row]));
 }

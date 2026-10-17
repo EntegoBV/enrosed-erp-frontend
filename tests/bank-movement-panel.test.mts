@@ -23,6 +23,9 @@ import type { Customer, IncomingPaymentRow, SalesOrderView } from '../src/app/co
 import type { BankMovementPanel } from '../src/app/features/finance/bank-movement-panel.ts';
 import { receiptInstant, receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
 import { paymentLocalDay, paymentMomentLabel } from '../src/app/features/finance/incoming-money.ts';
+import { bankTextOf } from '../src/app/features/finance/bank-text.ts';
+import { signedEur as signedMoney } from '../src/app/features/finance/finance-format.ts';
+import { containerName } from '../src/app/features/purchasing/container-name.ts';
 
 /* The same helper as shared/ui.ts (that file has Angular decorators, so it cannot be imported here). */
 const escapeHtml = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -121,6 +124,7 @@ function harness() {
     unbanked: () => [], pendingReceipts: () => [], searchedFrom: signal<string | null>(null), linking: signal<number | null>(null),
     bookAsLine: signal<BankStatementLine | null>(null), attachmentsFor: () => [], unlinkLine: (_row: BankStatementLine) => {}, unclassifyLine: async (_row: BankStatementLine) => {},
     linkLine: async () => '', accountLabel: (key: string) => key,
+    today: () => '2026-10-16', accountsView: () => [] as { account: string }[],
   };
   const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
   const ui = {
@@ -155,7 +159,7 @@ function harness() {
       throw new Error(`Unexpected service injection: ${String(token)}`);
     },
     bankAccountKey: bankExports.bankAccountKey, receiptLocalParts, receiptRequest,
-    paymentLocalDay, paymentMomentLabel, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
+    paymentLocalDay, paymentMomentLabel, bankTextOf, signedMoney, containerName, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');

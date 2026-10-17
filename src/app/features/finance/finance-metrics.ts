@@ -624,3 +624,38 @@ export function largestCosts(costs: readonly CompanyCost[], limit = 8): CompanyC
   return [...costs].sort((left, right) => finite(right.amountExclEur) - finite(left.amountExclEur) || left.date.localeCompare(right.date)).slice(0, limit);
 }
 
+
+/* -------------------------------------------------- reverse charge, container difference */
+
+/**
+ * The VAT of a reverse-charge cost ("verlegd"): it is in the return on both
+ * sides and never leaves the bank, so a strip that wants Excl + Btw = Incl
+ * shows it apart. 0 for every other regime.
+ */
+export function reverseChargeOf(row: VatRow): number {
+  const regime = regimeOf(row);
+  return regime !== null && REVERSE_CHARGE.has(regime) ? vatCentsOf(row) / 100 : 0;
+}
+
+/** What the difference of a container needs: the three figures on screen and the payee streams. */
+export interface ContainerDifferenceSource {
+  totals: { plannedExternalEur: number; paidEur: number; remainingEur: number };
+  streams: readonly { payee: string; plannedEur: number; paidEur: number; remainingEur: number }[];
+}
+
+/** open − (afspraak − betaald), split: moreEur for the payees with an Afspraak (+ meer, − minder betaald), otherEur for Bijkomende kosten. */
+export interface ContainerDifference { diffEur: number; moreEur: number; otherEur: number }
+
+/**
+ * "Verschil € 4.959,42 meer": why Afspraak − Betaald ≠ Open on a container.
+ * Per payee the difference is remaining − (planned − paid). Bijkomende
+ * kosten (OTHER) have no Afspraak, so what was paid there shows on its own
+ * line; any rest (credits, rounding) joins the supplier, so moreEur +
+ * otherEur always equals open − (afspraak − betaald) and the screen closes.
+ */
+export function meerBetaaldOf(source: ContainerDifferenceSource): ContainerDifference {
+  const diff = cents(source.totals.remainingEur) - (cents(source.totals.plannedExternalEur) - cents(source.totals.paidEur));
+  const other = source.streams.filter((stream) => stream.payee === 'OTHER')
+    .reduce((sum, stream) => sum + cents(stream.remainingEur) - (cents(stream.plannedEur) - cents(stream.paidEur)), 0);
+  return { diffEur: diff / 100, moreEur: (diff - other) / 100, otherEur: other / 100 };
+}

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderForecast } from '../src/app/core/api/models.ts';
 import {
-  CERTAINTY_LABEL, NO_DEFAULTS, balanceHistory, buildCashForecast, dayEndBalances, defaultSellWeeks, distributeCents, horizonEndOf,
+  CERTAINTY_LABEL, NO_DEFAULTS, balanceHistory, buildCashForecast, containerDueDates, dayEndBalances, defaultSellWeeks, distributeCents, horizonEndOf,
   likelyPaid, parsePaymentTerms, poSheet, resolveChoice, runningBalances, seasonalProfile, suggestOrderDate,
 } from '../src/app/features/finance/cash-forecast.ts';
 import type {
@@ -663,4 +663,18 @@ test('pins: the four largest moves of at least € 5.000, grouped within three d
     [4, '2027-01-08', '2027-01-10', -13540],
   ]);
   assert.equal(forecast.pins[2].label, 'PO-2026-043 · 70% bij vertrek · PO-2026-044 · 2e voorschot');
+});
+
+test('containerDueDates: every open container row on the Kaslijn\'s own day, keyed as Te betalen keys it; import VAT left out', () => {
+  const input = exampleB();
+  const dates = containerDueDates(input);
+  const items = buildCashForecast(input, options({ horizonEnd: '2027-12-31' })).items.filter((item) => item.key.startsWith('container:'));
+  assert.equal(dates.size, input.containerRows.length);
+  for (const item of items) {
+    const due = dates.get(item.key);
+    assert.ok(due, item.key);
+    assert.deepEqual([due!.date, due!.certainty, due!.overdue], [item.date, item.certainty, item.overdue], item.key);
+  }
+  assert.ok(![...dates.keys()].some((key) => key.startsWith('importvat:')));
+  assert.equal(dates.get('container:43:SUPPLIER:ORDERED')?.date, TODAY, 'a reached term is today');
 });

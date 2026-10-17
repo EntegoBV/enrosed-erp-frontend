@@ -138,10 +138,6 @@
 
   /* ---- Analyse › Btw-aangifte: the headline, the four kaders, the grid rows */
   .fin-vat { display: grid; gap: 16px; }
-  .fin-vat__head { display: grid; gap: 2px; }
-  .fin-vat__label { color: var(--muted); font-size: 13px; font-weight: 650; }
-  .fin-vat__value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .fin-vat__sub { color: var(--muted); font-size: 12.5px; &.is-warn { color: var(--warn); } }
   .fin-vat__chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .fin-vat__kaders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; .wk-card + .wk-card { margin-top: 0; } }
   .fin-vat__column { display: grid; gap: 16px; }
@@ -190,15 +186,10 @@
   .fin-insp-hero { display: grid; justify-items: start; gap: 4px; }
   .fin-insp-party { color: var(--muted); font-size: 13px; }
   .fin-insp-amount { font-size: 24px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .fin-insp-state { color: var(--muted); font-weight: 600; letter-spacing: 0; text-transform: none; }
   .fin-insp-missing { padding: 24px 18px; }
   .fin-notes { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-  .fin-terms { display: grid; gap: 2px; margin: 8px 0 0; padding: 0; list-style: none; font-size: 12.5px;
-    li { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-2); } }
 
   /* ---- allocation dialog */
-  .fin-alloc__movement { display: grid; gap: 3px; padding: 14px; border-radius: 12px; background: var(--surface-2);
-    strong { font-size: 24px; font-variant-numeric: tabular-nums; } span, small { color: var(--muted); font-size: 12.5px; } }
   .fin-alloc__label { margin: 4px 0 0; font-size: 13px; font-weight: 700; }
   .fin-alloc__cards { display: grid; gap: 8px; }
   .fin-match { display: grid; gap: 3px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer;
@@ -225,9 +216,6 @@
   /* Ontvangen's "Transactie" and Containers' "Op de bank" (2026-10-16) step aside first: md and xs. */
   .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
   .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
-  .fin-table--unbanked { --wk-cols: 92px minmax(140px, 1fr) 96px 112px 96px; }
-  .fin-table--recent { --wk-cols: 84px minmax(180px, 1fr) 104px 120px; }
-  .fin-table--vat { --wk-cols: minmax(160px, 1fr) 112px 104px 112px 132px 84px; }
   /* Vaste kosten: sized by its own column (container fin-rec), since the agenda may sit beside it. */
   .fin-recurring__main { min-width: 0; container: fin-rec / inline-size; }
   .fin-table--recurring { --wk-cols: minmax(180px, 1fr) minmax(0, 140px) 108px 124px 104px 108px 96px 64px; }
@@ -248,10 +236,7 @@
   .fin-status__pay { display: none; }
   .fin-row:hover .fin-status__pay, .fin-row:focus-within .fin-status__pay { display: inline-flex; }
   .fin-row:hover .fin-status__open, .fin-row:focus-within .fin-status__open { display: none; }
-  .fin-marker { border: 0; cursor: pointer; }
-  .fin-link-btn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
   .fin-pending { padding: 8px var(--wk-pad-x); }
-  .fin-record { grid-column: 1 / -1; color: var(--muted); }
 
   /* ---- Uitgaven › Containers: the unfolded row */
   .fin-expand { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 12px var(--wk-pad-x) 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
@@ -261,7 +246,6 @@
   .fin-stream__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; b { font-size: 13px; } }
   .fin-stream__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0;
     dt { color: var(--muted); font-size: 11px; } dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; } }
-  .fin-stream__term { display: flex; justify-content: space-between; gap: 8px; padding-top: 4px; color: var(--ink-2); }
   /* the unfolded container as invoices → terms → payments (container-payment-tree-view) */
   .fin-expand--tree { grid-template-columns: minmax(0, 1fr) auto;
     > .fin-expand__streams { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); } }
@@ -284,20 +268,8 @@
   .fin-attention__more { margin: 4px 16px 12px; }
 
   /* ---- Bank › Rekeningen */
-  .fin-bank-head { display: grid; gap: 2px; margin-bottom: 16px; }
-  .fin-bank-head__label { color: var(--muted); font-size: 13px; font-weight: 650; }
-  .fin-bank-head__value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .fin-bank-head__sub { color: var(--muted); font-size: 12.5px; }
   .fin-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
   .fin-account { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
-  .fin-account__top { display: flex; align-items: center; gap: 8px; }
-  .fin-account__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fin-account__iban { display: block; margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; }
-  .fin-account__value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-  .fin-account__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
-  .fin-account--add { align-items: center; justify-content: center; min-height: 140px; border: 1.5px dashed var(--line-strong); background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer;
-    &:hover { border-color: var(--rose); color: var(--rose-dark); } }
-  .fin-unbanked .fin-hint { padding: 0 16px 10px; }
 
   /* ---- Uitgaven › Vaste kosten */
   .fin-recurring { display: grid; gap: 16px; }
@@ -342,7 +314,6 @@
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
     .fin-table--containers { --wk-cols: minmax(170px, 1fr) 104px 108px 108px 108px minmax(0, 150px) 36px; }
-    .fin-table--vat { --wk-cols: minmax(120px, 1fr) 104px 96px 112px 72px; }
     .fin-analysis-grid, .fin-vat__kaders { grid-template-columns: minmax(0, 1fr); }
     .fin-expand { grid-template-columns: minmax(0, 1fr); }
   }
@@ -360,9 +331,6 @@
     .fin-table--receivables { --wk-cols: 96px minmax(120px, 1fr) 104px 104px 24px; }
     .fin-table--receipts { --wk-cols: 116px minmax(130px, 1fr) 108px 36px; }
     .fin-table--containers { --wk-cols: minmax(130px, 1fr) 100px 100px 36px; }
-    .fin-table--unbanked { --wk-cols: 88px minmax(110px, 1fr) 104px 88px; }
-    .fin-table--recent { --wk-cols: 72px minmax(140px, 1fr) 88px 108px; }
-    .fin-table--vat { --wk-cols: minmax(100px, 1fr) 96px 88px 96px 64px; }
   }
   @container wk-pane (min-width: 1100px) {
     .fin-recurring--agenda { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
