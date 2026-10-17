@@ -59,6 +59,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
 import { changeOverMonths } from './market-math';
 import type { Months } from './market-math';
 import { AnVisitorsRow } from './analyses-visitors-row';
+import { ResultMonthBars } from './result-month-bars';
 import { withAllLocations } from './analyses-stock';
 import { LoadError } from '../../shared/load-error';
 import { AnHow, HOW_TEXTS } from './analyses-how';
@@ -181,7 +182,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss'],
   host: { '(document:visibilitychange)': 'visible()' },
-  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
+  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
     PageHeader,
     EurPipe,
@@ -844,6 +845,15 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               <span class="an-kpi__sub">{{ plural(r.receivedContainers, 'container', 'containers') }} ontvangen · externe kost volgens actuele afrekening</span><span class="an-kpi__foot"></span></div>
           </div>
         }
+        <section class="an-card" aria-labelledby="an-bars-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="an-bars-title">Marge en kosten per maand</h2>
+            <span class="an-card__trail an-legend"><span><i class="an-legend__m"></i>marge op goederen</span><span><i class="an-legend__c"></i>eigen kosten</span></span></header>
+          <div class="an-card__body">
+            @if (loading()) { <app-skeleton kind="card" /> }
+            @else if (!r.monthly.length) { <p class="an-empty">Nog niets in deze periode.</p> }
+            @else { <app-an-month-bars [months]="r.monthly" [height]="desk.active() ? 180 : 132" [compact]="!desk.active()" /> }
+          </div>
+        </section>
         <div class="an-cols">
           <div class="an-col">
             <section class="an-card" aria-labelledby="an-rchannel-title">

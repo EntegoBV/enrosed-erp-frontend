@@ -74,3 +74,22 @@ test('Overzicht: Markt, Bezoekers and the Aandacht rows (critique N7, N17)', asy
   assert.equal(overdueSub(0), 'Niets na de vervaldatum');
   assert.equal(overdueSub(1), '1 factuur na de vervaldatum');
 });
+
+test('Resultaat month bars: margin up, own costs down from one zero line, three rounded ticks', async () => {
+  const { monthBars } = await import('../src/app/features/analyses/analyses-words.ts');
+  const geometry = monthBars([
+    { month: '2026-08', marginEur: 0, costsEur: 0, resultEur: 0 },
+    { month: '2026-09', marginEur: 3800, costsEur: 900, resultEur: 2900 },
+    { month: '2026-10', marginEur: -1200, costsEur: 1106, resultEur: -2306 },
+  ]);
+  assert.deepEqual(geometry.ticks.map((tick) => tick.value), [4000, 0, -2000]);
+  assert.equal(Math.round(geometry.zeroPct * 100) / 100, 66.67);
+  const [empty, september, october] = geometry.bars;
+  assert.equal(empty.marginHeight, 0, 'an empty month is a bar of 0');
+  assert.equal(Math.round(september.marginTop * 100) / 100, 3.33);
+  assert.equal(Math.round(september.marginHeight * 100) / 100, 63.33);
+  assert.equal(october.marginNegative, true);
+  assert.equal(october.marginTop, geometry.zeroPct, 'a loss hangs from the zero line');
+  assert.equal(Math.round(october.costHeight * 100) / 100, 18.43);
+  assert.deepEqual(monthBars([{ month: '2026-01', marginEur: 0, costsEur: 0, resultEur: 0 }]).ticks.map((tick) => tick.value), [0]);
+});

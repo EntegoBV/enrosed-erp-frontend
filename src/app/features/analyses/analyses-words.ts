@@ -174,3 +174,52 @@ export function advanceTermsSub(containers: readonly AdvanceTermDigest[], today:
 export function overdueSub(count: number): string {
   return count === 0 ? 'Niets na de vervaldatum' : `${plural(count, 'factuur', 'facturen')} na de vervaldatum`;
 }
+
+/* ---------- Resultaat: margin and own costs per month as bars (design §3.6) */
+
+export interface MonthBarInput { month: string; marginEur: number; costsEur: number; resultEur: number }
+export interface MonthBar {
+  month: string;
+  /** Margin bar: top and height in % of the plot; negative margins hang below the zero line. */
+  marginTop: number; marginHeight: number; marginNegative: boolean;
+  /** Own costs hang below the zero line. */
+  costTop: number; costHeight: number;
+  resultEur: number;
+}
+export interface MonthBarsGeometry { zeroPct: number; ticks: { value: number; pct: number }[]; bars: MonthBar[] }
+
+/** A rounded step for the axis: 1, 2 or 5 times a power of ten. */
+function niceStep(span: number): number {
+  if (!(span > 0)) return 1;
+  const power = 10 ** Math.floor(Math.log10(span));
+  const unit = span / power;
+  return (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * power;
+}
+
+/**
+ * The geometry of the month bars: the top is the largest margin (or 0), the
+ * bottom the deepest loss or cost month (or 0), rounded out to a nice step;
+ * three ticks: top, zero, bottom (zero alone when nothing moved).
+ */
+export function monthBars(rows: readonly MonthBarInput[]): MonthBarsGeometry {
+  const high = Math.max(0, ...rows.map((row) => row.marginEur));
+  const low = Math.min(0, ...rows.map((row) => Math.min(row.marginEur, -Math.abs(row.costsEur))));
+  const step = niceStep(Math.max(high, -low) / 2);
+  const top = high > 0 ? Math.ceil(high / step) * step : 0;
+  const bottom = low < 0 ? Math.floor(low / step) * step : 0;
+  const span = top - bottom || 1;
+  const pct = (value: number) => ((top - value) / span) * 100;
+  const zeroPct = pct(0);
+  const ticks = [...new Set([top, 0, bottom])].map((value) => ({ value, pct: pct(value) }));
+  const bars = rows.map((row) => {
+    const margin = row.marginEur;
+    const cost = Math.abs(row.costsEur);
+    return {
+      month: row.month,
+      marginTop: margin >= 0 ? pct(margin) : zeroPct, marginHeight: (Math.abs(margin) / span) * 100, marginNegative: margin < 0,
+      costTop: zeroPct, costHeight: (cost / span) * 100,
+      resultEur: row.resultEur,
+    };
+  });
+  return { zeroPct, ticks, bars };
+}

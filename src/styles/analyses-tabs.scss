@@ -193,3 +193,27 @@ a.an-row--link { color: inherit; text-decoration: none; }
   .an-kpis--5 > .an-kpi { grid-column: span 2; }
   .an-kpis--5 > .an-kpi:nth-child(n + 4) { grid-column: span 3; }
 }
+
+/* ---------- Resultaat: margin and own costs per month (app-an-month-bars) */
+.an-legend__m { background: var(--rose) !important; }
+.an-legend__c { background: color-mix(in srgb, var(--warn) 55%, var(--surface)) !important; }
+app-an-month-bars { display: block; padding: 8px 0 12px; }
+.an-mbars { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 6px 16px 4px; }
+.an-mbars__axis { position: relative; height: var(--h, 180px); color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; text-align: right; }
+.an-mbars__axis span { position: absolute; right: 0; translate: 0 -50%; white-space: nowrap; }
+.an-mbars__plot { position: relative; display: grid; grid-template-columns: repeat(var(--n, 12), minmax(0, 1fr)); height: var(--h, 180px); }
+.an-mbars__grid { position: absolute; left: 0; right: 0; height: 1px; background: color-mix(in srgb, var(--line) 70%, transparent); }
+.an-mbars__grid.is-zero { background: var(--line-strong); }
+.an-mbars__m { position: relative; }
+.an-mbars__m i { position: absolute; width: 30%; min-height: 0; border-radius: 3px; }
+.an-mbars__m i.m { left: 18%; background: var(--rose); }
+.an-mbars__m i.m.neg { background: var(--danger); }
+.an-mbars__m i.c { left: 52%; background: color-mix(in srgb, var(--warn) 55%, var(--surface)); }
+.an-mbars__x { display: grid; grid-template-columns: repeat(var(--n, 12), minmax(0, 1fr)); margin: 5px 16px 0 76px; color: var(--muted); font-size: 10.5px; text-align: center; }
+.an-mbars__x span { min-width: 0; }
+.an-mbars__x b { display: block; color: var(--ink-2); font-size: 10.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.an-mbars__x b.neg { color: var(--danger); }
+@media (max-width: 679.98px) {
+  .an-phone .an-mbars { grid-template-columns: 40px minmax(0, 1fr); padding: 12px 12px 2px; }
+  .an-phone .an-mbars__x { margin: 4px 12px 0 60px; font-size: 10px; }
+}
