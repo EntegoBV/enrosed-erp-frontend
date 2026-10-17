@@ -40,3 +40,8 @@ test('the login page: the eye toggle, the focus and the 375x667 fit', () => {
     assert.ok(page.includes(text), text);
   }
 });
+
+test('signing in replaces the login entry, so back never returns to the form', () => {
+  const page = readFileSync(new URL('../src/app/features/login/login-page.ts', import.meta.url), 'utf8');
+  assert.match(page, /this\.router\.navigateByUrl\(returnTo \?\? '\/dashboard', \{ replaceUrl: true \}\)/);
+});

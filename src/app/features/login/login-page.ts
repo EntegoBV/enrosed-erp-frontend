@@ -135,7 +135,8 @@ export class LoginPage {
       await this.auth.login(this.username(), this.password());
       rememberLastAccount(deviceStore(), this.username());
       const returnTo = this.route.snapshot.queryParamMap.get('returnTo');
-      await this.router.navigateByUrl(returnTo ?? '/dashboard');
+      /* The screen takes the login form's place in the history: back never shows the form to a signed-in user. */
+      await this.router.navigateByUrl(returnTo ?? '/dashboard', { replaceUrl: true });
     } catch (failure: unknown) {
       const status = (failure as { status?: number }).status;
       this.error.set(status === 401
