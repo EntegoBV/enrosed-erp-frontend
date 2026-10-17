@@ -320,14 +320,21 @@ export class App {
    * #fragment would be a router navigation). The page is focusable only for
    * that moment: with a permanent tabindex a click on any text would focus
    * .main, and the workspace shortcuts (keyContext: body or inside the
-   * workspace) would stop until the next click on a control.
+   * workspace) would stop until the next click on a control. The next Tab
+   * (blur) or the next press in the page gives the tabindex back.
    */
   skipToContent(event: Event): void {
     event.preventDefault();
     const main = this.document.getElementById('inhoud');
     if (!main) return;
+    const release = () => {
+      main.removeAttribute('tabindex');
+      main.removeEventListener('blur', release);
+      main.removeEventListener('pointerdown', release);
+    };
     main.setAttribute('tabindex', '-1');
-    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
+    main.addEventListener('blur', release);
+    main.addEventListener('pointerdown', release);
     main.focus();
   }
 

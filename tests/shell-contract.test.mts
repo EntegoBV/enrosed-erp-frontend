@@ -16,7 +16,9 @@ test('the desk sidebar: a skip link first, Meldingen op dit toestel in the foot,
   assert.doesNotMatch(shell, /class="main"[^>]*tabindex/);
   const skipTo = shell.slice(shell.indexOf('skipToContent(event: Event): void {'), shell.indexOf('initialUrl(): string'));
   assert.match(skipTo, /main\.setAttribute\('tabindex', '-1'\);/);
-  assert.match(skipTo, /addEventListener\('blur', \(\) => main\.removeAttribute\('tabindex'\), \{ once: true \}\)/);
+  assert.match(skipTo, /main\.removeAttribute\('tabindex'\);/);
+  assert.match(skipTo, /main\.addEventListener\('blur', release\);/);
+  assert.match(skipTo, /main\.addEventListener\('pointerdown', release\);/);
   assert.match(skipTo, /main\.focus\(\);/);
   assert.match(shell, /@for \(item of navDevice; track item\.id\)/);
   assert.match(shell, /sidebar__count-rail">\{\{ n > 9 \? '9\+' : n \}\}/);
