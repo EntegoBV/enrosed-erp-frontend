@@ -47,6 +47,8 @@ test('Inkoop parts: ?deel, kosten by default, ?orderId means Afwijkingen over al
   assert.equal(parsePart(url('orderId=abc')), 'kosten');
   assert.deepEqual(partParams('kosten'), { deel: null });
   assert.deepEqual(partParams('kwaliteit'), { deel: 'kwaliteit' });
+  assert.deepEqual(partParams('kosten', true), { deel: 'kosten' }, 'with an order focus Containerkost is written out');
+  assert.equal(parsePart(url('deel=kosten&orderId=12')), 'kosten');
   assert.equal(parseOrderId(url('orderId=0')), null);
   assert.equal(parseSupplier(url('leverancier=7')), 7);
   assert.equal(parseSupplier(url('leverancier=-1')), null);
@@ -54,4 +56,17 @@ test('Inkoop parts: ?deel, kosten by default, ?orderId means Afwijkingen over al
   assert.deepEqual(parseReceiptPeriod(url('orderId=12')), { preset: 'alle' });
   assert.deepEqual(parseReceiptPeriod(url('orderId=12&ontvangst=jaar')), { preset: 'jaar' });
   assert.deepEqual(parseReceiptPeriod(url('ovan=2026-01-01&otot=2026-06-30')), { from: '2026-01-01', to: '2026-06-30' });
+});
+
+test('Inkoop parts survive the URL round trip, with and without an order focus', () => {
+  const merge = (query: string, params: Record<string, string | null>) => {
+    const next = new URLSearchParams(query);
+    for (const [key, value] of Object.entries(params)) { if (value === null) next.delete(key); else next.set(key, value); }
+    return next.toString();
+  };
+  for (const part of ['kosten', 'kwaliteit', 'partners', 'afwijkingen'] as const) {
+    assert.equal(parsePart(url(merge('orderId=12&deel=kwaliteit', partParams(part, true)))), part, `${part} with ?orderId`);
+    assert.equal(parsePart(url(merge('deel=kwaliteit', partParams(part)))), part, `${part} without a focus`);
+  }
+  assert.equal(merge('deel=partners', partParams('kosten')), '', 'without a focus the default stays out of the URL');
 });

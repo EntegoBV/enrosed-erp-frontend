@@ -1893,7 +1893,7 @@ export class AnalysesPage {
 
   setPart(part: InkoopPart): void {
     this.part.set(part);
-    this.writeParams(partParams(part));
+    this.writeParams(partParams(part, this.focusedOrderId() !== null));
   }
 
   setReceiptPeriod(choice: PeriodChoice): void {
@@ -1912,7 +1912,7 @@ export class AnalysesPage {
     this.focusedOrderId.set(null);
     const params = this.route.snapshot.queryParamMap;
     this.receiptPeriod.set(parsePeriod((key) => params.get(key), RECEIPT_PERIOD_KEYS, DEFAULT_PERIOD));
-    this.writeParams({ orderId: null, ...this.receiptParams() });
+    this.writeParams({ orderId: null, ...partParams(this.part()), ...this.receiptParams() });
   }
 
   private receiptParams(): Record<string, string | null> {
@@ -1924,7 +1924,7 @@ export class AnalysesPage {
   }
 
   private inkoopParams(): Record<string, string | null> {
-    return { ...partParams(this.part()), ...this.receiptParams(), leverancier: this.receiptSupplier() === null ? null : String(this.receiptSupplier()),
+    return { ...partParams(this.part(), this.focusedOrderId() !== null), ...this.receiptParams(), leverancier: this.receiptSupplier() === null ? null : String(this.receiptSupplier()),
       orderId: this.focusedOrderId() === null ? null : String(this.focusedOrderId()) };
   }
 

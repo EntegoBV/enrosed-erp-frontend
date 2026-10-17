@@ -8,8 +8,8 @@
  * - Verkoop/Resultaat: ?periode=maand|kwartaal|vorigjaar|alle or ?van=&tot=
  *   ("jaar", the default, is omitted);
  * - Inkoop receipts: ?ontvangst=… or ?ovan=&otot=, and ?leverancier=<id>;
- * - Inkoop part: ?deel=kwaliteit|partners|afwijkingen (kosten omitted);
- *   ?orderId implies afwijkingen.
+ * - Inkoop part: ?deel=kosten|kwaliteit|partners|afwijkingen; kosten is omitted
+ *   unless an order focus is in the URL, because a bare ?orderId means afwijkingen.
  * Unknown values fall back to the default.
  *
  * Pure and import-free (node-tested, tests/analyses-period.test.mts).
@@ -130,8 +130,12 @@ export function parsePart(get: (key: string) => string | null): InkoopPart {
   return parseOrderId(get) !== null ? 'afwijkingen' : 'kosten';
 }
 
-export function partParams(part: InkoopPart): { deel: string | null } {
-  return { deel: part === 'kosten' ? null : part };
+/**
+ * The ?deel of a part. Kosten, the default, is omitted, except with an order focus: a bare ?orderId reads as
+ * Afwijkingen, so Containerkost must be written out to survive the round trip.
+ */
+export function partParams(part: InkoopPart, orderFocus = false): { deel: string | null } {
+  return { deel: part === 'kosten' && !orderFocus ? null : part };
 }
 
 function positiveId(value: string | null): number | null {
