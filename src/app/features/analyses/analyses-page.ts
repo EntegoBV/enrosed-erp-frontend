@@ -50,6 +50,8 @@ import { WorkQueue } from '../../core/api/work-queue';
 import { NavHistory } from '../../core/platform/nav-history-service';
 import { capsuleLabel, isWorkspaceUrl, screenLabel } from '../../core/platform/return-label';
 import { originOf } from './analyses-origin';
+import { analysesTabForKey } from './analyses-keys';
+import { keyContext } from '../../shared/key-context';
 import { Skeleton } from '../../shared/skeleton';
 import { Fx } from '../../core/api/fx';
 import { eurWhole } from '../finance/cash-format';
@@ -182,7 +184,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss'],
-  host: { '(document:visibilitychange)': 'visible()' },
+  host: { '(document:visibilitychange)': 'visible()', '(document:keydown)': 'deskKey($event)' },
   imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
     PageHeader,
@@ -1232,6 +1234,7 @@ export class AnalysesPage {
   private readonly location = inject(Location);
   private readonly work = inject(WorkQueue);
   private readonly website = viewChild(WebsiteAnalytics);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly analysisTabs = ANALYSIS_TABS;
   /** The old desk tab row, off since the redesign (analyses-desk-tabs.ts). */
   readonly deskTabRow = DESK_TAB_ROW;
@@ -1760,6 +1763,21 @@ export class AnalysesPage {
     try {
       await Promise.all([this.load(), this.cashSources.state() === 'idle' ? Promise.resolve() : this.cashSources.reload(this.today())]);
     } finally { this.refreshing.set(false); }
+  }
+
+  /**
+   * ⌥1…⌥8 on the desk open the tabs in sidebar order (design §2.5): never while typing, behind a sheet, menu or
+   * one of the page's popovers (Periode, Hoe gerekend, Buffer), or with the focus outside the page. Like the
+   * chips, the switch replaces the address.
+   */
+  deskKey(event: KeyboardEvent): void {
+    if (!this.desk.active() || event.defaultPrevented) return;
+    const tab = analysesTabForKey(event);
+    if (!tab) return;
+    const context = keyContext(event, this.host.nativeElement);
+    if (context.typing || context.overlayOpen || !context.inScope || this.host.nativeElement.querySelector('.wk-popover')) return;
+    event.preventDefault();
+    if (tab !== this.section()) void this.router.navigate(['/analyses', tab], { replaceUrl: true });
   }
 
   /** The page became visible again: a new day rolls the presets and "vandaag" over. */
