@@ -136,13 +136,18 @@ app-purchase-desk .desk-table .c-price{width:100px}
 app-purchase-desk .desk-table .c-money{width:124px}
 app-purchase-desk .desk-table .c-act{width:34px}
 app-purchase-desk .desk-table--editing .c-cartons{width:84px}
-app-purchase-desk .desk-table--editing .c-price{width:160px}
-app-purchase-desk .desk-table--editing .c-money{width:116px}
+/* 152 still holds the 128 px price field; 120 keeps the head 'Goederen / stuk' whole (116 cut it to 'Goederen / st…'). */
+app-purchase-desk .desk-table--editing .c-price{width:152px}
+app-purchase-desk .desk-table--editing .c-money{width:120px}
 app-purchase-desk .desk-table--editing .c-act{width:40px}
 /* The landed cell's second line in words ('per display · € 1,997 per stuk ›', 'kostopbouw ›'), no capitals; it may wrap. */
 app-purchase-desk .desk-total small{display:block;margin-top:1px;color:var(--muted);font-size:10.5px;font-weight:600;line-height:1.3;text-align:right;white-space:normal}
 /* The build-up row opens on the user's click only. */
 app-purchase-desk .desk-detail{animation:mo-row-in var(--dur-2,200ms) var(--ease-out,ease-out) backwards}
+
+/* ---- Order form in the panel: the payment plan trigger wraps inside its pill instead of running into the border. */
+app-purchase-desk .purchase-payment-plan-trigger{justify-content:space-between;gap:12px;padding:9px 16px;white-space:normal;text-align:left;line-height:1.35}
+app-purchase-desk .purchase-payment-plan-trigger>span{flex:none}
 
 /* ---- receive sheet: 'Wat was er mis?' takes the whole row under the two counts (B6) */
 app-purchase-desk .receive-line__field--note{grid-column:1/-1}

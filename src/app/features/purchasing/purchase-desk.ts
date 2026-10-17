@@ -556,16 +556,14 @@ export class PurchaseDeskStyles {}
                   } @else {
                   <section class="pdk-sec" aria-label="Order bewerken">
                   <div class="desk-form">
-                    <div class="desk-form__duo">
-                      <div class="field">
-                        <label for="dk-alias">Herkenbare naam <span class="opt"></span></label>
-                        <input class="input" id="dk-alias" [ngModel]="data.order.alias" (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
-                        <span class="hint">De titel van deze container in de hele ERP.</span>
-                      </div>
-                      <div class="field">
-                        <label for="dk-number">Ordernummer</label>
-                        <input class="input" id="dk-number" autocomplete="off" [ngModel]="data.order.number" (ngModelChange)="$event?.trim() && patch({ number: $event.trim() })" />
-                      </div>
+                    <div class="field">
+                      <label for="dk-alias">Herkenbare naam <span class="opt"></span></label>
+                      <input class="input" id="dk-alias" [ngModel]="data.order.alias" (ngModelChange)="patch({ alias: $event })" placeholder="Bijv. voorjaar, kleurvariant…" />
+                      <span class="hint">De titel van deze container in de hele ERP.</span>
+                    </div>
+                    <div class="field">
+                      <label for="dk-number">Ordernummer</label>
+                      <input class="input" id="dk-number" autocomplete="off" [ngModel]="data.order.number" (ngModelChange)="$event?.trim() && patch({ number: $event.trim() })" />
                     </div>
                     <div class="desk-form__duo">
                       <div class="field">
@@ -603,29 +601,27 @@ export class PurchaseDeskStyles {}
                         @for (type of containerTypes; track type.value) { <option [value]="type.value">{{ type.label }}</option> }
                       </select>
                     </div>
-                    <div class="desk-form__duo">
-                      <div class="field">
-                        <label for="dk-from">Vertrekhaven</label>
-                        <select class="select" id="dk-from" [ngModel]="portSelection(data.order.departurePort, departurePorts, customDeparturePort())" (ngModelChange)="selectDeparturePort($event)">
-                          @for (port of departurePorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
-                          <option [value]="otherPortValue">Andere haven…</option>
-                        </select>
-                        @if (usesCustomDeparturePort(data.order.departurePort)) {
-                          <input class="input mt-8" aria-label="Andere vertrekhaven" autocomplete="off" placeholder="Typ de vertrekhaven"
-                                 [value]="customPortInput(data.order.departurePort, departurePorts, customDeparturePort())" (blur)="setCustomDeparturePort($any($event.target).value)" />
-                        }
-                      </div>
-                      <div class="field">
-                        <label for="dk-to">Aankomsthaven</label>
-                        <select class="select" id="dk-to" [ngModel]="portSelection(data.order.destinationPort, destinationPorts, customDestinationPort(), 'Rotterdam')" (ngModelChange)="selectDestinationPort($event)">
-                          @for (port of destinationPorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
-                          <option [value]="otherPortValue">Andere haven…</option>
-                        </select>
-                        @if (usesCustomDestinationPort(data.order.destinationPort)) {
-                          <input class="input mt-8" aria-label="Andere aankomsthaven" autocomplete="off" placeholder="Typ de aankomsthaven"
-                                 [value]="customPortInput(data.order.destinationPort, destinationPorts, customDestinationPort())" (blur)="setCustomDestinationPort($any($event.target).value)" />
-                        }
-                      </div>
+                    <div class="field">
+                      <label for="dk-from">Vertrekhaven</label>
+                      <select class="select" id="dk-from" [ngModel]="portSelection(data.order.departurePort, departurePorts, customDeparturePort())" (ngModelChange)="selectDeparturePort($event)">
+                        @for (port of departurePorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
+                        <option [value]="otherPortValue">Andere haven…</option>
+                      </select>
+                      @if (usesCustomDeparturePort(data.order.departurePort)) {
+                        <input class="input mt-8" aria-label="Andere vertrekhaven" autocomplete="off" placeholder="Typ de vertrekhaven"
+                               [value]="customPortInput(data.order.departurePort, departurePorts, customDeparturePort())" (blur)="setCustomDeparturePort($any($event.target).value)" />
+                      }
+                    </div>
+                    <div class="field">
+                      <label for="dk-to">Aankomsthaven</label>
+                      <select class="select" id="dk-to" [ngModel]="portSelection(data.order.destinationPort, destinationPorts, customDestinationPort(), 'Rotterdam')" (ngModelChange)="selectDestinationPort($event)">
+                        @for (port of destinationPorts; track port.value) { <option [value]="port.value">{{ port.label }}</option> }
+                        <option [value]="otherPortValue">Andere haven…</option>
+                      </select>
+                      @if (usesCustomDestinationPort(data.order.destinationPort)) {
+                        <input class="input mt-8" aria-label="Andere aankomsthaven" autocomplete="off" placeholder="Typ de aankomsthaven"
+                               [value]="customPortInput(data.order.destinationPort, destinationPorts, customDestinationPort())" (blur)="setCustomDestinationPort($any($event.target).value)" />
+                      }
                     </div>
                     <div class="field">
                       <label for="dk-clearance">Inklaring</label>

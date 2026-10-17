@@ -46,3 +46,28 @@ test('every way into the panel goes through showRail, the deep link included (B3
 test('the B/L of a departure is uploaded only after the status save went through (F9)', () => {
   assert.match(desk, /this\.enqueue\(\(order\) => \(\{ \.\.\.order, trackingReference: tracking, status: 'ONDERWEG' \}\), \(\) => \{\s*this\.statusCelebration\.set\('SHIPPED'\);\s*if \(file\) void this\.attachBillOfLading\(data\.order\.id, file, bill\);/);
 });
+
+test('edit mode keeps its words in the 340-380 px panel: name and number, and the two ports, stacked; money heads whole', async () => {
+  const form = /<section class="pdk-sec" aria-label="Order bewerken">([\s\S]*?)<\/section>/.exec(template)?.[1] ?? '';
+  assert.ok(form.includes('id="dk-alias"') && form.includes('id="dk-number"') && form.includes('id="dk-from"') && form.includes('id="dk-to"'));
+  // A duo beside Ordernummer cut the placeholder 'Bijv. voorjaar, kleurvariant…'; one beside Aankomsthaven cut 'Ningbo — Ningbo-Zhoushan'.
+  type Node = { name?: string; attributes?: { name: string; value: string }[]; children?: Node[]; branches?: Node[] };
+  const inDuo: string[] = [];
+  const walk = (nodes: Node[], duo: boolean): void => {
+    for (const node of nodes) {
+      const attrs = node.attributes ?? [];
+      const here = duo || attrs.some((a) => a.name === 'class' && a.value.split(/\s+/).includes('desk-form__duo'));
+      const id = attrs.find((a) => a.name === 'for')?.value;
+      if (here && id) inDuo.push(id);
+      walk([...(node.children ?? []), ...(node.branches ?? [])], here);
+    }
+  };
+  walk(parseTemplate(form, 'order-form.html').nodes as Node[], false);
+  assert.ok(inDuo.includes('dk-date'), inDuo.join());
+  for (const id of ['dk-alias', 'dk-number', 'dk-from', 'dk-to']) assert.ok(!inDuo.includes(id), `${id} sits in a duo`);
+  const partial = await readFile(new URL('../src/styles/purchase-desk.scss', import.meta.url), 'utf8');
+  // 'Goederen / stuk' needs 96 px of text plus 22 px of padding.
+  const money = Number(/app-purchase-desk \.desk-table--editing \.c-money\{width:(\d+)px\}/.exec(partial)?.[1]);
+  assert.ok(money >= 120, String(money));
+  assert.match(partial, /app-purchase-desk \.purchase-payment-plan-trigger\{[^}]*white-space:normal/);
+});
