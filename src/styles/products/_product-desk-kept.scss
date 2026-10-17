@@ -12,6 +12,11 @@ app-product-desk .pd-empty { margin: 0; padding: 10px 12px; border: 1px dashed v
 app-product-desk .pd-empty--gap { margin-top: 14px; }
 app-product-desk .pd-facts > div { grid-template-columns: 118px minmax(0, 1fr); }
 app-product-desk .pd-facts > div:last-child { border-bottom: 0; }
+/* 900–1199, one column: the Omdoos facts stand in two columns, so the full-width card is not half empty. */
+@media (min-width: 900px) and (max-width: 1199.98px) {
+  app-product-desk #pd-carton .pd-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+  app-product-desk #pd-carton .pd-facts > div:nth-last-child(2) { border-bottom: 0; }
+}
 app-product-desk .pd-barcode { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--rose-dark); font: inherit; font-weight: 650; cursor: pointer; }
 app-product-desk .pd-barcode:hover { text-decoration: underline; }
 app-product-desk .pd-barcode i { color: var(--muted); font-size: 13px; font-style: normal; }
