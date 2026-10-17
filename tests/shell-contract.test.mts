@@ -44,7 +44,9 @@ test('the shell starts from the address bar and keeps staff inside it on /voorwa
     assert.ok(at > 0 && guard > 0 && at - guard < 80, side);
   }
   assert.match(shell, /location\.pathname/);
-  assert.match(shell, /url\.startsWith\('\/voorwaarden'\) && !this\.auth\.isLoggedIn\(\)/);
+  assert.match(shell, /is\('\/voorwaarden'\) && !this\.auth\.isLoggedIn\(\)/);
+  /* Whole path segments: /login-requests and /offertes are staff addresses, not the bare login or quote page. */
+  assert.match(shell, /path === root \|\| path\.startsWith\(root \+ '\/'\)/);
 });
 
 test('only a group the user toggles animates; the route opens and closes them instantly', () => {
