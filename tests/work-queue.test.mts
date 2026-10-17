@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createEnvironmentInjector, runInInjectionContext } from '@angular/core';
 import { SalesApi } from '../src/app/core/api/sales-api';
 import { WorkQueue } from '../src/app/core/api/work-queue';
+import { QUEUE_REUSE_MS } from '../src/app/core/api/work-queue-refresh';
 import type { AppNotification } from '../src/app/core/api/models';
 
 // Run with esbuild (already supplied by Angular) so the real injectable service is exercised:
@@ -153,4 +154,34 @@ test('a backend without the summary leaves the count at zero', async () => {
     assert.equal(queue.loginIntakeFull(), false);
     assert.equal(queue.error(), null);
   } finally { injector.destroy(); }
+});
+
+test('one page load asks once: an unforced refresh reuses one that just answered; forced, failed or older ones fetch', async () => {
+  let calls = 0;
+  let fail = false;
+  const { queue, injector } = queueWithSummary(async () => ({ pending: 0, intakeFull: false }), async () => {
+    calls++;
+    if (fail) throw new Error('offline');
+    return { items: [notification('VOORSTEL', 42)] };
+  });
+  const realNow = Date.now;
+  try {
+    await queue.refresh();
+    await queue.refresh();
+    assert.equal(calls, 1, 'the shell on start, the home a moment later: one call');
+    await queue.refresh(true);
+    assert.equal(calls, 2, 'after a change of our own');
+    fail = true;
+    await queue.refresh(true);
+    assert.notEqual(queue.error(), null);
+    fail = false;
+    await queue.refresh();
+    assert.equal(calls, 4, 'a failed answer is never reused');
+    assert.equal(queue.error(), null);
+    const at = realNow();
+    Date.now = () => at + QUEUE_REUSE_MS + 1;
+    await queue.refresh();
+    assert.equal(calls, 5, 'older than the window');
+    assert.equal(queue.items().length, 1);
+  } finally { Date.now = realNow; injector.destroy(); }
 });

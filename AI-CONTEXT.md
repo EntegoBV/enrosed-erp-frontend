@@ -241,7 +241,11 @@ verkoop/:id, inkoop/:id, producten/:id); every route has a `title`
 (`EnrosedTitleStrategy`, "X — Enrosed", skipped when only the query
 changes; a page header's own title wins); `WorkQueue.startAutoRefresh()`
 (App, while logged in) refreshes the counts on focus/visibility after a
-minute and every five minutes while visible.
+minute and every five minutes while visible. An unforced `refresh()`
+shares a fetch under way and reuses one that answered without an error
+less than 5 s ago (`QUEUE_REUSE_MS`), so the shell's start refresh and the
+home/bell/Meer asking on arrival are one pair of calls; after a change of
+our own, force it.
 
 **Login and keys** (F7b): the login page preselects the last account
 (`enrosed.login.last`, the name only), focuses the password when it can,
