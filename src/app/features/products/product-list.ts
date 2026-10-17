@@ -1,11 +1,10 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Product, ProductFamily, StockLevel, ExpectedStock } from '../../core/api/models';
+import { Category, Product, ProductFamily, StockLevel, ExpectedStock, StockLocation } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -19,13 +18,16 @@ import { productSalesUnit } from './product-sales-unit';
 import { PhotoExportSheet } from './photo-export-sheet';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import {
-  SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, type ListCategory, type ListSort, type ListStatus,
+  SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, sortButtonLabel, type ListCategory, type ListSort, type ListStatus,
 } from './product-list-query';
 import { onderwegSummary, type Onderweg } from './product-figures';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { Sheet } from '../../shared/ui';
 import { ProductListStyles } from './product-list-styles';
+import { ProductListTable, type ProductListTableHost } from './product-list-table';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { keyContext } from '../../shared/key-context';
 
 /**
  * One row in the list: a product on its own, or a series (family) that
@@ -75,20 +77,28 @@ interface ProductSwipe {
 @Component({
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
-    PhotoExportSheet, LoadError, ContextMenu, Sheet,
+  host: { '(document:keydown)': 'onDocumentKey($event)' },
+  imports: [Skeleton, RouterLink, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
+    PhotoExportSheet, LoadError, ContextMenu, Sheet, ProductListTable,
     ProductListStyles],
   template: `
     <app-page-header title="Producten" [subtitle]="listSubtitle()">
       @if (desktop.active()) {
-        <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
-          <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
+        <label class="wk-search pl-search">
+          <app-icon name="search" [size]="15" />
+          <input type="search" data-page-search placeholder="Zoek naam, SKU, kleur of barcode" aria-label="Producten zoeken"
+                 [value]="query()" (input)="setQuery($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
+          <button class="wk-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="13" /></button>
+          <span class="wk-kbd" aria-hidden="true">/</span>
+        </label>
+        <a class="btn btn--sm pl-tool" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
+          <app-icon name="pdf" [size]="16" /><span class="pl-tool__label">Catalogus PDF</span>
         </a>
-        <button class="btn btn--sm btn--icon-mobile" type="button" title="Foto’s exporteren"
+        <button class="btn btn--sm pl-tool" type="button" title="Foto’s exporteren"
                 aria-label="Foto’s exporteren" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
-          <app-icon name="media" [size]="18" /><span class="hide-mobile">Foto’s exporteren</span>
+          <app-icon name="media" [size]="16" /><span class="pl-tool__label">Foto’s exporteren</span>
         </button>
-        <a class="btn btn--primary btn--sm hide-mobile" routerLink="/products/new">+ Nieuw</a>
+        <a class="btn btn--primary btn--sm" routerLink="/products/new">+ Nieuw</a>
       } @else {
         <!-- Voorraad is one tap from the list; the PDF and the photo export sit behind ⋯. -->
         <a class="btn btn--sm btn--icon-mobile" routerLink="/stock" title="Voorraad" aria-label="Voorraad">
@@ -102,166 +112,101 @@ interface ProductSwipe {
     </app-page-header>
 
     @if (desktop.active()) {
-      <div class="content">
-        <section class="catalog-tools" aria-label="Producten zoeken en filteren">
-          <div class="catalog-search">
-            <label class="sr-only" for="catalog-search-input">Zoeken</label>
-            <svg class="catalog-search__icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="6.5" />
-              <path d="m16 16 4 4" />
-            </svg>
-            <input class="input catalog-search__input" id="catalog-search-input" type="search"
-                   placeholder="Zoek naam, SKU, kleur of barcode…"
-                   [ngModel]="query()" (ngModelChange)="setQuery($event)" />
-            @if (query()) {
-              <button class="catalog-search__clear" type="button" aria-label="Zoekopdracht wissen"
-                      (click)="setQuery('')">×</button>
+      <div class="content pl-content">
+        <div class="wk-subbar pl-subbar">
+          <div class="pl-subbar__chips" role="group" aria-label="Categorie">
+            @if (categoriesFolded()) {
+              <button class="wk-chip" type="button" aria-haspopup="menu" [attr.aria-pressed]="categoryFilter() !== null"
+                      (click)="openMenu('category', $event)">{{ categoryChipLabel() }} <app-icon name="chevron-down" [size]="13" /></button>
+            } @else {
+              <button class="wk-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="setCategory(null)">
+                Alle <span class="pl-chip-count">{{ chipTotal() }}</span></button>
+              @for (chip of categoryChips(); track chip.key) {
+                <button class="wk-chip" type="button" [attr.aria-pressed]="categoryFilter() === chip.id" (click)="setCategory(chip.id)">
+                  {{ chip.label }} <span class="pl-chip-count">{{ chip.count }}</span></button>
+              }
             }
           </div>
-
-          <!-- Filters and sorting fold away behind one button: the search box
-               is what you reach for; the rest is there when you need it. -->
-          <button class="filter-toggle" type="button"
-                  [class.filter-toggle--active]="activeFilterCount() > 0"
-                  [attr.aria-expanded]="filtersOpen()"
-                  (click)="filtersOpen.set(!filtersOpen())">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 6h16M7 12h10M10 18h4" />
-            </svg>
-            <span class="hide-mobile">Filters</span>
-            @if (activeFilterCount(); as n) {
-              <b class="filter-toggle__count">{{ n }}</b>
-            }
-            <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
-          </button>
-
-          @if (filtersOpen()) {
-          <div class="filter-grid">
-            <label class="filter-field">
-              <span class="filter-field__label">Categorie</span>
-              <select class="select filter-field__select" aria-label="Filter op categorie"
-                      [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
-                <option [ngValue]="null">Alle categorieën</option>
-                @for (category of categories(); track category.id) {
-                  <option [ngValue]="category.id">{{ category.name }}</option>
-                }
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span class="filter-field__label">Publicatie</span>
-              <select class="select filter-field__select" aria-label="Filter op publicatiestatus"
-                      [disabled]="familyLoading() || familyLoadError()"
-                      [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
-                <option value="ALL">Alle statussen</option>
-                <option value="NEEDS_WORK">Aandacht nodig</option>
-                <option value="WEBSITE">Website live</option>
-                <option value="ORDER_APP">Orderapp live</option>
-                <option value="INACTIVE">Inactief</option>
-              </select>
-            </label>
-
-            <!-- Sorting as a compact icon control: on a phone a third full
-                 select pushed the filter bar onto a second row. -->
-            <div class="filter-field filter-sort">
-              <span class="filter-field__label" aria-hidden="true">Sorteren</span>
-              <div class="filter-sort__box">
-                <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
-                </svg>
-                <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
-                <select class="filter-sort__native" aria-label="Sorteren"
-                        [title]="'Sorteren: ' + sortLabel()"
-                        [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
-                  @for (option of sortOptions(); track option.key) {
-                    <option [value]="option.key">{{ option.label }}</option>
-                  }
-                </select>
-              </div>
-            </div>
-
+          <span class="pl-subbar__sep" aria-hidden="true"></span>
+          @if (attentionCount() !== null) {
+            <button class="wk-chip tone-warn" type="button" [attr.aria-pressed]="statusFilter() === 'NEEDS_WORK'" (click)="toggleAttention()">
+              Aandacht <span class="pl-chip-count">{{ attentionCount() }}</span></button>
+          }
+          <button class="wk-chip" type="button" aria-haspopup="menu" [attr.aria-pressed]="statusFilter() !== 'ALL' && statusFilter() !== 'NEEDS_WORK'"
+                  [disabled]="familyLoading() || familyLoadError()" (click)="openMenu('status', $event)">
+            {{ statusChipLabel() }} <app-icon name="chevron-down" [size]="13" /></button>
+          <div class="wk-subbar__end pl-subbar__end">
+            <button class="wk-btn wk-btn--ghost wk-btn--sm" type="button" aria-haspopup="menu" (click)="openMenu('sort', $event)">
+              <app-icon name="order" [size]="14" />{{ sortButton() }}</button>
+            @if (!loading()) { <span class="pl-subbar__count">{{ filtered().length }} van {{ products().length }}</span> }
+            @if (hasFilters()) { <button class="wk-link" type="button" (click)="resetFilters()">Filters wissen</button> }
           </div>
+        </div>
 
-          }
-
-          @if (filtersOpen() || hasFilters()) {
-            <div class="filter-summary" aria-live="polite">
-              <span><strong>{{ filtered().length }}</strong> van {{ products().length }} producten</span>
-              @if (hasFilters()) {
-                <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
-              }
-            </div>
-          }
-          @if (familyLoadError()) {
-            <div class="family-load-warning" role="alert">
-              <span>Publicatiestatus en varianten zijn niet geladen.</span>
-              <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
-                      (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
-            </div>
-          }
-        </section>
-
-        @for (section of sections(); track section.key) {
-          <!-- One card per category, its name above the white: the eye finds
-               "Glas" faster than it reads twelve product names. -->
-          <section class="section" [style.animation-delay.ms]="$index * 40">
-            @if (section.name !== null) {
-              <h2 class="section-head">
-                <span>{{ section.name }}</span>
-                <small>{{ section.count }}</small>
-              </h2>
-            }
-            <div class="card">
-              <div class="list">
-              @for (group of section.groups; track group.key) {
-                <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
-              }
-              </div>
-            </div>
-          </section>
-        } @empty {
-          <div class="card">
-            <div class="list">
-              @if (loadError(); as error) {
-                <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
-              } @else if (loading()) {
-                <app-skeleton kind="list" [rows]="6" />
-              } @else {
-                <div class="empty">
-                  <div class="empty__icon">◈</div>
-                  <div class="empty__title">Geen producten gevonden</div>
-                  <a class="btn btn--primary" routerLink="/products/new">Product toevoegen</a>
-                </div>
-              }
-            </div>
+        @if (familyLoadError()) {
+          <div class="family-load-warning pl-warning" role="alert">
+            <span>Publicatiestatus en varianten zijn niet geladen.</span>
+            <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
+                    (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
           </div>
         }
-      </div>
 
-      @if (demoGroups().length && !loading()) {
-        <!-- Demo pieces: ideas we show, nothing the shelf sells. Folded away
-             so the working list stays about sellable stock. -->
-        <div class="content demo-fold-wrap">
-          <section class="section section--demo">
-            <button class="demo-fold" type="button" [attr.aria-expanded]="showDemoFold()"
-                    (click)="demoOpen.set(!showDemoFold())">
-              <span class="demo-chip">demo</span>
-              <span class="demo-fold__label">Demoproducten</span>
-              <small>{{ demoCount() }}</small>
-              <i class="demo-fold__chev" [class.demo-fold__chev--open]="showDemoFold()" aria-hidden="true"></i>
-            </button>
-            @if (showDemoFold()) {
-              <div class="card">
-                <div class="list">
-                  @for (group of demoGroups(); track group.key) {
-                    <ng-container *ngTemplateOutlet="productGroup; context: { $implicit: group }" />
-                  }
-                </div>
+        @if (loadError(); as error) {
+          <div class="wk-card"><app-load-error [message]="error" [busy]="loading()" (retry)="reload()" /></div>
+        } @else if (loading()) {
+          <div class="wk-card pl-card"><app-skeleton kind="table" [rows]="8" /></div>
+        } @else if (!sections().length && !demoGroups().length) {
+          <div class="wk-card">
+            @if (products().length) {
+              <div class="wk-empty">
+                <div class="wk-empty__icon"><app-icon name="search" [size]="22" /></div>
+                <h2 class="wk-empty__title">Geen producten gevonden</h2>
+                <p class="wk-empty__text">Pas je zoekopdracht of filters aan.</p>
+                <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="resetFilters()">Filters wissen</button></div>
+              </div>
+            } @else {
+              <div class="wk-empty">
+                <div class="wk-empty__icon"><app-icon name="products" [size]="22" /></div>
+                <h2 class="wk-empty__title">Nog geen producten</h2>
+                <p class="wk-empty__text">Voeg je eerste product toe; kleuren en maten hang je daarna aan de reeks.</p>
+                <div class="wk-empty__actions"><a class="wk-btn wk-btn--primary" routerLink="/products/new">+ Nieuw product</a></div>
               </div>
             }
-          </section>
-        </div>
-      }
+          </div>
+        } @else if (wide()) {
+          <div class="wk-card pl-card mo-fade">
+            <app-product-list-table [host]="this" />
+          </div>
+        } @else {
+          <!-- 680–899: the phone rows in cards, a section per category. -->
+          @for (section of sections(); track section.key) {
+            <section class="pl-msection">
+              @if (section.name !== null) {
+                <h2 class="pl-msection__head">{{ section.name }} <small>{{ section.count }}</small></h2>
+              }
+              <div class="ios-group ios-group--thumbs pl-mgroup">
+                @for (group of section.groups; track group.key) {
+                  <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
+                }
+              </div>
+            </section>
+          }
+          @if (demoGroups().length) {
+            <section class="pl-msection">
+              <button class="pl-msection__head pl-msection__toggle" type="button" [attr.aria-expanded]="showDemoFold()" (click)="toggleDemo()">
+                Demoproducten <small>{{ demoCount() }}</small> <app-icon class="plp-demo__chev" [class.plp-demo__chev--open]="showDemoFold()" name="chevron-down" [size]="14" />
+              </button>
+              @if (showDemoFold()) {
+                <div class="ios-group ios-group--thumbs pl-mgroup">
+                  @for (group of demoGroups(); track group.key) {
+                    <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
+                  }
+                </div>
+              }
+            </section>
+          }
+        }
+      </div>
     } @else {
       <div class="content plp">
         <div class="ios-search plp-search">
@@ -347,211 +292,6 @@ interface ProductSwipe {
         }
       </div>
     }
-
-    <ng-template #productGroup let-group>
-
-            @if (group.products.length === 1) {
-              <ng-container *ngTemplateOutlet="productRow; context: { $implicit: group.products[0], nested: false }" />
-            } @else {
-              <!-- The series head: one line per product range, the variants
-                   fold out below it. Less scrolling past six shades of the
-                   same vase. -->
-              <button class="list-item group-head" type="button"
-                      [class.group-head--open]="isOpen(group)"
-                      [attr.aria-expanded]="isOpen(group)"
-                      (click)="toggle(group)">
-                @if (group.photo) {
-                  <img class="thumb" [appAuthSrc]="group.photo" [alt]="group.name" draggable="false" />
-                } @else {
-                  <div class="thumb thumb--placeholder">◈</div>
-                }
-                <div class="list-item__body">
-                  <div class="product-row__primary">
-                    <div class="product-row__title">
-                      <strong>{{ group.name }}</strong>
-                    </div>
-                    <div class="product-row__badges">
-                      @if (groupAllDemo(group)) { <span class="demo-chip">demo</span> }
-                      @if (groupAttention(group); as attention) {
-                        <span class="master-chip master-chip--warn"
-                              [attr.title]="groupTooltip(group)">{{ attention }}</span>
-                      }
-                    </div>
-                  </div>
-                  <div class="group-head__meta">
-                    <span class="group-head__count">
-                      {{ groupSummary(group) }}
-                      <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
-                        <path d="M2.5 4.5 6 8l3.5-3.5" />
-                      </svg>
-                    </span>
-                    @if (group.colours.length) {
-                      <span class="group-head__dots" aria-hidden="true">
-                        @for (colour of group.colours.slice(0, 8); track colour.name) {
-                          <i [style.background]="colour.hex || 'var(--surface-2)'"
-                             [class.dot--empty]="!colour.hex" [title]="colour.name"></i>
-                        }
-                        @if (group.colours.length > 8) {
-                          <small>+{{ group.colours.length - 8 }}</small>
-                        }
-                      </span>
-                    }
-                  </div>
-                </div>
-                <div class="list-item__end group-head__end">
-                  <div class="product-row__stock">
-                    <span>Voorraad</span>
-                    @if (group.stock) {
-                      <strong class="stock">{{ groupStock(group) }}</strong>
-                    } @else {
-                      <strong class="stock stock--none">0</strong>
-                    }
-                    @if (expectedForGroup(group); as exp) {
-                      <small class="stock-expected">+{{ exp | num }} verwacht</small>
-                    }
-                  </div>
-                  <!-- Variants mostly share a price, so the head shows the
-                       lead variant's; a faint mark says when they differ. -->
-                  <div class="product-row__prices">
-                    <div>
-                      <span>Kostprijs</span>
-                      @if (purchasePrice(group.lead); as price) {
-                        <strong class="num">{{ price | eur }}@if (group.costVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
-                      } @else {
-                        <strong class="muted">—</strong>
-                      }
-                    </div>
-                    <div>
-                      <span>Catalogusprijs</span>
-                      @if (salesPrice(group.lead); as price) {
-                        <strong class="num">{{ price | eur }}@if (group.priceVaries) {<i class="varies" title="Verschilt per variant">≠</i>}</strong>
-                        <small>per {{ salesUnit(group.lead).singular }}</small>
-                      } @else {
-                        <strong class="muted">—</strong>
-                      }
-                    </div>
-                  </div>
-                </div>
-              </button>
-              @if (isOpen(group)) {
-                <div class="group-body">
-                  @for (product of group.products; track product.id) {
-                    <ng-container *ngTemplateOutlet="productRow; context: { $implicit: product, nested: true }" />
-                  }
-                </div>
-              }
-            }
-    </ng-template>
-
-    <ng-template #productRow let-product let-nested="nested">
-      <div class="swipe"
-           [class.swipe--nested]="nested"
-           [class.swipe--open]="swiped() === product.id"
-           [class.swipe--dragging]="draggingProductId() === product.id"
-           [style.--swipe-offset]="draggingProductId() === product.id
-             ? swipeOffset() + 'px' : null">
-      <a class="list-item swipe__row" [class.list-item--inactive]="!product.active"
-         [class.list-item--nested]="nested"
-         [routerLink]="['/products', product.id]"
-         (pointerdown)="startSwipe($event, product)"
-         (pointermove)="moveSwipe($event, product)"
-         (pointerup)="finishSwipe($event)"
-         (pointercancel)="cancelSwipe($event)"
-         (dragstart)="$event.preventDefault()"
-         (click)="blockWhenSwiped($event, product.id)">
-        @if (salesPhotoUrl(product); as photo) {
-          <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="photo"
-               [alt]="product.name" draggable="false" />
-        } @else {
-          <div class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</div>
-        }
-        <div class="list-item__body">
-          <div class="product-row__primary">
-            <div class="product-row__title">
-              @if (!nested) {
-                <strong>{{ product.name }}</strong>
-              }
-              @if (variantLabel(product); as variant) {
-                <span class="variant-label">
-                  @if (!nested) { · }
-                  {{ variant }}
-                  <!-- The dot only where it tells colours apart: inside an
-                       opened series. On a lone product it is just noise. -->
-                  @if (nested && colourHex(product); as hex) {
-                    <i class="colour-dot" [style.background]="hex" [title]="product.colour"></i>
-                  }
-                </span>
-              }
-            </div>
-            <div class="product-row__badges">
-              @if (product.demo) { <span class="demo-chip">demo</span> }
-              <!-- Inside a series a variant shows the points that concern
-                   it: the shared ones plus its own, never another colour's.
-                   Hovering lists them in words. -->
-              @if (attentionLabel(product, nested); as attention) {
-                <span class="master-chip"
-                      [class.master-chip--muted]="!product.active"
-                      [class.master-chip--warn]="product.active"
-                      [attr.title]="product.active ? issueTooltip(product, nested) : null">
-                  {{ attention }}
-                </span>
-              }
-            </div>
-          </div>
-          <div class="product-row__sku mono">{{ product.sku || 'Geen SKU' }}</div>
-        </div>
-        <div class="list-item__end product-row__end">
-          <div class="product-row__stock" [attr.title]="stockBreakdown(product)">
-            <span>Voorraad</span>
-            @if (stockOf(product)) {
-              <strong class="stock">{{ stockLabel(stockOf(product)) }}</strong>
-            } @else {
-              <strong class="stock stock--none">0</strong>
-            }
-            @if (expectedFor(product); as exp) {
-              <!-- On the water: what the catalogue may promise soon, and when. -->
-              <small class="stock-expected" [attr.title]="'Op ' + exp.orderNumbers.join(', ')">
-                +{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}
-              </small>
-            }
-          </div>
-          <div class="product-row__prices">
-          <div>
-            <span>Kostprijs</span>
-            @if (purchasePrice(product); as price) {
-              <strong class="num">{{ price | eur }}</strong>
-            } @else {
-              <strong class="muted">—</strong>
-            }
-          </div>
-          <div>
-            <span>Catalogusprijs</span>
-            @if (salesPrice(product); as price) {
-              <strong class="num">{{ price | eur }}</strong>
-              <small>per {{ salesUnit(product).singular }}</small>
-            } @else {
-              <strong class="muted">—</strong>
-            }
-          </div>
-          </div>
-        </div>
-      </a>
-      <button class="swipe__delete" type="button"
-              [disabled]="deleting() !== null"
-              [attr.aria-label]="'Product ' + product.name + ' verwijderen'"
-              [attr.title]="'Product verwijderen'"
-              (focus)="revealDelete(product.id)"
-              (keydown.escape)="closeDelete($event)"
-              (click)="remove(product)">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-          <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-        </svg>
-      </button>
-      </div>
-    </ng-template>
 
     <ng-template #phoneGroup let-group>
       @if (group.products.length === 1) {
@@ -684,6 +424,9 @@ interface ProductSwipe {
     @if (photoExportOpen()) {
       <app-photo-export-sheet (closed)="photoExportOpen.set(false)" />
     }
+    @if (deskMenu(); as menu) {
+      <app-context-menu [title]="menu.title" [anchor]="menu.at" [items]="menu.items" (pick)="pickDeskMenu($event)" (closed)="deskMenu.set(null)" />
+    }
     @if (moreMenuOpen()) {
       <app-context-menu title="Producten" variant="ios" cancelLabel="Annuleren" [items]="moreItems" (pick)="pickMore($event)" (closed)="moreMenuOpen.set(false)" />
     }
@@ -724,217 +467,8 @@ interface ProductSwipe {
     <!-- The list's partial arrives with this lazy chunk (see ProductListStyles). -->
     <app-product-list-styles />
   `,
-  styles: `
-    .catalog-tools {
-      width: 100%; min-width: 0; margin-bottom: 14px; padding: 12px;
-      border: 1px solid var(--line); border-radius: var(--r);
-      background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
-      box-shadow: 0 5px 18px rgb(31 25 22 / 4%);
-    }
-    .sr-only {
-      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-    }
-    .catalog-search { position: relative; display: block; min-width: 0; flex: 1; }
-    .catalog-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
-    .filter-toggle {
-      display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px;
-      border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
-      color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
-    }
-    .filter-toggle:hover { background: var(--surface-2); }
-    .filter-toggle--active { border-color: var(--rose-line); color: var(--rose-dark); background: var(--rose-soft); }
-    .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; }
-    .filter-toggle__count {
-      min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rose); color: #fff;
-      font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
-    }
-    .filter-toggle__chev {
-      width: 7px; height: 7px; margin-left: 2px; border-right: 1.6px solid currentColor;
-      border-bottom: 1.6px solid currentColor; transform: translateY(-2px) rotate(45deg);
-      transition: transform .15s ease; opacity: .7;
-    }
-    .filter-toggle__chev--open { transform: translateY(2px) rotate(-135deg); }
-    .filter-grid, .filter-summary, .family-load-warning { flex: 1 0 100%; }
-    .catalog-search__icon {
-      position: absolute; z-index: 1; left: 13px; top: 50%; transform: translateY(-52%);
-      width: 18px; height: 18px; color: var(--muted); fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; pointer-events: none;
-    }
-    .catalog-search__input { padding-left: 42px; padding-right: 42px; }
-    .catalog-search__clear {
-      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
-      background: transparent; color: var(--muted); font-size: 24px; line-height: 1;
-      cursor: pointer;
-    }
-    .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
-    .filter-grid {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-      gap: 9px; min-width: 0; margin-top: 2px;
-    }
-    .filter-sort__box {
-      position: relative; display: flex; align-items: center; gap: 7px; min-height: 42px;
-      padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-      background: var(--surface); color: var(--ink-2);
-    }
-    .filter-sort__box:hover { background: var(--surface-2); }
-    .filter-sort__icon { width: 18px; height: 18px; fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .filter-sort__text { font-size: 13px; font-weight: 650; white-space: nowrap; }
-    /* The real select lies invisibly over the box: the native picker opens
-       on tap, the box is just how it looks. */
-    .filter-sort__native { position: absolute; inset: 0; width: 100%; height: 100%;
-      opacity: 0; cursor: pointer; font-size: 16px; }
-    .filter-field { display: block; min-width: 0; }
-    .filter-field__label {
-      display: block; margin: 0 0 5px 2px; color: var(--muted);
-      font-size: 10px; font-weight: 750; letter-spacing: .055em; text-transform: uppercase;
-    }
-    .filter-sort .filter-field__label { visibility: hidden; }
-    .filter-field__select {
-      display: block; min-width: 0; max-width: 100%; min-height: 42px;
-      padding: 9px 30px 9px 10px; font-size: 13px; font-weight: 650;
-      text-overflow: ellipsis;
-    }
-    .filter-summary {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      min-width: 0; margin-top: 0; color: var(--muted); font-size: 12px;
-    }
-    .filter-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-    .filter-reset {
-      flex: 0 0 auto; padding: 4px 0; border: 0; background: transparent;
-      color: var(--rose-dark); font-size: 12px; font-weight: 700; cursor: pointer;
-    }
-    .family-load-warning {
-      grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center;
-      justify-content: space-between; gap: 7px 12px; margin-top: 9px; padding: 8px 10px;
-      border: 1px solid #eddcb9; border-radius: 10px; background: var(--warn-soft);
-      color: var(--ink-2); font-size: 11px;
-    }
-    @media (min-width: 680px) {
-      .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
-    }
-    .list-item--inactive { opacity: .66; }
-    .demo-chip { flex: none; padding: 1px 7px; border-radius: 6px; background: var(--warn-soft);
-      border: 1px dashed var(--warn); color: var(--warn); font-size: 9.5px; font-weight: 800;
-      letter-spacing: .07em; text-transform: uppercase; }
-    .demo-fold-wrap { padding-top: 0; margin-top: -20px; }
-    .demo-fold { display: flex; align-items: center; gap: 8px; width: 100%; padding: 11px 14px;
-      margin-bottom: 8px; border: 1px dashed var(--line-strong); border-radius: var(--r-sm);
-      background: var(--surface-2); color: var(--ink-2); font: inherit; font-size: 12.5px;
-      font-weight: 650; text-align: left; cursor: pointer; }
-    .demo-fold:hover { background: var(--surface); }
-    .demo-fold__label { flex: none; }
-    .demo-fold small { color: var(--muted); }
-    .demo-fold__chev { width: 7px; height: 7px; margin-left: auto; border-right: 1.6px solid var(--muted);
-      border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); transition: transform .15s ease; }
-    .demo-fold__chev--open { transform: rotate(-135deg); }
-    .product-row__primary {
-      display: flex; min-width: 0; flex-wrap: wrap; align-items: center;
-      justify-content: space-between; gap: 4px 8px;
-    }
-    /* Wraps: a long name takes the whole line and the colour label drops
-       under it, instead of both fighting for one line. */
-    .product-row__title { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: 2px 4px; }
-    /* A long name gives way with an ellipsis; the colour label stays whole
-       - "· Roc" told nobody anything. */
-    .product-row__title strong { flex: 0 1 auto; overflow: hidden; min-width: 0; font-size: 13.5px;
-      text-overflow: ellipsis; white-space: nowrap; }
-    .product-row__title span { flex: 0 0 auto; color: var(--muted); font-size: 11px;
-      white-space: nowrap; }
-    .product-row__badges { display: flex; flex: 0 0 auto; gap: 4px; }
-    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
-    .product-row__end { display: flex; align-items: center; gap: 8px; }
-    .product-row__stock { display: grid; justify-items: end; gap: 4px; }
-    .product-row__stock span { color: var(--muted); font-size: 8px; font-weight: 700;
-      letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
-    .stock { display: inline-flex; align-items: center; padding: 0 7px; min-height: 18px;
-      border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line);
-      color: var(--ink-2); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
-      white-space: nowrap; }
-    /* Nothing on the shelf: a plain figure, no badge to shout about it. */
-    .stock--none { padding: 0; border: 0; background: transparent; color: var(--muted); font-weight: 600; }
-    .stock-expected { display: block; margin-top: 2px; color: var(--warn); font-size: 10px; font-weight: 700;
-      white-space: nowrap; text-transform: none; letter-spacing: 0; }
-    .product-row__prices { display: grid; gap: 4px; width: 84px; box-sizing: border-box;
-      padding-left: 8px; border-left: 1px solid var(--line); }
-    @media (min-width: 680px) {
-      .product-row__end { gap: 10px; }
-      .product-row__prices { width: 96px; padding-left: 10px; }
-    }
-    .product-row__prices > div { display: grid; }
-    .product-row__prices span { color: var(--muted); font-size: 8px; font-weight: 700;
-      letter-spacing: .055em; line-height: 1.15; text-transform: uppercase; }
-    .product-row__prices strong { font-size: 11.5px; line-height: 1.3; }
-    .product-row__prices small { overflow: hidden; color: var(--muted); font-size: 9.5px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-    .swipe--dragging { user-select: none; }
-    .swipe--dragging .swipe__row {
-      transform: translateX(var(--swipe-offset, 0px)); transition: none; cursor: grabbing;
-    }
-    .master-chip { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 18px;
-      padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 750;
-      letter-spacing: .03em; text-transform: uppercase; }
-    .master-chip--warn { color: var(--warn); background: var(--warn-soft); }
-    .master-chip--muted { color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); }
-
-    .section { animation: section-in .28s ease both; }
-    .section + .section { margin-top: 18px; }
-    @keyframes section-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: none; }
-    }
-    @media (prefers-reduced-motion: reduce) { .section { animation: none; } }
-    .section-head {
-      display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px 4px;
-      color: var(--ink-2); font-size: 11.5px; font-weight: 800; letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-    .section-head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
-    .group-head { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit;
-      text-align: left; cursor: pointer; }
-    .group-head:hover { background: var(--surface-2); }
-    /* Opened: a quiet grey tint and a thin bar, the same in every theme -
-       the accent colour would shout over the whole list. */
-    .group-head--open { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); }
-    .group-head__meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
-    .group-head__count { color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .group-head__dots { display: inline-flex; align-items: center; gap: 3px; }
-    .group-head__dots i { width: 11px; height: 11px; border-radius: 50%;
-      border: 1px solid rgb(0 0 0 / 14%); display: inline-block; }
-    .group-head__dots .dot--empty { border-style: dashed; }
-    .group-head__dots small { color: var(--muted); font-size: 10px; margin-left: 2px; }
-    .group-head__end { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-    .varies { font-style: normal; color: var(--muted); font-size: 9px; margin-left: 3px;
-      vertical-align: top; cursor: help; }
-    /* The fold hint lives in the text line, so the figures column stays
-       aligned with every other row. */
-    .group-head__count { display: inline-flex; align-items: center; gap: 5px; }
-    /* A small ringed chevron: readable as "this folds open" at a glance,
-       without the weight of a button. */
-    .group-head__chev { width: 18px; height: 18px; padding: 3px; box-sizing: border-box;
-      border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface);
-      fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round;
-      stroke-linejoin: round; transition: transform .15s ease, background .15s ease; }
-    .group-head:hover .group-head__chev { background: var(--surface-2); }
-    .group-head--open .group-head__chev { transform: rotate(180deg); background: var(--surface-2); }
-
-    /* The opened series: its variants sit in a tinted well with a bar on the
-       left, so the eye sees at once what belongs to the head above. */
-    .group-body { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted));
-      border-bottom: 1px solid var(--line); }
-    .group-body .swipe:last-child .list-item { border-bottom: 0; }
-    .list-item--nested { padding-left: 30px; min-height: 50px; background: var(--surface-2); }
-    .thumb--sm { width: 36px; height: 36px; }
-
-    .variant-label { display: inline-flex; align-items: center; gap: 5px; }
-    .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block;
-      border: 1px solid rgb(0 0 0 / 14%); }
-
-  `,
 })
-export class ProductList {
+export class ProductList implements ProductListTableHost {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
@@ -948,6 +482,9 @@ export class ProductList {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  /** Desk widths: the table from 900, the full column set and the category chips from 1360. */
+  readonly wide = this.media('(min-width: 900px)');
+  readonly full = this.media('(min-width: 1360px)');
 
   readonly query = signal('');
   /** The search as the address bar has it: written 300 ms after the typing stops. */
@@ -1023,6 +560,90 @@ export class ProductList {
     });
     this.destroyRef.onDestroy(() => { if (this.queryTimer !== null) clearTimeout(this.queryTimer); });
     void this.load();
+  }
+
+  private media(query: string) {
+    const matches = signal(false);
+    const list = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query) : null;
+    if (list) {
+      matches.set(list.matches);
+      const change = (event: MediaQueryListEvent) => matches.set(event.matches);
+      list.addEventListener('change', change);
+      this.destroyRef.onDestroy(() => list.removeEventListener('change', change));
+    }
+    return matches.asReadonly();
+  }
+
+  /* ---- the desk subbar and its menus ---- */
+  readonly deskMenu = signal<{ kind: 'category' | 'status' | 'sort'; title: string; at: MenuPoint; items: ContextMenuItem[] } | null>(null);
+  /** Below 1360, or with more than five categories, the chips fold into one "Categorie ▾". */
+  readonly categoriesFolded = computed(() => !this.full() || this.categoryChips().filter((chip) => chip.id !== 'none').length > 5);
+  readonly chipTotal = computed(() => this.products().filter((product) => !product.demo).length);
+  readonly categoryChipLabel = computed(() => {
+    const category = this.categoryFilter();
+    if (category === null) return 'Categorie';
+    return this.categoryChips().find((chip) => chip.id === category)?.label ?? 'Categorie';
+  });
+  readonly statusChipLabel = computed(() => {
+    const status = this.statusFilter();
+    return status === 'ALL' || status === 'NEEDS_WORK' ? 'Publicatie' : STATUS_OPTIONS.find((option) => option.key === status)?.label ?? 'Publicatie';
+  });
+  readonly sortButton = computed(() => sortButtonLabel(this.sortKey()));
+
+  openMenu(kind: 'category' | 'status' | 'sort', event: MouseEvent): void {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const at = { x: kind === 'sort' ? box.right : box.left, y: box.bottom + 6 };
+    if (kind === 'category') {
+      this.deskMenu.set({ kind, at, title: 'Categorie', items: [
+        { id: 'all', label: `Alle categorieën · ${this.chipTotal()}`, checked: this.categoryFilter() === null },
+        ...this.categoryChips().map((chip) => ({ id: String(chip.id), label: `${chip.label} · ${chip.count}`, checked: this.categoryFilter() === chip.id })),
+      ] });
+    } else if (kind === 'status') {
+      this.deskMenu.set({ kind, at, title: 'Publicatie', items: STATUS_OPTIONS.map((option) => ({
+        id: option.key, label: option.label, checked: this.statusFilter() === option.key || (option.key === 'ALL' && this.statusFilter() === 'NEEDS_WORK'),
+      })) });
+    } else {
+      this.deskMenu.set({ kind, at, title: 'Volgorde', items: SORT_OPTIONS.map((option) => ({ id: option.key, label: option.label, checked: this.sortKey() === option.key })) });
+    }
+  }
+
+  pickDeskMenu(item: ContextMenuItem): void {
+    const menu = this.deskMenu();
+    this.deskMenu.set(null);
+    if (!menu) return;
+    if (menu.kind === 'category') this.setCategory(item.id === 'all' ? null : item.id === 'none' ? 'none' : Number(item.id));
+    else if (menu.kind === 'status') this.statusFilter.set(item.id as ListStatus);
+    else this.sortKey.set(item.id as ListSort);
+  }
+
+  setSort(sort: ListSort): void {
+    this.sortKey.set(sort);
+  }
+
+  toggleDemo(): void {
+    this.demoOpen.set(!this.showDemoFold());
+  }
+
+  /** Esc in the search clears it first; a second Esc leaves the field. */
+  clearSearch(event: Event): void {
+    if (!this.query()) { (event.target as HTMLElement).blur(); return; }
+    event.preventDefault();
+    this.setQuery('');
+  }
+
+  /** '/' focuses the search (until the shell listens for it everywhere). */
+  onDocumentKey(event: KeyboardEvent): void {
+    if (event.key !== '/' || !this.desktop.active()) return;
+    const context = keyContext(event, null);
+    if (context.typing || context.overlayOpen || context.mod) return;
+    const field = document.querySelector<HTMLInputElement>('app-product-list [data-page-search]');
+    if (!field) return;
+    event.preventDefault();
+    field.focus();
+  }
+
+  familyKnown(): boolean {
+    return !this.familyLoading() && !this.familyLoadError();
   }
 
   /** Location.replaceState: no history entry and no navigation, only while the list is the screen. */
@@ -1160,6 +781,7 @@ export class ProductList {
       .then(([levels, locations]) => {
         this.levels.set(levels);
         this.locationNames.set(new Map(locations.filter((l) => l.id !== null).map((l) => [l.id!, l.name])));
+        this.activeLocations.set(locations.filter((l) => l.active && l.id !== null).sort((a, b) => a.position - b.position));
       })
       .catch(() => undefined);
     void this.sourcing.expectedStock()
@@ -1426,6 +1048,36 @@ export class ProductList {
     for (const [productId, own] of lines) result.set(productId, own.join(' · '));
     return result;
   });
+
+  private readonly activeLocations = signal<StockLocation[]>([]);
+
+  /**
+   * "Tica Brussel 8": what lies outside the first location, so a second
+   * location's stock shows on the row; null when only the first holds any.
+   */
+  otherLocationsLine(products: readonly Product[]): string | null {
+    const others = this.activeLocations().slice(1);
+    if (!others.length) return null;
+    const ids = new Set(products.map((product) => product.id));
+    const parts = others.map((location) => {
+      const quantity = this.levels().filter((level) => level.locationId === location.id && ids.has(level.productId))
+        .reduce((sum, level) => sum + level.quantity, 0);
+      return quantity ? `${location.name} ${quantity.toLocaleString('nl-BE')}` : null;
+    }).filter((part): part is string => part !== null);
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  /** The series' stock per location, for the tooltip. */
+  groupBreakdown(group: ProductGroup): string | null {
+    const names = this.locationNames();
+    if (names.size <= 1) return null;
+    const ids = new Set(group.products.map((product) => product.id));
+    const totals = new Map<number, number>();
+    for (const level of this.levels()) {
+      if (ids.has(level.productId)) totals.set(level.locationId, (totals.get(level.locationId) ?? 0) + level.quantity);
+    }
+    return [...totals].map(([id, quantity]) => `${names.get(id) ?? '?'}: ${quantity.toLocaleString('nl-BE')}`).join(' · ');
+  }
 
   stockBreakdown(product: Product): string | null {
     if (this.locationNames().size <= 1) return null;

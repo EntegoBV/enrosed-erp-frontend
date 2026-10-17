@@ -2,6 +2,67 @@
    Phone (<680): inset groups per category, today's swipe rows laid out as
    plp-row. Names wrap and are never cut; figures never ellipsize. */
 
+/* ---- Rows (phone, and the desk below 900 px inside cards) ---- */
+/* One row: thumb, the name and its lines, the stock column. */
+app-product-list .plp-row {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px;
+  padding: 10px 14px 10px 16px; border: 0; background: var(--surface); color: var(--ink);
+  font: inherit; text-align: left; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+app-product-list .plp-row .ios-thumb { margin-top: 2px; }
+app-product-list .plp-thumb--empty { display: grid; place-items: center; color: var(--muted-2); font-size: 16px; }
+/* Dim the contents, not the row: the row covers the swipe's red delete button. */
+app-product-list .plp-row--inactive > * { opacity: .66; }
+app-product-list .plp-row--nested { min-height: 54px; padding-left: 28px; background: var(--surface); }
+app-product-list .plp-swipe--nested::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 16px; z-index: 2; width: 2px;
+  border-radius: 1px; background: var(--line-strong); pointer-events: none;
+}
+app-product-list .plp-head--open { background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
+app-product-list .plp-body { display: grid; flex: 1; gap: 2px; min-width: 0; }
+/* Names wrap, never cut (owner rule): no clamp, no ellipsis. */
+app-product-list .plp-name { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+app-product-list .plp-name--variant { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
+app-product-list .plp-cdot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
+app-product-list .plp-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted);
+  font-size: 13px; line-height: 1.3; overflow-wrap: anywhere;
+}
+app-product-list .plp-meta.mono { font-family: var(--mono); font-size: 12px; }
+app-product-list .plp-dots { display: inline-flex; align-items: center; gap: 3px; }
+app-product-list .plp-dots i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
+app-product-list .plp-dots .plp-dot--empty { box-shadow: inset 0 0 0 1px var(--line-strong); }
+app-product-list .plp-dots small { color: var(--muted); font-size: 11px; }
+app-product-list .plp-chev { color: var(--muted-2); transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
+app-product-list .plp-head--open .plp-chev { transform: rotate(180deg); }
+app-product-list .plp-chip {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 13%, var(--surface)); color: var(--warn); font-size: 11px; font-weight: 700;
+}
+app-product-list .plp-chip--muted { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: var(--muted); }
+app-product-list .plp-chip--demo { border: 1px dashed var(--warn); background: var(--warn-soft); letter-spacing: .04em; text-transform: uppercase; font-size: 10px; }
+app-product-list .plp-price { color: var(--ink-2); font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+app-product-list .plp-price b { color: var(--ink); font-weight: 650; }
+app-product-list .plp-nw { white-space: nowrap; }
+app-product-list .plp-varies { margin-left: 1px; color: var(--muted); font-size: 10px; font-style: normal; vertical-align: top; }
+app-product-list .plp-end {
+  display: grid; flex: none; justify-items: end; align-content: start; min-width: 64px; padding-top: 1px; text-align: right;
+}
+app-product-list .plp-end strong { font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; }
+app-product-list .plp-end strong.zero { color: var(--muted-2); font-weight: 550; }
+app-product-list .plp-end small { color: var(--muted); font-size: 11.5px; line-height: 1.25; }
+app-product-list .plp-end .exp { margin-top: 2px; color: var(--rose-dark); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+app-product-list .plp-end .plp-date { font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* The demo fold: its head is the toggle. */
+app-product-list .plp-demo__head {
+  width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer;
+}
+app-product-list .plp-demo__head .ios-section__trail { display: inline-flex; align-items: center; gap: 4px; }
+app-product-list .plp-demo__chev { transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
+app-product-list .plp-demo__chev--open { transform: rotate(180deg); }
+
+/* ---- Phone page ---- */
 @media (max-width: 679.98px) {
   app-product-list .content.plp { padding-left: 0; padding-right: 0; }
   app-product-list .plp-search { padding: 0 var(--ios-inset) 6px; }
@@ -16,68 +77,139 @@
     margin: 0 var(--ios-inset) 14px; padding: 10px 12px; border-radius: 14px;
     background: var(--warn-soft); color: var(--ink-2); font-size: 13px;
   }
-
-  /* One row: thumb, the name and its lines, the stock column. */
-  app-product-list .plp-row {
-    display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px;
-    padding: 10px 14px 10px 16px; border: 0; background: var(--surface); color: var(--ink);
-    font: inherit; text-align: left; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent;
-  }
-  app-product-list .plp-row .ios-thumb { margin-top: 2px; }
-  app-product-list .plp-thumb--empty { display: grid; place-items: center; color: var(--muted-2); font-size: 16px; }
-  /* Dim the contents, not the row: the row covers the swipe's red delete button. */
-  app-product-list .plp-row--inactive > * { opacity: .66; }
-  app-product-list .plp-row--nested { min-height: 54px; padding-left: 28px; background: var(--surface); }
-  app-product-list .plp-swipe--nested::after {
-    content: ''; position: absolute; top: 0; bottom: 0; left: 16px; z-index: 2; width: 2px;
-    border-radius: 1px; background: var(--line-strong); pointer-events: none;
-  }
-  app-product-list .plp-head--open { background: color-mix(in srgb, var(--ink) 3%, var(--surface)); }
-  app-product-list .plp-body { display: grid; flex: 1; gap: 2px; min-width: 0; }
-  /* Names wrap, never cut (owner rule): no clamp, no ellipsis. */
-  app-product-list .plp-name { font-size: 15px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
-  app-product-list .plp-name--variant { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
-  app-product-list .plp-cdot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
-  app-product-list .plp-meta {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted);
-    font-size: 13px; line-height: 1.3; overflow-wrap: anywhere;
-  }
-  app-product-list .plp-meta.mono { font-family: var(--mono); font-size: 12px; }
-  app-product-list .plp-dots { display: inline-flex; align-items: center; gap: 3px; }
-  app-product-list .plp-dots i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
-  app-product-list .plp-dots .plp-dot--empty { box-shadow: inset 0 0 0 1px var(--line-strong); }
-  app-product-list .plp-dots small { color: var(--muted); font-size: 11px; }
-  app-product-list .plp-chev { color: var(--muted-2); transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
-  app-product-list .plp-head--open .plp-chev { transform: rotate(180deg); }
   app-product-list .plp-chips-line { display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
-  app-product-list .plp-chip {
-    display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px;
-    background: color-mix(in srgb, var(--warn) 13%, var(--surface)); color: var(--warn); font-size: 11px; font-weight: 700;
-  }
-  app-product-list .plp-chip--muted { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: var(--muted); }
-  app-product-list .plp-chip--demo { border: 1px dashed var(--warn); background: var(--warn-soft); letter-spacing: .04em; text-transform: uppercase; font-size: 10px; }
-  app-product-list .plp-price { color: var(--ink-2); font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; }
-  app-product-list .plp-price b { color: var(--ink); font-weight: 650; }
-  app-product-list .plp-nw { white-space: nowrap; }
-  app-product-list .plp-varies { margin-left: 1px; color: var(--muted); font-size: 10px; font-style: normal; vertical-align: top; }
-  app-product-list .plp-end {
-    display: grid; flex: none; justify-items: end; align-content: start; min-width: 64px; padding-top: 1px; text-align: right;
-  }
-  app-product-list .plp-end strong { font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  app-product-list .plp-end strong.zero { color: var(--muted-2); font-weight: 550; }
-  app-product-list .plp-end small { color: var(--muted); font-size: 11.5px; line-height: 1.25; }
-  app-product-list .plp-end .exp { margin-top: 2px; color: var(--rose-dark); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  app-product-list .plp-end .plp-date { font-size: 11px; font-variant-numeric: tabular-nums; }
-
-  /* The demo fold: its head is the toggle. */
-  app-product-list .plp-demo__head {
-    width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer;
-  }
-  app-product-list .plp-demo__head .ios-section__trail { display: inline-flex; align-items: center; gap: 4px; }
-  app-product-list .plp-demo__chev { transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
-  app-product-list .plp-demo__chev--open { transform: rotate(180deg); }
 }
 
 /* The filter sheet sits in a sheet, wherever the list is. */
 .sheet--ios .plp-sheet { --ios-inset: 0px; }
 .sheet--ios .plp-sheet .ios-section:last-child { margin-bottom: 4px; }
+
+/* Swipe drag (phone rows): the row follows the finger. */
+app-product-list .swipe--dragging { user-select: none; }
+app-product-list .swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; cursor: grabbing; }
+
+/* ==== Desk (≥680): toolbar search, the subbar, the table (≥900), cards (680–899) ==== */
+@media (min-width: 680px) {
+  /* Wide enough for the whole placeholder, "Zoek naam, SKU, kleur of barcode". */
+  app-product-list .pl-search { width: 300px; }
+  app-product-list .pl-tool app-icon { flex: none; }
+  app-product-list .pl-content { min-width: 0; }
+
+  app-product-list .pl-subbar { gap: 8px; }
+  app-product-list .pl-subbar__chips {
+    display: flex; flex: 0 1 auto; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  }
+  app-product-list .pl-subbar__chips::-webkit-scrollbar { display: none; }
+  app-product-list .pl-subbar .wk-chip { flex: none; }
+  app-product-list .pl-subbar .wk-chip:disabled { opacity: .5; cursor: default; }
+  app-product-list .pl-chip-count { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+  app-product-list .wk-chip[aria-pressed=true] .pl-chip-count { color: inherit; opacity: .75; }
+  app-product-list .pl-subbar__sep { flex: none; width: 1px; height: 20px; background: var(--line-strong); }
+  app-product-list .pl-subbar__end { display: flex; align-items: center; gap: 10px; }
+  app-product-list .pl-subbar__count { color: var(--muted); }
+  app-product-list .pl-warning {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+    margin-bottom: 12px; padding: 8px 12px; border: 1px solid #eddcb9; border-radius: 12px;
+    background: var(--warn-soft); color: var(--ink-2); font-size: 12.5px;
+  }
+
+  /* 680–899: the phone rows inside cards. */
+  app-product-list .pl-msection { --ios-inset: 0px; margin-bottom: 18px; }
+  app-product-list .pl-msection__head {
+    display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px 4px; padding: 0; border: 0; background: none;
+    color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  }
+  app-product-list .pl-msection__head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
+  app-product-list .pl-msection__toggle { cursor: pointer; }
+  app-product-list .pl-mgroup { border: 1px solid var(--line); border-radius: 16px; }
+}
+/* Up to 1180 the search rests narrower so the subtitle stays whole; it widens while in use. */
+@media (min-width: 680px) and (max-width: 1179.98px) {
+  app-product-list .pl-search { width: 220px; transition: width var(--dur-2, .2s) var(--ease-out, ease); }
+  app-product-list .pl-search:focus-within { width: 300px; }
+}
+@media (min-width: 680px) and (max-width: 1279.98px) {
+  /* The two secondary tools become icons, their words in title and aria-label. */
+  app-product-list .pl-tool__label { display: none; }
+  app-product-list .pl-tool { padding-inline: 8px; }
+
+}
+
+/* ---- The table (app-product-list-table) ---- */
+app-product-list-table { display: block; }
+app-product-list-table .pl-table {
+  --wk-cols: 40px minmax(0, 1fr) 92px 124px 84px 116px 64px 112px 28px;
+  --wk-gap: 12px;
+}
+app-product-list-table .pl-tr { min-height: 52px; }
+app-product-list-table .pl-tr--variant { min-height: 44px; font-size: 13px; }
+app-product-list-table .pl-tr--inactive > .wk-td:not(.wk-td--actions) { opacity: .62; }
+app-product-list-table .pl-tr--head[aria-expanded=true] { background: color-mix(in srgb, var(--ink) 2.5%, var(--surface)); }
+app-product-list-table .pl-tr:hover { background: var(--surface-2); }
+/* Cells that hold names and figures: never cut, they wrap (owner rule). */
+app-product-list-table .pl-cell { display: grid; align-content: center; padding: 7px 0; overflow: visible; white-space: normal; text-overflow: clip; }
+app-product-list-table .pl-cell.wk-td--num { justify-items: end; }
+app-product-list-table .pl-thumb {
+  display: block; width: 36px; height: 36px; border-radius: 9px; background: var(--surface-2); object-fit: cover;
+  box-shadow: inset 0 0 0 .5px rgb(0 0 0 / 8%);
+}
+app-product-list-table .pl-thumb--sm { width: 30px; height: 30px; margin-left: 6px; border-radius: 8px; }
+app-product-list-table .pl-thumb--empty { display: grid; place-items: center; color: var(--muted-2); font-size: 14px; }
+app-product-list-table .pl-tr--variant .pl-cell--name { padding-left: 6px; }
+app-product-list-table .pl-name { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; min-width: 0; }
+app-product-list-table .pl-name b { font-size: 13.5px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+app-product-list-table .pl-link { min-width: 0; color: inherit; text-decoration: none; }
+app-product-list-table .pl-link:hover { text-decoration: underline; }
+app-product-list-table .pl-name .wk-pill { flex: none; height: 18px; font-size: 10.5px; }
+app-product-list-table .pl-pill--demo { border: 1px dashed var(--warn); background: var(--warn-soft); color: var(--warn); letter-spacing: .05em; text-transform: uppercase; }
+app-product-list-table .pl-cdot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
+app-product-list-table .pl-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; margin-top: 1px; color: var(--muted); font-size: 11.5px; }
+app-product-list-table .pl-sub .mono { font-family: var(--mono); font-size: 11px; letter-spacing: .02em; }
+app-product-list-table .pl-fold { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); font-weight: 650; }
+app-product-list-table .pl-fold app-icon { color: var(--muted); transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
+app-product-list-table .pl-fold--open app-icon { transform: rotate(90deg); }
+app-product-list-table .pl-dots { display: inline-flex; align-items: center; gap: 3px; }
+app-product-list-table .pl-dots i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
+app-product-list-table .pl-dots .pl-dot--empty { box-shadow: inset 0 0 0 1px var(--line-strong); }
+app-product-list-table .pl-dots small { color: var(--muted); font-size: 10.5px; }
+app-product-list-table .pl-num { font-size: 13.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+app-product-list-table .pl-num--zero { color: var(--muted-2); font-weight: 550; }
+app-product-list-table .pl-cell__sub { color: var(--muted); font-size: 11.5px; line-height: 1.3; text-align: right; }
+app-product-list-table .pl-varies { margin-left: 2px; color: var(--muted); font-size: 10px; font-style: normal; vertical-align: top; cursor: help; }
+app-product-list-table .pl-exp { color: var(--rose-dark); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+app-product-list-table .pl-margin { color: var(--ok); }
+app-product-list-table .pl-margin--bad { color: var(--danger); }
+app-product-list-table .pl-pub { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+app-product-list-table .pl-pub span { display: inline-flex; align-items: center; gap: 4px; }
+app-product-list-table .pl-pub i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+app-product-list-table .pl-pub .on { color: var(--ink-2); }
+app-product-list-table .pl-pub .on i { background: var(--ok); }
+app-product-list-table .pl-col--pub { justify-items: start; }
+app-product-list-table .pl-pubdot { display: none; width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); }
+app-product-list-table .pl-pubdot.on { background: var(--ok); }
+app-product-list-table .pl-pub__head--dot { display: none; }
+app-product-list-table .pl-under { display: none; }
+app-product-list-table .pl-pill--narrow { display: none; }
+app-product-list-table .wk-group { min-height: 34px; }
+app-product-list-table .wk-group__label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; }
+app-product-list-table .wk-group__count { font-size: 12px; letter-spacing: 0; text-transform: none; }
+app-product-list-table .pl-demo .wk-group__toggle[aria-expanded=false] app-icon { transform: rotate(-90deg); }
+
+/* 900–1359: Onderweg folds under Voorraad with its date (B2), the points
+   move after the name, Marge waits for the product page, Publicatie is a dot. */
+@media (max-width: 1359.98px) {
+  app-product-list-table .pl-table { --wk-cols: 40px minmax(0, 1fr) 124px 84px 116px 24px 28px; }
+  app-product-list-table .pl-col--onderweg,
+  app-product-list-table .pl-col--marge { display: none; }
+  app-product-list-table .pl-pub,
+  app-product-list-table .pl-pill--wide,
+  app-product-list-table .pl-pub__head { display: none; }
+  app-product-list-table .pl-pubdot { display: inline-block; }
+  app-product-list-table .pl-col--pub { justify-items: center; }
+  app-product-list-table .pl-pill--narrow { display: inline-flex; }
+  app-product-list-table .pl-under {
+    display: grid; justify-items: end; font-size: 11.5px; line-height: 1.3; text-align: right;
+  }
+  app-product-list-table .pl-under > span { white-space: nowrap; }
+  app-product-list-table .pl-under__date { color: var(--muted); }
+}
