@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import type { PurchaseOrderView } from '../../../core/api/models';
 import { containerName } from '../../purchasing/container-name';
 import { HomeData } from '../home-data';
-import { nextContainerEvents } from '../home-figures';
+import { nextContainerEvents, shortCompany } from '../home-figures';
 import { HomeWidget, amount, count, counted } from './home-w';
 
 interface Group { eur: number; pieces: number; orders: number; }
@@ -19,7 +19,10 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
  * pieces, orders, the old "Inkoop onderweg"), the next three expected
  * arrivals with a progress line from the order or sailing day, and Besteld ·
  * Op zee · Controleren. Every container is named by containerName(); each
- * arrival row opens its order.
+ * arrival row opens its order. The supplier shows short (shortCompany: "Yunnan
+ * Pubei"), its full name in the row's title and aria-label: on the desk one
+ * line, name · supplier and the arrival; on the phone the name on its own
+ * line, then the supplier and "aankomst (verwacht) …" (the late signal).
  */
 @Component({
   selector: 'app-home-inkoop',
@@ -39,8 +42,13 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
               @for (event of events(); track event.orderId) {
                 <li>
                   <a class="home-w__event home-w__raise" [routerLink]="['/purchasing', event.orderId]"
-                     [attr.aria-label]="event.label + ', ' + event.supplier + ', ' + event.text">
-                    <span class="home-w__event-name"><b>{{ event.label }}</b>@if (event.supplier) { · {{ event.supplier }} }</span>
+                     [title]="full(event, ' · ')" [attr.aria-label]="full(event, ', ')">
+                    @if (variant() === 'desk') {
+                      <span class="home-w__event-name"><b>{{ event.label }}</b>@if (event.supplier) { · {{ short(event.supplier) }} }</span>
+                    } @else {
+                      <span class="home-w__event-name"><b>{{ event.label }}</b></span>
+                      <span class="home-w__event-sup">{{ short(event.supplier) }}</span>
+                    }
                     <span class="home-w__event-when" [class.is-late]="event.late">{{ event.text }}</span>
                     <span class="home-w__progress" aria-hidden="true"><i [style.width.%]="event.progressPct"></i></span>
                   </a>
@@ -71,6 +79,12 @@ export class HomeInkoop {
   readonly whole = amount;
   readonly count = count;
   readonly counted = counted;
+  readonly short = shortCompany;
+
+  /** The row's full words (the whole supplier name): its title and aria-label. */
+  full(event: { label: string; supplier: string; text: string }, separator: string): string {
+    return [event.label, event.supplier, event.text].filter(Boolean).join(separator);
+  }
 
   private readonly open = computed(() => this.data.purchases().filter((row) => row.order.status === 'BESTELD' || row.order.status === 'ONDERWEG'));
   readonly incoming = computed(() => groupOf(this.open()));

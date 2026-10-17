@@ -7,7 +7,7 @@ import { Icon } from '../../../shared/icon';
 import { chartBuffer, periodText } from '../../analyses/cash-view';
 import { DEFAULT_CASH_LOCATION } from '../../analyses/cash-url';
 import { eurWhole, weekdayDayMonth } from '../../finance/cash-format';
-import { sparkPoints } from '../home-cash';
+import { moreTightText, sparkPoints } from '../home-cash';
 import { HomeData } from '../home-data';
 import { amount } from './home-w';
 import { ageText } from '../home-figures';
@@ -26,7 +26,9 @@ const SPARK_H = 54;
  * the desk card keeps the room of the chart and the figures, so nothing
  * below it moves when they land. On the phone it is the hero: one tap target, the retry button
  * when the bank failed, "Saldo invullen" when there is no reading
- * (amendment G8: nothing interactive nested).
+ * (amendment G8: nothing interactive nested). The hero names the reading's
+ * age; a second krap period reads "· nog 1 periode"; the figures that land
+ * with the forecast fade in once (.mo-fade, 120 ms, off under reduced motion).
  */
 @Component({
   selector: 'app-home-kas',
@@ -83,13 +85,14 @@ const SPARK_H = 54;
           <div class="home-w__figs home-w__figs--4 home-kas__figs">
             @switch (c.state) {
               @case ('ready') {
-                <div class="home-w__fig" [class.is-warn]="c.lowest!.warn" [class.is-danger]="c.lowest!.eur < 0">
+                <!-- The figures that replace the ghost fade in once, when the forecast lands (foundation .mo-fade). -->
+                <div class="home-w__fig mo-fade" [class.is-warn]="c.lowest!.warn" [class.is-danger]="c.lowest!.eur < 0">
                   <span class="home-w__fig-label">Laagste stand</span><strong class="home-w__fig-value">{{ whole(c.lowest!.eur) }}</strong>
                   <span class="home-w__fig-sub">{{ wd(c.lowest!.day) }} · met scenario</span></div>
-                <div class="home-w__fig" [class.is-warn]="!!c.tight"><span class="home-w__fig-label">Krap</span>
+                <div class="home-w__fig mo-fade" [class.is-warn]="!!c.tight"><span class="home-w__fig-label">Krap</span>
                   @if (c.tight; as tight) {
                     <strong class="home-w__fig-value">{{ period(tight.from, tight.to) }}</strong>
-                    <span class="home-w__fig-sub">onder {{ whole(c.bufferEur) }}</span>
+                    <span class="home-w__fig-sub">onder {{ whole(c.bufferEur) }}@if (more(c.tightCount); as more) { · {{ more }}}</span>
                   } @else {
                     <strong class="home-w__fig-value home-w__fig-value--text">Niet de komende {{ months }} maanden</strong>
                   }
@@ -121,7 +124,7 @@ const SPARK_H = 54;
                   <span class="home-w__fig-sub"><button class="wk-link home-w__raise" type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
                 } @else {
                   <strong class="home-w__fig-value">{{ whole(o.receiveEur) }}</strong>
-                  <span class="home-w__fig-sub">klant &amp; partner</span>
+                  <span class="home-w__fig-sub">klant &amp; partner, na tegoed</span>
                 }
               </div>
             } @else if (busy()) {
@@ -154,29 +157,31 @@ const SPARK_H = 54;
           <a class="ios-hero home-kas-hero" routerLink="/analyses/cash" [attr.aria-busy]="busy() || null" [attr.aria-label]="heroLabel()">
             <span class="ios-hero__label">Op de bank</span>
             <span class="ios-hero__value">{{ c.state === 'loading' ? '—' : whole(c.startEur) }}</span>
+            <!-- The reading's age, as the desk card says it (P6); warm when an account's reading is stale. -->
+            @if (age(); as age) { <span class="home-kas-hero__age" [class.is-warn]="stale()">bijgewerkt {{ age }}</span> }
             @switch (c.state) {
               @case ('loading') { <span class="ios-hero__sub">Banksaldo laden…</span> }
               @case ('computing') { <span class="ios-hero__sub">Kasprognose wordt berekend…</span> }
               @case ('partial') { <span class="ios-hero__sub is-warn">Prognose onvolledig: {{ c.warnings.join(', ') }}</span> }
               @case ('ready') {
                 @if (spark(); as s) {
-                  <svg class="home-kas-hero__spark" [attr.viewBox]="'0 0 ' + sparkW + ' ' + sparkH" preserveAspectRatio="none" aria-hidden="true">
+                  <svg class="home-kas-hero__spark mo-fade" [attr.viewBox]="'0 0 ' + sparkW + ' ' + sparkH" preserveAspectRatio="none" aria-hidden="true">
                     @for (band of s.bands; track band.x) { <rect class="home-kas-hero__band" [attr.x]="band.x" y="0" [attr.width]="band.w" [attr.height]="sparkH" /> }
                     @if (s.bufferY !== null) { <line class="home-kas-hero__buffer" x1="0" [attr.x2]="sparkW" [attr.y1]="s.bufferY" [attr.y2]="s.bufferY" /> }
                     <polyline class="home-kas-hero__line" [attr.points]="s.points" />
                   </svg>
                 }
-                <span class="home-kas-hero__figs">
+                <span class="home-kas-hero__figs mo-fade">
                   <span class="home-kas-hero__fig">
                     <small>Laagste stand</small>
-                    <b [class.is-warn]="c.lowest!.warn">{{ whole(c.lowest!.eur) }}</b>
+                    <b [class.is-warn]="c.lowest!.warn && c.lowest!.eur >= 0" [class.is-neg]="c.lowest!.eur < 0">{{ whole(c.lowest!.eur) }}</b>
                     <span>{{ wd(c.lowest!.day) }} · met scenario</span>
                   </span>
                   <span class="home-kas-hero__fig">
                     <small>Krap</small>
                     @if (c.tight; as tight) {
                       <b class="is-warn">{{ period(tight.from, tight.to) }}</b>
-                      <span>onder {{ whole(c.bufferEur) }}</span>
+                      <span>onder {{ whole(c.bufferEur) }}@if (more(c.tightCount); as more) { · {{ more }}}</span>
                     } @else {
                       <b class="is-text">Niet de komende {{ months }} maanden</b>
                     }
@@ -200,6 +205,8 @@ export class HomeKas {
   readonly months = DEFAULT_CASH_LOCATION.horizon;
   readonly sparkW = SPARK_W;
   readonly sparkH = SPARK_H;
+  /** "nog 1 periode" after the first krap period. */
+  readonly more = moreTightText;
 
   readonly busy = computed(() => ['loading', 'computing'].includes(this.data.cash().state));
   /** The chart is on its way: loading or computing with no failed source (a partial forecast draws no chart). */
@@ -209,6 +216,8 @@ export class HomeKas {
     const ages = this.data.cash().accounts.map((account) => account.ageDays).filter((days): days is number => days !== null);
     return ages.length ? ageText(Math.max(...ages)) : null;
   });
+  /** An account's reading is stale (the desk card's warn rule): the hero's age line turns warm. */
+  readonly stale = computed(() => this.data.cash().accounts.some((account) => account.stale));
 
   /** The desk chart: the balance with the scenario, the buffer and the krap bands; only from a complete forecast. */
   readonly chart = computed(() => {
@@ -240,7 +249,10 @@ export class HomeKas {
   readonly heroLabel = computed(() => {
     const head = this.data.cash();
     if (head.state !== 'ready') return null;
-    const tight = head.tight ? `krap ${periodText(head.tight.from, head.tight.to)} onder ${eurWhole(head.bufferEur)}` : `niet krap de komende ${this.months} maanden`;
-    return `Op de bank ${eurWhole(head.startEur)}; laagste stand ${eurWhole(head.lowest!.eur)} op ${weekdayDayMonth(head.lowest!.day)} met scenario; ${tight}. Kasprognose openen`;
+    const more = moreTightText(head.tightCount);
+    const tight = head.tight ? `krap ${periodText(head.tight.from, head.tight.to)} onder ${eurWhole(head.bufferEur)}${more ? `, ${more}` : ''}`
+      : `niet krap de komende ${this.months} maanden`;
+    const age = this.age();
+    return `Op de bank ${eurWhole(head.startEur)}${age ? `, bijgewerkt ${age}` : ''}; laagste stand ${eurWhole(head.lowest!.eur)} op ${weekdayDayMonth(head.lowest!.day)} met scenario; ${tight}. Kasprognose openen`;
   });
 }

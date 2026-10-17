@@ -5,8 +5,9 @@ import { HomeWidget, amount } from './home-w';
 
 /**
  * Ontvangen (spec-home §6.5): what came in net this month, with the gross,
- * the refunds and the partner advances, incl. btw - the old "Netto
- * ontvangen deze maand". Opens Kosten & bank › Ontvangen for the month.
+ * the refunds and the partner advances as label/value rows, incl. btw - the
+ * old "Netto ontvangen deze maand". Opens Kosten & bank › Ontvangen for the
+ * month. The phone says "Voorschotten" (the full label in its title).
  */
 @Component({
   selector: 'app-home-ontvangen',
@@ -17,8 +18,13 @@ import { HomeWidget, amount } from './home-w';
                 link="/costs" [query]="{ view: 'incoming', tab: 'received', period: 'month' }" [state]="state()">
       @if (state() === 'ready') {
         <span class="home-w__value">{{ whole(month().receivedEur) }}</span>
-        <span class="home-w__line">{{ whole(month().grossReceivedEur) }} ontvangen · {{ whole(month().refundedEur) }} terugbetaald</span>
-        <span class="home-w__line">{{ whole(month().partnerAdvanceEur) }} netto partnervoorschotten · incl. btw</span>
+        <dl class="home-w__kv">
+          <div><dt>Ontvangen</dt><dd>{{ whole(month().grossReceivedEur) }}</dd></div>
+          <div><dt>Terugbetaald</dt><dd>{{ whole(month().refundedEur) }}</dd></div>
+          <div><dt title="Netto partnervoorschotten">{{ variant() === 'desk' ? 'Netto partnervoorschotten' : 'Voorschotten' }}</dt>
+            <dd>{{ whole(month().partnerAdvanceEur) }}</dd></div>
+        </dl>
+        <span class="home-w__note">incl. btw</span>
       }
     </app-home-w>
   `,

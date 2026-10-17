@@ -3,9 +3,10 @@ import { HomeData } from '../home-data';
 import { HomeWidget, amount, count } from './home-w';
 
 /**
- * Voorraad (spec-home §6.6): the known stock cost and its pieces, with the
- * coverage warning when pieces have no cost or products no known stock -
- * the old home's formula, the same as Analyses › Voorraad. In pieces.
+ * Voorraad (spec-home §6.6): the known stock cost and its pieces, the pieces
+ * without a cost (only when there are any), and the coverage note when
+ * pieces have no cost or products no known stock - the old home's formula,
+ * the same as Analyses › Voorraad. In pieces.
  */
 @Component({
   selector: 'app-home-voorraad',
@@ -14,10 +15,14 @@ import { HomeWidget, amount, count } from './home-w';
   template: `
     <app-home-w [variant]="variant()" kind="voorraad" title="Bekende voorraadkost" icon="stock" tone="blue" link="/analyses/inventory" [state]="state()">
       @if (state() === 'ready') {
+        @let desk = variant() === 'desk';
         <span class="home-w__value">{{ whole(stock().eur) }}</span>
-        <span class="home-w__line">{{ count(stock().pieces) }} st met bekende kost</span>
+        <dl class="home-w__kv">
+          <div><dt>{{ desk ? 'Met bekende kost' : 'Met kost' }}</dt><dd>{{ count(stock().pieces) }} st</dd></div>
+          @if (stock().unvalued) { <div class="is-warn"><dt>Zonder kost</dt><dd>{{ count(stock().unvalued) }} st</dd></div> }
+        </dl>
         @if (stock().unvalued || stock().unknown) {
-          <span class="home-w__line is-warn">Kostdekking is nog niet volledig@if (stock().unvalued) { · {{ count(stock().unvalued) }} st zonder kost }</span>
+          <span class="home-w__note is-warn">{{ desk ? 'Kostdekking is nog niet volledig' : 'Kostdekking nog niet volledig' }}</span>
         }
       }
     </app-home-w>
