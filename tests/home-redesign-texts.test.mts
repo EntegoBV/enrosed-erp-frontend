@@ -68,6 +68,10 @@ test('H2: the desk home sits under the foundation toolbar "Dashboard" with one N
   assert.match(await read('styles/home-phone.scss'), /\.home-bell-host > \.bell \{ display: none !important; \}/);
 });
 
+test('fix round 1: the brief\'s krap link never breaks over two lines', async () => {
+  assert.match(await read('styles/home-desk.scss'), /\.home-desk__krap \{[^}]*white-space: nowrap; \}/);
+});
+
 test('H2: the Ook nog preview and the footer that says how many are for today (B3, B5)', async () => {
   const desk = await read('app/features/dashboard/home-desk.ts');
   assert.match(desk, /t\.ookNog\.slice\(0, Math\.max\(0, Math\.min\(t\.ookNog\.length, 6 - t\.top\.length\)\)\)/);
