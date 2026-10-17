@@ -358,7 +358,8 @@ function customersTask(input: HomeTaskInput): Candidate | null {
   const who = oldest?.item.customer?.trim();
   return {
     key: 'customers', source: 'customers', tier, escalated: tier === 'nu', title: 'Klanten wachten',
-    context: parts.join(' · ') + (who ? ` · de oudste: ${who}` : ''),
+    /* The name first: the context is one line that ellipsizes, and who waits must survive the cut (§4 #8). */
+    context: [who ? `de oudste: ${who}` : null, ...parts].filter(Boolean).join(' · '),
     chip, eur: null, count: items.length, daysLate: 0, due: null,
     verb: 'Openen', target: { kind: 'bell' }, plannerId: null, actions: SYSTEM_ACTIONS,
     detail: items.map((item) => `${item.kind}|${item.orderNumber}`).sort().join(','),

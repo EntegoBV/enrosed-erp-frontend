@@ -137,10 +137,10 @@ test('customers waiting are ONE row with the bell count', () => {
   const rows = all(five).filter((task) => task.source === 'customers');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].count, 5);
-  assert.equal(rows[0].context, '2 websiteaanvragen · wijziging · levertermijn · vracht · de oudste: Klant');
+  assert.equal(rows[0].context, 'de oudste: Klant · 2 websiteaanvragen · wijziging · levertermijn · vracht');
   assert.deepEqual(rows[0].target, { kind: 'bell' });
   const resend = bySource(homeTasks(input({ customers: [customer('OPNIEUW_VERSTUREN', 'OF6')] })), 'customers')!;
-  assert.equal(resend.context, 'opnieuw versturen · de oudste: Klant');
+  assert.equal(resend.context, 'de oudste: Klant · opnieuw versturen');
 });
 
 function customerCases(): unknown {
@@ -401,7 +401,7 @@ test('the B fixture (Thu 15 Oct 20:50): Nu 3, Vandaag 5, Ook nog 6', () => {
   assert.equal(nu[0].chip.label, '3 d over datum');
   assert.equal(nu[2].context, 'Volgens de afspraak bij de container · 70% bij aankomst');
   const customers = bySource(list, 'customers')!;
-  assert.deepEqual([customers.count, customers.tier, customers.context], [5, 'vandaag', '2 websiteaanvragen · wijziging · levertermijn · vracht · de oudste: Klant']);
+  assert.deepEqual([customers.count, customers.tier, customers.context], [5, 'vandaag', 'de oudste: Klant · 2 websiteaanvragen · wijziging · levertermijn · vracht']);
   assert.equal(bySource(list, 'krap'), undefined);
   assert.ok(!all(list).some((row) => row.plannerId === 8));
   assert.deepEqual(list.ookNog.map((row) => row.source).sort(),
@@ -494,7 +494,7 @@ test('Klanten wachten names the oldest customer and keeps the chip and detail ke
   const who = (name: string | null, at: string | null, kind = 'VRACHT', order = 'OF1') => ({ kind, title: kind, orderNumber: order, customer: name, at, detail: '' });
   const row = bySource(homeTasks(input({ customers: [who('Bloemenhuis Lier', '2026-10-14T09:00:00Z', 'VOORSTEL', 'OF2'),
     who('Tuincentrum Peeters', '2026-10-12T09:00:00Z'), who(null, null, 'LEVERTERMIJN', 'OF3')] })), 'customers')!;
-  assert.equal(row.context, 'wijziging · levertermijn · vracht · de oudste: Tuincentrum Peeters');
+  assert.equal(row.context, 'de oudste: Tuincentrum Peeters · wijziging · levertermijn · vracht');
   assert.deepEqual([row.tier, row.chip.label], ['nu', 'Wacht 3 werkdagen']);
   assert.equal(row.detail, 'LEVERTERMIJN|OF3,VOORSTEL|OF2,VRACHT|OF1');
   /* No customer on the oldest item: no name. */

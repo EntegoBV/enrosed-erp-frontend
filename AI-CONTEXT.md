@@ -989,7 +989,8 @@ cijfers'.
     (Koppelen/laatste 3 mnd, Boeken/staat klaar, Afhandelen/tegoed,
     Bevestigen/dit jaar, Nakijken/opmerking, Afrekenen/ontvangen,
     Aanvullen/website); login Goedkeuren; krap keeps Bekijken. Klanten
-    wachten names "de oudste: {klant}". The brief: "… en zakt op ma 4
+    wachten names "de oudste: {klant}" first, before the kinds (the line
+    ellipsizes). The brief: "… en zakt op ma 4
     januari onder nul." / "De bank staat nu onder nul." (`belowZeroFrom`),
     the Kas "· nog 1 periode" (`tightCount`). Toevoegen preselects the next
     workday from 18:00 and at the weekend (`defaultTaskDay`).
