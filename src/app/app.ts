@@ -167,7 +167,7 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
         <nav class="tabbar">
           <a class="tabbar__item" routerLink="/dashboard"
              [class.active]="phoneTab() === 'home'" [attr.aria-current]="phoneTab() === 'home' ? 'page' : null">
-            <span class="tabbar__icon"><app-icon name="home" /></span> Home
+            <span class="tabbar__icon"><app-icon name="home" /></span><span class="tabbar__label">Home</span>
           </a>
           <a class="tabbar__item" routerLink="/sales"
              [class.active]="phoneTab() === 'sales'" [attr.aria-current]="phoneTab() === 'sales' ? 'page' : null">
@@ -176,15 +176,15 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
               @if (openWork(); as n) {
                 <span class="tabbar__count">{{ n > 9 ? '9+' : n }}</span>
               }
-            </span> Verkoop
+            </span><span class="tabbar__label">Verkoop</span>
           </a>
           <a class="tabbar__item" routerLink="/purchasing"
              [class.active]="phoneTab() === 'purchasing'" [attr.aria-current]="phoneTab() === 'purchasing' ? 'page' : null">
-            <span class="tabbar__icon"><app-icon name="purchase" /></span> Inkoop
+            <span class="tabbar__icon"><app-icon name="purchase" /></span><span class="tabbar__label">Inkoop</span>
           </a>
           <a class="tabbar__item" routerLink="/products"
              [class.active]="phoneTab() === 'products'" [attr.aria-current]="phoneTab() === 'products' ? 'page' : null">
-            <span class="tabbar__icon"><app-icon name="products" /></span> Producten
+            <span class="tabbar__icon"><app-icon name="products" /></span><span class="tabbar__label">Producten</span>
           </a>
           <a class="tabbar__item" routerLink="/more"
              [class.active]="phoneTab() === 'more'" [attr.aria-current]="phoneTab() === 'more' ? 'page' : null">
@@ -193,7 +193,7 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
               @if (openLoginRequests(); as n) {
                 <span class="tabbar__count">{{ n > 9 ? '9+' : n }}</span>
               }
-            </span> Meer
+            </span><span class="tabbar__label">Meer</span>
           </a>
         </nav>
       }

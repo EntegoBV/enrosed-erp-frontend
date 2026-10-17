@@ -226,52 +226,7 @@ a { color: var(--rose); }
   margin: 0 auto;
 }
 
-/* --- onderbalk (mobiel) --- */
-/* Floating pill, the way iOS 26 docks its tab bars: it hovers over the
-   content instead of fencing it off, and the blur keeps context visible. */
-.tabbar {
-  position: fixed;
-  left: calc(var(--safe-l) + 10px);
-  right: calc(var(--safe-r) + 10px);
-  bottom: calc(var(--safe-b) + 10px);
-  z-index: 40;
-  height: var(--tabbar-h);
-  display: flex;
-  background: rgb(255 255 255 / 78%);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  border: 1px solid rgb(255 255 255 / 60%);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgb(26 22 20 / 14%);
-}
-
-.tabbar__item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  padding: 6px 2px;
-  -webkit-tap-highlight-color: transparent;
-}
-.tabbar__icon { line-height: 0; }
-.tabbar__item.active { color: var(--rose); }
-.tabbar__item.active .tabbar__icon { transform: translateY(-1px); }
-.tabbar__item .tabbar__icon { transition: transform 0.15s ease; }
-/* The active tab sits on a soft pill of its own colour, the way the iOS 26
-   tab bar marks where you are without a hard underline. */
-.tabbar__item { position: relative; }
-.tabbar__item::before { content: ''; position: absolute; inset: 6px 4px; border-radius: 14px;
-  background: color-mix(in srgb, var(--rose) 12%, transparent); opacity: 0; transform: scale(.85);
-  transition: opacity .18s ease, transform .18s ease; }
-.tabbar__item.active::before { opacity: 1; transform: none; }
-.tabbar__item > * { position: relative; }
+/* --- onderbalk (mobiel): .tabbar and the '+' (.fab), styled in styles/shell-tabbar.scss --- */
 
 /* --- zijbalk (desktop): .sidebar*, styled in styles/shell.scss --- */
 
@@ -483,32 +438,6 @@ a { color: var(--rose); }
 .btn--danger:active { background: var(--danger-soft); }
 .btn--sm { min-height: 34px; padding: 5px 11px; font-size: 13px; }
 .btn--block { width: 100%; }
-
-/* Floating action button on mobile */
-.fab {
-  position: fixed;
-  right: 16px;
-  bottom: calc(var(--tabbar-h) + var(--safe-b) + 28px);
-  z-index: 35;
-  min-height: 52px;
-  padding: 0 20px;
-  border-radius: 26px;
-  background: var(--rose);
-  color: #fff;
-  border: 0;
-  font-size: 15px;
-  font-weight: 650;
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--rose) 38%, transparent);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-/* The home's '+': an icon-only circle instead of a labelled pill. */
-.fab--round { width: 56px; min-height: 56px; padding: 0; border-radius: 50%; justify-content: center; }
-@media (min-width: 680px) {
-  .fab { display: none; }
-}
 
 /* ================================================================= badges */
 
@@ -3538,6 +3467,7 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/shell-sidebar');
 @include meta.load-css('styles/finance-phone');
 @include meta.load-css('styles/files-phone');
+@include meta.load-css('styles/shell-tabbar');
 @include meta.load-css('styles/purchase-payments');
 @include meta.load-css('styles/purchase-nacalc');
 @include meta.load-css('styles/purchase-phone');
