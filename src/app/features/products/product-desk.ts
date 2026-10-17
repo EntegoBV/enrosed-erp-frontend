@@ -132,7 +132,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <small>Voorraad</small>
               @if (stockLevels()) {
                 <strong [class.is-bad]="stockTotal() <= 0">{{ stockTotal() | num }}<em>{{ unitWord(product, stockTotal()) }}</em></strong>
-                <span>{{ stockSplit() }}</span>
+                <span>@for (part of stockSplit(); track $index) {@if (!$first) { · }<span class="pdk-nw">{{ part }}</span>}</span>
               } @else if (product.inventoryKnown) {
                 <strong [class.is-bad]="product.stockQuantity <= 0">{{ product.stockQuantity | num }}<em>{{ unitWord(product, product.stockQuantity) }}</em></strong>
                 <span>—</span>
@@ -145,7 +145,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <a class="pdk-kpi pdk-kpi--accent" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
                 <small>Onderweg</small>
                 <strong>+{{ exp.quantity | num }}</strong>
-                <span>{{ exp.orderNumbers.join(', ') }} · {{ exp.expectedArrival ? 'verwacht ' + (exp.expectedArrival | dateNl) : 'datum nog open' }}</span>
+                <span>@for (order of exp.orderNumbers; track order) {@if (!$first) {, }<span class="pdk-nw">{{ order }}</span>} · {{ exp.expectedArrival ? 'verwacht ' + (exp.expectedArrival | dateNl) : 'datum nog open' }}</span>
               </a>
             } @else {
               <div class="pdk-kpi pdk-kpi--static">
@@ -158,7 +158,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <small>Kostprijs <app-icon name="chevron-right" [size]="12" /></small>
               @if (product.landedCostEur; as landed) {
                 <strong>{{ landed | eur: 2 }}</strong>
-                <span>geland{{ product.landedCostSource ? ' · ' + product.landedCostSource : ', incl. transport en rechten' }}</span>
+                <span>@if (product.landedCostSource; as source) { geland · <span class="pdk-nw">{{ source }}</span> } @else { geland, incl. transport en rechten }</span>
               } @else {
                 <strong>—</strong>
                 <span>nog geen kostprijs</span>
@@ -251,7 +251,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             <div class="pdk-flow__step">
               <small>Kostprijs</small>
               <b>@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</b>
-              <span>{{ product.landedCostSource ? 'geland · ' + product.landedCostSource : 'incl. transport en rechten' }}</span>
+              <span>@if (product.landedCostSource; as source) { geland · <span class="pdk-nw">{{ source }}</span> } @else { incl. transport en rechten }</span>
               <button class="linklike pdk-flow__link" type="button" (click)="openHistory()">Historiek ›</button>
             </div>
             <i class="pdk-flow__op" aria-hidden="true">→</i>
@@ -729,11 +729,11 @@ export class ProductDesk extends ProductView {
     return parts.filter(Boolean).join(' · ');
   });
 
-  /** "Zaltbommel 6.000 · Tica Brussel 0"; with one location the unit alone. */
+  /** ["Zaltbommel 6.000", "Tica Brussel 0"], each location kept with its figure on one line; "alle locaties" with one location. */
   readonly stockSplit = computed(() => {
     const levels = this.stockLevels() ?? [];
-    if (levels.length <= 1) return 'alle locaties';
-    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`).join(' · ');
+    if (levels.length <= 1) return ['alle locaties'];
+    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`);
   });
 
   unitWord(product: Product, quantity: number): string {

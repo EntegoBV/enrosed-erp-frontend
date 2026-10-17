@@ -424,7 +424,7 @@ test('desk, phone and editor each open the history sheet from the cost', async (
   assert.equal(desk.match(/\(click\)="openPriceDetail\(\)"/g)?.length, 2);
   /* Phone: the "Kostprijs ›" figure of the hero and the Kostprijs cell of Prijs & marge, which also names the source (Bron). */
   assert.match(view, /<button type="button" \(click\)="openHistory\(\)">\s*<small>Kostprijs ›<\/small>/);
-  assert.match(view, /<button class="ios-cell" type="button" \(click\)="openHistory\(\)">\s*<span class="ios-cell__body"><span class="ios-cell__title">Kostprijs<\/span><span class="ios-cell__sub pph-wrap">\{\{ product\.landedCostSource \? 'geland · ' \+ product\.landedCostSource/);
+  assert.match(view, /<button class="ios-cell" type="button" \(click\)="openHistory\(\)">\s*<span class="ios-cell__body"><span class="ios-cell__title">Kostprijs<\/span><span class="ios-cell__sub pph-wrap">@if \(product\.landedCostSource; as source\) \{ geland · <span class="pph-nw">\{\{ source \}\}<\/span> · historiek \}/);
   assert.equal(view.match(/<app-product-cost-history-sheet /g)?.length, 1);
   assert.match(view, /openPriceInfo\(product: Product\): void \{\s*this\.priceTab\.set\('build'\);/);
   /* Editor: beside "Berekend uit", only for a saved product; no new styles there. */

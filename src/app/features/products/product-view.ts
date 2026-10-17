@@ -125,7 +125,7 @@ export type { ReceivedContainer } from './received-containers';
             <div class="pph-figs">
               <button type="button" (click)="scrollToStock()">
                 <small>Voorraad</small>
-                @if (stockLevels()) { <strong [class.is-bad]="stockTotal() < 0">{{ stockTotal() | num }}<em>{{ unitFor(product, stockTotal()) }}</em></strong><span>{{ locationLine() }}</span> }
+                @if (stockLevels()) { <strong [class.is-bad]="stockTotal() < 0">{{ stockTotal() | num }}<em>{{ unitFor(product, stockTotal()) }}</em></strong><span>@for (part of locationLine(); track $index) {@if (!$first) { · }<span class="pph-nw">{{ part }}</span>}</span> }
                 @else if (product.inventoryKnown) { <strong>{{ product.stockQuantity | num }}<em>{{ unitFor(product, product.stockQuantity) }}</em></strong><span>in voorraad</span> }
                 @else { <strong>—</strong><span>nog niet bevestigd</span> }
               </button>
@@ -139,7 +139,7 @@ export type { ReceivedContainer } from './received-containers';
               <button type="button" (click)="openHistory()">
                 <small>Kostprijs ›</small>
                 @if (product.landedCostEur; as landed) { <strong>{{ landed | eur: 2 }}</strong> } @else { <strong>—</strong> }
-                <span>{{ product.landedCostSource ? 'geland · ' + product.landedCostSource : 'incl. transport en rechten' }}</span>
+                <span>@if (product.landedCostSource; as source) { geland · <span class="pph-nw">{{ source }}</span> } @else { incl. transport en rechten }</span>
               </button>
               <button type="button" [class.ok]="(margin()?.eur ?? 0) >= 0" [class.bad]="(margin()?.eur ?? 0) < 0" (click)="openPriceInfo(product)">
                 <small>Marge</small>
@@ -153,7 +153,7 @@ export type { ReceivedContainer } from './received-containers';
         @if (expected(); as exp) {
           <a class="pph-onway" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
             <span>+{{ exp.quantity | num }} {{ unitFor(product, exp.quantity) }} onderweg</span>
-            <small>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
+            <small>@for (order of exp.orderNumbers; track order) {@if (!$first) {, }<span class="pph-nw">{{ order }}</span>}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
           </a>
         }
 
@@ -222,7 +222,7 @@ export type { ReceivedContainer } from './received-containers';
                 <span class="ios-cell__value num">{{ extra | cur: product.exwCurrency }}</span></div>
             }
             <button class="ios-cell" type="button" (click)="openHistory()">
-              <span class="ios-cell__body"><span class="ios-cell__title">Kostprijs</span><span class="ios-cell__sub pph-wrap">{{ product.landedCostSource ? 'geland · ' + product.landedCostSource + ' · historiek' : 'incl. transport en rechten · historiek' }}</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Kostprijs</span><span class="ios-cell__sub pph-wrap">@if (product.landedCostSource; as source) { geland · <span class="pph-nw">{{ source }}</span> · historiek } @else { incl. transport en rechten · historiek }</span></span>
               <span class="ios-cell__value num">@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
@@ -657,11 +657,11 @@ export class ProductView {
     const name = this.family()?.name?.trim();
     return name && name !== this.product()?.name.trim() ? name : null;
   });
-  /** "Zaltbommel 1.960 · Tica Brussel 8"; "in voorraad" with one location. */
+  /** ["Zaltbommel 1.960", "Tica Brussel 8"], each location kept with its figure on one line; "in voorraad" with one location. */
   readonly locationLine = computed(() => {
     const levels = this.stockLevels() ?? [];
-    if (levels.length <= 1) return 'in voorraad';
-    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`).join(' · ');
+    if (levels.length <= 1) return ['in voorraad'];
+    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`);
   });
   /**
    * Every product's stock over all locations, asked once after the product

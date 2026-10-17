@@ -73,6 +73,8 @@ app-product-desk .pdk-kpi--warn strong { color: var(--warn); }
 app-product-desk .pdk-cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: 14px; align-items: start; }
 app-product-desk .pdk-col { display: grid; gap: 14px; min-width: 0; align-content: start; }
 app-product-desk .pdk-duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+/* A location stays with its figure and an order number stays whole: sub-lines break only between the parts. */
+app-product-desk .pdk-nw { display: inline-block; }
 app-product-desk .pdk-card { display: block; min-width: 0; padding: 14px 18px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
 app-product-desk .pdk-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 app-product-desk .pdk-card__head h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
