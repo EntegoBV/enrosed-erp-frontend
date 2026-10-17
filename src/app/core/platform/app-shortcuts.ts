@@ -52,6 +52,32 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/sales/:id/edit', '/purchasing/:id/edit', '/products/:id/edit', '/website/*'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
   },
+  /* Producten & voorraad (2026-10-17) */
+  {
+    routes: ['/products'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Door de lijst' },
+      { keys: ['→', '←'], text: 'Reeks openen of sluiten' },
+      { keys: ['↵'], text: 'Product openen' },
+      { keys: ['E'], text: 'Bewerken' },
+    ],
+  },
+  {
+    routes: ['/products/:id'],
+    rows: [
+      { keys: ['E'], text: 'Bewerken' },
+      { keys: ['B'], text: 'Voorraad boeken' },
+      { keys: ['⌥', '←'], alt: ['⌥', '→'], text: 'Vorige of volgende kleur' },
+    ],
+  },
+  {
+    routes: ['/stock'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Door de lijst' },
+      { keys: ['↵'], text: 'Voorraad van het product' },
+      { keys: ['B'], text: 'Voorraad boeken' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */
