@@ -355,6 +355,11 @@ export class App {
    */
   readonly homeRoute = computed(() => this.url().split('?')[0] === '/dashboard' && !this.desktopViewport.active());
 
+  /* The bell, the tab badges and the Meer counts stay current while someone is logged in. */
+  private readonly autoRefreshWork = effect((onCleanup) => {
+    if (this.auth.isLoggedIn()) onCleanup(this.work.startAutoRefresh());
+  });
+
   /* Every ERP screen is noted, so a workspace knows the way back ("Terug naar inkooporder"). */
   private readonly workspaceReturn = inject(WorkspaceReturn);
   private readonly noteReturn = effect(() => this.workspaceReturn.note(this.url()));
