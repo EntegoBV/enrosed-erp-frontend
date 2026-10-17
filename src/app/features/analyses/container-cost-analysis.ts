@@ -128,7 +128,7 @@ import { plural } from './analyses-words';
           @if (desk.active()) {
             <div class="cc-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
               <table>
-                <thead><tr><th>Container</th><th class="cc-col-status">Status</th><th>Afspraak</th><th>Betaald</th><th>Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th>Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
+                <thead><tr><th>Container</th><th class="cc-col-status">Status</th><th>Afspraak</th><th>Betaald</th><th class="cc-col-fold">Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th class="cc-col-unit">Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
                 <tbody>
                   @for (row of rows(); track row.view.order.id) {
                     <tr [class.is-on]="expandedId() === row.view.order.id">
@@ -136,9 +136,10 @@ import { plural } from './analyses-words';
                         <small>{{ orderStatus(row.view.order.status) }}<span class="cc-state-inline"> · {{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></small></td>
                       <td class="cc-col-status"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized" [class.tone-warn]="!row.reconciliation.totals.finalized">{{ row.reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig' }}</span></td>
                       <td>{{ row.reconciliation.totals.plannedExternalEur | eur }}</td>
-                      <td>{{ row.reconciliation.totals.paidEur | eur }}</td>
-                      <td>{{ row.reconciliation.totals.remainingEur | eur }}</td>
-                      <td><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b></td>
+                      <td>{{ row.reconciliation.totals.paidEur | eur }}<small class="cc-fold">open {{ row.reconciliation.totals.remainingEur | eur }}</small></td>
+                      <td class="cc-col-fold">{{ row.reconciliation.totals.remainingEur | eur }}</td>
+                      <td><b>{{ row.reconciliation.totals.forecastExternalEur | eur }}</b>
+                        <span class="cc-fold cc-unit-fold"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></span></td>
                       <td [class.is-warn]="row.reconciliation.totals.varianceEur > 0" [class.is-ok]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</td>
                       <td>
                         @if (row.paymentResult; as result) {
@@ -148,8 +149,11 @@ import { plural } from './analyses-words';
                           } @else { <span>—</span><small>Niet meegeteld</small> }
                         } @else { <span>—</span><small>Niet beschikbaar</small> }
                       </td>
-                      <td class="cc-unit"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></td>
-                      <td class="cc-actions"><button class="wk-btn wk-btn--sm" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening ' + name(row)" (click)="toggle(row.view.order.id)">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</button></td>
+                      <td class="cc-unit cc-col-unit"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></td>
+                      <td class="cc-actions"><button class="wk-btn wk-btn--sm cc-act" type="button" [attr.aria-expanded]="expandedId() === row.view.order.id" [attr.aria-label]="'Afrekening & PDF ' + name(row)"
+                          [attr.title]="expandedId() === row.view.order.id ? 'Afrekening sluiten' : 'Afrekening & PDF'" (click)="toggle(row.view.order.id)">
+                        <app-icon class="cc-act__icon" [name]="expandedId() === row.view.order.id ? 'close' : 'pdf'" [size]="14" />
+                        <span class="cc-act__text">{{ expandedId() === row.view.order.id ? 'Sluiten' : 'Afrekening & PDF' }}</span></button></td>
                     </tr>
                   }
                 </tbody>

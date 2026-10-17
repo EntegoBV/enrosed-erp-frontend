@@ -67,8 +67,13 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .cc-pay__details[open] summary app-icon { rotate: 180deg; }
 .cc-pay__details p, .cc-pay__note { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .cc .cc-total .an-row__title { font-weight: 700; }
-/* position: the table's visually hidden header text stays inside the scroll region (it widened the page at 1100). */
-.cc-table { position: relative; overflow-x: auto; }
+/* position: the table's visually hidden header text stays inside the scroll region (it widened the page at 1100).
+   The scroll region is only the last resort (critique N23); the local/scroll backgrounds shade an edge that can still scroll. */
+.cc-table { position: relative; overflow-x: auto;
+  background: linear-gradient(to right, var(--surface) 40%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 40%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(26 22 20 / 14%), transparent) left / 10px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(26 22 20 / 14%), transparent) right / 10px 100% no-repeat scroll; }
 .cc-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .cc-table th { padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .05em;
   text-align: right; text-transform: uppercase; white-space: nowrap; }
@@ -83,8 +88,22 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .cc-table .cc-name { min-width: 150px; max-width: 240px; white-space: normal; overflow-wrap: break-word; }
 .cc-table .cc-name a { color: var(--rose-dark); font-weight: 700; text-decoration: none; }
 .cc-table .is-warn { color: var(--warn); } .cc-table .is-ok { color: var(--ok); }
-.cc-state-inline { display: none; }
-@media (max-width: 1279.98px) { .cc-table .cc-col-status { display: none; } .cc-state-inline { display: inline; } }
+/* The table folds instead of cutting (critique N23): below 1440 Open goes under Betaald and the row action is an icon;
+   below 1280 also the status under the name and Per eenheid under Verwachte kost. Every figure stays in its row. */
+.cc-state-inline, .cc-table .cc-fold, .cc-act__icon { display: none; }
+.cc-table .cc-unit-fold { min-width: 110px; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 500; white-space: normal; }
+@media (max-width: 1439.98px) {
+  .cc-table .cc-col-fold { display: none; }
+  .cc-table small.cc-fold { display: block; }
+  .cc-act { width: 26px; padding: 0; }
+  .cc-act__icon { display: inline-flex; }
+  .cc-act__text { display: none; }
+}
+@media (max-width: 1279.98px) {
+  .cc-table .cc-col-status, .cc-table .cc-col-unit { display: none; }
+  .cc-state-inline { display: inline; }
+  .cc-table .cc-unit-fold { display: block; }
+}
 .cc-detail { margin-top: var(--an-gap); }
 .cc-sheet { display: grid; gap: 18px; padding-bottom: 8px; }
 .cc-sheet .ios-cell__value { text-align: right; }
