@@ -4382,7 +4382,7 @@ export class PurchaseEditor {
   private previewVersion = 0;
 
   /** Applies a change to the draft and refreshes the calculation. */
-  private enqueue(
+  protected enqueue(
     make: (order: PurchaseOrder) => PurchaseOrder,
     afterSave?: (saved: PurchaseOrderView) => void,
   ): void {

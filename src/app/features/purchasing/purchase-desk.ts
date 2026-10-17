@@ -1,5 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, inject, input, linkedSignal, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { LandedCostLine, Payee, Product } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -46,11 +47,22 @@ import { stripColour } from './purchase-desk-format';
 import { messageOf } from '../../core/api/errors';
 import { STATUS_LABEL } from '../sales/quote-status';
 import { Icon } from '../../shared/icon';
+import { elementWidth } from '../../shared/workspace-layout';
 import { containerNumberHint } from './container-name';
 import { PAYEE_LABEL } from './purchase-payment-ledger';
 import { costsSupersededFor, countWords, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
+
+/**
+ * The panel docks beside the products from this host width (726 px table +
+ * 340 px rail + 16 gap + 48 padding); below it the panel is a drawer
+ * (Inkoop redesign I3). 1440 docks; 1366, 1280 and 1100 get the drawer.
+ */
+export const PDK_DOCK_MIN_PX = 1140;
+const RAIL_LABEL: Readonly<Record<RailTab, string>> = { order: 'Order', costs: 'Kosten', partner: 'Partner', files: 'Dossier', done: 'Afronden' };
+/** A sheet, context menu or kit overlay is open: Esc and outside clicks belong to it, not to the drawer. */
+const OVERLAY = '.overlay, .cm, [data-kit-overlay]';
 
 type DeskRow =
   | { kind: 'section'; key: string; label: string; count: number }
@@ -94,7 +106,7 @@ export class PurchaseDeskStyles {}
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
-            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     <app-purchase-desk-styles />
     @if (view(); as data) {
@@ -161,7 +173,7 @@ export class PurchaseDeskStyles {}
               <span class="pdk-tile__sub"><span class="pdk-nw">{{ data.costing.totals.goodsUsd | cur: 'USD' }}</span></span>
             </div>
             <!-- Several products have no one price per stuk: their count and range, never an average over them (Emre 2026-10-15). -->
-            <button class="pdk-tile pdk-tile--landed" type="button" (click)="showCosts()">
+            <button class="pdk-tile pdk-tile--landed" type="button" data-pdk-rail (click)="showCosts()">
               <span class="pdk-tile__label">Totaal geland</span>
               <span class="pdk-tile__value">{{ data.costing.totals.totalEur | eur: 0 }}</span>
               <span class="pdk-tile__sub">{{ keepAmounts(landedUnitText()) }}</span>
@@ -218,38 +230,54 @@ export class PurchaseDeskStyles {}
               <span class="pdk-attn__count">{{ attentionShown().length }}</span>
               <span class="pdk-attn__text">@for (item of attentionShown(); track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
               @if (paymentAttention()) { <button class="wk-link" type="button" (click)="showPayments()">Betalingen ›</button> }
-              <button class="wk-link" type="button" (click)="showRail('done')">Afronden ›</button>
+              <button class="wk-link" type="button" data-pdk-rail (click)="showRail('done')">Afronden ›</button>
             </div>
           }
         </section>
 
-        <div class="desk-body" [class.desk-body--payments]="mainView() !== 'products'">
-          <!-- ============================ the table: every line, keyed through -->
-          <main class="desk-main">
-            <div class="desk-viewbar">
-              <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="mainView.set($event === 'payments' ? 'payments' : $event === 'nacalc' ? 'nacalc' : 'products')" />
+        <div class="pdk-body" [class.pdk-body--docked]="railShown()">
+          <!-- ============================ the main pane: products, payments or the nacalculatie -->
+          <main class="pdk-main" [attr.data-switched]="viewSwitched() ? '' : null">
+            <div class="pdk-bar">
+              <app-segmented label="Weergave" semantics="tabs" [options]="viewOptions()" [value]="mainView()" (changed)="switchView($event === 'payments' ? 'payments' : $event === 'nacalc' ? 'nacalc' : 'products')" />
+              @if (barHints()) { <span class="pdk-bar__keys" aria-hidden="true"><kbd class="wk-kbd">⌥1</kbd> <kbd class="wk-kbd">⌥2</kbd> <kbd class="wk-kbd">⌥3</kbd></span> }
+              @if (!railDocked()) {
+                <!-- Below a 1140px host the panel is a drawer: its tabs as buttons here, a second click closes it. -->
+                <div class="pdk-bar__rail" role="group" aria-label="Paneel">
+                  @for (tab of railOptions(); track tab.id) {
+                    <button class="wk-btn wk-btn--ghost wk-btn--sm" type="button" data-pdk-rail aria-controls="pdk-drawer"
+                            [attr.aria-expanded]="drawerOpen() && activeRailTab() === tab.id" (click)="toggleDrawer($any(tab.id), $event)">{{ tab.label }}</button>
+                  }
+                </div>
+              }
             </div>
             @if (mainView() === 'payments') {
-              <app-purchase-payment-workbench id="purchase-payments-section" tabindex="-1"
-                [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
-                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
-                [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
-                [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
-                [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
-                (add)="requestPayment($event)" (edit)="requestEdit($event)" (addTransfer)="requestAddTransfer($event)" (download)="downloadDocument($event)"
-                (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)" (assignInvoice)="assignInvoiceToAll($event)"
-                (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
-                (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
-                (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
+              <div class="pdk-pane pdk-card">
+                <app-purchase-payment-workbench id="purchase-payments-section" tabindex="-1"
+                  [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentStateError()"
+                  [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [dirty]="dirty()" [saving]="saving()"
+                  [pdfBusy]="paymentsPdfBusy()" [orderId]="data.order.id" [planLabel]="planLabel(data.order)"
+                  [partnerLinked]="hasPartnerTab()" [nacalc]="nacalcSummary()" [roundOnServer]="roundOnServer()" [bankLineLabel]="bankLineLabel"
+                  [notice]="paymentNoticeText()" (dismissNotice)="dismissPaymentNotice()"
+                  (add)="requestPayment($event)" (edit)="requestEdit($event)" (addTransfer)="requestAddTransfer($event)" (download)="downloadDocument($event)"
+                  (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)" (assignInvoice)="assignInvoiceToAll($event)"
+                  (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
+                  (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
+                  (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
+              </div>
             } @else if (mainView() === 'nacalc') {
-              <app-purchase-nacalc-workbench [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
-                [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [saving]="saving()"
-                [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [orderId]="data.order.id"
-                (openPayments)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)"
-                (save)="save()" (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()"
-                (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()"
-                (credit)="requestCredit($event)" />
-            } @else {
+              <div class="pdk-pane pdk-card">
+                <app-purchase-nacalc-workbench [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                  [state]="paymentState()" [error]="paymentStateError()" [dirty]="dirty()" [saving]="saving()"
+                  [busy]="payingBusy() || saving() || paymentStateLoading() || payments() === null" [orderId]="data.order.id"
+                  (openPayments)="showPayments($event)" (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)"
+                  (save)="save()" (refresh)="refreshPaymentState(); reloadPartnerFinancing()" (refreshPartner)="reloadPartnerFinancing()"
+                  (openPartner)="openPartner()" (openReports)="showRail('files')" (applyCosts)="showRail('done')" (openCosts)="showCosts()"
+                  (credit)="requestCredit($event)" />
+              </div>
+            }
+            <!-- The products stay mounted while another view shows: no photo is fetched twice (audit B16). -->
+            <div class="pdk-pane pdk-card" [hidden]="mainView() !== 'products'">
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
@@ -274,7 +302,7 @@ export class PurchaseDeskStyles {}
                     <th class="c-product">Product</th>
                     <th class="c-qty">Aantal</th>
                     <th class="c-cartons">Dozen</th>
-                    <th class="c-price">Prijs / stuk <span class="c-price__basis">{{ isDdp() ? 'DDP' : 'EXW' }}</span></th>
+                    <th class="c-price">Prijs <span class="c-price__basis">{{ isDdp() ? 'DDP' : 'EXW' }}</span></th>
                     <th class="c-money">Goederen{{ perPiece() ? ' / stuk' : '' }}</th>
                     <th class="c-money">{{ perPiece() ? 'Geland / stuk' : 'Totaal geland' }}</th>
                     @if (editing()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
@@ -386,6 +414,7 @@ export class PurchaseDeskStyles {}
                             </div>
                           } @else {
                             <b class="num">{{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ unitPriceOf(line) | num: 2 }}</b>
+                            @if (setPiecesOf(line.productId)) { <small>/display</small> }
                           }
                         </td>
                         <td class="c-money num">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</td>
@@ -393,8 +422,8 @@ export class PurchaseDeskStyles {}
                           <button class="desk-total" type="button" (click)="toggleLine(line.productId)"
                                   [attr.aria-expanded]="lineOpen(line.productId)" [title]="'Kostopbouw van ' + line.productName">
                             @let set = perPiece() ? setPiecesOf(line.productId) : null;
-                            <b>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}@if (set) { /display }</b>
-                            <small>@if (set) { {{ line.landedUnitEur / set | eurUp: 3 }} /stuk · }detail <i aria-hidden="true">›</i></small>
+                            <b>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</b>
+                            <small>@if (set) { per display · <span class="pdk-nw">{{ line.landedUnitEur / set | eurUp: 3 }}</span> per stuk } @else { kostopbouw } <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
                         @if (editing()) {
@@ -473,49 +502,59 @@ export class PurchaseDeskStyles {}
                 </div>
               }
             }
-            }
+            </div>
           </main>
 
-          <!-- ============================ the rail: everything else, one tab away -->
-          <aside class="desk-rail" aria-label="Order, kosten, betalingen en dossier">
-            <nav class="desk-tabs" role="tablist">
-              <button type="button" role="tab" [class.on]="activeRailTab() === 'order'" [attr.aria-selected]="activeRailTab() === 'order'" (click)="railTab.set('order')">Order</button>
-              <button type="button" role="tab" [class.on]="activeRailTab() === 'costs'" [attr.aria-selected]="activeRailTab() === 'costs'" (click)="railTab.set('costs')">Kosten</button>
-              @if (hasPartnerTab()) {
-                <button type="button" role="tab" [class.on]="activeRailTab() === 'partner'" [attr.aria-selected]="activeRailTab() === 'partner'" (click)="railTab.set('partner')">Partner</button>
-              }
-              <button type="button" role="tab" [class.on]="activeRailTab() === 'files'" [attr.aria-selected]="activeRailTab() === 'files'" (click)="railTab.set('files')">Dossier</button>
-              <button type="button" role="tab" [class.on]="activeRailTab() === 'done'" [attr.aria-selected]="activeRailTab() === 'done'" (click)="railTab.set('done')">Afronden</button>
-            </nav>
+          @if (railShown()) {
+            <!-- ============================ the rail: everything else, one tab away (docked from a 1140px host) -->
+            <aside class="pdk-rail" aria-label="Paneel">
+              <div class="pdk-rail__bar"><app-segmented label="Paneel" semantics="tabs" [options]="railOptions()" [value]="activeRailTab()" (changed)="railTab.set($any($event))" /></div>
+              <div class="pdk-rail__panel"><ng-container *ngTemplateOutlet="railPanel" /></div>
+            </aside>
+          }
+        </div>
 
-            <div class="desk-panel">
+        <!-- The panel's content, written once: docked beside the products or in the drawer, never both (the ids stay unique). -->
+        <ng-template #railPanel>
               @switch (activeRailTab()) {
                 @case ('order') {
+                  <section class="pdk-sec" aria-labelledby="pdk-sec-supplier">
+                    <h3 class="pdk-sec__title"><span id="pdk-sec-supplier">Leverancier</span>
+                      <a class="wk-link" [routerLink]="['/suppliers']" [queryParams]="{ q: supplierName() }">Leverancier ›</a></h3>
+                    <div class="pdk-supplier">
+                      <span class="pdk-supplier__mark" aria-hidden="true">{{ supplierName().charAt(0) }}</span>
+                      <span class="pdk-supplier__copy">
+                        <strong>{{ supplierName() }}</strong>
+                        <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
+                      </span>
+                      @if (supplier()?.currency; as currency) { <span class="wk-pill">{{ currency }}</span> }
+                    </div>
+                  </section>
                   @if (!editing()) {
-                    <div class="desk-panel__head"><strong>Ordergegevens</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
-                  }
-                  <div class="desk-supplier">
-                    <span class="desk-supplier__mark" aria-hidden="true">{{ supplierName().charAt(0) }}</span>
-                    <span class="desk-supplier__copy">
-                      <strong>{{ supplierName() }}</strong>
-                      <app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" />
-                    </span>
-                    <small class="desk-supplier__cur">{{ supplier()?.currency }}</small>
-                  </div>
-                  @if (!editing()) {
-                    <dl class="desk-facts">
-                      <div><dt>Herkenbare naam</dt><dd>{{ data.order.alias || '—' }}</dd></div>
-                      <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
-                      @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
-                      @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
-                      <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                      @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>{{ data.order.trackingReference || '—' }}@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
-                      <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
-                      <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
-                      <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
-                      <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : isCif() ? 'CIF, zeevracht via de leverancier' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
-                    </dl>
+                    <section class="pdk-sec" aria-labelledby="pdk-sec-order">
+                      <h3 class="pdk-sec__title"><span id="pdk-sec-order">Order</span><button class="wk-link" type="button" (click)="startEdit()">Bewerken</button></h3>
+                      <dl class="desk-facts">
+                        <div><dt>Herkenbare naam</dt><dd>{{ data.order.alias || '—' }}</dd></div>
+                        <div><dt>Ordernummer</dt><dd>{{ data.order.number }}</dd></div>
+                        <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
+                        @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
+                        @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
+                        <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>{{ data.order.trackingReference || '—' }}@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
+                      </dl>
+                    </section>
+                    <section class="pdk-sec" aria-labelledby="pdk-sec-route">
+                      <h3 class="pdk-sec__title"><span id="pdk-sec-route">Route en container</span></h3>
+                      <dl class="desk-facts">
+                        <div><dt>Container</dt><dd>{{ containerLabel(data.order.containerType) }}</dd></div>
+                        <div><dt>Route</dt><dd>{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</dd></div>
+                        <div><dt>Lossen op</dt><dd>{{ receivingLocationName(data.order.receivingLocationId) }}</dd></div>
+                        <div><dt>Inklaring</dt><dd>@if (clearanceLabel(data.order.clearance); as chosen) { {{ chosen }} } @else { <span class="pdk-warn">Te bevestigen</span><small>voorstel: {{ suggestedClearanceLabel(data.order.destinationPort) }}</small> }</dd></div>
+                        <div><dt>Prijsbasis</dt><dd>{{ isDdp() ? 'DDP, geleverd incl. rechten' : isCif() ? 'CIF, zeevracht via de leverancier' : 'EXW, af fabriek' }}<small>stukprijzen in {{ orderCurrency() }}</small></dd></div>
+                      </dl>
+                    </section>
                   } @else {
+                  <section class="pdk-sec" aria-label="Order bewerken">
                   <div class="desk-form">
                     <div class="desk-form__duo">
                       <div class="field">
@@ -616,16 +655,18 @@ export class PurchaseDeskStyles {}
                       <span class="hint">@if (isDdp()) { Geleverd incl. rechten, voor de hele container: zeevracht en invoerrechten stappen opzij. } @else if (isCif()) { CIF: de leverancier regelt en factureert zeevracht (en lokale kosten China); invoerrechten en lokale kosten aankomst via Douane &amp; transport. } @else { Af fabriek: wij regelen zeevracht, invoerrechten en transport. } De stukprijzen staan in {{ orderCurrency() }}.</span>
                     </div>
                   </div>
+                  </section>
                   }
-                  <app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="openPartner()" (unlink)="unlinkPartnerDoc($event)" />
+                  <section class="pdk-sec pdk-sec--partner"><app-purchase-partner-panel [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [canQuote]="quoteLines().length > 0" [canAuction]="auctionLines().length > 0" (saved)="onPartnerSaved($event)" (quote)="quoteOpen.set(true)" (link)="partnerSheetOpen.set(true)" (auction)="auctionOpen.set(true)" (schedule)="openPartner()" (unlink)="unlinkPartnerDoc($event)" /></section>
                 }
 
                 @case ('costs') {
+                  <section class="pdk-sec" aria-labelledby="pdk-sec-costs">
                   <!-- The nacalculatie in four lines; 'Volledig ›' opens the third main view. -->
                   <app-purchase-nacalc-summary [summary]="nacalcSummary()" [dirty]="dirty()" (open)="showNacalculatie()" />
                   @if (!editing()) {
-                    <div class="desk-panel__head"><strong>Kosten &amp; koersen</strong><button class="linklike" type="button" (click)="startEdit()">Bewerken</button></div>
-                    <div class="desk-rates">
+                    <h3 class="pdk-sec__title"><span id="pdk-sec-costs">Kosten &amp; koersen</span><button class="wk-link" type="button" (click)="startEdit()">Bewerken</button></h3>
+                    <div class="pdk-rates">
                       <div><small>RMB → USD</small><b>{{ data.order.cnyToUsd != null ? (data.order.cnyToUsd | num: 4) : '—' }}</b>@if (marketReference(); as market) { <i>ECB {{ market.cnyToUsd | num: 4 }}</i> }</div>
                       <div><small>USD → EUR</small><b>{{ usdToEurRate() | num: 4 }}</b>@if (marketReference(); as market) { <i>ECB {{ market.usdToEur | num: 4 }}</i> }</div>
                       <div><small>Prijsbasis</small><b>{{ isDdp() ? 'DDP' : isCif() ? 'CIF' : 'EXW' }}</b></div>
@@ -798,14 +839,15 @@ export class PurchaseDeskStyles {}
                       </div>
                     }
                   </div>
+                  </section>
                 }
 
                 @case ('partner') {
-                  <app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" (creditNote)="creditNoteOpen.set(true)" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" />
+                  <section class="pdk-sec" aria-label="Partner"><app-purchase-partner-payments (quote)="quoteOpen.set(true)" (changed)="onPartnerLinked()" (creditNote)="creditNoteOpen.set(true)" [order]="data.order" [docs]="partnerDocs()" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" /></section>
                 }
 
                 @case ('files') {
-                  <div class="desk-dossier">
+                  <div class="desk-dossier pdk-sec">
                     <section>
                       <header class="desk-dossier__head"><strong>Dagboek</strong>
                         <button class="linklike" type="button" (click)="noteEditing.set(!noteEditing())">{{ noteEditing() ? 'Klaar' : 'Bewerken' }}</button></header>
@@ -879,7 +921,7 @@ export class PurchaseDeskStyles {}
                 }
 
                 @case ('done') {
-                  <div class="desk-done">
+                  <div class="desk-done pdk-sec">
                     <ol class="desk-milestones">
                       @for (step of milestones(); track step.key) {
                         <li [class.is-done]="step.done" [class.is-now]="step.now">
@@ -926,10 +968,18 @@ export class PurchaseDeskStyles {}
                   </div>
                 }
               }
-            </div>
-          </aside>
-        </div>
+        </ng-template>
       </div>
+
+      @if (drawerShown()) {
+        <aside id="pdk-drawer" class="wk-inspector wk-inspector--drawer pdk-drawer" [attr.aria-label]="'Paneel: ' + railTabLabel()">
+          <header class="wk-inspector__head">
+            <app-segmented label="Paneel" semantics="tabs" [options]="railOptions()" [value]="activeRailTab()" (changed)="railTab.set($any($event))" />
+            <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button" aria-label="Paneel sluiten" (click)="closeDrawer()"><app-icon name="close" [size]="17" /></button>
+          </header>
+          <div class="pdk-drawer__body"><ng-container *ngTemplateOutlet="railPanel" /></div>
+        </aside>
+      }
 
       @if (quoteOpen()) {
         @if (view(); as data) {
@@ -1192,6 +1242,10 @@ export class PurchaseDeskStyles {}
                   <label class="receive-line__field"><span>Beschadigd</span>
                     <input class="input num right" type="number" min="0" step="1" inputmode="numeric" [ngModel]="line.damaged" (ngModelChange)="setDamaged(line.productId, +$event)" /></label>
                   @if (line.received !== line.ordered || line.damaged > 0) {
+                    <!-- What went wrong, per deviating line, as on the phone (B14). -->
+                    <label class="receive-line__field receive-line__field--note"><span>Wat was er mis?</span>
+                      <input class="input" type="text" placeholder="bijv. glazen stolpen gebarsten, binnendoos te dun"
+                             [ngModel]="line.note" (ngModelChange)="setIssueNote(line.productId, $event)" /></label>
                     <span class="receive-line__note">
                       @if (line.received < line.ordered) { {{ line.ordered - line.received | num }} te weinig }
                       @if (line.received > line.ordered) { {{ line.received - line.ordered | num }} te veel }
@@ -1268,7 +1322,7 @@ export class PurchaseDeskStyles {}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
-    .desk-table{width:100%;min-width:726px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--editing{min-width:814px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
+    .desk-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
     .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
     .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}
     .desk-price--target{margin-top:4px}.desk-price__sym--wide{padding:0 5px;font-size:9.5px;letter-spacing:.02em;text-transform:uppercase}.desk-table--editing.desk-table--extra{min-width:1000px}
@@ -1277,8 +1331,7 @@ export class PurchaseDeskStyles {}
     .desk-table thead th.c-product{text-align:left;padding-left:16px}
     .desk-table td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;line-height:1.25}
     .desk-table td.c-product{padding-left:16px}
-    .c-product{width:34%;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{width:90px;text-align:right}.c-price{width:120px}.c-money{width:124px;text-align:right;font-variant-numeric:tabular-nums}.c-act{width:34px}
-    .desk-table--editing .c-price{width:168px}.desk-table--editing .c-act{width:40px}
+    .c-product{width:34%;min-width:200px}.c-qty{width:68px;text-align:right}.c-cartons{text-align:right}.c-money{text-align:right;font-variant-numeric:tabular-nums}
     .c-money--total{font-weight:750;color:var(--rose-dark)}
     .desk-section__row th{padding:12px 16px 5px;color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-align:left;text-transform:uppercase;background:var(--surface)}
     .desk-section__row th small{margin-left:6px;color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
@@ -1309,7 +1362,6 @@ export class PurchaseDeskStyles {}
     .desk-price__hint{display:block;margin-top:2px;color:var(--muted);font-size:10px;white-space:nowrap}
     .desk-remove{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
     .desk-total{display:inline-grid;justify-items:end;gap:1px;margin:-4px 0;padding:4px 0 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--rose-dark);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.2;cursor:pointer}
-    .desk-total small{display:inline-flex;align-items:center;gap:2px;color:var(--muted);font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
     .desk-total i{display:inline-block;font-style:normal;font-size:12px;font-weight:700;transition:transform .15s ease}.desk-row--open .desk-total i{transform:rotate(90deg)}.desk-total:hover{background:var(--rose-soft)}
     .desk-remove:hover:enabled{background:var(--danger-soft);color:var(--danger)}.desk-remove:disabled{opacity:.35}
     .desk-detail td{padding:0 12px 12px;background:var(--surface-2)}
@@ -1362,27 +1414,23 @@ export class PurchaseDeskStyles {}
       .desk-table td.c-money.c-extra::before{content:'Enrosed kost'}.desk-table tfoot th.c-money.c-extra::before{content:'Enrosed kost · '}
     }
 
-    .desk-supplier{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-    .desk-supplier__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose);color:#fff;font-weight:800}.desk-supplier__copy{display:grid;min-width:0;flex:1;line-height:1.25}.desk-supplier strong{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-supplier__cur{align-self:flex-start;padding:2px 7px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700}
     .desk-affix-select{min-width:64px;border-radius:0 var(--r-sm) var(--r-sm) 0}
     .desk-sum{padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .desk-sum .stat-row{padding:4px 0;font-size:12px}.desk-sum .stat-row small{display:block;color:var(--muted);font-size:9.5px;font-weight:500}
     .desk-sum__sub{border-top:1px solid var(--line);font-weight:650}.desk-sum__total{border-top:2px solid var(--line-strong);font-size:13px}.desk-sum__total strong{color:var(--rose-dark)}
     .desk-done{display:grid;gap:12px}
     .desk-done__attention{margin:0;padding:8px 12px 8px 26px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
-    .desk-rates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--line);overflow:hidden}
-    .desk-rates>div{display:grid;gap:1px;padding:9px 12px;background:var(--surface-2)}.desk-rates small{color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}.desk-rates b{font-size:14px;font-variant-numeric:tabular-nums}.desk-rates i{color:var(--muted);font-size:10px;font-style:normal;font-variant-numeric:tabular-nums}
     .desk-mix{display:flex;height:12px;border-radius:99px;background:var(--line);overflow:hidden}.desk-mix i{display:block;height:100%}
     .desk-mix__legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 12px;padding:0;list-style:none;color:var(--muted);font-size:11px}.desk-mix__legend li{display:inline-flex;align-items:center;gap:5px}.desk-mix__legend i{width:9px;height:9px;border-radius:2px}.desk-mix__legend b{color:var(--ink-2)}
     .desk-mix__goods{background:var(--rose-dark)}.desk-mix__transport{background:var(--gold)}.desk-mix__duty{background:var(--warn)}.desk-mix__destination{background:var(--blue)}.desk-mix__extra{background:var(--muted)}
     .desk-dossier{display:grid;gap:16px}.desk-dossier__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.desk-dossier__head-actions{display:inline-flex;gap:6px}.desk-dossier__head strong{font-size:13px}.desk-dossier__head strong small{margin-left:5px;color:var(--muted);font-weight:600}
-    .desk-reports{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-reports li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-reports__row--later{border-color:var(--rose-line);background:var(--rose-soft)}.desk-reports__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.desk-reports__row--later .desk-reports__tag{background:var(--rose);color:#fff}.desk-reports__what{display:grid;min-width:0}.desk-reports__what b{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.desk-reports__what small{color:var(--muted);font-size:11px}.desk-reports__count{color:var(--danger);font-size:12px;font-weight:650;white-space:nowrap}.desk-reports__count b{font-size:14px}.desk-reports__note{grid-column:2/-1;color:var(--ink-2);font-size:12px}.desk-dossier__hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
+    .desk-reports{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-reports li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-reports__row--later{border-color:var(--rose-line);background:var(--rose-soft)}.desk-reports__tag{padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}.desk-reports__row--later .desk-reports__tag{background:var(--rose);color:#fff}.desk-reports__what{display:grid;min-width:0}.desk-reports__what small{color:var(--muted);font-size:11px}.desk-reports__count{color:var(--danger);font-size:12px;font-weight:650;white-space:nowrap}.desk-reports__count b{font-size:14px}.desk-reports__note{grid-column:2/-1;color:var(--ink-2);font-size:12px}.desk-dossier__hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
     .desk-partner__lead{margin:0 0 8px;color:var(--ink-2);font-size:12.5px;line-height:1.45}.desk-partner-docs{display:grid;gap:6px;margin:0;padding:0;list-style:none}.desk-partner-docs li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.desk-partner-docs__what{display:grid;min-width:0;flex:1;color:inherit;text-decoration:none}.desk-partner-docs__what b{font-size:13px}.desk-partner-docs__what small{color:var(--muted);font-size:11px}.desk-partner-docs__amount{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}.desk-partner-docs__unlink{flex:none;width:26px;height:26px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:15px;line-height:1;cursor:pointer}.desk-partner-docs__unlink:hover{border-color:var(--danger);color:var(--danger)}
     .desk-dossier__diary{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.desk-dossier__empty{margin:0;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;color:var(--muted);font-size:12px}
     .desk-drop{display:grid;width:100%;gap:2px;margin-bottom:8px;padding:12px;border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font:inherit;text-align:center;cursor:pointer}.desk-drop b{font-size:12.5px}.desk-drop small{color:var(--muted);font-size:11px}.desk-drop:hover{border-color:var(--rose);background:var(--rose-soft)}
     .desk-docs{margin:0;padding:0;list-style:none}.desk-docs li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
     .desk-docs__kind{padding:3px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
-    .desk-docs__copy{display:grid;min-width:0}.desk-docs__copy b{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.desk-docs__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .desk-docs__copy{display:grid;min-width:0}
     .desk-docs__actions{display:flex;align-items:center;gap:4px}.desk-docs__icon{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:15px;cursor:pointer}.desk-docs__icon:hover{background:var(--surface-2);color:var(--ink)}
     .desk-milestones{margin:0;padding:0;list-style:none}.desk-milestones li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:6px 0}
     .desk-milestones i{display:grid;width:22px;height:22px;place-items:center;border:2px solid var(--line-strong);border-radius:50%;color:#fff;font-size:11px;font-style:normal;font-weight:800;background:var(--surface)}
@@ -1431,6 +1479,11 @@ export class PurchaseDesk extends PurchaseEditor {
     if (data && !data.costing.lines.length && !this.isReceived()) { this.startEdit(); this.openAdd(); }
   }
 
+  /** The chosen inklaring in words, or null while it is still to confirm. */
+  clearanceLabel(value: string | null | undefined): string | null {
+    return value ? this.clearanceOptions.find(option => option.value === value)?.label ?? value : null;
+  }
+
   /** An amount range never breaks inside: '€ 3,124 – € 10,859' stays on one line. */
   keepAmounts(text: string): string {
     return text.replace(/ – /g, '\u00a0–\u00a0');
@@ -1462,13 +1515,80 @@ export class PurchaseDesk extends PurchaseEditor {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly workbench = viewChild(PurchasePaymentWorkbench);
 
+  /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
+  readonly hostWidth = elementWidth(() => this.host.nativeElement);
+  readonly railDocked = computed(() => this.hostWidth() >= PDK_DOCK_MIN_PX);
+  /** The docked panel stands beside the products only; Betalingen and Nacalculatie take the whole width. */
+  readonly railShown = computed(() => this.railDocked() && this.mainView() === 'products');
+  readonly drawerOpen = signal(false);
+  readonly drawerShown = computed(() => !this.railDocked() && this.drawerOpen());
+  readonly railOptions = computed<SegmentOption[]>(() => (['order', 'costs', 'partner', 'files', 'done'] as const)
+    .filter(tab => tab !== 'partner' || this.hasPartnerTab())
+    .map(tab => ({ id: tab, label: RAIL_LABEL[tab] })));
+  readonly railTabLabel = computed(() => RAIL_LABEL[this.activeRailTab()]);
+  /** The ⌥ hints only where the view bar has room (a card of 980px or more). */
+  readonly barHints = computed(() => this.hostWidth() - 48 >= 980);
+  /** A pane fades in only after the user switched views, never when the order loads. */
+  readonly viewSwitched = signal(false);
+  private drawerOpener: HTMLElement | null = null;
+
+  constructor() {
+    super();
+    /* Docking closes the drawer, so a narrower window later starts without one. */
+    effect(() => { if (this.railDocked()) untracked(() => this.drawerOpen.set(false)); });
+  }
+
+  switchView(view: 'products' | 'payments' | 'nacalc'): void {
+    if (this.mainView() !== view) this.viewSwitched.set(true);
+    this.mainView.set(view);
+  }
+
+  /** A panel button in the view bar: opens the drawer on that tab, a second click on the same tab closes it. */
+  toggleDrawer(tab: RailTab, event?: Event): void {
+    if (this.drawerOpen() && this.activeRailTab() === tab) { this.closeDrawer(); return; }
+    this.drawerOpener = (event?.currentTarget as HTMLElement | null) ?? (document.activeElement as HTMLElement | null);
+    this.railTab.set(tab);
+    this.openDrawer(true);
+  }
+
+  private openDrawer(focusTab: boolean): void {
+    const wasOpen = this.drawerOpen();
+    this.drawerOpen.set(true);
+    if (!focusTab || wasOpen) return;
+    requestAnimationFrame(() => (document.querySelector('#pdk-drawer [role=tab][aria-selected=true]') as HTMLElement | null)?.focus());
+  }
+
+  /** ×, Esc or a click outside; focus goes back to what opened it (not after a click elsewhere). */
+  closeDrawer(returnFocus = true): void {
+    if (!this.drawerOpen()) return;
+    this.drawerOpen.set(false);
+    const opener = this.drawerOpener;
+    this.drawerOpener = null;
+    if (returnFocus && opener?.isConnected) opener.focus({ preventScroll: true });
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  onDrawerEscape(event: Event): void {
+    if (!this.drawerShown() || document.querySelector(OVERLAY)) return;
+    event.preventDefault();
+    this.closeDrawer();
+  }
+
+  @HostListener('document:pointerdown', ['$event'])
+  onDrawerOutside(event: PointerEvent): void {
+    if (!this.drawerShown()) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.isConnected || target.closest('#pdk-drawer, [data-pdk-rail]') || target.closest(OVERLAY) || document.querySelector(OVERLAY)) return;
+    this.closeDrawer(false);
+  }
+
   private static isPaymentAttention(item: string): boolean {
     return item.startsWith('Betaling open') || item === 'Nog geen betaling genoteerd' || /nog te betalen\.?$/.test(item);
   }
 
   /** The payments workbench, scrolled into view below the app bar; with a payee, that payee's row selected. */
   showPayments(payee?: Payee): void {
-    this.mainView.set('payments');
+    this.switchView('payments');
     requestAnimationFrame(() => {
       const target = document.getElementById('purchase-payments-section');
       target?.scrollIntoView({ block: 'start' });
@@ -1477,10 +1597,18 @@ export class PurchaseDesk extends PurchaseEditor {
     });
   }
 
-  /** A rail drawer lives beside the products; opening one leaves the payments view. */
-  showRail(tab: RailTab): void {
-    this.mainView.set('products');
+  /**
+   * The only way into the panel from outside it (B3): the tab, the products
+   * view as today, and below a 1140px host the drawer. A caller that focuses
+   * its own target afterwards (a deep link, Track & trace) passes focusTab false.
+   */
+  showRail(tab: RailTab, focusTab = true): void {
+    if (this.drawerShown() && this.activeRailTab() !== tab) focusTab = false;
+    this.switchView('products');
     this.railTab.set(tab);
+    if (this.railDocked()) return;
+    if (!this.drawerOpen()) this.drawerOpener = document.activeElement as HTMLElement | null;
+    this.openDrawer(focusTab);
   }
 
   /** Partner financing (money in) has its own drawer; without a partner the link means the payments. */
@@ -1496,7 +1624,7 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** The nacalculatie across the main pane, scrolled into view below the app bar. */
   showNacalculatie(): void {
-    this.mainView.set('nacalc');
+    this.switchView('nacalc');
     requestAnimationFrame(() => {
       const target = document.getElementById('purchase-payment-result');
       target?.scrollIntoView({ block: 'start' });
@@ -1514,7 +1642,7 @@ export class PurchaseDesk extends PurchaseEditor {
     event.preventDefault();
     if (event.code === 'Digit2') this.showPayments();
     else if (event.code === 'Digit3') this.showNacalculatie();
-    else this.mainView.set('products');
+    else this.switchView('products');
   }
 
   /** Series folded shut; a long container reads by series first. */
@@ -1675,8 +1803,15 @@ export class PurchaseDesk extends PurchaseEditor {
     if (!prompt || !data) return;
     if (prompt.to === 'ONDERWEG') {
       const bill = prompt.billOfLading.trim();
-      this.patch({ trackingReference: prompt.tracking.trim() || bill || null });
-      if (prompt.billFile) void this.attachBillOfLading(data.order.id, prompt.billFile, bill);
+      const file = prompt.billFile;
+      const tracking = prompt.tracking.trim() || bill || null;
+      this.stepPrompt.set(null);
+      /* One save: the tracking with the status. The B/L goes to the dossier only once that save went through (F9). */
+      this.enqueue((order) => ({ ...order, trackingReference: tracking, status: 'ONDERWEG' }), () => {
+        this.statusCelebration.set('SHIPPED');
+        if (file) void this.attachBillOfLading(data.order.id, file, bill);
+      });
+      return;
     }
     this.stepPrompt.set(null);
     super.advanceStatus();
@@ -1701,14 +1836,14 @@ export class PurchaseDesk extends PurchaseEditor {
       return;
     }
     this.startEdit();
-    this.showRail('order');
+    this.showRail('order', false);
     setTimeout(() => document.getElementById('dk-tracking')?.focus(), 150);
   }
 
   /** The fields live in the products table and the rail, so editing leaves the payments view. */
   startEdit(): void {
     this.editing.set(true);
-    this.mainView.set('products');
+    this.switchView('products');
   }
 
   /** Back to reading; an unsaved draft is dropped after a word of warning. */
