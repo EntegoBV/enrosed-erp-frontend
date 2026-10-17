@@ -267,12 +267,18 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   choice written back). Desk: `app-an-period` (popover, Esc and outside
   click close); phone: tinted capsule → "Periode" sheet (`app-an-period-sheet`).
 - Lists show 8 rows on the desk, 5 on the phone, the rest behind "Alle n
-  tonen" (`take(key, rows)`, `toggleList`). Plurals and words come from the
+  tonen" (`take(key, rows)`, `toggleList`); a list beside a shorter card
+  stops at 5 on the desk too (`limitOf`, `SHORT_LISTS`: Verkoop's Opvolgen)
+  so both columns end close together. Share rows (meter rows) of one card
+  are a subgrid on the desk, so meters line up. Verkoop's three-up lists are
+  two plus one (Producten full width) between 900 and 1280. The phone tool
+  row wraps (the range text takes a second line), never scrolls. Plurals and words come from the
   pure `analyses-words.ts` (plural, monthLabel "mrt 2026", rangeLabel,
   eurShort, the Overzicht sentences, `monthBars`). Whole euros use
   `eurWhole` with non-breaking spaces (a figure never splits).
-- Styles: `src/styles/analyses.scss` (frame, figures, cards, rows, phone)
-  and `analyses-tabs.scss` (per tab, Containerkost, Markt, Bezoekers),
+- Styles: `src/styles/analyses.scss` (frame, figures, cards, rows, phone),
+  `analyses-tabs.scss` (per tab, Containerkost) and `analyses-sources.scss`
+  (Markt and Bezoekers; split out on 2026-10-17 for the style budget),
   loaded through the page's `styleUrls` with `ViewEncapsulation.None`, so
   they stay in the lazy chunk (styles.css is about 20 kB under the 1 MB
   initial budget); every rule is scoped under `.an` / `an-*` / a child's
@@ -305,26 +311,41 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   Overzicht; on failure the warehouse figure counts and the banner says
   "voorraadlocaties". Kasprognose keeps its own inputs.
 - Inkoop in four parts (`?deel=kosten|kwaliteit|partners|afwijkingen`,
-  kosten omitted; `?orderId` without `deel` means Afwijkingen): row 1 the
+  kosten omitted unless `?orderId` is there, because `?orderId` without
+  `deel` means Afwijkingen; `partParams(part, orderFocus)`): row 1 the
   parts (warn dot on Partners, affected-order count on Afwijkingen); row 2
   per part (critique B10). Kwaliteit and Afwijkingen share the receipt period
   (`?ontvangst` / `?ovan&otot`) and `?leverancier`, applied at once with a
-  300 ms debounced reload. The order focus applies to Afwijkingen only
-  (critique N8; Kwaliteit reads `qualityReport`, the unfocused report); the
+  300 ms debounced reload; `load()` and `loadVariances()` share one ticket
+  (`varianceRound`), so the newest report wins. The order focus applies to Afwijkingen only
+  (critique N8; Kwaliteit reads `qualityReport`, the unfocused report, and
+  `qualityError`: a failed report shows the danger banner with Opnieuw and
+  "—" for its two variance figures, never € 0 / "alles gewaardeerd"); the
   chip "Alleen {container} ✕" clears it and `?orderId`. A deep link scrolls
   to the order card (`#an-order-{id}`, ring `.is-focus`). Value field
   (critique B3): it shows the stored `receiptUnitValueEur` ("1,26"), label
   "Waarde per stuk", hint "Telt mee in de impact: n st × € 1,26." or "Nog
   geen waarde: vul de waarde per stuk in.", no "Wissen", "Bewaren" only for
   a changed non-empty value (empty means unknown, never the cost price).
+  The verb stays "Bewaren" (critique B3; the base said "Bewaar", Inkoop's
+  receipt screens say "Bewaren"; the app is mixed, about 65 "Opslaan" to 71
+  "Bewaren/Bewaar"): a switch to "Opslaan" is the orchestrator's call.
   Containerkost (`container-cost-analysis.ts`) has no component styles left;
   on the phone each container opens a sheet with every figure (critique B1).
-  Its table scrolls inside `.cc-table` (position: relative, so the
-  visually hidden header text cannot widen the page). On the phone row 2
+  Its table folds instead of scrolling (critique N23): below 1440 Open
+  sits under Betaald and "Afrekening & PDF" is an icon button (title and
+  aria-label keep the words); below 1280 the status goes under the name and
+  Per eenheid under Verwachte kost, and the figure labels read "Afgesproken"
+  / "Verwachte kost" with "externe kost · " in the sub. `.cc-table` stays a
+  scroll region as the last resort (position: relative, so the visually
+  hidden header text cannot widen the page) and shades an edge that can
+  still scroll. On the phone row 2
   wraps: the supplier picker fills the line beside the period capsule and
   the order chip gets a line of its own.
 - Resultaat: five figures (3 + 2 below 1280), `app-an-month-bars`
-  (result-month-bars.ts), channels as rows, categories as share rows, Per
+  (result-month-bars.ts; a year band under the months when the bars span
+  several years, `yearSpans()`), channels as rows and categories as share
+  rows, both full-width cards (side by side they left a 250 px hole), Per
   maand with "mrt 2026" and every month up to today (`resultAnalysis`
   `today` option; credit notes counted apart: `creditNoteCount`).
 - Markt: its own tool row (desk: period segmented, ECB line, "+ Tarief
@@ -342,10 +363,21 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   `cash-forecast.ts` below).
 - Revert units: W2c, W2d, W4b, W5, W5b, W5c, N24, W6c and W6d each revert alone; W6
   (Markt + Bezoekers) is W6a…W6d together (W6c/W6d rework W6a/W6b's tool
-  rows); W1–W4 revert with the area merge. Style budget: analyses.scss
-  compiles to about 15 850 bytes and analyses-tabs.scss to about 15 400, of
-  the 16 384-byte (16 kB) component-style warning; a next rule needs room
-  made first.
+  rows); W1–W4 revert with the area merge. Style budget (compressed, fix
+  round 1): analyses.scss about 15 400 bytes, analyses-tabs.scss about
+  15 900, analyses-sources.scss about 2 450, of the 16 kB component-style
+  warning each; a next rule goes to analyses-sources.scss or needs room made
+  first.
+- Fix round 1 (2026-10-17): Markt and Bezoekers cards take the an-card look
+  (16 px radius, 14 px title, no eyebrow on the card heads; the phone keeps
+  its iOS radius); Markt's "bijgewerkt 16 okt" sits in the tool row only and
+  the Bezoekers axis reads "17 sep" (`dayMonth`). The "Offerte-interesse"
+  foot is green up, warn down. Figure placeholders use the shared
+  `skel-shimmer`. Known deviation (critique N5): the Markt "Periode", the
+  Bezoekers "Bron"/"Periode" and the Containerkost container sheets are
+  rendered by the children inside the faded body. `.mo-fade` fills
+  backwards only, so the stacking context lasts --dur-1 after a tab switch;
+  hoisting them would move the children's state (N10) into the page.
 
 **Left out** (stop line, critique B9): nothing of the critique's package list
 is open. Kept on purpose: Inkoop's phone container filter and supplier stay
@@ -2290,13 +2322,16 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   which wins over history.
 - First build waits for the advance schedules (2026-10-17, critique N13):
   `CashData.schedulesFor` records the round whose schedules have loaded
-  (also on failure); `CashState.attach(page, loading, today, schedulesNeeded)`
+  (also on failure), only while it is still the latest round (an older round
+  answering last never pulls it back, and its schedules are dropped);
+  `CashState.attach(page, loading, today, schedulesNeeded)`
   builds the first forecast only once `forecastReady(generation,
   schedulesFor, needed)` (cash-view.ts); later rounds keep the last figures.
   `today` is a Signal now (the page's), so the forecast rolls over at
   midnight.
 - Scenario default (2026-10-17, critique B4): `history.realisedMarkupPct`
-  is null unless the last year holds at least 3 regular invoices and
+  is null unless the last year holds at least 3 issued regular invoices
+  (concept and cancelled ones are no sample, like documentAccounting) and
   € 10.000 recognised revenue (`REALISED_MIN_INVOICES`,
   `REALISED_MIN_REVENUE_EUR` in cash-forecast-input.ts); then the default is
   50 %. The raw figure stays in `history.realisedSample { invoices,
