@@ -890,7 +890,7 @@ export class PurchaseDeskStyles {}
                                 @if (renamingDoc()?.id === doc.id) {
                                   <input class="input input--sm" type="text" enterkeyhint="done" placeholder="Titel, bijv. KBC mei"
                                          [ngModel]="renamingDoc()!.label" (ngModelChange)="renamingDoc.set({ id: doc.id, label: $event })"
-                                         (keydown.enter)="commitDocRename(doc)" (keydown.escape)="renamingDoc.set(null)" (blur)="commitDocRename(doc)" />
+                                         (keydown.enter)="commitDocRename(doc)" (keydown.escape)="$event.preventDefault(); renamingDoc.set(null)" (blur)="commitDocRename(doc)" />
                                 } @else {
                                   <span class="desk-docs__copy">
                                     <b>{{ doc.label || doc.originalFilename }}</b>
@@ -1563,9 +1563,15 @@ export class PurchaseDesk extends PurchaseEditor {
     if (returnFocus && opener?.isConnected) opener.focus({ preventScroll: true });
   }
 
+  /**
+   * Esc closes the drawer, but not behind a sheet, not an Esc a field already
+   * used (the document rename cancels itself) and not while typing in a field
+   * (Track & trace, the Order form): that Esc belongs to the field.
+   */
   @HostListener('document:keydown.escape', ['$event'])
   onDrawerEscape(event: Event): void {
-    if (!this.drawerShown() || document.querySelector(OVERLAY)) return;
+    if (!this.drawerShown() || event.defaultPrevented || document.querySelector(OVERLAY)) return;
+    if (keyContext(event as KeyboardEvent, this.host.nativeElement).typing) return;
     event.preventDefault();
     this.closeDrawer();
   }
