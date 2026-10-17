@@ -53,8 +53,16 @@ test('the company group holds Logboek, the settings overview, the terms and Verw
   assert.equal(sidebarGroupForUrl('/activity?wie=emre'), 'bedrijf');
 });
 
-test('Categorieën opens Producten & voorraad, and the device settings open no group', () => {
+test('Categorieën opens Producten & voorraad, and the notifications foot item opens no group', () => {
   assert.equal(sidebarGroupForUrl('/categories'), 'producten');
   assert.equal(sidebarGroupForUrl('/settings?sectie=notifications'), null);
-  assert.equal(sidebarGroupForUrl('/settings?sectie=appearance'), null);
+});
+
+test('the settings tab strip keeps the Bedrijf group open on its own views', () => {
+  for (const sectie of ['legal', 'website', 'appearance', 'device']) {
+    assert.equal(sidebarGroupForUrl(`/settings?sectie=${sectie}`), 'bedrijf', sectie);
+  }
+  assert.equal(sidebarGroupForUrl('/settings?sectie=discounts'), 'verkoop');
+  assert.equal(sidebarGroupForUrl('/settings?sectie=duties'), 'inkoop');
+  assert.equal(sidebarGroupForUrl('/settings?sectie=catalog-data'), 'producten');
 });

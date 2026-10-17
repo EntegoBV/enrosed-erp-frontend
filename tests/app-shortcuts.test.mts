@@ -64,3 +64,8 @@ test('Categorieën lists its own keys next to Opslaan', () => {
   assert.deepEqual(pageShortcutsFor('/website/categories?code=domes').map((row) => row.text),
     ['Opslaan', 'Andere categorie kiezen', 'Categorie hoger of lager zetten', 'Categorie openen']);
 });
+
+test('Instellingen saves its open view with ⌘S (company area)', () => {
+  assert.deepEqual(pageShortcutsFor('/settings?sectie=company').map((row) => row.text), ['Opslaan']);
+  assert.deepEqual(pageShortcutsFor('/settings/deleted-items'), []);
+});

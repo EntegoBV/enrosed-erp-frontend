@@ -200,3 +200,20 @@ test('one action list: single, archive, multi, folder and empty area', () => {
   assert.equal(bulkSummary('gearchiveerd', 12, 2, 'Geen toegang'), '12 gearchiveerd, 2 mislukt: Geen toegang');
   assert.equal(bulkSummary('gearchiveerd', 3, 0, null), '3 gearchiveerd');
 });
+
+test('placeSummary: loaded, photos, documents, size and the newest change (company C8)', async () => {
+  const { placeSummary, pathTail } = await import('../src/app/features/files/files-rules.ts');
+  const now = new Date(2026, 9, 17, 12, 0);
+  const assets = [
+    { kind: 'IMAGE', sizeBytes: 3 * 1_048_576, updatedAt: new Date(2026, 9, 17, 10, 41).toISOString() },
+    { kind: 'IMAGE', sizeBytes: 1_048_576, updatedAt: new Date(2026, 9, 16, 9, 0).toISOString() },
+    { kind: 'DOCUMENT', sizeBytes: 524_288, updatedAt: new Date(2026, 9, 1, 9, 0).toISOString() },
+  ] as never[];
+  assert.deepEqual(placeSummary(assets, now), [
+    { label: 'Geladen', value: '3' }, { label: 'Foto’s', value: '2' }, { label: 'Documenten', value: '1' },
+    { label: 'Samen', value: '4,5 MB' }, { label: 'Nieuwste', value: 'vandaag 10:41' },
+  ]);
+  assert.deepEqual(placeSummary([], now), []);
+  const folders = [{ id: 1, parentId: null, name: 'Inkooporders' }, { id: 2, parentId: 1, name: 'PO-2026-005' }] as never[];
+  assert.equal(pathTail(folders, 2, 1), 'PO-2026-005');
+});

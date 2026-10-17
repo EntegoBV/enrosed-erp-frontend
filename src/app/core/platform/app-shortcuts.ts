@@ -145,6 +145,11 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
       { keys: ['↵'], text: 'Categorie openen' },
     ],
   },
+  /* Instellingen: the open view (Bedrijfsgegevens, Kortingen…) saves from the toolbar. */
+  {
+    routes: ['/settings'],
+    rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */

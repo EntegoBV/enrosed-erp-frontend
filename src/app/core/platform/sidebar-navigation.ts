@@ -49,6 +49,8 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
     || path === '/settings/deleted-items'
     || (path === '/settings' && !section)
     || section === 'company'
+    /* The settings tab strip stays inside Bedrijf: legal, website and this device's view. */
+    || (path === '/settings' && (section === 'legal' || section === 'website' || section === 'appearance' || section === 'device'))
   ) return 'bedrijf';
 
   return null;

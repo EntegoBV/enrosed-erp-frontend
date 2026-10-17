@@ -21,6 +21,7 @@ import {
   LINK_VIEWS, PHONE_SORTS, badgeText, extensionToneClass, targetLabel,
 } from './files-collections';
 import { crumbsFor, folderMeta, sizeLabel, whereLine } from './files-rules';
+import { capsuleLabel } from '../../core/platform/return-label';
 import { fileKey } from './files-selection';
 import { FilesController } from './files-controller';
 import { FilesInspector } from './files-inspector';
@@ -54,7 +55,7 @@ import { FilesInspector } from './files-inspector';
         </app-ios-nav>
         <app-files-inspector layout="screen" />
       } @else {
-        <app-ios-nav [title]="navTitle()" [backLabel]="c.picking() ? null : isRoot() ? 'App' : ''"
+        <app-ios-nav [title]="navTitle()" [backLabel]="c.picking() ? null : isRoot() ? rootBackLabel() : ''"
                      [backUrl]="isRoot() ? ret.phoneUrl() : null"
                      [backAriaLabel]="isRoot() ? 'Terug naar ' + ret.label() : 'Terug naar ' + c.parentTitle()" (back)="c.goBack()">
           @if (c.picking()) {
@@ -116,7 +117,8 @@ import { FilesInspector } from './files-inspector';
                     <button class="files-shelf__item" type="button" appMenuTrigger (menuTrigger)="c.openFileMenu(asset, null)" (click)="c.openFileScreen(asset.id)">
                       @if (asset.kind === 'IMAGE') { <img [appAuthSrc]="c.media.thumbnailUrl(asset.id)" appAuthLazy alt="" draggable="false" /> }
                       @else { <span class="files-ext files-ext--lg" [class]="tone(asset)">{{ badge(asset) }}</span> }
-                      <span>{{ asset.name }}</span>
+                      <span class="files-shelf__name" [title]="asset.name">{{ asset.name }}</span>
+                      @if (whereOf(asset).text; as where) { <small class="files-shelf__where" [title]="where">{{ where }}</small> }
                     </button>
                   </div>
                 } @empty { <p class="files-muted files-shelf__empty">Nog geen bestanden.</p> }
@@ -487,6 +489,8 @@ export class FilesPhone {
   tone(asset: MediaAssetSummary): string { return extensionToneClass(asset); }
   meta(folderId: number): string { return folderMeta(this.c.store.counts().get(folderId)); }
   whereOf(asset: MediaAssetSummary) { return whereLine(asset, this.c.loc(), this.c.store.folders()); }
+  /** The root's back capsule names the screen below when it is short ("Meer", "Inkoop"); otherwise a chevron alone. */
+  rootBackLabel(): string { return capsuleLabel(this.ret.label()); }
   value(event: Event): string { return (event.target as HTMLInputElement).value; }
 
   setKind(id: string): void {

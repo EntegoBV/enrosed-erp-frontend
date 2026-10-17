@@ -208,7 +208,7 @@ const VIEW_PLURALS: Record<string, string> = {
                   <span class="wk-td files-name" role="gridcell"><span class="files-icon files-icon--folder"><app-icon name="folder" [size]="17" /></span><span class="files-name__text">{{ folder.name }}</span></span>
                   <span class="wk-td files-muted" role="gridcell" data-hide="xxs">{{ meta(folder.id) }}</span>
                   @if (showMap()) { <span class="wk-td" role="gridcell" data-hide="xs"></span> }
-                  <span class="wk-td" role="gridcell"></span><span class="wk-td" role="gridcell"></span><span class="wk-td" role="gridcell" data-hide="sm"></span>
+                  <span class="wk-td files-none" role="gridcell">—</span><span class="wk-td wk-td--num files-muted files-total" role="gridcell">{{ folderTotal(folder.id) }}</span><span class="wk-td" role="gridcell" data-hide="sm"></span>
                 </div>
               }
               @for (section of c.sections(); track section.key) {
@@ -504,7 +504,13 @@ export class FilesDesktop {
   tone(asset: MediaAssetSummary): string { return extensionToneClass(asset); }
   icon(asset: MediaAssetSummary): string { return targetIconName(asset.links[0].targetType); }
   firstLink(asset: MediaAssetSummary): string { return linkLabel(asset.links[0]); }
-  tail(asset: MediaAssetSummary): string { return pathTail(this.c.store.folders(), asset.folderId, 2); }
+  /** The last folder of the path ("PO-2026-005"); the full path is the title. */
+  tail(asset: MediaAssetSummary): string { return pathTail(this.c.store.folders(), asset.folderId, 1); }
+  /** "214 bestanden" in a folder row's Grootte column. */
+  folderTotal(folderId: number): string {
+    const total = this.c.store.counts().get(folderId)?.total ?? 0;
+    return `${total} ${total === 1 ? 'bestand' : 'bestanden'}`;
+  }
   meta(folderId: number): string { return folderMeta(this.c.store.counts().get(folderId)); }
   type(targetType: Parameters<typeof targetLabel>[0]): string { return targetLabel(targetType); }
   openLabel(targetType: Parameters<typeof recordOpenLabel>[0]): string { return recordOpenLabel(targetType); }

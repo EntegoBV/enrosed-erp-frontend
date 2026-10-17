@@ -1,32 +1,34 @@
-import { DOCUMENT } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { DOCUMENT, Location, NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   HostListener,
   OnDestroy,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
-import { SourcingApi } from '../../core/api/sourcing-api';
 import {
-  CatalogImportResult, Category, CompanyProfile, DiscountTier, LANGUAGES, LanguageCode,
-  Product, ProductFamily, Supplier,
+  CatalogImportResult, Category, HsCode, LANGUAGES, LanguageCode,
+  Product, ProductFamily,
 } from '../../core/api/models';
-import { AuthImage } from '../../core/api/auth-image';
-import { salesPhotoUrl } from '../../shared/sales-photo';
 import { PageHeader } from '../../shared/page-header';
-import { ProductPicker } from '../../shared/product-picker';
-import { Ui } from '../../shared/ui';
+import { Ui, confirmLeave } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { NavHistory } from '../../core/platform/nav-history-service';
 import { THEMES, Theme } from '../../core/platform/theme';
 import {
   FeaturedProductEligibility,
@@ -38,8 +40,33 @@ import { CategoryTranslationEditor } from './category-translation-editor';
 import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
-import { StaffContactPhones } from '../../shared/staff-contact-phones';
-import { DateTimeNlPipe } from '../../shared/pipes';
+import { DateNlPipe, DateTimeNlPipe } from '../../shared/pipes';
+import { Skeleton } from '../../shared/skeleton';
+import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
+import { CompanyStore } from './company-store';
+import { SettingsDiscounts } from './settings-discounts';
+import { SettingsOverview } from './settings-overview';
+import { SettingsCompany } from './settings-company';
+import { LEGAL_LANGUAGES, SettingsLegal } from './settings-legal';
+import { Segmented } from '../../shared/segmented';
+import { SettingsEditor, dirtyStatusText } from './settings-editor';
+import { Icon } from '../../shared/icon';
+import { keyContext } from '../../shared/key-context';
+import {
+  SettingsView, deviceFocus, isSettingsOverviewUrl, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
+} from './settings-sections';
+
+/**
+ * The overview as the way up from a view. Its own path (a redirect to
+ * /settings): the navigation history keys "the last URL seen" by path, and
+ * /settings itself would resolve to the open view.
+ */
+const OVERVIEW_URL = '/settings/overzicht';
+
+/** The settings views of this build (the legal view arrives with its own package). */
+const AVAILABLE_VIEWS: readonly SettingsView[] = [
+  'overview', 'company', 'legal', 'website', 'duties', 'discounts', 'catalog-data', 'device',
+];
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -66,24 +93,39 @@ const normalizeCategoryCode = (value: string): string => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
-/** Categorieën, douanetarieven en kortingsstaffels. */
+/**
+ * Instellingen: an overview of every setting with its current value, and one
+ * view per ?sectie= (Bedrijfsgegevens, Website, Douane, Kortingen,
+ * Catalogusdata, Dit toestel). The desk switches views with a tab strip
+ * under the toolbar, the phone pushes them. /website/categories renders the
+ * category editor of this same component (websiteCategoryMode), unchanged.
+ */
 @Component({
   selector: 'app-settings-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [CompanyStore],
   imports: [
-    AuthImage,
+    Icon,
+    LoadError,
+    NgTemplateOutlet,
+    SettingsCompany,
+    SettingsLegal,
+    SettingsOverview,
+    Segmented,
+    Skeleton,
+    SettingsDiscounts,
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
     PhotoExportSheet,
-    ProductPicker,
     RouterLink,
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
-    StaffContactPhones,
+    DateNlPipe,
     DateTimeNlPipe,
   ],
   template: `
+    @if (websiteCategoryMode) {
     <app-page-header
       [showBack]="!websiteCategoryMode"
       [backTo]="websiteCategoryMode ? null : settingsBackTo"
@@ -93,6 +135,25 @@ const normalizeCategoryCode = (value: string): string => value
         : 'Categorieën, tarieven en staffels'"
       [showBell]="!websiteCategoryMode"
     />
+    } @else {
+    <app-page-header [title]="viewInfo().title" [subtitle]="viewInfo().subtitle"
+                     [parent]="headerParent()" [backTo]="headerBackTo()">
+      @if (view() === 'legal' && desktop.active() && legalEditor(); as legal) {
+        <app-segmented label="Taal" [options]="legalLanguages" [value]="legal.language()" (changed)="legal.setLanguage($event)" />
+      }
+      @if (activeEditor(); as editor) {
+        @if (editor.dirty()) {
+          @if (desktop.active()) {
+            <span class="set-dirty mo-fade" role="status" [attr.aria-label]="dirtyText(editor)">
+              <i class="set-dot" aria-hidden="true"></i><span class="set-dirty__n" aria-hidden="true">{{ editor.dirtyCount() }}</span><span class="set-dirty__text" aria-hidden="true">{{ dirtyWords(editor) }}</span>
+            </span>
+            <button class="btn set-ghost mo-fade" type="button" [disabled]="editor.saving()" (click)="editor.revert()">Wijzigingen wissen</button>
+          }
+          <button class="btn btn--primary mo-fade" type="button" [disabled]="editor.saving()" (click)="saveEditor(editor)">{{ editor.saving() ? 'Opslaan…' : 'Opslaan' }}</button>
+        }
+      }
+    </app-page-header>
+    }
 
     @if (websiteCategoryMode) {
       <div class="content website-category-nav">
@@ -110,21 +171,503 @@ const normalizeCategoryCode = (value: string): string => value
     }
 
     @if (!websiteCategoryMode) {
-    <nav class="settings-nav" aria-label="Snel naar instelling">
-      <div class="settings-nav__rail">
-        @for (section of settingsSections; track section.id) {
-          <button type="button" [class.active]="activeSection() === section.id"
-                  [attr.aria-current]="activeSection() === section.id ? 'location' : null"
-                  [attr.data-settings-section]="section.id"
-                  (click)="scrollToSection(section.id)">
-            {{ section.label }}
+    <div class="content set-page">
+      @if (desktop.active()) {
+        <nav class="wk-subbar set-subbar" aria-label="Onderdelen van Instellingen">
+          <div class="set-tabs" #tabStrip>
+            @for (tab of tabs(); track tab.id) {
+              <a class="wk-chip" routerLink="/settings" [queryParams]="viewQuery(tab.id)" [replaceUrl]="true"
+                 [class.is-on]="view() === tab.id" [attr.aria-current]="view() === tab.id ? 'page' : null"
+                 [attr.data-view]="tab.id">{{ tab.tab }}@if (viewDirty(tab.id)) {<i class="set-dot" aria-label="niet opgeslagen"></i>}</a>
+            }
+          </div>
+        </nav>
+      }
+
+      @if (visited().has('overview')) {
+        <app-settings-overview class="mo-fade" [hidden]="view() !== 'overview'" [active]="view() === 'overview'"
+                               [douaneRoute]="douaneRoute" [legalView]="views.includes('legal')" />
+      }
+
+      @if (visited().has('company')) {
+        <app-settings-company class="mo-fade" [hidden]="view() !== 'company'" />
+      }
+
+      @if (visited().has('legal')) {
+        <app-settings-legal class="mo-fade" [hidden]="view() !== 'legal'" />
+      }
+
+      @if (visited().has('website')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'website'" aria-label="Prijzen op de website">
+        @if (desktop.active()) {
+        <div class="set-pair">
+          <!-- The sync status shows once: inside the price card (B5). -->
+          <div class="wk-card set-pane set-pane--bare" id="website">
+            <app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" />
+          </div>
+          <nav class="wk-card set-pane set-links" aria-label="Website en catalogus">
+            <h2 class="set-pane__title">Website en catalogus</h2>
+            <a routerLink="/website"><span><b>Website beheren</b><small>Indeling, teksten, SEO, producten en publicatie</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/website/categories"><span><b>Categorieën en menunamen</b><small>Volgorde, uitgelicht product en namen per taal</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/categories"><span><b>Categorieën · foto’s</b><small>De foto’s van elke collectie</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/catalog/texts"><span><b>Catalogusteksten per taal</b><small>Teksten van de catalogus-pdf</small></span><app-icon name="chevron-right" [size]="16" /></a>
+          </nav>
+        </div>
+        } @else {
+        <!-- Phone: the same two groups as inset groups -->
+        <div class="set-ios">
+          <app-website-quote-settings variant="ios" [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" />
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Website en catalogus</h2></div>
+            <nav class="ios-group" aria-label="Website en catalogus">
+              <a class="ios-cell" routerLink="/website"><span class="ios-cell__body"><span class="ios-cell__title">Website beheren</span><span class="ios-cell__sub set-ios__text">Indeling, teksten, SEO, producten en publicatie</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/website/categories"><span class="ios-cell__body"><span class="ios-cell__title">Categorieën en menunamen</span><span class="ios-cell__sub set-ios__text">Volgorde, uitgelicht product en namen per taal</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/categories"><span class="ios-cell__body"><span class="ios-cell__title">Categorieën · foto’s</span><span class="ios-cell__sub set-ios__text">De foto’s van elke collectie</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/catalog/texts"><span class="ios-cell__body"><span class="ios-cell__title">Catalogusteksten per taal</span><span class="ios-cell__sub set-ios__text">Teksten van de catalogus-pdf</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+            </nav>
+          </section>
+        </div>
+        }
+      </section>
+      }
+
+      @if (visited().has('duties')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'duties'" aria-label="Douane">
+      @if (dutiesError(); as error) {
+        <app-load-error [message]="error" [busy]="dutiesLoading()" (retry)="loadDuties()" />
+      } @else if (dutiesLoading() && !hsCodes().length) {
+        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="4" /></div></div>
+      } @else {
+      <!-- ======================================= douanetarieven -->
+      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
+        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
+          <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
+        <div class="card__body">
+          <div class="alert alert--warn" style="margin-bottom:14px">
+            <span class="alert__icon">!</span>
+            <div>
+              Kijk deze percentages na in de <b>TARIC-databank</b> van de EU. Wat hier staat is
+              configuratie, geen douaneadvies.
+            </div>
+          </div>
+          @for (code of hsCodes(); track code.code) {
+            <div style="border:1px solid var(--line);border-radius:var(--r-sm);
+                        padding:10px 12px;margin-bottom:10px">
+              <div class="row" style="margin-bottom:8px">
+                <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
+                       [ngModel]="code.code" (ngModelChange)="code.code = $event" />
+                <input class="input input--sm num right" style="max-width:80px" type="text"
+                       inputmode="decimal" aria-label="Invoerrecht"
+                       [value]="pctText(code.dutyRatePct)"
+                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
+                <span class="small muted">%</span>
+                <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
+                <button class="btn btn--sm btn--danger" type="button"
+                        (click)="removeHsCode(code)">✕</button>
+              </div>
+              <input class="input input--sm" aria-label="Omschrijving" placeholder="Omschrijving"
+                     [ngModel]="code.description" (ngModelChange)="code.description = $event" />
+            </div>
+          }
+          <p class="small muted">
+            Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
+            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
+          </p>
+        </div>
+      </div>
+      }
+      </section>
+      }
+
+      @if (visited().has('discounts')) {
+        <app-settings-discounts class="mo-fade" [hidden]="view() !== 'discounts'" />
+      }
+
+      @if (visited().has('catalog-data')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'catalog-data'" aria-label="Catalogusdata">
+      <!-- The import result: one block for the desk card and the phone groups -->
+      <ng-template #workbookResultView>
+          @if (workbookResult(); as result) {
+            <div class="alert workbook-result" aria-live="polite"
+                 [class.alert--ok]="!result.problems.length"
+                 [class.alert--warn]="result.problems.length > 0">
+              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
+              <div>
+                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
+                <div class="small workbook-result__summary">
+                  {{ result.updatedProducts }} productregels verwerkt ·
+                  {{ result.updatedRows }} vertaalregels bijgewerkt
+                </div>
+                @if (result.problems.length) {
+                  <details class="workbook-problems">
+                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
+                    <ul>
+                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
+                    </ul>
+                  </details>
+                }
+              </div>
+            </div>
+          }
+      </ng-template>
+      @if (desktop.active()) {
+      <div class="set-pair set-pair--side">
+      <!-- ======================================= catalogus in Excel -->
+      <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
+        <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
+          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
+        </div>
+        <div class="card__body">
+          <p class="workbook-intro">
+            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
+            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
+            Ook vertalingen staan in dezelfde export.
+          </p>
+
+          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
+            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
+            <li><span>2</span><div><b>Bewerk</b><small>
+              Producten staan op duidelijke tabbladen. Vertalingen staan apart.
+            </small></div></li>
+            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
+          </ol>
+
+          <div class="workbook-safety">
+            <b>SKU niet wijzigen.</b>
+            <span>
+              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
+              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
+            </span>
+          </div>
+
+          <div class="workbook-actions">
+            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
+                    (click)="exportWorkbook()">
+              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
+            </button>
+            <button class="btn" type="button" [disabled]="importingWorkbook()"
+                    (click)="workbookFile.click()">Excel importeren…</button>
+            <input #workbookFile type="file"
+                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                   hidden (change)="selectWorkbook($any($event.target))" />
+          </div>
+
+          @if (selectedWorkbook(); as file) {
+            <div class="workbook-selection">
+              <div class="workbook-selection__file">
+                <span class="workbook-file-icon" aria-hidden="true">X</span>
+                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
+              </div>
+              <div class="workbook-selection__actions">
+                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
+                        (click)="clearWorkbookSelection()">Annuleren</button>
+                <button class="btn btn--sm btn--primary" type="button"
+                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
+                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
+                </button>
+              </div>
+            </div>
+          }
+
+          <ng-container [ngTemplateOutlet]="workbookResultView" />
+
+
+        </div>
+      </div>
+      <div class="set-side">
+        <!-- Photos are not master data, but they are exported from the
+               same place: one ZIP with a folder per product. -->
+          <button class="photo-export-row" type="button" aria-haspopup="dialog"
+                  (click)="photoExportOpen.set(true)">
+            <span class="photo-export-row__badge" aria-hidden="true">ZIP</span>
+            <span class="photo-export-row__copy">
+              <b>Productfoto’s exporteren (ZIP)</b>
+              <small>Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</small>
+            </span>
+            <i aria-hidden="true">›</i>
           </button>
+        <a class="photo-export-row" routerLink="/catalog/texts">
+          <span class="photo-export-row__badge" aria-hidden="true">TXT</span>
+          <span class="photo-export-row__copy"><b>Catalogusteksten per taal</b><small>De teksten van de catalogus-pdf in elke taal.</small></span>
+          <i aria-hidden="true">›</i>
+        </a>
+      </div>
+      </div>
+      } @else {
+      <!-- Phone: the same steps, note, actions and exports as inset groups -->
+      <div class="set-ios">
+        <section class="ios-section">
+          <div class="ios-section__head"><h2>Producten in Excel</h2></div>
+          <div class="ios-group">
+            <div class="ios-cell ios-cell--tall">
+              <span class="ios-cell__lead"><span class="workbook-badge" aria-hidden="true">XLSX</span></span>
+              <span class="ios-cell__body">
+                <span class="ios-cell__title ios-cell__title--strong">Importeren en exporteren</span>
+                <span class="ios-cell__sub set-ios__text">Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar. Ook vertalingen staan in dezelfde export.</span>
+              </span>
+            </div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">1</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Download</span><span class="ios-cell__sub set-ios__text">Begin altijd met de nieuwste export.</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">2</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Bewerk</span><span class="ios-cell__sub set-ios__text">Producten staan op duidelijke tabbladen. Vertalingen staan apart.</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">3</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Importeer</span><span class="ios-cell__sub set-ios__text">Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</span></span></div>
+          </div>
+        </section>
+        <div class="workbook-safety">
+          <b>SKU niet wijzigen.</b>
+          <span>De SKU koppelt elke rij aan het juiste product. Categorie, leverancier, voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.</span>
+        </div>
+        <section class="ios-section">
+          <div class="ios-group">
+            <button class="ios-cell ios-cell--action" type="button" [disabled]="exportingWorkbook()" (click)="exportWorkbook()">
+              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}</button>
+            <button class="ios-cell ios-cell--action" type="button" [disabled]="importingWorkbook()" (click)="workbookFile.click()">Excel importeren…</button>
+          </div>
+          <input #workbookFile type="file"
+                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                 hidden (change)="selectWorkbook($any($event.target))" />
+        </section>
+        @if (selectedWorkbook(); as file) {
+          <section class="ios-section">
+            <div class="ios-group">
+              <div class="ios-cell">
+                <span class="ios-cell__lead"><span class="workbook-file-icon" aria-hidden="true">X</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title set-ios__text">{{ file.name }}</span><span class="ios-cell__sub">{{ fileSize(file.size) }}</span></span>
+              </div>
+              <button class="ios-cell ios-cell--action" type="button" [disabled]="importingWorkbook()" (click)="importWorkbook()">
+                {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}</button>
+              <button class="ios-cell" type="button" [disabled]="importingWorkbook()" (click)="clearWorkbookSelection()">Annuleren</button>
+            </div>
+          </section>
+        }
+        <div class="set-ios__result"><ng-container [ngTemplateOutlet]="workbookResultView" /></div>
+        <section class="ios-section">
+          <div class="ios-group">
+            <!-- Photos are not master data, but they are exported from the same place. -->
+            <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
+              <span class="ios-cell__lead"><span class="photo-export-row__badge" aria-hidden="true">ZIP</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Productfoto’s exporteren (ZIP)</span>
+                <span class="ios-cell__sub set-ios__text">Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </button>
+            <a class="ios-cell" routerLink="/catalog/texts">
+              <span class="ios-cell__lead"><span class="photo-export-row__badge" aria-hidden="true">TXT</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Catalogusteksten per taal</span>
+                <span class="ios-cell__sub set-ios__text">De teksten van de catalogus-pdf in elke taal.</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </a>
+          </div>
+        </section>
+      </div>
+      }
+      </section>
+      }
+
+      @if (visited().has('device')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'device'" aria-label="Dit toestel">
+      @if (desktop.active()) {
+      <div class="set-pair">
+      <!-- ============== app on this device: looks and notifications -->
+      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance" [class.set-focus]="focusRing() === 'appearance'">
+        <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
+          <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
+            @for (option of themes; track option.key) {
+              <button class="theme-picker__option" type="button" role="radio"
+                      [class.theme-picker__option--active]="theme.current() === option.key"
+                      [attr.aria-checked]="theme.current() === option.key"
+                      (click)="theme.set(option.key)">
+                <i class="theme-picker__swatch" [style.background]="option.swatch" aria-hidden="true"></i>
+                <span>{{ option.label }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================= meldingen op dit toestel -->
+      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications" [class.set-focus]="focusRing() === 'notifications'">
+        <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">
+            Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
+            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            Op iPhone werkt dit zodra de app op het beginscherm staat.
+          </p>
+          @if (!push.supported()) {
+            <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
+          } @else if (push.enabled()) {
+            <div class="push-actions">
+              <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="disablePush()">Uitzetten</button>
+            </div>
+          } @else {
+            <button class="btn btn--primary" type="button" [disabled]="push.busy()"
+                    (click)="enablePush()">
+              {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
+            </button>
+          }
+          @if (push.enabled() || pushDevices().length) {
+            <div class="push-actions mt-12">
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="testPush()">Stuur testmelding</button>
+              <span class="small muted">Naar alle aangemelde toestellen.</span>
+            </div>
+          }
+          @if (pushDevices().length) {
+            <div class="push-devices" aria-label="Aangemelde toestellen">
+              @for (device of pushDevices(); track device.id) {
+                <div class="push-device">
+                  <b>{{ device.device }}@if (device.since) { · aangemeld sinds {{ device.since | dateNl }} }</b>
+                  <span>
+                    @if (device.lastStatus === null) { nog geen melding gestuurd }
+                    @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                      laatste melding door pushdienst geaccepteerd
+                    } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                    @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
+                  </span>
+                </div>
+              }
+            </div>
+          }
+          @if (pushDevicesError(); as error) {
+            <div class="push-error" role="alert">
+              <div><b>Aangemelde toestellen konden niet worden geladen</b><small>{{ error }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="pushDevicesLoading()"
+                      (click)="loadPushDevices()">Opnieuw proberen</button>
+            </div>
+          } @else if (pushDevicesLoading()) {
+            <p class="small muted mt-12" role="status">Aangemelde toestellen laden…</p>
+          } @else if (pushDevicesLoaded() && !pushDevices().length) {
+            <p class="small muted mt-12" role="status">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</p>
+          }
+          @if (pushActionError()) {
+            <div class="push-error" role="alert">
+              <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="retryPushAction()">Opnieuw proberen</button>
+            </div>
+          }
+          <div class="push-sounds">
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
+              Geluid nieuwe offerte
+            </button>
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
+              Geluid nieuwe factuur
+            </button>
+          </div>
+        </div>
+      </div>
+      </div>
+      } @else {
+      <!-- Phone: Weergave and Meldingen as inset groups; the same flows -->
+      <div class="set-ios">
+        <section class="ios-section" id="appearance">
+          <div class="ios-section__head"><h2>Weergave</h2></div>
+          <div class="ios-group set-ios__themes" role="radiogroup" aria-label="Kleurschema" [class.set-focus]="focusRing() === 'appearance'">
+            @for (option of themes; track option.key) {
+              <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="theme.current() === option.key" (click)="theme.set(option.key)">
+                <span class="ios-cell__lead"><i class="set-ios__swatch" [style.background]="option.swatch" aria-hidden="true"></i></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                @if (theme.current() === option.key) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+              </button>
+            }
+          </div>
+          <p class="ios-section__foot">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
+        </section>
+
+        <section class="ios-section" id="notifications">
+          <div class="ios-section__head"><h2>Meldingen op dit toestel</h2></div>
+          <div class="ios-group" [class.set-focus]="focusRing() === 'notifications'">
+            @if (!push.supported()) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Meldingen</span>
+                <span class="ios-cell__sub set-ios__text warn-text">Deze browser ondersteunt geen meldingen.</span></span></div>
+            } @else {
+              <label class="ios-cell">
+                <span class="ios-cell__body"><span class="ios-cell__title" id="push-switch-label">Meldingen</span>
+                  <span class="ios-cell__sub">{{ push.busy() ? 'Bezig…' : push.enabled() ? 'Staan aan op dit toestel' : 'Staan uit op dit toestel' }}</span></span>
+                <input class="ios-switch" type="checkbox" role="switch" aria-labelledby="push-switch-label"
+                       [checked]="push.enabled()" [disabled]="push.busy()"
+                       (click)="$event.preventDefault(); push.enabled() ? disablePush() : enablePush()" />
+              </label>
+            }
+            @if (push.enabled() || pushDevices().length) {
+              <button class="ios-cell ios-cell--action" type="button" [disabled]="push.busy()" (click)="testPush()">
+                <span class="ios-cell__body"><span class="ios-cell__title">Stuur testmelding</span><span class="ios-cell__sub">Naar alle aangemelde toestellen.</span></span>
+              </button>
+            }
+            <button class="ios-cell ios-cell--action" type="button" (click)="previewSound('sale-quote')">Geluid nieuwe offerte</button>
+            <button class="ios-cell ios-cell--action" type="button" (click)="previewSound('sale-invoice')">Geluid nieuwe factuur</button>
+          </div>
+          <p class="ios-section__foot">Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
+            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            Op iPhone werkt dit zodra de app op het beginscherm staat.</p>
+        </section>
+
+        @if (pushActionError()) {
+          <div class="ios-banner ios-banner--danger" role="alert">
+            <span><b>Meldingsactie mislukt</b><br />{{ pushActionError() }}</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="push.busy()" (click)="retryPushAction()">Opnieuw proberen</button>
+          </div>
+        }
+
+        @if (pushDevices().length || pushDevicesError() || pushDevicesLoading() || pushDevicesLoaded()) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Aangemelde toestellen</h2>
+              @if (pushDevices().length) { <span class="ios-section__trail">{{ pushDevices().length }}</span> }</div>
+            <div class="ios-group" aria-label="Aangemelde toestellen">
+              @for (device of pushDevices(); track device.id) {
+                <div class="ios-cell">
+                  <span class="ios-cell__body">
+                    <span class="ios-cell__title set-ios__text">{{ device.device }}</span>
+                    @if (device.since) { <span class="ios-cell__sub">aangemeld sinds {{ device.since | dateNl }}</span> }
+                    <span class="ios-cell__sub set-ios__text">
+                      @if (device.lastStatus === null) { nog geen melding gestuurd }
+                      @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                        laatste melding door pushdienst geaccepteerd
+                      } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                      @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
+                    </span>
+                  </span>
+                </div>
+              }
+              @if (pushDevicesError(); as error) {
+                <div class="ios-cell" role="alert"><span class="ios-cell__body">
+                  <span class="ios-cell__title set-ios__text">Aangemelde toestellen konden niet worden geladen</span>
+                  <span class="ios-cell__sub set-ios__text">{{ error }}</span></span></div>
+                <button class="ios-cell ios-cell--action" type="button" [disabled]="pushDevicesLoading()" (click)="loadPushDevices()">Opnieuw proberen</button>
+              } @else if (pushDevicesLoading() && !pushDevices().length) {
+                <div class="ios-cell" role="status"><span class="ios-cell__sub">Aangemelde toestellen laden…</span></div>
+              } @else if (pushDevicesLoaded() && !pushDevices().length) {
+                <div class="ios-cell" role="status"><span class="ios-cell__sub set-ios__text">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</span></div>
+              }
+            </div>
+          </section>
         }
       </div>
-    </nav>
-    }
+      }
+      </section>
+      }
 
-    <div class="content settings-content" [class.settings-content--website]="websiteCategoryMode">
+      @if (!desktop.active() && view() !== 'overview') {
+        <!-- Phone: Meer has no row for the overview yet (N15 waits for the foundation's NAV_GROUPS); every view leads there. -->
+        <section class="ios-section set-all">
+          <div class="ios-group ios-group--icons">
+            <a class="ios-cell" [attr.href]="overviewUrl" (click)="toOverview($event)">
+              <span class="ios-cell__lead"><span class="ios-tile tone-grey" aria-hidden="true"><app-icon name="list" [size]="17" /></span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Alle instellingen</span>
+                <span class="ios-cell__sub set-ios__text">Elke instelling met haar huidige waarde</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </a>
+          </div>
+        </section>
+      }
+    </div>
+    } @else {
+    <div class="content settings-content settings-content--website">
       @if (settingsLoadError()) {
         <section class="settings-load-error" role="alert">
           <span aria-hidden="true">!</span>
@@ -139,228 +682,6 @@ const normalizeCategoryCode = (value: string): string => value
           </button>
         </section>
       }
-      <!-- ======================================= bedrijfsgegevens -->
-      <div [class.settings-section--folded]="folded('company')" class="card settings-section" id="company">
-        <div (click)="toggleSection('company', $event)" class="card__head settings-head"><h2>Onze bedrijfsgegevens</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">
-            Deze gegevens komen op elke offerte, factuur en catalogus. Het BTW-nummer hoort
-            er wettelijk op te staan, net als je adres.
-          </p>
-          <p class="legend"><b>*</b> verplicht op documenten.</p>
-
-          @if (company(); as profile) {
-            <div class="form-grid">
-              <div class="field">
-                <label class="req" for="co-name">Handelsnaam</label>
-                <input class="input" id="co-name" [ngModel]="profile.name"
-                       (ngModelChange)="patchCompany({ name: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-legal">Juridische naam <span class="opt"></span></label>
-                <input class="input" id="co-legal" [ngModel]="profile.legalName"
-                       (ngModelChange)="patchCompany({ legalName: $event })"
-                       placeholder="Enrosed BV" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-vat">BTW-nummer</label>
-                <input class="input mono" id="co-vat" [ngModel]="profile.vatNumber"
-                       (ngModelChange)="patchCompany({ vatNumber: $event })"
-                       placeholder="BE 0123.456.789" />
-              </div>
-              <div class="field">
-                <label for="co-reg">Ondernemingsnummer <span class="opt"></span></label>
-                <input class="input mono" id="co-reg" [ngModel]="profile.registrationNumber"
-                       (ngModelChange)="patchCompany({ registrationNumber: $event })" />
-              </div>
-              <div class="field span-2">
-                <label class="req" for="co-address">Adres</label>
-                <input class="input" id="co-address" [ngModel]="profile.addressLine"
-                       (ngModelChange)="patchCompany({ addressLine: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-zip">Postcode</label>
-                <input class="input" id="co-zip" [ngModel]="profile.postalCode"
-                       (ngModelChange)="patchCompany({ postalCode: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-city">Stad</label>
-                <input class="input" id="co-city" [ngModel]="profile.city"
-                       (ngModelChange)="patchCompany({ city: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-country">Land (ISO)</label>
-                <input class="input" id="co-country" maxlength="2" [ngModel]="profile.countryCode"
-                       (ngModelChange)="patchCompany({ countryCode: $event.toUpperCase() })" />
-                <span class="hint">Bepaalt mee welk BTW-regime binnenland is.</span>
-              </div>
-              <div class="field">
-                <label for="co-email">E-mail <span class="opt"></span></label>
-                <input class="input" id="co-email" type="email" [ngModel]="profile.email"
-                       (ngModelChange)="patchCompany({ email: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-phone">Telefoon <span class="opt"></span></label>
-                <input class="input" id="co-phone" [ngModel]="profile.phone"
-                       (ngModelChange)="patchCompany({ phone: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-web">Website <span class="opt"></span></label>
-                <input class="input" id="co-web" [ngModel]="profile.website"
-                       (ngModelChange)="patchCompany({ website: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-iban">IBAN <span class="opt"></span></label>
-                <input class="input mono" id="co-iban" [ngModel]="profile.iban"
-                       (ngModelChange)="patchCompany({ iban: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-bic">BIC <span class="opt"></span></label>
-                <input class="input mono" id="co-bic" [ngModel]="profile.bic"
-                       (ngModelChange)="patchCompany({ bic: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-rep">Beperkt fiscaal vertegenwoordiger (NL) <span class="opt"></span></label>
-                <input class="input" id="co-rep" [ngModel]="profile.fiscalRepresentativeName ?? ''"
-                       (ngModelChange)="patchCompany({ fiscalRepresentativeName: $event })" placeholder="24/7 Customs BV" />
-                <span class="hint">Komt op documenten van klanten die via deze vertegenwoordiger inklaren.</span>
-              </div>
-              <div class="field">
-                <label for="co-rep-vat">Btw-nummer vertegenwoordiger <span class="opt"></span></label>
-                <input class="input mono" id="co-rep-vat" [ngModel]="profile.fiscalRepresentativeVat ?? ''"
-                       (ngModelChange)="patchCompany({ fiscalRepresentativeVat: $event })" placeholder="NL858617262B02" />
-              </div>
-              <div class="field span-2">
-                <label class="switch-row" [class.switch-row--on]="!!profile.importVatDeferred">
-                  <span class="switch-row__copy">
-                    <b>Vergunning ET 14000 (invoer-btw verlegd)</b>
-                    <small>Aan: de invoer-btw van containers ingeklaard in België komt in rooster 87/57/59 in plaats van betaald aan de douane.</small>
-                  </span>
-                  <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="!!profile.importVatDeferred"
-                         [ngModel]="!!profile.importVatDeferred" (ngModelChange)="patchCompany({ importVatDeferred: $event })" />
-                  <span class="switch-row__track" aria-hidden="true"><i></i></span>
-                </label>
-              </div>
-              <div class="field">
-                <label for="co-quote-prefix">Nummering offertes <span class="opt"></span></label>
-                <input class="input mono" id="co-quote-prefix" maxlength="12" [ngModel]="profile.quoteNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ quoteNumberPrefix: $event })" placeholder="ENR" />
-                <span class="hint">Letters vóór het nummer: ENR geeft ENR-{{ year }}-0001. Verander je ze, dan telt de reeks gewoon door.</span>
-              </div>
-              <div class="field">
-                <label for="co-invoice-prefix">Nummering facturen <span class="opt"></span></label>
-                <input class="input mono" id="co-invoice-prefix" maxlength="12" [ngModel]="profile.invoiceNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ invoiceNumberPrefix: $event })" placeholder="F" />
-                <span class="hint">F geeft F-{{ year }}-0001 voor gewone facturen.</span>
-              </div>
-              <div class="field">
-                <label for="co-credit-prefix">Nummering creditnota's <span class="opt"></span></label>
-                <input class="input mono" id="co-credit-prefix" maxlength="12" [ngModel]="profile.creditNoteNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ creditNoteNumberPrefix: $event })" placeholder="CN" />
-                <span class="hint">CN geeft CN-{{ year }}-0001. Eén reeks voor gewone en partnercreditnota's.</span>
-              </div>
-              <div class="field">
-                <label for="co-partner-invoice-pattern">Nummering partnerfacturen <span class="opt"></span></label>
-                <input class="input mono" id="co-partner-invoice-pattern" maxlength="60" [ngModel]="profile.partnerInvoiceNumberPattern ?? ''"
-                       (ngModelChange)="patchCompany({ partnerInvoiceNumberPattern: $event })" placeholder="partner/{jaar}/{nr:3}" />
-                <span class="hint">Eigen reeks voor voorschot- en slotfacturen: partner/{{ year }}/003. {{ '{jaar}' }} is het jaar, {{ '{nr:3}' }} het volgnummer met drie cijfers.</span>
-              </div>
-              <div class="field">
-                <label for="co-partner-invoice-next">Volgend nummer partnerfacturen <span class="opt"></span></label>
-                <input class="input num" id="co-partner-invoice-next" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="profile.partnerInvoiceNextNumber ?? ''" (ngModelChange)="patchCompany({ partnerInvoiceNextNumber: $event === '' || $event === null ? null : +$event })" placeholder="bv. 3" />
-                <span class="hint">Alleen als de boekhouding al verder telt: 3 geeft partner/{{ year }}/003 als eerstvolgende; daarna telt de reeks vanzelf door.</span>
-              </div>
-              <div class="field span-2">
-                <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
-                <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"
-                          (ngModelChange)="patchCompany({ documentFooter: $event })"
-                          placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
-              </div>
-              @if (desktop.active()) {
-                <div class="field span-2">
-                  <label for="co-foot-en">Voettekst op documenten (EN) <span class="opt"></span></label>
-                  <textarea class="textarea" id="co-foot-en" [ngModel]="profile.documentFooterEn"
-                            (ngModelChange)="patchCompany({ documentFooterEn: $event })"
-                            placeholder="All our quotations are subject to our general terms and conditions."></textarea>
-                  <span class="hint">
-                    Documenten in een andere taal dan Nederlands gebruiken deze; leeg = de
-                    Nederlandse tekst.
-                  </span>
-                </div>
-              }
-            </div>
-            <div class="span-2 mt-8">
-              <div class="section-title" style="margin-top:0">Juridische teksten</div>
-              <p class="small muted" style="margin-bottom:8px">
-                Voorwaarden en privacyverklaring staan klaar als voorstel voor Enrosed BV —
-                laat ze nakijken door je boekhouder of jurist. Klanten lezen ze op
-                <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>.
-                @if (desktop.active()) {
-                  Documenten in een andere taal dan Nederlands verwijzen naar de
-                  <b>Engelse</b> versie.
-                }
-                Leeg laten betekent: gebruik het ingebouwde voorstel.
-              </p>
-              <details style="margin-bottom:8px">
-                <summary class="small strong" style="cursor:pointer">
-                  Algemene voorwaarden (NL)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.termsAndConditions"
-                          (ngModelChange)="patchCompany({ termsAndConditions: $event })"
-                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
-              </details>
-              @if (desktop.active()) {
-                <details style="margin-bottom:8px">
-                  <summary class="small strong" style="cursor:pointer">
-                    Terms and conditions (EN)
-                  </summary>
-                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                            [ngModel]="profile.termsAndConditionsEn"
-                            (ngModelChange)="patchCompany({ termsAndConditionsEn: $event })"
-                            [placeholder]="'Empty = built-in draft'"></textarea>
-                </details>
-              }
-              <details style="margin-bottom:8px">
-                <summary class="small strong" style="cursor:pointer">
-                  Privacyverklaring (NL)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.privacyPolicy"
-                          (ngModelChange)="patchCompany({ privacyPolicy: $event })"
-                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
-              </details>
-              @if (desktop.active()) {
-                <details>
-                  <summary class="small strong" style="cursor:pointer">
-                    Privacy statement (EN)
-                  </summary>
-                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                            [ngModel]="profile.privacyPolicyEn"
-                            (ngModelChange)="patchCompany({ privacyPolicyEn: $event })"
-                            [placeholder]="'Empty = built-in draft'"></textarea>
-                </details>
-              }
-            </div>
-            <button class="btn btn--primary btn--block mt-8" type="button"
-                    [disabled]="savingCompany()" (click)="saveCompany()">
-              {{ savingCompany() ? 'Bezig…' : 'Bedrijfsgegevens opslaan' }}
-            </button>
-          }
-          @if (!websiteCategoryMode) {
-            <app-staff-contact-phones style="display:block; margin-top:20px" />
-          }
-        </div>
-      </div>
-
-      @if (!websiteCategoryMode) {
-        <div [class.settings-section--folded]="folded('website')" class="card settings-section" id="website">
-          <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Prijzen</h2></div>
-          <div class="card__body"><app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" /></div>
-        </div>
-      }
-
       <div [class.settings-section--folded]="folded('categories')" class="card settings-section category-section" id="categories">
         <div (click)="toggleSection('categories', $event)" class="card__head settings-head category-section__head">
           <div>
@@ -619,373 +940,7 @@ const normalizeCategoryCode = (value: string): string => value
           }
         </div>
       </div>
-
-      <!-- ======================================= douanetarieven: their own screen under Inkoop since 2026-10-17; this card points there for old links -->
-      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
-        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2></div>
-        <div class="card__body">
-          <p class="small muted">De douanetarieven hebben nu een eigen scherm onder Inkoop.</p>
-          <a class="btn btn--sm" routerLink="/douane">Naar Douane ›</a>
-        </div>
-      </div>
-
-      <!-- ======================================= productspecifieke lijnkorting -->
-      <div class="card settings-section discount-section"
-           [class.settings-section--folded]="folded('discounts')" id="discounts">
-        <div (click)="toggleSection('discounts', $event)" class="card__head settings-head">
-          <div>
-            <h2>Lijnkorting — per product</h2>
-            <span class="discount-section__count">
-              {{ lineDiscountGroups().length }} product{{ lineDiscountGroups().length === 1 ? '' : 'en' }} ingesteld
-            </span>
-          </div>
-          <span class="spacer"></span>
-          <button class="btn btn--sm" type="button"
-                  [disabled]="!discountPickerProducts().length"
-                  (click)="lineDiscountPicker.set(true)">+ Product</button>
-        </div>
-        <div class="card__body">
-          <p class="discount-intro">
-            Iedere productvariant krijgt zijn eigen staffel. Een grens voor bijvoorbeeld rood
-            verandert dus niets aan blauw of aan een ander product.
-          </p>
-
-          @if (legacyLineTiers().length) {
-            <div class="discount-legacy" role="status">
-              <div><b>Oude algemene lijnkorting staat uit</b><span>Deze {{ legacyLineTiers().length }} oude regel{{ legacyLineTiers().length === 1 ? '' : 's' }} wordt niet meer op alle producten toegepast.</span></div>
-              <button class="btn btn--sm" type="button" (click)="removeLegacyLineTiers()">Opruimen</button>
-            </div>
-          }
-
-          <div class="discount-product-list">
-            @for (group of lineDiscountGroups(); track group.productId) {
-              <article class="discount-product" [id]="'line-discount-' + group.productId">
-                <header class="discount-product__head">
-                  @if (discountPhotoUrl(group.product); as photo) {
-                    <img class="discount-product__photo"
-                         [appAuthSrc]="photo"
-                         [alt]="group.product!.name" />
-                  } @else {
-                    <span class="discount-product__photo discount-product__photo--empty" aria-hidden="true">◈</span>
-                  }
-                  <div class="discount-product__identity">
-                    <h3>{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
-                    <span>
-                      @if (group.product?.colour) { {{ group.product!.colour }} · }
-                      @if (group.product?.variantSize) { {{ group.product!.variantSize }} · }
-                      {{ group.product?.sku || 'Onbekende SKU' }}
-                    </span>
-                    @if (group.product && supplierName(group.product); as supplier) {
-                      <small>{{ supplier }}</small>
-                    }
-                  </div>
-                  <button class="discount-product__remove" type="button"
-                          [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
-                          (click)="removeLineDiscountProduct(group.productId, group.product?.name)">×</button>
-                </header>
-
-                <div class="discount-tiers" [attr.aria-label]="'Staffel voor ' + (group.product?.name || group.productId)">
-                  @for (tier of group.tiers; track tier.id ?? $index) {
-                    <div class="discount-tier">
-                      <label>
-                        <span>Vanaf</span>
-                        <input class="input input--sm num right" type="number" min="1" step="1"
-                               [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
-                               [ngModel]="tier.minQuantity"
-                               (ngModelChange)="updateLineTier(tier, { minQuantity: +$event })" />
-                        <small>stuks</small>
-                      </label>
-                      <span class="discount-tier__arrow" aria-hidden="true">→</span>
-                      <label>
-                        <span>Korting</span>
-                        <input class="input input--sm num right" type="text" inputmode="decimal"
-                               [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
-                               [value]="pctText(tier.percent)"
-                               (blur)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
-                        <small>%</small>
-                      </label>
-                      <button class="discount-tier__remove" type="button" aria-label="Drempel verwijderen"
-                              (click)="removeLineTier(tier)">×</button>
-                    </div>
-                  }
-                </div>
-
-                <footer class="discount-product__actions">
-                  <button class="btn btn--sm" type="button" (click)="addLineTier(group.productId)">+ Drempel</button>
-                  <button class="btn btn--sm btn--primary" type="button"
-                          [disabled]="savingLineProductId() !== null || !group.tiers.length"
-                          (click)="saveLineProductTiers(group.productId)">
-                    {{ savingLineProductId() === group.productId ? 'Opslaan…' : 'Staffel opslaan' }}
-                  </button>
-                </footer>
-              </article>
-            } @empty {
-              <div class="discount-empty">
-                <b>Nog geen productspecifieke korting</b>
-                <span>Kies een product en voeg alleen daarvoor de juiste staffel toe.</span>
-                <button class="btn btn--primary" type="button"
-                        [disabled]="!discountPickerProducts().length"
-                        (click)="lineDiscountPicker.set(true)">Product kiezen</button>
-              </div>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- ======================================= orderkorting -->
-      <div class="card settings-section" [class.settings-section--folded]="folded('order-discounts')"
-           id="order-discounts">
-        <div (click)="toggleSection('order-discounts', $event)" class="card__head settings-head">
-          <h2>Orderkorting — totaal order</h2><span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="addTier('ORDER')">+</button>
-        </div>
-        <div class="card__body">
-          <p class="small muted" style="margin:0 0 12px">
-            Korting op de hele order zodra het totale aantal stuks van alle producten samen een grens haalt.
-          </p>
-          @if (!orderTiers().length) {
-            <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
-          }
-          @for (tier of orderTiers(); track tier.id ?? $index; let tierIndex = $index) {
-            <div class="row" style="margin-bottom:8px">
-              <span class="small muted" style="width:52px">vanaf</span>
-              <input class="input input--sm num right" type="number" step="50"
-                     aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
-                     (ngModelChange)="updateOrderTier(tierIndex, { minQuantity: +$event })" />
-              <span class="small muted">st →</span>
-              <input class="input input--sm num right" type="text" inputmode="decimal"
-                     aria-label="Percentage" [value]="pctText(tier.percent)"
-                     (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
-              <span class="small muted">%</span>
-              <button class="btn btn--sm btn--danger" type="button"
-                      (click)="removeTier('ORDER', tierIndex)">✕</button>
-            </div>
-          }
-          @if (orderTiers().length) {
-            <button class="btn btn--sm btn--primary mt-8" type="button"
-                    (click)="saveTiers('ORDER')">Staffel opslaan</button>
-          }
-        </div>
-      </div>
-      <!-- ======================================= catalogus in Excel -->
-      <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
-        <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
-          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
-        </div>
-        <div class="card__body">
-          <p class="workbook-intro">
-            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
-            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
-            @if (desktop.active()) {
-              Ook vertalingen staan in dezelfde export.
-            }
-          </p>
-          <!-- The PDF catalogue's own words per language live on their own screen (2026-10-17). -->
-          <p class="workbook-intro"><a routerLink="/catalog/texts" [queryParams]="{ returnTo: '/settings?sectie=catalog-data' }">Catalogusteksten per taal ›</a></p>
-
-          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
-            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
-            <li><span>2</span><div><b>Bewerk</b><small>
-              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
-            </small></div></li>
-            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
-          </ol>
-
-          <div class="workbook-safety">
-            <b>SKU niet wijzigen.</b>
-            <span>
-              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
-              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
-            </span>
-          </div>
-
-          <div class="workbook-actions">
-            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
-                    (click)="exportWorkbook()">
-              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
-            </button>
-            <button class="btn" type="button" [disabled]="importingWorkbook()"
-                    (click)="workbookFile.click()">Excel importeren…</button>
-            <input #workbookFile type="file"
-                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                   hidden (change)="selectWorkbook($any($event.target))" />
-          </div>
-
-          @if (selectedWorkbook(); as file) {
-            <div class="workbook-selection">
-              <div class="workbook-selection__file">
-                <span class="workbook-file-icon" aria-hidden="true">X</span>
-                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
-              </div>
-              <div class="workbook-selection__actions">
-                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
-                        (click)="clearWorkbookSelection()">Annuleren</button>
-                <button class="btn btn--sm btn--primary" type="button"
-                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
-                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
-                </button>
-              </div>
-            </div>
-          }
-
-          @if (workbookResult(); as result) {
-            <div class="alert workbook-result" aria-live="polite"
-                 [class.alert--ok]="!result.problems.length"
-                 [class.alert--warn]="result.problems.length > 0">
-              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
-              <div>
-                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
-                <div class="small workbook-result__summary">
-                  {{ result.updatedProducts }} productregels verwerkt ·
-                  {{ result.updatedRows }} vertaalregels bijgewerkt
-                </div>
-                @if (result.problems.length) {
-                  <details class="workbook-problems">
-                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
-                    <ul>
-                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
-                    </ul>
-                  </details>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Photos are not master data, but they are exported from the
-               same place: one ZIP with a folder per product. -->
-          <button class="photo-export-row" type="button" aria-haspopup="dialog"
-                  (click)="photoExportOpen.set(true)">
-            <span class="photo-export-row__badge" aria-hidden="true">ZIP</span>
-            <span class="photo-export-row__copy">
-              <b>Productfoto’s exporteren (ZIP)</b>
-              <small>Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</small>
-            </span>
-            <i aria-hidden="true">›</i>
-          </button>
-        </div>
-      </div>
-
-      <!-- ======================================= categorieen -->
-
-      <!-- ======================================= weergave -->
-      @if (!websiteCategoryMode) {
-        <details class="card settings-management">
-          <summary><span>Beheer</span><i aria-hidden="true">›</i></summary>
-          <a routerLink="/settings/deleted-items"><span><b>Verwijderde items</b><small>Tijdelijk verwijderde documenten bekijken en herstellen</small></span><i aria-hidden="true">›</i></a>
-        </details>
-      }
-      <!-- ============== app on this device: looks and notifications -->
-      <p class="app-settings-kicker">App op dit toestel</p>
-      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
-        <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
-          <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
-            @for (option of themes; track option.key) {
-              <button class="theme-picker__option" type="button" role="radio"
-                      [class.theme-picker__option--active]="theme.current() === option.key"
-                      [attr.aria-checked]="theme.current() === option.key"
-                      (click)="theme.set(option.key)">
-                <i class="theme-picker__swatch" [style.background]="option.swatch" aria-hidden="true"></i>
-                <span>{{ option.label }}</span>
-              </button>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- ======================================= meldingen op dit toestel -->
-      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications">
-        <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">
-            Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
-            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
-            Op iPhone werkt dit zodra de app op het beginscherm staat.
-          </p>
-          @if (!push.supported()) {
-            <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
-          } @else if (push.enabled()) {
-            <div class="push-actions">
-              <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="disablePush()">Uitzetten</button>
-            </div>
-          } @else {
-            <button class="btn btn--primary" type="button" [disabled]="push.busy()"
-                    (click)="enablePush()">
-              {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
-            </button>
-          }
-          @if (push.enabled() || pushDevices().length) {
-            <div class="push-actions mt-12">
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="testPush()">Stuur testmelding</button>
-              <span class="small muted">Naar alle aangemelde toestellen.</span>
-            </div>
-          }
-          @if (pushDevices().length) {
-            <div class="push-devices" aria-label="Aangemelde toestellen">
-              @for (device of pushDevices(); track device.id) {
-                <div class="push-device">
-                  <b>{{ device.device }}</b>
-                  <span>
-                    @if (device.lastStatus === null) { nog geen melding gestuurd }
-                    @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
-                      laatste melding door pushdienst geaccepteerd
-                    } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
-                    @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
-                  </span>
-                </div>
-              }
-            </div>
-          }
-          @if (pushDevicesError(); as error) {
-            <div class="push-error" role="alert">
-              <div><b>Aangemelde toestellen konden niet worden geladen</b><small>{{ error }}</small></div>
-              <button class="btn btn--sm" type="button" [disabled]="pushDevicesLoading()"
-                      (click)="loadPushDevices()">Opnieuw proberen</button>
-            </div>
-          } @else if (pushDevicesLoading()) {
-            <p class="small muted mt-12" role="status">Aangemelde toestellen laden…</p>
-          } @else if (pushDevicesLoaded() && !pushDevices().length) {
-            <p class="small muted mt-12" role="status">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</p>
-          }
-          @if (pushActionError()) {
-            <div class="push-error" role="alert">
-              <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="retryPushAction()">Opnieuw proberen</button>
-            </div>
-          }
-          <div class="push-sounds">
-            <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
-              🔔 Geluid nieuwe offerte
-            </button>
-            <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
-              💰 Geluid nieuwe factuur
-            </button>
-          </div>
-        </div>
-      </div>
-
     </div>
-
-    @if (lineDiscountPicker()) {
-      <app-product-picker
-        heading="Product voor lijnkorting kiezen"
-        [products]="discountPickerProducts()"
-        [categories]="categories()"
-        [families]="families()"
-        [groupByFamily]="true"
-        [preserveSourceOrder]="true"
-        [selectionOnly]="true"
-        [showPrice]="false"
-        [stockAware]="false"
-        [supplierNameOf]="discountSupplierNameOf"
-        (picked)="chooseDiscountProduct($event.product)"
-        (cancelled)="lineDiscountPicker.set(false)"
-      />
     }
 
     @if (photoExportOpen()) {
@@ -993,7 +948,6 @@ const normalizeCategoryCode = (value: string): string => value
     }
   `,
   styles: `
-    .settings-management{margin-top:18px}.settings-management summary,.settings-management>a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:54px}.settings-management summary{list-style:none;cursor:pointer;font-size:14px;font-weight:650}.settings-management summary::-webkit-details-marker{display:none}.settings-management i{font-style:normal;color:var(--muted)}.settings-management[open] summary i{transform:rotate(90deg)}.settings-management>a{border-top:1px solid var(--line);text-decoration:none;color:var(--ink)}.settings-management>a>span{display:grid;gap:5px}.settings-management b{font-size:13px}.settings-management small{font-size:11px;color:var(--muted);line-height:1.5}.settings-management summary:focus-visible,.settings-management>a:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
     .website-category-nav { max-width: 1540px; padding-bottom: 0; }
     .category-ownership {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
@@ -1009,18 +963,6 @@ const normalizeCategoryCode = (value: string): string => value
     .category-dependency-warning span { color: var(--muted); font-size: 13px; line-height: 1.4; }
     .category-dependency-warning .btn { min-height: 48px; }
     .settings-content--website { max-width: 1540px; padding-top: 0; }
-    .settings-content--website > .settings-section:not(.category-section) { display: none; }
-    .settings-content--website > .app-settings-kicker { display: none; }
-    .settings-nav {
-      position: sticky; top: var(--appbar-h); z-index: 50;
-      width: 100%; margin: 0; border-bottom: 1px solid var(--line);
-      background: var(--surface);
-    }
-    .settings-nav__rail {
-      display: flex; gap: 3px; width: 100%; max-width: 1400px; margin: 0 auto;
-      padding: 6px 12px; overflow-x: auto; overscroll-behavior-x: contain;
-      scrollbar-width: none;
-    }
     .settings-load-error {
       display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
       margin-bottom: 14px; padding: 14px; border: 1px solid var(--danger); border-radius: var(--r-sm);
@@ -1032,37 +974,65 @@ const normalizeCategoryCode = (value: string): string => value
     .settings-load-error b { font-size: 15px; }
     .settings-load-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
     .settings-load-error .btn { min-height: 48px; }
-    .settings-nav__rail::-webkit-scrollbar { display: none; }
-    @media (max-width: 679px) {
-      .settings-nav__rail { padding-right: 36px; mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
-        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
-    }
-    .settings-nav button {
-      flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 40px;
-      padding: 0 11px; border: 0; border-radius: 8px; background: transparent;
-      color: var(--muted); font: inherit; font-size: 12px; font-weight: 650;
-      cursor: pointer; text-decoration: none; transition: color .16s, background .16s;
-    }
-    .settings-nav button:hover { color: var(--ink-2); background: var(--surface-2); }
-    .settings-nav button.active { background: var(--rose-soft); color: var(--rose-dark); }
-    .settings-nav button:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; }
     .settings-content { padding-top: 12px; }
-    .settings-section { scroll-margin-top: 109px; }
     .workbook-card { overflow: hidden; }
-    /* Phone: the settings page reads as a grouped list - one section open,
-       the rest a row with a chevron, the way iOS keeps a long settings
-       screen short. On desktop everything stays open. */
+    /* Phone: the category card of /website/categories folds on its head. */
     @media (max-width: 679px) {
-      .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-      .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
+      .settings-content--website .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+      .settings-content--website .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
         border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
         transform: rotate(45deg); transition: transform .15s ease; }
-      .settings-head .spacer { display: none; }
+      .settings-content--website .settings-head .spacer { display: none; }
       .settings-section--folded .settings-head::after { transform: rotate(-45deg); }
       .settings-section--folded .card__body { display: none; }
       .settings-section--folded .settings-head .btn { display: none; }
-      .settings-section + .settings-section { margin-top: 10px; }
+      .settings-content--website > .category-section { margin-top: 10px; }
     }
+    /* Settings views: one shows, the visited ones stay mounted and hidden (keep-alive). */
+    .set-view { display: block; }
+    .set-view[hidden], app-settings-overview[hidden] { display: none !important; }
+    .set-view > .card + .card { margin-top: 16px; }
+    .set-tabs { display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .set-tabs::-webkit-scrollbar { display: none; }
+    .set-tabs .wk-chip { height: 30px; padding: 0 12px; font-size: 12.5px; text-decoration: none; }
+    .set-dot { display: inline-block; width: 6px; height: 6px; margin-left: 2px; border-radius: 50%; background: var(--warn); }
+    /* The toolbar save group: "● 2 wijzigingen niet opgeslagen · Wijzigingen wissen · Opslaan". */
+    .set-dirty { display: inline-flex; align-items: center; gap: 6px; margin-right: 2px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .set-dirty .set-dot { margin: 0; }
+    .set-dirty__n { font-variant-numeric: tabular-nums; }
+    .set-dirty__text { margin-left: -3px; }
+    @media (max-width: 1279.98px) { .set-dirty__text { display: none; } }
+    .btn.set-ghost { border-color: transparent; background: transparent; }
+    /* Website, Catalogusdata and Dit toestel: two cards side by side on the desk. */
+    .set-pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+    .set-pair > .card, .set-pair > .wk-card { margin: 0; }
+    @media (min-width: 1024px) { .set-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .set-pair--side { grid-template-columns: minmax(0, 1fr) 340px; } }
+    .set-pane { padding: 4px 16px 16px; }
+    .set-pane__title { margin: 0; padding: 12px 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    /* The price card: the toolbar already says "Prijzen op de website", its switch row names itself. */
+    .set-pane--bare { padding-top: 16px; }
+    .set-links { padding-bottom: 6px; }
+    .set-links > a { display: flex; align-items: center; gap: 12px; min-height: 52px; margin: 0 -16px; padding: 8px 16px; border-top: 1px solid var(--line);
+      color: var(--ink); text-decoration: none; }
+    .set-links > a:hover { background: var(--surface-2); }
+    .set-links > a > span { display: grid; flex: 1; gap: 1px; min-width: 0; }
+    .set-links b { font-size: 13.5px; font-weight: 650; }
+    .set-links small { color: var(--muted); font-size: 12px; }
+    .set-links app-icon { color: var(--muted-2); }
+    .set-side { display: grid; gap: 12px; }
+    .set-side > .photo-export-row { margin: 0; text-decoration: none; }
+    .set-focus { box-shadow: 0 0 0 2px var(--rose); transition: box-shadow var(--dur-2, 200ms) var(--ease-out, ease); }
+    /* Phone: Website, Catalogusdata and Dit toestel as inset groups (.content already holds the side padding). */
+    .set-ios, .set-all { --ios-inset: 0px; }
+    .set-ios .ios-banner { margin-inline: 0; }
+    .set-ios__text { white-space: normal; overflow-wrap: anywhere; }
+    .set-ios .ios-cell--action .ios-cell__title { color: inherit; }
+    .set-ios__step { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #dff5ec; color: #126645; font-size: 14px; font-weight: 750; }
+    .set-ios__swatch { display: block; width: 26px; height: 26px; border: 1px solid rgb(0 0 0 / 12%); border-radius: 50%; }
+    .set-ios__themes { --ios-sep-inset: 54px; }
+    .set-ios > .workbook-safety { margin: -8px 0 22px; }
+    .set-ios__result .workbook-result { margin: 0 0 22px; }
+    .btn.set-ghost:hover:not(:disabled) { background: var(--surface-2); }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
       border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
@@ -1192,15 +1162,12 @@ const normalizeCategoryCode = (value: string): string => value
       .category-item__actions .btn { width: auto; }
     }
     @media (min-width: 680px) {
-      .settings-nav { top: 62px; }
-      .settings-nav__rail { padding-inline: 26px; }
       .settings-content { padding-top: 16px; }
       .settings-content--website { padding-top: 0; }
-      .settings-section { scroll-margin-top: 119px; }
     }
     .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .push-devices { display: grid; gap: 5px; margin-top: 10px; }
-    .push-device { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px;
+    .push-device { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 7px 10px;
       border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
       font-size: 11px; }
     .push-device span { color: var(--muted); }
@@ -1210,19 +1177,12 @@ const normalizeCategoryCode = (value: string): string => value
     .push-error>div { display:grid;gap:2px;min-width:0 }
     .push-error small { color:var(--muted);font-size:13px;line-height:1.45 }
     .push-error .btn { flex:none;min-height:48px }
-    @media(max-width:560px) { .push-error { align-items:stretch;flex-direction:column }.push-error .btn { width:100% } }
-    .app-settings-kicker { margin: 22px 2px 8px; color: var(--muted); font-size: 10px;
-      font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
-  /** This year, for the numbering examples. */
-  readonly year = new Date().getFullYear();
   readonly push = inject(PushSetup);
   readonly pushActionError = signal<string | null>(null);
   private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';
-  /** All registered devices remain visible even if this browser is not subscribed. */
-  private readonly pushDevicesLoad = setTimeout(() => void this.loadPushDevices(), 1500);
 
   async enablePush(): Promise<void> {
     this.lastPushAction = 'enable';
@@ -1279,7 +1239,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     else void this.enablePush();
   }
 
-  readonly pushDevices = signal<{ id: number; device: string;
+  readonly pushDevices = signal<{ id: number; device: string; since?: string | null;
     lastStatus: number | null; lastAt: string | null }[]>([]);
   readonly pushDevicesLoaded = signal(false);
   readonly pushDevicesLoading = signal(false);
@@ -1375,9 +1335,9 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
-  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly route = inject(ActivatedRoute);
   readonly websiteCategoryMode = this.route.snapshot.data['websiteCategoryMode'] === true;
   readonly categoryDeepLinkCode = this.route.snapshot.queryParamMap.get('category')?.trim() || null;
@@ -1388,46 +1348,140 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     '/more',
   );
   private categoryDeepLinkOpened = false;
-  private scrollSpyFrame: number | null = null;
-  private removeScrollSpyListeners?: () => void;
-  private contentResizeObserver?: ResizeObserver;
+  private readonly router = inject(Router);
+  readonly companyStore = inject(CompanyStore);
 
-  readonly settingsSections = [
-    { id: 'company', label: 'Bedrijf' },
-    { id: 'website', label: 'Website' },
-    { id: 'categories', label: 'Categorieën' },
-    { id: 'duties', label: 'Douane' },
-    { id: 'discounts', label: 'Kortingen' },
-    { id: 'catalog-data', label: 'Catalogusdata' },
-    { id: 'appearance', label: 'Weergave' },
-    { id: 'notifications', label: 'Meldingen' },
-  ] as const;
-  readonly activeSection = signal<SettingsSectionId>(
-    this.websiteCategoryMode ? 'categories' : 'company',
-  );
-  /** Phone: the one section that is unfolded; desktop shows them all. */
-  readonly openSection = signal<string>(this.websiteCategoryMode ? 'categories' : 'company');
+  /** The views this build has (C3 adds the legal view). */
+  readonly views: readonly SettingsView[] = AVAILABLE_VIEWS;
+  /** Douane moves to the purchasing screen /douane once that route exists (B1). */
+  readonly douaneRoute = this.router.config.some((route) => route.path === 'douane');
+  private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  /** The open view follows the query live: a query-only navigation reuses this component. */
+  readonly view = computed<SettingsView>(() => settingsView(this.query().get('sectie'), this.views));
+  readonly viewInfo = computed(() => settingsViewInfo(this.view()));
+  readonly tabs = computed(() => settingsTabs({ douaneRoute: this.douaneRoute, available: this.views }));
+  /** Views stay mounted after their first visit (hidden while another shows), so a draft survives a tab switch. */
+  readonly visited = signal<ReadonlySet<SettingsView>>(new Set([this.view()]));
+  /** Desk: the crumb "Instellingen ›" on every view. Phone: no parent, the back control follows the history (B9). */
+  readonly headerParent = computed(() => this.view() === 'overview'
+    ? null
+    : this.desktop.active() ? { label: 'Instellingen', url: OVERVIEW_URL } : undefined);
+  readonly headerBackTo = computed(() => this.view() === 'overview' ? this.settingsBackTo : OVERVIEW_URL);
+  /** Phone: the "Alle instellingen" row under every view. */
+  readonly overviewUrl = OVERVIEW_URL;
+  private readonly navHistory = inject(NavHistory);
+  private readonly location = inject(Location);
+
+  /**
+   * "Alle instellingen": back when the overview is the screen below (no
+   * second overview on the stack), else up: the overview takes this view's
+   * place (settingsOverviewUp), so its back leads where the view's did.
+   * A modified click keeps the link (a new tab).
+   */
+  toOverview(event: MouseEvent): void {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (isSettingsOverviewUrl(this.navHistory.below())) { this.location.back(); return; }
+    void this.router.navigateByUrl(OVERVIEW_URL, { info: { nav: 'push' } });
+  }
+  private readonly tabStrip = viewChild<ElementRef<HTMLElement>>('tabStrip');
+  private readonly loadedViews = new Set<SettingsView>();
+
+  viewQuery(view: SettingsView): Record<string, string> | null {
+    return settingsViewQuery(view);
+  }
+
+  /* ---------------------------------------------- one save model per view */
+
+  private readonly discountsEditor = viewChild(SettingsDiscounts);
+  private readonly companyEditor = viewChild(SettingsCompany);
+  readonly legalEditor = viewChild(SettingsLegal);
+  readonly legalLanguages = LEGAL_LANGUAGES;
+
+  /** The editor of a view: its draft, dirty count and save (see SettingsEditor). */
+  editorFor(view: SettingsView): SettingsEditor | null {
+    switch (view) {
+      case 'discounts': return this.discountsEditor() ?? null;
+      case 'company': return this.companyEditor() ?? null;
+      case 'legal': return this.legalEditor() ?? null;
+      default: return null;
+    }
+  }
+
+  readonly activeEditor = computed(() => this.editorFor(this.view()));
+  /** Every mounted editor (keep-alive): the leave guard checks them all. */
+  private readonly editors = computed(() =>
+    this.views.map((view) => this.editorFor(view)).filter((editor): editor is SettingsEditor => !!editor));
+
+  /** The warn dot on a tab whose view holds unsaved changes. */
+  viewDirty(view: SettingsView): boolean {
+    return !!this.editorFor(view)?.dirty();
+  }
+
+  dirtyText(editor: SettingsEditor): string {
+    return dirtyStatusText(editor.dirtyCount());
+  }
+
+  /** The words after the count; below 1280 px only the dot and the count show. */
+  dirtyWords(editor: SettingsEditor): string {
+    return dirtyStatusText(editor.dirtyCount()).replace(/^\d+/, '');
+  }
+
+  saveEditor(editor: SettingsEditor): void {
+    void editor.save();
+  }
+
+  /**
+   * ⌘S / Ctrl+S on the desk saves the open view, also while typing. The
+   * shortcut sheet lists it for every /settings view, so it never opens the
+   * browser's "Save page as…", also on a view without an editor or behind an
+   * overlay. In the legal edit sheet it saves that text; behind any other
+   * overlay (a confirm, the product picker) it does nothing.
+   */
+  @HostListener('document:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (this.websiteCategoryMode || event.key.toLowerCase() !== 's' || event.altKey || event.shiftKey) return;
+    if (!(event.metaKey || event.ctrlKey) || !this.desktop.active()) return;
+    event.preventDefault();
+    const legal = this.view() === 'legal' ? this.legalEditor() : undefined;
+    const editor = legal?.editing() && !this.ui.confirmRequest() ? legal
+      : keyContext(event, this.host.nativeElement).overlayOpen ? null : this.activeEditor();
+    if (editor?.dirty() && !editor.saving()) void editor.save();
+  }
+
+  /** Leaving /settings with unsaved views: Opslaan saves them all, Niet opslaan drops them. */
+  private leaveEditors(): boolean | Promise<boolean> {
+    const dirty = this.editors().filter((editor) => editor.dirty());
+    if (dirty.some((editor) => editor.saving())) return false;
+    if (!dirty.length) return true;
+    return confirmLeave(this.ui, async () => {
+      for (const editor of dirty) {
+        if (!(await editor.save())) return false;
+      }
+      return true;
+    });
+  }
+
   /** A saved price switch queues a website rebuild; refresh every status on the page. */
   refreshWebsiteSync(): void {
     this.websiteSyncRefresh.update((value) => value + 1);
   }
 
+  /** Phone: the category card on /website/categories folds on its head; settings views never fold. */
+  readonly openSection = signal<string>('categories');
   folded(section: string): boolean {
-    return !this.desktop.active() && this.openSection() !== section;
+    return this.websiteCategoryMode && !this.desktop.active() && this.openSection() !== section;
   }
   toggleSection(section: string, event: Event): void {
-    if (this.desktop.active()) return;
+    if (!this.websiteCategoryMode || this.desktop.active()) return;
     /* A button or field in the head does its own job; the head only folds on the bare row. */
     if ((event.target as HTMLElement).closest('button, a, input, select, label')) return;
     this.openSection.set(this.openSection() === section ? '' : section);
   }
 
-  readonly company = signal<CompanyProfile | null>(null);
-  readonly savingCompany = signal(false);
   readonly categories = signal<Category[]>([]);
   readonly products = signal<Product[]>([]);
   readonly families = signal<ProductFamily[]>([]);
-  readonly suppliers = signal<Supplier[]>([]);
   readonly categoryDraft = signal<Category | null>(null);
   private readonly savedCategoryDraft = signal<Category | null>(null);
   readonly categoryDirty = computed(() =>
@@ -1436,83 +1490,53 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly categorySaveError = signal<string | null>(null);
   readonly categoryConflict = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
-  private readonly lineTiers = signal<DiscountTier[]>([]);
-  readonly orderTiers = signal<DiscountTier[]>([]);
-  readonly lineDiscountPicker = signal(false);
-  readonly savingLineProductId = signal<number | null>(null);
-  readonly legacyLineTiers = computed(() =>
-    this.lineTiers().filter((tier) => tier.productId == null));
-  readonly lineDiscountGroups = computed(() => {
-    const products = new Map(this.products().flatMap((product) =>
-      product.id == null ? [] : [[product.id, product] as const]));
-    const groups = new Map<number, DiscountTier[]>();
-    for (const tier of this.lineTiers()) {
-      if (tier.productId == null) continue;
-      const current = groups.get(tier.productId) ?? [];
-      current.push(tier);
-      groups.set(tier.productId, current);
+  readonly hsCodes = signal<HsCode[]>([]);
+  constructor() {
+    if (this.websiteCategoryMode) {
+      void this.load();
+      return;
     }
-    const productRank = new Map(this.products().flatMap((product, index) =>
-      product.id == null ? [] : [[product.id, index] as const]));
-    return [...groups.entries()]
-      .map(([productId, tiers]) => ({
-        productId,
-        product: products.get(productId) ?? null,
-        tiers: [...tiers].sort((left, right) => left.minQuantity - right.minQuantity),
-      }))
-      .sort((left, right) =>
-        (productRank.get(left.productId) ?? Number.MAX_SAFE_INTEGER)
-        - (productRank.get(right.productId) ?? Number.MAX_SAFE_INTEGER));
-  });
-  readonly discountPickerProducts = computed(() => {
-    const configured = new Set(this.lineDiscountGroups().map((group) => group.productId));
-    return this.products().filter((product) =>
-      product.id != null && product.active && !product.demo && !configured.has(product.id));
-  });
-  readonly discountSupplierNameOf = (product: Product): string | null =>
-    this.supplierName(product);
-  /** The product's Hoofdfoto, the same photo quotes and invoices print. */
-  discountPhotoUrl(product: Product | null): string | null {
-    return product?.photos?.length ? salesPhotoUrl(product) : null;
+    /* The view follows the query: mark it visited, load what it needs, and move old deep links on. */
+    effect(() => {
+      const view = this.view();
+      const params = this.query();
+      untracked(() => {
+        const redirect = settingsCategoryRedirect({
+          sectie: params.get('sectie'),
+          category: params.get('category'),
+          language: params.get('language'),
+          focus: params.get('focus'),
+        });
+        if (redirect) {
+          void this.router.navigate([redirect.path], { queryParams: redirect.queryParams, replaceUrl: true });
+          return;
+        }
+        if (params.get('sectie') === 'duties' && this.douaneRoute) {
+          void this.router.navigate(['/douane'], { replaceUrl: true });
+          return;
+        }
+        if (!this.visited().has(view)) this.visited.update((visited) => new Set([...visited, view]));
+        this.ensureViewData(view);
+        this.revealTab(view);
+        if (view === 'device') this.focusDeviceCard(deviceFocus(params.get('sectie')));
+      });
+    });
   }
 
-  constructor() { void this.load(); }
-
   ngAfterViewInit(): void {
-    const view = this.document.defaultView;
-    if (!view) return;
-
-    const schedule = (): void => this.scheduleScrollSpy();
-    view.addEventListener('scroll', schedule, { passive: true });
-    view.addEventListener('resize', schedule, { passive: true });
-    this.removeScrollSpyListeners = () => {
-      view.removeEventListener('scroll', schedule);
-      view.removeEventListener('resize', schedule);
-    };
-
-    const content = this.document.querySelector<HTMLElement>('.settings-content');
-    if (content && typeof ResizeObserver !== 'undefined') {
-      this.contentResizeObserver = new ResizeObserver(schedule);
-      this.contentResizeObserver.observe(content);
-    }
-    this.scheduleScrollSpy();
-
-    this.scrollToDeepLink();
+    if (this.websiteCategoryMode) this.scrollToDeepLink();
   }
 
   /**
-   * Meer links straight into one drawer: /settings?sectie=... opens and
-   * scrolls to it. Runs again after the data lands, because the sections
-   * above the target grow while loading and drag the anchor along.
+   * /website/categories?category=… opens that category; the page then
+   * scrolls to the card. Runs again after the data lands, because the
+   * blocks above it grow while loading and drag the anchor along.
    */
   private scrollToDeepLink(): void {
     const view = this.document.defaultView;
     this.openDeepLinkedCategory();
-    const wanted = (this.websiteCategoryMode
-      ? 'categories'
-      : this.route.snapshot.queryParamMap.get('sectie')) as SettingsSectionId | null;
-    if (!view || !wanted || !this.settingsSections.some((section) => section.id === wanted)) return;
-    view.setTimeout(() => this.scrollToSection(wanted), 150);
+    if (!view || !this.websiteCategoryMode) return;
+    view.setTimeout(() => this.scrollToSection('categories'), 150);
   }
 
   private openDeepLinkedCategory(): void {
@@ -1541,14 +1565,79 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.removeScrollSpyListeners?.();
-    this.contentResizeObserver?.disconnect();
-    const view = this.document.defaultView;
-    if (view && this.scrollSpyFrame !== null) view.cancelAnimationFrame(this.scrollSpyFrame);
+    this.destroyed = true;
+    if (this.focusTimer) clearTimeout(this.focusTimer);
+  }
+  private destroyed = false;
+
+  /** Each view loads what it needs the first time it opens; the overview loads its own values. */
+  private ensureViewData(view: SettingsView): void {
+    if (this.loadedViews.has(view)) return;
+    this.loadedViews.add(view);
+    void this.loadViewData(view);
+  }
+
+  private loadViewData(view: SettingsView): Promise<unknown> {
+    switch (view) {
+      case 'company': return this.companyStore.load();
+      case 'duties': return this.loadDuties();
+      /* Kortingen loads itself when it first shows; a reload goes through it. */
+      case 'discounts': return this.discountsEditor()?.load() ?? Promise.resolve();
+      case 'device': return this.loadPushDevices();
+      default: return Promise.resolve();
+    }
+  }
+
+  /** Dit toestel opened for Meldingen (or Weergave): that card scrolls into view with a short accent ring. */
+  readonly focusRing = signal<'notifications' | 'appearance' | null>(null);
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private focusDeviceCard(card: 'notifications' | 'appearance' | null): void {
+    if (!card) return;
+    const win = this.document.defaultView;
+    win?.requestAnimationFrame(() => {
+      this.document.getElementById(card)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      this.focusRing.set(card);
+      if (this.focusTimer) clearTimeout(this.focusTimer);
+      this.focusTimer = setTimeout(() => this.focusRing.set(null), 1200);
+    });
+  }
+
+  /** The current tab chip scrolls into view (the strip scrolls sideways at 1100 px). */
+  private revealTab(view: SettingsView): void {
+    const win = this.document.defaultView;
+    win?.requestAnimationFrame(() => {
+      const chip = this.tabStrip()?.nativeElement.querySelector<HTMLElement>(`[data-view="${view}"]`);
+      chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  readonly dutiesLoading = signal(false);
+  readonly dutiesError = signal<string | null>(null);
+
+  async loadDuties(): Promise<void> {
+    this.dutiesLoading.set(true);
+    this.dutiesError.set(null);
+    try {
+      const hsCodes = await this.catalog.hsCodes();
+      if (this.destroyed) return;
+      this.hsCodes.set(hsCodes);
+      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
+    } catch (failure: unknown) {
+      if (!this.destroyed) this.dutiesError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.dutiesLoading.set(false);
+    }
   }
 
   async load(): Promise<void> {
-    if (this.loadingSettings() && this.company()) return;
+    if (!this.websiteCategoryMode) {
+      /* Settings views: read again what the opened views show; a view with an unsaved draft keeps it. */
+      await Promise.all([...this.loadedViews].filter((view) => !this.editorFor(view)?.dirty()).map((view) =>
+        view === 'company' ? this.companyStore.load(true) : this.loadViewData(view)));
+      return;
+    }
     this.loadingSettings.set(true);
     this.settingsLoadError.set(null);
     this.categoryDependencyWarning.set(null);
@@ -1581,25 +1670,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         this.scrollToDeepLink();
         return;
       }
-      const [categories, products, families, suppliers, line, order, company] = await Promise.all([
-        this.catalog.categories(), this.catalog.products().catch(() => []),
-        this.catalog.productFamilies().catch(() => []),
-        this.sourcing.suppliers().catch(() => []),
-        this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
-        this.sales.company(),
-      ]);
-      this.company.set(company);
-      this.categories.set(categories.map((category) => ({
-        ...category,
-        revision: category.revision ?? null,
-        texts: category.texts ?? [],
-      })));
-      this.products.set(products);
-      this.families.set(families);
-      this.suppliers.set(suppliers);
-      this.lineTiers.set(line);
-      this.orderTiers.set(order);
-      this.scrollToDeepLink();
     } catch (failure: unknown) {
       this.settingsLoadError.set(messageOf(
         failure,
@@ -1610,92 +1680,13 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     }
   }
 
-  patchCompany(changes: Partial<CompanyProfile>): void {
-    this.company.update((profile) => (profile ? { ...profile, ...changes } : profile));
-  }
-
-  async saveCompany(): Promise<void> {
-    const profile = this.company();
-    if (!profile) return;
-    this.savingCompany.set(true);
-    try {
-      this.company.set(await this.sales.saveCompany(profile));
-      this.ui.toast('Bedrijfsgegevens opgeslagen');
-    } catch {
-      this.ui.toast('Opslaan mislukt', 'err');
-    } finally {
-      this.savingCompany.set(false);
-    }
-  }
-
-  tiers(scope: 'LINE' | 'ORDER'): DiscountTier[] {
-    return scope === 'LINE' ? this.lineTiers() : this.orderTiers();
-  }
-
-  scrollToSection(section: SettingsSectionId): void {
+  scrollToSection(section: string): void {
     const view = this.document.defaultView;
     const target = this.document.getElementById(section);
     if (!view || !target) return;
-
-    this.activeSection.set(section);
     this.openSection.set(section);
-    this.revealActiveNavButton(section);
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    const stickyBottom = nav?.getBoundingClientRect().bottom ?? 0;
     const targetTop = target.getBoundingClientRect().top + view.scrollY;
-    view.scrollTo({ top: Math.max(0, targetTop - stickyBottom - 8), behavior: 'smooth' });
-  }
-
-  private scheduleScrollSpy(): void {
-    const view = this.document.defaultView;
-    if (!view || this.scrollSpyFrame !== null) return;
-    this.scrollSpyFrame = view.requestAnimationFrame(() => {
-      this.scrollSpyFrame = null;
-      this.updateActiveSection();
-    });
-  }
-
-  private updateActiveSection(): void {
-    const view = this.document.defaultView;
-    if (!view) return;
-
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    // The marker is based on the rendered sticky navigation, not a guessed
-    // header height. This keeps the scroll spy correct on both appbar sizes.
-    const stickyBottom = nav?.getBoundingClientRect().bottom ?? 0;
-    const marker = stickyBottom + 10;
-    let current: SettingsSectionId = this.settingsSections[0].id;
-
-    for (const section of this.settingsSections) {
-      const element = this.document.getElementById(section.id);
-      if (!element || element.getBoundingClientRect().top > marker) break;
-      current = section.id;
-    }
-
-    const pageBottom = view.scrollY + view.innerHeight;
-    const documentBottom = this.document.documentElement.scrollHeight;
-    if (pageBottom >= documentBottom - 2) {
-      current = this.settingsSections[this.settingsSections.length - 1].id;
-    }
-
-    if (this.activeSection() === current) return;
-    this.activeSection.set(current);
-    this.revealActiveNavButton(current);
-  }
-
-  private revealActiveNavButton(section: SettingsSectionId): void {
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    const rail = nav?.querySelector<HTMLElement>('.settings-nav__rail');
-    const button = rail?.querySelector<HTMLElement>(`[data-settings-section="${section}"]`);
-    if (!rail || !button) return;
-
-    const railRect = rail.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-    if (buttonRect.left < railRect.left) {
-      rail.scrollBy({ left: buttonRect.left - railRect.left - 8, behavior: 'smooth' });
-    } else if (buttonRect.right > railRect.right) {
-      rail.scrollBy({ left: buttonRect.right - railRect.right + 8, behavior: 'smooth' });
-    }
+    view.scrollTo({ top: Math.max(0, targetTop - 8), behavior: 'smooth' });
   }
 
   /* ---------------------------------------------------- categorieen */
@@ -2027,6 +2018,24 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       });
   }
 
+  /* -------------------------------------------------- douanetarieven */
+
+  addHsCode(): void {
+    this.hsCodes.update((codes) =>
+      [...codes, { id: null, code: '', description: '', dutyRatePct: 0 }]);
+  }
+
+  async saveHsCode(code: HsCode): Promise<void> {
+    if (!code.code.trim()) { this.ui.toast('Vul een code in', 'err'); return; }
+    await this.catalog.saveHsCode(code);
+    this.ui.toast('Tarief opgeslagen');
+    /* Only Douane: load() re-reads every opened view and would wipe an unsaved Kortingen draft. */
+    await this.loadDuties();
+  }
+
+  /** Codes as loaded from the server; anything else is an unsaved draft. */
+  private savedHsCodes = new Set<string>();
+
   /* Percentages are typed the Belgian way, with a comma. A number input
      refuses "6,5" on most keyboards; a decimal text field accepts both. */
   pctText(value: number | null | undefined): string {
@@ -2038,151 +2047,24 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  /* ------------------------------------------------------- staffels */
-
-  addTier(scope: 'LINE' | 'ORDER'): void {
-    const target = scope === 'LINE' ? this.lineTiers : this.orderTiers;
-    target.update((tiers) => [...tiers, {
-      id: null, scope, productId: null, minQuantity: 1, percent: 0,
-    }]);
-  }
-
-  removeTier(scope: 'LINE' | 'ORDER', index: number): void {
-    const target = scope === 'LINE' ? this.lineTiers : this.orderTiers;
-    target.update((tiers) => tiers.filter((_, i) => i !== index));
-  }
-
-  async saveTiers(scope: 'LINE' | 'ORDER'): Promise<void> {
-    try {
-      const saved = await this.sales.saveTiers(scope, this.tiers(scope));
-      (scope === 'LINE' ? this.lineTiers : this.orderTiers).set(saved);
-      this.ui.toast('Staffel opgeslagen');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Staffel opslaan mislukt'), 'err');
-    }
-  }
-
-  supplierName(product: Product): string | null {
-    if (product.supplierId == null) return null;
-    return this.suppliers().find((supplier) => supplier.id === product.supplierId)?.name ?? null;
-  }
-
-  chooseDiscountProduct(product: Product): void {
-    if (product.id == null) return;
-    this.lineDiscountPicker.set(false);
-    if (this.lineTiers().some((tier) => tier.productId === product.id)) {
-      this.scrollToLineDiscount(product.id);
+  removeHsCode(code: HsCode): void {
+    /* A freshly added row has nothing on the server yet: drop it locally,
+       no dialog - that was the "X does nothing" on a new tariff. */
+    if (!this.savedHsCodes.has(code.code)) {
+      this.hsCodes.update((codes) => codes.filter((candidate) => candidate !== code));
       return;
     }
-    this.lineTiers.update((tiers) => [...tiers, {
-      id: null,
-      scope: 'LINE',
-      productId: product.id,
-      minQuantity: Math.max(1, product.carton.piecesPerCarton ?? 1),
-      percent: 0,
-    }]);
-    this.scrollToLineDiscount(product.id);
+    this.ui.confirm(
+      { title: 'Tariefcode verwijderen',
+        message: `<b>${code.code}</b> verwijderen? Producten vallen terug op het `
+          + 'standaardpercentage van de inkooporder.',
+        confirmLabel: 'Verwijderen', danger: true },
+      async () => { await this.catalog.deleteHsCode(code.code); await this.loadDuties(); });
   }
 
-  addLineTier(productId: number): void {
-    const existing = this.lineTiers().filter((tier) => tier.productId === productId);
-    const highest = existing.reduce((value, tier) => Math.max(value, tier.minQuantity), 0);
-    this.lineTiers.update((tiers) => [...tiers, {
-      id: null,
-      scope: 'LINE',
-      productId,
-      minQuantity: Math.max(1, highest + 100),
-      percent: 0,
-    }]);
-  }
-
-  updateLineTier(tier: DiscountTier, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
-    this.lineTiers.update((tiers) => tiers.map((candidate) =>
-      candidate === tier ? { ...candidate, ...changes } : candidate));
-  }
-
-  removeLineTier(tier: DiscountTier): void {
-    if (tier.productId != null
-        && this.lineTiers().filter((candidate) => candidate.productId === tier.productId).length === 1) {
-      const productName = this.products().find((product) => product.id === tier.productId)?.name;
-      this.removeLineDiscountProduct(tier.productId, productName);
-      return;
-    }
-    this.lineTiers.update((tiers) => tiers.filter((candidate) => candidate !== tier));
-  }
-
-  updateOrderTier(index: number, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
-    this.orderTiers.update((tiers) => tiers.map((tier, currentIndex) =>
-      currentIndex === index ? { ...tier, ...changes, productId: null } : tier));
-  }
-
-  async saveLineProductTiers(productId: number): Promise<void> {
-    const tiers = this.lineTiers()
-      .filter((tier) => tier.productId === productId)
-      .sort((left, right) => left.minQuantity - right.minQuantity);
-    if (!tiers.length) return;
-    this.savingLineProductId.set(productId);
-    try {
-      const saved = await this.sales.saveProductTiers(productId, tiers);
-      this.lineTiers.update((current) => [
-        ...current.filter((tier) => tier.productId !== productId),
-        ...saved,
-      ]);
-      this.ui.toast('Productstaffel opgeslagen');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Productstaffel opslaan mislukt'), 'err');
-    } finally {
-      this.savingLineProductId.set(null);
-    }
-  }
-
-  removeLineDiscountProduct(productId: number, productName?: string | null): void {
-    this.ui.confirm({
-      title: 'Productkorting verwijderen',
-      message: 'De automatische lijnkorting voor dit product wordt verwijderd. Andere producten blijven ongewijzigd.',
-      confirmLabel: 'Verwijderen',
-      danger: true,
-    }, async () => {
-      this.savingLineProductId.set(productId);
-      try {
-        await this.sales.saveProductTiers(productId, []);
-        this.lineTiers.update((tiers) => tiers.filter((tier) => tier.productId !== productId));
-        this.ui.toast(productName ? `Korting voor ${productName} verwijderd` : 'Productkorting verwijderd');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Productkorting verwijderen mislukt'), 'err');
-      } finally {
-        this.savingLineProductId.set(null);
-      }
-    });
-  }
-
-  removeLegacyLineTiers(): void {
-    this.ui.confirm({
-      title: 'Oude algemene lijnkorting opruimen',
-      message: 'Alleen de oude niet-productspecifieke regels worden verwijderd. Productspecifieke staffels blijven staan.',
-      confirmLabel: 'Opruimen',
-      danger: false,
-    }, async () => {
-      try {
-        const valid = this.lineTiers().filter((tier) => tier.productId != null);
-        this.lineTiers.set(await this.sales.saveTiers('LINE', valid));
-        this.ui.toast('Oude algemene lijnkorting opgeruimd');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Oude lijnkorting opruimen mislukt'), 'err');
-      }
-    });
-  }
-
-  private scrollToLineDiscount(productId: number): void {
-    this.document.defaultView?.setTimeout(() => {
-      this.document.getElementById(`line-discount-${productId}`)?.scrollIntoView({
-        behavior: 'smooth', block: 'center',
-      });
-    });
-  }
-
-  canDeactivate(): boolean {
+  canDeactivate(): boolean | Promise<boolean> {
     if (this.savingCategory()) return false;
+    if (!this.websiteCategoryMode) return this.leaveEditors();
     if (!this.categoryDirty()) return true;
     return window.confirm(
       'Je hebt categorie- of vertaalwijzigingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
@@ -2191,7 +2073,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.categoryDirty() && !this.savingCategory()) return;
+    const editing = this.editors().some((editor) => editor.dirty() || editor.saving());
+    if (!this.categoryDirty() && !this.savingCategory() && !editing) return;
     event.preventDefault();
     event.returnValue = '';
   }
@@ -2204,4 +2087,3 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 }
 
-type SettingsSectionId = 'company' | 'website' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts' | 'notifications';
