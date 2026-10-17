@@ -12,79 +12,132 @@ import {
 import { WebsiteRebuildStatus } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { WebsiteSyncStore } from './website-sync-store';
-
-interface WebsiteRebuildCopy {
-  label: string;
-  detail: string;
-  tone: 'muted' | 'pending' | 'ok' | 'danger';
-}
+import { WEBSITE_SYNC_TECHNICAL, WebsiteSyncAction, isTranslationPending, websiteSyncCopy } from './website-sync-copy';
 
 // A page can show the status more than once; each heading needs its own id.
 let nextTitleId = 0;
 
+/**
+ * The website rebuild status, from the one WebsiteSyncStore of the app.
+ * - card: Settings › Website · Prijzen and the quote settings (the full block);
+ * - bar: the desk status bar of Website beheren ("● Live sinds 16/10 23:40 Vernieuwen");
+ * - chip: the phone capsule under a large title, a link to Publicatie;
+ * - banner: the phone banner, rendered only while the website is not live.
+ * The words come from website-sync-copy.ts, so the variants cannot disagree.
+ */
 @Component({
   selector: 'app-website-sync-status',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
+  host: { '[class.ws-sync-host]': "variant() !== 'card'" },
   template: `
-    <section class="website-sync" [class.website-sync--compact]="compact()"
-             [attr.aria-labelledby]="titleId"
-             [attr.aria-busy]="loading() || retrying()">
-      <div class="website-sync__heading">
-        <div>
-          <h3 [id]="titleId">Website synchronisatie</h3>
-          <p>Opgeslagen betekent nog niet automatisch zichtbaar op de website.</p>
-        </div>
-        @if (status(); as current) {
-          <span class="sync-badge" [class]="'sync-badge sync-badge--' + copy().tone">
-            <i aria-hidden="true"></i>{{ copy().label }}
-          </span>
-        }
-      </div>
-
-      @if (loadError()) {
-        <div class="sync-state sync-state--error" role="alert">
-          <div><b>Status niet geladen</b><small>{{ loadError() }}</small></div>
-          <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
-            Opnieuw laden
-          </button>
-        </div>
-      } @else if (loading() && !status()) {
-        <div class="sync-state" role="status">Synchronisatiestatus laden…</div>
-      } @else if (status(); as current) {
-        <div class="sync-summary" aria-live="polite">
-          <div>
-            <b>{{ copy().detail }}</b>
-            @if (statusMoment(current); as moment) {
-              <small>{{ moment.label }} · {{ formatDate(moment.value) }}</small>
+    @switch (variant()) {
+      @case ('bar') {
+        <span class="ws-sync" [class]="'ws-sync is-' + copy().tone" [attr.title]="copy().detail">
+          <i aria-hidden="true"></i><b>{{ copy().label }}</b>
+          @if (copy().moment; as moment) { <small>{{ moment }}</small> }
+          @if (copy().action; as action) {
+            @if (action === 'todo') {
+              <a routerLink="/website" fragment="translation-work">{{ copy().actionLabel }}</a>
+            } @else {
+              <button type="button" [disabled]="loading() || retrying()" (click)="run(action)">{{ busyLabel(action) }}</button>
             }
-            @if (current.nextAttemptAt && current.status === 'FAILED_OR_STALE' && !translationPending()) {
-              <small>Volgende automatische poging · {{ formatDate(current.nextAttemptAt) }}</small>
-            }
-            @if (current.lastError && current.status === 'FAILED_OR_STALE' && !translationPending()) {
-              <small class="sync-error">{{ current.lastError }}</small>
-            }
-          </div>
-          <div class="sync-actions">
-            <button class="btn btn--sm" type="button" [disabled]="loading() || retrying()"
-                    (click)="load()">Status vernieuwen</button>
-            @if (translationPending()) {
-              <a class="btn btn--sm btn--primary" routerLink="/website" fragment="translation-work">
-                Open vertaalwerk
-              </a>
-            } @else if (current.status === 'FAILED_OR_STALE') {
-              <button class="btn btn--sm btn--primary" type="button"
-                      [disabled]="loading() || retrying()" (click)="retry()">
-                {{ retrying() ? 'Opnieuw starten…' : 'Opnieuw proberen' }}
-              </button>
-            }
-          </div>
-        </div>
+          }
+        </span>
       }
-    </section>
+      @case ('chip') {
+        <a class="ws-chip" [class]="'ws-chip is-' + copy().tone" routerLink="/website/publication"
+           [attr.aria-label]="'Website: ' + copy().label + (copy().moment ? ', ' + copy().moment : '')">
+          <i aria-hidden="true"></i><span>{{ copy().label }}@if (copy().moment; as moment) { · {{ moment }} }</span>
+        </a>
+      }
+      @case ('banner') {
+        @if (copy().needsBanner) {
+          <div class="ios-banner ws-sync-banner" [class.ios-banner--danger]="copy().tone === 'danger'"
+               [class.ios-banner--info]="copy().tone === 'muted'" role="status">
+            <span><b>{{ copy().label }}</b>@if (copy().moment; as moment) { · {{ moment }} }</span>
+            @if (copy().action; as action) {
+              @if (action === 'todo') {
+                <a class="ios-capsule ios-capsule--sm ios-capsule--tinted" routerLink="/website" fragment="translation-work">{{ copy().actionLabel }}</a>
+              } @else {
+                <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button"
+                        [disabled]="loading() || retrying()" (click)="run(action)">{{ busyLabel(action) }}</button>
+              }
+            }
+          </div>
+        }
+      }
+      @default {
+        <section class="website-sync" [class.website-sync--compact]="compact()"
+                 [attr.aria-labelledby]="titleId"
+                 [attr.aria-busy]="loading() || retrying()">
+          <div class="website-sync__heading">
+            <div>
+              <h3 [id]="titleId">Website synchronisatie</h3>
+              <p>Opgeslagen betekent nog niet automatisch zichtbaar op de website.</p>
+            </div>
+            @if (status()) {
+              <span class="sync-badge" [class]="'sync-badge sync-badge--' + badgeTone()">
+                <i aria-hidden="true"></i>{{ copy().label }}
+              </span>
+            }
+          </div>
+
+          @if (loadError()) {
+            <div class="sync-state sync-state--error" role="alert">
+              <div><b>Status niet geladen</b><small>{{ loadError() }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
+                Opnieuw laden
+              </button>
+            </div>
+          } @else if (loading() && !status()) {
+            <div class="sync-state" role="status">Status ophalen…</div>
+          } @else if (status(); as current) {
+            <div class="sync-summary" aria-live="polite">
+              <div>
+                <b>{{ copy().detail }}</b>
+                @if (statusMoment(current); as moment) {
+                  <small>{{ moment.label }} · {{ formatDate(moment.value) }}</small>
+                }
+                @if (pollEnded() && (current.status === 'QUEUED' || current.status === 'TRIGGERED')) {
+                  <small>Controle gestopt na 5 minuten · vernieuw de status om opnieuw te kijken</small>
+                }
+                @if (current.nextAttemptAt && current.status === 'FAILED_OR_STALE' && !translationPending()) {
+                  <small>Volgende automatische poging · {{ formatDate(current.nextAttemptAt) }}</small>
+                }
+                @if (current.lastError && current.status === 'FAILED_OR_STALE' && !translationPending()) {
+                  <small class="sync-error">{{ current.lastError }}</small>
+                }
+                @if (technical() && current.status === 'NOT_CONFIGURED') {
+                  <details class="sync-technical">
+                    <summary>Technische uitleg</summary>
+                    <p>{{ technicalText }}</p>
+                  </details>
+                }
+              </div>
+              <div class="sync-actions">
+                <button class="btn btn--sm" type="button" [disabled]="loading() || retrying()"
+                        (click)="load()">Status vernieuwen</button>
+                @if (translationPending()) {
+                  <a class="btn btn--sm btn--primary" routerLink="/website" fragment="translation-work">
+                    Naar Te doen
+                  </a>
+                } @else if (current.status === 'FAILED_OR_STALE') {
+                  <button class="btn btn--sm btn--primary" type="button"
+                          [disabled]="loading() || retrying()" (click)="retry()">
+                    {{ retrying() ? 'Opnieuw starten…' : 'Opnieuw proberen' }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </section>
+      }
+    }
   `,
   styles: `
     :host { display: block; }
+    :host(.ws-sync-host) { display: contents; }
     .website-sync {
       margin-bottom: 12px; padding: 14px; border: 1px solid var(--line);
       border-radius: var(--r-sm); background: var(--surface-2);
@@ -111,6 +164,8 @@ let nextTitleId = 0;
     .sync-summary, .sync-state { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
     .sync-summary b, .sync-state b { font-size: 15px; line-height: 1.4; }
     .sync-error { color: var(--danger) !important; }
+    .sync-technical summary { color: var(--ink-2); font-size: 13px; font-weight: 650; cursor: pointer; }
+    .sync-technical p { margin-top: 4px; font-size: 13px; }
     .sync-state { min-height: 48px; color: var(--muted); font-size: 14px; }
     .sync-state--error { color: var(--danger); }
     .sync-actions { display: flex; flex: none; gap: 6px; }
@@ -134,15 +189,26 @@ export class WebsiteSyncStatus {
 
   readonly titleId = `website-sync-title-${nextTitleId++}`;
   readonly refreshKey = input(0);
+  readonly variant = input<'card' | 'bar' | 'chip' | 'banner'>('card');
   /** Smaller type and no bottom margin, for use inside another setting. */
   readonly compact = input(false, { transform: booleanAttribute });
+  /** The card on Publicatie explains the Vercel/Railway set-up when the link is missing. */
+  readonly technical = input(false, { transform: booleanAttribute });
+  readonly technicalText = WEBSITE_SYNC_TECHNICAL;
   // Shared with every other panel on screen, so they cannot disagree.
   readonly status = this.store.status;
   readonly loading = this.store.loading;
   readonly retrying = this.store.retrying;
   readonly loadError = this.store.loadError;
-  readonly translationPending = computed(() => this.isTranslationPending(this.status()));
-  readonly copy = computed(() => this.statusCopy(this.status()));
+  readonly pollEnded = this.store.pollEnded;
+  readonly translationPending = computed(() => isTranslationPending(this.status()));
+  readonly copy = computed(() => websiteSyncCopy({
+    status: this.status(), loading: this.loading(), loadError: this.loadError(), pollEnded: this.pollEnded(),
+  }));
+  readonly badgeTone = computed(() => {
+    const tone = this.copy().tone;
+    return tone === 'warn' ? 'pending' : tone;
+  });
 
   private readonly dateFormatter = new Intl.DateTimeFormat('nl-BE', {
     dateStyle: 'short',
@@ -166,6 +232,17 @@ export class WebsiteSyncStatus {
     return this.store.retry();
   }
 
+  run(action: WebsiteSyncAction): void {
+    if (action === 'retry') void this.retry();
+    else void this.load();
+  }
+
+  busyLabel(action: WebsiteSyncAction): string {
+    if (action === 'retry' && this.retrying()) return 'Opnieuw starten…';
+    if (action !== 'retry' && this.loading()) return 'Bezig…';
+    return this.copy().actionLabel ?? '';
+  }
+
   statusMoment(current: WebsiteRebuildStatus): { label: string; value: string } | null {
     if (current.status === 'LIVE' && current.liveAt) {
       return { label: 'Live sinds', value: current.liveAt };
@@ -183,59 +260,5 @@ export class WebsiteSyncStatus {
   formatDate(value: string): string {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? 'tijdstip onbekend' : this.dateFormatter.format(date);
-  }
-
-  private statusCopy(current: WebsiteRebuildStatus | null): WebsiteRebuildCopy {
-    const status = current?.status;
-    if (this.isTranslationPending(current)) {
-      return {
-        label: 'Wacht op vertalingen',
-        detail: 'Opgeslagen; de website wacht nog op verplichte vertalingen. De invoer is niet verloren.',
-        tone: 'pending',
-      };
-    }
-    switch (status) {
-      case 'NOT_CONFIGURED':
-        return {
-          label: 'Niet ingesteld',
-          detail: 'De backend kent nog geen Vercel Deploy Hook van de website. Maak er een '
-            + 'aan in Vercel (project enrosed-website-frontend → Settings → Git → Deploy '
-            + 'Hooks) en zet de URL op Railway als VERCEL_WEBSITE_DEPLOY_HOOK_URL. Daarna '
-            + 'bouwt de website zichzelf opnieuw na elke opgeslagen wijziging.',
-          tone: 'muted',
-        };
-      case 'QUEUED':
-        return {
-          label: 'In wachtrij',
-          detail: 'De wijziging staat klaar om de website opnieuw op te bouwen.',
-          tone: 'pending',
-        };
-      case 'TRIGGERED':
-        return {
-          label: 'Wordt bijgewerkt',
-          detail: 'De update is geaccepteerd, maar staat nog niet live.',
-          tone: 'pending',
-        };
-      case 'LIVE':
-        return {
-          label: 'Live',
-          detail: 'De website gebruikt de nieuwste gepubliceerde revisie.',
-          tone: 'ok',
-        };
-      case 'FAILED_OR_STALE':
-        return {
-          label: 'Actie nodig',
-          detail: 'De website kon niet worden bijgewerkt of loopt achter.',
-          tone: 'danger',
-        };
-      default:
-        return { label: 'Status laden', detail: 'Status wordt gecontroleerd.', tone: 'muted' };
-    }
-  }
-
-  private isTranslationPending(current: WebsiteRebuildStatus | null): boolean {
-    if (current?.status !== 'FAILED_OR_STALE' || !current.lastError) return false;
-    return /missing required translation|translation entry|invalid public website copy|vertal|ontbrekende?\s+taal/i
-      .test(current.lastError);
   }
 }

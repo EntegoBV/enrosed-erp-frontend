@@ -1,0 +1,28 @@
+/* ==========================================================================
+   Website beheren (/website*): the workspace on the kit (2026-10-17).
+   Reference: scratchpad redesign/website/mock-src/website.css. Every rule is
+   scoped under a ws-* class or an app-website-* host; kit classes are used,
+   never restyled bare. Durations come from the motion tokens.
+   ========================================================================== */
+
+/* ---- website status: desk status bar pill, phone chip and banner */
+.ws-sync{display:inline-flex;flex:none;align-items:center;gap:7px;min-width:0;color:var(--ink-2);font-weight:600}
+.ws-sync i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.ws-sync.is-warn i{background:var(--warn)}.ws-sync.is-danger i{background:var(--danger)}.ws-sync.is-muted i{background:var(--muted-2)}
+.ws-sync b{font-weight:650}
+.ws-sync small{color:var(--muted);font-size:12px;font-weight:500}
+.ws-statusbar .ws-sync button,.ws-statusbar .ws-sync a{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-decoration:none;cursor:pointer}
+.ws-statusbar .ws-sync button:hover,.ws-statusbar .ws-sync a:hover{text-decoration:underline;text-underline-offset:3px}
+.ws-statusbar .ws-sync button:disabled{color:var(--muted);cursor:default}
+.ws-statusbar__hint,.ws-statusbar__env{flex:none}
+.ws-statusbar__env{display:none}.ws-statusbar__env--alone{display:inline}
+/* main narrower than 1000 px: the keys live in Sneltoetsen, the environment takes their place */
+@media (max-width:1247.98px){.ws-statusbar__hint{display:none}.ws-statusbar__env{display:inline}}
+
+.ws-chip{position:relative;display:inline-flex;align-items:center;gap:6px;max-width:100%;height:26px;margin-top:6px;padding:0 10px;border-radius:999px;background:var(--surface);box-shadow:inset 0 0 0 .5px var(--ios-sep);color:var(--ink-2);font-size:12.5px;font-weight:650;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.ws-chip::after{content:'';position:absolute;inset:-9px -4px}
+.ws-chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-chip i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.ws-chip.is-warn i{background:var(--warn)}.ws-chip.is-danger i{background:var(--danger)}.ws-chip.is-muted i{background:var(--muted-2)}
+.ws-chip:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+.ws-sync-banner .ios-capsule{flex:none}
