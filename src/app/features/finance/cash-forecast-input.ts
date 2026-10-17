@@ -201,7 +201,8 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
    * € 10.000 recognised revenue in the window (Analyses critique B4). One invoice at −11 % gave every container
    * a −2,5 % default. The raw figure stays visible through realisedSample.
    */
-  const sampleInvoices = inWindow.filter((view) => view.order.docType === 'FACTUUR').length;
+  /* Issued regular invoices only: a concept or cancelled invoice adds no revenue (documentAccounting), so it is no sample either. */
+  const sampleInvoices = inWindow.filter(regularInvoice).length;
   const realisedMarkupPct = sampleInvoices >= REALISED_MIN_INVOICES && revenue >= REALISED_MIN_REVENUE_EUR ? rawMarkupPct : null;
 
   const paidDayOf = (view: SalesOrderView): Iso | null => {
