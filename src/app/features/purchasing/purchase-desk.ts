@@ -228,7 +228,7 @@ export class PurchaseDeskStyles {}
           @if (attentionShown().length) {
             <div class="pdk-attn" role="status">
               <span class="pdk-attn__count">{{ attentionShown().length }}</span>
-              <span class="pdk-attn__text">@for (item of attentionShown(); track item; let last = $last) {{{ item }}@if (!last) { · }}</span>
+              <span class="pdk-attn__text">@for (item of attentionShown(); track item; let last = $last) {{{ keepAmounts(item) }}@if (!last) { · }}</span>
               @if (paymentAttention()) { <button class="wk-link" type="button" (click)="showPayments()">Betalingen ›</button> }
               <button class="wk-link" type="button" data-pdk-rail (click)="showRail('done')">Afronden ›</button>
             </div>
@@ -1484,9 +1484,9 @@ export class PurchaseDesk extends PurchaseEditor {
     return value ? this.clearanceOptions.find(option => option.value === value)?.label ?? value : null;
   }
 
-  /** An amount range never breaks inside: '€ 3,124 – € 10,859' stays on one line. */
+  /** An amount never breaks inside: '€ 3,124 – € 10,859' stays on one line, and a server text's '€ 4500,00' keeps its sign (N9). */
   keepAmounts(text: string): string {
-    return text.replace(/ – /g, '\u00a0–\u00a0');
+    return text.replace(/ – /g, '\u00a0–\u00a0').replace(/€ (?=[\d−-])/g, '€\u00a0');
   }
   /** How the route opened us; the desk itself decides when editing ends. */
   readonly mode = input<'view' | 'edit'>('view');
