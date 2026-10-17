@@ -151,8 +151,9 @@ app-notification-bell.an-bell-host .bell { display: none; }
 .an-sheet-dates { margin-top: 22px; }
 @media (max-width: 679.98px) {
   .an-phone { --an-gap: 22px; }
-  .an-phone .an-bar { flex-wrap: nowrap; gap: 8px; min-height: 0; margin: 0 var(--ios-inset, 16px) 14px; overflow-x: auto; scrollbar-width: none; }
-  .an-phone .an-bar__text { font-size: 13px; white-space: nowrap; }
+  /* The tool row wraps: the range text takes a second line under the capsule, never a cut at the screen edge (B2). */
+  .an-phone .an-bar { flex-wrap: wrap; gap: 6px 8px; min-height: 0; margin: 0 var(--ios-inset, 16px) 14px; }
+  .an-phone .an-bar__text { font-size: 13px; }
   .an-pick-phone { flex: none; gap: 5px; }
   /* Today's bodies (until each body package replaces them) keep the page inset. */
   .an-body--legacy { padding: 0 var(--ios-inset, 16px); }

@@ -15,9 +15,8 @@
 .an-capsule-select { flex: none; max-width: 70%; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none;
   background: color-mix(in srgb, var(--rose) 12%, var(--surface)); color: var(--rose-dark); font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; }
 .an-phone-search { margin: 0 var(--ios-inset, 16px) 14px; }
-/* Phone row 2 wraps instead of scrolling: the supplier fills the line beside the period, the order chip gets its own line, nothing past the edge. */
+/* Phone row 2 wraps like every phone tool row: the supplier fills the line beside the period, the order chip gets its own line. */
 @media (max-width: 679.98px) {
-  .an-phone .an-bar--sub { flex-wrap: wrap; overflow: visible; }
   .an-phone .an-pick-phone + .an-capsule-select { flex: 1 1 0; min-width: 0; max-width: none; }
 }
 .an-kpis--6 { --an-cols: 6; }
