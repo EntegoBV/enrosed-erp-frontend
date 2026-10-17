@@ -2285,9 +2285,21 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   (`[hidden]` + an explicit `display:none` rule), so a draft survives a tab
   switch. Desk: a `wk-subbar` tab strip (replaceUrl); phone: pushed screens
   (`info: {nav: 'push'}`), back = history, else the overview. The way up
-  (desk crumb, phone fallback) is `/settings/overzicht`, a redirect to
-  `/settings`: NavHistory keys "the last URL seen" by path, so a parent on
-  the same path as the open view would resolve to the view itself.
+  (desk crumb, phone fallback, Verwijderde items' phone fallback) is
+  `/settings/overzicht`: its own path, because NavHistory keys "the last URL
+  seen" by path and a parent on the open view's path would resolve to the
+  view itself. A canMatch (`settings-overview-up.ts`) sends it on to
+  `/settings` with replaceUrl: up takes the view's place in the history, so
+  the overview's back leads below the view or to Meer, never back into it
+  (pushed, a deep link looped). The phone "Alle instellingen" row goes back
+  when the overview lies below (`isSettingsOverviewUrl`), else up the same
+  way. `screenLabel()` names a view below by its title ("‹ Kortingen",
+  "Terug naar Bedrijfsgegevens"); its map is held equal to SETTINGS_VIEWS by
+  a test.
+- Phone sheets (`variant="ios"`): the kit's iOS sheet body has no side
+  padding (it expects inset groups). Text, fields and fact lists inside one
+  bring their own 16 px gutter under 680 px (trash detail, legal read/edit,
+  Voettekst); never restyle the kit sheet.
 - `websiteCategoryMode` (`/website/categories`) renders exactly what it did.
 - Save model: `SettingsEditor` (`settings-editor.ts`): dirty, dirtyCount,
   saving, save(), revert(). The page shows "n wijzigingen niet opgeslagen ·
@@ -2348,7 +2360,11 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   unknown purchase order (at most once a minute; `namesReloadDue`).
 - Detail (`activity-inspector.ts`): docked beside the list from 1000 px of
   page width (sticky column), else a drawer at page-host level; a sheet on
-  the phone. With nothing selected the dock shows the Overzicht.
+  the phone. With nothing selected the dock shows the Overzicht. The detail
+  is keyed by the selected row (`@for` over one row), so it fades in on
+  every selection; "Meer aan dit record" lists rows (`relatedRows`), a
+  burst once. Phone rows wrap in full (no clamp: a phone has no title).
+  Money from `nlMoney` keeps a no-break space after the symbol.
 
 **Verwijderde items** (`deleted-items-page.ts`, `deleted-items-state.ts`):
 kit table / inset list with counts per type, "door …", "nog n dagen";
