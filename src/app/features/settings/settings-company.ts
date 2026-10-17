@@ -116,14 +116,15 @@ const LONG_LABELS: Record<LongField, string> = {
                 <div class="set-num" [class.set-num--dirty]="isDirty(row.field) || (row.next ? isDirty(row.next) : false)">
                   <b>{{ row.label }}@if (row.isNew) { <span class="wk-pill tone-accent">nieuw</span> }</b>
                   <input class="set-input mono" [attr.aria-label]="row.label + ': letters of patroon'" [attr.maxlength]="row.max"
-                         [attr.placeholder]="'Standaard: ' + defaultOf(row.field)" [value]="textOf(d, row.field)"
+                         [attr.placeholder]="row.next ? 'Standaard' : 'Standaard: ' + defaultOf(row.field)" [value]="textOf(d, row.field)"
                          (input)="set(row.field, $any($event.target).value)" />
                   @if (row.next; as next) {
                     <input class="set-input set-input--num" type="number" min="1" step="1" inputmode="numeric"
                            [attr.aria-label]="row.label + ': volgend nummer'" placeholder="—" [value]="textOf(d, next)"
                            (input)="setNumber(next, $any($event.target).value)" />
                   } @else { <span class="set-muted">—</span> }
-                  <span class="set-preview">{{ preview(row.series).text }}@if (preview(row.series).isDefault) { <span class="wk-pill wk-pill--outline">standaard</span> }</span>
+                  <!-- A default pattern is too long for the field at 1100 as a placeholder: it reads whole here, before its example. -->
+                  <span class="set-preview">@if (row.next && preview(row.series).isDefault) { <span class="set-preview__pattern">@for (part of patternParts(row.field); track $index) {<span>{{ part }}</span><wbr />}→</span> }{{ preview(row.series).text }}@if (preview(row.series).isDefault) { <span class="wk-pill wk-pill--outline">standaard</span> }</span>
                   @if (row.note) { <p class="set-num__note">{{ row.note }}</p> }
                   @if (warning(row); as text) { <p class="set-num__warn mo-fade">{{ text }}</p> }
                 </div>
@@ -323,6 +324,7 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-muted { color: var(--muted-2); }
     .set-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--ink-2); font: 500 13px var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .set-preview .wk-pill { font-family: var(--font, inherit); }
+    .set-preview__pattern { color: var(--muted); overflow-wrap: normal; }
     .set-num__warn { grid-column: 2 / -1; margin: 4px 0 0; color: var(--warn); font-size: 12px; }
     .set-num__note { grid-column: 2 / -1; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
     @container set-card (max-width: 640px) {
@@ -472,6 +474,11 @@ export class SettingsCompany implements SettingsEditor {
     const value = profile[key];
     const text = value === null || value === undefined ? '' : String(value);
     return key === 'iban' && this.focused() !== 'iban' ? ibanDisplay(text) : text;
+  }
+
+  /** A default pattern in pieces that end on "/": the preview breaks a long pattern only after a slash. */
+  patternParts(key: CompanyField): string[] {
+    return `${this.defaultOf(key)} `.split(/(?<=\/)/);
   }
 
   defaultOf(key: CompanyField): string {
