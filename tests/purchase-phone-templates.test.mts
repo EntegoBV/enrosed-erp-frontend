@@ -179,6 +179,13 @@ test('the kit gains the stacked segments and the nav its [hero] slot', async () 
   assert.equal(parseTemplate(navTemplate, 'ios-nav.html').errors, null);
 });
 
+test('the supplier\'s address in the phone editor wraps instead of ending in an ellipsis (cut at 360 px)', async () => {
+  const editor = templateOf(await read('app/features/purchasing/purchase-editor.ts'));
+  assert.equal(count(editor, '<span class="ios-cell__sub mpo-address"><app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" /></span>'), 1);
+  // Three classes on the address and its span: the component's own encapsulated nowrap rules carry an attribute each.
+  assert.match(await read('styles/purchase-phone.scss'), /app-purchase-editor \.mpo-address \.supplier-address\.supplier-address--inline span\{[^}]*white-space:normal\}/);
+});
+
 test('the phone styles load once and every rule stays scoped to the purchase hosts', async () => {
   const styles = await read('styles.scss');
   assert.equal(count(styles, "@include meta.load-css('styles/purchase-phone');"), 1);

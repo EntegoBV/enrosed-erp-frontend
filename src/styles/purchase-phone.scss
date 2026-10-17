@@ -31,6 +31,8 @@
 .mpo-phone .ios-nav :is(a,button){scroll-margin:calc(-1 * (var(--ios-nav-h) + var(--mpo-tabs-h))) 0 calc(var(--ios-nav-h) + var(--mpo-tabs-h))}
 .mpo-phone .ios-nav--condensed~.mpo-tabs [role="tab"]{scroll-margin:calc(-1 * var(--mpo-tabs-h)) 0 var(--mpo-tabs-h)}
 :is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
+/* The supplier's address in the Order pane wraps instead of ending in an ellipsis (it was cut at 360 px). */
+app-purchase-editor .mpo-address,app-purchase-editor .mpo-address .supplier-address.supplier-address--inline,app-purchase-editor .mpo-address .supplier-address.supplier-address--inline span{min-width:0;overflow:visible;text-overflow:clip;white-space:normal}
 
 /* ---- summary card ([hero] of app-ios-nav) */
 .mpo-summary{margin:2px 16px 12px;padding:16px;border-radius:var(--ios-radius);background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}

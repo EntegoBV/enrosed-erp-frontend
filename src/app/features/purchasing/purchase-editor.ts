@@ -237,7 +237,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <span class="ios-cell__lead"><span class="ios-tile tone-accent" aria-hidden="true">{{ supplierName().charAt(0) }}</span></span>
                     <span class="ios-cell__body">
                       <span class="ios-cell__title ios-cell__title--strong mpo-wrap">{{ supplierName() }}</span>
-                      <span class="ios-cell__sub"><app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" /></span>
+                      <span class="ios-cell__sub mpo-address"><app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" /></span>
                     </span>
                     <span class="ios-cell__trail"><span class="ios-cell__value">{{ supplier()?.currency }}</span></span>
                   </div>
