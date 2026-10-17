@@ -15,6 +15,7 @@ import { AgendaMonth, AgendaRows, WEEKDAYS_SHORT, dayAria, dotTone, monthName } 
 import { enterHome } from './home-data';
 import { longDate, shortDate } from './home-figures';
 import { PlannerCards } from './planner-cards';
+import { HomeStyles } from './home-styles';
 
 type Seg = 'dag' | 'komend' | 'taken';
 
@@ -46,8 +47,9 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 @Component({
   selector: 'app-agenda-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IosNav, Icon, Segmented, Skeleton, ContextMenu, AgendaMonth, AgendaRows, PlannerCards],
+  imports: [IosNav, Icon, Segmented, Skeleton, ContextMenu, AgendaMonth, AgendaRows, PlannerCards, HomeStyles],
   template: `
+    <app-home-styles hidden />
     @if (!desk()) {
       <div class="ios-page home-agenda">
         <app-ios-nav [title]="title()" [subtitle]="subtitle()" backLabel="Vandaag" backUrl="/dashboard" backAriaLabel="Terug naar Vandaag">

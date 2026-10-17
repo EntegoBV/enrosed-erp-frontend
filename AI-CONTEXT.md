@@ -943,7 +943,13 @@ cijfers'.
   order, no edit mode): Kas, Verkoop, Inkoop & containers, Resultaat,
   Ontvangen, Voorraad, Partners, Website, (Search Console), Markt. One tap
   target each; a failed source reads "— · Opnieuw", never 0. Styles live in
-  the global partials `styles/home-*.scss` (no component styles).
+  the partials `styles/home-*.scss` (plain global rules, no component
+  styles), but they load with the home routes, not from styles.scss:
+  `home-styles.ts` has one unencapsulated carrier per partial, and
+  /dashboard, its Agenda and Open punten render `<app-home-styles hidden />`
+  as their first child (rules before the page's component styles, as in
+  styles.css). That keeps ~39 kB out of the 1 MB initial budget, which the
+  foundation left at 999.9 kB; never load them from styles.scss again.
 - `home-figures.ts` (pure): month windows that follow the day, Δ%, bars,
   next container events, the desk briefing, greeting, week number, the
   Markt quote (own forwarder routes only, never an index in points).
