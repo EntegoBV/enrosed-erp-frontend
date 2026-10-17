@@ -182,7 +182,7 @@ export class WebsiteNavPanel {
     this.sync.refresh();
     inject(DestroyRef).onDestroy(() => this.sync.detach());
     /* Entering the workspace: fresh counts, the old ones stay visible meanwhile (edits made elsewhere show). */
-    void this.store.refresh();
+    void this.store.refreshStale();
   }
 
   countOf(id: WebsiteNavId): SideCount | null {

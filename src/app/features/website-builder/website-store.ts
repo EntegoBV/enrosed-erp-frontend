@@ -48,6 +48,8 @@ export class WebsiteStore {
   readonly categories = signal<Category[] | null>(null);
   readonly content = signal<ContentTranslationOverview | null>(null);
   readonly homepage = signal<WebsiteBuilderHomepage | null>(null);
+  /** Moves on every full answer for the reeksen (not on a patch): lists that keep rows until the next load key on it. */
+  readonly familiesVersion = signal(0);
   /** The error of the last failed load per part; cleared by the next good answer. */
   readonly errors = signal<Partial<Record<WebsitePart, string>>>({});
   readonly loading = signal<Partial<Record<WebsitePart, boolean>>>({});
@@ -94,7 +96,16 @@ export class WebsiteStore {
     return Promise.all(parts.filter((part) => !this.isFresh(part)).map((part) => this.load(part, false))).then(() => undefined);
   }
 
-  /** Loads again whatever its age (the "Vernieuwen" buttons, entering the workspace); old values stay meanwhile. */
+  /**
+   * Entering the workspace: everything older than a few seconds loads again
+   * in the background (edits made elsewhere show), old values stay meanwhile;
+   * a request already under way counts as fresh.
+   */
+  refreshStale(maxAge = 5_000): Promise<void> {
+    return Promise.all(WEBSITE_PARTS.filter((part) => !this.isFresh(part, maxAge)).map((part) => this.load(part, false))).then(() => undefined);
+  }
+
+  /** Loads again whatever its age (the "Vernieuwen" buttons); old values stay meanwhile. */
   refresh(parts: readonly WebsitePart[] = WEBSITE_PARTS): Promise<void> {
     return Promise.all(parts.map((part) => this.load(part, true))).then(() => undefined);
   }
@@ -150,7 +161,7 @@ export class WebsiteStore {
 
   private set(part: WebsitePart, value: unknown): void {
     switch (part) {
-      case 'families': this.families.set(value as ProductFamily[]); break;
+      case 'families': this.families.set(value as ProductFamily[]); this.familiesVersion.update((version) => version + 1); break;
       case 'categories': this.categories.set(value as Category[]); break;
       case 'content': this.content.set(value as ContentTranslationOverview); break;
       case 'homepage': this.homepage.set(value as WebsiteBuilderHomepage); break;
