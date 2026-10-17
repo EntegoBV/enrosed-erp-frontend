@@ -24,7 +24,7 @@ import { Skeleton } from '../../shared/skeleton';
       </button>
     </app-page-header>
 
-    <div class="content">
+    <div class="content content--narrow">
       <details class="explainer">
         <summary>Welke voorraad telt waar?</summary>
         <div class="explainer__body">
@@ -44,6 +44,8 @@ import { Skeleton } from '../../shared/skeleton';
                 {{ location.kindLabel }}
                 @if (location.address) { · {{ location.address }} }
               </div>
+              <!-- What lies there, from the stock levels and the landed costs; "—" until they arrive. -->
+              <div class="list-item__meta location-stock">{{ stockLine(location.id) }}</div>
             </div>
             <div class="list-item__end location-flags">
               @if (location.countsForWebsite) { <span class="badge badge--ok">alle kanalen</span> }
@@ -204,12 +206,43 @@ export class StockLocationList {
     void this.load();
   }
 
+  /** Per location: products with stock and their value at landed cost, asked after the list shows. */
+  private readonly stockByLocation = signal<Map<number, { products: number; value: number }> | null>(null);
+
+  stockLine(locationId: number | null): string {
+    const all = this.stockByLocation();
+    if (!all || locationId === null) return '—';
+    const own = all.get(locationId) ?? { products: 0, value: 0 };
+    const value = own.value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    return `${own.products} product${own.products === 1 ? '' : 'en'} op voorraad · ${value} tegen kostprijs`;
+  }
+
+  private async loadStock(): Promise<void> {
+    try {
+      const [levels, products] = await Promise.all([this.catalog.stockLevels(), this.catalog.products()]);
+      const cost = new Map(products.map((product) => [product.id, product.landedCostEur]));
+      const result = new Map<number, { products: number; value: number }>();
+      for (const level of levels) {
+        if (!(level.quantity > 0)) continue;
+        const entry = result.get(level.locationId) ?? { products: 0, value: 0 };
+        entry.products += 1;
+        const unitCost = cost.get(level.productId);
+        if (unitCost && unitCost > 0) entry.value = Math.round((entry.value + level.quantity * unitCost) * 100) / 100;
+        result.set(level.locationId, entry);
+      }
+      this.stockByLocation.set(result);
+    } catch {
+      /* The stock line is a bonus: it stays "—". */
+    }
+  }
+
   private async load(): Promise<void> {
     try {
       this.locations.set((await this.catalog.stockLocations()).map(normalizePickupFields));
     } finally {
       this.loading.set(false);
     }
+    if (this.stockByLocation() === null) void this.loadStock();
   }
 
   open(location: StockLocation | null): void {
