@@ -185,3 +185,11 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .an-quality .is-warn, .an-quality .is-warn b { color: var(--warn); }
 a.an-row--link { color: inherit; text-decoration: none; }
 @media (max-width: 679.98px) { .an-phone .an-quality { margin: -14px calc(var(--ios-inset, 16px) + 16px) var(--an-gap); font-size: 13px; } }
+
+/* ---------- Resultaat: five figures only from 1280; narrower 3 + 2 without a hole (critique B2.3) */
+.an-kpis--5 { --an-cols: 5; }
+@media (min-width: 680px) and (max-width: 1279.98px) {
+  .an-kpis--5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .an-kpis--5 > .an-kpi { grid-column: span 2; }
+  .an-kpis--5 > .an-kpi:nth-child(n + 4) { grid-column: span 3; }
+}

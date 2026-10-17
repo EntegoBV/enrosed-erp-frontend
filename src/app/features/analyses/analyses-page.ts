@@ -73,7 +73,7 @@ import type { SegmentOption } from '../../shared/segmented';
 import { scrollBehavior } from '../../shared/motion';
 import type { PartnerFinancingRow } from './analysis-metrics';
 import type { PeriodChoice } from './analyses-period';
-import { advanceTermsSub, dayMonth, dollarValue, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
+import { advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
 
 type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -136,7 +136,7 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
 };
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
 /** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
-const LEGACY_BODIES = new Set<AnalysisSection>(['result', 'market', 'website']);
+const LEGACY_BODIES = new Set<AnalysisSection>(['market', 'website']);
 /** The phone ⋯ sheet: the links the desk shows in the tool row. */
 const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
   sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
@@ -179,7 +179,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   providers: [CashState],
   /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
   encapsulation: ViewEncapsulation.None,
-  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-legacy.scss'],
+  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss'],
   host: { '(document:visibilitychange)': 'visible()' },
   imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
@@ -824,78 +824,91 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'result') {
-      <section class="analysis-section" aria-labelledby="result-analysis-title">
-        <header class="section-copy section-copy--split">
-          <div>
-            <span class="eyebrow">Resultaat</span>
-            <h2 id="result-analysis-title">Wat we overhouden</h2>
-            <p>De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten. Verkoop telt op de factuurdatum, kosten op hun datum; alles excl. btw.</p>
+        @let r = result();
+        @if (loading()) {
+          <div class="an-kpis an-kpis--5" aria-label="Resultaat laden">@for (n of [1, 2, 3, 4, 5]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+        } @else {
+          <div class="an-kpis an-kpis--5">
+            <div class="an-kpi"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ whole(r.revenueEur) }}</span>
+              <span class="an-kpi__sub">{{ plural(r.invoiceCount, 'factuur', 'facturen') }}@if (r.creditNoteCount) { · {{ plural(r.creditNoteCount, 'creditnota', 'creditnota’s') }} } · excl. btw</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Marge op goederen</span>
+              <span class="an-kpi__value" [attr.data-tone]="r.marginEur < 0 ? 'danger' : null">{{ whole(r.marginEur) }}</span>
+              <span class="an-kpi__sub">@if (r.marginPct !== null) { {{ r.marginPct | pct: 1 }} · }goederen kostten {{ whole(r.goodsCostEur) }}@if (r.missingCostLines) { · {{ plural(r.missingCostLines, 'regel', 'regels') }} zonder kost }</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Eigen kosten</span><span class="an-kpi__value">{{ whole(r.costsEur) }}</span>
+              <span class="an-kpi__sub">{{ r.unpaidCostsEur ? whole(r.unpaidCostsEur) + ' nog te betalen incl. btw' : 'alles betaald' }}</span>
+              <span class="an-kpi__foot">@if (r.depreciationEur > 0) {waarvan {{ whole(r.depreciationEur) }} afschrijvingen}</span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Resultaat</span>
+              <span class="an-kpi__value" [attr.data-tone]="r.resultEur < 0 ? 'danger' : null">{{ whole(r.resultEur) }}</span>
+              <span class="an-kpi__sub">marge min eigen kosten</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Ingekocht</span><span class="an-kpi__value">{{ whole(r.purchasedEur) }}</span>
+              <span class="an-kpi__sub">{{ plural(r.receivedContainers, 'container', 'containers') }} ontvangen · externe kost volgens actuele afrekening</span><span class="an-kpi__foot"></span></div>
           </div>
-        </header>
-        <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Omzet</span><strong>{{ result().revenueEur | eur: 0 }}</strong><p>{{ result().invoiceCount }} uitgegeven factuur/facturen · excl. btw</p></article>
-          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Marge op goederen</span><strong>{{ result().marginEur | eur: 0 }}</strong><p>{{ result().marginPct === null ? 'kost van de goederen ' + (result().goodsCostEur | eur: 0) : (result().marginPct | pct: 1) + ' · goederen kostten ' + (result().goodsCostEur | eur: 0) }}@if (result().missingCostLines) { · {{ result().missingCostLines }} regel(s) zonder kost }</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Eigen kosten</span><strong>{{ result().costsEur | eur: 0 }}</strong><p>@if (result().depreciationEur > 0) { waarvan {{ result().depreciationEur | eur: 0 }} afschrijvingen · }@if (result().unpaidCostsEur) { {{ result().unpaidCostsEur | eur: 0 }} nog te betalen incl. btw } @else { alles betaald }</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="result().resultEur < 0"><span class="metric-card__label">Resultaat</span><strong>{{ result().resultEur | eur: 0 }}</strong><p>marge min eigen kosten</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Ingekocht</span><strong>{{ result().purchasedEur | eur: 0 }}</strong><p>{{ result().receivedContainers }} container(s) ontvangen, externe kost volgens actuele afrekening</p></article>
-        </div>
-        <div class="analysis-columns">
-          <article class="card analysis-list scorecard-card">
-            <header><div><span>Kanalen</span><h3>Per verkoopkanaal</h3></div><small>omzet, marge en de kosten die erbij horen</small></header>
-            @if (result().byChannel.length) {
-              <div class="scorecard-scroll">
-                <table class="scorecard">
-                  <thead><tr><th>Kanaal</th><th>Facturen</th><th>Omzet</th><th>Marge</th><th>Kosten</th><th>Resultaat</th></tr></thead>
-                  <tbody>
-                    @for (row of result().byChannel; track row.channel) {
-                      <tr>
-                        <td data-label="Kanaal">{{ channelLabel(row.channel) }}</td>
-                        <td data-label="Facturen">{{ row.invoiceCount }}</td>
-                        <td data-label="Omzet">{{ row.revenueEur | eur: 0 }}</td>
-                        <td data-label="Marge">{{ row.marginEur | eur: 0 }}</td>
-                        <td data-label="Kosten">{{ row.costsEur ? (row.costsEur | eur: 0) : '—' }}</td>
-                        <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+        }
+        <div class="an-cols">
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-rchannel-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-rchannel-title">Per verkoopkanaal</h2><span class="an-card__trail">resultaat, excl. btw</span></header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                  @for (row of r.byChannel; track row.channel) {
+                    <div class="an-row an-row--nolead">
+                      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
+                        <span class="an-row__sub">{{ plural(row.invoiceCount, 'factuur', 'facturen') }} · omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
+                      <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
+                    </div>
+                  } @empty { <p class="an-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
+                }
               </div>
-            } @else { <p class="list-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
-          </article>
-          <article class="card analysis-list">
-            <header><div><span>Kosten</span><h3>Per categorie</h3></div><small><a routerLink="/costs">alle kosten ›</a></small></header>
-            @for (row of result().byCategory; track row.category) {
-              <div class="channel-row">
-                <div><b>{{ categoryLabel(row.category) }}</b></div>
-                <span class="channel-row__bar"><i [style.width.%]="row.sharePct"></i></span>
-                <strong>{{ row.amountEur | eur: 0 }}</strong>
-                <small>{{ row.sharePct | pct: 0 }}</small>
+            </section>
+          </div>
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-rcat-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-rcat-title">Kosten per categorie</h2><span class="an-card__trail"><a class="an-link" routerLink="/costs">alle kosten ›</a></span></header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                  @for (row of take('categories', r.byCategory); track row.category) {
+                    <div class="an-row an-share" [class.mo-fade]="$index >= listLimit()">
+                      <span class="an-row__body"><span class="an-row__title">{{ categoryLabel(row.category) }}</span></span>
+                      <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
+                      <span class="an-row__value">{{ whole(row.amountEur) }}</span>
+                      <span class="an-row__meta">{{ row.sharePct | pct: 0 }}</span>
+                    </div>
+                  } @empty { <p class="an-empty">Nog geen kosten geboekt in deze periode.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'categories', total: r.byCategory.length }" />
+                }
               </div>
-            } @empty { <p class="list-empty">Nog geen kosten geboekt in deze periode.</p> }
-          </article>
+            </section>
+          </div>
         </div>
-        <article class="card analysis-list scorecard-card">
-          <header><div><span>Verloop</span><h3>Per maand</h3></div><small>oudste maand eerst</small></header>
-          @if (result().monthly.length) {
-            <div class="scorecard-scroll">
-              <table class="scorecard">
+        <section class="an-card" aria-labelledby="an-months-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="an-months-title">Per maand</h2><span class="an-card__trail">{{ desk.active() ? 'oudste maand eerst' : 'nieuwste maand eerst' }}</span></header>
+          @if (loading()) { <div class="an-card__body"><app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /></div> }
+          @else if (!r.monthly.length) { <p class="an-empty">Nog niets in deze periode.</p> }
+          @else if (desk.active()) {
+            <div class="an-table-wrap" tabindex="0" role="region" aria-label="Resultaat per maand">
+              <table class="an-table">
                 <thead><tr><th>Maand</th><th>Omzet</th><th>Marge</th><th>Eigen kosten</th><th>Resultaat</th></tr></thead>
                 <tbody>
-                  @for (row of result().monthly; track row.month) {
-                    <tr>
-                      <td data-label="Maand">{{ row.month }}</td>
-                      <td data-label="Omzet">{{ row.revenueEur | eur: 0 }}</td>
-                      <td data-label="Marge">{{ row.marginEur | eur: 0 }}</td>
-                      <td data-label="Eigen kosten">{{ row.costsEur | eur: 0 }}</td>
-                      <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}</td>
-                    </tr>
+                  @for (row of r.monthly; track row.month) {
+                    <tr><td>{{ monthLabel(row.month) }}</td><td>{{ whole(row.revenueEur) }}</td><td>{{ whole(row.marginEur) }}</td><td>{{ whole(row.costsEur) }}</td>
+                      <td [class.is-danger]="row.resultEur < 0">{{ whole(row.resultEur) }}</td></tr>
                   }
                 </tbody>
               </table>
             </div>
-          } @else { <p class="list-empty">Nog niets in deze periode.</p> }
-        </article>
-      </section>
+          } @else {
+            <div class="an-card__body">
+              @for (row of take('months', monthsNewestFirst()); track row.month) {
+                <div class="an-row an-row--nolead" [class.mo-fade]="$index >= listLimit()">
+                  <span class="an-row__body"><span class="an-row__title">{{ monthLabel(row.month) }}</span>
+                    <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ whole(row.costsEur) }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
+                </div>
+              }
+              <ng-container *ngTemplateOutlet="more; context: { key: 'months', total: r.monthly.length }" />
+            </div>
+          }
+        </section>
       }
 
       @if (section() === 'market') {
@@ -1405,7 +1418,10 @@ export class AnalysesPage {
   /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
   readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
     from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, this.today()), openEur: openOf,
+    today: this.today(),
   }));
+  readonly monthsNewestFirst = computed(() => [...this.result().monthly].reverse());
+  readonly monthLabel = monthLabel;
   readonly channelLabel = channelLabel;
   /** "waarvan voorschot € 77.376 · gecrediteerd − € 80" (parts left out when zero). */
   readonly invoicedFoot = computed(() => {

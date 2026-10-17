@@ -9,14 +9,14 @@
    backdrop-filter or container-type on anything that can hold a sheet or a
    popover with fixed children (trap rule); media queries, never container
    queries.
-   Today's page styles live in analyses-legacy.scss until each body package
-   has replaced them (critique B9).
    ========================================================================== */
 
 app-analyses-page { display: block; }
 
 /* ---------- Part 1: frame */
 .an { --an-gap: 14px; }
+.an.analyses-page { max-width: 1180px; padding-bottom: 110px; }
+@media (min-width: 680px) { .an.analyses-page { padding-bottom: 40px; } }
 .an-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 40px; margin: 0 0 var(--an-gap); }
 .an-bar__text { min-width: 0; color: var(--muted); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .an-bar__end { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
@@ -52,7 +52,7 @@ app-analyses-page { display: block; }
 .an-kpi__value[data-tone=ok] { color: var(--ok); } .an-kpi__value[data-tone=warn] { color: var(--warn); } .an-kpi__value[data-tone=danger] { color: var(--danger); }
 .an-kpi__sub { color: var(--muted); font-size: 12px; line-height: 1.38; }
 .an-kpi__foot { align-self: end; margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 12px; font-weight: 600; line-height: 1.35; font-variant-numeric: tabular-nums; }
-.an-kpi__foot:empty { visibility: hidden; }
+.an-kpi__foot:empty { display: none; }
 .an-kpi__foot.is-warn { color: var(--warn); }
 a.an-kpi--link:hover { border-color: var(--rose-line); }
 .an-kpi--link::after { content: '›'; position: absolute; top: 11px; right: 14px; color: var(--muted-2); font-size: 16px; font-weight: 600; }
@@ -118,6 +118,24 @@ button.an-row { width: 100%; border: 0; background: none; font: inherit; text-al
 .an-share > .an-row__meta { text-align: right; }
 .an-skeleton { display: block; padding: 4px 16px 12px; }
 .an-body app-cash-overview-card .cf-overview { margin-bottom: var(--an-gap); }
+
+/* ---------- the old desk tab row: off since the redesign (DESK_TAB_ROW, analyses-desk-tabs.ts); kept so that
+   reverting W2c brings it back styled. */
+.an {
+  .analysis-tabs{position:sticky;z-index:5;top:58px;display:flex;gap:5px;margin:-2px -2px 20px;padding:7px 2px;overflow-x:auto;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);scrollbar-width:none}.analysis-tabs::-webkit-scrollbar{display:none}.analysis-tabs a{flex:none;padding:8px 11px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:730;text-decoration:none;white-space:nowrap}.analysis-tabs a:hover{border-color:var(--rose-line);color:var(--ink)}.analysis-tabs a.active{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+  
+  
+  @media(min-width:680px){.analysis-tabs{top:0}}
+  
+  .analysis-tabs{top:var(--appbar-h);gap:4px;margin:-4px 0 20px;padding:6px;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);border-radius:24px;background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:0 4px 18px rgb(25 35 45 / 5%);backdrop-filter:blur(16px);scroll-padding-inline:6px}
+  .analysis-tabs a{display:flex;align-items:center;gap:7px;min-height:44px;padding:5px 12px 5px 7px;border:1px solid transparent;background:transparent;font-size:12px;transition:background .18s,box-shadow .18s}
+  .analysis-tabs a.active{border-color:var(--line);background:var(--surface);color:var(--ink);box-shadow:0 2px 7px rgb(25 35 45 / 8%)}
+  .analysis-tab-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:10px;color:#2365b5;background:#eaf2ff}
+  .analysis-tab-icon[data-tone=rose]{color:#b73568;background:#fdebf1}.analysis-tab-icon[data-tone=green]{color:#247656;background:#e6f5ee}.analysis-tab-icon[data-tone=amber]{color:#9b641b;background:#fff1dc}.analysis-tab-icon[data-tone=purple]{color:#7550bc;background:#f1eafd}
+  .analysis-tabs a:active{transform:scale(.97)}
+  @media(min-width:680px){.analysis-tabs{top:var(--appbar-h);width:max-content;max-width:100%}.analysis-tabs a{font-size:13px}}
+  
+}
 
 /* ---------- phone frame (< 680) */
 /* The bell lives at page-host level; the nav shows a proxy circle (critique B7, the home's pattern). */
