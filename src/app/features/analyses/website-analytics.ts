@@ -91,7 +91,8 @@ const RANGES: readonly Range[] = [
           <span class="an-kpi__sub">gemiddeld, bij meer dan één pagina</span><span class="an-kpi__foot"></span></div>
         <div class="an-kpi"><span class="an-kpi__label">Offerte-interesse</span><span class="an-kpi__value">{{ r.funnel.quoteSessions | num }}</span>
           <span class="an-kpi__sub">{{ r.funnel.quoteSessions ? share(r.funnel.quoteSessions, r.funnel.sessions) + ' van de sessies' : 'nog niemand op de offertepagina' }}</span>
-          <span class="an-kpi__foot is-ok">{{ r.funnel.quoteSessions ? deltaLine(r.funnel.quoteSessions, r.previous.quoteSessions, true) : '' }}</span></div>
+          @let quoteTrend = r.funnel.quoteSessions ? direction(r.funnel.quoteSessions, r.previous.quoteSessions) : null;
+          <span class="an-kpi__foot" [class.is-ok]="quoteTrend === 'up'" [class.is-warn]="quoteTrend === 'down'">{{ r.funnel.quoteSessions ? deltaLine(r.funnel.quoteSessions, r.previous.quoteSessions, true) : '' }}</span></div>
       </div>
 
       @if (!r.totals.visits) {
@@ -512,6 +513,12 @@ export class WebsiteAnalytics {
   }
 
   /** "▲ 12 % t.o.v. gisteren", or what there is to say when nothing came before. */
+  /** Up is good, down is a warning, the same rule as the Overzicht's Bezoekers row (deltaMeta); flat or unknown stays muted. */
+  direction(current: number, previous: number): 'up' | 'down' | null {
+    const delta = deltaOf(current, previous);
+    return delta && delta.direction !== 'flat' ? delta.direction : null;
+  }
+
   deltaLine(current: number, previous: number, short = false): string {
     const delta = deltaOf(current, previous);
     const before = this.range().before;
