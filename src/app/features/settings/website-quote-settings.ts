@@ -93,19 +93,46 @@ export class WebsiteQuoteSettings {
     return this.prices.load();
   }
 
-  async togglePrices(): Promise<void> {
+  /**
+   * Turning prices on asks first (every visitor sees them, in every
+   * language); turning them off does not. Either way the toast offers
+   * "Ongedaan maken", which works even after leaving this screen.
+   */
+  togglePrices(): void {
     const current = this.settings();
     if (!current || this.loading() || this.saving()) return;
+    if (current.pricesVisible) { void this.switchPrices(false); return; }
+    this.ui.confirm({
+      title: 'Prijzen tonen op de website?',
+      message: 'Elke bezoeker ziet dan prijzen, in alle talen. De website wordt opnieuw opgebouwd.',
+      confirmLabel: 'Prijzen tonen',
+    }, () => void this.switchPrices(true));
+  }
+
+  private async switchPrices(visible: boolean): Promise<void> {
     try {
-      const saved = await this.prices.save(!current.pricesVisible);
-      // Only the saved fact: whether a rebuild follows is for the status below to say.
-      this.ui.toast(saved.pricesVisible
-        ? 'Prijzen zichtbaar op de website.'
-        : 'Prijzen verborgen op de website.', 'ok');
+      const saved = await this.prices.save(visible);
       this.ownRefresh.update((value) => value + 1);
       this.saved.emit();
+      // Only the saved fact: whether a rebuild follows is for the status below to say.
+      this.ui.toast(saved.pricesVisible ? 'Prijzen zichtbaar op de website' : 'Prijzen verborgen op de website', 'ok',
+        { label: 'Ongedaan maken', run: () => void undoPriceSwitch(this.prices, this.sync, this.ui, !saved.pricesVisible) });
     } catch {
       /* The store holds the message; the error row below shows it. */
     }
+  }
+}
+
+/**
+ * The undo of a price switch: no confirm (he just had that state), and only
+ * root services, so it still works once the settings screen is gone.
+ */
+async function undoPriceSwitch(prices: WebsitePriceStore, sync: WebsiteSyncStore, ui: Ui, visible: boolean): Promise<void> {
+  try {
+    const saved = await prices.save(visible);
+    sync.refresh();
+    ui.toast(saved.pricesVisible ? 'Prijzen weer zichtbaar op de website' : 'Prijzen weer verborgen op de website');
+  } catch (failure: unknown) {
+    ui.toast(failure instanceof Error ? failure.message : 'Ongedaan maken is niet gelukt.', 'err');
   }
 }

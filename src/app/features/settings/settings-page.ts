@@ -43,7 +43,7 @@ import { CategoryTranslationEditor } from './category-translation-editor';
 import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
-import { DateTimeNlPipe } from '../../shared/pipes';
+import { DateNlPipe, DateTimeNlPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { CompanyStore } from './company-store';
@@ -57,7 +57,7 @@ import { productSalesUnit } from '../products/product-sales-unit';
 import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
 import {
-  SettingsView, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
+  SettingsView, deviceFocus, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
 } from './settings-sections';
 
 /**
@@ -126,6 +126,7 @@ const normalizeCategoryCode = (value: string): string => value
     RouterLink,
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
+    DateNlPipe,
     DateTimeNlPipe,
   ],
   template: `
@@ -203,9 +204,19 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('website')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'website'" aria-label="Prijzen op de website">
-        <div [class.settings-section--folded]="folded('website')" class="card settings-section" id="website">
-          <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Prijzen</h2></div>
-          <div class="card__body"><app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" /></div>
+        <div class="set-pair">
+          <!-- The sync status shows once: inside the price card (B5). -->
+          <div class="wk-card set-pane" id="website">
+            <h2 class="set-pane__title">Prijzen op de website</h2>
+            <app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" />
+          </div>
+          <nav class="wk-card set-pane set-links" aria-label="Website en catalogus">
+            <h2 class="set-pane__title">Website en catalogus</h2>
+            <a routerLink="/website"><span><b>Website beheren</b><small>Indeling, teksten, SEO, producten en publicatie</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/website/categories"><span><b>Categorieën en menunamen</b><small>Volgorde, uitgelicht product en namen per taal</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/categories"><span><b>Categorieën · foto’s</b><small>De foto’s van elke collectie</small></span><app-icon name="chevron-right" [size]="16" /></a>
+            <a routerLink="/catalog/texts"><span><b>Catalogusteksten per taal</b><small>Teksten van de catalogus-pdf</small></span><app-icon name="chevron-right" [size]="16" /></a>
+          </nav>
         </div>
       </section>
       }
@@ -419,6 +430,7 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('catalog-data')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'catalog-data'" aria-label="Catalogusdata">
+      <div class="set-pair set-pair--side">
       <!-- ======================================= catalogus in Excel -->
       <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
         <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
@@ -428,15 +440,13 @@ const normalizeCategoryCode = (value: string): string => value
           <p class="workbook-intro">
             Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
             Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
-            @if (desktop.active()) {
-              Ook vertalingen staan in dezelfde export.
-            }
+            Ook vertalingen staan in dezelfde export.
           </p>
 
           <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
             <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
             <li><span>2</span><div><b>Bewerk</b><small>
-              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
+              Producten staan op duidelijke tabbladen. Vertalingen staan apart.
             </small></div></li>
             <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
           </ol>
@@ -501,7 +511,11 @@ const normalizeCategoryCode = (value: string): string => value
             </div>
           }
 
-          <!-- Photos are not master data, but they are exported from the
+
+        </div>
+      </div>
+      <div class="set-side">
+        <!-- Photos are not master data, but they are exported from the
                same place: one ZIP with a folder per product. -->
           <button class="photo-export-row" type="button" aria-haspopup="dialog"
                   (click)="photoExportOpen.set(true)">
@@ -512,15 +526,21 @@ const normalizeCategoryCode = (value: string): string => value
             </span>
             <i aria-hidden="true">›</i>
           </button>
-        </div>
+        <a class="photo-export-row" routerLink="/catalog/texts">
+          <span class="photo-export-row__badge" aria-hidden="true">TXT</span>
+          <span class="photo-export-row__copy"><b>Catalogusteksten per taal</b><small>De teksten van de catalogus-pdf in elke taal.</small></span>
+          <i aria-hidden="true">›</i>
+        </a>
+      </div>
       </div>
       </section>
       }
 
       @if (visited().has('device')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'device'" aria-label="Dit toestel">
+      <div class="set-pair">
       <!-- ============== app on this device: looks and notifications -->
-      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
+      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance" [class.set-focus]="focusRing() === 'appearance'">
         <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
         <div class="card__body">
           <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
@@ -539,7 +559,7 @@ const normalizeCategoryCode = (value: string): string => value
       </div>
 
       <!-- ======================================= meldingen op dit toestel -->
-      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications">
+      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications" [class.set-focus]="focusRing() === 'notifications'">
         <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
         <div class="card__body">
           <p class="small muted" style="margin-bottom:12px">
@@ -572,7 +592,7 @@ const normalizeCategoryCode = (value: string): string => value
             <div class="push-devices" aria-label="Aangemelde toestellen">
               @for (device of pushDevices(); track device.id) {
                 <div class="push-device">
-                  <b>{{ device.device }}</b>
+                  <b>{{ device.device }}@if (device.since) { · aangemeld sinds {{ device.since | dateNl }} }</b>
                   <span>
                     @if (device.lastStatus === null) { nog geen melding gestuurd }
                     @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
@@ -604,13 +624,14 @@ const normalizeCategoryCode = (value: string): string => value
           }
           <div class="push-sounds">
             <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
-              🔔 Geluid nieuwe offerte
+              Geluid nieuwe offerte
             </button>
             <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
-              💰 Geluid nieuwe factuur
+              Geluid nieuwe factuur
             </button>
           </div>
         </div>
+      </div>
       </div>
       </section>
       }
@@ -986,6 +1007,23 @@ const normalizeCategoryCode = (value: string): string => value
     .set-dirty__text { margin-left: -3px; }
     @media (max-width: 1279.98px) { .set-dirty__text { display: none; } }
     .btn.set-ghost { border-color: transparent; background: transparent; }
+    /* Website, Catalogusdata and Dit toestel: two cards side by side on the desk. */
+    .set-pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+    .set-pair > .card, .set-pair > .wk-card { margin: 0; }
+    @media (min-width: 1024px) { .set-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .set-pair--side { grid-template-columns: minmax(0, 1fr) 340px; } }
+    .set-pane { padding: 4px 16px 16px; }
+    .set-pane__title { margin: 0; padding: 12px 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    .set-links { padding-bottom: 6px; }
+    .set-links > a { display: flex; align-items: center; gap: 12px; min-height: 52px; margin: 0 -16px; padding: 8px 16px; border-top: 1px solid var(--line);
+      color: var(--ink); text-decoration: none; }
+    .set-links > a:hover { background: var(--surface-2); }
+    .set-links > a > span { display: grid; flex: 1; gap: 1px; min-width: 0; }
+    .set-links b { font-size: 13.5px; font-weight: 650; }
+    .set-links small { color: var(--muted); font-size: 12px; }
+    .set-links app-icon { color: var(--muted-2); }
+    .set-side { display: grid; gap: 12px; }
+    .set-side > .photo-export-row { margin: 0; text-decoration: none; }
+    .set-focus { box-shadow: 0 0 0 2px var(--rose); transition: box-shadow var(--dur-2, 200ms) var(--ease-out, ease); }
     .btn.set-ghost:hover:not(:disabled) { background: var(--surface-2); }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
@@ -1121,7 +1159,7 @@ const normalizeCategoryCode = (value: string): string => value
     }
     .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .push-devices { display: grid; gap: 5px; margin-top: 10px; }
-    .push-device { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px;
+    .push-device { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 7px 10px;
       border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
       font-size: 11px; }
     .push-device span { color: var(--muted); }
@@ -1194,7 +1232,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     else void this.enablePush();
   }
 
-  readonly pushDevices = signal<{ id: number; device: string;
+  readonly pushDevices = signal<{ id: number; device: string; since?: string | null;
     lastStatus: number | null; lastAt: string | null }[]>([]);
   readonly pushDevicesLoaded = signal(false);
   readonly pushDevicesLoading = signal(false);
@@ -1491,6 +1529,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         if (!this.visited().has(view)) this.visited.update((visited) => new Set([...visited, view]));
         this.ensureViewData(view);
         this.revealTab(view);
+        if (view === 'device') this.focusDeviceCard(deviceFocus(params.get('sectie')));
       });
     });
   }
@@ -1538,6 +1577,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    if (this.focusTimer) clearTimeout(this.focusTimer);
   }
   private destroyed = false;
 
@@ -1556,6 +1596,22 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       case 'device': return this.loadPushDevices();
       default: return Promise.resolve();
     }
+  }
+
+  /** Dit toestel opened for Meldingen (or Weergave): that card scrolls into view with a short accent ring. */
+  readonly focusRing = signal<'notifications' | 'appearance' | null>(null);
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private focusDeviceCard(card: 'notifications' | 'appearance' | null): void {
+    if (!card) return;
+    const win = this.document.defaultView;
+    win?.requestAnimationFrame(() => {
+      this.document.getElementById(card)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (win.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      this.focusRing.set(card);
+      if (this.focusTimer) clearTimeout(this.focusTimer);
+      this.focusTimer = setTimeout(() => this.focusRing.set(null), 1200);
+    });
   }
 
   /** The current tab chip scrolls into view (the strip scrolls sideways at 1100 px). */
