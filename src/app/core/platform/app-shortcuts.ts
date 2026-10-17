@@ -52,6 +52,22 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/sales/:id/edit', '/purchasing/:id/edit', '/products/:id/edit', '/website/*'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
   },
+  /* Website beheren (2026-10-17). */
+  {
+    routes: ['/website/layout'],
+    rows: [{ keys: ['↑', '↓'], text: 'Ander blok kiezen' }],
+  },
+  {
+    routes: ['/website/texts', '/website/seo'],
+    rows: [{ keys: ['['], alt: [']'], text: 'Vorige of volgende taal' }],
+  },
+  {
+    routes: ['/website/products'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere reeks kiezen' },
+      { keys: ['↵'], text: 'Reeks openen' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */
