@@ -2263,3 +2263,91 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   buffer is disabled.
 - `?from=` on an older server returns every line; the payments round's own
   guard (`paymentRoundOnServer`) is unchanged.
+
+## Instellingen, Logboek en Verwijderde items (company area, 2026-10-17)
+
+Contract: scratchpad redesign/company/design.md + critique.md (the critique wins).
+
+**Instellingen** (`features/settings/`):
+- `/settings` without `?sectie=` is the overview (`settings-overview.ts`):
+  every setting with its live value, six self-stacking cards on the desk,
+  the iOS Settings root on the phone. Each value loads on its own and is
+  re-read every time the overview shows again or the tab becomes visible;
+  the old value stays until the new one lands (critique B6). No call to
+  `/api/product-families` here.
+- One view per `?sectie=` (`settings-sections.ts`, pure): company, legal,
+  website, duties, discounts (also order-discounts), catalog-data, device
+  (also appearance, notifications). `categories` redirects to
+  `/website/categories` with only the params present; `duties` redirects to
+  `/douane` once that route exists (purchasing owns Douane; until then
+  today's Douane card renders unchanged in the duties view). The view
+  follows the query live; visited views stay mounted and hidden
+  (`[hidden]` + an explicit `display:none` rule), so a draft survives a tab
+  switch. Desk: a `wk-subbar` tab strip (replaceUrl); phone: pushed screens
+  (`info: {nav: 'push'}`), back = history, else the overview. The way up
+  (desk crumb, phone fallback) is `/settings/overzicht`, a redirect to
+  `/settings`: NavHistory keys "the last URL seen" by path, so a parent on
+  the same path as the open view would resolve to the view itself.
+- `websiteCategoryMode` (`/website/categories`) renders exactly what it did.
+- Save model: `SettingsEditor` (`settings-editor.ts`): dirty, dirtyCount,
+  saving, save(), revert(). The page shows "n wijzigingen niet opgeslagen ·
+  Wijzigingen wissen · Opslaan" in the toolbar (dot + count below 1280 px),
+  an Opslaan capsule + a "Wissen" banner on the phone, ⌘S on the desk, a dot
+  on the tab of a dirty view, and `confirmLeave` when /settings is left.
+  Editors: Bedrijfsgegevens (`settings-company.ts`), the legal edit sheet
+  (`settings-legal.ts`), Kortingen (the page's own `discountsEditor`).
+- `CompanyStore` (`company-store.ts`, provided by the page): the one saved
+  profile; `save(patch)` PUTs `{...saved, ...patch}`. The backend saves the
+  whole profile, so every editor sends only its own changed fields and
+  rebases its draft when `saved` changes (`rebaseCompanyDraft`). Two staff
+  saving at the same moment still overwrite each other until backend B5.
+- `WebsitePriceStore` (root): the website price switch as one fact; the
+  Website view writes it, the overview reads it. Turning prices on asks
+  first; every switch toasts "Ongedaan maken", which works after leaving.
+- Defaults are said, never faked (`company-fields.ts`, `COMPANY_DEFAULTS`):
+  "Standaard: ENR", "Standaard: 24/7 Customs BV"; partner patterns the
+  backend ignores (no `{nr`, the old `partner/{jaar}/{nr:3}`) warn.
+- Kortingen: `discount-tiers.ts` counts changes against the saved tiers per
+  order and per product (removing the last tier is a change). Removing a
+  product's discount and "Opruimen" save at once and move only that
+  product's baseline. Thresholds count in the product's own unit
+  (`productSalesUnit().plural`). Styles: `styles/settings-discounts.scss`.
+- Voorwaarden & privacy: a text identical to the built-in proposal saves as
+  null. `/voorwaarden` shows staff the page header (NL | EN, Bewerken) and a
+  status line; customers keep the dark bar.
+
+**Logboek** (`features/activity/`):
+- `activity-format.ts` (pure): values like the rest of the ERP (money only
+  with a known currency: EXW prices are USD), bursts (same person, action
+  and record within 15 min; CREATED, DELETED, STATUS_CHANGED stand alone),
+  day counts count events, URL filters `?soort=&wie=&type=&id=`.
+- The backend has no FINANCE category yet: "Kosten & bank" asks FINANCE
+  once, on 400 asks OTHER and keeps cost/bank entities (remembered for the
+  visit); "Overig" drops them; a short filtered page fetches on (max 4).
+  Cost and bank events are always Kosten & bank (`activity-copy.ts`).
+- `ActivityNames` (root): purchase orders by `containerName()`, suppliers by
+  name; loaded after the first page, shared with the settings overview.
+- Detail (`activity-inspector.ts`): docked beside the list from 1000 px of
+  page width (sticky column), else a drawer at page-host level; a sheet on
+  the phone. With nothing selected the dock shows the Overzicht.
+
+**Verwijderde items** (`deleted-items-page.ts`, `deleted-items-state.ts`):
+kit table / inset list with counts per type, "door …", "nog n dagen";
+`deletedFieldValue` formats snapshot fields on the frontend (dates, euro,
+statuses, %, rates, country names), also for old snapshots. A PO's detail
+is titled by its container name from the snapshot field "Naam".
+
+**Backend follow-ups (not built; the frontend adopts each when it lands)**:
+B1 `DeletedItemDtos.Summary.name` (trash rows by container name); B2
+`GET /api/company/next-numbers`; B3 log company/HS/tier/category/price
+changes; B4 a per-change `kind` (money+currency/number/date/status/ref);
+B5 CompanyProfile `revision` + 409 and required-field validation; B6 the
+push subscription `username`; B7 `ActivityCategory.FINANCE` for
+COMPANY_COST, RECURRING_COST, BANK_BALANCE, BANK_STATEMENT; B8 deleted
+sales snapshots with the line's own sales unit (not a fixed "stuks").
+
+**Cross-area notes**: purchasing owns `/douane` (no edit of
+`settings-page.ts` there); `sales-receipts.ts:130` should link the missing
+IBAN to `/settings?sectie=company`; an "Alle instellingen" row in NAV_GROUPS
+(Meer and the sidebar) waits for the foundation (its active state needs a
+navItemActive rule for a bare `/settings`).
