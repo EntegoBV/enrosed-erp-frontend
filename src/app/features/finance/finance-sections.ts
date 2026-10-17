@@ -71,8 +71,8 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
   open: [
     { id: 'all', label: 'Alles', short: 'Alles' },
     { id: 'costs', label: 'Kosten', short: 'Kosten' },
-    /* Four segments on a 375px phone: 'Containers' would be cut to 'Contain…'. */
-    { id: 'containers', label: 'Containers', short: 'Cont.' },
+    /* Four segments on a 375px phone: the phone segmented's 12.5 px keeps 'Containers' whole. */
+    { id: 'containers', label: 'Containers', short: 'Containers' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
   ],
   incoming: [
@@ -86,10 +86,9 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
   ],
   costs: [
     { id: 'company', label: 'Facturen & kosten', short: 'Kosten' },
-    /* Four segments here too: 'Cont.' on a 375px phone. */
-    { id: 'containers', label: 'Containers', short: 'Cont.' },
+    { id: 'containers', label: 'Containers', short: 'Containers' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
-    { id: 'lists', label: 'Aan wie & beurzen', short: 'Lijsten' },
+    { id: 'lists', label: 'Aan wie & beurzen', short: 'Aan wie' },
   ],
   analysis: [
     { id: 'costs', label: 'Kosten', short: 'Kosten' },

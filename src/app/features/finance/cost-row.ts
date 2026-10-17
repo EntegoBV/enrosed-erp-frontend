@@ -40,8 +40,7 @@ import { daysBetween } from './payables';
           <span class="wk-td" role="gridcell">{{ date() }}
             @if (age() !== null && age()! > 0) { <span class="wk-pill fin-age" [class.tone-warn]="age()! > 30 && age()! <= 60" [class.tone-danger]="age()! > 60">{{ age() }} d</span> }
           </span>
-          <span class="wk-td" role="gridcell">{{ row.description }}@if (regimeNote()) { <span class="wk-pill wk-pill--outline" [title]="regimeNote()">te bevestigen</span> }@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
-          <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill tone-teal">Kost</span></span>
+          <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-teal" name="receipt" [size]="16" /><b>{{ row.description }}@if (regimeNote()) { <i class="wk-dot tone-warn fin-regime-dot" role="img" [attr.title]="regimeNote()" [attr.aria-label]="regimeNote()"></i> }</b>@if (row.party) { <small>{{ row.party }}</small> }</span>
           <span class="wk-td wk-td--wrap" role="gridcell"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
           <span class="wk-td fin-clip" role="gridcell" data-hide="md">@if (documents()) { <app-icon name="clip" [size]="14" />{{ documents() }} }</span>
           <span class="wk-td wk-td--num" role="gridcell"><b>{{ open() | eur }}</b>@if (status() === 'partial') { <span class="wk-td__sub">van {{ incl() | eur }}</span> }</span>

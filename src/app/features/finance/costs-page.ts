@@ -135,15 +135,10 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
                      [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + backText()" (back)="backFromSection()">
           <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
           <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
-          <div below class="ios-subbar" [hidden]="!phoneSegments().length">
-            @if (phoneSegments().length > 2) {
-              <label class="fin-phone-section"><span>Toon</span>
-                <select [attr.aria-label]="'Onderdeel van ' + current().label" [value]="state.location().tab" (change)="state.go({ tab: $any($event.target).value })">
-                  @for (option of phoneSegments(); track option.id) { <option [value]="option.id">{{ option.label }}{{ option.dot ? ' · vraagt aandacht' : '' }}</option> }
-                </select><app-icon name="chevron-down" [size]="16" />
-              </label>
-            } @else if (phoneSegments().length) {
-              <app-segmented variant="ios" semantics="tabs" label="Onderdeel"
+          <!-- The kit's segmented control on every place with segments (it replaced a native 'Toon' select for three or four). -->
+          <div below class="ios-subbar fin-phone-seg" [hidden]="!phoneSegments().length">
+            @if (phoneSegments().length) {
+              <app-segmented variant="ios" semantics="tabs" [label]="'Onderdeel van ' + current().label"
                              [options]="phoneSegments()" [value]="state.location().tab" (changed)="state.go({ tab: $event })" />
             }
           </div>
@@ -304,7 +299,10 @@ export class CostsPage {
     const view = this.state.location().view;
     if (view === 'bank') return [];
     /* The segment behind a tab badge carries a dot, so the badge leads somewhere visible. */
-    return FINANCE_TABS[view].map((tab) => ({ id: tab.id, label: tab.label, dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
+    /* Short words only where there are more than two segments (Te betalen, Inkoop & kosten); the full label stays the accessible name. */
+    const tabs = FINANCE_TABS[view];
+    return tabs.map((tab) => ({ id: tab.id, label: tabs.length > 2 ? tab.short : tab.label, ariaLabel: tab.label,
+      dot: this.state.segmentWarn(view, tab.id) ? 'warn' as const : null }));
   });
 
   constructor() {

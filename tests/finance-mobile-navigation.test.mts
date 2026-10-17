@@ -83,10 +83,15 @@ test('editing or paying hides the mobile detail dialog without discarding its or
   }
 });
 
-test('mobile section chooser uses full names; Transacties is a phone tab: no back label "Rekeningen", subScreen() false', () => {
+test('the phone segmented reads the short words with four segments, the full names as their accessible names; Transacties is a phone tab', () => {
   // Reversed on purpose (spec-bank-forecast §1.1, §6.1): the account register's explicit "Rekeningen" back is gone.
+  // 2026-10-17 (critique N12): the kit's segmented replaces the native select; shorts only where there are more than two segments.
   const { state, page } = setup({ view: 'costs', tab: 'company' });
-  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  state.go({ view: 'incoming', tab: 'open' });
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Openstaand', 'Ontvangen'], 'two segments keep their words');
+  state.go({ view: 'costs', tab: 'company' });
   state.go({ view: 'bank', tab: 'movements', account: 'BE94731074082814' });
   assert.equal(page.phoneSegments().length, 0); assert.equal(page.subScreen(), false);
   assert.deepEqual([page.pageTitle(), page.phoneSubtitle()], ['Transacties', 'KBC-zichtrekening']);

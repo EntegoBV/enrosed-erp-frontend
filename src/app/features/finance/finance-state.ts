@@ -547,8 +547,9 @@ export class FinanceState {
 
   /* payables: costs, containers and recurring in one list */
   readonly containerPayables = computed(() => (this.purchaseFiguresVisible() ? containerPayables(this.purchaseViews()) : []));
+  /* Container terms are dated by the Kaslijn's own rule (containerDates), so Binnenkort and the Kaslijn agree. */
   readonly payables = computed(() => payablesFor({
-    openCosts: this.openCosts(), upcoming30: this.upcoming(), containerRows: this.containerPayables(), today: this.today(),
+    openCosts: this.openCosts(), upcoming30: this.upcoming(), containerRows: this.containerPayables(), today: this.today(), containerDates: this.containerDates(),
   }));
   readonly payableTotals = computed(() => payableTotals(this.payables()));
   /** The Kaslijn's day of every open container row, by its payables key (Te betalen dates its terms with it). */
@@ -725,7 +726,8 @@ export class FinanceState {
       accounts: this.accountsView().map((account) => ({ key: account.account, label: account.label, hasReading: !!account.reading, ageDays: account.ageDays })),
       unbanked: { count: unbanked.length, eur: round2(unbanked.reduce((sum, row) => sum + row.amountEur, 0)) },
       costs: this.costs().map((cost) => ({ date: cost.date, recurringCostId: cost.recurringCostId, documented: cost.id !== null && this.documentedIds().has(cost.id) })),
-      receivables: this.receivables().map((row) => ({ orderDate: row.orderDate, remainingEur: row.remainingEur })),
+      receivables: this.receivables().map((row) => ({ orderDate: row.orderDate, remainingEur: row.remainingEur, dueDate: row.dueDate, number: row.number, customer: row.customer })),
+      vatDue: this.vatDue(),
       openCredits: { count: this.openInvoices().creditNoteCount, eur: round2(this.receivables().filter((row) => row.kind === 'credit').reduce((sum, row) => sum + row.creditEur, 0)) },
     });
   });

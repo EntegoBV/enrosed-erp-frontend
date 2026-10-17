@@ -16,6 +16,7 @@ import { FinanceTable } from './finance-table';
 import { PayableBucket, PayableRow, payableSearchTexts, payableTotals } from './payables';
 import { containerNumberHint } from '../purchasing/container-name';
 import type { MenuPoint } from '../../shared/context-menu-position';
+import { containerNumberHint as poHint } from '../purchasing/container-name';
 
 const BUCKETS: readonly { id: PayableBucket; label: string; phone: string }[] = [
   { id: 'now', label: 'Nu te betalen', phone: 'Nu te betalen' },
@@ -54,8 +55,7 @@ type SortKey = 'date' | 'title' | 'amount';
             <span class="wk-th" role="columnheader"><input class="wk-check" type="checkbox" aria-label="Alle kosten selecteren" [checked]="allChecked()" [indeterminate]="someChecked()" (change)="table.checkAll(costKeys())" /></span>
             <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('date')"><button class="wk-th__btn" type="button" (click)="sortBy('date')">Wanneer</button></span>
             <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('title')"><button class="wk-th__btn" type="button" (click)="sortBy('title')">Omschrijving</button></span>
-            <span class="wk-th" role="columnheader" data-hide="xs">Soort</span>
-            <span class="wk-th" role="columnheader">Categorie / ontvanger</span>
+            <span class="wk-th" role="columnheader">Ontvanger / categorie</span>
             <span class="wk-th" role="columnheader" data-hide="md"><app-icon name="clip" [size]="13" /></span>
             <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('amount')"><button class="wk-th__btn" type="button" (click)="sortBy('amount')">Bedrag<span data-hide="md">&nbsp;incl. btw</span></button></span>
             <span class="wk-th" role="columnheader"><span class="fin-sr">Actie</span></span>
@@ -72,17 +72,17 @@ type SortKey = 'date' | 'title' | 'amount';
                                 (focused)="table.focused(row.key)" (select)="table.click(row.key, $event)" (check)="table.check(row.key)" />
                 }
                 @case ('container') {
+                  <!-- A container term opens in the inspector (its foot: "Beheren bij de container ›"); the row stays in Te betalen. -->
                   <div class="wk-tr wk-tr--link" role="row" [attr.tabindex]="table.stop() === row.key ? 0 : -1" [attr.data-key]="row.key" [attr.aria-selected]="table.isSelected(row.key)"
-                       (focus)="table.focused(row.key)" (click)="table.click(row.key, $event)" (dblclick)="state.openContainer(row.orderId!)" appMenuTrigger (menuTrigger)="containerMenu(row, $event)">
+                       (focus)="table.focused(row.key)" (click)="table.click(row.key, $event)" (dblclick)="inspectContainer(row)" appMenuTrigger (menuTrigger)="containerMenu(row, $event)">
                     <span class="wk-td" role="gridcell"></span>
-                    <span class="wk-td" role="gridcell">{{ row.container!.whenLabel }}</span>
-                    <span class="wk-td" role="gridcell">{{ row.title }}@if (row.container!.archived) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }
-                      <span class="wk-td__sub">{{ containerSub(row) }}</span></span>
-                    <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill tone-blue">Container</span></span>
+                    <span class="wk-td fin-when" role="gridcell"><b>{{ whenDay(row) }}</b><small>{{ whenWord(row) }}</small></span>
+                    <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-blue" name="truck" [size]="16" /><b>{{ row.title }}@if (row.container!.archived) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }</b>
+                      <small>{{ whatSub(row) }}</small></span>
                     <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + payeeTone(row)"></span> {{ payee(row) }}</span>
                     <span class="wk-td" role="gridcell" data-hide="md"></span>
                     <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.amountEur | eur }}</b><span class="wk-td__sub">verwacht</span></span>
-                    <span class="wk-td wk-td--actions" role="gridcell"><button class="wk-link" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openContainer(row.orderId!)">Bij container ›</button></span>
+                    <span class="wk-td wk-td--actions fin-td-chev" role="gridcell"><app-icon name="chevron-right" [size]="16" /></span>
                   </div>
                 }
                 @case ('recurring') {
@@ -91,8 +91,7 @@ type SortKey = 'date' | 'title' | 'amount';
                        appMenuTrigger (menuTrigger)="state.recurringMenu(row.upcoming!.definition, $event)">
                     <span class="wk-td" role="gridcell"></span>
                     <span class="wk-td" role="gridcell">{{ day(row.date) }}</span>
-                    <span class="wk-td" role="gridcell">{{ row.title }}@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
-                    <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill tone-plum">Vaste kost</span></span>
+                    <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-plum" name="repeat" [size]="16" /><b>{{ row.title }}</b>@if (row.party) { <small>{{ row.party }}</small> }</span>
                     <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + tone(row.upcoming!.definition.category)"></span> {{ category(row.upcoming!.definition.category) }}
                       @if (row.autoPaid) { <span class="wk-pill wk-pill--outline" title="Domiciliëring: gaat vanzelf">domiciliëring · gaat vanzelf</span> }</span>
                     <span class="wk-td" role="gridcell" data-hide="md"></span>
@@ -117,7 +116,7 @@ type SortKey = 'date' | 'title' | 'amount';
       <div class="ios-headline">
         <div class="ios-headline__label">Nu te betalen</div>
         <div class="ios-headline__value">{{ totals().nowEur | eur }}</div>
-        <div class="ios-headline__sub">Binnenkort {{ totals().soonEur | eur }} · Later {{ totals().laterEur | eur }}@if (totals().containerLaterEur) { (verwacht)}</div>
+        <div class="ios-headline__sub">Binnenkort {{ totals().soonEur | eur }} · Later {{ totals().laterEur | eur }}@if (totals().containerLaterEur || totals().containerSoonEur) { (verwacht)}</div>
       </div>
       @for (group of groups(); track group.id) {
         <section class="ios-section">
@@ -127,12 +126,12 @@ type SortKey = 'date' | 'title' | 'amount';
               @switch (row.kind) {
                 @case ('cost') { <app-cost-row [cost]="row.cost!" layout="inset" columns="payable" /> }
                 @case ('container') {
-                  <button class="ios-cell ios-cell--tall" type="button" (click)="state.openContainer(row.orderId!)">
+                  <button class="ios-cell ios-cell--tall" type="button" (click)="inspectContainer(row)">
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
-                    <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                      <span class="ios-cell__sub">{{ containerSub(row) }} · verwacht</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ row.title }}</span>
+                      <span class="ios-cell__sub fin-wrapall">@if (row.bucket !== 'now' && row.date) { <b class="fin-due">{{ whenDay(row) }}</b> · }{{ phoneSub(row) }}</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.amountEur | eur }}</span>
-                      @if (row.bucket === 'now') { <span class="wk-pill tone-warn">Nu</span> } @else { <span class="ios-cell__meta">{{ row.container!.whenLabel }}</span> }</span>
+                      @if (row.bucket === 'now') { <span class="wk-pill tone-warn">Nu</span> } @else { <span class="ios-cell__meta">verwacht</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                 }
@@ -215,7 +214,7 @@ export class PayablesPanel implements FinanceSectionApi {
     const totals = this.totals();
     return [
       { label: 'Nu', value: formatEuro(totals.nowEur), tone: totals.nowEur > 0 ? 'strong' : undefined },
-      { label: 'Binnenkort', value: formatEuro(totals.soonEur) },
+      { label: totals.containerSoonEur ? 'Binnenkort · 30 dagen (verwacht)' : 'Binnenkort · 30 dagen', value: formatEuro(totals.soonEur) },
       { label: totals.containerLaterEur ? 'Later (verwacht)' : 'Later', value: formatEuro(totals.laterEur), tone: 'muted' },
       { label: 'Totaal', value: formatEuro(totals.totalEur) },
     ];
@@ -232,7 +231,7 @@ export class PayablesPanel implements FinanceSectionApi {
     const costs = this.selectedCosts().length ? this.selectedCosts() : focus?.cost ? [focus.cost] : [];
     switch (command) {
       case 'open':
-        if (focus?.kind === 'container') this.state.openContainer(focus.orderId!);
+        if (focus?.kind === 'container') this.inspectContainer(focus);
         else if (focus?.kind === 'recurring') this.state.openRecurring(focus.upcoming!.definition);
         else if (focus?.cost) this.state.inspectItem({ kind: 'cost', id: focus.cost.id! });
         return !!focus;
@@ -265,6 +264,35 @@ export class PayablesPanel implements FinanceSectionApi {
       pick: () => this.state.openContainer(row.orderId!) });
   }
 
+  /** A container term in the inspector (Te betalen stays behind it); "Bij de container openen" in its menu still leaves for the order. */
+  inspectContainer(row: PayableRow): void { if (row.orderId) this.state.inspectItem({ kind: 'container', id: row.orderId }); }
+  /** Wanneer: "± 22 okt" (no ± for a fixed day), "nu" for a reached term, "± vandaag" for a planned day already past. */
+  whenDay(row: PayableRow): string {
+    if (row.bucket === 'now' || !row.date) return row.bucket === 'now' ? 'nu' : '—';
+    const approx = row.dateCertainty && row.dateCertainty !== 'FIXED' ? '± ' : '';
+    return `${approx}${row.plannedDate || row.date === this.state.today() ? 'vandaag' : dayMonth(row.date)}`;
+  }
+  /** Under the day: when the term falls due ("bij vertrek"), and the planned day once it has passed. */
+  whenWord(row: PayableRow): string {
+    return [row.dueWord, row.plannedDate ? `gepland ${dayMonth(row.plannedDate)}` : ''].filter(Boolean).join(' · ');
+  }
+  /** Omschrijving's second line: "PO-2026-013 · 30% bij vertrek" (the payee for a stream without a term), " · Factuur X", " · via leverancier". */
+  whatSub(row: PayableRow): string {
+    const container = row.container;
+    if (!container) return '';
+    const hint = poHint(row.title, container.orderNumber);
+    return [hint, container.termLabel || this.payee(row), container.invoiceNumber ? 'Factuur ' + container.invoiceNumber : '', container.viaSupplier ? 'via leverancier' : '']
+      .filter(Boolean).join(' · ');
+  }
+  /** The phone sub after the day: the term (with its due word when the label lacks it) or the payee, the invoice, via leverancier, the PO number (N3). */
+  phoneSub(row: PayableRow): string {
+    const container = row.container;
+    if (!container) return '';
+    const term = container.termLabel && row.dueWord && !container.termLabel.toLowerCase().includes(row.dueWord) ? `${container.termLabel} · ${row.dueWord}`
+      : container.termLabel || [row.bucket === 'now' ? '' : row.dueWord, this.payee(row)].filter(Boolean).join(' · ');
+    return [term, container.invoiceNumber ? 'Factuur ' + container.invoiceNumber : '', container.viaSupplier ? 'via leverancier' : '',
+      poHint(row.title, container.orderNumber)].filter(Boolean).join(' · ');
+  }
   payee(row: PayableRow): string { return row.container ? paymentPayeeLabel(row.container.payee) : ''; }
   /** 'Leverancier · 70% bij vertrek · Factuur CI-2026-118'; the inspection paid via the supplier says so. */
   containerSub(row: PayableRow): string {
