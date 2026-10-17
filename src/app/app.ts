@@ -393,6 +393,16 @@ export class App {
    */
   readonly phoneTab = computed(() => phoneTabForUrl(this.url()));
 
+  /* The route progress line and the idle preloading (shell-loading.ts), from a lazy chunk. */
+  private readonly shellLoading = effect((onCleanup) => {
+    let uninstall: (() => void) | null = null;
+    let cancelled = false;
+    void import('./core/platform/shell-loading').then((m) => {
+      if (!cancelled) uninstall = m.installShellLoading(this.router, this.document, this.desktopViewport);
+    });
+    onCleanup(() => { cancelled = true; uninstall?.(); });
+  });
+
   logout(): void {
     this.auth.logout();
     this.router.navigate(['/login']);
