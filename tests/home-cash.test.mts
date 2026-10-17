@@ -124,4 +124,9 @@ test('Te doen shows once (B2): after its sources, when the Kas is past computing
     assert.equal(tasksReveal({ loading: false, cashState, capPassed: false }), true, cashState);
   }
   assert.equal(TASKS_REVEAL_CAP_MS, 1500);
+  /* The catalog count (the Ook nog "Websiteproducten aanvullen" row) holds the reveal too, inside the same cap. */
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: false, catalogLoading: true }), false);
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: false, catalogLoading: false }), true);
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: true, catalogLoading: true }), true);
+  assert.equal(tasksReveal({ loading: false, cashState: 'computing', capPassed: false, catalogLoading: false }), false);
 });

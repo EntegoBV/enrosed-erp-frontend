@@ -140,6 +140,8 @@ export class HomeData {
   private readonly inputsAnswered = signal(false);
   /** TASKS_REVEAL_CAP_MS after the first load's task sources answered: Te doen shows without the Kasprognose (B2). */
   private readonly revealCap = signal(false);
+  /** The first load's catalog count answered (the families, else the products fallback): Te doen's reveal waits for it (B2). */
+  private readonly catalogAnswered = signal(false);
   private readonly bellAnswered = signal(false);
   private busy = false;
   /** Home routes on screen (enterHome): the forecast and the advance schedules follow CashData only while one is. */
@@ -308,11 +310,13 @@ export class HomeData {
   readonly tasks = computed(() => homeTasks({ ...this.taskBase(), nowMs: this.now(), later: this.laterState() }));
 
   /**
-   * Te doen may show (critique B2): its sources answered and the Kas is past computing (or 1.5 s passed). Until then
+   * Te doen may show (critique B2): its sources answered, the Kas is past computing and the catalog count answered
+   * (or 1.5 s passed). Until then
    * every Te doen surface - the desk card and its pill, the brief, the phone section and its count, Open punten,
    * Alle - shows its skeleton, so the list appears once instead of growing and reordering per source.
    */
-  readonly tasksReady = computed(() => tasksReveal({ loading: this.loading(), cashState: this.cash().state, capPassed: this.revealCap() }));
+  readonly tasksReady = computed(() => tasksReveal({ loading: this.loading(), cashState: this.cash().state, capPassed: this.revealCap(),
+    catalogLoading: !this.catalogAnswered() }));
 
   /**
    * The status words: the failed coverage sources in their order (the same words as the Te doen note, from the
@@ -466,12 +470,14 @@ export class HomeData {
         track('klanten', () => this.salesApi.customers(), (value) => this.customers.set(value)),
         track('websiteproducten', () => families!, (value) => this.catalogAttention.set(value
           .filter((family) => family.active && family.publicationIssues.length > 0).length)),
-        /* The old fallback, once both answered: products not ready for publication, while the families could not load. */
-        products && families ? Promise.allSettled([products, families]).then(([productRows, familyRows]) => {
-          if (familyRows.status === 'rejected' && productRows.status === 'fulfilled') {
-            land(() => this.catalogAttention.set(productRows.value.filter((product) => product.active && (product.publicationIssues?.length ?? 0) > 0).length));
-          }
-        }) : Promise.resolve(),
+        /*
+         * The catalog count: the families (track above), else the old fallback once the products answered - products
+         * not ready for publication. On the first load Te doen's reveal waits for it (its Ook nog row, B2).
+         */
+        (families ? families.then(() => undefined, async () => {
+          const rows = products ? await products.catch(() => null) : null;
+          if (rows) land(() => this.catalogAttention.set(rows.filter((product) => product.active && (product.publicationIssues?.length ?? 0) > 0).length));
+        }) : Promise.resolve()).finally(() => { if (first) this.catalogAnswered.set(true); }),
         want('planner') ? this.planner.reload().then(() => { if (!this.planner.error()) stamp('planner'); }, () => undefined)
           .finally(() => answered('planner')) : Promise.resolve(),
         want('bell') ? this.work.refresh().then(() => { this.bellAnswered.set(true); if (!this.work.error()) stamp('bell'); }, () => undefined)
@@ -484,6 +490,7 @@ export class HomeData {
     } finally {
       if (first) {
         this.inputsAnswered.set(true);
+        this.catalogAnswered.set(true);
         this.endFirstLoad();
       }
       this.loadedAt.set(Date.now());

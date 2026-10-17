@@ -962,8 +962,10 @@ cijfers'.
     all, `settled` too. A later load still swaps everything in at once.
     Every Te doen surface (desk card and pill, brief, phone section and
     count, Open punten, Alle) waits for `HomeData.tasksReady` - the task
-    sources and a Kas past computing, or 1.5 s (`tasksReveal`) - so the list
-    shows once instead of growing per source.
+    sources, a Kas past computing and the catalog count (families, else the
+    products fallback: the Ook nog "Websiteproducten aanvullen" row), or
+    1.5 s (`tasksReveal`) - so the list shows once instead of growing per
+    source.
   - *Schedules gate.* `forecastSources` (bank, Vooruitblik) is there once the
     forecast's own calls answered; the forecast itself is built only when
     `forecastGate` opens: this CashData round's advance schedules answered

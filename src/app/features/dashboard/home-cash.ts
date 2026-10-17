@@ -95,11 +95,12 @@ export const TASKS_REVEAL_CAP_MS = 1500;
 
 /**
  * Te doen shows once (critique B2): after its own sources answered on the first load, and once the Kas is no
- * longer loading or computing (its krap and VAT rows come from the forecast), or TASKS_REVEAL_CAP_MS later.
+ * longer loading or computing (its krap and VAT rows come from the forecast) and the catalog count answered (the
+ * Ook nog "Websiteproducten aanvullen" row: the families, else the products fallback), or TASKS_REVEAL_CAP_MS later.
  */
-export function tasksReveal(input: { loading: boolean; cashState: CashHeadlineState; capPassed: boolean }): boolean {
+export function tasksReveal(input: { loading: boolean; cashState: CashHeadlineState; capPassed: boolean; catalogLoading?: boolean }): boolean {
   if (input.loading) return false;
-  return input.capPassed || (input.cashState !== 'loading' && input.cashState !== 'computing');
+  return input.capPassed || (input.cashState !== 'loading' && input.cashState !== 'computing' && !input.catalogLoading);
 }
 
 /** The desk Kas card's two Vooruitblik figures; null where a source behind the figure failed. */
