@@ -1111,9 +1111,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <div class="ios-group">
                 <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-kind">
                   <span class="ios-cell__body"><span class="ios-cell__title">Soort</span></span>
-                  <select class="mpo-input mpo-input--wide" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
+                  <span class="mpo-pick mpo-pick--wide"><select class="mpo-select" id="doc-kind" [ngModel]="doc.kind" (ngModelChange)="addingDocument.set({ ...doc, kind: $event })">
                     @for (kind of documentKindOptions(); track kind.value) { <option [value]="kind.value">{{ kind.label }}</option> }
-                  </select>
+                  </select><app-icon name="chevron-down" [size]="14" /></span>
                 </label>
                 <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-label">
                   <span class="ios-cell__body"><span class="ios-cell__title">Omschrijving</span></span>
@@ -1123,12 +1123,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 @if (doc.kind === 'PAYMENT_PROOF' && (payments() ?? []).length) {
                   <label class="ios-cell mpo-field-row mpo-field-row--stack" for="doc-payment">
                     <span class="ios-cell__body"><span class="ios-cell__title">Hoort bij betaling</span></span>
-                    <select class="mpo-input mpo-input--wide" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
+                    <span class="mpo-pick mpo-pick--wide"><select class="mpo-select" id="doc-payment" [ngModel]="doc.paymentId ?? ''" (ngModelChange)="addingDocument.set({ ...doc, paymentId: $event ? +$event : null })">
                       <option value="">— geen —</option>
                       @for (payment of payments() ?? []; track payment.id) {
                         <option [value]="payment.id">{{ paymentOptionLabel(payment) }}</option>
                       }
-                    </select>
+                    </select><app-icon name="chevron-down" [size]="14" /></span>
                   </label>
                 }
               </div>

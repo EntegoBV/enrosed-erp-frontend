@@ -18,3 +18,11 @@ test('the phone sheets are iOS sheets; the receive rows put "besteld n" first; t
   assert.match(view, /<div class="mpo-fillrow"><small>Vulling<\/small>/);
   assert.match(view, /\{\{ ladingWord\(\) \}\} · \{\{ data\.costing\.totals\.cartons \| num \}\} dozen/);
 });
+
+test('the document sheet\'s selects are pop-ups with a chevron, like Inklaring, not text fields', async () => {
+  const editor = await read('purchase-editor.ts');
+  for (const id of ['doc-kind', 'doc-payment']) {
+    assert.match(editor, new RegExp(`<span class="mpo-pick mpo-pick--wide"><select class="mpo-select" id="${id}"[\\s\\S]*?</select><app-icon name="chevron-down" \\[size\\]="14" /></span>`), id);
+  }
+  assert.doesNotMatch(editor, /<select class="mpo-input/, 'mpo-input draws no chevron (appearance none, no background)');
+});
