@@ -809,6 +809,8 @@ const normalizeCategoryCode = (value: string): string => value
               Ook vertalingen staan in dezelfde export.
             }
           </p>
+          <!-- The PDF catalogue's own words per language live on their own screen (2026-10-17). -->
+          <p class="workbook-intro"><a routerLink="/catalog/texts" [queryParams]="{ returnTo: '/settings?sectie=catalog-data' }">Catalogusteksten per taal ›</a></p>
 
           <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
             <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
