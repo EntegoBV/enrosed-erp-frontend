@@ -13,6 +13,9 @@ import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, DateTimeNlPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { salesPhotoUrl } from '../../shared/sales-photo';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
+import { productSalesUnit, unitCount } from './product-sales-unit';
+import { stockCellEdit, undoAllowed } from './stock-booking';
 
 interface StockRow {
   product: Product;
@@ -40,9 +43,9 @@ interface StockGroup {
 @Component({
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
+  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet, LoadError],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Voorraad" [subtitle]="subtitle()">
+    <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : subtitle()">
       @if (editing()) {
         <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
       } @else {
@@ -232,7 +235,8 @@ interface StockGroup {
           </div>
         </section>
       } @empty {
-        @if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
+        @if (loadError(); as error) { <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" /> }
+        @else if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
         @else { <div class="empty"><div class="empty__title">Geen producten gevonden</div></div> }
       }
     </div>
@@ -271,7 +275,7 @@ interface StockGroup {
               <div class="stock-row__figure stock-row__figure--location">
                 <span>{{ location.name }}</span>
                 @if (editing()) {
-                  <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
+                  <input class="stock-row__qty stock-row__qty--live num" type="text" autocomplete="off"
                          inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
                          [attr.aria-label]="row.product.name + ' op ' + location.name"
                          [value]="row.byLocation.get(location.id!) ?? 0"
@@ -291,7 +295,7 @@ interface StockGroup {
             <div class="stock-row__figure">
               <span>{{ locationName(view()!) }}</span>
               @if (editing()) {
-                <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
+                <input class="stock-row__qty stock-row__qty--live num" type="text" autocomplete="off"
                        inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
                        [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
                        [value]="row.byLocation.get(view()!) ?? 0"
@@ -350,7 +354,7 @@ interface StockGroup {
                      [ngModel]="out.note" (ngModelChange)="takeout.set({ ...out, note: $event })" />
             </div>
           </div>
-          <p class="hint mt-8">Op {{ locationName(out.locationId) }} liggen {{ (out.row.byLocation.get(out.locationId) ?? 0) | num }} stuks.
+          <p class="hint mt-8">Op {{ locationName(out.locationId) }} liggen {{ (out.row.byLocation.get(out.locationId) ?? 0) | num }} {{ unitOf(out.row.product).plural }}.
             {{ out.quantity > 0 ? 'Er gaan er ' + out.quantity + ' uit de voorraad, geteld als ' + (out.kind === 'DAMAGED' ? 'beschadigd' : 'demo') + '.' : '' }}</p>
         </div>
         <div foot style="display:contents">
@@ -369,12 +373,12 @@ interface StockGroup {
       <app-sheet [title]="book.row.product.name" (closed)="closeBook()">
         <div body>
           <p class="book-sub">{{ book.row.product.sku }}@if (book.row.product.colour) { · {{ book.row.product.colour }}}
-            <b>{{ book.row.total | num }} stuks</b></p>
+            <b>{{ book.row.total | num }} {{ book.row.total === 1 ? unitOf(book.row.product).singular : unitOf(book.row.product).plural }}</b></p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
               <label class="history-levels__tile">
                 <small>{{ location.name }}</small>
-                <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                <input class="history-levels__qty num" type="text" autocomplete="off" inputmode="numeric"
                        [attr.aria-label]="book.row.product.name + ' op ' + location.name"
                        [value]="book.row.byLocation.get(location.id!) ?? 0"
                        (keydown.enter)="$any($event.target).blur()"
@@ -430,7 +434,7 @@ interface StockGroup {
                          (ngModelChange)="patchTransfer({ note: $event })" /></div>
               </div>
               <div class="transfer-box__actions">
-                <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (book.row.byLocation.get(move.fromId) ?? 0) | num }} stuks.</span>
+                <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (book.row.byLocation.get(move.fromId) ?? 0) | num }} {{ unitOf(book.row.product).plural }}.</span>
                 <button class="btn btn--sm" type="button" (click)="transfer.set(null)">Annuleren</button>
                 <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="confirmTransfer()">
                   {{ saving() ? 'Bezig…' : 'Verplaatsen' }}
@@ -462,7 +466,7 @@ interface StockGroup {
                 </button>
               }
             } @else { <p class="hint">Nog geen bewegingen geboekt.</p> }
-          } @else { <p class="hint">Geschiedenis laden…</p> }
+          } @else { <app-skeleton kind="lines" [rows]="2" /> }
         </div>
         <div foot style="display:contents">
           <span class="spacer"></span>
@@ -703,8 +707,12 @@ export class StockPage {
   private readonly ui = inject(Ui);
   /** Thumbnails follow the Hoofdfoto rule, the same photo quotes and invoices print. */
   readonly salesPhotoUrl = salesPhotoUrl;
+  /** "bowl" / "bowls": every figure here is in the product's own unit, never "stuks" for all. */
+  readonly unitOf = productSalesUnit;
 
   readonly loading = signal(true);
+  /** The page could not load: it says so, with a retry, instead of "Geen producten gevonden". */
+  readonly loadError = signal<string | null>(null);
   readonly saving = signal(false);
   readonly products = signal<Product[]>([]);
   readonly locations = signal<StockLocation[]>([]);
@@ -897,7 +905,13 @@ export class StockPage {
     void this.load();
   }
 
+  reload(): void {
+    if (!this.loading()) void this.load();
+  }
+
   private async load(): Promise<void> {
+    this.loading.set(true);
+    this.loadError.set(null);
     try {
       const [products, locations, levels, categories, expected, families] = await Promise.all([
         this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
@@ -912,7 +926,7 @@ export class StockPage {
       this.categories.set(categories);
       this.expected.set(new Map(expected.map((item) => [item.productId, item])));
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Voorraad laden mislukt'), 'err');
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
     } finally {
       this.loading.set(false);
     }
@@ -937,7 +951,8 @@ export class StockPage {
     const out = this.takeout();
     if (!out || !(out.quantity > 0)) return;
     const at = out.row.byLocation.get(out.locationId) ?? 0;
-    if (out.quantity > at) { this.ui.toast(`Op ${this.locationName(out.locationId)} liggen maar ${at} stuks`, 'err'); return; }
+    const unit = productSalesUnit(out.row.product);
+    if (out.quantity > at) { this.ui.toast(`Op ${this.locationName(out.locationId)} liggen maar ${unitCount(unit, at)}`, 'err'); return; }
     this.saving.set(true);
     try {
       await this.catalog.takeOutStock(out.row.product.id!, {
@@ -945,8 +960,8 @@ export class StockPage {
       this.levels.set(await this.catalog.stockLevels());
       this.takeout.set(null);
       this.ui.toast(out.kind === 'DAMAGED'
-        ? `${out.quantity} stuks als beschadigd afgeboekt`
-        : `${out.quantity} stuks als demo afgeboekt`, 'ok');
+        ? `${unitCount(unit, out.quantity)} als beschadigd afgeboekt`
+        : `${unitCount(unit, out.quantity)} als demo afgeboekt`, 'ok');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
     } finally {
@@ -984,7 +999,7 @@ export class StockPage {
       this.levels.set(await this.catalog.stockLevels());
       this.transfer.set(null);
       void this.loadMoves(row.product.id!);
-      this.ui.toast(`${move.quantity} × ${row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
+      this.ui.toast(`${unitCount(productSalesUnit(row.product), move.quantity)} ${row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
     } finally {
@@ -994,23 +1009,55 @@ export class StockPage {
 
   /* ---- typing a count straight into the table ---- */
 
-  /** A figure typed in a cell is booked at once as a manual correction. */
+  /**
+   * A figure typed in a cell is booked at once as a manual correction, with
+   * an undo on the toast. Empty, letters, a minus or a decimal is no count:
+   * the old figure comes back and nothing is booked.
+   */
   async setQuantity(row: StockRow, locationId: number, field: HTMLInputElement): Promise<void> {
     const before = row.byLocation.get(locationId) ?? 0;
-    const quantity = Math.max(0, Math.round(Number(field.value) || 0));
-    if (quantity === before) { field.value = String(before); return; }
+    const edit = stockCellEdit(field.value, before);
+    if (edit.action !== 'book') {
+      field.value = String(before);
+      if (edit.action === 'revert') this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
+      return;
+    }
+    const productId = row.product.id!;
+    const quantity = edit.quantity;
     try {
-      await this.catalog.setStock(row.product.id!, quantity, locationId, 'Voorraadoverzicht');
-      this.levels.update((levels) => {
-        const rest = levels.filter((level) => !(level.productId === row.product.id && level.locationId === locationId));
-        return [...rest, { productId: row.product.id!, locationId, quantity }];
-      });
-      if (this.bookProductId() === row.product.id) void this.loadMoves(row.product.id!);
-      this.ui.toast(`${row.product.name}: ${quantity.toLocaleString('nl-BE')} op ${this.locationName(locationId)}`, 'ok');
+      await this.catalog.setStock(productId, quantity, locationId, 'Voorraadoverzicht');
+      this.storeLevel(productId, locationId, quantity);
+      const unit = productSalesUnit(row.product);
+      this.ui.toast(`${row.product.name}: ${unitCount(unit, quantity)} op ${this.locationName(locationId)}`, 'ok',
+        { label: 'Ongedaan maken', run: () => void this.undoQuantity(productId, locationId, before, quantity) });
     } catch (failure: unknown) {
       field.value = String(before);
       this.ui.toast(messageOf(failure, 'Voorraad zetten mislukt'), 'err');
     }
+  }
+
+  /** Puts the old figure back, only while the booked figure still stands. */
+  private async undoQuantity(productId: number, locationId: number, before: number, booked: number): Promise<void> {
+    const current = this.levels().find((level) => level.productId === productId && level.locationId === locationId)?.quantity ?? 0;
+    if (!undoAllowed(current, booked)) {
+      this.ui.toast('Niet teruggezet: het aantal is intussen gewijzigd', 'err');
+      return;
+    }
+    try {
+      await this.catalog.setStock(productId, before, locationId, 'Ongedaan gemaakt');
+      this.storeLevel(productId, locationId, before);
+      this.ui.toast(`Teruggezet naar ${before.toLocaleString('nl-BE')}`, 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err');
+    }
+  }
+
+  private storeLevel(productId: number, locationId: number, quantity: number): void {
+    this.levels.update((levels) => {
+      const rest = levels.filter((level) => !(level.productId === productId && level.locationId === locationId));
+      return [...rest, { productId, locationId, quantity }];
+    });
+    if (this.bookProductId() === productId) void this.loadMoves(productId);
   }
 
 }

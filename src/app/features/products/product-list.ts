@@ -17,6 +17,8 @@ import { describePublicationIssues } from './publication-issues';
 import { salesPhotoUrl } from '../../shared/sales-photo';
 import { productSalesUnit } from './product-sales-unit';
 import { PhotoExportSheet } from './photo-export-sheet';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
+import { SORT_OPTIONS, type ListSort } from './product-list-query';
 
 /**
  * One row in the list: a product on its own, or a series (family) that
@@ -51,8 +53,7 @@ function isRed(colour: string | null | undefined): boolean {
   return value === 'rood' || value === 'red' || value === 'rouge' || value === 'rot';
 }
 
-type SortKey = 'STOCK_SMART' | 'NAME_ASC' | 'NAME_DESC' | 'SKU' | 'STOCK_DESC' | 'STOCK_ASC'
-  | 'PRICE_ASC' | 'PRICE_DESC' | 'COST_ASC' | 'COST_DESC';
+type SortKey = ListSort;
 
 interface ProductSwipe {
   pointerId: number;
@@ -68,9 +69,9 @@ interface ProductSwipe {
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Skeleton, RouterLink, FormsModule, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
-    PhotoExportSheet],
+    PhotoExportSheet, LoadError],
   template: `
-    <app-page-header title="Catalogus" [subtitle]="products().length + ' producten'">
+    <app-page-header title="Producten" [subtitle]="loading() || loadError() ? '' : products().length + ' producten'">
       <a class="btn btn--sm btn--icon-mobile" routerLink="/catalog-export" title="Catalogus PDF" aria-label="Catalogus PDF">
         <app-icon name="pdf" [size]="18" /><span class="hide-mobile">Catalogus PDF</span>
       </a>
@@ -174,9 +175,8 @@ interface ProductSwipe {
         @if (familyLoadError()) {
           <div class="family-load-warning" role="alert">
             <span>Publicatiestatus en varianten zijn niet geladen.</span>
-            <button type="button" [disabled]="familyLoading()" (click)="retryFamilies()">
-              {{ familyLoading() ? 'Laden…' : 'Opnieuw proberen' }}
-            </button>
+            <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
+                    (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
           </div>
         }
       </section>
@@ -202,7 +202,9 @@ interface ProductSwipe {
       } @empty {
         <div class="card">
           <div class="list">
-            @if (loading()) {
+            @if (loadError(); as error) {
+              <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+            } @else if (loading()) {
               <app-skeleton kind="list" [rows]="6" />
             } @else {
               <div class="empty">
@@ -541,10 +543,6 @@ interface ProductSwipe {
       border: 1px solid #eddcb9; border-radius: 10px; background: var(--warn-soft);
       color: var(--ink-2); font-size: 11px;
     }
-    .family-load-warning button {
-      padding: 3px 0; border: 0; background: transparent; color: var(--rose-dark);
-      font-size: 11px; font-weight: 750; cursor: pointer;
-    }
     @media (min-width: 680px) {
       .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
     }
@@ -692,22 +690,13 @@ export class ProductList {
   readonly activeFilterCount = computed(() =>
     (this.categoryFilter() !== null ? 1 : 0)
     + (!this.familyLoadError() && this.statusFilter() !== 'ALL' ? 1 : 0)
-    + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
-  readonly sortOptions = computed<{ key: SortKey; label: string }[]>(() => [
-    { key: 'STOCK_SMART', label: 'Voorraad (standaard)' },
-    { key: 'NAME_ASC', label: 'Naam A–Z' },
-    { key: 'NAME_DESC', label: 'Naam Z–A' },
-    { key: 'SKU', label: 'SKU' },
-    { key: 'STOCK_DESC', label: 'Voorraad hoog → laag' },
-    { key: 'STOCK_ASC', label: 'Voorraad laag → hoog' },
-    { key: 'PRICE_ASC', label: 'Catalogusprijs laag → hoog' },
-    { key: 'PRICE_DESC', label: 'Catalogusprijs hoog → laag' },
-    { key: 'COST_ASC', label: 'Kostprijs laag → hoog' },
-    { key: 'COST_DESC', label: 'Kostprijs hoog → laag' },
-  ]);
+    + (this.sortKey() !== 'STOCK_SMART' ? 1 : 0));
+  readonly sortOptions = computed(() => SORT_OPTIONS);
   readonly sortLabel = computed(() =>
-    this.sortOptions().find((option) => option.key === this.sortKey())?.label ?? 'Naam A–Z');
+    this.sortOptions().find((option) => option.key === this.sortKey())?.label ?? SORT_OPTIONS[0].label);
   readonly loading = signal(true);
+  /** The products or categories did not load: the list says so instead of a skeleton forever. */
+  readonly loadError = signal<string | null>(null);
   readonly deleting = signal<number | null>(null);
   readonly swiped = signal<number | null>(null);
   readonly draggingProductId = signal<number | null>(null);
@@ -734,16 +723,30 @@ export class ProductList {
     void this.load();
   }
 
+  reload(): void {
+    if (!this.loading()) void this.load();
+  }
+
   private async load(): Promise<void> {
     /* The rows paint as soon as the products are set, and the families name
        and group them; so the products wait for the families and the list
        shows once, with the right names. A failed family request still lets
        the list through, with the retry beside it. */
-    const [products, categories] = await Promise.all([
-      this.catalog.products(),
-      this.catalog.categories(),
-      this.loadFamilies(),
-    ]);
+    this.loading.set(true);
+    this.loadError.set(null);
+    let products: Product[];
+    let categories: Category[];
+    try {
+      [products, categories] = await Promise.all([
+        this.catalog.products(),
+        this.catalog.categories(),
+        this.loadFamilies(),
+      ]);
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+      this.loading.set(false);
+      return;
+    }
     this.products.set(products);
     this.categories.set(categories);
     /* Stock per location arrives beside the products; until then the
@@ -877,8 +880,8 @@ export class ProductList {
         || text((p) => p.name)(a, b);
       case 'NAME_DESC': return text((p) => p.name, true);
       case 'SKU': return text((p) => p.sku);
-      case 'STOCK_DESC': return num((p) => p.stockQuantity ?? 0, true);
-      case 'STOCK_ASC': return num((p) => p.stockQuantity ?? 0);
+      case 'STOCK_DESC': return num((p) => this.stockOf(p), true);
+      case 'STOCK_ASC': return num((p) => this.stockOf(p));
       case 'PRICE_ASC': return num((p) => this.salesPrice(p));
       case 'PRICE_DESC': return num((p) => this.salesPrice(p), true);
       case 'COST_ASC': return num((p) => this.purchasePrice(p));
@@ -1041,7 +1044,7 @@ export class ProductList {
     this.query.set('');
     this.categoryFilter.set(null);
     this.statusFilter.set('ALL');
-    this.sortKey.set('NAME_ASC');
+    this.sortKey.set('STOCK_SMART');
   }
 
   startSwipe(event: PointerEvent, product: Product): void {

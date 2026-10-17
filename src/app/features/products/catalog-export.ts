@@ -98,8 +98,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   ],
   template: `
     <app-page-header
-      title="Catalogusstudio"
-      subtitle="Van uw assortiment naar een professionele PDF"
+      title="Catalogus PDF"
+      subtitle="Van je producten naar een PDF voor je klanten"
       [showBack]="true"
       [showBell]="false"
     />
@@ -171,14 +171,14 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               </div>
             }
           </div>
-          <p class="preview-caption">Opmaakimpressie · de PDF gebruikt uw gekozen teksten en foto’s.</p>
+          <p class="preview-caption">Opmaakimpressie · de PDF gebruikt je gekozen teksten en foto’s.</p>
           <div class="studio-totals" aria-label="Inhoud van de catalogus">
             <span><b>{{ selectedFamilyCount() }}</b><small>productgroepen</small></span>
             <span><b>{{ selected().size }}</b><small>varianten</small></span>
             <span><b>{{ selectedCategoryCount() }}</b><small>categorieën</small></span>
           </div>
           @if (layout() === 'BROCHURE' && desktop.active() && previewProducts().length && includePhotos()) {
-            <div class="preview-range" aria-label="Een blik op uw selectie">
+            <div class="preview-range" aria-label="Een blik op je selectie">
               @for (family of previewProducts(); track family.key) {
                 @if (family.photo; as photo) {
                   <div [attr.title]="family.name"><img [appAuthSrc]="photo.url" [alt]="family.name" /></div>
@@ -186,20 +186,20 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               }
             </div>
           }
-          <p class="studio-note">{{ draftPersistence() === 'DEVICE' ? 'Uw selectie en instellingen blijven bewaard op dit apparaat.' : draftPersistence() === 'SESSION' ? 'Uw selectie en instellingen blijven bewaard in dit tabblad.' : 'Uw selectie en instellingen blijven actief zolang dit scherm open is.' }} Gebruik ‘Volgorde opslaan’ om uw volgorde voor volgende exports te bewaren.</p>
+          <p class="studio-note">{{ draftPersistence() === 'DEVICE' ? 'Je selectie en instellingen blijven bewaard op dit apparaat.' : draftPersistence() === 'SESSION' ? 'Je selectie en instellingen blijven bewaard in dit tabblad.' : 'Je selectie en instellingen blijven actief zolang dit scherm open is.' }} Gebruik ‘Volgorde opslaan’ om je volgorde voor volgende exports te bewaren.</p>
         </aside>
 
         <div class="catalog-settings">
           <section class="studio-section" aria-labelledby="catalog-mode-title">
             <div class="studio-section__head"><span class="studio-step">01</span><div>
-              <h2 id="catalog-mode-title">Een document dat verkoopt.</h2>
-              <p>Kies hoe u uw collectie presenteert.</p>
+              <h2 id="catalog-mode-title">Soort catalogus</h2>
+              <p>Kies hoe je je collectie toont.</p>
             </div></div>
             <div class="mode-choice" role="group" aria-label="Soort catalogus">
               <button type="button" [class.active]="layout() === 'BROCHURE'"
                       [attr.aria-pressed]="layout() === 'BROCHURE'" (click)="layout.set('BROCHURE')">
                 <span class="mode-choice__paper" aria-hidden="true"><i></i></span>
-                <span class="mode-choice__copy"><b>Handelscatalogus</b><small>Fotografie, collectie en productdetails</small><em>Voor de beurs &amp; uw klanten</em></span>
+                <span class="mode-choice__copy"><b>Handelscatalogus</b><small>Fotografie, collectie en productdetails</small><em>Voor de beurs en je klanten</em></span>
                 <span class="mode-choice__check" aria-hidden="true">{{ layout() === 'BROCHURE' ? '✓' : '' }}</span>
               </button>
               <button type="button" [class.active]="layout() === 'SIMPLE'"
@@ -213,7 +213,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
 
           <section class="studio-section" aria-labelledby="catalog-content-title">
             <div class="studio-section__head"><span class="studio-step">02</span><div>
-              <h2 id="catalog-content-title">Op maat van uw lezer.</h2>
+              <h2 id="catalog-content-title">Wat staat erin</h2>
               <p>Eén taal, consistent door de hele catalogus.</p>
             </div></div>
             <label class="field studio-language">
@@ -222,9 +222,11 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                 @for (option of languages; track option.code) { <option [value]="option.code">{{ option.label }}</option> }
               </select>
             </label>
+            <a class="linklike studio-texts-link" routerLink="/catalog/texts"
+               [queryParams]="{ language: language(), returnTo: '/catalog-export' }">Catalogusteksten per taal ›</a>
             <div class="option-grid">
               <label class="option-toggle">
-                <span><b id="catalog-prices-label">Prijzen tonen</b><small id="catalog-prices-help">{{ includePrices() ? 'Per stuk, excl. btw en levering' : 'Zonder prijzen in de PDF' }}</small></span>
+                <span><b id="catalog-prices-label">Prijzen tonen</b><small id="catalog-prices-help">{{ includePrices() ? 'Catalogusprijs per verkoopeenheid (bowl, display…), excl. btw en levering' : 'Zonder prijzen in de PDF' }}</small></span>
                 <span class="option-toggle__control">
                   <span class="option-toggle__value" aria-hidden="true">{{ includePrices() ? 'Ja' : 'Nee' }}</span>
                   <input class="studio-switch" type="checkbox" role="switch" aria-labelledby="catalog-prices-label"
@@ -232,7 +234,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                 </span>
               </label>
               <label class="option-toggle">
-                <span><b>Productfoto’s</b><small>Uw foto voor de catalogus krijgt voorrang</small></span>
+                <span><b>Productfoto’s</b><small>Je foto voor de catalogus krijgt voorrang</small></span>
                 <input class="studio-switch" type="checkbox" [ngModel]="includePhotos()" (ngModelChange)="includePhotos.set($event)" />
               </label>
             </div>
@@ -617,7 +619,7 @@ export class CatalogExport {
     if (this.importingPhotos()) return 'Catalogusfoto’s worden gecontroleerd of toegevoegd.';
     if (this.savingPhotos()) return 'Fotokeuzes worden opgeslagen.';
     if (this.downloading()) return 'PDF wordt gemaakt. Dit kan enkele minuten duren.';
-    if (this.contactPhonesPending()) return 'Sla de gewijzigde telefoonnummers op voor u de catalogus downloadt.';
+    if (this.contactPhonesPending()) return 'Sla de gewijzigde telefoonnummers op voor je de catalogus downloadt.';
     return this.renderError() ?? '';
   });
   readonly renderTranslationIssues = computed(() => catalogTranslationLinks(
@@ -658,7 +660,7 @@ export class CatalogExport {
   readonly orderSaveStatus = computed(() => {
     if (this.loadingOrder()) return 'Opgeslagen volgorde laden…';
     if (this.savingOrder()) return 'Volgorde opslaan…';
-    if (this.orderConflict()) return 'De opgeslagen volgorde is intussen gewijzigd. Laad die opnieuw voordat u verder opslaat.';
+    if (this.orderConflict()) return 'De opgeslagen volgorde is intussen gewijzigd. Laad die opnieuw voordat je verder opslaat.';
     if (!this.savedOrder()) return 'De opgeslagen volgorde kon nog niet worden geladen.';
     if (this.orderDirty()) return 'Volgorde gewijzigd · nog niet opgeslagen voor volgende exports.';
     if (this.savedOrder()!.revision > 0) return 'Volgorde opgeslagen voor volgende exports, ook op andere apparaten.';
@@ -756,7 +758,7 @@ export class CatalogExport {
           : this.catalog.catalogOrder()
           .then(order => ({ order, error: null }))
           .catch(failure => ({ order: null, error: messageOf(failure,
-            'De opgeslagen volgorde kon niet worden geladen. Probeer het opnieuw voordat u de volgorde opslaat.') })),
+            'De opgeslagen volgorde kon niet worden geladen. Probeer het opnieuw voordat je de volgorde opslaat.') })),
       ]);
       if (this.destroyed) return;
       /* Internal assessment products stay in product management but never appear in a
@@ -882,7 +884,7 @@ export class CatalogExport {
     } catch (failure) {
       if (this.destroyed) return;
       this.orderConflict.set((failure as { status?: number })?.status === 409);
-      const message = messageOf(failure, 'De volgorde is niet opgeslagen. Uw aanpassingen staan er nog; probeer opnieuw.');
+      const message = messageOf(failure, 'De volgorde is niet opgeslagen. Je aanpassingen staan er nog; probeer opnieuw.');
       this.orderError.set(message);
       this.ui.toast(message, 'err');
     } finally {

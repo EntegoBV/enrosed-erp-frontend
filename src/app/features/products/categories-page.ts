@@ -31,7 +31,7 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
   imports: [RouterLink, FormsModule, AuthImage, PageHeader, Skeleton, Sheet, FilePicker],
   template: `
     <app-page-header title="Categorieën"
-                     [subtitle]="loading() ? 'Laden…' : categories().length + ' categorieën · foto’s voor website en catalogus'"
+                     [subtitle]="loading() ? '' : categories().length + ' categorieën · foto’s voor website en catalogus'"
                      [showBack]="false" [showBell]="false">
       <a class="btn btn--sm hide-mobile" routerLink="/website/categories">Teksten &amp; talen</a>
     </app-page-header>

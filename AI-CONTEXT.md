@@ -1607,7 +1607,7 @@ and on copies. Without the blocks (older backend) every screen is as before.
     `replaceUrl`, so a reload or the back button never reopens it.
     Ignored (parameter still removed) without a saved series or when the
     card has no "Wijzig" (inactive or demo colour). Two screens link
-    here: the product page and the Catalogusstudio.
+    here: the product page and the Catalogus PDF.
   - Product page (`product-view.ts`, `product-desk.ts`): button "Foto's
     beheren", slide badges "Website" / "Catalogus" / "Bestelpagina" read
     from the places (`tileUses`), and for a server with `places` the
@@ -1616,7 +1616,7 @@ and on copies. Without the blocks (older backend) every screen is as before.
     "Documenten & media" (`product-media-card.ts`) is for documents: a
     file added there never becomes a product photo, the card says so
     and points to Foto's.
-  - Catalogusstudio: every colour row has "Catalogusfoto wijzigen"
+  - Catalogus PDF: every colour row has "Catalogusfoto wijzigen"
     (`cataloguePhotoLink` in `catalog-studio.ts`, also in the row menu).
     The open cards and the row left from are kept in `sessionStorage`
     (`erp.catalog-studio.open-cards`, parsed defensively), so the back

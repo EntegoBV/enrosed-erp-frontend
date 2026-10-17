@@ -36,6 +36,9 @@ import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
 import { parseSupplierNote } from './supplier-note';
+import { containerName } from '../purchasing/container-name';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
+import { containerOptionLabel, parseCount } from './stock-booking';
 
 /**
  * Read-first product master. The page deliberately separates the customer
@@ -47,6 +50,8 @@ type TakeoutKind = 'DAMAGED' | 'DEMO' | 'SHORTAGE';
 export interface ReceivedContainer {
   id: number;
   number: string;
+  /** The container's one name (containerName(): Herkenbare naam, else the number). */
+  name: string;
   receivedOn: string | null;
 }
 
@@ -55,7 +60,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
   return orders
     .filter((row) => row.order.status === 'ONTVANGEN'
       && row.order.lines.some((line) => line.productId === productId))
-    .map((row) => ({ id: row.order.id, number: row.order.number, receivedOn: row.order.receivedOn ?? null }))
+    .map((row) => ({ id: row.order.id, number: row.order.number, name: containerName(row.order), receivedOn: row.order.receivedOn ?? null }))
     .sort((left, right) => (right.receivedOn ?? '').localeCompare(left.receivedOn ?? '') || right.id - left.id)
     .slice(0, 12);
 }
@@ -64,7 +69,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
-    ProductPlacesLine, PageHeader, Icon, Sheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    ProductPlacesLine, PageHeader, Icon, Sheet, LoadError, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -161,7 +166,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             @if (placeLine(); as line) { <app-product-places-line class="pd-places" [line]="line" /> }
 
             @if (familyLoading()) {
-              <div class="pd-variants pd-variant-state" role="status">Varianten laden…</div>
+              <div class="pd-variants pd-variant-state" role="status" aria-label="Varianten laden"><app-skeleton kind="lines" [rows]="1" /></div>
             } @else if (familyLoadError()) {
               <div class="pd-variants pd-variant-state" role="alert"><span>Varianten niet geladen.</span><button class="btn btn--sm" type="button" (click)="retryFamily()">Opnieuw proberen</button></div>
             } @else if (variantMembers().length > 1) {
@@ -228,7 +233,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                   <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
                 }
               } @else {
-                <p class="hint">Prijsopbouw laden…</p>
+                <app-skeleton kind="lines" [rows]="3" />
               }
             </div>
           </ng-template>
@@ -382,7 +387,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               }
 
               @if (agreementLoading()) {
-                <p class="agreement-state" role="status">Leveranciersafspraak laden…</p>
+                <div class="agreement-state" role="status" aria-label="Leveranciersafspraak laden"><app-skeleton kind="lines" [rows]="2" /></div>
               } @else if (agreementLoadError(); as agreementError) {
                 <div class="agreement-state agreement-state--error" role="alert">
                   <span>{{ agreementError }}</span>
@@ -431,6 +436,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                 </b></div>
                 <div class="tile"><span>Volume</span><b class="num">
                   @if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }
+                  @if (product.pieceCbm) { <small class="muted">{{ product.pieceCbm | cbm: 5 }} per {{ salesUnit(product).singular }}</small> }
                 </b></div>
                 <div class="tile"><span>Per 20ft GP</span><b class="num">
                   @if (gpCapacity().value !== null) {
@@ -548,7 +554,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
             </summary>
             <div class="publication-card__body" aria-live="polite">
               @if (familyLoading()) {
-                <p class="publication-loading">Publicatiestatus en varianten laden…</p>
+                <div class="publication-loading" role="status" aria-label="Publicatiestatus laden"><app-skeleton kind="lines" [rows]="2" /></div>
               } @else if (familyLoadError()) {
                 <div class="family-load-error" role="alert">
                   <div>
@@ -717,7 +723,7 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
               @for (level of stockLevels(); track level.locationId) {
                 <label class="correct-levels__tile">
                   <small>{{ level.name }}</small>
-                  <input class="correct-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                  <input class="correct-levels__qty num" type="text" autocomplete="off" inputmode="numeric"
                          [attr.aria-label]="level.name" [value]="level.quantity"
                          (keydown.enter)="$any($event.target).blur()"
                          (change)="bookCorrection(level.locationId, $any($event.target))" />
@@ -733,8 +739,13 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
         </app-sheet>
       }
 
+    } @else if (loadError(); as error) {
+      <app-page-header title="Product" [showBack]="true" [showBell]="false" />
+      <div class="content">
+        <app-load-error [message]="error" [busy]="reloading()" (retry)="reload()" />
+      </div>
     } @else {
-      <app-page-header title="Product" subtitle="Laden…" [showBack]="true" [showBell]="false" />
+      <app-page-header title="Product" [showBack]="true" [showBell]="false" />
       <div class="content" role="status" aria-live="polite" aria-label="Product laden">
         <app-skeleton kind="card" [rows]="1" />
         <app-skeleton kind="stats" [rows]="3" />
@@ -1185,7 +1196,7 @@ export class ProductView {
     let view: PurchaseOrderView | undefined;
     if (source) {
       try {
-        const orders = await this.sourcing.purchaseOrders();
+        const orders = await this.purchaseOrdersFor(product.id);
         view = orders.find((item) => item.order.number === source);
         line = view?.costing.lines.find((item) => item.productId === product.id) ?? null;
       } catch {
@@ -1276,12 +1287,7 @@ export class ProductView {
   }
 
   containerLabel(order: ReceivedContainer): string {
-    return order.receivedOn ? `${order.number} · ontvangen ${this.dateLabel(order.receivedOn)}` : order.number;
-  }
-
-  private dateLabel(day: string): string {
-    const [year, month, date] = day.split('-');
-    return `${date}/${month}/${year}`;
+    return containerOptionLabel(order);
   }
 
   async confirmTakeout(): Promise<void> {
@@ -1303,7 +1309,7 @@ export class ProductView {
       }
       this.takeout.set(null);
       const booked = out.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : out.kind === 'SHORTAGE' ? 'Tekort geboekt' : 'Demo geboekt';
-      this.ui.toast(container ? `${booked} · gemeld op ${container.number}` : booked);
+      this.ui.toast(container ? `${booked} · gemeld op ${container.name}` : booked);
       this.refreshStock(product.id);
       void this.sourcing.receiptIssues(product.id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
     } catch (failure) {
@@ -1316,7 +1322,14 @@ export class ProductView {
   async bookCorrection(locationId: number, input: HTMLInputElement): Promise<void> {
     const product = this.product();
     if (!product || product.id === null) return;
-    const quantity = Math.max(0, Math.floor(Number(input.value) || 0));
+    const before = this.stockLevels()?.find((level) => level.locationId === locationId)?.quantity ?? 0;
+    const quantity = parseCount(input.value);
+    /* No count (empty, letters, a minus, a decimal) books nothing: the old figure comes back. */
+    if (quantity === null || quantity === before) {
+      input.value = String(before);
+      if (quantity === null) this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
+      return;
+    }
     this.stockSaving.set(true);
     try {
       await this.catalog.setStock(product.id, quantity, locationId);
@@ -1434,6 +1447,24 @@ export class ProductView {
     }
   }
 
+  /** The product request failed (a 404 shows the server's message): the page says so, with a retry. */
+  readonly loadError = signal<string | null>(null);
+  readonly reloading = signal(false);
+  private loadedId: number | null = null;
+  /** One purchase-order request per product open, shared by the containers, the cost source and the build-up. */
+  private ordersRequest: { productId: number; request: Promise<PurchaseOrderView[]> } | null = null;
+
+  protected purchaseOrdersFor(productId: number | null): Promise<PurchaseOrderView[]> {
+    if (this.ordersRequest && this.ordersRequest.productId === productId) return this.ordersRequest.request;
+    return this.sourcing.purchaseOrders();
+  }
+
+  reload(): void {
+    if (this.loadedId === null || this.reloading()) return;
+    this.reloading.set(true);
+    void this.loadProduct(this.loadedId);
+  }
+
   private async loadProduct(id: number): Promise<void> {
     void this.loadCatalogueNavigation();
     this.loadStockHistory(id);
@@ -1441,6 +1472,8 @@ export class ProductView {
       .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
       .catch(() => this.expected.set(null));
     const version = ++this.loadVersion;
+    this.loadedId = id;
+    this.loadError.set(null);
     this.product.set(null);
     this.priceOpen.set(false);
     this.priceInfoOpen.set(false);
@@ -1468,17 +1501,31 @@ export class ProductView {
     void this.sourcing.receiptIssues(id)
       .then((issues) => { if (version === this.loadVersion) this.receiptIssues.set(issues); })
       .catch(() => { /* the history is a bonus on the page */ });
-    void this.sourcing.purchaseOrders()
+    this.ordersRequest = { productId: id, request: this.sourcing.purchaseOrders() };
+    void this.ordersRequest.request
       .then((orders) => { if (version === this.loadVersion) this.receivedOrders.set(receivedContainersFor(orders, id)); })
       .catch(() => { /* without the list a report simply has no container to point at */ });
     void this.loadSupplierAgreement(id, version);
 
-    const [product, categories, suppliers] = await Promise.all([
-      this.catalog.product(id),
-      this.catalog.categories(),
-      this.sourcing.suppliers(),
-    ]);
+    let product: Product;
+    let categories: Category[];
+    let suppliers: Supplier[];
+    try {
+      /* The product is the page; categories and suppliers only name things, so they fail soft. */
+      [product, categories, suppliers] = await Promise.all([
+        this.catalog.product(id),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.sourcing.suppliers().catch(() => [] as Supplier[]),
+      ]);
+    } catch (failure: unknown) {
+      if (version === this.loadVersion) {
+        this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+        this.reloading.set(false);
+      }
+      return;
+    }
     if (version !== this.loadVersion) return;
+    this.reloading.set(false);
     /* The variant group belongs to the first paint: it loads before the
        product shows, so no block appears a moment later. */
     if (product.familyId != null) await this.loadFamily(product.familyId, version);
@@ -1494,7 +1541,7 @@ export class ProductView {
     this.suppliers.set(suppliers);
     this.sourceOrderId.set(null);
     if (product.landedCostSource) {
-      void this.sourcing.purchaseOrders().then((orders) => {
+      void this.purchaseOrdersFor(product.id).then((orders) => {
         if (version !== this.loadVersion) return;
         this.sourceOrderId.set(
           orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
@@ -1582,7 +1629,7 @@ export class ProductView {
   }
 
   publicationSummary(): string {
-    if (this.familyLoading()) return 'Publicatiestatus laden…';
+    if (this.familyLoading()) return '—';
     if (this.familyLoadError()) return 'Publicatiestatus niet geladen';
     if (!this.family()) return 'Niet gekoppeld';
     if (!this.publicationActive()) return 'Inactief';

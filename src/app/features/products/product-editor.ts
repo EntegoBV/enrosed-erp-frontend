@@ -20,6 +20,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { Skeleton } from '../../shared/skeleton';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -86,6 +87,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
+    Skeleton,
   ],
   template: `
     @if (!desktop.active()) {
@@ -478,7 +480,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </div>
               }
             } @else if (familyLoading()) {
-              <div class="variant-editor-card span-2" role="status">Varianten laden…</div>
+              <div class="variant-editor-card span-2" role="status" aria-label="Varianten laden"><app-skeleton kind="lines" [rows]="2" /></div>
             } @else if (familyLoadError()) {
               <div class="variant-editor-card variant-editor-card--error span-2" role="alert">
                 <div><b>Varianten niet geladen</b><small>De andere productvelden blijven bewerkbaar.</small></div>
@@ -936,9 +938,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
               <dt>Voorraad</dt>
-              <dd class="num">
-                @if (draft().inventoryKnown) { {{ draft().stockQuantity | num }} } @else { onbekend }
-              </dd>
+              <dd class="num">{{ workspaceStockLabel() }}</dd>
               <dt>Marge per {{ salesUnit(draft()).singular }}</dt>
               <dd class="num">{{ unitMargin() | eur }}</dd>
             </dl>
@@ -1010,15 +1010,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 }
               }
             } @else {
-              <p class="hint">Voorraad laden…</p>
+              <app-skeleton kind="lines" [rows]="2" />
             }
 
             <h3 class="stock-history__title">Geschiedenis</h3>
             @if (stockHistory(); as history) {
               @if (history.length) {
-                <!-- Swipe a line left to strike it: a short swipe shows the
-                     bin, a long one deletes at once - no question asked, the
-                     count itself never changes. -->
+                <!-- Swipe a line left to show its bin; deleting always asks
+                     first (there is no undo), and the count itself never changes. -->
                 <ol class="stock-history">
                   @for (move of editorHistoryOpen() ? history : history.slice(0, 2); track move.id) {
                     <li class="swipe stock-history__item" [class.swipe--open]="moveSwiped() === move.id"
@@ -1069,7 +1068,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <p class="hint">Nog geen bewegingen geboekt. Alles wat vanaf nu binnenkomt of geteld wordt, staat hier.</p>
               }
             } @else {
-              <p class="hint">Geschiedenis laden…</p>
+              <app-skeleton kind="lines" [rows]="2" />
             }
           }
         </div>
@@ -2445,16 +2444,22 @@ export class ProductEditor implements OnDestroy {
     const offset = this.moveOffset();
     this.moveDragging.set(null);
     this.moveOffset.set(0);
-    if (offset < -140) {
-      this.moveSwipeHandled = true;
-      void this.deleteMove(move);
-      return;
-    }
     this.moveSwipeHandled = true;
     this.moveSwiped.set(offset < -40 ? move.id : null);
   }
 
-  async deleteMove(move: StockMovement): Promise<void> {
+  /** A history line goes only after a question: the API cannot bring it back. */
+  deleteMove(move: StockMovement): void {
+    if (this.draft().id === null || this.moveDeleting() !== null) return;
+    this.ui.confirm({
+      title: 'Regel verwijderen',
+      message: 'Deze regel verdwijnt uit de geschiedenis. Het voorraadaantal verandert niet.',
+      confirmLabel: 'Verwijderen',
+      danger: true,
+    }, () => void this.removeMove(move), undefined, () => this.moveSwiped.set(null));
+  }
+
+  private async removeMove(move: StockMovement): Promise<void> {
     const productId = this.draft().id;
     if (productId === null || this.moveDeleting() !== null) return;
     this.moveDeleting.set(move.id);
@@ -2462,7 +2467,7 @@ export class ProductEditor implements OnDestroy {
     try {
       await this.catalog.deleteStockMovement(productId, move.id);
       this.stockHistory.update((history) => history?.filter((item) => item.id !== move.id) ?? null);
-      this.ui.toast(`Regel verwijderd · voorraad blijft ${this.draft().stockQuantity}`);
+      this.ui.toast(`Regel verwijderd · voorraad blijft ${this.workspaceStockLabel()}`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Regel verwijderen mislukt'), 'err');
     } finally {
@@ -2647,7 +2652,7 @@ export class ProductEditor implements OnDestroy {
   readonly workspacePublicationNeedsAttention = computed(() =>
     this.familyLoadError() || (!!this.family() && this.readinessIssues().length > 0));
   readonly workspacePublicationShortLabel = computed(() => {
-    if (this.familyLoading()) return 'Laden…';
+    if (this.familyLoading()) return '—';
     if (this.familyLoadError()) return 'Onbekend';
     const baseline = this.baseline();
     const activeChanged = !!baseline && JSON.parse(baseline).active !== this.draft().active;

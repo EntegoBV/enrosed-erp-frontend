@@ -689,7 +689,7 @@ function catalogueCard(overview: ProductPhotoOverview, places: ResolvedPlaces, c
   const ownPhoto = (overview.photos ?? []).some((photo) => photo.kind === 'OWN');
   return {
     ...filled,
-    caption: `${filled.caption} ${colour} is niet actief, maar staat wel in de Catalogusstudio; `
+    caption: `${filled.caption} ${colour} is niet actief, maar staat wel in de Catalogus PDF; `
       + `haal de kleur daar weg als ze niet in de pdf hoort.${ownPhoto ? '' : ' Maak de kleur eerst actief om een foto te kiezen.'}`,
     actions: ownPhoto ? filled.actions : [],
   };
@@ -1018,7 +1018,7 @@ export function seriesAttention(rows: readonly SeriesRow[]): string {
 
 /**
  * The line under the strip: which pdf "Catalogus" stands for. The assumed pdf
- * holds every non-demo colour, inactive ones included, as the Catalogusstudio
+ * holds every non-demo colour, inactive ones included, as the Catalogus PDF
  * ticks them; the second sentence says so when the series has one.
  */
 export function catalogueAssumptionLine(
@@ -1028,7 +1028,7 @@ export function catalogueAssumptionLine(
   const counted = new Set(overview?.catalogueAssumption?.productIds ?? []);
   const inactive = members.some((member) => member.active === false && counted.has(member.productId));
   return 'Catalogus = een Handelscatalogus met alle kleuren van deze reeks.'
-    + (inactive ? ' Ook niet-actieve kleuren tellen mee; haal ze weg in de Catalogusstudio als ze niet in de pdf horen.' : '')
+    + (inactive ? ' Ook niet-actieve kleuren tellen mee; haal ze weg in de Catalogus PDF als ze niet in de pdf horen.' : '')
     + ' Een pdf, offerte of factuur die al verstuurd is, verandert niet meer.';
 }
 

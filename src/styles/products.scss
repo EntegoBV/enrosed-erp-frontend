@@ -1,0 +1,15 @@
+@use 'sass:meta';
+
+/* ==========================================================================
+   Producten & voorraad (2026-10-17): one partial per screen, desk and phone
+   blocks inside each, every rule scoped under its host element. A package
+   of the round writes only its own screen file, so each screen reverts on
+   its own. Never restyle a bare kit class here; override kit custom
+   properties under the host instead.
+   ========================================================================== */
+@include meta.load-css('products/list');
+@include meta.load-css('products/product-desk');
+@include meta.load-css('products/product-phone');
+@include meta.load-css('products/booking');
+@include meta.load-css('products/stock');
+@include meta.load-css('products/small-pages');

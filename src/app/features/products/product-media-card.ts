@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
 import { saveBlob } from '../../core/api/download';
@@ -24,7 +25,7 @@ import { isSourceLink } from '../files/files-collections';
 @Component({
   selector: 'app-product-media-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AuthImage, PhotoLightbox],
+  imports: [RouterLink, AuthImage, PhotoLightbox, Skeleton],
   template: `
     <div class="mc__head">
       <div><h2>Documenten &amp; media</h2><p>{{ summary() }}</p></div>
@@ -37,7 +38,7 @@ import { isSourceLink } from '../files/files-collections';
       </div>
     </div>
     @if (loading()) {
-      <p class="mc__empty">Bestanden laden…</p>
+      <div class="mc__empty" role="status" aria-label="Bestanden laden"><app-skeleton kind="lines" [rows]="2" /></div>
     } @else if (error(); as error) {
       <p class="mc__empty">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p>
     } @else if (!assets().length) {

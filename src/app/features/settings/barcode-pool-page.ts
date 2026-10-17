@@ -4,6 +4,8 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
+import { Skeleton } from '../../shared/skeleton';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 
 /**
  * The company's own EAN range: paste the codes from the GS1 sheet, and
@@ -13,7 +15,7 @@ import { Ui } from '../../shared/ui';
 @Component({
   selector: 'app-barcode-pool-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader],
+  imports: [FormsModule, PageHeader, Skeleton, LoadError],
   template: `
     <app-page-header [showBack]="true" backTo="/more" title="EAN-codes" [subtitle]="free().length + ' vrije code' + (free().length === 1 ? '' : 's')" />
 
@@ -74,8 +76,14 @@ import { Ui } from '../../shared/ui';
               </button>
             </div>
           } @empty {
-            <div class="empty"><div class="empty__title">{{ loading() ? 'Laden…' : 'Geen vrije codes' }}</div>
-              <div class="empty__text">Plak hierboven de codes uit je GS1-reeks.</div></div>
+            @if (loadError(); as error) {
+              <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+            } @else if (loading()) {
+              <app-skeleton kind="list" [rows]="3" />
+            } @else {
+              <div class="empty"><div class="empty__title">Nog geen vrije codes</div>
+                <div class="empty__text">Plak hierboven de codes uit je GS1-reeks.</div></div>
+            }
           }
         </div>
       </div>
@@ -108,9 +116,20 @@ export class BarcodePoolPage {
     void this.load();
   }
 
+  /** The pool did not load: the page says so, with a retry, instead of "no codes". */
+  readonly loadError = signal<string | null>(null);
+
+  reload(): void {
+    if (!this.loading()) void this.load();
+  }
+
   private async load(): Promise<void> {
+    this.loading.set(true);
+    this.loadError.set(null);
     try {
       this.free.set(await this.catalog.barcodePool());
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
     } finally {
       this.loading.set(false);
     }

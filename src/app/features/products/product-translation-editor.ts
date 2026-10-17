@@ -68,7 +68,7 @@ import {
       @if (snapshot() && completeCount() < languages.length) {
         <div class="partial-save-note" role="note">
           <span aria-hidden="true">✓</span>
-          <p><b>U mag dit werk tussentijds opslaan.</b> Lege talen blokkeren productwijzigingen niet en blijven als vertaaltaak zichtbaar in <a routerLink="/website" fragment="translation-work">Website beheren</a>. Alleen publiceren wacht indien verplichte publieke copy nog ontbreekt.</p>
+          <p><b>Je mag dit werk tussentijds opslaan.</b> Lege talen blokkeren productwijzigingen niet en blijven als vertaaltaak zichtbaar in <a routerLink="/website" fragment="translation-work">Website beheren</a>. Alleen publiceren wacht indien verplichte publieke copy nog ontbreekt.</p>
         </div>
       }
 
@@ -76,7 +76,7 @@ import {
         <div class="codex-brief-action" role="note">
           <div>
             <b>Brontekst gewijzigd of opnieuw laten controleren?</b>
-            <small>Kopieert alle huidige publieke taalwaarden en vaste productkoppelingen, ook wanneer 8/8 al compleet staat. Voorraad, prijzen, kosten en leverancier worden nooit meegenomen.</small>
+            <small>Kopieert alle huidige publieke taalwaarden en vaste productkoppelingen, ook wanneer alle talen al compleet staan. Voorraad, prijzen, kosten en leverancier worden nooit meegenomen.</small>
           </div>
           <button class="btn btn--sm btn--primary" type="button" (click)="copyCodexBrief()">
             Kopieer deze vertaalopdracht voor Codex
@@ -238,7 +238,7 @@ import {
                   @if (inheritedTags(); as fallback) {
                     Nu gebruikt: {{ fallback.value }} ({{ fallback.label }}).
                   } @else if (!tagsText()) {
-                    Nog geen tags beschikbaar. U kunt dit veld leeg laten.
+                    Nog geen tags beschikbaar. Je kunt dit veld leeg laten.
                   }
                   Leeg laten gebruikt eerst een Engelse of Nederlandse vertaling en anders de standaardtags.
                 </small>

@@ -14,6 +14,8 @@ import { ProductMediaCard } from './product-media-card';
 import { ProductPlacesLine } from './product-places-line';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { ProductView } from './product-view';
+import { LoadError } from '../../shared/load-error';
+import { Skeleton } from '../../shared/skeleton';
 
 type BookingKind = 'RECOUNT' | 'DAMAGED' | 'SHORTAGE' | 'DEMO';
 interface IssueGroup { key: string; label: string; action: string; link: unknown[]; params: Record<string, string> | null; issues: string[]; }
@@ -35,7 +37,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader,
+  imports: [ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
   ],
   template: `
@@ -263,7 +265,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <div><dt>Karton</dt><dd>{{ size(product.carton) }}<small>B × D × H</small></dd></div>
                 <div><dt>Inhoud</dt><dd>{{ product.carton.piecesPerCarton | num }} {{ salesUnit(product).plural }}<small>{{ cartonPiecesAuto(product) ? 'berekend uit de maten' : 'per omdoos' }}</small>@if (quantityDetail(product, product.carton.piecesPerCarton ?? 0); as detail) { <small>{{ detail }}</small> }</dd></div>
                 <div><dt>Gewicht</dt><dd>@if (product.carton.weightKg) { {{ product.carton.weightKg | kg }} } @else { — }<small>{{ product.carton.weightKg && cartonWeightAuto(product) ? 'berekend uit de stuks' : 'per omdoos' }}</small></dd></div>
-                <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm }} per {{ salesUnit(product).singular }}</small> }</dd></div>
+                <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm: 5 }} per {{ salesUnit(product).singular }}</small> }</dd></div>
                 <div><dt>Per 20ft GP</dt><dd>@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} {{ salesUnit(product).plural }}<small [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small> } @else { —<small>onvoldoende gegevens</small> }</dd></div>
                 <div><dt>Per 40' HC</dt><dd>@if (product.carton.hcCapacity; as hc) { {{ hc | num }} {{ salesUnit(product).plural }} } @else { — }@if (product.carton.hcCapacity) { <small>{{ product.carton.piecesPerHc ? 'handmatig geteld' : 'volle dozen op volume' }}</small> }</dd></div>
                 <div><dt>Omdoosbarcode</dt><dd class="mono">
@@ -354,7 +356,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                   <p class="pd-empty">Nog geen kostprijs of catalogusprijs. <a [routerLink]="['/products', product.id, 'edit']">Vul ze in via Bewerken ›</a></p>
                 }
               } @else {
-                <p class="pd-empty">Prijsopbouw laden…</p>
+                <app-skeleton kind="lines" [rows]="3" />
               }
               <div>
                 <div class="pd-kicker">Waar de cijfers vandaan komen</div>
@@ -400,7 +402,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 }
               </div>
             } @else {
-              <p class="pd-empty">Voorraad laden…</p>
+              <app-skeleton kind="lines" [rows]="2" />
             }
             @if (booking(); as book) {
               <form class="pd-booking" (submit)="$event.preventDefault(); confirmBooking()">
@@ -509,7 +511,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
               </div>
             </div>
             @if (familyLoading()) {
-              <p class="pd-empty">Publicatiestatus laden…</p>
+              <app-skeleton kind="lines" [rows]="3" />
             } @else if (familyLoadError()) {
               <p class="pd-empty">De publicatiestatus is niet geladen. <button class="linklike" type="button" (click)="retryFamily()">Opnieuw proberen</button></p>
             } @else {
@@ -593,7 +595,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
                 <p class="pd-empty">Nog geen instructies voor de leverancier.</p>
               }
               @if (agreementLoading()) {
-                <p class="pd-empty">Leveranciersafspraak laden…</p>
+                <app-skeleton kind="lines" [rows]="2" />
               } @else if (agreementLoadError(); as error) {
                 <p class="pd-empty">{{ error }} <button class="linklike" type="button" (click)="retrySupplierAgreement()">Opnieuw proberen</button></p>
               } @else if (agreementPhotos().length) {
@@ -647,6 +649,18 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
       @if (historyOpen()) {
         <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
       }
+    } @else if (loadError(); as error) {
+      <app-page-header title="Product" [showBell]="false" />
+      <div class="content desk">
+        <app-load-error [message]="error" [busy]="reloading()" (retry)="reload()" />
+      </div>
+    } @else {
+      <!-- Never a blank page while the product loads: the header and the shape of what comes. -->
+      <app-page-header title="Product" [showBell]="false" />
+      <div class="content desk" role="status" aria-live="polite" aria-label="Product laden">
+        <app-skeleton kind="card" [rows]="1" />
+        <app-skeleton kind="lines" [rows]="6" />
+      </div>
     }
   `,
   styles: [`
@@ -952,7 +966,7 @@ export class ProductDesk extends ProductView {
           });
         }
         const booked = book.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : book.kind === 'SHORTAGE' ? 'Tekort geboekt' : 'Demo geboekt';
-        this.ui.toast(container ? `${booked} · gemeld op ${container.number}` : booked);
+        this.ui.toast(container ? `${booked} · gemeld op ${container.name}` : booked);
         void this.sourcing.receiptIssues(product.id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
       }
       this.booking.set(null);

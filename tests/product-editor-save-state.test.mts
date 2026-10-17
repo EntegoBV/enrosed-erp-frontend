@@ -251,7 +251,7 @@ test('an unchanged published family is not described as live while its data is u
   editor.savedFamily.set(family('PUBLISHED'));
   editor.familyLoading.set(true);
   assert.equal(editor.workspacePublicationLive(), false);
-  assert.equal(editor.workspacePublicationShortLabel(), 'Laden…');
+  assert.equal(editor.workspacePublicationShortLabel(), '—', 'a figure that arrives later reads as a dash, never Laden…');
   editor.familyLoading.set(false);
   editor.familyLoadError.set(true);
   assert.equal(editor.workspacePublicationLive(), false);

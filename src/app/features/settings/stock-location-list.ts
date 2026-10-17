@@ -5,6 +5,7 @@ import { StockLocation } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Sheet, Ui } from '../../shared/ui';
+import { Skeleton } from '../../shared/skeleton';
 
 /**
  * Where stock can lie: the warehouse and every sales point.
@@ -15,7 +16,7 @@ import { Sheet, Ui } from '../../shared/ui';
 @Component({
   selector: 'app-stock-location-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet],
+  imports: [FormsModule, PageHeader, Sheet, Skeleton],
   template: `
     <app-page-header [showBack]="true" backTo="/more" title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -29,7 +30,7 @@ import { Sheet, Ui } from '../../shared/ui';
         <div class="explainer__body">
           <p>Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle verkoopkanalen</b> - normaal het magazijn.</p>
           <p>Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse verkocht wordt; die telt niet mee voor de website. Verplaatsen tussen locaties doe je onder Voorraad.</p>
-          <p>Een locatie kan daarnaast een <b>publiek afhaalpunt</b> zijn. Afhalen is gratis; klanten zien alleen de publieke naam, het publieke adres en de instructies die u hieronder invult.</p>
+          <p>Een locatie kan daarnaast een <b>publiek afhaalpunt</b> zijn. Afhalen is gratis; klanten zien alleen de publieke naam, het publieke adres en de instructies die je hieronder invult.</p>
         </div>
       </details>
 
@@ -53,7 +54,8 @@ import { Sheet, Ui } from '../../shared/ui';
             <span class="list-item__chev">›</span>
           </button>
         } @empty {
-          <div class="empty"><div class="empty__title">{{ loading() ? 'Laden…' : 'Nog geen locaties' }}</div></div>
+          @if (loading()) { <app-skeleton kind="list" [rows]="2" /> }
+          @else { <div class="empty"><div class="empty__title">Nog geen locaties</div></div> }
         }
       </div></div>
     </div>
@@ -132,7 +134,7 @@ import { Sheet, Ui } from '../../shared/ui';
                 </div>
                 @if (!draft().active) {
                   <div class="public-pickup__warning span-2" role="note">
-                    Deze locatie is inactief en verschijnt pas als afhaalpunt wanneer u ze opnieuw activeert.
+                    Deze locatie is inactief en verschijnt pas als afhaalpunt wanneer je ze opnieuw activeert.
                   </div>
                 }
               </div>
