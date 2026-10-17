@@ -74,7 +74,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
           <span class="fin-txd__dir">{{ row.amountEur > 0 ? 'Ontvangen van' : 'Betaald aan' }}</span>
           <div class="fin-txd__who"><h2 class="fin-txd__party">{{ titleOf(row) }}</h2>
             <strong class="fin-txd__amount" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong></div>
-          @if (textOf(row).sub) { <span class="fin-txd__meta fin-txd__clean">{{ textOf(row).sub }}</span> }
+          @if (cleanSub(row); as clean) { <span class="fin-txd__meta fin-txd__clean">{{ clean }}</span> }
           <span class="fin-txd__meta">{{ meta(row) }}</span>
           @if (row.reference) { <code class="fin-txd__ref">{{ row.reference }}</code> }
           <span class="fin-txd__pills"><span [class]="'wk-pill ' + statusTone(row)">{{ statusLabel(row) }}</span>
@@ -263,6 +263,11 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
   `,
 })
 export class TransactionDetail extends BankMovementPanel {
+  /** The cleaned reference above the raw one, only when cleaning changed something: a clean reference is not read twice. */
+  cleanSub(row: BankStatementLine): string {
+    const sub = this.textOf(row).sub;
+    return sub && sub !== (row.reference ?? '').replace(/\s+/g, ' ').trim() ? sub : '';
+  }
   private readonly injector = inject(Injector);
   private readonly purchases = inject(SourcingApi);
   readonly lineId = input.required<number>();
