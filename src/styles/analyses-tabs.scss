@@ -44,6 +44,13 @@
 .an-docs small { display: inline !important; }
 .an-docs--inline { display: none; margin-top: 4px; }
 @media (max-width: 1279.98px) { .an-ptable .an-col-docs { display: none; } .an-ptable .an-docs--inline { display: grid; } }
+/* Below 1100 (742 px of content at 1024) the scorecard and partner tables tighten their inner padding and first column, so they fit without the scroll region. */
+@media (min-width: 680px) and (max-width: 1099.98px) {
+  .an-table :is(th, td) { padding-inline: 8px; }
+  .an-table :is(th, td):first-child { padding-left: 16px; }
+  .an-table :is(th, td):last-child { padding-right: 16px; }
+  .an-table td:first-child { min-width: 160px; }
+}
 
 /* ---------- Containerkost (app-container-cost-analysis, critique N4: no component styles) */
 app-container-cost-analysis { display: block; min-width: 0; }
