@@ -1,4 +1,4 @@
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
@@ -111,6 +111,7 @@ const normalizeCategoryCode = (value: string): string => value
   imports: [
     Icon,
     LoadError,
+    NgTemplateOutlet,
     Sheet,
     SettingsCompany,
     SettingsLegal,
@@ -204,6 +205,7 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('website')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'website'" aria-label="Prijzen op de website">
+        @if (desktop.active()) {
         <div class="set-pair">
           <!-- The sync status shows once: inside the price card (B5). -->
           <div class="wk-card set-pane" id="website">
@@ -218,6 +220,21 @@ const normalizeCategoryCode = (value: string): string => value
             <a routerLink="/catalog/texts"><span><b>Catalogusteksten per taal</b><small>Teksten van de catalogus-pdf</small></span><app-icon name="chevron-right" [size]="16" /></a>
           </nav>
         </div>
+        } @else {
+        <!-- Phone: the same two groups as inset groups -->
+        <div class="set-ios">
+          <app-website-quote-settings variant="ios" [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" />
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Website en catalogus</h2></div>
+            <nav class="ios-group" aria-label="Website en catalogus">
+              <a class="ios-cell" routerLink="/website"><span class="ios-cell__body"><span class="ios-cell__title">Website beheren</span><span class="ios-cell__sub set-ios__text">Indeling, teksten, SEO, producten en publicatie</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/website/categories"><span class="ios-cell__body"><span class="ios-cell__title">Categorieën en menunamen</span><span class="ios-cell__sub set-ios__text">Volgorde, uitgelicht product en namen per taal</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/categories"><span class="ios-cell__body"><span class="ios-cell__title">Categorieën · foto’s</span><span class="ios-cell__sub set-ios__text">De foto’s van elke collectie</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              <a class="ios-cell" routerLink="/catalog/texts"><span class="ios-cell__body"><span class="ios-cell__title">Catalogusteksten per taal</span><span class="ios-cell__sub set-ios__text">Teksten van de catalogus-pdf</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+            </nav>
+          </section>
+        </div>
+        }
       </section>
       }
 
@@ -430,6 +447,32 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('catalog-data')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'catalog-data'" aria-label="Catalogusdata">
+      <!-- The import result: one block for the desk card and the phone groups -->
+      <ng-template #workbookResultView>
+          @if (workbookResult(); as result) {
+            <div class="alert workbook-result" aria-live="polite"
+                 [class.alert--ok]="!result.problems.length"
+                 [class.alert--warn]="result.problems.length > 0">
+              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
+              <div>
+                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
+                <div class="small workbook-result__summary">
+                  {{ result.updatedProducts }} productregels verwerkt ·
+                  {{ result.updatedRows }} vertaalregels bijgewerkt
+                </div>
+                @if (result.problems.length) {
+                  <details class="workbook-problems">
+                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
+                    <ul>
+                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
+                    </ul>
+                  </details>
+                }
+              </div>
+            </div>
+          }
+      </ng-template>
+      @if (desktop.active()) {
       <div class="set-pair set-pair--side">
       <!-- ======================================= catalogus in Excel -->
       <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
@@ -488,28 +531,7 @@ const normalizeCategoryCode = (value: string): string => value
             </div>
           }
 
-          @if (workbookResult(); as result) {
-            <div class="alert workbook-result" aria-live="polite"
-                 [class.alert--ok]="!result.problems.length"
-                 [class.alert--warn]="result.problems.length > 0">
-              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
-              <div>
-                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
-                <div class="small workbook-result__summary">
-                  {{ result.updatedProducts }} productregels verwerkt ·
-                  {{ result.updatedRows }} vertaalregels bijgewerkt
-                </div>
-                @if (result.problems.length) {
-                  <details class="workbook-problems">
-                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
-                    <ul>
-                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
-                    </ul>
-                  </details>
-                }
-              </div>
-            </div>
-          }
+          <ng-container [ngTemplateOutlet]="workbookResultView" />
 
 
         </div>
@@ -533,11 +555,80 @@ const normalizeCategoryCode = (value: string): string => value
         </a>
       </div>
       </div>
+      } @else {
+      <!-- Phone: the same steps, note, actions and exports as inset groups -->
+      <div class="set-ios">
+        <section class="ios-section">
+          <div class="ios-section__head"><h2>Producten in Excel</h2></div>
+          <div class="ios-group">
+            <div class="ios-cell ios-cell--tall">
+              <span class="ios-cell__lead"><span class="workbook-badge" aria-hidden="true">XLSX</span></span>
+              <span class="ios-cell__body">
+                <span class="ios-cell__title ios-cell__title--strong">Importeren en exporteren</span>
+                <span class="ios-cell__sub set-ios__text">Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar. Ook vertalingen staan in dezelfde export.</span>
+              </span>
+            </div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">1</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Download</span><span class="ios-cell__sub set-ios__text">Begin altijd met de nieuwste export.</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">2</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Bewerk</span><span class="ios-cell__sub set-ios__text">Producten staan op duidelijke tabbladen. Vertalingen staan apart.</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__lead"><span class="set-ios__step" aria-hidden="true">3</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Importeer</span><span class="ios-cell__sub set-ios__text">Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</span></span></div>
+          </div>
+        </section>
+        <div class="workbook-safety">
+          <b>SKU niet wijzigen.</b>
+          <span>De SKU koppelt elke rij aan het juiste product. Categorie, leverancier, voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.</span>
+        </div>
+        <section class="ios-section">
+          <div class="ios-group">
+            <button class="ios-cell ios-cell--action" type="button" [disabled]="exportingWorkbook()" (click)="exportWorkbook()">
+              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}</button>
+            <button class="ios-cell ios-cell--action" type="button" [disabled]="importingWorkbook()" (click)="workbookFile.click()">Excel importeren…</button>
+          </div>
+          <input #workbookFile type="file"
+                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                 hidden (change)="selectWorkbook($any($event.target))" />
+        </section>
+        @if (selectedWorkbook(); as file) {
+          <section class="ios-section">
+            <div class="ios-group">
+              <div class="ios-cell">
+                <span class="ios-cell__lead"><span class="workbook-file-icon" aria-hidden="true">X</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title set-ios__text">{{ file.name }}</span><span class="ios-cell__sub">{{ fileSize(file.size) }}</span></span>
+              </div>
+              <button class="ios-cell ios-cell--action" type="button" [disabled]="importingWorkbook()" (click)="importWorkbook()">
+                {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}</button>
+              <button class="ios-cell" type="button" [disabled]="importingWorkbook()" (click)="clearWorkbookSelection()">Annuleren</button>
+            </div>
+          </section>
+        }
+        <div class="set-ios__result"><ng-container [ngTemplateOutlet]="workbookResultView" /></div>
+        <section class="ios-section">
+          <div class="ios-group">
+            <!-- Photos are not master data, but they are exported from the same place. -->
+            <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="photoExportOpen.set(true)">
+              <span class="ios-cell__lead"><span class="photo-export-row__badge" aria-hidden="true">ZIP</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Productfoto’s exporteren (ZIP)</span>
+                <span class="ios-cell__sub set-ios__text">Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </button>
+            <a class="ios-cell" routerLink="/catalog/texts">
+              <span class="ios-cell__lead"><span class="photo-export-row__badge" aria-hidden="true">TXT</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Catalogusteksten per taal</span>
+                <span class="ios-cell__sub set-ios__text">De teksten van de catalogus-pdf in elke taal.</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </a>
+          </div>
+        </section>
+      </div>
+      }
       </section>
       }
 
       @if (visited().has('device')) {
       <section class="set-view mo-fade" [hidden]="view() !== 'device'" aria-label="Dit toestel">
+      @if (desktop.active()) {
       <div class="set-pair">
       <!-- ============== app on this device: looks and notifications -->
       <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance" [class.set-focus]="focusRing() === 'appearance'">
@@ -633,6 +724,93 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
       </div>
+      } @else {
+      <!-- Phone: Weergave and Meldingen as inset groups; the same flows -->
+      <div class="set-ios">
+        <section class="ios-section" id="appearance">
+          <div class="ios-section__head"><h2>Weergave</h2></div>
+          <div class="ios-group set-ios__themes" role="radiogroup" aria-label="Kleurschema" [class.set-focus]="focusRing() === 'appearance'">
+            @for (option of themes; track option.key) {
+              <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="theme.current() === option.key" (click)="theme.set(option.key)">
+                <span class="ios-cell__lead"><i class="set-ios__swatch" [style.background]="option.swatch" aria-hidden="true"></i></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                @if (theme.current() === option.key) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+              </button>
+            }
+          </div>
+          <p class="ios-section__foot">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
+        </section>
+
+        <section class="ios-section" id="notifications">
+          <div class="ios-section__head"><h2>Meldingen op dit toestel</h2></div>
+          <div class="ios-group" [class.set-focus]="focusRing() === 'notifications'">
+            @if (!push.supported()) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Meldingen</span>
+                <span class="ios-cell__sub set-ios__text warn-text">Deze browser ondersteunt geen meldingen.</span></span></div>
+            } @else {
+              <label class="ios-cell">
+                <span class="ios-cell__body"><span class="ios-cell__title" id="push-switch-label">Meldingen</span>
+                  <span class="ios-cell__sub">{{ push.busy() ? 'Bezig…' : push.enabled() ? 'Staan aan op dit toestel' : 'Staan uit op dit toestel' }}</span></span>
+                <input class="ios-switch" type="checkbox" role="switch" aria-labelledby="push-switch-label"
+                       [checked]="push.enabled()" [disabled]="push.busy()"
+                       (click)="$event.preventDefault(); push.enabled() ? disablePush() : enablePush()" />
+              </label>
+            }
+            @if (push.enabled() || pushDevices().length) {
+              <button class="ios-cell ios-cell--action" type="button" [disabled]="push.busy()" (click)="testPush()">
+                <span class="ios-cell__body"><span class="ios-cell__title">Stuur testmelding</span><span class="ios-cell__sub">Naar alle aangemelde toestellen.</span></span>
+              </button>
+            }
+            <button class="ios-cell ios-cell--action" type="button" (click)="previewSound('sale-quote')">Geluid nieuwe offerte</button>
+            <button class="ios-cell ios-cell--action" type="button" (click)="previewSound('sale-invoice')">Geluid nieuwe factuur</button>
+          </div>
+          <p class="ios-section__foot">Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
+            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            Op iPhone werkt dit zodra de app op het beginscherm staat.</p>
+        </section>
+
+        @if (pushActionError()) {
+          <div class="ios-banner ios-banner--danger" role="alert">
+            <span><b>Meldingsactie mislukt</b><br />{{ pushActionError() }}</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="push.busy()" (click)="retryPushAction()">Opnieuw proberen</button>
+          </div>
+        }
+
+        @if (pushDevices().length || pushDevicesError() || pushDevicesLoading() || pushDevicesLoaded()) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Aangemelde toestellen</h2>
+              @if (pushDevices().length) { <span class="ios-section__trail">{{ pushDevices().length }}</span> }</div>
+            <div class="ios-group" aria-label="Aangemelde toestellen">
+              @for (device of pushDevices(); track device.id) {
+                <div class="ios-cell">
+                  <span class="ios-cell__body">
+                    <span class="ios-cell__title set-ios__text">{{ device.device }}</span>
+                    @if (device.since) { <span class="ios-cell__sub">aangemeld sinds {{ device.since | dateNl }}</span> }
+                    <span class="ios-cell__sub set-ios__text">
+                      @if (device.lastStatus === null) { nog geen melding gestuurd }
+                      @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                        laatste melding door pushdienst geaccepteerd
+                      } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                      @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
+                    </span>
+                  </span>
+                </div>
+              }
+              @if (pushDevicesError(); as error) {
+                <div class="ios-cell" role="alert"><span class="ios-cell__body">
+                  <span class="ios-cell__title set-ios__text">Aangemelde toestellen konden niet worden geladen</span>
+                  <span class="ios-cell__sub set-ios__text">{{ error }}</span></span></div>
+                <button class="ios-cell ios-cell--action" type="button" [disabled]="pushDevicesLoading()" (click)="loadPushDevices()">Opnieuw proberen</button>
+              } @else if (pushDevicesLoading() && !pushDevices().length) {
+                <div class="ios-cell" role="status"><span class="ios-cell__sub">Aangemelde toestellen laden…</span></div>
+              } @else if (pushDevicesLoaded() && !pushDevices().length) {
+                <div class="ios-cell" role="status"><span class="ios-cell__sub set-ios__text">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</span></div>
+              }
+            </div>
+          </section>
+        }
+      </div>
+      }
       </section>
       }
     </div>
@@ -1024,6 +1202,16 @@ const normalizeCategoryCode = (value: string): string => value
     .set-side { display: grid; gap: 12px; }
     .set-side > .photo-export-row { margin: 0; text-decoration: none; }
     .set-focus { box-shadow: 0 0 0 2px var(--rose); transition: box-shadow var(--dur-2, 200ms) var(--ease-out, ease); }
+    /* Phone: Website, Catalogusdata and Dit toestel as inset groups (.content already holds the side padding). */
+    .set-ios { --ios-inset: 0px; }
+    .set-ios .ios-banner { margin-inline: 0; }
+    .set-ios__text { white-space: normal; overflow-wrap: anywhere; }
+    .set-ios .ios-cell--action .ios-cell__title { color: inherit; }
+    .set-ios__step { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #dff5ec; color: #126645; font-size: 14px; font-weight: 750; }
+    .set-ios__swatch { display: block; width: 26px; height: 26px; border: 1px solid rgb(0 0 0 / 12%); border-radius: 50%; }
+    .set-ios__themes { --ios-sep-inset: 54px; }
+    .set-ios > .workbook-safety { margin: -8px 0 22px; }
+    .set-ios__result .workbook-result { margin: 0 0 22px; }
     .btn.set-ghost:hover:not(:disabled) { background: var(--surface-2); }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
@@ -1169,7 +1357,6 @@ const normalizeCategoryCode = (value: string): string => value
     .push-error>div { display:grid;gap:2px;min-width:0 }
     .push-error small { color:var(--muted);font-size:13px;line-height:1.45 }
     .push-error .btn { flex:none;min-height:48px }
-    @media(max-width:560px) { .push-error { align-items:stretch;flex-direction:column }.push-error .btn { width:100% } }
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {

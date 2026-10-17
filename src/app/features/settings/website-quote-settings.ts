@@ -9,6 +9,48 @@ import { WebsitePriceStore } from './website-price-store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [WebsiteSyncStatus],
   template: `
+    @if (variant() === 'ios') {
+    <!-- Phone: the switch and its state as one inset group, the sync status as the next (shown once, B5). -->
+    <section class="ios-section" [attr.aria-busy]="loading() || saving()">
+      <div class="ios-group">
+        <label class="ios-cell ios-cell--tall">
+          <span class="ios-cell__body">
+            <span class="ios-cell__title" id="quote-prices-label">Prijzen tonen</span>
+            <span class="ios-cell__sub q-ios__text" id="quote-prices-description">Op de productpagina’s en in het offerte- en bestelscherm</span>
+          </span>
+          <input class="ios-switch" type="checkbox" role="switch"
+                 aria-labelledby="quote-prices-label" aria-describedby="quote-prices-description"
+                 [checked]="settings()?.pricesVisible === true"
+                 [disabled]="loading() || saving() || !settings()"
+                 (click)="$event.preventDefault(); togglePrices()" />
+        </label>
+        <div class="ios-cell" aria-live="polite" role="status">
+          <span class="ios-cell__body">
+            @if (loading()) {
+              <span class="ios-cell__sub">Instelling laden…</span>
+            } @else if (saving()) {
+              <span class="ios-cell__sub">Wijziging opslaan…</span>
+            } @else if (settings(); as current) {
+              <span class="ios-cell__title ios-cell__title--strong">{{ current.pricesVisible ? 'Prijzen zichtbaar' : 'Prijzen verborgen' }}</span>
+              <span class="ios-cell__sub q-ios__text">{{ current.pricesVisible
+                ? 'Bezoekers zien prijzen op de productpagina’s en in het offerte- en bestelscherm.'
+                : 'Bezoekers zien geen bedragen. Bij elk product staat dat de prijs op aanvraag is. De prijs volgt in jullie offerte.' }}</span>
+            }
+          </span>
+        </div>
+        @if (error(); as failure) {
+          <div class="ios-cell" role="alert">
+            <span class="ios-cell__body"><span class="ios-cell__sub q-ios__text q-ios__error">{{ failure }}</span></span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="loading() || saving()" (click)="load()">Opnieuw laden</button>
+          </div>
+        }
+      </div>
+      <div class="ios-section__foot">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. {{ rebuildHint() }} Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</div>
+    </section>
+    <section class="ios-section q-ios__sync">
+      <app-website-sync-status compact [refreshKey]="syncRefreshKey()" />
+    </section>
+    } @else {
     <div class="quote-setting" [attr.aria-busy]="loading() || saving()">
       <div class="quote-setting__row">
         <div>
@@ -45,6 +87,7 @@ import { WebsitePriceStore } from './website-price-store';
       <p class="quote-setting__hint">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. {{ rebuildHint() }} Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</p>
       <app-website-sync-status compact [refreshKey]="syncRefreshKey()" />
     </div>
+    }
   `,
   styles: `
     :host { display: block; }
@@ -66,6 +109,10 @@ import { WebsitePriceStore } from './website-price-store';
     .quote-setting__error { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--danger); font-size: 13px; margin-top: 12px; }
     @media (max-width: 679px) { .quote-setting__row { gap: 14px; align-items: flex-start; } }
     @media (prefers-reduced-motion: reduce) { .quote-setting__switch::before, .quote-setting__switch span { transition: none; } }
+    .q-ios__text { white-space: normal; }
+    .q-ios__error { color: var(--danger); }
+    /* The sync status box reads as an inset group on the phone (its own markup is unchanged). */
+    .q-ios__sync ::ng-deep .website-sync { padding: 14px 16px; border: 0; border-radius: var(--ios-radius, 22px); background: var(--surface); }
   `,
 })
 export class WebsiteQuoteSettings {
@@ -79,6 +126,8 @@ export class WebsiteQuoteSettings {
   readonly error = this.prices.error;
   /** Host counter, so a rebuild queued elsewhere on the page also refreshes this status. */
   readonly refreshKey = input(0);
+  /** 'ios': the phone's inset groups with the kit switch; 'card' (default): the desk card. Same logic. */
+  readonly variant = input<'card' | 'ios'>('card');
   /** Emits after a save; the backend queues a website rebuild when the value changed. */
   readonly saved = output<void>();
   private readonly ownRefresh = signal(0);

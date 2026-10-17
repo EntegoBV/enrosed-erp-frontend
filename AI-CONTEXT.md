@@ -2304,6 +2304,12 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
 - `WebsitePriceStore` (root): the website price switch as one fact; the
   Website view writes it, the overview reads it. Turning prices on asks
   first; every switch toasts "Ongedaan maken", which works after leaving.
+  `app-website-quote-settings variant="ios"` is the phone's inset group with
+  the kit switch (the click is prevented, so the switch only moves when the
+  store does); the sync status stays inside it, once.
+- Phone Website, Catalogusdata and Dit toestel are inset groups (`.set-ios`),
+  the desk keeps its cards; the import result is one `ng-template` for both.
+  Theme is a radio list, push one switch over the same enable/disable flow.
 - Defaults are said, never faked (`company-fields.ts`, `COMPANY_DEFAULTS`):
   "Standaard: ENR", "Standaard: 24/7 Customs BV"; partner patterns the
   backend ignores (no `{nr`, the old `partner/{jaar}/{nr:3}`) warn.
