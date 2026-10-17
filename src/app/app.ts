@@ -221,9 +221,9 @@ export class App {
     void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
-    /* The phone push, pop and tab motion (nav-motion.ts) and the '/' and '?' keys (app-shortcut-keys.ts)
-       load after the first screen: neither is needed to show one, and the initial bundle stays within its
-       budget. */
+    /* The phone push, pop and tab motion (nav-motion.ts), the '/' and '?' keys (app-shortcut-keys.ts) and
+       the route progress with preloading (shell-loading.ts) load after the first screen: none is needed to
+       show one, and the initial bundle stays within its budget. */
     const injector = inject(Injector);
     inject(Router).events.pipe(filter((event) => event instanceof NavigationEnd), take(1)).subscribe(() => {
       void import('./core/platform/nav-motion').then((m) => injector.get(m.NavMotion));
@@ -232,6 +232,8 @@ export class App {
         active: () => !this.bare(),
         openHelp: () => this.shortcutsOpen.set(true),
       }));
+      /* The route progress line and the tab-root preloading (shell-loading.ts). */
+      void import('./core/platform/shell-loading').then((m) => injector.get(m.ShellLoading).install());
     });
   }
 
