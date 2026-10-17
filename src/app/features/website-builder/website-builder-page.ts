@@ -4,7 +4,9 @@ import {
   DestroyRef,
   ElementRef,
   HostListener,
+  Injector,
   ViewEncapsulation,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -186,12 +188,12 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
                 @if (!snapshot()) {
                   <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="8" /></div>
                 } @else {
-                  <div class="ws-blocks" role="list" aria-labelledby="ws-blocks-title" (keydown)="listKey($event)">
+                  <div class="ws-blocks" role="list" aria-labelledby="ws-blocks-title" (keydown)="listKey($event)" (keyup)="listKeyUp($event)">
                     @for (section of sections(); track section.key; let index = $index) {
                       <div class="ws-blk" role="listitem" [class.is-sel]="selectedSectionIndex() === index" [class.is-hidden]="!section.enabled"
                            [class.is-moved]="flash() === section.key">
                         <button class="ws-blk__main" type="button" [attr.tabindex]="selectedSectionIndex() === index ? 0 : -1"
-                                [attr.aria-current]="selectedSectionIndex() === index ? 'true' : null" [attr.data-index]="index" (click)="selectSection(index)">
+                                [attr.aria-current]="selectedSectionIndex() === index ? 'true' : null" [attr.data-index]="index" [attr.data-key]="section.key" (click)="selectSection(index)">
                           <span class="ws-blk__no">{{ positionLabel(index) }}</span>
                           <span class="ws-blk__body">
                             <span class="ws-blk__name">{{ definition(section.key).label }}</span>
@@ -239,7 +241,7 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
             </div>
           }
         </div>
-        <app-website-status-bar [text]="statusText()" hint="↑↓ kiezen · ⌘S opslaan" />
+        <app-website-status-bar [text]="statusText()" hint="↑↓ kiezen · ⌥↑↓ verplaatsen · spatie tonen/verbergen" />
       </div>
     } @else {
       <div class="ios-page ws-ios ws-hp-ios">
@@ -456,6 +458,7 @@ const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands e
 export class WebsiteBuilderPage implements HasUnsavedChanges {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  private readonly injector = inject(Injector);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
@@ -710,16 +713,51 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.previewError.set(null);
   }
 
-  /** ↑/↓ move between the blocks of the list (one tab stop). */
+  /**
+   * The block list's keys (one tab stop): ↑/↓ choose another block, ⌥↑/⌥↓
+   * move the chosen block (the same rules as Hoger/Lager), Space shows or
+   * hides it (never a fixed block), Enter goes to the inspector's switch.
+   */
   listKey(event: KeyboardEvent): void {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     const button = (event.target as HTMLElement).closest<HTMLElement>('.ws-blk__main');
-    if (!button || event.altKey || event.metaKey || event.ctrlKey) return;
-    event.preventDefault();
-    const next = Number(button.dataset['index']) + (event.key === 'ArrowDown' ? 1 : -1);
-    if (next < 0 || next >= this.sections().length) return;
-    this.selectSection(next);
-    queueMicrotask(() => (document.querySelector(`.ws-blk__main[data-index="${next}"]`) as HTMLElement | null)?.focus());
+    if (!button || event.metaKey || event.ctrlKey) return;
+    const index = Number(button.dataset['index']);
+    const arrow = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (arrow && event.altKey) {
+      event.preventDefault();
+      if (!(arrow < 0 ? this.canMoveUp(index) : this.canMoveDown(index)) || this.busy()) return;
+      const key = this.sections()[index].key;
+      this.move(index, arrow as -1 | 1);
+      this.focusBlock(key);
+    } else if (arrow && !event.altKey) {
+      event.preventDefault();
+      const next = index + arrow;
+      if (next < 0 || next >= this.sections().length) return;
+      this.selectSection(next);
+      if (this.selectedSectionIndex() === next) this.focusBlock(this.sections()[next].key);
+    } else if (event.key === ' ' && !event.altKey) {
+      /* The button's own click (on key up) would only select the block again: Space toggles instead. */
+      event.preventDefault();
+      const section = this.sections()[index];
+      if (!section || this.definition(section.key).fixed || this.busy()) return;
+      this.toggle(index);
+    } else if (event.key === 'Enter' && !event.altKey) {
+      event.preventDefault();
+      if (this.selectedSectionIndex() !== index) this.selectSection(index);
+      if (this.selectedSectionIndex() !== index) return;
+      if (!this.threeColumns()) this.rightView.set('layout');
+      queueMicrotask(() => document.querySelector<HTMLElement>('.ws-hp__insp .ws-switch, .ws-hp__insp .ws-manage')?.focus());
+    }
+  }
+
+  /** Space activates a button on key up: keep that from selecting the block a second time. */
+  listKeyUp(event: KeyboardEvent): void {
+    if (event.key === ' ' && (event.target as HTMLElement).closest('.ws-blk__main')) event.preventDefault();
+  }
+
+  /** After the list has rendered: a moved row is re-inserted, which drops its focus. */
+  private focusBlock(key: WebsiteBuilderSectionKey): void {
+    afterNextRender({ read: () => document.querySelector<HTMLElement>(`.ws-blk__main[data-key="${key}"]`)?.focus() }, { injector: this.injector });
   }
 
   canMoveUp(index: number): boolean {

@@ -37,8 +37,10 @@ test('route patterns match one segment per parameter and a whole subtree with /*
 test('the page section lists the screen keys and hides elsewhere', () => {
   assert.deepEqual(pageShortcutsFor('/purchasing/62').map((row) => row.keys.join(' ')), ['⌥ 1', '⌥ 2', '⌥ 3']);
   assert.deepEqual(pageShortcutsFor('/sales/79/edit').map((row) => row.text), ['Opslaan']);
-  assert.deepEqual(pageShortcutsFor('/website/layout').map((row) => row.text), ['Opslaan', 'Ander blok kiezen']);
-  assert.deepEqual(pageShortcutsFor('/website/texts?key=home.hero.title').map((row) => row.text), ['Opslaan', 'Vorige of volgende taal']);
+  assert.deepEqual(pageShortcutsFor('/website/layout').map((row) => row.text),
+    ['Opslaan', 'Ander blok kiezen', 'Blok hoger of lager zetten', 'Blok tonen of verbergen', 'Naar de instellingen van het blok']);
+  assert.deepEqual(pageShortcutsFor('/website/texts?key=home.hero.title').map((row) => row.text),
+    ['Opslaan', 'Andere tekstgroep kiezen', 'Naar het tekstveld', 'Vorige of volgende taal']);
   assert.deepEqual(pageShortcutsFor('/customers'), []);
 });
 

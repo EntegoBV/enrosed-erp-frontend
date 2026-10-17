@@ -55,11 +55,20 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
   /* Website beheren (2026-10-17). */
   {
     routes: ['/website/layout'],
-    rows: [{ keys: ['↑', '↓'], text: 'Ander blok kiezen' }],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Ander blok kiezen' },
+      { keys: ['⌥', '↑'], alt: ['⌥', '↓'], text: 'Blok hoger of lager zetten' },
+      { keys: ['Spatie'], text: 'Blok tonen of verbergen' },
+      { keys: ['↵'], text: 'Naar de instellingen van het blok' },
+    ],
   },
   {
     routes: ['/website/texts', '/website/seo'],
-    rows: [{ keys: ['['], alt: [']'], text: 'Vorige of volgende taal' }],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere tekstgroep kiezen' },
+      { keys: ['↵'], text: 'Naar het tekstveld' },
+      { keys: ['['], alt: [']'], text: 'Vorige of volgende taal' },
+    ],
   },
   {
     routes: ['/website/products'],

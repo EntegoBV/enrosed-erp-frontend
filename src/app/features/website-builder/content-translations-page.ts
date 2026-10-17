@@ -131,7 +131,7 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
               (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved($event)" (selectedKeyChange)="keyChanged($event)" />
           }
         </div>
-        <app-website-status-bar [text]="statusText()" [hint]="seoMode && seoTab() === 'producten' ? '/ zoeken' : '[ ] taal · ⌘S opslaan · / zoeken'" />
+        <app-website-status-bar [text]="statusText()" [hint]="seoMode && seoTab() === 'producten' ? '/ zoeken' : '↑↓ groep · [ ] taal · ⌘S opslaan · / zoeken'" />
       </div>
     } @else {
       <div class="ios-page ws-ios ws-texts-ios">

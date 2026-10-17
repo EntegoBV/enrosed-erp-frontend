@@ -2291,6 +2291,8 @@ The `/website*` workspace moved onto the workspace kit (contract: scratchpad `re
 
 **Words.** Opslaan (never "Bewaren"), Herstellen for reverting unsaved edits, Live · Concept · Verborgen · Niet actief in ERP, webadres, uitgelicht product, blok, "je", real plurals, "Update geaccepteerd".
 
+**Keys (desk).** Lists are one tab stop with roving focus. Homepage block list: ↑↓ choose, ⌥↑/⌥↓ move (the Hoger/Lager rules), Space shows or hides (not on fixed blocks), Enter goes to the inspector's switch. Teksten / SEO › Algemene pagina's and the Homepage inline editor: ↑↓ / Home / End through the visible rows (the editor follows; refused with a toast while the text is not saved), Enter goes to the text field, `[` `]` change the language, ⌘S saves. The Sneltoetsen rows (`PAGE_SHORTCUTS`) and the status-bar hints say the same.
+
 **Open for Emre (not in this round).**
 - Backend W11: `WebsiteRebuildService.updateLiveRevision()` moves `liveAt` on every poll while LIVE, so "sinds" is the last check. One-line guard `if (state.status != WebsiteRebuildStatus.LIVE) applyLive(state, now);` + test; needs his go for the Railway test environment.
 - Website repo (Codex): G1/G6 skip the language dialog when `builderPreview` is in the URL (then the preview can offer other languages again, EN without a redirect); G2 decide block "Offerte aanvragen"; G3 "Beurzen" and the FAQ in the footer; G4 which section uses `home.catalog` / `home.tradeFlow`; G5 handle typos and Dutch handles, the active "TEST PRODUCT".

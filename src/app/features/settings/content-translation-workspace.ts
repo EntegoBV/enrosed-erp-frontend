@@ -3,6 +3,8 @@ import {
   Component,
   ElementRef,
   HostListener,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -408,7 +410,7 @@ const PREFIX_LABELS: Record<string, string> = {
       } @else {
         <div class="ws-ct" [class.ws-ct--split]="layout() === 'split'" [class.ws-ct--inline]="layout() === 'inline'">
           @if (layout() === 'split') {
-            <nav class="ws-texts__list" aria-label="Tekstgroepen">
+            <nav class="ws-texts__list" aria-label="Tekstgroepen" (keydown)="listKey($event)">
               @for (section of areaSections(); track section.area.key) {
                 <button class="ws-area" type="button" [attr.aria-expanded]="section.open" (click)="toggleArea(section.area.key)">
                   <app-icon name="chevron-right" [size]="13" class="ws-area__chev" />{{ section.area.label }}
@@ -419,6 +421,7 @@ const PREFIX_LABELS: Record<string, string> = {
                     @for (row of section.rows; track row.group.key) {
                       @if (row.subArea) { <div class="ws-sub-area">{{ row.subArea }}</div> }
                       <button class="ws-grp" type="button" [class.is-sel]="isSelected(row.group)" [attr.aria-current]="isSelected(row.group) ? 'true' : null"
+                              [attr.data-key]="row.group.key" [attr.tabindex]="rowTabStop() === row.group.key ? 0 : -1"
                               [attr.title]="row.group.key" (click)="pick(row.group)">
                         <span class="ws-grp__label">{{ row.label }}</span>
                         @if (!row.group.required) { <small class="ws-grp__opt">opt.</small> }
@@ -434,9 +437,10 @@ const PREFIX_LABELS: Record<string, string> = {
               <div class="ws-texts__foot">{{ listCount() }} van {{ scopeGroups().length }} tekstgroepen</div>
             </nav>
           } @else {
-            <div class="ws-inline-list" role="list" aria-label="Teksten van dit blok">
+            <div class="ws-inline-list" role="list" aria-label="Teksten van dit blok" (keydown)="listKey($event)">
               @for (group of inlineGroups(); track group.key) {
                 <button class="ws-grp" type="button" role="listitem" [class.is-sel]="isSelected(group)" [attr.aria-current]="isSelected(group) ? 'true' : null"
+                        [attr.data-key]="group.key" [attr.tabindex]="rowTabStop() === group.key ? 0 : -1"
                         [attr.title]="group.key" (click)="pick(group)">
                   <span class="ws-grp__label">{{ labelOf(group) }}</span>
                   @if (!group.required) { <small class="ws-grp__opt">opt.</small> }
@@ -770,6 +774,7 @@ export class ContentTranslationWorkspace {
   private readonly document = inject(DOCUMENT);
   private readonly store = inject(WebsiteStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private loadStarted = false;
   private focusedInitialKey: string | null = null;
 
@@ -968,6 +973,16 @@ export class ContentTranslationWorkspace {
   });
   /** inline: the block's groups in server order. */
   readonly inlineGroups = computed(() => this.scopeGroups());
+  /** The rows a keyboard can reach, in list order: open areas only (split), the block's groups (inline). */
+  readonly visibleRowGroups = computed<ContentTranslationGroup[]>(() => this.layout() === 'inline'
+    ? this.inlineGroups()
+    : this.areaSections().filter((section) => section.open).flatMap((section) => section.rows.map((row) => row.group)));
+  /** One tab stop in the list: the chosen group when it shows, else the first row. */
+  readonly rowTabStop = computed(() => {
+    const rows = this.visibleRowGroups();
+    const draft = this.draft();
+    return draft && rows.some((group) => group.key === draft.key) ? draft.key : rows[0]?.key ?? null;
+  });
 
   constructor() {
     effect(() => {
@@ -1173,6 +1188,36 @@ export class ContentTranslationWorkspace {
   toggleArea(key: string): void {
     const section = this.areaSections().find((item) => item.area.key === key);
     this.areaOverrides.update((overrides) => ({ ...overrides, [key]: !(section?.open ?? false) }));
+  }
+
+  /**
+   * The list's keys (split and inline): ↑/↓ the previous or next visible
+   * group (the editor follows; refused with the toast while the text is
+   * not saved), Home/End the first or last, Enter to the text field.
+   */
+  listKey(event: KeyboardEvent): void {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('.ws-grp');
+    if (!button || event.altKey || event.metaKey || event.ctrlKey) return;
+    const rows = this.visibleRowGroups();
+    const index = rows.findIndex((group) => group.key === button.dataset['key']);
+    if (index < 0) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.pick(rows[index]);
+      if (this.isSelected(rows[index])) afterNextRender({ read: () => this.host.nativeElement.querySelector<HTMLTextAreaElement>('.ws-textarea')?.focus() }, { injector: this.injector });
+      return;
+    }
+    const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1
+      : event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    const target = rows[next];
+    if (!target || next === index) return;
+    /* The address follows the choice (?key=); that must not pull the focus into the text field while arrowing. */
+    if (!this.hasPendingChanges() && !this.busy()) this.focusedInitialKey = target.key;
+    this.pick(target);
+    if (!this.isSelected(target)) return;
+    afterNextRender({ read: () => this.host.nativeElement.querySelector<HTMLElement>(`.ws-grp[data-key="${CSS.escape(target.key)}"]`)?.focus() }, { injector: this.injector });
   }
 
   /** Another group while the text is dirty: say why nothing happens (rows stay enabled). */
