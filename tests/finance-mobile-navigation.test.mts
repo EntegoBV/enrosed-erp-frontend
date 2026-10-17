@@ -123,6 +123,23 @@ test('a transaction (line=) opens its own sheet on the phone, not the generic de
   assert.equal(page.phoneInspector().id, 26);
 });
 
+test('the transaction sheet stays under its own ⋯ menu; the generic detail sheet steps aside for a menu or a form', () => {
+  // Review 2026-10-17 (B6 follow-up): the sheet unmounted when its ⋯ opened, so Intrekken ran on a destroyed sheet and a choice in progress was lost.
+  const { state, page } = setup({ view: 'bank', tab: 'movements', line: '8841' });
+  state.inspect.set({ kind: 'line', id: 8841 });
+  state.menu.set({ items: [] });
+  assert.equal(page.phoneLine().id, 8841, 'the menu stacks above the transaction sheet');
+  state.menu.set(null);
+  for (const field of ['costDraft', 'paySheet', 'recurringDraft']) {
+    state[field].set({ id: 1 }); assert.equal(page.phoneLine(), null, `${field} takes the screen`);
+    state[field].set(null); assert.equal(page.phoneLine().id, 8841);
+  }
+  state.inspect.set({ kind: 'cost', id: 26 }); state.menu.set({ items: [] });
+  assert.equal(page.phoneLine(), null); assert.equal(page.phoneInspector(), null);
+  state.desk.set(true); state.menu.set(null); state.inspect.set({ kind: 'line', id: 8841 });
+  assert.equal(page.phoneLine(), null, 'a desk docks the line instead');
+});
+
 test('opening anything else while a transaction is open takes line= off the address, so it cannot win the inspector back', () => {
   // Facturen & kosten: cost 14 → its transaction → another cost row. Before 2026-10-16's review the address kept line=105.
   const { state } = setup({ view: 'costs', tab: 'company', cost: '14', line: '105' });

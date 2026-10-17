@@ -1430,8 +1430,15 @@ export class BankMovementPanel {
   remove(row: BankStatementLine): void {
     if (this.busy() || !this.canRemove(row)) return;
     const what = [row.account, euro.format(row.amountEur), row.counterparty, row.reference || 'Geen referentie'].filter(Boolean).map(part => escapeHtml(part)).join(' · ');
+    /* The outcome does not depend on where Intrekken was picked (the list's ⋯, the phone sheet's ⋯): a failure is a toast, and the open detail of the withdrawn line closes. */
     this.ui.confirm({ title: 'Transactie intrekken', message: `${what}. Ze telt niet meer mee in het saldo. Het logboek houdt de wijziging bij.`, confirmLabel: 'Intrekken', danger: true },
-      () => this.run(async () => { await this.api.delete(row.id); this.state.bankStatements.update(rows => rows.filter(line => line.id !== row.id)); await this.state.refreshBank(); }));
+      () => this.run(async () => {
+        try { await this.api.delete(row.id); } catch (failure) { this.ui.toast(messageOf(failure, 'Intrekken mislukt'), 'err'); return; }
+        this.state.bankStatements.update(rows => rows.filter(line => line.id !== row.id));
+        const open = this.state.inspect();
+        if (open?.kind === 'line' && open.id === row.id) this.state.closeInspector();
+        await this.state.refreshBank();
+      }));
   }
   private async run(work: () => Promise<unknown>): Promise<void> { if (this.busy()) return; this.busy.set(true); this.error.set(''); try { await work(); } catch (failure) { this.error.set(messageOf(failure, 'Bankbewerking mislukt')); } finally { this.busy.set(false); } }
 }

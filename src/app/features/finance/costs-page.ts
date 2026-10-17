@@ -278,8 +278,15 @@ export class CostsPage {
   });
   readonly phoneInspector = computed(() => !this.state.desk() && !this.state.costDraft() && !this.state.paySheet()
     && !this.state.recurringDraft() && !this.state.menu() ? this.state.inspect() : null);
-  /** A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component). */
-  readonly phoneLine = computed(() => { const target = this.phoneInspector(); return target?.kind === 'line' ? target : null; });
+  /**
+   * A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component).
+   * Its own ⋯ menu stacks above it instead of hiding it: the action then runs on the sheet it came from (an Intrekken
+   * that fails says so), and a choice in progress survives Annuleren.
+   */
+  readonly phoneLine = computed(() => {
+    const target = this.state.inspect();
+    return !this.state.desk() && target?.kind === 'line' && !this.state.costDraft() && !this.state.paySheet() && !this.state.recurringDraft() ? target : null;
+  });
   /** The phone's way out: "‹ Dashboard" (capitalised); a label over 10 characters becomes the chevron circle, its words in the aria-label. */
   readonly backText = computed(() => { const label = this.ret.label(); return label.charAt(0).toLocaleUpperCase('nl-BE') + label.slice(1); });
   readonly backCapsule = computed(() => capsuleLabel(this.backText()));

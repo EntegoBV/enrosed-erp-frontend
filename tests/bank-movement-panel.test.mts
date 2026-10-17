@@ -128,10 +128,11 @@ function harness() {
     linkLine: async () => '', accountLabel: (key: string) => key,
     today: () => '2026-10-16', accountsView: () => [] as { account: string }[],
     showHistorical: signal(false), flashLine: signal<number | null>(null),
+    inspect: signal<{ kind: string; id: number } | null>(null), closeInspector: () => { state.inspect.set(null); },
   };
   const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
   const ui = {
-    toast: (message: string) => { toasts.push(message); },
+    toast: (message: string, tone?: string) => { toasts.push(tone === 'err' ? `err: ${message}` : message); },
     confirm: (options: { title: string; message: string; confirmLabel?: string; danger?: boolean }, onConfirm: () => void) => {
       confirms.push(options);
       onConfirm();
@@ -370,6 +371,29 @@ test('the withdraw confirmation escapes what was typed and shows the amount in e
   assert.equal(confirms[0].danger, true);
   assert.deepEqual(deleted, [3]);
   return Promise.resolve().then(() => new Promise((done) => setTimeout(done, 0))).then(() => assert.equal(loads.refreshBank, 1));
+});
+
+test('Intrekken from the phone sheet\'s ⋯: a failure is a toast, a success closes the detail of that line', async () => {
+  // Review 2026-10-17: the sheet's ⋯ ran remove() on a panel whose error() nobody showed, and the sheet came back on a deleted line.
+  const { panel, api, state, toasts, loads } = harness();
+  const settle = () => new Promise((done) => setTimeout(done, 0));
+  const manual = movement(7, -80);
+  state.bankStatements.set([manual, movement(8, -20)]);
+  state.inspect.set({ kind: 'line', id: 7 });
+  (api as unknown as { delete: (id: number) => Promise<void> }).delete = async () => { throw new Error('Deze transactie is al gekoppeld.'); };
+  panel.remove(manual); await settle();
+  assert.deepEqual(toasts, ['err: Deze transactie is al gekoppeld.']);
+  assert.deepEqual(state.inspect(), { kind: 'line', id: 7 }, 'a failed withdrawal keeps the line open');
+  assert.equal(state.bankStatements().length, 2);
+  (api as unknown as { delete: (id: number) => Promise<void> }).delete = async () => {};
+  panel.remove(manual); await settle();
+  assert.equal(state.inspect(), null, 'the withdrawn line no longer holds the sheet');
+  assert.deepEqual(Array.from(state.bankStatements(), (line) => line.id), [8]);
+  assert.equal(loads.refreshBank, 1);
+  state.inspect.set({ kind: 'line', id: 8 });
+  state.bankStatements.set([movement(8, -20), movement(9, -5)]);
+  panel.remove(movement(9, -5)); await settle();
+  assert.deepEqual(state.inspect(), { kind: 'line', id: 8 }, 'another open line stays');
 });
 
 test('"Te koppelen" includes incoming and outgoing bank rows without saved allocations', () => {
