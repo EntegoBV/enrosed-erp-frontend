@@ -228,7 +228,14 @@ a { color: var(--rose); }
 
 /* --- onderbalk (mobiel): .tabbar and the '+' (.fab), styled in styles/shell-tabbar.scss --- */
 
-/* --- zijbalk (desktop): .sidebar*, styled in styles/shell.scss --- */
+/* --- zijbalk (desktop) --- */
+.sidebar { display: none; }
+.sidebar__brand {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.sidebar__text--rail { display: none; }
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -236,18 +243,236 @@ a { color: var(--rose); }
    keeps its room; from 1024px it is the full sidebar below. */
 @media (min-width: 680px) {
   .shell { flex-direction: row; }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    color: var(--ink);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    padding-top: var(--safe-t);
+  }
   .tabbar { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
   .hide-desktop.hide-desktop { display: none !important; }
 }
 
+/* The narrow rail: icon over a short label, no group headers, the long
+   tail behind Meer. Tablets get it by width (680-1023 px). */
+@mixin sidebar-rail {
+  width: 84px;
+  flex: 0 0 84px;
+  overflow-x: clip;
+  .sidebar__brand {
+    display: flex;
+    justify-content: center;
+    padding: 14px 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
+  .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
+  .sidebar__brand .brand-mark__sub { display: none; }
+  .sidebar__nav { padding: 6px 6px; flex: 1; overflow-y: auto; }
+  .sidebar__label { display: none; }
+  .sidebar__group { display: none; }
+  .sidebar__sub { display: contents; }
+  .sidebar__link.sidebar__link--wide { display: none; }
+  .sidebar__theme { display: none; }
+  .sidebar__link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 9px 2px 8px;
+    margin: 0 0 2px;
+    border-radius: 10px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.1;
+    text-align: center;
+  }
+  .sidebar__text { min-width: 0; max-width: 100%; }
+  .sidebar__text--full { display: none; }
+  .sidebar__text--rail { display: inline; }
+  .sidebar__link--workspace { margin-top: 2px; border-color: transparent; }
+  .sidebar__link--workspace i { display: none; }
+  .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
+  .sidebar__link.active { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
+  .sidebar__link.sidebar__link--rail { display: flex; }
+  .sidebar__icon { width: 20px; display: inline-flex; justify-content: center; }
+  .sidebar__count { position: absolute; top: 4px; right: 8px; margin: 0; }
+  .sidebar__foot { padding: 8px 6px 12px; border-top: 1px solid var(--line); text-align: center; }
+  .sidebar__account { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .sidebar__user {
+    overflow: hidden;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar__logout {
+    width: 100%;
+    padding: 5px 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 11px;
+    cursor: pointer;
+  }
+}
+
 @media (min-width: 680px) and (max-width: 1023.98px) {
+  .sidebar { @include sidebar-rail; }
   .content { padding: 18px 20px 60px; }
+}
+
+/* A Fold shows only the four doors in its rail: home, sales, purchasing and products;
+   everything else waits under Meer, as on a phone. */
+@media (min-width: 680px) and (max-width: 899.98px) {
+  .sidebar .sidebar__link:not([data-rail-main]):not(.sidebar__link--rail) { display: none; }
+  .sidebar .sidebar__link--rail { margin-top: 6px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
 }
 
 @media (min-width: 1024px) {
   .shell { flex-direction: row; }
+
+  /* Light sidebar in the tab bar's idiom: white surface, hairline edge,
+     the real wordmark, and a soft rose highlight instead of a red pill. */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 228px;
+    flex: 0 0 228px;
+    background: var(--surface);
+    color: var(--ink);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+  }
+
+  .sidebar__brand {
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .sidebar__nav { padding: 10px; flex: 1; overflow-y: auto; }
+  .sidebar__label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 14px 10px 5px;
+  }
+  .sidebar__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-bottom: 1px;
+    border-radius: 10px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: background 0.16s ease, color 0.16s ease;
+  }
+  .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
+  .sidebar__link.active {
+    background: var(--rose-soft);
+    color: var(--rose-dark);
+    font-weight: 650;
+  }
+  .sidebar__link.active .sidebar__icon { opacity: 1; }
+  .sidebar__icon { width: 18px; display: inline-flex; justify-content: center; opacity: 0.85; }
+
+  .sidebar__group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    margin: 5px 0 2px;
+    padding: 8px 9px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 720;
+    letter-spacing: 0.035em;
+    color: var(--muted);
+    text-align: left;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+  }
+  .sidebar__group:hover { background: var(--surface-2); color: var(--ink-2); }
+  .sidebar__group--open {
+    border-color: var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .sidebar__group--current {
+    border-color: var(--rose-line);
+    background: var(--rose-soft);
+    color: var(--rose-dark);
+  }
+  .sidebar__group-icon { display: inline-flex; width: 18px; flex: 0 0 18px; opacity: .8; }
+  .sidebar__group-label { min-width: 0; flex: 1; line-height: 1.2; }
+  .sidebar__group-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--rose);
+    color: #fff;
+    font-size: 9px;
+    letter-spacing: 0;
+  }
+  .sidebar__group-chev {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    place-items: center;
+    border-radius: 999px;
+    font-size: 16px;
+    line-height: 1;
+    transition: transform 0.15s ease;
+  }
+  .sidebar__group-chev--open { transform: rotate(90deg); }
+  .sidebar__sub {
+    display: block;
+    margin: 1px 0 7px 16px;
+    padding-left: 7px;
+    border-left: 1px solid var(--line);
+  }
+  .sidebar__sub--closed { display: none; }
+  .sidebar__sub .sidebar__link { padding: 7px 8px; }
+  .sidebar__link.sidebar__link--rail { display: none; }
+  .sidebar__theme { display: flex; justify-content: center; gap: 6px; padding: 10px 8px 6px; }
+  .sidebar__theme button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
+    cursor: pointer;
+  }
+  .sidebar__theme button.active { border-color: var(--ink); }
+
+
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
   .hide-mobile.hide-mobile { display: revert; }
@@ -299,6 +524,15 @@ a { color: var(--rose); }
    left rail on a regular desktop, while smaller screens keep a work strip. */
 .shell.shell--website { flex-direction: column; background: #f4f1ed; }
 .shell--website .main { background: #f7f5f2; }
+.sidebar__link--workspace {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-2);
+}
+.sidebar__link--workspace:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.sidebar__link--workspace.active { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
+.sidebar__link--workspace i { margin-left: auto; font-style: normal; opacity: .55; }
 @media (min-width: 960px) {
   .shell.shell--website { flex-direction: row; }
 }
@@ -934,6 +1168,41 @@ table.data tfoot td {
   .sheet__body { padding: 0; overflow: visible; }
 }
 
+/* ------------------------------------------------------- zijbalk-voettekst */
+@media (min-width: 1024px) {
+  .sidebar__foot {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .sidebar__theme { padding: 0; }
+  .sidebar__account {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sidebar__user {
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar__logout {
+    flex: none;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    color: var(--ink-2);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .sidebar__logout:hover { background: var(--surface-2); color: var(--ink); }
+}
 
 /* Login page and customer portal: no navigation, so no room reserved for it. */
 .shell--bare .content { padding-bottom: 40px; }
@@ -1115,6 +1384,22 @@ table.data tfoot td {
   font-size: 9.5px;
   font-weight: 700;
   line-height: 15px;
+  text-align: center;
+}
+/* A link label that shares its row with a count stays on one line. The count
+   moves closer so that the bold label of the open page still fits beside it. */
+.sidebar__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar__text:not(:last-child) { margin-right: -8px; }
+.sidebar__text + .sidebar__count { padding-inline: 4px; }
+.sidebar__count {
+  margin-left: auto;
+  min-width: 19px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--rose);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -3464,7 +3749,6 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/workspace-kit');
 @include meta.load-css('styles/motion');
 @include meta.load-css('styles/shell');
-@include meta.load-css('styles/shell-sidebar');
 @include meta.load-css('styles/finance-phone');
 @include meta.load-css('styles/files-phone');
 @include meta.load-css('styles/shell-tabbar');
