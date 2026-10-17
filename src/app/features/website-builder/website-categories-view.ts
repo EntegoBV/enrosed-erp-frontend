@@ -144,6 +144,25 @@ export function categoryMenuLine(category: Category): string {
   return parts.join(' · ');
 }
 
+/**
+ * The text of the chosen "Uitgelicht product" option, in the order the select
+ * lists them: a product label (name · kleur — SKU) is wider than the desk
+ * inspector, so the select carries it in full as its title. '' when nothing
+ * the select shows matches.
+ */
+export function featuredChoiceText(
+  choices: readonly { id: number; label: string }[],
+  featuredProductId: number | null,
+  dependencyMissing: boolean,
+  missingFeaturedId: number | null,
+): string {
+  if (featuredProductId === null) return 'Geen uitgelicht product';
+  const choice = choices.find((item) => item.id === featuredProductId);
+  if (choice) return choice.label;
+  if (dependencyMissing) return `Huidige keuze #${featuredProductId} · productgegevens niet geladen`;
+  return missingFeaturedId === featuredProductId ? `Product #${featuredProductId} · geen publieke foto` : '';
+}
+
 /** Reeksen of this category: by category id where the reeks has one, else by name. */
 export function categoryReeksCount(category: Category, families: readonly ProductFamily[]): number {
   const name = category.name.trim().toLocaleLowerCase('nl');

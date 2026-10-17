@@ -290,7 +290,7 @@ const LIST_URL = '/website/layout';
                 <div class="ios-group">
                   @for (group of blockGroups(section.key).slice(0, showAllTexts() ? 999 : 6); track group.key) {
                     <a class="ios-cell" routerLink="/website/texts" [queryParams]="{ key: group.key, returnTo: '/website/layout?blok=' + section.key }">
-                      <span class="ios-cell__body"><span class="ios-cell__title">{{ labelOf(group) }}</span><span class="ios-cell__sub" [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</span></span>
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub" [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</span></span>
                       <span class="ios-cell__value" [class.ws-warn-text]="group.missingLanguages.length">{{ group.missingLanguages.length ? group.missingLanguages.length + ' leeg' : languageCount + '/' + languageCount }}</span>
                       <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
                     </a>

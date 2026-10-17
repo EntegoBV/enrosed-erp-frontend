@@ -3,7 +3,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import type { Category, LanguageCode } from '../../core/api/models';
 import { CategoryTranslationEditor } from '../settings/category-translation-editor';
-import { categoryCodeTaken, categoryCodeValid } from './website-categories-view';
+import { categoryCodeTaken, categoryCodeValid, featuredChoiceText } from './website-categories-view';
 
 /** One choice of the "Uitgelicht product" list, prepared by the page. */
 export interface CategoryFeaturedChoice {
@@ -83,8 +83,8 @@ export interface CategoryFeaturedChoice {
     <ng-template #featuredPart>
       <div class="field">
         <label [attr.for]="id('featured-product')">Uitgelicht product <span class="opt"></span></label>
-        <select class="select" [id]="id('featured-product')" [ngModel]="draft().featuredProductId ?? null"
-                [disabled]="draft().id === null || dependencyMissing()"
+        <select class="select ws-cf__featured" [id]="id('featured-product')" [ngModel]="draft().featuredProductId ?? null"
+                [attr.title]="featuredText() || null" [disabled]="draft().id === null || dependencyMissing()"
                 (ngModelChange)="patch.emit({ featuredProductId: numberOrNull($event) })">
           <option [ngValue]="null">Geen uitgelicht product</option>
           @for (choice of choices(); track choice.id) {
@@ -168,6 +168,9 @@ export class WebsiteCategoryForm {
 
   readonly codeTaken = computed(() => categoryCodeTaken(this.categories(), this.draft()));
   readonly codeValid = computed(() => categoryCodeValid(this.draft().code));
+  /** The chosen uitgelicht product in full, for the select's title (the inspector cuts it). */
+  readonly featuredText = computed(() => featuredChoiceText(this.choices(), this.draft().featuredProductId ?? null,
+    this.dependencyMissing(), this.missingFeaturedId()));
 
   /** Desk and phone forms can be in the page at once (drawer, sheet): ids stay unique per variant. */
   id(field: string): string {

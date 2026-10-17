@@ -59,6 +59,8 @@
 .ws-ios .ios-thumb.ws-thumb--none{display:block}
 .ws-ph-under{margin-top:-8px}
 .ws-sheet{padding-top:4px}
+/* the reeks name in the sheet head gets two lines, so "(Review)", which tells reeksen apart, stays readable (N19) */
+@media (max-width:679.98px){.sheet--ios:has(.ws-sheet) .sheet__head h2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.25;white-space:normal;overflow-wrap:anywhere}}
 .ws-sheet .ws-figs-foot{margin-top:-8px}
 .ws-sheet-photo{display:grid;place-items:center;height:170px;margin:0 var(--ios-inset) 16px;overflow:hidden;border-radius:var(--ios-radius);background:var(--surface)}
 .ws-sheet-photo img{display:block;width:100%;height:170px;object-fit:contain}

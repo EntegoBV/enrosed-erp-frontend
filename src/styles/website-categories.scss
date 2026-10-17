@@ -46,6 +46,8 @@
 .ws-cf .field{margin-bottom:12px}
 .ws-cf .field>label{font-size:12.5px}
 .ws-cf__error{color:var(--danger);font-size:12.5px;font-weight:600}
+/* a product label is wider than the inspector: it ends in "…" and the select carries it in full as its title */
+.ws-cf__featured{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---- phone: list with a reorder mode, the form in a full-height sheet */
 .ws-cat-ios .ios-group--thumbs .ios-cell{min-height:64px}
