@@ -217,3 +217,15 @@ app-an-month-bars { display: block; padding: 8px 0 12px; }
   .an-phone .an-mbars { grid-template-columns: 40px minmax(0, 1fr); padding: 12px 12px 2px; }
   .an-phone .an-mbars__x { margin: 4px 12px 0 60px; font-size: 10px; }
 }
+
+/* ---------- Markt & container (critique N4: these replace component rules) */
+app-market-analysis .an-bar { margin-bottom: var(--an-gap); }
+app-market-analysis .fr-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+app-market-analysis .fr-vs { margin: -2px 0 10px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+app-market-analysis .fr-vs b { color: var(--ink); } app-market-analysis .fr-vs b.is-warn { color: var(--warn); } app-market-analysis .fr-vs b.is-ok { color: var(--ok); }
+app-market-analysis .btn app-icon { margin-right: 4px; }
+@media (max-width: 679.98px) {
+  app-market-analysis .fr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .an-phone app-market-analysis .an-bar { margin-inline: 0; }
+  .an-phone app-market-analysis .an-bar app-segmented { flex: 1; }
+}

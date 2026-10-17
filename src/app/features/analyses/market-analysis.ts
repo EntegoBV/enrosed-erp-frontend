@@ -1,3 +1,6 @@
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { Segmented } from '../../shared/segmented';
+import type { SegmentOption } from '../../shared/segmented';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { messageOf } from '../../core/api/errors';
@@ -11,6 +14,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import {
   DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, changeOverMonths, crossOf, freightNarrative, fxInsight,
   invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, weeklyRows, windowOf,
+  quoteVsMarketPct,
 } from './market-math';
 
 type PairId = 'usd' | 'cny' | 'cross';
@@ -100,20 +104,17 @@ const STORAGE_KEY = 'enrosed.market';
 @Component({
   selector: 'app-market-analysis',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NumPipe, Sheet, Icon, TrendChart],
+  imports: [FormsModule, NumPipe, Segmented, Sheet, Icon, TrendChart],
   template: `
     <div class="mk" [attr.aria-busy]="loading() || saving()">
-      <div class="mk-toolbar">
-        <div class="mk-seg" role="group" aria-label="Periode van de grafieken en vergelijkingen">
-          <span class="mk-seg__label">Periode</span>
-          @for (option of monthOptions; track option.months) {
-            <button type="button" [class.is-on]="months() === option.months"
-                    [attr.aria-pressed]="months() === option.months" (click)="setMonths(option.months)">{{ option.label }}</button>
-          }
-        </div>
-        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="load()">
-          {{ loading() ? 'Laden…' : 'Vernieuwen' }}
-        </button>
+      <!-- The tab's tool row (critique N10): one period for every chart, the source, the one writing action. Vernieuwen is the page's. -->
+      <div class="an-bar">
+        <app-segmented label="Periode van de grafieken en vergelijkingen" [variant]="desk.active() ? 'desk' : 'ios'" [options]="periodOptions"
+                       [value]="'' + months()" (changed)="setMonths($any(+$event))" />
+        @if (desk.active()) {
+          <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }</span>
+          <div class="an-bar__end"><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
+        }
       </div>
 
       @if (loadError()) {
@@ -234,7 +235,7 @@ const STORAGE_KEY = 'enrosed.market';
             <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
             <p>Wat wij betalen, wat de markt betaalt en welke kant het op gaat · tik op een tegel voor het verloop en de uitleg</p>
           </div>
-          <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">Tarief toevoegen</button>
+          @if (!desk.active()) { <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="openAdd()"><app-icon name="plus" [size]="14" />Tarief toevoegen</button> }
         </header>
 
         @for (group of freightGroups; track group.id) {
@@ -244,6 +245,10 @@ const STORAGE_KEY = 'enrosed.market';
               <i class="mk-chip mk-chip--unit">{{ group.unit }}</i>
               <small>{{ group.hint }}</small>
             </div>
+            @if (group.id === 'own' && quoteVsMarket(); as q) {
+              <p class="fr-vs">Onze laatste offerte ({{ q.route }}, {{ shortDate(q.quotedOn) }}): $ {{ q.ownUsd | num: 0 }} · {{ q.benchmark }} $ {{ q.marketUsd | num: 0 }} ·
+                <b [class.is-warn]="q.pct > 0" [class.is-ok]="q.pct < 0">{{ q.pct > 0 ? '+ ' : q.pct < 0 ? '− ' : '' }}{{ abs(q.pct) | num: 0 }} %</b></p>
+            }
             <div class="fr-tiles" role="group" [attr.aria-label]="group.title">
               @for (tile of tilesFor(group.id); track tile.code) {
                 <button class="fr-tile" type="button" [class.is-on]="selected() === tile.code"
@@ -339,8 +344,8 @@ const STORAGE_KEY = 'enrosed.market';
                   @if (source.latestPublishedOn) { <span>publicatie {{ shortDate(source.latestPublishedOn) }}</span> }
                   @if (source.lastCheckedAt) { <span>gecontroleerd {{ checkedOn(source.lastCheckedAt) }}</span> }
                   <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">Bron ↗</a>
-                  <button class="linklike" type="button" [disabled]="refreshingSource() === source.code"
-                          (click)="refreshSource(source.code)">
+                  <button class="btn btn--sm" type="button" [disabled]="refreshingSource() === source.code"
+                          (click)="refreshSource(source.code)"><app-icon name="refresh" [size]="14" />
                     {{ refreshingSource() === source.code ? 'Bron ophalen…' : 'Bron nu ophalen' }}</button>
                 </div>
                 @if (sourceNeedsAttention(source)) { <p class="fr-source__detail">{{ sourceGuidance(source) }}</p> }
@@ -360,7 +365,7 @@ const STORAGE_KEY = 'enrosed.market';
                           <td class="num" [attr.data-label]="d.definition.unit === 'usd' ? 'USD / 40ft' : 'Punten'">{{ d.definition.unit === 'usd' ? '$ ' : '' }}{{ row.rate.usdPerContainer | num: d.definition.unit === 'usd' ? 0 : 1 }}</td>
                           <td class="num" data-label="Verschil">@if (row.stepPct !== null) { <b [class]="'tone-' + freightTone(row.stepPct)">{{ row.stepPct > 0 ? '+' : '' }}{{ row.stepPct | num: 1 }}%</b> } @else { <span class="tone-neutral">—</span> }</td>
                           @if (d.definition.group === 'own') {
-                            <td class="num mk-table__action"><button class="linklike" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
+                            <td class="num mk-table__action"><button class="btn btn--sm btn--danger" type="button" [disabled]="deletingId() === row.rate.id" (click)="remove(row.rate)">Verwijderen</button></td>
                           }
                         </tr>
                       }
@@ -408,7 +413,7 @@ const STORAGE_KEY = 'enrosed.market';
                 @for (rate of recent; track rate.id ?? rate.quotedOn) {
                   <div class="sheet-recent__row">
                     <b>$ {{ rate.usdPerContainer | num: 0 }}</b><span>{{ shortDate(rate.quotedOn) }}</span>
-                    <button class="linklike" type="button" [disabled]="deletingId() === rate.id" (click)="remove(rate)">Verwijderen</button>
+                    <button class="btn btn--sm btn--danger" type="button" [disabled]="deletingId() === rate.id" (click)="remove(rate)">Verwijderen</button>
                   </div>
                 }
               </div>
@@ -426,11 +431,6 @@ const STORAGE_KEY = 'enrosed.market';
   `,
   styles: `
     :host{display:block}.mk{display:grid;gap:18px}
-    .mk-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
-    .mk-seg{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:99px;background:var(--surface)}
-    .mk-seg__label{padding:0 8px 0 10px;color:var(--muted);font-size:10.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase}
-    .mk-seg button{padding:6px 12px;border:0;border-radius:99px;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer}
-    .mk-seg button:hover{color:var(--ink)}.mk-seg button.is-on{background:var(--rose-soft);color:var(--rose-dark)}
     .mk-warning{padding:9px 12px;border:1px solid #eddcb9;border-radius:10px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
     .mk-card{overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);box-shadow:var(--sh-1)}
     .mk-card__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 14px;padding:16px 18px 14px;border-bottom:1px solid var(--line)}
@@ -479,7 +479,6 @@ const STORAGE_KEY = 'enrosed.market';
     .mk-chip--unit{background:var(--surface-2);color:var(--ink-2);font-variant-numeric:tabular-nums}
     .fr-tile__source{color:var(--muted);font-size:10.5px;line-height:1.3}
     .fr-detail__what{margin:4px 0 2px;color:var(--ink-2);font-size:12.5px;line-height:1.45}
-    .fr-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,160px),224px));gap:8px}
     .fr-tile{display:grid;gap:3px;min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
     .fr-tile:hover{border-color:var(--rose-line)}.fr-tile.is-on{border-color:var(--rose);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose)}
     .fr-tile__name{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--ink-2);font-size:11.5px;font-weight:700}
@@ -509,12 +508,8 @@ const STORAGE_KEY = 'enrosed.market';
     @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
     @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
       .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
-      .mk-toolbar .btn{order:-1;margin-left:auto}.mk-seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.fx-pair__now strong{font-size:26px}.fr-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      .fx-pair__now strong{font-size:26px}}
     :host, .mk { min-width: 0; }
-    .mk-toolbar { gap: 10px; }
-    .mk-seg { min-width: 0; padding: 4px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 90%, transparent); box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%); }
-    .mk-seg button { flex: none; min-height: 44px; min-width: 44px; border-radius: 14px; }
-    .mk-seg button.is-on { background: var(--surface); color: var(--rose-dark); box-shadow: 0 2px 7px rgb(25 35 30 / 10%); }
     .mk-card { border-radius: 22px; box-shadow: 0 3px 12px rgb(25 35 30 / 3%); }
     .mk-card__head { padding: 19px 20px; gap: 12px; }
     .mk-card__head h2 { font-size: 20px; line-height: 1.3; }
@@ -540,11 +535,6 @@ const STORAGE_KEY = 'enrosed.market';
     :is(button, summary, a):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
     @media (max-width: 679px) {
       .mk { gap: 14px; }
-      .mk-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-      .mk-toolbar .btn { order: 0; margin: 0; padding-inline: 11px; }
-      .mk-seg { overflow-x: auto; border-radius: 17px; scrollbar-width: none; }
-      .mk-seg__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-      .mk-seg button { flex: 1 0 auto; padding-inline: 10px; font-size: 11px; }
       .mk-card__head, .fx-pair, .fx-insight, .fr-detail { padding: 16px; }
       .mk-card__head h2 { font-size: 18px; }
       .fx-grid { padding: 0 12px; }
@@ -552,7 +542,6 @@ const STORAGE_KEY = 'enrosed.market';
       .fx-pair + .fx-pair { border-left: 1px solid var(--line); }
       .fx-pair__now strong { font-size: 29px; }
       .fr-group { padding-inline: 14px; }
-      .fr-tiles { gap: 8px; }
       .fr-tile { padding: 12px; }
       .fr-detail__head > div { min-width: 0; }
       .fr-detail__now { justify-items: start; text-align: left; }
@@ -579,6 +568,8 @@ export class MarketAnalysis {
   readonly fx = inject(Fx);
 
   readonly monthOptions = MONTH_OPTIONS;
+  readonly desk = inject(DesktopViewport);
+  readonly periodOptions: SegmentOption[] = MONTH_OPTIONS.map((option) => ({ id: String(option.months), label: option.label }));
   readonly periodWords = periodWords;
   readonly shortDate = shortDate;
   readonly historyLimit = 8;
@@ -756,6 +747,18 @@ export class MarketAnalysis {
       (!group || definition.group === group) && (this.ratesByRoute().get(definition.code)?.length ?? 0) > 1);
     return withTrend('own')?.code ?? withTrend('usd')?.code ?? withTrend()?.code ?? FREIGHT[0].code;
   }
+
+  /** Our latest quote against the latest market price in USD (design §3.7): "+ 36 %". */
+  readonly quoteVsMarket = computed(() => {
+    const latest = (group: FreightDefinition['group']) => this.tiles().filter((tile) => tile.group === group && tile.latest)
+      .sort((left, right) => right.latest!.quotedOn.localeCompare(left.latest!.quotedOn))[0] ?? null;
+    const own = latest('own');
+    const market = latest('usd');
+    if (!own?.latest || !market?.latest) return null;
+    const pct = quoteVsMarketPct(own.latest.usdPerContainer, market.latest.usdPerContainer);
+    return pct === null ? null : { route: own.short, quotedOn: own.latest.quotedOn, ownUsd: own.latest.usdPerContainer, benchmark: market.short,
+      marketUsd: market.latest.usdPerContainer, pct };
+  });
 
   tilesFor(group: FreightDefinition['group']) {
     return this.tiles().filter((tile) => tile.group === group);

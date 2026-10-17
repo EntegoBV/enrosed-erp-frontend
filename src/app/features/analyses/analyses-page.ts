@@ -319,8 +319,14 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       @case ('menu') {
         <app-sheet [title]="head().title" variant="ios" (closed)="sheet.set(null)">
           <div body class="ios-group">
-            <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" />
-              <span class="ios-cell__body"><span class="ios-cell__title">Hoe gerekend</span></span></button>
+            @if (howLines().length) {
+              <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" />
+                <span class="ios-cell__body"><span class="ios-cell__title">Hoe gerekend</span></span></button>
+            }
+            @if (section() === 'market') {
+              <button class="ios-cell" type="button" (click)="addRate()"><app-icon name="plus" [size]="18" />
+                <span class="ios-cell__body"><span class="ios-cell__title">Tarief toevoegen</span></span></button>
+            }
             @for (link of menuLinks(); track link.url) {
               <a class="ios-cell" [routerLink]="link.url" (click)="sheet.set(null)"><app-icon [name]="link.icon" [size]="18" />
                 <span class="ios-cell__body"><span class="ios-cell__title">{{ link.label }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
@@ -1775,6 +1781,12 @@ export class AnalysesPage {
   legacyTab(section: AnalysisSection): boolean { return LEGACY_BODIES.has(section); }
 
   openBell(): void { this.bell()?.open(); }
+
+  /** Markt's one writing action, from the phone's ⋯ sheet. */
+  addRate(): void {
+    this.sheet.set(null);
+    this.market()?.openAdd();
+  }
 
   /** History back when the origin is the screen below; else to the origin with the pop motion. */
   goBack(): void {
