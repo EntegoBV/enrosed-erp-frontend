@@ -563,6 +563,27 @@ export function peakMonth(seasonal: readonly number[] | null): string | null {
   return MONTH_NAMES[at].toLowerCase();
 }
 
+/* --------------------------------------------------------- realised markup */
+
+type RealisedSample = { invoices: number; revenueEur: number; markupPct: number | null };
+
+/**
+ * The 12-month markup beside the default (critique B4): "12 mnd: −2,5 %"
+ * when it is the default; with its basis when the sample is too thin to use
+ * ("12 mnd: −2,5 % (1 factuur, te weinig om op te rekenen)"); '' without one.
+ */
+export function realisedHint(guardedPct: number | null, sample: RealisedSample | null | undefined): string {
+  if (guardedPct !== null) return `12 mnd: ${pct(guardedPct)} %`;
+  if (!sample || sample.markupPct === null) return '';
+  return `12 mnd: ${pct(sample.markupPct)} % (${sample.invoices} ${sample.invoices === 1 ? 'factuur' : 'facturen'}, te weinig om op te rekenen)`;
+}
+
+/** Why the default is 50 %: "standaard: te weinig verkoophistoriek (1 factuur)"; '' when the realised markup is used. */
+export function standardMarkupNote(guardedPct: number | null, sample: RealisedSample | null | undefined): string {
+  if (guardedPct !== null || !sample) return '';
+  return `standaard: te weinig verkoophistoriek (${sample.invoices} ${sample.invoices === 1 ? 'factuur' : 'facturen'})`;
+}
+
 /* ----------------------------------------------------------------- loading */
 
 /**

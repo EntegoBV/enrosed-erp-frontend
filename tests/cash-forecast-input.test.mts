@@ -373,3 +373,20 @@ test('an account known only from a receipt label is label-only and leaves the fo
   assert.equal(forecast.startEur, 32365.27);
   assert.equal(forecast.reconciliation.matches, true);
 });
+
+test('the realised markup is the scenario default only on a fair sample; the raw figure stays (Analyses critique B4)', () => {
+  const full = cashForecastInput(sources());
+  assert.ok(full.history.realisedSample, 'the sample is exported');
+  assert.equal(full.history.realisedSample!.invoices, 7, 'regular invoices of the last year; partner advances and credit notes are no sample');
+  assert.ok(full.history.realisedSample!.revenueEur >= 10000);
+  assert.equal(full.history.realisedMarkupPct, full.history.realisedSample!.markupPct, 'a fair sample is the default');
+  assert.notEqual(full.history.realisedMarkupPct, null);
+  const one = salesOrders().filter((view) => view.order.id === 410);
+  const thin = cashForecastInput(sources({ salesOrders: one }));
+  assert.equal(thin.history.realisedMarkupPct, null, 'one invoice: the default falls back to 50 %');
+  assert.equal(thin.history.realisedSample!.invoices, 1);
+  assert.equal(thin.history.realisedSample!.revenueEur, 5401.43);
+  assert.notEqual(thin.history.realisedSample!.markupPct, null, 'the raw 12-month figure is still there to show');
+  const three = salesOrders().filter((view) => [300, 401, 402].includes(view.order.id));
+  assert.equal(cashForecastInput(sources({ salesOrders: three })).history.realisedMarkupPct, null, 'three invoices but under € 10.000: still thin');
+});

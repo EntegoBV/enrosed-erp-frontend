@@ -102,7 +102,9 @@ export interface ForecastVatQuarter { year: number; quarter: number; knownNetEur
 export interface ForecastProduct { productId: number; name: string; stockUnits: number; externalUnitEur: number | null;
   pricingUnitEur: number | null; listUnitEur: number | null; historicUnitEur: number | null; paceUnitsPerWeek: number; }
 export interface ForecastHistory {
-  realisedMarkupPct: number | null;  // §2.4, on external cost, 1 decimal
+  realisedMarkupPct: number | null;  // §2.4, on external cost, 1 decimal; null when the sample is too thin (Analyses critique B4)
+  /** The raw 12-month markup and what it rests on, shown even when too thin to use as the default. */
+  realisedSample?: { invoices: number; revenueEur: number; markupPct: number | null };
   paymentDays: number | null;        // whole days
   vatPct: number;                    // effective VAT on sales, 2 decimals
   seasonal: number[] | null;         // 12 monthly weights (jan..dec), mean 1, or null = too little history

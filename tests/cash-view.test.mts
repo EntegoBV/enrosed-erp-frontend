@@ -92,6 +92,14 @@ const scenario = buildCashForecast(exampleC(), options({ scenario: true }));
 
 /* ------------------------------------------------------------------ tests */
 
+test('the 12-month markup keeps its basis when too thin to be the default (critique B4)', () => {
+  assert.equal(view.realisedHint(-2.5, { invoices: 12, revenueEur: 90000, markupPct: -2.5 }), '12 mnd: -2,5 %', 'pct() as the hint always wrote it');
+  assert.equal(view.realisedHint(null, { invoices: 1, revenueEur: 18846, markupPct: -2.5 }), '12 mnd: -2,5 % (1 factuur, te weinig om op te rekenen)');
+  assert.equal(view.realisedHint(null, { invoices: 0, revenueEur: 0, markupPct: null }), '');
+  assert.equal(view.standardMarkupNote(null, { invoices: 1, revenueEur: 18846, markupPct: -2.5 }), 'standaard: te weinig verkoophistoriek (1 factuur)');
+  assert.equal(view.standardMarkupNote(30, { invoices: 5, revenueEur: 50000, markupPct: 30 }), '');
+});
+
 test('small texts: periods, signed whole euros, month names', () => {
   assert.equal(view.periodText('2026-12-01', '2026-12-13'), '1–13 dec');
   assert.equal(view.periodText('2027-01-08', '2027-03-04'), '8 jan–4 mrt');

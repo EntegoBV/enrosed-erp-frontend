@@ -244,7 +244,8 @@ export class CashPoSheet {
     const sheet = this.sheet();
     return sheet ? this.state.storedFor(sheet.orderId) : null;
   });
-  readonly realised = computed(() => this.state.input()?.history.realisedMarkupPct ?? null);
+  /* "vorig jaar −2,5 %": the raw 12-month markup, a choice he can still tap even when it is too thin to be the default (critique B4). */
+  readonly realised = computed(() => { const history = this.state.input()?.history; return history?.realisedSample?.markupPct ?? history?.realisedMarkupPct ?? null; });
   readonly peak = computed(() => peakMonth(this.state.input()?.history.seasonal ?? null));
   readonly error = computed(() => {
     const sheet = this.sheet();

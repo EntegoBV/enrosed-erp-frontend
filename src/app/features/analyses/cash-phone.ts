@@ -14,7 +14,7 @@ import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
 import {
   adjusted, amountText, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, parseAmount, phoneKrapBanner,
-  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, suggestionText, underBuffer,
+  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, standardMarkupNote, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, RuleSwitch } from './cash-view';
 
@@ -423,7 +423,8 @@ export class CashPhone {
   readonly daysText = computed(() => `${this.location().paymentDays ?? this.history()?.paymentDays ?? 30} dagen`);
   readonly choiceFoot = computed(() => {
     const basis = this.location().costBasis === 'PRICING' ? 'kost met Enrosed-kost' : 'externe kost';
-    return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}. Verandert niets aan orders of betalingen.`;
+    const note = this.location().markupPct === null ? standardMarkupNote(this.history()?.realisedMarkupPct ?? null, this.history()?.realisedSample) : '';
+    return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}${note ? ` · ${note}` : ''}. Verandert niets aan orders of betalingen.`;
   });
 
   readonly howLines = [
