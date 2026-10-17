@@ -120,3 +120,29 @@ test('the band names its one account and its check; attention rows read in/uit, 
   assert.deepEqual(['link', 'book', 'check', 'fill', null, 'unbanked'].map((action) => band.trailVerb({ action })),
     ['Koppelen', 'Nu boeken', 'Controleren', 'Saldo invullen', null, null]);
 });
+
+const Hero = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['heroTap', 'toTransactions', 'capsule', 'leaving', 'runCapsule'], { bankTextOf: () => ({ title: 'X', sub: '' }) });
+
+test('the one-account phone hero opens Transacties, or without a balance that account\'s own first reading (review 2026-10-17)', () => {
+  const calls: unknown[] = [];
+  const hero = new Hero();
+  hero.state = { go: (patch: any, mode: string) => calls.push(['go', patch.view, patch.tab, mode]), checkOrFill: (key: string) => calls.push(['fill', key]), openBank: () => calls.push(['blank']) };
+  hero.heroTap({ ...kbc, currentEur: 1200 });
+  hero.heroTap({ ...kbc, currentEur: null });
+  assert.deepEqual(calls, [['go', 'bank', 'movements', 'push'], ['fill', kbc.account]], 'never the blank balance form without an account');
+});
+
+test('only the Te koppelen row he links with its capsule leaves with a motion, and only while it links', async () => {
+  // Contract §1.5: motion follows his own action, never a data load (the 5-minute refresh, an Odoo sync, another device).
+  const line = { id: 31, amountEur: -80, bookedAt: '2026-10-15T08:00:00Z' };
+  const suggestion = { target: { kind: 'cost-new', costId: 2, title: 'Kost · Huur' }, changesAmount: false, others: [] };
+  let release!: () => void; const seen: (number | null)[] = [];
+  const hero = new Hero();
+  hero.state = { suggestions: () => new Map([[31, suggestion]]), linking: () => null,
+    linkLine: () => { seen.push(hero.leaving()); return new Promise<string>((done) => { release = () => done(''); }); } };
+  assert.equal(hero.leaving(), null, 'nothing leaves on a load');
+  const running = hero.runCapsule(line);
+  assert.deepEqual(seen, [31], 'set before the link starts, so the row that goes takes mo-leave');
+  release(); await running;
+  assert.equal(hero.leaving(), null, 'cleared afterwards: a later reload removes rows without motion');
+});

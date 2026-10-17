@@ -181,16 +181,21 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
       </div>
     } @else {
       @if (single(); as a) {
-        <!-- One account: the account lives in the hero; the full-cover button opens Transacties, the ⋯ and the capsule sit above it. -->
+        <!--
+          One account: the account lives in the hero (what its carousel card said moves here: excluded from the forecast,
+          Alles gekoppeld, its own first balance); the full-cover button opens Transacties, the ⋯ and the capsule sit above it.
+        -->
         <div class="ios-hero fin-hero fin-hero--one">
-          <button class="fin-hero__open" type="button" [attr.aria-label]="'Transacties van ' + a.label" (click)="totalTile()"></button>
+          <button class="fin-hero__open" type="button" [attr.aria-label]="a.currentEur !== null ? 'Transacties van ' + a.label : 'Saldo invullen voor ' + a.label" (click)="heroTap(a)"></button>
           <div class="fin-hero__acct"><span>{{ a.label }}</span><small>{{ iban(a.account) }}</small></div>
           <div class="ios-hero__value">{{ a.currentEur !== null ? (a.currentEur | eur) : 'Nog niet ingesteld' }}</div>
           <div class="ios-hero__sub" [class.is-warn]="bankStale()">{{ a.currentEur !== null ? 'Op de bank · ' + bandAge() : 'Tik om je saldo in te vullen' }}</div>
           <div class="fin-hero__moves"><span><small>Vandaag</small><b>{{ signedEur(moves().today) }}</b></span><span><small>Deze week</small><b>{{ signedEur(moves().week) }}</b></span>
             <span><small>Transacties</small><b>{{ activeLines().length }}</b></span></div>
-          <div class="fin-hero__foot"><small>{{ source(a) }}</small>
-            @if (unlinkedCount()) { <button class="fin-hero__link fin-hero__tap" type="button" (click)="toTransactions(true)"><b>{{ unlinkedCount() }}</b> te koppelen<app-icon name="chevron-right" [size]="14" /></button> }</div>
+          <div class="fin-hero__foot"><span class="fin-hero__meta"><small>{{ source(a) }}</small>
+              @if (!a.countsInCash) { <span class="fin-hero__pill">telt niet mee in de kasprognose</span> }</span>
+            @if (unlinkedCount()) { <button class="fin-hero__link fin-hero__tap" type="button" (click)="toTransactions(true)"><b>{{ unlinkedCount() }}</b> te koppelen<app-icon name="chevron-right" [size]="14" /></button> }
+            @else if (activeLines().length) { <span class="fin-hero__done"><app-icon name="tick" [size]="14" />Alles gekoppeld</span> }</div>
           <button class="fin-hero__more" type="button" aria-label="Rekening beheren" aria-haspopup="menu" (click)="manage(a, null)"><app-icon name="more" [size]="18" /></button>
         </div>
       } @else {
@@ -250,7 +255,8 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
           <div class="ios-group">
             @for (line of toLink(); track line.id) {
               @let c = capsule(line);
-              <div class="fin-txrow" [class.fin-txrow--action]="c.label !== 'Bekijk'" animate.leave="mo-leave">
+              <!-- Only the row he just linked leaves with a motion; a quiet reload or a sync swaps rows without one (contract §1.5). -->
+              <div class="fin-txrow" [class.fin-txrow--action]="c.label !== 'Bekijk'" [animate.leave]="leaving() === line.id ? 'mo-leave' : ''">
                 <button class="fin-txrow__open" type="button" (click)="state.openLine(line.id)" [attr.aria-label]="lineTitle(line) + ', ' + (c.suggested ? 'suggestie' : 'te koppelen') + ': openen'">
                   <span class="fin-txrow__title">{{ lineTitle(line) }}</span>
                   <span class="fin-txrow__amount" [class.wk-amount--in]="line.amountEur > 0">{{ line.amountEur > 0 ? '+' : '−' }} {{ abs(line.amountEur) | eur }}</span>
@@ -431,12 +437,15 @@ export class BankCockpit {
     const quick = !suggestion.changesAmount && !suggestion.others.some((other) => other.score >= 50);
     return { label: quick ? 'Koppel' : 'Bekijk', suggested: true, target: suggestion.target.title };
   }
-  runCapsule(line: BankStatementLine): void {
+  /** The Te koppelen row he is linking with its capsule: the one row that leaves with mo-leave. */
+  readonly leaving = signal<number | null>(null);
+  async runCapsule(line: BankStatementLine): Promise<void> {
     const suggestion = this.state.suggestions().get(line.id);
     const capsule = this.capsule(line);
     if (!suggestion || capsule.label === 'Bekijk') { this.state.openLine(line.id); return; }
     if (suggestion.target.kind === 'cost-pattern') { this.state.bookPattern(line, suggestion.target.costId); return; }
-    void this.state.linkLine(line, suggestion.target);
+    this.leaving.set(line.id);
+    try { await this.state.linkLine(line, suggestion.target); } finally { if (this.leaving() === line.id) this.leaving.set(null); }
   }
 
   /** "{n} rekeningen · {m} te koppelen · {k} met exacte suggestie · {a} punten vragen aandacht · Odoo opgehaald 08:12". */
@@ -452,6 +461,11 @@ export class BankCockpit {
   totalTile(): void {
     if (this.bankKnown()) this.toTransactions(false);
     else this.state.openBank(null);
+  }
+  /** The one-account hero: Transacties, or without a balance yet that account's own first reading (not a blank form). */
+  heroTap(a: AccountView): void {
+    if (a.currentEur === null) this.state.checkOrFill(a.account);
+    else this.toTransactions(false);
   }
   toTransactions(unlinked: boolean): void {
     this.state.go({ view: 'bank', tab: 'movements', account: '', link: unlinked ? 'unlinked' : '', dir: '', q: '', period: 'all', from: '', to: '' }, 'push');
