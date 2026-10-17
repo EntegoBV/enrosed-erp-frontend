@@ -81,7 +81,8 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
           status, the Koppeling with its one action, the amount and the saldo. Which cells show depends on the pane and on a
           docked detail (critique B3, bank-cockpit.scss); a hidden status leaves a dot before the title.
         -->
-        <div class="wk-table fin-table fin-table--tx" [class.fin-table--tx-compact]="compact()" [class.fin-table--full]="!compact()" [class.fin-table--one]="one()" role="grid" aria-label="Banktransacties">
+        <div class="wk-table fin-table fin-table--tx" [class.fin-table--tx-compact]="compact()" [class.fin-table--full]="!compact()" [class.fin-table--one]="one()"
+             [class.fin-table--no-act]="compact() && !anyAction()" role="grid" aria-label="Banktransacties">
           <div class="wk-thead" role="row">
             @if (!one()) { <span class="wk-th fin-col-dot" role="columnheader"><span class="fin-sr">Rekening</span></span> }
             <span class="wk-th" role="columnheader"><span class="fin-th-full">Tegenpartij · mededeling</span><span class="fin-th-short" aria-hidden="true">Tegenpartij</span></span>
@@ -914,6 +915,8 @@ export class BankMovementPanel {
     }).sort((left, right) => Date.parse(right.bookedAt) - Date.parse(left.bookedAt) || right.id - left.id);
   });
   readonly visibleLines = computed(() => this.filteredLines().slice(0, this.compact() ? 12 : this.shown()));
+  /** Whether a row on screen has a Koppelen / Bekijken / Boeken: the cockpit's action column is one fixed width for all rows, or none. */
+  readonly anyAction = computed(() => this.visibleLines().some(row => !!this.actionOf(row)));
   /** The desk row Tab lands on (roving tabindex): the keyboard's row, else the first. */
   readonly tabStopId = computed(() => {
     const rows = this.visibleLines();

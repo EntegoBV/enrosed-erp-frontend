@@ -1384,3 +1384,16 @@ test('several containers on one transfer: "Inkoop · 3 containers" with the name
   assert.equal(panel.koppeling(row)?.text, 'Inkoop · 3 containers');
   assert.equal(panel.koppeling(row)?.sub, 'PO-2026-043, Foam Bear en PO-2026-045');
 });
+
+test('the cockpit list gives its action one column for all rows, or none when no row on screen has an action', () => {
+  // Review 2026-10-17: an auto track was sized per row (each row is its own grid), so the status pills jumped between rows.
+  const { panel, state } = harness();
+  const suggestions = signal(new Map<number, unknown>());
+  (state as unknown as { suggestions: typeof suggestions }).suggestions = suggestions;
+  state.bankStatements.set([movement(1, -50), movement(2, -20)]);
+  assert.equal(panel.anyAction(), false, 'no suggestion: the action track collapses to 0');
+  const suggestion = { lineId: 2, target: { kind: 'cost-new', costId: 4, title: 'Kost · Huur', openEur: 20 }, score: 80, reasons: [], amountMatches: true, exact: true, changesAmount: false, others: [] };
+  suggestions.set(new Map([[2, suggestion]]));
+  assert.equal(panel.actionOf(movement(2, -20))?.label, 'Koppelen');
+  assert.equal(panel.anyAction(), true, 'one row with Koppelen: every row keeps the fixed action track');
+});
