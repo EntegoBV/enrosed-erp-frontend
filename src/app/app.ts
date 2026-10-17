@@ -44,13 +44,22 @@ import { ShortcutsSheet } from './shared/shortcuts-sheet';
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
          [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()" [class.shell--home]="homeRoute()">
       <!-- The workspace sides load with their workspace (@defer): they are a third of the
-           first screen's script otherwise. A dark placeholder holds their place meanwhile. -->
+           first screen's script otherwise. A dark placeholder holds their place meanwhile.
+           Only a signed-in user gets the side itself: on a logged-out hard load of /files,
+           /costs or /website the guard is still redirecting, and a side's first request
+           would fail with 401 and send /login without its returnTo. -->
       @if (websiteWorkspace()) {
-        @defer (on immediate) { <app-website-admin-nav /> } @placeholder { <div class="website-sidebar-placeholder" aria-hidden="true"></div> }
+        @if (auth.isLoggedIn()) {
+          @defer (on immediate) { <app-website-admin-nav /> } @placeholder { <div class="website-sidebar-placeholder" aria-hidden="true"></div> }
+        } @else { <div class="website-sidebar-placeholder" aria-hidden="true"></div> }
       } @else if (filesWorkspace()) {
-        @defer (on immediate) { <app-files-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
+        @if (auth.isLoggedIn()) {
+          @defer (on immediate) { <app-files-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
+        } @else { <aside class="wk-side" aria-hidden="true"></aside> }
       } @else if (financeWorkspace()) {
-        @defer (on immediate) { <app-finance-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
+        @if (auth.isLoggedIn()) {
+          @defer (on immediate) { <app-finance-admin-nav /> } @placeholder { <aside class="wk-side" aria-hidden="true"></aside> }
+        } @else { <aside class="wk-side" aria-hidden="true"></aside> }
       } @else if (!bare()) {
         <!-- Keyboard: the first stop skips the navigation (visible on focus). -->
         <a class="skip-link" href="#inhoud" (click)="skipToContent($event)">Naar de inhoud</a>

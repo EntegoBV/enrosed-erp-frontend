@@ -28,6 +28,13 @@ test('the desk sidebar: a skip link first, Meldingen op dit toestel in the foot,
 
 test('the shell starts from the address bar and keeps staff inside it on /voorwaarden', () => {
   assert.match(shell, /initialValue: this\.initialUrl\(\)/);
+  /* A workspace side is created only for a signed-in user: on a logged-out hard load the guard is
+     still redirecting, and the side's first request (401) would drop the login's returnTo. */
+  for (const side of ['app-website-admin-nav', 'app-files-admin-nav', 'app-finance-admin-nav']) {
+    const at = shell.indexOf(`<${side} />`);
+    const guard = shell.lastIndexOf('@if (auth.isLoggedIn()) {', at);
+    assert.ok(at > 0 && guard > 0 && at - guard < 80, side);
+  }
   assert.match(shell, /location\.pathname/);
   assert.match(shell, /url\.startsWith\('\/voorwaarden'\) && !this\.auth\.isLoggedIn\(\)/);
 });
