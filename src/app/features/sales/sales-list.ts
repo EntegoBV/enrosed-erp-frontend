@@ -404,7 +404,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       </div>
     </div>
 
-    <button class="fab" type="button" (click)="startNew()">{{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Order' }}</button>
+    <button class="fab" type="button" [class.fab--text]="businessScope()==='PARTNER'" (click)="startNew()">{{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Order' }}</button>
 
     @if (containerMenu(); as menuContainer) {
       <app-sales-container-menu [container]="menuContainer" [customerName]="customerName(menuContainer.rows[0])"

@@ -1,11 +1,12 @@
 import { ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import {
-  provideRouter, withComponentInputBinding, withInMemoryScrolling, withNavigationErrorHandler,
+  TitleStrategy, provideRouter, withComponentInputBinding, withInMemoryScrolling, withNavigationErrorHandler,
 } from '@angular/router';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './core/api/auth.interceptor';
+import { EnrosedTitleStrategy } from './core/platform/title-strategy';
 
 /**
  * After a deploy the hashed chunk a still-open tab wants to lazy-load no
@@ -45,5 +46,7 @@ export const appConfig: ApplicationConfig = {
         if (isStaleChunkError(event.error)) reloadForNewBuild();
       }),
     ),
+    /* Route titles in the browser tab; a page header's own title wins (title-strategy.ts). */
+    { provide: TitleStrategy, useClass: EnrosedTitleStrategy },
   ],
 };
