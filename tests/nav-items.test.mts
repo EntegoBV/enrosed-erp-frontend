@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_WORKSPACES, allNavUrls, groupCountKeys, meerItems, meerLabel,
@@ -21,11 +22,20 @@ test('every link of the sidebar and Meer before the redesign is still there', ()
   assert.equal(new Set(urls).size, urls.length, 'no link twice');
 });
 
+/* Different names, the same drawing (a box, a cab and two wheels): never side by side in one group. */
+const LOOK_ALIKES: readonly (readonly string[])[] = [['suppliers', 'truck']];
+
 test('one icon per screen within a group, and ids are unique', () => {
+  const iconSource = readFileSync(new URL('../src/app/shared/icon.ts', import.meta.url), 'utf8');
   for (const group of NAV_GROUPS) {
     const icons = group.items.map((item) => item.icon);
     assert.equal(new Set(icons).size, icons.length, group.id);
+    for (const pair of LOOK_ALIKES) {
+      assert.ok(pair.filter((name) => icons.includes(name)).length < 2, `${group.id}: ${pair.join(' and ')} look the same`);
+    }
+    for (const icon of [group.icon, ...icons]) assert.ok(iconSource.includes(`@case ('${icon}')`), `icon ${icon} exists`);
   }
+  assert.equal(NAV_GROUPS.find((g) => g.id === 'inkoop')!.items.find((i) => i.id === 'duties')!.icon, 'customs');
   const ids = [NAV_HOME, ...NAV_GROUPS.flatMap((g) => g.items), ...NAV_WORKSPACES, ...NAV_DEVICE].map((i) => i.id);
   assert.equal(new Set(ids).size, ids.length);
 });
