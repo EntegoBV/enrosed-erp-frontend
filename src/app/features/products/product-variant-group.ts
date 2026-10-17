@@ -475,7 +475,7 @@ export class ProductVariantGroup {
     try {
       const [products, families, categories] = await Promise.all([
         this.catalog.products(),
-        this.catalog.productFamilies(),
+        this.catalog.productFamilies({ maxAgeMs: 20_000 }),
         this.catalog.categories(),
       ]);
       this.products.set(products);

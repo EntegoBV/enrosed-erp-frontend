@@ -768,7 +768,7 @@ export class ProductList {
     this.familyLoading.set(true);
     this.familyLoadError.set(false);
     try {
-      this.families.set(await this.catalog.productFamilies());
+      this.families.set(await this.catalog.productFamilies({ maxAgeMs: 20_000 }));
     } catch {
       this.families.set([]);
       this.familyLoadError.set(true);

@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { finalize, firstValueFrom, type Observable } from 'rxjs';
+import { cachedOnce } from './request-cache';
 import { api } from './api.config';
 import {
   CatalogChannel, CatalogImportResult, Category, ContentTranslationCreate, ContentTranslationGroup, ContentTranslationOverview, ContentTranslationScope, ContentTranslationWrite, HsCode, LanguageCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductPublicTranslationsSnapshot, ProductPublicTranslationsWrite, ProductSharedFieldsApplyRequest, ProductSharedFieldsApplyResult, ProductSupplierAgreementPhoto, PublicWebsiteLayout, WebsiteBuilderHomepage, WebsiteBuilderSection, WebsiteRebuildStatus, StockMovement, StockLocation, StockLevel, ProductStock,
@@ -56,9 +57,37 @@ export interface WebsiteVisibilityResult {
   notice: string | null;
 }
 
+/**
+ * The HttpClient this API writes through: every POST, PUT, PATCH or DELETE
+ * calls `clear` before it is sent and again once it is answered, so a cached
+ * read can never outlive a write made through CatalogApi.
+ */
+function clearingOnWrite(http: HttpClient, clear: () => void): HttpClient {
+  return new Proxy(http, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'post' || property === 'put' || property === 'patch' || property === 'delete') {
+        return (...args: unknown[]) => {
+          clear();
+          return (value as (...input: unknown[]) => Observable<unknown>).apply(target, args).pipe(finalize(clear));
+        };
+      }
+      return (value as (...input: unknown[]) => unknown).bind(target);
+    },
+  });
+}
+
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
-  private readonly http = inject(HttpClient);
+  private readonly http = clearingOnWrite(inject(HttpClient), () => this.familiesCache.clear());
+  /**
+   * GET /api/product-families, shared while in flight; the product screens
+   * opt into reusing an answer up to 20 s old (productFamilies({ maxAgeMs })).
+   * Any write through this API forgets it.
+   */
+  private readonly familiesCache = cachedOnce(
+    () => firstValueFrom(this.http.get<ProductFamily[]>(api('/api/product-families'))), 20_000);
   /**
    * Share only identical photo requests that are currently in flight. The
    * completed response is intentionally not cached, so replacing a photo on
@@ -179,8 +208,14 @@ export class CatalogApi {
 
   /* --------------------------------------------------- productfamilies */
 
-  productFamilies(): Promise<ProductFamily[]> {
-    return firstValueFrom(this.http.get<ProductFamily[]>(api('/api/product-families')));
+  /**
+   * Every series with its publication state. Without options one request per
+   * call, as always (only a request already in flight is shared); the
+   * product screens pass { maxAgeMs: 20000 } to reuse a young answer. Each
+   * caller gets its own copy, so changing one in place changes nobody else's.
+   */
+  productFamilies(options?: { maxAgeMs?: number }): Promise<ProductFamily[]> {
+    return this.familiesCache.get(options?.maxAgeMs ?? 0).then((families) => structuredClone(families));
   }
 
   productFamily(id: number): Promise<ProductFamily> {

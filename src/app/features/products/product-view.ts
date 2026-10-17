@@ -1510,7 +1510,7 @@ export class ProductView {
     if (this.catalogueNavigationRequest) return this.catalogueNavigationRequest;
     this.catalogueNavigationRequest = Promise.all([
       this.catalog.products(),
-      this.catalog.productFamilies(),
+      this.catalog.productFamilies({ maxAgeMs: 20_000 }),
     ]).then(([products, families]) => {
       this.catalogueProducts.set(products);
       this.catalogueFamilies.set(families);

@@ -903,7 +903,7 @@ export class StockPage {
         this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
         this.catalog.categories().catch(() => [] as Category[]),
         this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
-        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
+        this.catalog.productFamilies({ maxAgeMs: 20_000 }).catch(() => [] as ProductFamily[]),
       ]);
       this.families.set(families);
       this.products.set(products);
