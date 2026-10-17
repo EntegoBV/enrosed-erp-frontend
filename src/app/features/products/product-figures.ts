@@ -127,6 +127,29 @@ export function locationValues(levels: readonly LevelLike[], costOf: ReadonlyMap
   return new Map([...cents].map(([id, value]) => [id, value / 100]));
 }
 
+/**
+ * Voorraadlocaties, per location: the products holding stock there and
+ * their value at landed cost, on /stock's basis (active products only,
+ * valued per level to the cent), so both screens show the same figure.
+ */
+export function locationStock(
+  levels: readonly LevelLike[],
+  products: readonly { id: number | null; active: boolean; landedCostEur: number | null | undefined }[],
+): Map<number, { products: number; value: number }> {
+  const costOf = new Map<number, number | null | undefined>();
+  for (const product of products) if (product.active && product.id !== null) costOf.set(product.id, product.landedCostEur);
+  const own = levels.filter((level) => costOf.has(level.productId));
+  const values = locationValues(own, costOf);
+  const result = new Map<number, { products: number; value: number }>();
+  for (const level of own) {
+    if (!(level.quantity > 0)) continue;
+    const entry = result.get(level.locationId) ?? { products: 0, value: values.get(level.locationId) ?? 0 };
+    entry.products += 1;
+    result.set(level.locationId, entry);
+  }
+  return result;
+}
+
 /** Pieces per product, summed over every location. */
 export function totalsByProduct(levels: readonly LevelLike[]): Map<number, number> {
   const totals = new Map<number, number>();

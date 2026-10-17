@@ -6,6 +6,7 @@ import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
+import { locationStock } from '../products/product-figures';
 
 /**
  * Where stock can lie: the warehouse and every sales point.
@@ -220,17 +221,8 @@ export class StockLocationList {
   private async loadStock(): Promise<void> {
     try {
       const [levels, products] = await Promise.all([this.catalog.stockLevels(), this.catalog.products()]);
-      const cost = new Map(products.map((product) => [product.id, product.landedCostEur]));
-      const result = new Map<number, { products: number; value: number }>();
-      for (const level of levels) {
-        if (!(level.quantity > 0)) continue;
-        const entry = result.get(level.locationId) ?? { products: 0, value: 0 };
-        entry.products += 1;
-        const unitCost = cost.get(level.productId);
-        if (unitCost && unitCost > 0) entry.value = Math.round((entry.value + level.quantity * unitCost) * 100) / 100;
-        result.set(level.locationId, entry);
-      }
-      this.stockByLocation.set(result);
+      /* The same basis as Voorraad: active products only, valued per level to the cent. */
+      this.stockByLocation.set(locationStock(levels, products));
     } catch {
       /* The stock line is a bonus: it stays "—". */
     }
