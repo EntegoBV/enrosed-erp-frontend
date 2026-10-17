@@ -386,7 +386,14 @@ function mediaSignal(query: string) {
           @if (group.photo) { <img class="ios-thumb" [appAuthSrc]="group.photo" alt="" draggable="false" /> } @else { <span class="ios-thumb skp-thumb--empty" aria-hidden="true">◈</span> }
           <span class="skp-body">
             <span class="skp-name">{{ group.name }}</span>
-            <span class="skp-meta">{{ phoneMeta(group.byLocation, group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten', group.value) }}</span>
+            <span class="skp-meta skp-meta--fold">
+              <span>{{ group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten' }}</span>
+              @if (group.colours.length) {
+                <span class="skp-dots" aria-hidden="true">@for (colour of group.colours.slice(0, 8); track colour.name) { <i [style.background]="colour.hex || 'var(--surface-2)'"></i> }@if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }</span>
+              }
+              <app-icon class="skp-chev" name="chevron-down" [size]="14" />
+            </span>
+            @if (phoneFigures(group.byLocation, group.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
           </span>
           <span class="skp-end">
             <strong [class.zero]="!figureOf(group.byLocation, group.total)">{{ figureOf(group.byLocation, group.total) | num }}</strong>
@@ -414,20 +421,32 @@ function mediaSignal(query: string) {
           } @else {
             <span class="skp-name">{{ row.product.name }}</span>
           }
-          <span class="skp-meta">{{ phoneMeta(row.byLocation, nested ? (row.product.sku || 'Geen SKU') : productMeta(row.product), row.value) }}</span>
+          <span class="skp-meta">{{ nested ? (row.product.sku || 'Geen SKU') : productMeta(row.product) }}</span>
+          @if (phoneFigures(row.byLocation, row.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
         </span>
         <span class="skp-end">
           @if (editing() && editLocation() !== null) {
             <input class="skp-qty" type="text" inputmode="numeric" autocomplete="off" [attr.aria-label]="row.product.name + ' op ' + locationName(editLocation()!)"
                    [value]="row.byLocation.get(editLocation()!) ?? 0" (click)="$event.stopPropagation()"
-                   (keydown.enter)="$any($event.target).blur()" (change)="setQuantity(row, editLocation()!, $any($event.target))" />
+                   (keydown.enter)="$event.stopPropagation(); $any($event.target).blur()" (change)="setQuantity(row, editLocation()!, $any($event.target))" />
           } @else {
             <strong [class.zero]="!figureOf(row.byLocation, row.total)">{{ figureOf(row.byLocation, row.total) | num }}</strong>
           }
           <small>{{ figureOf(row.byLocation, row.total) === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</small>
           @if (exp) { <span class="exp">+{{ exp.quantity | num }}</span> }
         </span>
+        <!-- One tap to move between locations, as before the redesign. -->
+        @if (!editing() && activeLocations().length > 1) {
+          <button class="skp-move" type="button" title="Verplaatsen" [attr.aria-label]="'Verplaatsen: ' + row.product.name"
+                  (click)="$event.stopPropagation(); openBooking(row, 'TRANSFER', view())" (keydown.enter)="$event.stopPropagation()">
+            <app-icon name="exchange" [size]="16" /></button>
+        }
       </div>
+    </ng-template>
+
+    <!-- The second meta line: each location with its figure (and the value) kept on one line. -->
+    <ng-template #figureLine let-parts>
+      <span class="skp-meta skp-meta--figs">@for (part of parts; track $index) {@if (!$first) { · }<span class="skp-nw">{{ part }}</span>}</span>
     </ng-template>
 
     <!-- One sheet per product: the figures per location, the actions and
@@ -722,13 +741,21 @@ export class StockPage {
     return view === null ? total : byLocation.get(view) ?? 0;
   }
 
-  /** Phone meta: the split when two locations hold stock and the segment is Alle, else "{label} · € value". */
-  phoneMeta(byLocation: Map<number, number>, label: string, value: number | null): string {
+  /**
+   * Phone, the second meta line under "4 kleuren" or the SKU: where the
+   * stock lies (two or more locations hold it and the segment is Alle) and
+   * what it is worth; null when there is neither.
+   */
+  phoneFigures(byLocation: Map<number, number>, value: number | null): string[] | null {
+    const parts: string[] = [];
     if (this.view() === null) {
-      const entries = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }));
-      if (entries.filter((entry) => entry.quantity).length >= 2) return locationSplit(entries);
+      /* One part per location that holds stock ("Zaltbommel 1.960"), so a name never parts from its figure. */
+      const held = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }))
+        .filter((entry) => entry.quantity !== 0);
+      if (held.length >= 2) parts.push(...held.map((entry) => locationSplit([entry])));
     }
-    return value === null ? label : `${label} · ${value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}`;
+    if (value !== null) parts.push(value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }));
+    return parts.length ? parts : null;
   }
 
   readonly filtered = computed(() => {

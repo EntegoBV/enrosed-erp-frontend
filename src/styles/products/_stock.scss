@@ -139,6 +139,20 @@ app-stock-page .skp-name { font-size: 15px; font-weight: 600; line-height: 1.25;
 app-stock-page .skp-name--variant { display: flex; align-items: center; gap: 6px; font-size: 14.5px; }
 app-stock-page .skp-cdot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
 app-stock-page .skp-meta { color: var(--muted); font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }
+/* The series head keeps "4 kleuren", the colour dots and the fold chevron; the split goes on the next line. */
+app-stock-page .skp-meta--fold { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+app-stock-page .skp-dots { display: inline-flex; align-items: center; gap: 3px; }
+app-stock-page .skp-dots i { width: 9px; height: 9px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%); }
+app-stock-page .skp-dots small { color: var(--muted); font-size: 11px; }
+app-stock-page .skp-chev { color: var(--muted-2); transition: transform var(--dur-1, .12s) var(--ease-out, ease); }
+app-stock-page .skp-row--open .skp-chev { transform: rotate(180deg); }
+/* A location stays with its figure: the line breaks only between the parts. */
+app-stock-page .skp-nw { display: inline-block; }
+app-stock-page .skp-move {
+  display: grid; flex: none; place-items: center; align-self: center; width: 34px; height: 34px; margin-right: -4px; padding: 0;
+  border: 0; border-radius: 50%; background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-2); cursor: pointer;
+}
+app-stock-page .skp-move:active { background: color-mix(in srgb, var(--ink) 12%, transparent); }
 app-stock-page .skp-end { display: grid; flex: none; justify-items: end; min-width: 64px; padding-top: 1px; text-align: right; }
 app-stock-page .skp-end strong { font-size: 17px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
 app-stock-page .skp-end strong.zero { color: var(--muted-2); font-weight: 550; }
