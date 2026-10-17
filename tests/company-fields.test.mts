@@ -131,3 +131,16 @@ test('numbering previews: {jaar}, {nr:3}, the next number and the fallback warni
   assert.equal(partnerPatternWarning('', 'partnerQuote'), null);
   assert.equal(partnerPatternWarning('pf/{jaar}/{nr:3}', 'partnerQuote'), null);
 });
+
+test('legal texts: version line, word count, built-in stays null', async () => {
+  const { legalVersionLine, wordCountText, legalSaveValue } = await import('../src/app/features/settings/company-fields.ts');
+  assert.equal(legalVersionLine('ALGEMENE VOORWAARDEN\nVersie 30 augustus 2026\n\nArtikel 1'), 'Versie 30 augustus 2026');
+  assert.equal(legalVersionLine('GENERAL TERMS\nVersion 30 August 2026\n'), 'Version 30 August 2026');
+  assert.equal(legalVersionLine('Geen versie hier'), null);
+  assert.equal(wordCountText('een twee  drie\nvier'), '4 woorden');
+  assert.equal(wordCountText(Array.from({ length: 1842 }, () => 'w').join(' ')), '1.842 woorden');
+  assert.equal(legalSaveValue('  ', 'x'), null);
+  assert.equal(legalSaveValue('Ingebouwd\n', 'Ingebouwd'), null);
+  assert.equal(legalSaveValue('Eigen tekst', 'Ingebouwd'), 'Eigen tekst');
+  assert.equal(legalSaveValue('Eigen tekst', null), 'Eigen tekst');
+});

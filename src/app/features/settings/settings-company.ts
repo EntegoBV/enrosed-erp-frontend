@@ -147,21 +147,11 @@ const LONG_LABELS: Record<LongField, string> = {
               </div>
             </section>
 
-            <!-- Voorwaarden & privacy: the legal texts stay here until their own view exists -->
-            <section class="wk-card set-card span-2" aria-labelledby="co-group-legal">
-              <h2 class="set-card__title" id="co-group-legal">Voorwaarden &amp; privacy</h2>
-              <p class="set-foot">Voorstel voor Enrosed BV: laat deze teksten nakijken door je boekhouder of jurist. Klanten lezen ze op
-                <a class="wk-link" routerLink="/voorwaarden">/voorwaarden</a>. Documenten in een andere taal dan Nederlands verwijzen naar de Engelse versie.
-                Leeg laten betekent: gebruik het ingebouwde voorstel.</p>
-              @for (key of legalKeys; track key) {
-                <details class="set-legal" [class.set-field--dirty]="isDirty(key)">
-                  <summary>{{ longLabel(key) }} <span class="wk-pill" [class.tone-accent]="!!textOf(d, key).trim()">{{ textOf(d, key).trim() ? 'Eigen tekst' : 'Ingebouwd voorstel' }}</span></summary>
-                  <textarea class="set-textarea set-textarea--long" [attr.aria-label]="longLabel(key)" [value]="textOf(d, key)"
-                            [attr.placeholder]="key.endsWith('En') ? 'Empty = built-in draft' : 'Leeg = ingebouwd voorstel'"
-                            (input)="set(key, $any($event.target).value)"></textarea>
-                </details>
-              }
-            </section>
+            <!-- Voorwaarden & privacy have their own view -->
+            <a class="wk-card set-card span-2 set-linkrow" routerLink="/settings" [queryParams]="{ sectie: 'legal' }">
+              <span><b>Voorwaarden &amp; privacy</b><small>Algemene voorwaarden en privacyverklaring, Nederlands en Engels: lezen, bewerken, terugzetten</small></span>
+              <app-icon name="chevron-right" [size]="16" />
+            </a>
           </div>
         </div>
       } @else {
@@ -245,21 +235,12 @@ const LONG_LABELS: Record<LongField, string> = {
           </section>
 
           <section class="ios-section">
-            <div class="ios-section__head"><h2>Voorwaarden &amp; privacy</h2></div>
             <div class="ios-group">
-              @for (key of legalKeys; track key) {
-                <button class="ios-cell" type="button" (click)="openLong(key)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ longLabel(key) }}</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ textOf(d, key).trim() ? 'Eigen tekst' : 'Ingebouwd' }}</span></span>
-                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                </button>
-              }
-              <a class="ios-cell" routerLink="/voorwaarden">
-                <span class="ios-cell__body"><span class="ios-cell__title">Bekijk zoals klanten</span></span>
+              <a class="ios-cell" routerLink="/settings" [queryParams]="{ sectie: 'legal' }" [info]="push">
+                <span class="ios-cell__body"><span class="ios-cell__title">Voorwaarden &amp; privacy</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </a>
             </div>
-            <p class="ios-section__foot">Voorstel voor Enrosed BV: laat deze teksten nakijken door je boekhouder of jurist. Leeg = het ingebouwde voorstel.</p>
           </section>
         </div>
       }
@@ -306,7 +287,7 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-field { display: grid; grid-template-columns: 168px minmax(0, 1fr); align-items: center; column-gap: 14px; padding: 5px 16px; }
     .set-field > label { justify-self: end; color: var(--ink-2); font-size: 13px; font-weight: 600; text-align: right; }
     .set-field > label.req::after { content: ' *'; color: var(--danger); }
-    .set-field--dirty > label::before, .set-footer.set-field--dirty > label::before, details.set-field--dirty > summary::before {
+    .set-field--dirty > label::before, .set-footer.set-field--dirty > label::before {
       content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
     .set-field--error > label { color: var(--danger); }
     .set-input { width: 100%; height: 36px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
@@ -349,8 +330,12 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-textarea { width: 100%; min-height: 96px; max-height: 200px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 9px;
       background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.5; resize: vertical; field-sizing: content; }
     .set-textarea--long { min-height: 220px; max-height: 60vh; margin-top: 8px; field-sizing: fixed; }
-    .set-legal { margin: 0 16px 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
-    .set-legal summary { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 650; cursor: pointer; }
+    .set-linkrow { display: flex; align-items: center; gap: 12px; padding: 14px 16px; color: var(--ink); text-decoration: none; }
+    .set-linkrow:hover { background: var(--surface-2); }
+    .set-linkrow > span { display: grid; flex: 1; gap: 2px; min-width: 0; }
+    .set-linkrow b { font-size: 15px; }
+    .set-linkrow small { color: var(--muted); font-size: 12.5px; }
+    .set-linkrow > app-icon { color: var(--muted-2); }
     .set-company-phone { --ios-inset: 0px; }
     .set-company-phone .ios-banner { margin-inline: 0; }
     .set-text-btn { flex: none; min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; }
@@ -422,7 +407,8 @@ export class SettingsCompany implements SettingsEditor {
     { series: 'partnerQuote', label: 'Partneroffertes', field: 'partnerQuoteNumberPattern', next: 'partnerQuoteNextNumber', max: 60, isNew: true },
   ];
   readonly footerKeys: readonly LongField[] = ['documentFooter', 'documentFooterEn'];
-  readonly legalKeys: readonly LongField[] = ['termsAndConditions', 'termsAndConditionsEn', 'privacyPolicy', 'privacyPolicyEn'];
+  /** Rows that open another view push on the phone. */
+  readonly push = { nav: 'push' };
 
   /** The saved profile the draft is based on. */
   private readonly base = signal<CompanyProfile | null>(null);

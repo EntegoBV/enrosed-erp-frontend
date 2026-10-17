@@ -353,3 +353,29 @@ export const FOOTER_PROPOSAL = {
   nl: 'Op al onze offertes zijn onze algemene voorwaarden van toepassing.',
   en: 'All our quotations are subject to our general terms and conditions.',
 } as const;
+
+/* ------------------------------------------------------- legal texts */
+
+/** The version line a legal text carries ("Versie 30 augustus 2026"), if any. */
+export function legalVersionLine(value: string | null | undefined): string | null {
+  const match = (value ?? '').match(/^\s*((?:Versie|Version)\b[^\n]{0,60})$/im);
+  return match ? match[1].trim() : null;
+}
+
+/** "1.842 woorden" (nl-BE thousands). */
+export function wordCountText(value: string | null | undefined): string {
+  const count = (value ?? '').trim().split(/\s+/).filter(Boolean).length;
+  const shown = String(count).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${shown} ${count === 1 ? 'woord' : 'woorden'}`;
+}
+
+/**
+ * What saving a legal text stores: null (the built-in proposal) when it is
+ * empty or still exactly the built-in text it was started from.
+ */
+export function legalSaveValue(textValue: string, builtIn: string | null): string | null {
+  const trimmed = textValue.trim();
+  if (!trimmed) return null;
+  if (builtIn !== null && trimmed === builtIn.trim()) return null;
+  return textValue;
+}

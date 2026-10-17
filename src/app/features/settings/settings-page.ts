@@ -49,6 +49,8 @@ import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { CompanyStore } from './company-store';
 import { SettingsOverview } from './settings-overview';
 import { SettingsCompany } from './settings-company';
+import { LEGAL_LANGUAGES, SettingsLegal } from './settings-legal';
+import { Segmented } from '../../shared/segmented';
 import { SettingsEditor, dirtyStatusText } from './settings-editor';
 import { keyContext } from '../../shared/key-context';
 import {
@@ -64,7 +66,7 @@ const OVERVIEW_URL = '/settings/overzicht';
 
 /** The settings views of this build (the legal view arrives with its own package). */
 const AVAILABLE_VIEWS: readonly SettingsView[] = [
-  'overview', 'company', 'website', 'duties', 'discounts', 'catalog-data', 'device',
+  'overview', 'company', 'legal', 'website', 'duties', 'discounts', 'catalog-data', 'device',
 ];
 
 interface CategoryFeaturedOption {
@@ -106,7 +108,9 @@ const normalizeCategoryCode = (value: string): string => value
   imports: [
     LoadError,
     SettingsCompany,
+    SettingsLegal,
     SettingsOverview,
+    Segmented,
     Skeleton,
     AuthImage,
     CategoryTranslationEditor,
@@ -133,6 +137,9 @@ const normalizeCategoryCode = (value: string): string => value
     } @else {
     <app-page-header [title]="viewInfo().title" [subtitle]="viewInfo().subtitle"
                      [parent]="headerParent()" [backTo]="headerBackTo()">
+      @if (view() === 'legal' && desktop.active() && legalEditor(); as legal) {
+        <app-segmented label="Taal" [options]="legalLanguages" [value]="legal.language()" (changed)="legal.setLanguage($event)" />
+      }
       @if (activeEditor(); as editor) {
         @if (editor.dirty()) {
           @if (desktop.active()) {
@@ -183,6 +190,10 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('company')) {
         <app-settings-company class="mo-fade" [hidden]="view() !== 'company'" />
+      }
+
+      @if (visited().has('legal')) {
+        <app-settings-legal class="mo-fade" [hidden]="view() !== 'legal'" />
       }
 
       @if (visited().has('website')) {
@@ -1289,11 +1300,14 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   /* ---------------------------------------------- one save model per view */
 
   private readonly companyEditor = viewChild(SettingsCompany);
+  readonly legalEditor = viewChild(SettingsLegal);
+  readonly legalLanguages = LEGAL_LANGUAGES;
 
   /** The editor of a view: its draft, dirty count and save (see SettingsEditor). */
   editorFor(view: SettingsView): SettingsEditor | null {
     switch (view) {
       case 'company': return this.companyEditor() ?? null;
+      case 'legal': return this.legalEditor() ?? null;
       default: return null;
     }
   }
