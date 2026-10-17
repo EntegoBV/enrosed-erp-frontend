@@ -35,7 +35,11 @@ interface FieldDef {
 
 interface FieldGroup { id: string; title: string; fields: FieldDef[]; foot?: string }
 
-interface SeriesRow { series: NumberSeries; label: string; field: CompanyField; next?: CompanyField; max: number; isNew?: boolean }
+interface SeriesRow {
+  series: NumberSeries; label: string; field: CompanyField; next?: CompanyField; max: number; isNew?: boolean;
+  /** What else shares or owns this series (the old form's hints, kept). */
+  note?: string;
+}
 
 /** The texts edited in a sheet on the phone (and the legal texts in a sheet on the phone too). */
 type LongField = 'documentFooter' | 'documentFooterEn' | 'termsAndConditions' | 'termsAndConditionsEn' | 'privacyPolicy' | 'privacyPolicyEn';
@@ -72,7 +76,7 @@ const LONG_LABELS: Record<LongField, string> = {
                 @if (group.id === 'fiscal') {
                   <label class="set-switch">
                     <span><b>Vergunning ET 14000 (invoer-btw verlegd)</b>
-                      <small>Aan: de invoer-btw van containers ingeklaard in België komt in rooster 87/57/59 in plaats van betaald aan de douane.</small></span>
+                      <small>{{ et14000 }}</small></span>
                     <input class="ios-switch" type="checkbox" role="switch" [checked]="!!d.importVatDeferred"
                            (change)="set('importVatDeferred', $any($event.target).checked)" />
                   </label>
@@ -120,10 +124,11 @@ const LONG_LABELS: Record<LongField, string> = {
                            (input)="setNumber(next, $any($event.target).value)" />
                   } @else { <span class="set-muted">—</span> }
                   <span class="set-preview">{{ preview(row.series).text }}@if (preview(row.series).isDefault) { <span class="wk-pill wk-pill--outline">standaard</span> }</span>
+                  @if (row.note) { <p class="set-num__note">{{ row.note }}</p> }
                   @if (warning(row); as text) { <p class="set-num__warn mo-fade">{{ text }}</p> }
                 </div>
               }
-              <p class="set-foot">{{ '{jaar}' }} is het jaar, {{ '{nr:3}' }} het volgnummer met drie cijfers. Verander je de letters, dan telt de reeks gewoon door. Het volgnummer telt gewoon door. Een volgend nummer gebruik je alleen als de boekhouding al verder telt.</p>
+              <p class="set-foot">{{ numberingFoot }}</p>
             </section>
 
             <!-- Op elk document -->
@@ -169,7 +174,7 @@ const LONG_LABELS: Record<LongField, string> = {
               <div class="ios-group">
                 @if (group.id === 'fiscal') {
                   <label class="ios-cell set-switch-cell">
-                    <span class="ios-cell__body"><span class="ios-cell__title">Vergunning ET 14000</span><span class="ios-cell__sub ios-cell__sub--2">Invoer-btw verlegd (87/57/59)</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">Vergunning ET 14000</span><span class="ios-cell__sub set-wrap">{{ et14000 }}</span></span>
                     <input class="ios-switch" type="checkbox" role="switch" [checked]="!!d.importVatDeferred"
                            (change)="set('importVatDeferred', $any($event.target).checked)" />
                   </label>
@@ -200,6 +205,7 @@ const LONG_LABELS: Record<LongField, string> = {
                   <input class="mono" [attr.maxlength]="row.max" [attr.placeholder]="row.next ? 'Standaard' : 'Standaard: ' + defaultOf(row.field)"
                          [value]="textOf(d, row.field)" (input)="set(row.field, $any($event.target).value)" />
                   <small class="p-sub mono">@if (row.next && preview(row.series).isDefault) { {{ defaultOf(row.field) }} → }{{ preview(row.series).text }}@if (preview(row.series).isDefault) { · standaard }</small>
+                  @if (row.note) { <small class="p-sub">{{ row.note }}</small> }
                   @if (warning(row); as text) { <small class="p-sub p-sub--warn">{{ text }}</small> }
                 </label>
                 @if (row.next; as next) {
@@ -211,7 +217,7 @@ const LONG_LABELS: Record<LongField, string> = {
                 }
               }
             </div>
-            <p class="ios-section__foot">{{ '{jaar}' }} is het jaar, {{ '{nr:3}' }} het volgnummer met drie cijfers. Het volgnummer telt gewoon door.</p>
+            <p class="ios-section__foot">{{ numberingFoot }}</p>
           </section>
 
           <section class="ios-section">
@@ -318,6 +324,7 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--ink-2); font: 500 13px var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .set-preview .wk-pill { font-family: var(--font, inherit); }
     .set-num__warn { grid-column: 2 / -1; margin: 4px 0 0; color: var(--warn); font-size: 12px; }
+    .set-num__note { grid-column: 2 / -1; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
     @container set-card (max-width: 640px) {
       .set-num { grid-template-columns: 110px minmax(0, 1fr) 90px; row-gap: 4px; }
       .set-num > .set-preview { grid-column: 2 / -1; }
@@ -353,6 +360,7 @@ const LONG_LABELS: Record<LongField, string> = {
     .p-sub--warn { color: var(--warn); }
     .p-sub--err { color: var(--danger); font-weight: 600; }
     .set-switch-cell { cursor: pointer; }
+    .set-wrap { white-space: normal; overflow-wrap: anywhere; }
     .set-staff-phone { padding: 12px 16px; }
     .set-long { display: grid; gap: 8px; }
     .set-textarea--sheet { min-height: 40vh; max-height: none; font-size: 16px; field-sizing: fixed; }
@@ -387,7 +395,7 @@ export class SettingsCompany implements SettingsEditor {
       { key: 'website', label: 'Website', stacked: true },
     ] },
     { id: 'bank', title: 'Bank', foot: 'Komt op offertes en facturen bij de betaalgegevens.', fields: [
-      { key: 'iban', label: 'IBAN', mono: true },
+      { key: 'iban', label: 'IBAN', mono: true, stacked: true },
       { key: 'bic', label: 'BIC', mono: true, upper: true },
     ] },
     { id: 'fiscal', title: 'Btw en douane',
@@ -402,11 +410,16 @@ export class SettingsCompany implements SettingsEditor {
   readonly series: readonly SeriesRow[] = [
     { series: 'quote', label: 'Offertes', field: 'quoteNumberPrefix', max: 12 },
     { series: 'invoice', label: 'Facturen', field: 'invoiceNumberPrefix', max: 12 },
-    { series: 'creditNote', label: 'Creditnota’s', field: 'creditNoteNumberPrefix', max: 12 },
-    { series: 'partnerInvoice', label: 'Partnerfacturen', field: 'partnerInvoiceNumberPattern', next: 'partnerInvoiceNextNumber', max: 60 },
+    { series: 'creditNote', label: 'Creditnota’s', field: 'creditNoteNumberPrefix', max: 12, note: 'Eén reeks voor gewone en partnercreditnota’s.' },
+    { series: 'partnerInvoice', label: 'Partnerfacturen', field: 'partnerInvoiceNumberPattern', next: 'partnerInvoiceNextNumber', max: 60,
+      note: 'Eigen reeks voor voorschot- en slotfacturen.' },
     { series: 'partnerQuote', label: 'Partneroffertes', field: 'partnerQuoteNumberPattern', next: 'partnerQuoteNextNumber', max: 60, isNew: true },
   ];
   readonly footerKeys: readonly LongField[] = ['documentFooter', 'documentFooterEn'];
+  /** Under Nummering, desk and phone: a preview "…-0001" shows the form, never the next number. */
+  readonly numberingFoot = '{jaar} is het jaar, {nr:3} het volgnummer met drie cijfers. Het voorbeeld toont de vorm: het volgnummer telt gewoon door, '
+    + 'ook als je de letters verandert. Een volgend nummer gebruik je alleen als de boekhouding al verder telt.';
+  readonly et14000 = 'Aan: de invoer-btw van containers ingeklaard in België komt in rooster 87/57/59 in plaats van betaald aan de douane.';
   /** Rows that open another view push on the phone. */
   readonly push = { nav: 'push' };
 
