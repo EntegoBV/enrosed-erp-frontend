@@ -6,7 +6,7 @@ import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth } from './finance-format';
-import { cashTotalOf, openOf, paidOf, regimeLabel, reverseChargeOf, vatOf } from './finance-metrics';
+import { cashTotalOf, openOf, paidOf, regimeLabel, regimeToConfirm, reverseChargeOf, vatOf } from './finance-metrics';
 import { FinanceState } from './finance-state';
 import { daysBetween } from './payables';
 
@@ -163,12 +163,8 @@ export class CostRow {
     const onBank = payments.filter((payment) => payment.bankStatementLineId != null || (!!payment.id && lines.has(`kostbetaling#${payment.id}`))).length;
     return `${onBank} van ${payments.length} betalingen op de bank`;
   });
-  /** 'België · te bevestigen' while the regime was only derived; 'Nog te bepalen' without one. */
-  readonly regimeNote = computed(() => {
-    const cost = this.cost();
-    if (!cost.vatRegime) return regimeLabel(null);
-    return cost.vatRegimeConfirmed ? '' : `${regimeLabel(cost.vatRegime)} · te bevestigen`;
-  });
+  /** The dot's title: 'Btw-regeling afgeleid · te bevestigen · België' while the regime was only derived; '' once confirmed. */
+  readonly regimeNote = computed(() => regimeToConfirm(this.cost().vatRegime, this.cost().vatRegimeConfirmed));
   readonly age = computed(() => {
     const cost = this.cost();
     return cost.date <= this.state.today() ? daysBetween(cost.date, this.state.today()) : null;

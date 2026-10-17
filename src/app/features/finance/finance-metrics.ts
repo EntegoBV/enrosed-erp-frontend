@@ -71,6 +71,15 @@ export function regimeLabel(code: string | null | undefined): string {
   return VAT_REGIMES.find((def) => def.code === code)?.label ?? code;
 }
 
+/**
+ * The warn dot after a cost whose regime still needs his word (title and aria): 'Btw-regeling afgeleid · te bevestigen · België'
+ * for a derived one, 'Btw-regeling nog te bepalen' without one, '' once confirmed.
+ */
+export function regimeToConfirm(code: string | null | undefined, confirmed: boolean | null | undefined): string {
+  if (!code) return 'Btw-regeling nog te bepalen';
+  return confirmed ? '' : `Btw-regeling afgeleid · te bevestigen · ${regimeLabel(code)}`;
+}
+
 export interface ExpensePreset { code: ExpenseType; label: string; vatPct: number | null; taxPct: number | null; hint?: string }
 
 /** The deductibility presets (BDO table AY 2026); CUSTOM keeps whatever was typed. */
