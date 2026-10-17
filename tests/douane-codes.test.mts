@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
+  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, oneLine, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
 } from '../src/app/features/purchasing/douane-codes.ts';
 
 // Douane (Inkoop redesign I8, F22): the codes as people read them, the products per code and the two checks.
@@ -62,3 +62,11 @@ test('the spelling note follows its count: one product vindt and rekent, several
   const [mismatch] = spellingMismatches([product(9, '0603 11 00')], [{ code: '06031100' }]);
   assert.deepEqual([mismatch.spelled, mismatch.code], ['0603 11 00', '06031100']);
 });
+
+test('a description stays one line: breaks from the phone text area become one space, the rest is kept as typed', () => {
+  assert.equal(oneLine('Glaswerk voor tafel,\nkeuken en versiering'), 'Glaswerk voor tafel, keuken en versiering');
+  assert.equal(oneLine('Rozen \r\n\n vers afgesneden'), 'Rozen vers afgesneden');
+  assert.equal(oneLine('Rozen, vers afgesneden'), 'Rozen, vers afgesneden');
+  assert.equal(oneLine('  spaties  blijven  '), '  spaties  blijven  ', 'only line breaks change');
+});
+

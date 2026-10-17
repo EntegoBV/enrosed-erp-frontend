@@ -130,3 +130,9 @@ export function matchesTariff(code: Pick<HsCode, 'code' | 'description'>, query:
   return normalizeHs(code.code).includes(normalizeHs(needle)) && normalizeHs(needle) !== ''
     || (code.description ?? '').toLowerCase().includes(needle);
 }
+
+/** A tariff description is one line (the desk field is a one-line input): line breaks typed or pasted into the phone's text area become spaces. */
+export function oneLine(text: string): string {
+  return text.replace(/[ \t]*[\r\n]+[ \t]*/g, ' ');
+}
+

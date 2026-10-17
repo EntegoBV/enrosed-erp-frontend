@@ -59,3 +59,9 @@ app-douane-page .dt-field>.ios-cell__body{flex:1 1 auto}
 app-douane-page .dt-field>.dt-input,app-douane-page .dt-field>.dt-pct{flex:none}
 app-douane-page .dt-sheet .dt-input{width:170px;height:36px;padding:0 10px;border:0;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink);font:inherit;font-size:16px}
 app-douane-page .dt-sheet .dt-input--pct{width:80px}
+/* Omschrijving on the phone stacks under its label across the cell, as a text area: 'Glaswerk voor tafel, keuken en versiering
+   (stolpen, schalen)' reads whole while editing (beside the label the field was 170 px and showed 'Rozen, vers afgesne…'). */
+app-douane-page .dt-field--stack{flex-wrap:wrap;row-gap:6px;padding-block:10px}
+app-douane-page .dt-field--stack>.ios-cell__body{flex:1 1 100%}
+app-douane-page .dt-sheet .dt-field--stack>.dt-input--text{flex:1 1 100%;width:100%;height:auto;min-height:60px;padding:8px 10px;line-height:1.35;resize:none;field-sizing:content}
+

@@ -15,7 +15,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, confirmLeave, escapeHtml } from '../../shared/ui';
 import {
-  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
+  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, oneLine, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
 } from './douane-codes';
 
 interface TariffDraft {
@@ -193,9 +193,11 @@ export class DouanePageStyles {}
                          [value]="draft.code" (input)="patch({ code: $any($event.target).value })" />
                 </label>
               }
-              <label class="ios-cell dt-field" for="dt-desc-p">
+              <!-- Omschrijving stacks under its label as a text area: a long tariff reads whole while editing (beside the label it was 170 px). -->
+              <label class="ios-cell dt-field dt-field--stack" for="dt-desc-p">
                 <span class="ios-cell__body"><span class="ios-cell__title">Omschrijving</span></span>
-                <input class="dt-input" id="dt-desc-p" type="text" autocomplete="off" [value]="draft.description" (input)="patch({ description: $any($event.target).value })" />
+                <textarea class="dt-input dt-input--text" id="dt-desc-p" rows="2" autocomplete="off" enterkeyhint="done" [value]="draft.description"
+                          (input)="patch({ description: oneLine($any($event.target).value) })" (keydown.enter)="$event.preventDefault()"></textarea>
               </label>
               <label class="ios-cell dt-field" for="dt-duty-p">
                 <span class="ios-cell__body"><span class="ios-cell__title">Invoerrecht</span>
@@ -292,6 +294,7 @@ export class DouanePage implements HasUnsavedChanges {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
   readonly formatHs = formatHs;
+  readonly oneLine = oneLine;
   readonly pctLabel = pctLabel;
   readonly mismatchWords = mismatchWords;
 
