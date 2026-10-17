@@ -328,7 +328,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
     <button class="fab" type="button" (click)="startNew()">+ Calculatie</button>
 
     @if (rowMenu(); as menu) {
-      <app-context-menu [title]="containerName(menu.row.order)" [items]="rowMenuItems(menu.row)" [anchor]="menu.anchor"
+      <app-context-menu class="pl-menu" [title]="containerName(menu.row.order)" [items]="rowMenuItems(menu.row)" [anchor]="menu.anchor"
                         variant="ios" cancelLabel="Annuleren" (pick)="pickRowMenu($event, menu.row)" (closed)="rowMenu.set(null)" />
     }
 

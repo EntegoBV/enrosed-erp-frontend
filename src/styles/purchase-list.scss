@@ -55,6 +55,10 @@ app-purchase-list .pl-swipe:hover .pl-more,app-purchase-list .pl-swipe:focus-wit
 app-purchase-list .swipe--open .pl-more{transform:translateX(-76px)}
 app-purchase-list .swipe--open-start .pl-more{transform:translateX(76px)}
 app-purchase-list .swipe--dragging .pl-more{transform:translateX(var(--swipe-offset,0px));transition:none}
+/* The row menu: its head is the container name, which is never cut (B4). The kit's popover head and the iOS sheet title are
+   one line with an ellipsis and no title; under the menu's own class they wrap instead (the end, "40FTHQ", tells two apart). */
+app-purchase-list .pl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
+@media (max-width:679.98px){app-purchase-list .pl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
 
 /* Swipe: the buttons under a row show only while it is open, dragged or the button has focus; no 1px sliver (B17). */
 app-purchase-list .pl-swipe>.swipe__archive,app-purchase-list .pl-swipe>.swipe__delete{opacity:0}

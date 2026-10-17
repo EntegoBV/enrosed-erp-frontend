@@ -270,7 +270,7 @@ function blank(): Supplier {
     }
 
     @if (menu(); as open) {
-      <app-context-menu [title]="open.supplier.name" [items]="menuItems" [anchor]="open.anchor" variant="ios" cancelLabel="Annuleren"
+      <app-context-menu class="sup-menu" [title]="open.supplier.name" [items]="menuItems" [anchor]="open.anchor" variant="ios" cancelLabel="Annuleren"
                         (pick)="menu.set(null); removeFromList(open.supplier)" (closed)="menu.set(null)" />
     }
 
