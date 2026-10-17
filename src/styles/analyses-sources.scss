@@ -1,0 +1,46 @@
+/* ==========================================================================
+   Analyses › Markt & container and Bezoekers (redesign 2026-10-17): the two
+   tabs with their own sources and tool rows (critique N10). Split out of
+   analyses.scss and analyses-tabs.scss so each file stays under the 16 kB
+   component-style budget. Loaded by AnalysesPage (styleUrls,
+   ViewEncapsulation.None); scoped under the children's host tags.
+   ========================================================================== */
+
+/* ---------- Markt: the horizon cells stay buttons on the one period (critique N16), drawn as a strip of figures, the current one marked */
+.mk-fig { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
+.mk-fig > button { display: grid; align-content: center; gap: 1px; min-width: 0; min-height: 50px; padding: 7px 4px; border: 0; border-radius: 0;
+  background: var(--surface); color: var(--ink); font: inherit; text-align: center; cursor: pointer; transition: background-color var(--dur-1, 120ms) var(--ease-out, ease); }
+.mk-fig > button:hover:not(:disabled) { background: var(--surface-2); }
+.mk-fig > .is-on { background: var(--rose-soft); box-shadow: inset 0 -2px 0 var(--rose); }
+.mk-fig > button:disabled { cursor: default; opacity: .6; }
+.an .mk-fig > button:focus-visible { outline-offset: -3px; }
+.mk-fig span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.mk-fig > .is-on span { color: var(--rose-dark); }
+.mk-fig b { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mk-fig small { color: var(--muted); font-size: 10px; }
+.mk-fig--lg { margin-top: 4px; }
+.mk-fig--lg > button { min-height: 64px; }
+.mk-fig--lg b { font-size: 15px; }
+@media (max-width: 679.98px) { .mk-fig--lg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- Bezoekers (critique N4: these replace component rules) */
+app-website-analytics .an-bar { margin-bottom: 6px; }
+app-website-analytics .an-kpis { margin-top: 8px; }
+app-website-analytics .an-kpi__foot.is-ok { color: var(--ok); }
+app-website-analytics .wa__plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+app-website-analytics .wa__yaxis { display: flex; flex-direction: column; justify-content: space-between; min-width: 28px; color: var(--muted);
+  font-size: 10.5px; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; }
+@media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { margin-inline: 0; } }
+/* Phone: the live count may take a line of its own, never a cut at the screen edge. */
+@media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { flex-wrap: wrap; overflow: visible; } }
+
+/* ---------- Markt & container (critique N4: these replace component rules) */
+app-market-analysis .an-bar { margin-bottom: var(--an-gap); }
+app-market-analysis .fr-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+app-market-analysis .fr-vs { margin: -2px 0 10px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+app-market-analysis .fr-vs b { color: var(--ink); } app-market-analysis .fr-vs b.is-warn { color: var(--warn); } app-market-analysis .fr-vs b.is-ok { color: var(--ok); }
+app-market-analysis .btn app-icon { margin-right: 4px; }
+@media (max-width: 679.98px) {
+  app-market-analysis .fr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .an-phone app-market-analysis .an-bar { margin-inline: 0; }
+}

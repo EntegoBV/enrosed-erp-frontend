@@ -183,7 +183,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   providers: [CashState],
   /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
   encapsulation: ViewEncapsulation.None,
-  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss'],
+  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-sources.scss'],
   host: { '(document:visibilitychange)': 'visible()', '(document:keydown)': 'deskKey($event)' },
   imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
