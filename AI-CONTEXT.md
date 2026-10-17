@@ -1836,15 +1836,23 @@ contract `redesign/products/design.md` + `critique.md`).
   actions; 900–1359 Onderweg folds under Voorraad with its date and the
   aandacht/Inactief pills sit after the name; 680–899 the phone rows in
   cards. The whole series head folds (never opens the lead). Aandacht counts
-  rows with the filter's own predicate. Keyboard: roving tabindex, ↑ ↓, → ←,
-  Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
+  rows with the filter's own predicate; "Alle" counts every product (as the
+  subtitle and "x van y"), the category chips their products outside the
+  Demoproducten fold. "Filters wissen" also clears `?q=` at once (cancels
+  the typing timer). Keyboard: roving tabindex (`rovingRow`: the first row
+  takes Tab once the focused one is deleted, folded or filtered away), ↑ ↓,
+  → ←, Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
   filter sheet (Publicatie, Volgorde), category chips + Aandacht, the swipe
   rows laid out as `plp-row` (names never clamped; "+n" with its date).
   Default order label: "Standaardvolgorde (voorraad eerst)".
 - **`product-figures.ts`** (node-tested): `productMargin` (the desk
   rounding), `onderwegSummary` (series sum, earliest date, each order once),
   `stockValue` (rows without cost counted apart), `locationValues`,
-  `totalsByProduct`, `locationSplit`. Sums are unit-safe: quantities only
+  `totalsByProduct`, `locationSplit` (screens render one inline-block part
+  per location, so a name never parts from its figure), `knownValueSum`
+  (null when nothing has a cost: "—", never € 0),
+  `locationStock` (Voorraadlocaties' line, on /stock's basis: active
+  products, per level to the cent). Sums are unit-safe: quantities only
   within one product or series, euros across products.
 - **Voorraad boeken** (`stock-booking.ts` model, node-tested;
   `app-stock-booking-sheet`): the only booking UI. Hertelling, Beschadigd,
@@ -1855,9 +1863,14 @@ contract `redesign/products/design.md` + `critique.md`).
   ("Verplaatsen", "Stuk / demo", `?action=damaged|demo`). Without
   `containers` the sheet loads them once for damage/shortage. `(booked)`
   carries kind, delta, location, containerId and the returned product.
+  The sheet starts a fresh draft only when the host's kind or location
+  changes; new levels alone keep the typed count, location and kind
+  (`refreshBookingDraft`). Counts show as "6.000" (`countText`).
   Booking on blur exists only in /stock "Aantallen bewerken" (guarded,
-  toast with Ongedaan maken that books back only while the figure stands,
-  reference "Ongedaan gemaakt") and the editor's guarded stock tiles.
+  toast with Ongedaan maken that re-reads the live level and books back
+  only while the booked figure stands on the server, reference "Ongedaan
+  gemaakt") and the editor's stock tiles (text fields through
+  `stockCellEdit`, so "1.000" is a thousand there too).
   `received-containers.ts` names containers with `containerName()`.
 - **Families cache**: `CatalogApi.productFamilies({ maxAgeMs })`
   (`core/api/request-cache.ts` `cachedOnce`): opt-in 20 s reuse for the
@@ -1866,12 +1879,16 @@ contract `redesign/products/design.md` + `critique.md`).
   shared); every CatalogApi POST/PUT/PATCH/DELETE clears it; each caller gets
   a `structuredClone`.
 - **Product page, desk** (`product-desk.ts`): light hero card (no
-  `.desk-hero`): photo, identity, series chips with all-location totals (one
-  `stockLevels()` request), strip of six figure buttons; cards in two
+  `.desk-hero`): photo, identity, series chips with all-location totals
+  (ProductView's `memberStock`: one `stockLevels()` request for desk and
+  phone, patched after a booking, each product's `stockQuantity` when it
+  fails), strip of six figure buttons; cards in two
   self-stacking columns from 1200 (`ng-template`s placed by a media signal),
   one column below in a fixed order; Prijs & marge flow (3 + 2 below 1360),
-  Omdoos & logistiek its own card, Afspraken folded to 136 px; Documenten
-  summarises managed product photos in one row. Keys E, B, ⌥ ← / ⌥ →. Ids
+  Omdoos & logistiek its own card (facts in two columns at 900–1199),
+  Afspraken folded to 136 px; Documenten summarises managed product photos
+  in one row. Keys E, B, ⌥ ← / ⌥ → (off while a photo lightbox is open; not
+  listed on /products/new, `PageShortcutSet.except`). Ids
   `pd-price`, `pd-stock`, `pd-web`, `pd-agreements`, `pd-media`, `pd-issues`.
 - **Product page, phone** (`product-view.ts`): `app-ios-nav customLarge`
   with the product as its hero card (`pph-card`, 2 × 2 figures), the page
@@ -1886,8 +1903,10 @@ contract `redesign/products/design.md` + `critique.md`).
   all locations, per location, Onderweg, Zonder kostprijs), location
   segment, Categorie ▾, Leeg verbergen, kit table with `--wk-cols` bound by
   the component (B4 column sets), group rows with their € value, demo fold
-  with its own value (the parts add up to the total), units per product.
-  `?locatie=&q=&categorie=`. /stock itself lights the Producten phone tab;
+  with its own value (the parts add up to the total), units per product;
+  roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
+  fold chevron (or kleur · SKU), line 2 the location split and the value;
+  a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock itself lights the Producten phone tab;
   its back falls back to "‹ Producten".
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from
