@@ -52,6 +52,23 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/sales/:id/edit', '/purchasing/:id/edit', '/products/:id/edit', '/website/*'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
   },
+  /* Inkoop redesign (2026-10-17): the list and Leveranciers. */
+  {
+    routes: ['/purchasing'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Vorige of volgende container' },
+      { keys: ['⇧', 'F10'], text: 'Acties voor de container' },
+      { keys: ['N'], text: 'Nieuwe inkoopcalculatie' },
+    ],
+  },
+  {
+    routes: ['/suppliers'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Vorige of volgende leverancier' },
+      { keys: ['↩'], text: 'Leverancier bewerken' },
+      { keys: ['N'], text: 'Nieuwe leverancier' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */

@@ -1,0 +1,70 @@
+/* ==========================================================================
+   Leveranciers (/suppliers), Inkoop redesign of 2026-10-17 (I7).
+   Desk: one kit table of every supplier with what its containers ask, the
+   chosen supplier in full below it (critique B7: no short list column beside
+   a long detail). Phone: a list and a sheet per supplier. Every rule hangs on
+   app-supplier-list; kit classes are never restyled bare.
+   ========================================================================== */
+
+app-supplier-list{display:block;min-width:0}
+app-supplier-list .sup-nw{white-space:nowrap}
+app-supplier-list .sup-warn{color:var(--warn);font-weight:700}
+app-supplier-list .sup-ok{color:var(--ok);font-weight:650}
+app-supplier-list .sup-muted{color:var(--muted)}
+app-supplier-list .sup-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
+app-supplier-list .sup-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10.5px;font-weight:700;line-height:17px;vertical-align:1px}
+app-supplier-list .sup-mark{display:grid;flex:none;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--rose-soft);color:var(--rose-dark);font-size:16px;font-weight:800;text-transform:uppercase}
+
+/* ---- desk toolbar */
+app-supplier-list .sup-search{flex:none;width:280px}
+
+/* ---- desk: the supplier table; more than 8 suppliers scroll inside it */
+app-supplier-list .sup-table{--wk-cols:minmax(240px,2.4fr) 70px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}
+app-supplier-list .sup-rows{max-height:calc(8 * 58px);overflow-y:auto;overscroll-behavior:contain;outline:none}
+app-supplier-list .sup-row{min-height:58px}
+app-supplier-list .sup-row[aria-selected=true]{box-shadow:inset 3px 0 0 var(--rose)}
+app-supplier-list .sup-cell{display:grid;align-content:center;gap:2px;padding-block:8px}
+app-supplier-list .sup-name{font-size:14px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+app-supplier-list .sup-sub{color:var(--muted);font-size:12px;line-height:1.35}
+app-supplier-list .sup-cell .wk-pill{justify-self:start}
+
+/* ---- desk: the chosen supplier in full, across the width */
+app-supplier-list .sup-detail{margin-top:16px}
+app-supplier-list .sup-detail__head{display:flex;flex-wrap:wrap;align-items:center;gap:12px 14px;padding:16px 20px}
+app-supplier-list .sup-detail__who{flex:1 1 280px;min-width:0}
+app-supplier-list .sup-detail__who h2{margin:0;font-size:18px;font-weight:720;letter-spacing:-.01em;line-height:1.3;overflow-wrap:anywhere}
+app-supplier-list .sup-detail__who p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+app-supplier-list .sup-detail__actions{display:flex;flex:none;align-items:center;gap:6px}
+app-supplier-list .sup-strip{border-top:1px solid var(--line)}
+app-supplier-list .sup-sec{min-width:0;padding:14px 20px;border-top:1px solid var(--line)}
+app-supplier-list .sup-sec__title{margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+app-supplier-list .sup-ctable{--wk-cols:minmax(240px,2.4fr) minmax(0,1.2fr) 120px minmax(0,1.2fr);margin:0 -20px}
+app-supplier-list .sup-crow{min-height:54px;color:var(--ink);text-decoration:none}
+app-supplier-list .sup-total{font-weight:700}
+app-supplier-list .sup-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+app-supplier-list .sup-pair>.sup-sec+.sup-sec{border-left:1px solid var(--line)}
+app-supplier-list .sup-contact{display:grid;gap:3px;margin-top:8px;font-size:13px}
+app-supplier-list .sup-contact a{overflow-wrap:anywhere}
+app-supplier-list .sup-notes{margin:0;font-size:13px;line-height:1.45;white-space:pre-wrap}
+@media (max-width:1100px){app-supplier-list .sup-search{width:240px}app-supplier-list .sup-table{--wk-cols:minmax(200px,2.2fr) 64px minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}}
+
+/* ---- phone */
+app-supplier-list .sup--phone{--ios-inset:4px}
+app-supplier-list .sup-isearch{margin:0 var(--ios-inset) 14px}
+app-supplier-list .sup-loading{margin:0 var(--ios-inset)}
+/* Swipe: the delete shows only while a row is open or the button has focus; no 1px sliver (F13). */
+app-supplier-list .sup-swipe>.swipe__delete{opacity:0}
+app-supplier-list .sup-swipe.swipe--open>.swipe__delete,app-supplier-list .sup-swipe>.swipe__delete:focus-visible{opacity:1}
+app-supplier-list .sup-sheet{display:grid;gap:14px;min-width:0}
+app-supplier-list .sup-sheet>.ios-section{margin-bottom:0}
+app-supplier-list .sup-hero{display:flex;align-items:center;gap:12px;margin:0 var(--ios-inset);padding:4px 16px}
+app-supplier-list .sup-hero__copy{display:grid;flex:1;min-width:0;line-height:1.3}
+app-supplier-list .sup-hero__copy b{font-size:16px;overflow-wrap:anywhere}
+app-supplier-list .sup-hero__copy span{color:var(--muted);font-size:13px}
+app-supplier-list .sup-capsules{display:flex;gap:8px;margin:0 var(--ios-inset);padding:0 16px}
+app-supplier-list .sup-capsules .ios-capsule{display:inline-flex;align-items:center;gap:6px}
+app-supplier-list .sup-figures{margin-bottom:0}
+app-supplier-list .sup-figures__wide{grid-column:1/-1}
+app-supplier-list .sup-address{padding:12px 16px}
+app-supplier-list .sup-link{color:var(--rose-dark)}
+app-supplier-list .sup-notes--cell{padding:12px 16px}

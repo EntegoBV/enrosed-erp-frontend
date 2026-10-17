@@ -1,3 +1,4 @@
+import { ActivatedRoute } from '@angular/router';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -448,6 +449,7 @@ export class PurchaseList {
 
   private readonly sourcing = inject(SourcingApi);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
   readonly fx = inject(Fx);
   readonly auth = inject(Auth);
@@ -611,10 +613,25 @@ export class PurchaseList {
     this.suppliers.set(suppliers);
     this.chosen.set(suppliers[0]?.id ?? null);
     this.loading.set(false);
+    this.openRequestedCalculation();
     if (this.picking() && !suppliers.length) {
       this.picking.set(false);
       this.ui.toast('Maak eerst een leverancier aan', 'err');
     }
+  }
+
+  /**
+   * /purchasing?nieuw=1&leverancier={id} (Leveranciers' 'Nieuwe calculatie', F19): the new-calculation
+   * sheet opens with that supplier chosen; the query leaves the address so Back does not open it again.
+   */
+  private openRequestedCalculation(): void {
+    const params = this.route.snapshot.queryParamMap;
+    if (params.get('nieuw') !== '1') return;
+    const id = Number(params.get('leverancier'));
+    void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+    if (!this.suppliers().length) return;
+    if (this.supplierById().has(id)) this.chosen.set(id);
+    this.startNew();
   }
 
   supplierName(id: number): string {
