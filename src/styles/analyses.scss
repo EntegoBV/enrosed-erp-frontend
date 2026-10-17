@@ -119,6 +119,12 @@ button.an-row { width: 100%; border: 0; background: none; font: inherit; text-al
 .an-meter--ok > i { background: var(--ok); }
 .an-share { grid-template-columns: minmax(0, 1.1fr) minmax(60px, 1fr) auto 44px; }
 .an-share > .an-row__meta { text-align: right; }
+/* Desk: the share rows of one card share their columns (subgrid), so every meter starts and ends at the same x. */
+@media (min-width: 680px) {
+  .an-card__body:has(> .an-share) { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(60px, 1fr) max-content 44px; column-gap: 12px; }
+  .an-card__body:has(> .an-share) > * { grid-column: 1 / -1; }
+  .an-card__body > .an-share { grid-template-columns: subgrid; }
+}
 .an-skeleton { display: block; padding: 4px 16px 12px; }
 .an-body app-cash-overview-card .cf-overview { margin-bottom: var(--an-gap); }
 
