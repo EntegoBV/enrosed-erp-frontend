@@ -5,8 +5,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { IosNav } from '../../shared/ios-nav';
 import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
-import { WEBSITE_SYNC_TECHNICAL, rebuildTimeline, shortMoment, websiteSyncCopy } from '../settings/website-sync-copy';
-import { WebsiteSyncStatus } from '../settings/website-sync-status';
+import { WEBSITE_SYNC_TECHNICAL, detailWithMoment, rebuildTimeline, shortMoment, websiteSyncCopy } from '../settings/website-sync-copy';
 import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { differenceLine, homepageDifferences } from './website-homepage';
 import { WebsiteRecent } from './website-recent';
@@ -24,13 +23,13 @@ import { WebsiteStore } from './website-store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-overview.scss', '../../../styles/website-publication.scss'],
-  imports: [IosNav, LoadError, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus],
+  imports: [IosNav, LoadError, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar],
   template: `
     <ng-template #updateBody>
       @if (sync.status() || sync.loadError()) {
         <div class="ws-live" role="status">
           <span class="ws-live__state" [class]="'ws-live__state is-' + copy().tone"><i aria-hidden="true"></i>{{ copy().label }}</span>
-          <span class="ws-live__detail">{{ copy().detail }}@if (copy().moment; as moment) { · {{ moment }} }</span>
+          <span class="ws-live__detail">{{ detail() }}</span>
           @if (copy().error; as error) { <span class="ws-live__error">{{ error }}</span> }
           @if (copy().nextAttempt; as next) { <span class="ws-live__detail">{{ next }}</span> }
           @if (copy().action; as action) {
@@ -63,7 +62,7 @@ import { WebsiteStore } from './website-store';
           <div><dt>Blokken zichtbaar</dt><dd>{{ home.draftVisible }}</dd><dd>{{ home.publishedVisible }}</dd></div>
           <div><dt>Moment</dt>
             <dd>{{ home.updatedAt ? 'Gewijzigd ' + moment(home.updatedAt) : 'Nooit gewijzigd' }}</dd>
-            <dd>{{ home.publishedAt ? 'Gepubliceerd ' + moment(home.publishedAt) : 'Standaardindeling · nooit aangepast' }}</dd></div>
+            <dd>{{ home.publishedAt ? 'Gepubliceerd ' + moment(home.publishedAt) : 'Standaard\u00ADindeling · nooit aangepast' }}</dd></div>
           <div><dt>Conceptversie</dt><dd>{{ home.revision }}</dd><dd></dd></div>
         </dl>
         <div class="ws-diff">
@@ -109,9 +108,8 @@ import { WebsiteStore } from './website-store';
       </div>
     } @else {
       <div class="ios-page ws-ios">
-        <app-ios-nav title="Publicatie" backLabel="Overzicht" backUrl="/website" backAriaLabel="Terug naar Overzicht">
-          <app-website-sync-status caption variant="chip" />
-        </app-ios-nav>
+        <!-- no status chip here: the Website-update card is the state (critique N17, once per screen) -->
+        <app-ios-nav title="Publicatie" backLabel="Overzicht" backUrl="/website" backAriaLabel="Terug naar Overzicht" />
         <section class="ios-section"><div class="ios-section__head"><h2>Website-update</h2></div>
           <div class="ios-card ws-pub-ios-card"><ng-container *ngTemplateOutlet="updateBody" /></div></section>
         <section class="ios-section"><div class="ios-section__head"><h2>Homepage-indeling</h2></div>
@@ -130,6 +128,7 @@ export class WebsitePublicationPage {
   readonly copy = computed(() => websiteSyncCopy({
     status: this.sync.status(), loading: this.sync.loading(), loadError: this.sync.loadError(), pollEnded: this.sync.pollEnded(),
   }));
+  readonly detail = computed(() => detailWithMoment(this.copy()));
   readonly timeline = computed(() => rebuildTimeline(this.sync.status()));
   readonly differences = computed(() => {
     const snapshot = this.store.homepage();

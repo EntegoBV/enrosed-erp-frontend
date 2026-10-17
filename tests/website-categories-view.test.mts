@@ -120,3 +120,11 @@ test('deep links: ?code= (Te doen) and ?category= (older links) open the same ca
   assert.equal(findCategoryByCode(list, 'unknown'), null);
   assert.equal(findCategoryByCode(list, null), null);
 });
+
+test('Categorieën at 1100: Uitgelicht wraps to two lines like Menu, and one missing language reads "ontbreekt"', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../src/styles/website-categories.scss', import.meta.url), 'utf8');
+  const page = await readFile(new URL('../src/app/features/website-builder/website-categories-page.ts', import.meta.url), 'utf8');
+  assert.match(css, /\.wk-td\.ws-cat-feat\{display:-webkit-box;[^}]*-webkit-line-clamp:2/);
+  assert.match(page, /\(languageCount - row\.complete === 1 \? 'ontbreekt' : 'ontbreken'\)/);
+});

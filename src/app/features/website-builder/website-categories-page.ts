@@ -221,7 +221,7 @@ interface CategoryRow {
                         </span>
                         <span class="wk-td wk-td--num ws-cat-num" role="gridcell">{{ row.reeksen ?? '—' }}</span>
                         <span class="wk-td wk-td--num ws-cat-frac" role="gridcell" [class.is-done]="row.complete === languageCount" [class.is-warn]="row.complete < languageCount"
-                              [attr.title]="row.complete < languageCount ? (languageCount - row.complete) + ' van ' + languageCount + ' talen ontbreken' : 'Alle ' + languageCount + ' talen compleet'">{{ row.complete }}/{{ languageCount }}</span>
+                              [attr.title]="row.complete < languageCount ? (languageCount - row.complete) + ' van ' + languageCount + ' talen ' + (languageCount - row.complete === 1 ? 'ontbreekt' : 'ontbreken') : 'Alle ' + languageCount + ' talen compleet'">{{ row.complete }}/{{ languageCount }}</span>
                         <app-icon class="ws-cat-chev" name="chevron-right" [size]="16" />
                       </div>
                     }

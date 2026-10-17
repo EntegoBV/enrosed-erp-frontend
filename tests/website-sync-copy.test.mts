@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { WebsiteRebuildState, WebsiteRebuildStatus } from '../src/app/core/api/models.ts';
-import { isTranslationPending, shortMoment, websiteSyncCopy } from '../src/app/features/settings/website-sync-copy.ts';
+import { detailWithMoment, isTranslationPending, shortMoment, websiteSyncCopy } from '../src/app/features/settings/website-sync-copy.ts';
 
 const now = new Date(2026, 9, 17, 9, 30);
 const at = (day: number, hour: number, minute: number, year = 2026) => new Date(year, 9, day, hour, minute).toISOString();
@@ -69,4 +69,20 @@ test('the update timeline counts only moments of the current cycle', async () =>
   assert.deepEqual(failed.map((step) => step.state), ['done', 'done', 'failed', 'todo'], 'an acceptance from an earlier cycle does not count');
   const live = rebuildTimeline(status('LIVE', { queuedAt: at(16, 23, 38), lastAttemptAt: at(16, 23, 39), hookAcceptedAt: at(16, 23, 39), liveAt: at(16, 23, 40) }), now)!;
   assert.deepEqual(live.map((step) => step.state), ['done', 'done', 'done', 'done']);
+});
+
+test('the detail and its moment read as one line, never ". ·"', () => {
+  const live = copy(status('LIVE', { liveAt: at(16, 23, 40) }));
+  assert.equal(detailWithMoment(live), 'De website draait op de laatste opgeslagen versie · sinds 16/10\u00A023:40', 'date and time stay together');
+  assert.equal(detailWithMoment({ detail: 'Zonder moment.', moment: null }), 'Zonder moment.');
+});
+
+test('Publicatie on the phone says the state once (the card), and the Overzicht Live card uses the same line', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const publication = await readFile(new URL('../src/app/features/website-builder/website-publication-page.ts', import.meta.url), 'utf8');
+  const overview = await readFile(new URL('../src/app/features/website-builder/website-admin-page.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(publication, /variant="chip"/);
+  assert.match(publication, /<span class="ws-live__detail">\{\{ detail\(\) \}\}<\/span>/);
+  assert.match(overview, /<span class="ws-live__detail">\{\{ syncDetail\(\) \}\}<\/span>/);
+  assert.match(publication, /'Standaard\\u00ADindeling · nooit aangepast'/, 'breaks only at its soft hyphen');
 });

@@ -72,6 +72,17 @@ const SHORT_LABELS: Record<string, string> = {
   'In wachtrij': 'In wachtrij', 'Wordt bijgewerkt': 'Bezig', 'Actie nodig': 'Actie nodig', Live: 'Live',
 };
 
+/**
+ * The detail with its moment on one line, without ". ·": "De website draait
+ * op de laatste opgeslagen versie · sinds 16/10 23:40"; the date and the time
+ * never wrap apart.
+ */
+export function detailWithMoment(copy: Pick<WebsiteSyncCopy, 'detail' | 'moment'>): string {
+  if (!copy.moment) return copy.detail;
+  const moment = copy.moment.replace(/(\d{2}\/\d{2}(?:\/\d{4})?) (\d{2}:\d{2})/, '$1\u00A0$2');
+  return `${copy.detail.replace(/\.\s*$/, '')} · ${moment}`;
+}
+
 export function websiteSyncCopy(input: WebsiteSyncInput): WebsiteSyncCopy {
   const copy = syncCopyOf(input);
   return { ...copy, shortLabel: SHORT_LABELS[copy.label] ?? copy.label };

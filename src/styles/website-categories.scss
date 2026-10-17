@@ -18,7 +18,8 @@
 .ws-cat-name small{display:block;overflow:hidden;color:var(--muted);font:11.5px var(--mono);text-overflow:ellipsis;white-space:nowrap}
 /* the menu names: one muted text, two lines at most, the whole line in the title */
 .wk-td.ws-cat-menu{display:-webkit-box;margin:6px 0;padding:0;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--muted);font-size:12px;line-height:1.35;white-space:normal}
-.ws-cat-feat{color:var(--ink-2);font-size:12.5px}
+/* the featured product: two lines like Menu, so its variant part is not lost at 1100 */
+.wk-td.ws-cat-feat{display:-webkit-box;margin:6px 0;padding:0;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--ink-2);font-size:12.5px;line-height:1.35;white-space:normal}
 .ws-cat-none{color:var(--muted-2)}
 .ws-cat-num{font-weight:650}
 .ws-cat-frac{font-weight:650;font-variant-numeric:tabular-nums}

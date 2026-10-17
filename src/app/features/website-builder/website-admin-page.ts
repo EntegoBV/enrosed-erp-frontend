@@ -16,7 +16,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { Skeleton } from '../../shared/skeleton';
-import { websiteSyncCopy } from '../settings/website-sync-copy';
+import { detailWithMoment, websiteSyncCopy } from '../settings/website-sync-copy';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { TODO_SECTION_ORDER, WEBSITE_LANGUAGE_ORDER, plural } from './website-attention';
@@ -130,7 +130,7 @@ const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
                     @if (showLiveState()) {
                       <div class="ws-live" role="status">
                         <span class="ws-live__state" [class]="'ws-live__state is-' + syncCopy().tone"><i aria-hidden="true"></i>{{ syncCopy().label }}</span>
-                        <span class="ws-live__detail">{{ syncCopy().detail }}@if (syncCopy().moment; as moment) { · {{ moment }} }</span>
+                        <span class="ws-live__detail">{{ syncDetail() }}</span>
                         @if (syncCopy().nextAttempt; as next) { <span class="ws-live__detail">{{ next }}</span> }
                         @if (syncCopy().error; as error) { <span class="ws-live__error">{{ error }}</span> }
                         @if (syncCopy().action; as action) {
@@ -244,6 +244,7 @@ export class WebsiteAdminPage {
   readonly syncCopy = computed(() => websiteSyncCopy({
     status: this.sync.status(), loading: this.sync.loading(), loadError: this.sync.loadError(), pollEnded: this.sync.pollEnded(),
   }));
+  readonly syncDetail = computed(() => detailWithMoment(this.syncCopy()));
   /** The Live card repeats the state only when it is not simply live (the strip already says Live). */
   readonly showLiveState = computed(() => !!(this.sync.status() || this.sync.loadError()) && this.syncCopy().tone !== 'ok');
 
