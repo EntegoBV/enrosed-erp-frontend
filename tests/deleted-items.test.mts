@@ -234,3 +234,29 @@ test('trashed credit notes have their own type, label and filter', () => {
   assert.deepEqual(filterDeletedItems(rows, 'creditnota', '').map(row => row.number), ['CN-2026-0001'], 'the label is searchable');
   assert.equal(restoredItemRoute(rows[1], { sourceId: 102, targetRoute: '/sales/102' }), '/sales/102');
 });
+
+test('C6: trash fields read as everywhere else; counts, days left and the singular after "per"', async () => {
+  const { countDeletedByType, daysLeft, daysLeftText, deletedFieldLabel, deletedFieldValue, deletedItemStatus, perUnit } =
+    await import('../src/app/features/settings/deleted-items-state.ts');
+  assert.equal(deletedFieldValue('Besteld op', '2026-09-11'), '11/09/2026');
+  assert.match(deletedFieldValue('Gearchiveerd op', '2026-09-12T00:54:00Z'), /^\d{2}\/09\/2026, \d{2}:54$/);
+  assert.match(deletedFieldValue('Goederen (EUR)', '18846.43'), /^€\s18\.846,43$/);
+  assert.equal(deletedFieldLabel('Goederen (EUR)'), 'Goederen');
+  assert.equal(deletedFieldLabel('Invoerrecht (%)'), 'Invoerrecht');
+  assert.equal(deletedFieldValue('Status', 'BESTELD'), 'Besteld');
+  assert.equal(deletedFieldValue('Invoerrecht (%)', '10'), '10 %');
+  assert.equal(deletedFieldValue('Wisselkoers USD/EUR', '0.8612'), '0,8612');
+  assert.equal(deletedFieldValue('Bestemming', 'NL'), 'Nederland (NL)');
+  assert.equal(deletedFieldValue('Notitie', ''), '—');
+  assert.equal(deletedFieldValue('BTW', '0%'), '0%');
+  assert.equal(deletedItemStatus('ONDERWEG'), 'Vertrokken');
+  assert.equal(perUnit('stuks'), 'stuk');
+  assert.equal(perUnit(null), 'eenheid');
+  assert.deepEqual(countDeletedByType([item(1), item(2, { type: 'PURCHASE_ORDER' }), item(3, { type: 'PURCHASE_ORDER' })]),
+    { '': 3, INVOICE: 1, CREDIT_NOTE: 0, QUOTE: 0, PURCHASE_ORDER: 2 });
+  const now = new Date('2026-10-17T12:00:00Z');
+  assert.equal(daysLeft('2027-01-14T12:00:00Z', now), 89);
+  assert.equal(daysLeftText(89), 'nog 89 dagen');
+  assert.equal(daysLeftText(1), 'nog 1 dag');
+  assert.equal(daysLeftText(0), 'laatste dag');
+});
