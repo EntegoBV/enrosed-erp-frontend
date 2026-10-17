@@ -1581,6 +1581,29 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
 - Backend follow-ups (not built): BE-1 'Vertrokken op' choosable (today the
   step date is the day the status was set); BE-2 the Toelichting's 'Budget op
   bestelde aantallen' in the server's own words.
+- Fix round 1 (each commit reverts alone): Douane's open row saves on Enter
+  only from a field (a strip button keeps its own Enter) and stays in rows()
+  under any search; the spelling note names both spellings literally
+  (`mismatchWords`), a respelled tariff says 'opgeslagen als „…”'; the saved
+  flash fades back (transition on `.dt-row`). The list's `.pl-lading-inline`
+  default sits before its container query and carries type, dozen, m³ and
+  fill. The editor's `loadPayments` returns its failure and `load()` toasts
+  it only once the order stands and is still current. The desk drawer keeps
+  an Esc that was used or typed in a field. Container totals use
+  `countWords().plural` (desk) or `.short` (phone: st / displays / eenheden)
+  and `lineCount` ('1 regel'); both sit on PurchaseEditor. Leveranciers:
+  `archived` in `supplierOverview`, the line adds up to the count, skeleton
+  only on the first load, one Bewerken in the phone sheet, search 280 px and
+  money columns with a minimum below 1101 px. The phone partner panel's doc
+  line wraps. Behaviour tests lift the page's own methods with real signals
+  (`douane-page-behaviour`, `purchase-desk-drawer`, `purchase-payments-loading`,
+  `purchase-list-names`).
+- Merge notes: Meer › Douane links to `/douane` here; the foundation tip
+  (7875e1f) builds Meer from NAV_GROUPS, so take its more-page.ts and keep
+  `link: '/douane'` (no `query`) in the nav-items.ts conflict. The area
+  partials load through style hosts, not styles.scss (initial bundle about
+  987.7 kB of the 1 MB error budget): the orchestrator decides once for all
+  areas and aligns `tests/purchase-area-styles.test.mts` with it.
 
 ### Kostprijshistoriek and Kostprijzen toepassen (2026-10-16)
 - Backend `product_cost_history` (migration 2026-10-16/product-cost-history-basis:
