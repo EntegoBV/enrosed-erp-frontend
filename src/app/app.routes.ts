@@ -293,6 +293,9 @@ export const routes: Routes = [
     loadComponent: () => import('./features/files/files-page').then((m) => m.FilesPage),
   },
   { path: 'settings/documents-media', pathMatch: 'full', redirectTo: 'files' },
+  /* The way up from a settings view to the overview: a path of its own, so the
+     crumb and the phone back never resolve to the view itself (same path). */
+  { path: 'settings/overzicht', pathMatch: 'full', redirectTo: 'settings' },
   {
     path: 'settings/deleted-items',
     canActivate: [authGuard],

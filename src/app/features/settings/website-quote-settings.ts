@@ -1,9 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
-import { SalesApi, WebsiteQuoteSettings as QuoteSettings } from '../../core/api/sales-api';
-import { messageOf } from '../../core/api/errors';
 import { Ui } from '../../shared/ui';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteSyncStore } from './website-sync-store';
+import { WebsitePriceStore } from './website-price-store';
 
 @Component({
   selector: 'app-website-quote-settings',
@@ -70,13 +69,14 @@ import { WebsiteSyncStore } from './website-sync-store';
   `,
 })
 export class WebsiteQuoteSettings {
-  private readonly sales = inject(SalesApi);
   private readonly ui = inject(Ui);
   private readonly sync = inject(WebsiteSyncStore);
-  readonly settings = signal<QuoteSettings | null>(null);
-  readonly loading = signal(false);
-  readonly saving = signal(false);
-  readonly error = signal<string | null>(null);
+  /** The one price switch of the app: the settings overview reads the same store. */
+  private readonly prices = inject(WebsitePriceStore);
+  readonly settings = this.prices.settings;
+  readonly loading = this.prices.loading;
+  readonly saving = this.prices.saving;
+  readonly error = this.prices.error;
   /** Host counter, so a rebuild queued elsewhere on the page also refreshes this status. */
   readonly refreshKey = input(0);
   /** Emits after a save; the backend queues a website rebuild when the value changed. */
@@ -89,42 +89,23 @@ export class WebsiteQuoteSettings {
 
   constructor() { void this.load(); }
 
-  async load(): Promise<void> {
-    if (this.loading() || this.saving()) return;
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      this.settings.set(this.checked(await this.sales.websiteQuoteSettings()));
-    } catch (failure) {
-      this.error.set(messageOf(failure, 'De prijsinstelling kon niet worden geladen. Probeer opnieuw.'));
-    } finally {
-      this.loading.set(false);
-    }
+  load(): Promise<void> {
+    return this.prices.load();
   }
 
   async togglePrices(): Promise<void> {
     const current = this.settings();
     if (!current || this.loading() || this.saving()) return;
-    this.saving.set(true);
-    this.error.set(null);
     try {
-      const saved = this.checked(await this.sales.saveWebsiteQuoteSettings({ pricesVisible: !current.pricesVisible }));
-      this.settings.set(saved);
+      const saved = await this.prices.save(!current.pricesVisible);
       // Only the saved fact: whether a rebuild follows is for the status below to say.
       this.ui.toast(saved.pricesVisible
         ? 'Prijzen zichtbaar op de website.'
         : 'Prijzen verborgen op de website.', 'ok');
       this.ownRefresh.update((value) => value + 1);
       this.saved.emit();
-    } catch (failure) {
-      this.error.set(messageOf(failure, 'Opslaan kon niet worden bevestigd. Laad de instelling opnieuw.'));
-    } finally {
-      this.saving.set(false);
+    } catch {
+      /* The store holds the message; the error row below shows it. */
     }
-  }
-
-  private checked(value: QuoteSettings): QuoteSettings {
-    if (typeof value?.pricesVisible !== 'boolean') throw new Error('De server gaf geen geldige prijsinstelling terug. Laad de pagina opnieuw.');
-    return value;
   }
 }

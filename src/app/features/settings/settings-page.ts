@@ -1,15 +1,20 @@
 import { DOCUMENT } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   HostListener,
   OnDestroy,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -40,6 +45,25 @@ import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
 import { DateTimeNlPipe } from '../../shared/pipes';
+import { Skeleton } from '../../shared/skeleton';
+import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
+import { CompanyStore } from './company-store';
+import { SettingsOverview } from './settings-overview';
+import {
+  SettingsView, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
+} from './settings-sections';
+
+/**
+ * The overview as the way up from a view. Its own path (a redirect to
+ * /settings): the navigation history keys "the last URL seen" by path, and
+ * /settings itself would resolve to the open view.
+ */
+const OVERVIEW_URL = '/settings/overzicht';
+
+/** The settings views of this build (the legal view arrives with its own package). */
+const AVAILABLE_VIEWS: readonly SettingsView[] = [
+  'overview', 'company', 'website', 'duties', 'discounts', 'catalog-data', 'device',
+];
 
 interface CategoryFeaturedOption {
   product: Product;
@@ -66,11 +90,21 @@ const normalizeCategoryCode = (value: string): string => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
-/** Categorieën, douanetarieven en kortingsstaffels. */
+/**
+ * Instellingen: an overview of every setting with its current value, and one
+ * view per ?sectie= (Bedrijfsgegevens, Website, Douane, Kortingen,
+ * Catalogusdata, Dit toestel). The desk switches views with a tab strip
+ * under the toolbar, the phone pushes them. /website/categories renders the
+ * category editor of this same component (websiteCategoryMode), unchanged.
+ */
 @Component({
   selector: 'app-settings-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [CompanyStore],
   imports: [
+    LoadError,
+    SettingsOverview,
+    Skeleton,
     AuthImage,
     CategoryTranslationEditor,
     FormsModule,
@@ -84,6 +118,7 @@ const normalizeCategoryCode = (value: string): string => value
     DateTimeNlPipe,
   ],
   template: `
+    @if (websiteCategoryMode) {
     <app-page-header
       [showBack]="!websiteCategoryMode"
       [backTo]="websiteCategoryMode ? null : settingsBackTo"
@@ -93,6 +128,10 @@ const normalizeCategoryCode = (value: string): string => value
         : 'Categorieën, tarieven en staffels'"
       [showBell]="!websiteCategoryMode"
     />
+    } @else {
+    <app-page-header [title]="viewInfo().title" [subtitle]="viewInfo().subtitle"
+                     [parent]="headerParent()" [backTo]="headerBackTo()" />
+    }
 
     @if (websiteCategoryMode) {
       <div class="content website-category-nav">
@@ -110,35 +149,27 @@ const normalizeCategoryCode = (value: string): string => value
     }
 
     @if (!websiteCategoryMode) {
-    <nav class="settings-nav" aria-label="Snel naar instelling">
-      <div class="settings-nav__rail">
-        @for (section of settingsSections; track section.id) {
-          <button type="button" [class.active]="activeSection() === section.id"
-                  [attr.aria-current]="activeSection() === section.id ? 'location' : null"
-                  [attr.data-settings-section]="section.id"
-                  (click)="scrollToSection(section.id)">
-            {{ section.label }}
-          </button>
-        }
-      </div>
-    </nav>
-    }
-
-    <div class="content settings-content" [class.settings-content--website]="websiteCategoryMode">
-      @if (settingsLoadError()) {
-        <section class="settings-load-error" role="alert">
-          <span aria-hidden="true">!</span>
-          <div>
-            <b>{{ websiteCategoryMode
-              ? 'Categorieën konden niet worden geladen'
-              : 'Instellingen konden niet volledig worden geladen' }}</b>
-            <small>{{ settingsLoadError() }}</small>
+    <div class="content set-page">
+      @if (desktop.active()) {
+        <nav class="wk-subbar set-subbar" aria-label="Onderdelen van Instellingen">
+          <div class="set-tabs" #tabStrip>
+            @for (tab of tabs(); track tab.id) {
+              <a class="wk-chip" routerLink="/settings" [queryParams]="viewQuery(tab.id)" [replaceUrl]="true"
+                 [class.is-on]="view() === tab.id" [attr.aria-current]="view() === tab.id ? 'page' : null"
+                 [attr.data-view]="tab.id">{{ tab.tab }}@if (viewDirty(tab.id)) {<i class="set-dot" aria-label="niet opgeslagen"></i>}</a>
+            }
           </div>
-          <button class="btn" type="button" [disabled]="loadingSettings()" (click)="load()">
-            {{ loadingSettings() ? 'Laden…' : 'Opnieuw laden' }}
-          </button>
-        </section>
+        </nav>
       }
+
+      @if (visited().has('overview')) {
+        <app-settings-overview class="mo-fade" [hidden]="view() !== 'overview'" [active]="view() === 'overview'"
+                               [douaneRoute]="douaneRoute" [legalView]="views.includes('legal')" />
+      }
+
+      @if (visited().has('company')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'company'" aria-label="Bedrijfsgegevens">
+      @if (company()) {
       <!-- ======================================= bedrijfsgegevens -->
       <div [class.settings-section--folded]="folded('company')" class="card settings-section" id="company">
         <div (click)="toggleSection('company', $event)" class="card__head settings-head"><h2>Onze bedrijfsgegevens</h2></div>
@@ -353,14 +384,433 @@ const normalizeCategoryCode = (value: string): string => value
           }
         </div>
       </div>
+      } @else if (companyStore.error(); as error) {
+        <app-load-error [message]="error" [busy]="companyStore.loading()" (retry)="companyStore.load(true)" />
+      } @else {
+        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="6" /></div></div>
+      }
+      </section>
+      }
 
-      @if (!websiteCategoryMode) {
+      @if (visited().has('website')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'website'" aria-label="Prijzen op de website">
         <div [class.settings-section--folded]="folded('website')" class="card settings-section" id="website">
           <div (click)="toggleSection('website', $event)" class="card__head settings-head"><h2>Website · Prijzen</h2></div>
           <div class="card__body"><app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" /></div>
         </div>
+      </section>
       }
 
+      @if (visited().has('duties')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'duties'" aria-label="Douane">
+      @if (dutiesError(); as error) {
+        <app-load-error [message]="error" [busy]="dutiesLoading()" (retry)="loadDuties()" />
+      } @else if (dutiesLoading() && !hsCodes().length) {
+        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="4" /></div></div>
+      } @else {
+      <!-- ======================================= douanetarieven -->
+      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
+        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
+          <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
+        <div class="card__body">
+          <div class="alert alert--warn" style="margin-bottom:14px">
+            <span class="alert__icon">!</span>
+            <div>
+              Kijk deze percentages na in de <b>TARIC-databank</b> van de EU. Wat hier staat is
+              configuratie, geen douaneadvies.
+            </div>
+          </div>
+          @for (code of hsCodes(); track code.code) {
+            <div style="border:1px solid var(--line);border-radius:var(--r-sm);
+                        padding:10px 12px;margin-bottom:10px">
+              <div class="row" style="margin-bottom:8px">
+                <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
+                       [ngModel]="code.code" (ngModelChange)="code.code = $event" />
+                <input class="input input--sm num right" style="max-width:80px" type="text"
+                       inputmode="decimal" aria-label="Invoerrecht"
+                       [value]="pctText(code.dutyRatePct)"
+                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
+                <span class="small muted">%</span>
+                <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
+                <button class="btn btn--sm btn--danger" type="button"
+                        (click)="removeHsCode(code)">✕</button>
+              </div>
+              <input class="input input--sm" aria-label="Omschrijving" placeholder="Omschrijving"
+                     [ngModel]="code.description" (ngModelChange)="code.description = $event" />
+            </div>
+          }
+          <p class="small muted">
+            Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
+            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
+          </p>
+        </div>
+      </div>
+      }
+      </section>
+      }
+
+      @if (visited().has('discounts')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'discounts'" aria-label="Kortingen">
+      @if (discountsError(); as error) {
+        <app-load-error [message]="error" [busy]="discountsLoading()" (retry)="loadDiscounts()" />
+      } @else if (discountsLoading() && !discountsLoaded()) {
+        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="5" /></div></div>
+      } @else {
+      <!-- ======================================= productspecifieke lijnkorting -->
+      <div class="card settings-section discount-section"
+           [class.settings-section--folded]="folded('discounts')" id="discounts">
+        <div (click)="toggleSection('discounts', $event)" class="card__head settings-head">
+          <div>
+            <h2>Lijnkorting — per product</h2>
+            <span class="discount-section__count">
+              {{ lineDiscountGroups().length }} product{{ lineDiscountGroups().length === 1 ? '' : 'en' }} ingesteld
+            </span>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn--sm" type="button"
+                  [disabled]="!discountPickerProducts().length"
+                  (click)="lineDiscountPicker.set(true)">+ Product</button>
+        </div>
+        <div class="card__body">
+          <p class="discount-intro">
+            Iedere productvariant krijgt zijn eigen staffel. Een grens voor bijvoorbeeld rood
+            verandert dus niets aan blauw of aan een ander product.
+          </p>
+
+          @if (legacyLineTiers().length) {
+            <div class="discount-legacy" role="status">
+              <div><b>Oude algemene lijnkorting staat uit</b><span>Deze {{ legacyLineTiers().length }} oude regel{{ legacyLineTiers().length === 1 ? '' : 's' }} wordt niet meer op alle producten toegepast.</span></div>
+              <button class="btn btn--sm" type="button" (click)="removeLegacyLineTiers()">Opruimen</button>
+            </div>
+          }
+
+          <div class="discount-product-list">
+            @for (group of lineDiscountGroups(); track group.productId) {
+              <article class="discount-product" [id]="'line-discount-' + group.productId">
+                <header class="discount-product__head">
+                  @if (discountPhotoUrl(group.product); as photo) {
+                    <img class="discount-product__photo"
+                         [appAuthSrc]="photo"
+                         [alt]="group.product!.name" />
+                  } @else {
+                    <span class="discount-product__photo discount-product__photo--empty" aria-hidden="true">◈</span>
+                  }
+                  <div class="discount-product__identity">
+                    <h3>{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
+                    <span>
+                      @if (group.product?.colour) { {{ group.product!.colour }} · }
+                      @if (group.product?.variantSize) { {{ group.product!.variantSize }} · }
+                      {{ group.product?.sku || 'Onbekende SKU' }}
+                    </span>
+                    @if (group.product && supplierName(group.product); as supplier) {
+                      <small>{{ supplier }}</small>
+                    }
+                  </div>
+                  <button class="discount-product__remove" type="button"
+                          [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
+                          (click)="removeLineDiscountProduct(group.productId, group.product?.name)">×</button>
+                </header>
+
+                <div class="discount-tiers" [attr.aria-label]="'Staffel voor ' + (group.product?.name || group.productId)">
+                  @for (tier of group.tiers; track tier.id ?? $index) {
+                    <div class="discount-tier">
+                      <label>
+                        <span>Vanaf</span>
+                        <input class="input input--sm num right" type="number" min="1" step="1"
+                               [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
+                               [ngModel]="tier.minQuantity"
+                               (ngModelChange)="updateLineTier(tier, { minQuantity: +$event })" />
+                        <small>stuks</small>
+                      </label>
+                      <span class="discount-tier__arrow" aria-hidden="true">→</span>
+                      <label>
+                        <span>Korting</span>
+                        <input class="input input--sm num right" type="text" inputmode="decimal"
+                               [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
+                               [value]="pctText(tier.percent)"
+                               (blur)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
+                        <small>%</small>
+                      </label>
+                      <button class="discount-tier__remove" type="button" aria-label="Drempel verwijderen"
+                              (click)="removeLineTier(tier)">×</button>
+                    </div>
+                  }
+                </div>
+
+                <footer class="discount-product__actions">
+                  <button class="btn btn--sm" type="button" (click)="addLineTier(group.productId)">+ Drempel</button>
+                  <button class="btn btn--sm btn--primary" type="button"
+                          [disabled]="savingLineProductId() !== null || !group.tiers.length"
+                          (click)="saveLineProductTiers(group.productId)">
+                    {{ savingLineProductId() === group.productId ? 'Opslaan…' : 'Staffel opslaan' }}
+                  </button>
+                </footer>
+              </article>
+            } @empty {
+              <div class="discount-empty">
+                <b>Nog geen productspecifieke korting</b>
+                <span>Kies een product en voeg alleen daarvoor de juiste staffel toe.</span>
+                <button class="btn btn--primary" type="button"
+                        [disabled]="!discountPickerProducts().length"
+                        (click)="lineDiscountPicker.set(true)">Product kiezen</button>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+      <!-- ======================================= orderkorting -->
+      <div class="card settings-section" [class.settings-section--folded]="folded('order-discounts')"
+           id="order-discounts">
+        <div (click)="toggleSection('order-discounts', $event)" class="card__head settings-head">
+          <h2>Orderkorting — totaal order</h2><span class="spacer"></span>
+          <button class="btn btn--sm" type="button" (click)="addTier('ORDER')">+</button>
+        </div>
+        <div class="card__body">
+          <p class="small muted" style="margin:0 0 12px">
+            Korting op de hele order zodra het totale aantal stuks van alle producten samen een grens haalt.
+          </p>
+          @if (!orderTiers().length) {
+            <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
+          }
+          @for (tier of orderTiers(); track tier.id ?? $index; let tierIndex = $index) {
+            <div class="row" style="margin-bottom:8px">
+              <span class="small muted" style="width:52px">vanaf</span>
+              <input class="input input--sm num right" type="number" step="50"
+                     aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
+                     (ngModelChange)="updateOrderTier(tierIndex, { minQuantity: +$event })" />
+              <span class="small muted">st →</span>
+              <input class="input input--sm num right" type="text" inputmode="decimal"
+                     aria-label="Percentage" [value]="pctText(tier.percent)"
+                     (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
+              <span class="small muted">%</span>
+              <button class="btn btn--sm btn--danger" type="button"
+                      (click)="removeTier('ORDER', tierIndex)">✕</button>
+            </div>
+          }
+          @if (orderTiers().length) {
+            <button class="btn btn--sm btn--primary mt-8" type="button"
+                    (click)="saveTiers('ORDER')">Staffel opslaan</button>
+          }
+        </div>
+      </div>
+      }
+      </section>
+      }
+
+      @if (visited().has('catalog-data')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'catalog-data'" aria-label="Catalogusdata">
+      <!-- ======================================= catalogus in Excel -->
+      <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
+        <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
+          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
+        </div>
+        <div class="card__body">
+          <p class="workbook-intro">
+            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
+            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
+            @if (desktop.active()) {
+              Ook vertalingen staan in dezelfde export.
+            }
+          </p>
+
+          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
+            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
+            <li><span>2</span><div><b>Bewerk</b><small>
+              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
+            </small></div></li>
+            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
+          </ol>
+
+          <div class="workbook-safety">
+            <b>SKU niet wijzigen.</b>
+            <span>
+              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
+              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
+            </span>
+          </div>
+
+          <div class="workbook-actions">
+            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
+                    (click)="exportWorkbook()">
+              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
+            </button>
+            <button class="btn" type="button" [disabled]="importingWorkbook()"
+                    (click)="workbookFile.click()">Excel importeren…</button>
+            <input #workbookFile type="file"
+                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                   hidden (change)="selectWorkbook($any($event.target))" />
+          </div>
+
+          @if (selectedWorkbook(); as file) {
+            <div class="workbook-selection">
+              <div class="workbook-selection__file">
+                <span class="workbook-file-icon" aria-hidden="true">X</span>
+                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
+              </div>
+              <div class="workbook-selection__actions">
+                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
+                        (click)="clearWorkbookSelection()">Annuleren</button>
+                <button class="btn btn--sm btn--primary" type="button"
+                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
+                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
+                </button>
+              </div>
+            </div>
+          }
+
+          @if (workbookResult(); as result) {
+            <div class="alert workbook-result" aria-live="polite"
+                 [class.alert--ok]="!result.problems.length"
+                 [class.alert--warn]="result.problems.length > 0">
+              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
+              <div>
+                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
+                <div class="small workbook-result__summary">
+                  {{ result.updatedProducts }} productregels verwerkt ·
+                  {{ result.updatedRows }} vertaalregels bijgewerkt
+                </div>
+                @if (result.problems.length) {
+                  <details class="workbook-problems">
+                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
+                    <ul>
+                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
+                    </ul>
+                  </details>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Photos are not master data, but they are exported from the
+               same place: one ZIP with a folder per product. -->
+          <button class="photo-export-row" type="button" aria-haspopup="dialog"
+                  (click)="photoExportOpen.set(true)">
+            <span class="photo-export-row__badge" aria-hidden="true">ZIP</span>
+            <span class="photo-export-row__copy">
+              <b>Productfoto’s exporteren (ZIP)</b>
+              <small>Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</small>
+            </span>
+            <i aria-hidden="true">›</i>
+          </button>
+        </div>
+      </div>
+      </section>
+      }
+
+      @if (visited().has('device')) {
+      <section class="set-view mo-fade" [hidden]="view() !== 'device'" aria-label="Dit toestel">
+      <!-- ============== app on this device: looks and notifications -->
+      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
+        <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
+          <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
+            @for (option of themes; track option.key) {
+              <button class="theme-picker__option" type="button" role="radio"
+                      [class.theme-picker__option--active]="theme.current() === option.key"
+                      [attr.aria-checked]="theme.current() === option.key"
+                      (click)="theme.set(option.key)">
+                <i class="theme-picker__swatch" [style.background]="option.swatch" aria-hidden="true"></i>
+                <span>{{ option.label }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================= meldingen op dit toestel -->
+      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications">
+        <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
+        <div class="card__body">
+          <p class="small muted" style="margin-bottom:12px">
+            Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
+            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
+            Op iPhone werkt dit zodra de app op het beginscherm staat.
+          </p>
+          @if (!push.supported()) {
+            <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
+          } @else if (push.enabled()) {
+            <div class="push-actions">
+              <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="disablePush()">Uitzetten</button>
+            </div>
+          } @else {
+            <button class="btn btn--primary" type="button" [disabled]="push.busy()"
+                    (click)="enablePush()">
+              {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
+            </button>
+          }
+          @if (push.enabled() || pushDevices().length) {
+            <div class="push-actions mt-12">
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="testPush()">Stuur testmelding</button>
+              <span class="small muted">Naar alle aangemelde toestellen.</span>
+            </div>
+          }
+          @if (pushDevices().length) {
+            <div class="push-devices" aria-label="Aangemelde toestellen">
+              @for (device of pushDevices(); track device.id) {
+                <div class="push-device">
+                  <b>{{ device.device }}</b>
+                  <span>
+                    @if (device.lastStatus === null) { nog geen melding gestuurd }
+                    @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
+                      laatste melding door pushdienst geaccepteerd
+                    } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
+                    @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
+                  </span>
+                </div>
+              }
+            </div>
+          }
+          @if (pushDevicesError(); as error) {
+            <div class="push-error" role="alert">
+              <div><b>Aangemelde toestellen konden niet worden geladen</b><small>{{ error }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="pushDevicesLoading()"
+                      (click)="loadPushDevices()">Opnieuw proberen</button>
+            </div>
+          } @else if (pushDevicesLoading()) {
+            <p class="small muted mt-12" role="status">Aangemelde toestellen laden…</p>
+          } @else if (pushDevicesLoaded() && !pushDevices().length) {
+            <p class="small muted mt-12" role="status">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</p>
+          }
+          @if (pushActionError()) {
+            <div class="push-error" role="alert">
+              <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
+              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
+                      (click)="retryPushAction()">Opnieuw proberen</button>
+            </div>
+          }
+          <div class="push-sounds">
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
+              🔔 Geluid nieuwe offerte
+            </button>
+            <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
+              💰 Geluid nieuwe factuur
+            </button>
+          </div>
+        </div>
+      </div>
+      </section>
+      }
+    </div>
+    } @else {
+    <div class="content settings-content settings-content--website">
+      @if (settingsLoadError()) {
+        <section class="settings-load-error" role="alert">
+          <span aria-hidden="true">!</span>
+          <div>
+            <b>{{ websiteCategoryMode
+              ? 'Categorieën konden niet worden geladen'
+              : 'Instellingen konden niet volledig worden geladen' }}</b>
+            <small>{{ settingsLoadError() }}</small>
+          </div>
+          <button class="btn" type="button" [disabled]="loadingSettings()" (click)="load()">
+            {{ loadingSettings() ? 'Laden…' : 'Opnieuw laden' }}
+          </button>
+        </section>
+      }
       <div [class.settings-section--folded]="folded('categories')" class="card settings-section category-section" id="categories">
         <div (click)="toggleSection('categories', $event)" class="card__head settings-head category-section__head">
           <div>
@@ -619,384 +1069,8 @@ const normalizeCategoryCode = (value: string): string => value
           }
         </div>
       </div>
-
-      <!-- ======================================= douanetarieven -->
-      <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
-        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
-        <div class="card__body">
-          <div class="alert alert--warn" style="margin-bottom:14px">
-            <span class="alert__icon">!</span>
-            <div>
-              Kijk deze percentages na in de <b>TARIC-databank</b> van de EU. Wat hier staat is
-              configuratie, geen douaneadvies.
-            </div>
-          </div>
-          @for (code of hsCodes(); track code.code) {
-            <div style="border:1px solid var(--line);border-radius:var(--r-sm);
-                        padding:10px 12px;margin-bottom:10px">
-              <div class="row" style="margin-bottom:8px">
-                <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
-                       [ngModel]="code.code" (ngModelChange)="code.code = $event" />
-                <input class="input input--sm num right" style="max-width:80px" type="text"
-                       inputmode="decimal" aria-label="Invoerrecht"
-                       [value]="pctText(code.dutyRatePct)"
-                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
-                <span class="small muted">%</span>
-                <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
-                <button class="btn btn--sm btn--danger" type="button"
-                        (click)="removeHsCode(code)">✕</button>
-              </div>
-              <input class="input input--sm" aria-label="Omschrijving" placeholder="Omschrijving"
-                     [ngModel]="code.description" (ngModelChange)="code.description = $event" />
-            </div>
-          }
-          <p class="small muted">
-            Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
-            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
-          </p>
-        </div>
-      </div>
-
-      <!-- ======================================= productspecifieke lijnkorting -->
-      <div class="card settings-section discount-section"
-           [class.settings-section--folded]="folded('discounts')" id="discounts">
-        <div (click)="toggleSection('discounts', $event)" class="card__head settings-head">
-          <div>
-            <h2>Lijnkorting — per product</h2>
-            <span class="discount-section__count">
-              {{ lineDiscountGroups().length }} product{{ lineDiscountGroups().length === 1 ? '' : 'en' }} ingesteld
-            </span>
-          </div>
-          <span class="spacer"></span>
-          <button class="btn btn--sm" type="button"
-                  [disabled]="!discountPickerProducts().length"
-                  (click)="lineDiscountPicker.set(true)">+ Product</button>
-        </div>
-        <div class="card__body">
-          <p class="discount-intro">
-            Iedere productvariant krijgt zijn eigen staffel. Een grens voor bijvoorbeeld rood
-            verandert dus niets aan blauw of aan een ander product.
-          </p>
-
-          @if (legacyLineTiers().length) {
-            <div class="discount-legacy" role="status">
-              <div><b>Oude algemene lijnkorting staat uit</b><span>Deze {{ legacyLineTiers().length }} oude regel{{ legacyLineTiers().length === 1 ? '' : 's' }} wordt niet meer op alle producten toegepast.</span></div>
-              <button class="btn btn--sm" type="button" (click)="removeLegacyLineTiers()">Opruimen</button>
-            </div>
-          }
-
-          <div class="discount-product-list">
-            @for (group of lineDiscountGroups(); track group.productId) {
-              <article class="discount-product" [id]="'line-discount-' + group.productId">
-                <header class="discount-product__head">
-                  @if (discountPhotoUrl(group.product); as photo) {
-                    <img class="discount-product__photo"
-                         [appAuthSrc]="photo"
-                         [alt]="group.product!.name" />
-                  } @else {
-                    <span class="discount-product__photo discount-product__photo--empty" aria-hidden="true">◈</span>
-                  }
-                  <div class="discount-product__identity">
-                    <h3>{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
-                    <span>
-                      @if (group.product?.colour) { {{ group.product!.colour }} · }
-                      @if (group.product?.variantSize) { {{ group.product!.variantSize }} · }
-                      {{ group.product?.sku || 'Onbekende SKU' }}
-                    </span>
-                    @if (group.product && supplierName(group.product); as supplier) {
-                      <small>{{ supplier }}</small>
-                    }
-                  </div>
-                  <button class="discount-product__remove" type="button"
-                          [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
-                          (click)="removeLineDiscountProduct(group.productId, group.product?.name)">×</button>
-                </header>
-
-                <div class="discount-tiers" [attr.aria-label]="'Staffel voor ' + (group.product?.name || group.productId)">
-                  @for (tier of group.tiers; track tier.id ?? $index) {
-                    <div class="discount-tier">
-                      <label>
-                        <span>Vanaf</span>
-                        <input class="input input--sm num right" type="number" min="1" step="1"
-                               [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
-                               [ngModel]="tier.minQuantity"
-                               (ngModelChange)="updateLineTier(tier, { minQuantity: +$event })" />
-                        <small>stuks</small>
-                      </label>
-                      <span class="discount-tier__arrow" aria-hidden="true">→</span>
-                      <label>
-                        <span>Korting</span>
-                        <input class="input input--sm num right" type="text" inputmode="decimal"
-                               [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
-                               [value]="pctText(tier.percent)"
-                               (blur)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
-                        <small>%</small>
-                      </label>
-                      <button class="discount-tier__remove" type="button" aria-label="Drempel verwijderen"
-                              (click)="removeLineTier(tier)">×</button>
-                    </div>
-                  }
-                </div>
-
-                <footer class="discount-product__actions">
-                  <button class="btn btn--sm" type="button" (click)="addLineTier(group.productId)">+ Drempel</button>
-                  <button class="btn btn--sm btn--primary" type="button"
-                          [disabled]="savingLineProductId() !== null || !group.tiers.length"
-                          (click)="saveLineProductTiers(group.productId)">
-                    {{ savingLineProductId() === group.productId ? 'Opslaan…' : 'Staffel opslaan' }}
-                  </button>
-                </footer>
-              </article>
-            } @empty {
-              <div class="discount-empty">
-                <b>Nog geen productspecifieke korting</b>
-                <span>Kies een product en voeg alleen daarvoor de juiste staffel toe.</span>
-                <button class="btn btn--primary" type="button"
-                        [disabled]="!discountPickerProducts().length"
-                        (click)="lineDiscountPicker.set(true)">Product kiezen</button>
-              </div>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- ======================================= orderkorting -->
-      <div class="card settings-section" [class.settings-section--folded]="folded('order-discounts')"
-           id="order-discounts">
-        <div (click)="toggleSection('order-discounts', $event)" class="card__head settings-head">
-          <h2>Orderkorting — totaal order</h2><span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="addTier('ORDER')">+</button>
-        </div>
-        <div class="card__body">
-          <p class="small muted" style="margin:0 0 12px">
-            Korting op de hele order zodra het totale aantal stuks van alle producten samen een grens haalt.
-          </p>
-          @if (!orderTiers().length) {
-            <p class="small muted">Nog geen staffel. Druk op + om een eerste grens toe te voegen.</p>
-          }
-          @for (tier of orderTiers(); track tier.id ?? $index; let tierIndex = $index) {
-            <div class="row" style="margin-bottom:8px">
-              <span class="small muted" style="width:52px">vanaf</span>
-              <input class="input input--sm num right" type="number" step="50"
-                     aria-label="Vanaf aantal" [ngModel]="tier.minQuantity"
-                     (ngModelChange)="updateOrderTier(tierIndex, { minQuantity: +$event })" />
-              <span class="small muted">st →</span>
-              <input class="input input--sm num right" type="text" inputmode="decimal"
-                     aria-label="Percentage" [value]="pctText(tier.percent)"
-                     (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
-              <span class="small muted">%</span>
-              <button class="btn btn--sm btn--danger" type="button"
-                      (click)="removeTier('ORDER', tierIndex)">✕</button>
-            </div>
-          }
-          @if (orderTiers().length) {
-            <button class="btn btn--sm btn--primary mt-8" type="button"
-                    (click)="saveTiers('ORDER')">Staffel opslaan</button>
-          }
-        </div>
-      </div>
-      <!-- ======================================= catalogus in Excel -->
-      <div [class.settings-section--folded]="folded('catalog-data')" class="card settings-section workbook-card" id="catalog-data">
-        <div (click)="toggleSection('catalog-data', $event)" class="card__head settings-head workbook-card__head">
-          <div><span class="workbook-badge" aria-hidden="true">XLSX</span><h2>Producten in Excel (importeren / exporteren)</h2></div>
-        </div>
-        <div class="card__body">
-          <p class="workbook-intro">
-            Bewerk productteksten, maten, barcodes, prijzen en publicatie in één duidelijk
-            Excel-bestand. Kolomfilters, vaste kopregels en dropdowns staan al voor je klaar.
-            @if (desktop.active()) {
-              Ook vertalingen staan in dezelfde export.
-            }
-          </p>
-
-          <ol class="workbook-steps" aria-label="Werkwijze Excel-import">
-            <li><span>1</span><div><b>Download</b><small>Begin altijd met de nieuwste export.</small></div></li>
-            <li><span>2</span><div><b>Bewerk</b><small>
-              Producten staan op duidelijke tabbladen.@if (desktop.active()) { Vertalingen staan apart. }
-            </small></div></li>
-            <li><span>3</span><div><b>Importeer</b><small>Problemen worden per rij gemeld; onbekende SKU's worden niet aangemaakt.</small></div></li>
-          </ol>
-
-          <div class="workbook-safety">
-            <b>SKU niet wijzigen.</b>
-            <span>
-              De SKU koppelt elke rij aan het juiste product. Categorie, leverancier,
-              voorraad, extra eenheidskosten en landed cost beheer je in het ERP, niet in Excel.
-            </span>
-          </div>
-
-          <div class="workbook-actions">
-            <button class="btn btn--primary" type="button" [disabled]="exportingWorkbook()"
-                    (click)="exportWorkbook()">
-              {{ exportingWorkbook() ? 'Excel maken…' : 'Excel downloaden' }}
-            </button>
-            <button class="btn" type="button" [disabled]="importingWorkbook()"
-                    (click)="workbookFile.click()">Excel importeren…</button>
-            <input #workbookFile type="file"
-                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                   hidden (change)="selectWorkbook($any($event.target))" />
-          </div>
-
-          @if (selectedWorkbook(); as file) {
-            <div class="workbook-selection">
-              <div class="workbook-selection__file">
-                <span class="workbook-file-icon" aria-hidden="true">X</span>
-                <div><b>{{ file.name }}</b><small>{{ fileSize(file.size) }}</small></div>
-              </div>
-              <div class="workbook-selection__actions">
-                <button class="btn btn--sm" type="button" [disabled]="importingWorkbook()"
-                        (click)="clearWorkbookSelection()">Annuleren</button>
-                <button class="btn btn--sm btn--primary" type="button"
-                        [disabled]="importingWorkbook()" (click)="importWorkbook()">
-                  {{ importingWorkbook() ? 'Controleren en importeren…' : 'Controleren en importeren' }}
-                </button>
-              </div>
-            </div>
-          }
-
-          @if (workbookResult(); as result) {
-            <div class="alert workbook-result" aria-live="polite"
-                 [class.alert--ok]="!result.problems.length"
-                 [class.alert--warn]="result.problems.length > 0">
-              <span class="alert__icon">{{ result.problems.length ? '!' : '✓' }}</span>
-              <div>
-                <b>{{ result.problems.length ? 'Import afgerond met aandachtspunten' : 'Excel succesvol geïmporteerd' }}</b>
-                <div class="small workbook-result__summary">
-                  {{ result.updatedProducts }} productregels verwerkt ·
-                  {{ result.updatedRows }} vertaalregels bijgewerkt
-                </div>
-                @if (result.problems.length) {
-                  <details class="workbook-problems">
-                    <summary>{{ result.problems.length }} {{ result.problems.length === 1 ? 'melding' : 'meldingen' }} bekijken</summary>
-                    <ul>
-                      @for (problem of result.problems; track $index) { <li>{{ problem }}</li> }
-                    </ul>
-                  </details>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Photos are not master data, but they are exported from the
-               same place: one ZIP with a folder per product. -->
-          <button class="photo-export-row" type="button" aria-haspopup="dialog"
-                  (click)="photoExportOpen.set(true)">
-            <span class="photo-export-row__badge" aria-hidden="true">ZIP</span>
-            <span class="photo-export-row__copy">
-              <b>Productfoto’s exporteren (ZIP)</b>
-              <small>Originele foto’s per product in een eigen map, met een LEESMIJ-bestand. Zonder prijzen.</small>
-            </span>
-            <i aria-hidden="true">›</i>
-          </button>
-        </div>
-      </div>
-
-      <!-- ======================================= categorieen -->
-
-      <!-- ======================================= weergave -->
-      @if (!websiteCategoryMode) {
-        <details class="card settings-management">
-          <summary><span>Beheer</span><i aria-hidden="true">›</i></summary>
-          <a routerLink="/settings/deleted-items"><span><b>Verwijderde items</b><small>Tijdelijk verwijderde documenten bekijken en herstellen</small></span><i aria-hidden="true">›</i></a>
-        </details>
-      }
-      <!-- ============== app on this device: looks and notifications -->
-      <p class="app-settings-kicker">App op dit toestel</p>
-      <div [class.settings-section--folded]="folded('appearance')" class="card settings-section" id="appearance">
-        <div (click)="toggleSection('appearance', $event)" class="card__head settings-head"><h2>Weergave</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">De accentkleur van de app: knoppen, actieve menu-items en markeringen. Geldt op dit toestel.</p>
-          <div class="theme-picker" role="radiogroup" aria-label="Kleurschema">
-            @for (option of themes; track option.key) {
-              <button class="theme-picker__option" type="button" role="radio"
-                      [class.theme-picker__option--active]="theme.current() === option.key"
-                      [attr.aria-checked]="theme.current() === option.key"
-                      (click)="theme.set(option.key)">
-                <i class="theme-picker__swatch" [style.background]="option.swatch" aria-hidden="true"></i>
-                <span>{{ option.label }}</span>
-              </button>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- ======================================= meldingen op dit toestel -->
-      <div [class.settings-section--folded]="folded('notifications')" class="card settings-section" id="notifications">
-        <div (click)="toggleSection('notifications', $event)" class="card__head settings-head"><h2>Meldingen op dit toestel</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">
-            Een melding bij elke nieuwe offerte of factuur (mét kassageluid), inkooporder,
-            contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
-            Op iPhone werkt dit zodra de app op het beginscherm staat.
-          </p>
-          @if (!push.supported()) {
-            <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
-          } @else if (push.enabled()) {
-            <div class="push-actions">
-              <span class="badge badge--ok">Meldingen staan aan op dit toestel</span>
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="disablePush()">Uitzetten</button>
-            </div>
-          } @else {
-            <button class="btn btn--primary" type="button" [disabled]="push.busy()"
-                    (click)="enablePush()">
-              {{ push.busy() ? 'Bezig…' : 'Meldingen aanzetten op dit toestel' }}
-            </button>
-          }
-          @if (push.enabled() || pushDevices().length) {
-            <div class="push-actions mt-12">
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="testPush()">Stuur testmelding</button>
-              <span class="small muted">Naar alle aangemelde toestellen.</span>
-            </div>
-          }
-          @if (pushDevices().length) {
-            <div class="push-devices" aria-label="Aangemelde toestellen">
-              @for (device of pushDevices(); track device.id) {
-                <div class="push-device">
-                  <b>{{ device.device }}</b>
-                  <span>
-                    @if (device.lastStatus === null) { nog geen melding gestuurd }
-                    @else if (device.lastStatus >= 200 && device.lastStatus < 300) {
-                      laatste melding door pushdienst geaccepteerd
-                    } @else { laatste melding geweigerd ({{ device.lastStatus }}) }
-                    @if (device.lastAt) { · {{ device.lastAt | dateTimeNl }} }
-                  </span>
-                </div>
-              }
-            </div>
-          }
-          @if (pushDevicesError(); as error) {
-            <div class="push-error" role="alert">
-              <div><b>Aangemelde toestellen konden niet worden geladen</b><small>{{ error }}</small></div>
-              <button class="btn btn--sm" type="button" [disabled]="pushDevicesLoading()"
-                      (click)="loadPushDevices()">Opnieuw proberen</button>
-            </div>
-          } @else if (pushDevicesLoading()) {
-            <p class="small muted mt-12" role="status">Aangemelde toestellen laden…</p>
-          } @else if (pushDevicesLoaded() && !pushDevices().length) {
-            <p class="small muted mt-12" role="status">Nog geen toestellen aangemeld. Zet meldingen aan op elke gsm waarop je ze wilt ontvangen.</p>
-          }
-          @if (pushActionError()) {
-            <div class="push-error" role="alert">
-              <div><b>Meldingsactie mislukt</b><small>{{ pushActionError() }}</small></div>
-              <button class="btn btn--sm" type="button" [disabled]="push.busy()"
-                      (click)="retryPushAction()">Opnieuw proberen</button>
-            </div>
-          }
-          <div class="push-sounds">
-            <button class="btn btn--sm" type="button" (click)="previewSound('sale-quote')">
-              🔔 Geluid nieuwe offerte
-            </button>
-            <button class="btn btn--sm" type="button" (click)="previewSound('sale-invoice')">
-              💰 Geluid nieuwe factuur
-            </button>
-          </div>
-        </div>
-      </div>
-
     </div>
+    }
 
     @if (lineDiscountPicker()) {
       <app-product-picker
@@ -1020,7 +1094,6 @@ const normalizeCategoryCode = (value: string): string => value
     }
   `,
   styles: `
-    .settings-management{margin-top:18px}.settings-management summary,.settings-management>a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;min-height:54px}.settings-management summary{list-style:none;cursor:pointer;font-size:14px;font-weight:650}.settings-management summary::-webkit-details-marker{display:none}.settings-management i{font-style:normal;color:var(--muted)}.settings-management[open] summary i{transform:rotate(90deg)}.settings-management>a{border-top:1px solid var(--line);text-decoration:none;color:var(--ink)}.settings-management>a>span{display:grid;gap:5px}.settings-management b{font-size:13px}.settings-management small{font-size:11px;color:var(--muted);line-height:1.5}.settings-management summary:focus-visible,.settings-management>a:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
     .website-category-nav { max-width: 1540px; padding-bottom: 0; }
     .category-ownership {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
@@ -1036,18 +1109,6 @@ const normalizeCategoryCode = (value: string): string => value
     .category-dependency-warning span { color: var(--muted); font-size: 13px; line-height: 1.4; }
     .category-dependency-warning .btn { min-height: 48px; }
     .settings-content--website { max-width: 1540px; padding-top: 0; }
-    .settings-content--website > .settings-section:not(.category-section) { display: none; }
-    .settings-content--website > .app-settings-kicker { display: none; }
-    .settings-nav {
-      position: sticky; top: var(--appbar-h); z-index: 50;
-      width: 100%; margin: 0; border-bottom: 1px solid var(--line);
-      background: var(--surface);
-    }
-    .settings-nav__rail {
-      display: flex; gap: 3px; width: 100%; max-width: 1400px; margin: 0 auto;
-      padding: 6px 12px; overflow-x: auto; overscroll-behavior-x: contain;
-      scrollbar-width: none;
-    }
     .settings-load-error {
       display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
       margin-bottom: 14px; padding: 14px; border: 1px solid var(--danger); border-radius: var(--r-sm);
@@ -1059,37 +1120,28 @@ const normalizeCategoryCode = (value: string): string => value
     .settings-load-error b { font-size: 15px; }
     .settings-load-error small { color: var(--muted); font-size: 14px; line-height: 1.45; }
     .settings-load-error .btn { min-height: 48px; }
-    .settings-nav__rail::-webkit-scrollbar { display: none; }
-    @media (max-width: 679px) {
-      .settings-nav__rail { padding-right: 36px; mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
-        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
-    }
-    .settings-nav button {
-      flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 40px;
-      padding: 0 11px; border: 0; border-radius: 8px; background: transparent;
-      color: var(--muted); font: inherit; font-size: 12px; font-weight: 650;
-      cursor: pointer; text-decoration: none; transition: color .16s, background .16s;
-    }
-    .settings-nav button:hover { color: var(--ink-2); background: var(--surface-2); }
-    .settings-nav button.active { background: var(--rose-soft); color: var(--rose-dark); }
-    .settings-nav button:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; }
     .settings-content { padding-top: 12px; }
-    .settings-section { scroll-margin-top: 109px; }
     .workbook-card { overflow: hidden; }
-    /* Phone: the settings page reads as a grouped list - one section open,
-       the rest a row with a chevron, the way iOS keeps a long settings
-       screen short. On desktop everything stays open. */
+    /* Phone: the category card of /website/categories folds on its head. */
     @media (max-width: 679px) {
-      .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-      .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
+      .settings-content--website .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+      .settings-content--website .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
         border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
         transform: rotate(45deg); transition: transform .15s ease; }
-      .settings-head .spacer { display: none; }
+      .settings-content--website .settings-head .spacer { display: none; }
       .settings-section--folded .settings-head::after { transform: rotate(-45deg); }
       .settings-section--folded .card__body { display: none; }
       .settings-section--folded .settings-head .btn { display: none; }
-      .settings-section + .settings-section { margin-top: 10px; }
+      .settings-content--website > .category-section { margin-top: 10px; }
     }
+    /* Settings views: one shows, the visited ones stay mounted and hidden (keep-alive). */
+    .set-view { display: block; }
+    .set-view[hidden], app-settings-overview[hidden] { display: none !important; }
+    .set-view > .card + .card { margin-top: 16px; }
+    .set-tabs { display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .set-tabs::-webkit-scrollbar { display: none; }
+    .set-tabs .wk-chip { height: 30px; padding: 0 12px; font-size: 12.5px; text-decoration: none; }
+    .set-dot { display: inline-block; width: 6px; height: 6px; margin-left: 2px; border-radius: 50%; background: var(--warn); }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
       border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
@@ -1219,11 +1271,8 @@ const normalizeCategoryCode = (value: string): string => value
       .category-item__actions .btn { width: auto; }
     }
     @media (min-width: 680px) {
-      .settings-nav { top: 62px; }
-      .settings-nav__rail { padding-inline: 26px; }
       .settings-content { padding-top: 16px; }
       .settings-content--website { padding-top: 0; }
-      .settings-section { scroll-margin-top: 119px; }
     }
     .push-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .push-devices { display: grid; gap: 5px; margin-top: 10px; }
@@ -1238,8 +1287,6 @@ const normalizeCategoryCode = (value: string): string => value
     .push-error small { color:var(--muted);font-size:13px;line-height:1.45 }
     .push-error .btn { flex:none;min-height:48px }
     @media(max-width:560px) { .push-error { align-items:stretch;flex-direction:column }.push-error .btn { width:100% } }
-    .app-settings-kicker { margin: 22px 2px 8px; color: var(--muted); font-size: 10px;
-      font-weight: 780; letter-spacing: .09em; text-transform: uppercase; }
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
@@ -1248,8 +1295,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly push = inject(PushSetup);
   readonly pushActionError = signal<string | null>(null);
   private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';
-  /** All registered devices remain visible even if this browser is not subscribed. */
-  private readonly pushDevicesLoad = setTimeout(() => void this.loadPushDevices(), 1500);
 
   async enablePush(): Promise<void> {
     this.lastPushAction = 'enable';
@@ -1415,35 +1460,49 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     '/more',
   );
   private categoryDeepLinkOpened = false;
-  private scrollSpyFrame: number | null = null;
-  private removeScrollSpyListeners?: () => void;
-  private contentResizeObserver?: ResizeObserver;
+  private readonly router = inject(Router);
+  readonly companyStore = inject(CompanyStore);
 
-  readonly settingsSections = [
-    { id: 'company', label: 'Bedrijf' },
-    { id: 'website', label: 'Website' },
-    { id: 'categories', label: 'Categorieën' },
-    { id: 'duties', label: 'Douane' },
-    { id: 'discounts', label: 'Kortingen' },
-    { id: 'catalog-data', label: 'Catalogusdata' },
-    { id: 'appearance', label: 'Weergave' },
-    { id: 'notifications', label: 'Meldingen' },
-  ] as const;
-  readonly activeSection = signal<SettingsSectionId>(
-    this.websiteCategoryMode ? 'categories' : 'company',
-  );
-  /** Phone: the one section that is unfolded; desktop shows them all. */
-  readonly openSection = signal<string>(this.websiteCategoryMode ? 'categories' : 'company');
+  /** The views this build has (C3 adds the legal view). */
+  readonly views: readonly SettingsView[] = AVAILABLE_VIEWS;
+  /** Douane moves to the purchasing screen /douane once that route exists (B1). */
+  readonly douaneRoute = this.router.config.some((route) => route.path === 'douane');
+  private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  /** The open view follows the query live: a query-only navigation reuses this component. */
+  readonly view = computed<SettingsView>(() => settingsView(this.query().get('sectie'), this.views));
+  readonly viewInfo = computed(() => settingsViewInfo(this.view()));
+  readonly tabs = computed(() => settingsTabs({ douaneRoute: this.douaneRoute, available: this.views }));
+  /** Views stay mounted after their first visit (hidden while another shows), so a draft survives a tab switch. */
+  readonly visited = signal<ReadonlySet<SettingsView>>(new Set([this.view()]));
+  /** Desk: the crumb "Instellingen ›" on every view. Phone: no parent, the back control follows the history (B9). */
+  readonly headerParent = computed(() => this.view() === 'overview'
+    ? null
+    : this.desktop.active() ? { label: 'Instellingen', url: OVERVIEW_URL } : undefined);
+  readonly headerBackTo = computed(() => this.view() === 'overview' ? this.settingsBackTo : OVERVIEW_URL);
+  private readonly tabStrip = viewChild<ElementRef<HTMLElement>>('tabStrip');
+  private readonly loadedViews = new Set<SettingsView>();
+
+  viewQuery(view: SettingsView): Record<string, string> | null {
+    return settingsViewQuery(view);
+  }
+
+  /** The warn dot on a tab whose view holds unsaved changes. */
+  viewDirty(_view: SettingsView): boolean {
+    return false;
+  }
+
   /** A saved price switch queues a website rebuild; refresh every status on the page. */
   refreshWebsiteSync(): void {
     this.websiteSyncRefresh.update((value) => value + 1);
   }
 
+  /** Phone: the category card on /website/categories folds on its head; settings views never fold. */
+  readonly openSection = signal<string>('categories');
   folded(section: string): boolean {
-    return !this.desktop.active() && this.openSection() !== section;
+    return this.websiteCategoryMode && !this.desktop.active() && this.openSection() !== section;
   }
   toggleSection(section: string, event: Event): void {
-    if (this.desktop.active()) return;
+    if (!this.websiteCategoryMode || this.desktop.active()) return;
     /* A button or field in the head does its own job; the head only folds on the bare row. */
     if ((event.target as HTMLElement).closest('button, a, input, select, label')) return;
     this.openSection.set(this.openSection() === section ? '' : section);
@@ -1504,43 +1563,56 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     return product?.photos?.length ? salesPhotoUrl(product) : null;
   }
 
-  constructor() { void this.load(); }
+  constructor() {
+    if (this.websiteCategoryMode) {
+      void this.load();
+      return;
+    }
+    /* The view follows the query: mark it visited, load what it needs, and move old deep links on. */
+    effect(() => {
+      const view = this.view();
+      const params = this.query();
+      untracked(() => {
+        const redirect = settingsCategoryRedirect({
+          sectie: params.get('sectie'),
+          category: params.get('category'),
+          language: params.get('language'),
+          focus: params.get('focus'),
+        });
+        if (redirect) {
+          void this.router.navigate([redirect.path], { queryParams: redirect.queryParams, replaceUrl: true });
+          return;
+        }
+        if (params.get('sectie') === 'duties' && this.douaneRoute) {
+          void this.router.navigate(['/douane'], { replaceUrl: true });
+          return;
+        }
+        if (!this.visited().has(view)) this.visited.update((visited) => new Set([...visited, view]));
+        this.ensureViewData(view);
+        this.revealTab(view);
+      });
+    });
+    /* Company values come from the page's one store; the form edits its own copy of them. */
+    effect(() => {
+      const saved = this.companyStore.saved();
+      untracked(() => { if (saved && !this.company()) this.company.set({ ...saved }); });
+    });
+  }
 
   ngAfterViewInit(): void {
-    const view = this.document.defaultView;
-    if (!view) return;
-
-    const schedule = (): void => this.scheduleScrollSpy();
-    view.addEventListener('scroll', schedule, { passive: true });
-    view.addEventListener('resize', schedule, { passive: true });
-    this.removeScrollSpyListeners = () => {
-      view.removeEventListener('scroll', schedule);
-      view.removeEventListener('resize', schedule);
-    };
-
-    const content = this.document.querySelector<HTMLElement>('.settings-content');
-    if (content && typeof ResizeObserver !== 'undefined') {
-      this.contentResizeObserver = new ResizeObserver(schedule);
-      this.contentResizeObserver.observe(content);
-    }
-    this.scheduleScrollSpy();
-
-    this.scrollToDeepLink();
+    if (this.websiteCategoryMode) this.scrollToDeepLink();
   }
 
   /**
-   * Meer links straight into one drawer: /settings?sectie=... opens and
-   * scrolls to it. Runs again after the data lands, because the sections
-   * above the target grow while loading and drag the anchor along.
+   * /website/categories?category=… opens that category; the page then
+   * scrolls to the card. Runs again after the data lands, because the
+   * blocks above it grow while loading and drag the anchor along.
    */
   private scrollToDeepLink(): void {
     const view = this.document.defaultView;
     this.openDeepLinkedCategory();
-    const wanted = (this.websiteCategoryMode
-      ? 'categories'
-      : this.route.snapshot.queryParamMap.get('sectie')) as SettingsSectionId | null;
-    if (!view || !wanted || !this.settingsSections.some((section) => section.id === wanted)) return;
-    view.setTimeout(() => this.scrollToSection(wanted), 150);
+    if (!view || !this.websiteCategoryMode) return;
+    view.setTimeout(() => this.scrollToSection('categories'), 150);
   }
 
   private openDeepLinkedCategory(): void {
@@ -1569,13 +1641,90 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.removeScrollSpyListeners?.();
-    this.contentResizeObserver?.disconnect();
-    const view = this.document.defaultView;
-    if (view && this.scrollSpyFrame !== null) view.cancelAnimationFrame(this.scrollSpyFrame);
+    this.destroyed = true;
+  }
+  private destroyed = false;
+
+  /** Each view loads what it needs the first time it opens; the overview loads its own values. */
+  private ensureViewData(view: SettingsView): void {
+    if (this.loadedViews.has(view)) return;
+    this.loadedViews.add(view);
+    void this.loadViewData(view);
+  }
+
+  private loadViewData(view: SettingsView): Promise<unknown> {
+    switch (view) {
+      case 'company': return this.companyStore.load();
+      case 'duties': return this.loadDuties();
+      case 'discounts': return this.loadDiscounts();
+      case 'device': return this.loadPushDevices();
+      default: return Promise.resolve();
+    }
+  }
+
+  /** The current tab chip scrolls into view (the strip scrolls sideways at 1100 px). */
+  private revealTab(view: SettingsView): void {
+    const win = this.document.defaultView;
+    win?.requestAnimationFrame(() => {
+      const chip = this.tabStrip()?.nativeElement.querySelector<HTMLElement>(`[data-view="${view}"]`);
+      chip?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  readonly dutiesLoading = signal(false);
+  readonly dutiesError = signal<string | null>(null);
+
+  async loadDuties(): Promise<void> {
+    this.dutiesLoading.set(true);
+    this.dutiesError.set(null);
+    try {
+      const hsCodes = await this.catalog.hsCodes();
+      if (this.destroyed) return;
+      this.hsCodes.set(hsCodes);
+      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
+    } catch (failure: unknown) {
+      if (!this.destroyed) this.dutiesError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.dutiesLoading.set(false);
+    }
+  }
+
+  readonly discountsLoading = signal(false);
+  readonly discountsLoaded = signal(false);
+  readonly discountsError = signal<string | null>(null);
+
+  /** The tiers, plus what the product picker and the product cards need. */
+  async loadDiscounts(): Promise<void> {
+    this.discountsLoading.set(true);
+    this.discountsError.set(null);
+    try {
+      const [line, order, categories, products, families, suppliers] = await Promise.all([
+        this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
+        this.catalog.categories().catch(() => []), this.catalog.products().catch(() => []),
+        this.catalog.productFamilies().catch(() => []), this.sourcing.suppliers().catch(() => []),
+      ]);
+      if (this.destroyed) return;
+      this.lineTiers.set(line);
+      this.orderTiers.set(order);
+      this.categories.set(categories);
+      this.products.set(products);
+      this.families.set(families);
+      this.suppliers.set(suppliers);
+      this.discountsLoaded.set(true);
+    } catch (failure: unknown) {
+      if (!this.destroyed) this.discountsError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.discountsLoading.set(false);
+    }
   }
 
   async load(): Promise<void> {
+    if (!this.websiteCategoryMode) {
+      /* Settings views: read again what the opened views show. */
+      await Promise.all([...this.loadedViews].map((view) =>
+        view === 'company' ? this.companyStore.load(true) : this.loadViewData(view)));
+      return;
+    }
     if (this.loadingSettings() && this.company()) return;
     this.loadingSettings.set(true);
     this.settingsLoadError.set(null);
@@ -1609,27 +1758,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         this.scrollToDeepLink();
         return;
       }
-      const [categories, products, families, suppliers, hsCodes, line, order, company] = await Promise.all([
-        this.catalog.categories(), this.catalog.products().catch(() => []),
-        this.catalog.productFamilies().catch(() => []),
-        this.sourcing.suppliers().catch(() => []), this.catalog.hsCodes(),
-        this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
-        this.sales.company(),
-      ]);
-      this.company.set(company);
-      this.categories.set(categories.map((category) => ({
-        ...category,
-        revision: category.revision ?? null,
-        texts: category.texts ?? [],
-      })));
-      this.products.set(products);
-      this.families.set(families);
-      this.suppliers.set(suppliers);
-      this.hsCodes.set(hsCodes);
-      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
-      this.lineTiers.set(line);
-      this.orderTiers.set(order);
-      this.scrollToDeepLink();
     } catch (failure: unknown) {
       this.settingsLoadError.set(messageOf(
         failure,
@@ -1649,7 +1777,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (!profile) return;
     this.savingCompany.set(true);
     try {
-      this.company.set(await this.sales.saveCompany(profile));
+      this.company.set({ ...await this.companyStore.save(profile) });
       this.ui.toast('Bedrijfsgegevens opgeslagen');
     } catch {
       this.ui.toast('Opslaan mislukt', 'err');
@@ -1662,70 +1790,13 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     return scope === 'LINE' ? this.lineTiers() : this.orderTiers();
   }
 
-  scrollToSection(section: SettingsSectionId): void {
+  scrollToSection(section: string): void {
     const view = this.document.defaultView;
     const target = this.document.getElementById(section);
     if (!view || !target) return;
-
-    this.activeSection.set(section);
     this.openSection.set(section);
-    this.revealActiveNavButton(section);
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    const stickyBottom = nav?.getBoundingClientRect().bottom ?? 0;
     const targetTop = target.getBoundingClientRect().top + view.scrollY;
-    view.scrollTo({ top: Math.max(0, targetTop - stickyBottom - 8), behavior: 'smooth' });
-  }
-
-  private scheduleScrollSpy(): void {
-    const view = this.document.defaultView;
-    if (!view || this.scrollSpyFrame !== null) return;
-    this.scrollSpyFrame = view.requestAnimationFrame(() => {
-      this.scrollSpyFrame = null;
-      this.updateActiveSection();
-    });
-  }
-
-  private updateActiveSection(): void {
-    const view = this.document.defaultView;
-    if (!view) return;
-
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    // The marker is based on the rendered sticky navigation, not a guessed
-    // header height. This keeps the scroll spy correct on both appbar sizes.
-    const stickyBottom = nav?.getBoundingClientRect().bottom ?? 0;
-    const marker = stickyBottom + 10;
-    let current: SettingsSectionId = this.settingsSections[0].id;
-
-    for (const section of this.settingsSections) {
-      const element = this.document.getElementById(section.id);
-      if (!element || element.getBoundingClientRect().top > marker) break;
-      current = section.id;
-    }
-
-    const pageBottom = view.scrollY + view.innerHeight;
-    const documentBottom = this.document.documentElement.scrollHeight;
-    if (pageBottom >= documentBottom - 2) {
-      current = this.settingsSections[this.settingsSections.length - 1].id;
-    }
-
-    if (this.activeSection() === current) return;
-    this.activeSection.set(current);
-    this.revealActiveNavButton(current);
-  }
-
-  private revealActiveNavButton(section: SettingsSectionId): void {
-    const nav = this.document.querySelector<HTMLElement>('.settings-nav');
-    const rail = nav?.querySelector<HTMLElement>('.settings-nav__rail');
-    const button = rail?.querySelector<HTMLElement>(`[data-settings-section="${section}"]`);
-    if (!rail || !button) return;
-
-    const railRect = rail.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-    if (buttonRect.left < railRect.left) {
-      rail.scrollBy({ left: buttonRect.left - railRect.left - 8, behavior: 'smooth' });
-    } else if (buttonRect.right > railRect.right) {
-      rail.scrollBy({ left: buttonRect.right - railRect.right + 8, behavior: 'smooth' });
-    }
+    view.scrollTo({ top: Math.max(0, targetTop - 8), behavior: 'smooth' });
   }
 
   /* ---------------------------------------------------- categorieen */
@@ -2266,4 +2337,3 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   }
 }
 
-type SettingsSectionId = 'company' | 'website' | 'appearance' | 'catalog-data' | 'categories' | 'duties' | 'discounts' | 'notifications';
