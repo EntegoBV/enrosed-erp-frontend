@@ -109,11 +109,16 @@ const STORAGE_KEY = 'enrosed.market';
     <div class="mk" [attr.aria-busy]="loading() || saving()">
       <!-- The tab's tool row (critique N10): one period for every chart, the source, the one writing action. Vernieuwen is the page's. -->
       <div class="an-bar">
-        <app-segmented label="Periode van de grafieken en vergelijkingen" [variant]="desk.active() ? 'desk' : 'ios'" [options]="periodOptions"
-                       [value]="'' + months()" (changed)="setMonths($any(+$event))" />
         @if (desk.active()) {
+          <app-segmented label="Periode van de grafieken en vergelijkingen" [options]="periodOptions" [value]="'' + months()" (changed)="setMonths($any(+$event))" />
           <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ shortDate(rates.asOf) }} }</span>
           <div class="an-bar__end"><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
+        } @else {
+          <!-- Phone: the capsule and sheet of the Kasprognose horizon (design §3.7). -->
+          <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                  [attr.aria-label]="'Periode: ' + monthsWord(months())" (click)="periodSheet.set(true)">
+            <app-icon name="calendar" [size]="15" />{{ monthsWord(months()) }}<app-icon name="chevron-down" [size]="14" /></button>
+          @if (fx.series(); as rates) { <span class="an-bar__text">ECB · bijgewerkt {{ shortDate(rates.asOf) }}</span> }
         }
       </div>
 
@@ -164,9 +169,9 @@ const STORAGE_KEY = 'enrosed.market';
                     <div><dt>Laag</dt><dd>{{ summary.min | num: 4 }}<small>{{ shortDate(summary.minOn) }}</small></dd></div>
                   </dl>
                 }
-                <div class="mk-horizons" aria-label="Verandering per periode">
+                <div class="mk-horizons mk-fig" role="group" aria-label="Verandering per periode">
                   @for (horizon of pair.horizons; track horizon.months) {
-                    <button type="button" [class.is-on]="months() === horizon.months" (click)="setMonths(horizon.months)">
+                    <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" (click)="setMonths(horizon.months)">
                       <span>{{ horizon.label }}</span>
                       @if (horizon.pct !== null) {
                         <b [class]="'tone-' + horizon.tone">{{ horizon.pct >= 0 ? '+' : '' }}{{ horizon.pct | num: 1 }}%</b>
@@ -188,7 +193,7 @@ const STORAGE_KEY = 'enrosed.market';
               <ul>
                 @for (line of insight.lines; track line) { <li>{{ line }}</li> }
               </ul>
-              <div class="fx-insight__grid" role="group" aria-label="Koopkracht per periode">
+              <div class="fx-insight__grid mk-fig mk-fig--lg" role="group" aria-label="Koopkracht per periode">
                 @for (horizon of insight.horizons; track horizon.months) {
                   <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" [disabled]="horizon.pct === null"
                           (click)="setMonths(horizon.months)">
@@ -428,6 +433,22 @@ const STORAGE_KEY = 'enrosed.market';
         </div>
       </app-sheet>
     }
+
+    @if (periodSheet()) {
+      <app-sheet title="Periode" variant="ios" (closed)="periodSheet.set(false)">
+        <div body>
+          <div class="ios-group" role="radiogroup" aria-label="Periode van de grafieken en vergelijkingen">
+            @for (option of monthOptions; track option.months) {
+              <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="months() === option.months" (click)="pickMonths(option.months)">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ monthsWord(option.months) }}</span></span>
+                @if (months() === option.months) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+              </button>
+            }
+          </div>
+          <p class="ios-section__foot">Geldt voor elke grafiek en vergelijking op dit scherm. Dit toestel onthoudt de keuze.</p>
+        </div>
+      </app-sheet>
+    }
   `,
   styles: `
     :host{display:block}.mk{display:grid;gap:18px}
@@ -454,19 +475,11 @@ const STORAGE_KEY = 'enrosed.market';
     .fx-pair__range{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:10px 0 0;border-top:1px solid var(--line)}
     .fx-pair__range div{display:grid;gap:1px;min-width:0}.fx-pair__range dt{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
     .fx-pair__range dd{display:grid;margin:0;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}.fx-pair__range small{color:var(--muted);font-size:10px;font-weight:500}
-    .mk-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-    .mk-horizons button{display:grid;gap:2px;padding:7px 4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
-    .mk-horizons button:hover{border-color:var(--rose-line)}.mk-horizons button.is-on{border-color:var(--rose);background:var(--rose-soft)}
-    .mk-horizons span{color:var(--muted);font-size:10px;font-weight:700}.mk-horizons b{font-size:12px;font-variant-numeric:tabular-nums}
     /* buying power */
     .fx-insight{display:grid;gap:10px;padding:16px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
     .fx-insight header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.fx-insight h3{margin:2px 0 0;font-size:15px}
     .fx-insight__lead{margin:0;font-size:13.5px;font-weight:600;line-height:1.45}
     .fx-insight ul{display:grid;gap:6px;margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.5}
-    .fx-insight__grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px}
-    .fx-insight__grid button{display:grid;gap:1px;padding:9px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font:inherit;text-align:center;cursor:pointer}
-    .fx-insight__grid button:disabled{cursor:default;opacity:.6}.fx-insight__grid button.is-on{border-color:var(--rose);box-shadow:0 0 0 1px var(--rose)}
-    .fx-insight__grid span{color:var(--muted);font-size:10px;font-weight:700}.fx-insight__grid b{font-size:15px;font-variant-numeric:tabular-nums}.fx-insight__grid small{color:var(--muted);font-size:10px}
     /* tables */
     .mk-table{border-top:1px solid var(--line)}.mk-table summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;font-size:12px;font-weight:750;cursor:pointer}
     .mk-table summary span{color:var(--muted);font-size:10.5px;font-weight:500}
@@ -507,7 +520,7 @@ const STORAGE_KEY = 'enrosed.market';
     .market-sheet-foot{display:flex;width:100%;justify-content:flex-end;gap:8px}
     @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
     @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
-      .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons,.fx-insight__grid{grid-template-columns:repeat(2,1fr)}
+      .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons{grid-template-columns:repeat(2,1fr)}
       .fx-pair__now strong{font-size:26px}}
     :host, .mk { min-width: 0; }
     .mk-card { border-radius: 22px; box-shadow: 0 3px 12px rgb(25 35 30 / 3%); }
@@ -519,8 +532,6 @@ const STORAGE_KEY = 'enrosed.market';
     .fx-pair { padding: 20px; gap: 12px; }
     .fx-pair__flip { min-height: 44px; border-radius: 15px; }
     .fx-pair__now strong { font-size: 32px; font-variant-numeric: tabular-nums; }
-    .mk-horizons button { min-height: 50px; border-radius: 13px; }
-    .fx-insight__grid button { min-height: 68px; border-radius: 15px; }
     .fr-tile { padding: 14px; border-radius: 17px; }
     .fr-tile strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     .fr-horizon { min-width: 0; border-radius: 15px; }
@@ -570,6 +581,8 @@ export class MarketAnalysis {
   readonly monthOptions = MONTH_OPTIONS;
   readonly desk = inject(DesktopViewport);
   readonly periodOptions: SegmentOption[] = MONTH_OPTIONS.map((option) => ({ id: String(option.months), label: option.label }));
+  /** The phone's Periode sheet (the capsule in the tool row). */
+  readonly periodSheet = signal(false);
   readonly periodWords = periodWords;
   readonly shortDate = shortDate;
   readonly historyLimit = 8;
@@ -772,6 +785,17 @@ export class MarketAnalysis {
   setMonths(months: Months): void {
     this.months.set(months);
     this.storePreferences();
+  }
+
+  /** A choice in the phone's Periode sheet: apply and close. */
+  pickMonths(months: Months): void {
+    this.setMonths(months);
+    this.periodSheet.set(false);
+  }
+
+  /** "1 maand", "6 maanden": the capsule and the sheet rows. */
+  monthsWord(months: Months): string {
+    return months === 1 ? '1 maand' : `${months} maanden`;
   }
 
   flip(id: PairId): void {

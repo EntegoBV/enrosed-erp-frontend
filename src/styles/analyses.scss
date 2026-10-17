@@ -137,6 +137,23 @@ button.an-row { width: 100%; border: 0; background: none; font: inherit; text-al
   
 }
 
+/* ---------- Markt: the horizon cells stay buttons on the one period (critique N16), drawn as a strip of figures, the current one marked */
+.mk-fig { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
+.mk-fig > button { display: grid; align-content: center; gap: 1px; min-width: 0; min-height: 50px; padding: 7px 4px; border: 0; border-radius: 0;
+  background: var(--surface); color: var(--ink); font: inherit; text-align: center; cursor: pointer; transition: background-color var(--dur-1, 120ms) var(--ease-out, ease); }
+.mk-fig > button:hover:not(:disabled) { background: var(--surface-2); }
+.mk-fig > .is-on { background: var(--rose-soft); box-shadow: inset 0 -2px 0 var(--rose); }
+.mk-fig > button:disabled { cursor: default; opacity: .6; }
+.an .mk-fig > button:focus-visible { outline-offset: -3px; }
+.mk-fig span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.mk-fig > .is-on span { color: var(--rose-dark); }
+.mk-fig b { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mk-fig small { color: var(--muted); font-size: 10px; }
+.mk-fig--lg { margin-top: 4px; }
+.mk-fig--lg > button { min-height: 64px; }
+.mk-fig--lg b { font-size: 15px; }
+@media (max-width: 679.98px) { .mk-fig--lg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* ---------- phone frame (< 680) */
 /* The bell lives at page-host level; the nav shows a proxy circle (critique B7, the home's pattern). */
 .an-bell-host .bell { display: none; }
