@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CompanyProfile, DiscountTier, HsCode } from '../src/app/core/api/models.ts';
 import {
-  bankSummary, contactLine, dateNl, deviceLines, dutySummary, fiscalSummary, footerSummary, ibanDisplay, identityLine,
+  bankSummary, contactLine, dateNl, deviceLines, dutySummary, fiscalSummary, footerSummary, ibanDisplay, identityLine, identityNames,
   legalPill, lineDiscountSummary, numberingSummary, shortDateTimeNl, tierSummary, todayCount, trashSummary, usablePattern,
   websiteSyncValue,
 } from '../src/app/features/settings/company-fields.ts';
@@ -34,6 +34,13 @@ test('overview strings for tiers and tariffs read as the owner says them', () =>
 test('company rows: identity, bank in groups of four, numbering with the defaults said', () => {
   const p = profile();
   assert.equal(identityLine(p), 'BE 1034.273.386 · Vekeblok 17, 2400 Mol');
+  /* The legal name is never dropped from the overview (design §4). */
+  assert.deepEqual(identityNames({ name: 'Enrosed', legalName: 'Enrosed BV' }), { title: 'Enrosed BV', legal: null });
+  assert.deepEqual(identityNames({ name: 'Enrosed', legalName: ' enrosed ' }), { title: 'Enrosed', legal: null });
+  assert.deepEqual(identityNames({ name: 'Enrosed', legalName: '' }), { title: 'Enrosed', legal: null });
+  assert.deepEqual(identityNames({ name: 'Rozenhuis', legalName: 'Enrosed BV' }), { title: 'Rozenhuis', legal: 'Enrosed BV' });
+  assert.deepEqual(identityNames({ name: 'Rose', legalName: 'Rosewood BV' }), { title: 'Rose', legal: 'Rosewood BV' });
+  assert.deepEqual(identityNames({ name: '', legalName: 'Enrosed BV' }), { title: 'Geen handelsnaam', legal: 'Enrosed BV' });
   assert.equal(contactLine(p), 'hello@enrosed.com · +324 4 70 02 42 07');
   assert.equal(ibanDisplay('BE94731074082814'), 'BE94 7310 7408 2814');
   assert.equal(ibanDisplay(' be94 7310 7408 2814 '), 'BE94 7310 7408 2814');

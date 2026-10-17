@@ -90,6 +90,22 @@ export function fiscalSummary(profile: CompanyProfile): string {
   return `${licence} · NL: ${own || `${COMPANY_DEFAULTS.fiscalRepresentativeName} (standaard)`}`;
 }
 
+/**
+ * The overview's company name with its legal name, both visible: the legal
+ * name is the title when it starts with the trade name ("Enrosed" and
+ * "Enrosed BV" → "Enrosed BV"); otherwise the trade name is the title and
+ * the legal name is a line of its own (`legal`).
+ */
+export function identityNames(profile: Pick<CompanyProfile, 'name' | 'legalName'>): { title: string; legal: string | null } {
+  const name = text(profile.name);
+  const legal = text(profile.legalName);
+  if (!name) return { title: 'Geen handelsnaam', legal: legal || null };
+  if (!legal || legal.toLocaleLowerCase('nl') === name.toLocaleLowerCase('nl')) return { title: name, legal: null };
+  const holdsName = legal.toLocaleLowerCase('nl').startsWith(name.toLocaleLowerCase('nl'))
+    && !/[\p{L}\p{N}]/u.test(legal.charAt(name.length));
+  return holdsName ? { title: legal, legal: null } : { title: name, legal };
+}
+
 /** The identity block: "BE 1034.273.386 · Vekeblok 17, 2400 Mol". */
 export function identityLine(profile: CompanyProfile): string {
   const place = [text(profile.postalCode), text(profile.city)].filter(Boolean).join(' ');

@@ -17,7 +17,7 @@ import { THEMES, Theme } from '../../core/platform/theme';
 import { Icon } from '../../shared/icon';
 import { CompanyStore } from './company-store';
 import {
-  bankSummary, contactLine, deviceLines, dutySummary, fiscalSummary, footerSummary, identityLine,
+  bankSummary, contactLine, deviceLines, dutySummary, fiscalSummary, footerSummary, identityLine, identityNames,
   legalPill, lineDiscountSummary, numberingSummary, shortDateTimeNl, tierSummary, todayCount, trashSummary,
   websiteSyncValue,
 } from './company-fields';
@@ -74,7 +74,8 @@ type Link = { path: string; query: Record<string, string> | null };
           <header class="set-card__head"><span class="set-tile tone-plum"><app-icon name="settings" [size]="16" /></span><h2 id="set-card-company">Bedrijf</h2></header>
           <div class="set-id">
             @if (company(); as profile) {
-              <b class="mo-fade">{{ profile.name || 'Geen handelsnaam' }}</b>
+              <b class="mo-fade">{{ companyNames().title }}</b>
+              @if (companyNames().legal; as legal) { <span class="mo-fade">{{ legal }}</span> }
               <span class="mo-fade">{{ identity() }}</span>
               @if (contact()) { <span class="mo-fade">{{ contact() }}</span> }
             } @else if (companyStore.error()) {
@@ -188,7 +189,8 @@ type Link = { path: string; query: Record<string, string> | null };
             <span class="ios-cell__lead"><span class="set-mark" aria-hidden="true">{{ initial() }}</span></span>
             <span class="ios-cell__body">
               @if (company(); as profile) {
-                <span class="ios-cell__title ios-cell__title--strong mo-fade">{{ profile.name || 'Geen handelsnaam' }}</span>
+                <span class="ios-cell__title ios-cell__title--strong mo-fade">{{ companyNames().title }}</span>
+                @if (companyNames().legal; as legal) { <span class="ios-cell__sub mo-fade">{{ legal }}</span> }
                 <span class="ios-cell__sub mo-fade">{{ phoneIdentity() }}</span>
               } @else if (companyStore.error()) {
                 <span class="ios-cell__title ios-cell__title--strong">Bedrijfsgegevens</span>
@@ -390,6 +392,8 @@ export class SettingsOverview {
   readonly staff = new Source<StaffContact[]>();
 
   readonly company = this.companyStore.saved;
+  /** "Enrosed BV" (the legal name holds the trade name), or the trade name with the legal name under it. */
+  readonly companyNames = computed(() => { const p = this.company(); return p ? identityNames(p) : { title: '', legal: null }; });
   readonly identity = computed(() => { const p = this.company(); return p ? identityLine(p) : ''; });
   readonly contact = computed(() => { const p = this.company(); return p ? contactLine(p) : ''; });
   readonly bank = computed(() => { const p = this.company(); return p ? bankSummary(p) : ''; });
