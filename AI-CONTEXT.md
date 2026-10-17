@@ -811,7 +811,12 @@ cijfers'.
   (DesktopViewport), else `app-home-phone`; `/dashboard/agenda` and
   `/dashboard/open` (Open punten) are pushed phone pages. Every home route
   calls `enterHome()`: the day is checked every 60 s and on window focus, a
-  new day loads again, page data older than 20 s is fetched again.
+  new day loads again, and each call older than its own maximum age is
+  fetched again (`home-refresh.ts`: 20 s for sales, purchases, costs,
+  incoming payments, partner financing, planner and bell; 5 min for
+  products, website products, suppliers, website visits and customers;
+  partner financing also on a new CashData round; Opnieuw/Vernieuwen fetch
+  all).
 - **`HomeData`** (root, `home-data.ts`) loads and derives everything once:
   sales, purchases, products, families, suppliers, website (7 d), costs,
   incoming payments, partner financing, customers, planner and the bell;

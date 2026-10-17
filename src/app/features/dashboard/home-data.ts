@@ -32,6 +32,8 @@ import { monthWindows } from './home-figures';
 import { readLater, writeLater } from './home-later';
 import { coverageOf, forecastAnswer, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
 import type { CoverageAnswer, CoverageSource, HomeTask, LaterState } from './home-priority';
+import { staleSources } from './home-refresh';
+import type { HomeFetchKey } from './home-refresh';
 import { agendaInputOf, attentionOf, homeTaskInputOf, vatOf } from './home-sources';
 import type { HomeCashSources } from './home-sources';
 
@@ -64,8 +66,6 @@ const TASK_SOURCES: readonly HomeSource[] = ['verkoop', 'inkoop', 'kosten', 'ink
 const FORECAST_INPUTS: readonly HomeSource[] = ['verkoop', 'inkoop', 'voorraad', 'leveranciers', 'kosten', 'inkomende betalingen', 'klanten'];
 /** Named after the coverage words in the status, in this order. */
 const OTHER_SOURCES: readonly HomeSource[] = ['voorraad', 'websiteproducten', 'leveranciers', 'websitebezoek', 'klanten'];
-/** A visit older than this fetches the page data again (the old home fetched on every visit; the Agenda and Open pages sit in between). */
-const PAGE_MAX_AGE_MS = 20_000;
 
 /** "08:40" of an epoch time, local. */
 function clockOf(ms: number): string {
@@ -134,6 +134,8 @@ export class HomeData {
   /** When the last load finished, every source answered (epoch ms): "Alles bijgewerkt om 08:12". */
   readonly loadedAt = signal<number | null>(null);
   private readonly loadedOnce = signal(false);
+  /** When each call last answered well (home-refresh.ts): a return fetches only the stale ones. */
+  private readonly fetchedAt: Partial<Record<HomeFetchKey, number>> = {};
   /** The forecast's own calls (FORECAST_INPUTS) answered once: from here the forecast may be built. */
   private readonly inputsAnswered = signal(false);
   /** TASKS_REVEAL_CAP_MS after the first load's task sources answered: Te doen shows without the Kasprognose (B2). */
@@ -368,17 +370,22 @@ export class HomeData {
   /* ---------------------------------------------------------------- load */
 
   /**
-   * A home route was entered: the day is checked, CashData ensured, and the page data fetched when it is
-   * older than 20 s or CashData started a new round (its advance schedules need this round's financings).
-   * Returns the leave function for the route's onDestroy.
+   * A home route was entered: the day is checked, CashData ensured, and the calls fetched again that are older
+   * than their own maximum age (home-refresh.ts: 20 s, or 5 min for what hardly changes); partner financing too
+   * when CashData started a new round (its advance schedules need this round's financings). The first visit
+   * fetches everything. Returns the leave function for the route's onDestroy.
    */
   enter(): () => void {
     this.active.update((count) => count + 1);
     this.checkDay();
     const round = this.cashData.generation();
     this.cashData.ensure(this.today());
-    const at = this.loadedAt();
-    if (at === null || Date.now() - at > PAGE_MAX_AGE_MS || this.cashData.generation() !== round) void this.fetchPage();
+    if (!this.loadedOnce()) void this.fetchPage();
+    else {
+      const stale = new Set(staleSources(this.fetchedAt, Date.now()));
+      if (this.cashData.generation() !== round) stale.add('partnerfinanciering');
+      if (stale.size) void this.fetchPage(stale);
+    }
     return () => this.active.update((count) => Math.max(0, count - 1));
   }
 
@@ -391,7 +398,7 @@ export class HomeData {
     void this.load();
   }
 
-  /** "Opnieuw" and "Vernieuwen": the page data and CashData, both fetched again. */
+  /** "Opnieuw" and "Vernieuwen": all the page data and CashData, fetched again. */
   async load(): Promise<void> {
     if (this.cashData.state() === 'idle') this.cashData.ensure(this.today());
     else void this.cashData.reload(this.today());
@@ -401,12 +408,15 @@ export class HomeData {
   /**
    * The page data. The first load applies each source as it answers (§4 #4): `loading` ends once Te doen's sources,
    * the planner and the bell answered, the forecast may be built once its own calls did, and `refreshing` and
-   * `loadedAt` wait for all. A later load keeps the last data on screen and swaps the new data in at once, as before.
+   * `loadedAt` wait for all. A later load keeps the last data on screen and swaps the new data in at once, as before;
+   * `only` limits it to the stale calls (enter), with the same flags for what it asked.
    */
-  private async fetchPage(): Promise<void> {
+  private async fetchPage(only?: ReadonlySet<HomeFetchKey>): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     const first = !this.loadedOnce();
+    const want = (key: HomeFetchKey): boolean => first || !only || only.has(key);
+    const stamp = (key: HomeFetchKey): void => { this.fetchedAt[key] = Date.now(); };
     this.refreshing.set(true);
     if (first) this.loading.set(true);
     this.dismissed.set(readDismissed());
@@ -419,36 +429,38 @@ export class HomeData {
       if (taskWait.delete(key) && taskWait.size === 0) this.endFirstLoad();
       if (inputWait.delete(key) && inputWait.size === 0) this.inputsAnswered.set(true);
     };
-    const track = <T>(source: HomeSource, call: Promise<T>, apply: (value: T) => void): Promise<void> => call.then(
-      (value) => land(() => { apply(value); this.setState(source, 'ready'); }),
+    const track = <T>(source: HomeSource, call: () => Promise<T>, apply: (value: T) => void): Promise<void> => (want(source) ? call().then(
+      (value) => { stamp(source); land(() => { apply(value); this.setState(source, 'ready'); }); },
       () => land(() => this.setState(source, 'failed')),
-    ).finally(() => answered(source));
+    ).finally(() => answered(source)) : Promise.resolve());
     try {
-      const products = this.catalog.products();
-      const families = this.catalog.productFamilies();
+      const products = want('voorraad') ? this.catalog.products() : null;
+      const families = want('websiteproducten') ? this.catalog.productFamilies() : null;
       await Promise.all([
-        track('verkoop', this.salesApi.orders(), (value) => this.salesOrders.set(value)),
-        track('inkoop', this.sourcing.purchaseOrders(), (value) => this.purchases.set(value)),
-        track('voorraad', products, (value) => this.products.set(value)),
-        track('leveranciers', this.sourcing.suppliers(), (value) => this.suppliers.set(value)),
-        track('websitebezoek', this.analytics.websiteReport(7), (value) => this.website.set(value)),
-        track('kosten', this.finance.costs(), (value) => this.costs.set(value)),
-        track('inkomende betalingen', this.salesApi.incomingPayments(), (value) => this.incomingPayments.set(value)),
-        track('partnerfinanciering', this.sourcing.partnerFinancings(), (value) => {
+        track('verkoop', () => this.salesApi.orders(), (value) => this.salesOrders.set(value)),
+        track('inkoop', () => this.sourcing.purchaseOrders(), (value) => this.purchases.set(value)),
+        track('voorraad', () => products!, (value) => this.products.set(value)),
+        track('leveranciers', () => this.sourcing.suppliers(), (value) => this.suppliers.set(value)),
+        track('websitebezoek', () => this.analytics.websiteReport(7), (value) => this.website.set(value)),
+        track('kosten', () => this.finance.costs(), (value) => this.costs.set(value)),
+        track('inkomende betalingen', () => this.salesApi.incomingPayments(), (value) => this.incomingPayments.set(value)),
+        track('partnerfinanciering', () => this.sourcing.partnerFinancings(), (value) => {
           this.partnerSummaries.set(value);
           this.partnersRound.set(this.cashData.generation());
         }),
-        track('klanten', this.salesApi.customers(), (value) => this.customers.set(value)),
-        track('websiteproducten', families, (value) => this.catalogAttention.set(value
+        track('klanten', () => this.salesApi.customers(), (value) => this.customers.set(value)),
+        track('websiteproducten', () => families!, (value) => this.catalogAttention.set(value
           .filter((family) => family.active && family.publicationIssues.length > 0).length)),
         /* The old fallback, once both answered: products not ready for publication, while the families could not load. */
-        Promise.allSettled([products, families]).then(([productRows, familyRows]) => {
+        products && families ? Promise.allSettled([products, families]).then(([productRows, familyRows]) => {
           if (familyRows.status === 'rejected' && productRows.status === 'fulfilled') {
             land(() => this.catalogAttention.set(productRows.value.filter((product) => product.active && (product.publicationIssues?.length ?? 0) > 0).length));
           }
-        }),
-        this.planner.reload().catch(() => undefined).finally(() => answered('planner')),
-        this.work.refresh().then(() => this.bellAnswered.set(true)).catch(() => undefined).finally(() => answered('bell')),
+        }) : Promise.resolve(),
+        want('planner') ? this.planner.reload().then(() => { if (!this.planner.error()) stamp('planner'); }, () => undefined)
+          .finally(() => answered('planner')) : Promise.resolve(),
+        want('bell') ? this.work.refresh().then(() => { this.bellAnswered.set(true); if (!this.work.error()) stamp('bell'); }, () => undefined)
+          .finally(() => answered('bell')) : Promise.resolve(),
       ]);
       for (const apply of batch) apply();
     } finally {
