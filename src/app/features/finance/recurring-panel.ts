@@ -5,7 +5,7 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
-import { dayMonth, dayMonthYear, monthLabel } from './finance-format';
+import { dayMonth, dayMonthYear, monthLabel, monthShort } from './finance-format';
 import { addDays, cashTotalOf, intervalLabel, perYear, recurringGroups, recurringSummary, upcomingRecurring } from './finance-metrics';
 import type { UpcomingCost } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
@@ -228,16 +228,20 @@ export class RecurringPanel implements FinanceSectionApi {
   /** "Lijkt te herhalen": hand-booked costs to one party that come back (recurring-candidates.ts). */
   readonly candidates = computed(() => this.state.recurring().length ? [] : recurringCandidates(this.state.costs(),
     this.state.recurring().map((definition) => definition.party ?? definition.name), this.state.today()));
-  /** "6 boekingen sinds apr · laatst € 363,00 · maandelijks". */
+  /** "6 boekingen sinds mrt · laatst € 363,00 · maandelijks" ("sinds okt 2025" for a start in another year). */
   candidateText(candidate: RecurringCandidate): string {
-    return `${candidate.count} boekingen sinds ${monthLabel(candidate.since).split(' ')[0].slice(0, 3)} · laatst ${formatEuro(cashTotalOf(candidate.last))} · ${intervalLabel(candidate.interval).toLowerCase()}`;
+    return `${candidate.count} boekingen sinds ${monthShort(candidate.since, this.state.today())} · laatst ${formatEuro(cashTotalOf(candidate.last))} · ${intervalLabel(candidate.interval).toLowerCase()}`;
   }
-  /** The recurring sheet, prefilled from the newest booking (amount excl. and VAT rate as stored) and starting at the next expected day; nothing is saved before Opslaan. */
+  /**
+   * The recurring sheet, prefilled from the newest booking (amount excl. and VAT rate as stored) and starting at the
+   * next expected day; nothing is saved before Opslaan. A regime that booking only derived stays unconfirmed, so the
+   * sheet opens its regime section: every booking the definition makes carries that flag into the VAT return (N5).
+   */
   setUp(candidate: RecurringCandidate): void {
     const last = candidate.last;
     this.state.recurringDraft.set({ ...blankRecurring(this.state.today()), name: candidate.party, party: candidate.party, category: last.category,
       amountExclEur: last.amountExclEur, vatPct: last.vatPct, salesChannel: last.salesChannel, interval: candidate.interval, startDate: candidate.nextDate,
-      vatRegime: last.vatRegime ?? 'BE', vatRegimeConfirmed: !!last.vatRegime, supplierCountry: last.supplierCountry ?? 'BE', costKind: last.costKind,
+      vatRegime: last.vatRegime ?? 'BE', vatRegimeConfirmed: !!last.vatRegime && last.vatRegimeConfirmed === true, supplierCountry: last.supplierCountry ?? 'BE', costKind: last.costKind,
       expenseType: last.expenseType ?? 'STANDARD', vatDeductiblePct: last.vatDeductiblePct ?? 100, taxDeductiblePct: last.taxDeductiblePct ?? 100 });
   }
   readonly status = computed(() => `${this.state.recurring().length} vaste ${this.state.recurring().length === 1 ? 'kost' : 'kosten'}`);

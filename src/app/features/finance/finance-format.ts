@@ -18,6 +18,14 @@ export function dayMonthYear(day: string | null | undefined): string {
   return day ? clean(DAY_MONTH_YEAR.format(asDate(day))) : '—';
 }
 
+const MONTH_SHORT = new Intl.DateTimeFormat('nl-BE', { month: 'short', timeZone: 'UTC' });
+
+/** 'mrt' (the app's short month), 'okt 2025' when the day lies in another year than `today`. */
+export function monthShort(day: string, today: string): string {
+  const month = clean(MONTH_SHORT.format(asDate(day)));
+  return day.slice(0, 4) === today.slice(0, 4) ? month : `${month} ${day.slice(0, 4)}`;
+}
+
 /** 'september 2026' */
 export function monthLabel(month: string): string {
   return MONTH_YEAR.format(asDate(`${month.slice(0, 7)}-01`));
