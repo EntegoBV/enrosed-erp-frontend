@@ -174,12 +174,16 @@ export class StaffContactPhones {
     this.host.nativeElement.querySelector<HTMLInputElement>(`[data-staff-phone="${CSS.escape(username)}"]`)?.focus();
   }
 
-  /** Saves every changed row; true when all went through (a failed row keeps its error and stays dirty). */
+  /**
+   * Saves every changed row; true when all went through (a failed row keeps
+   * its error and stays dirty). Each row is judged by save()'s own answer:
+   * the account object collected here is the one from before the save, so
+   * comparing the fresh draft with its old phone would call a saved row dirty.
+   */
   async saveAll(): Promise<boolean> {
     let ok = true;
     for (const account of this.accounts().filter((row) => this.dirty(row))) {
-      await this.save(account);
-      if (this.errors()[account.username] || this.dirty(account)) ok = false;
+      if (!(await this.save(account))) ok = false;
     }
     return ok;
   }
@@ -190,16 +194,20 @@ export class StaffContactPhones {
     }
   }
 
-  async save(account: StaffContact): Promise<void> {
-    if (this.disabled() || this.saving()[account.username] || !this.dirty(account) || this.validationError(account)) return;
+  /** Saves one row; true when the server took it (or there was nothing to save), false when it was refused or failed. */
+  async save(account: StaffContact): Promise<boolean> {
+    if (this.disabled() || this.saving()[account.username] || this.validationError(account)) return false;
+    if (!this.dirty(account)) return true;
     this.saving.update(saving => ({ ...saving, [account.username]: true }));
     this.errors.update(errors => ({ ...errors, [account.username]: null }));
     try {
       const saved = await this.api.savePhone(account.username, normalizedStaffPhone(this.drafts()[account.username]));
       this.accounts.update(accounts => accounts.map(row => row.username === saved.username ? saved : row));
       this.drafts.update(drafts => ({ ...drafts, [saved.username]: saved.phone ?? '' }));
+      return true;
     } catch (failure: unknown) {
       this.errors.update(errors => ({ ...errors, [account.username]: messageOf(failure, 'Telefoonnummer opslaan mislukt.') }));
+      return false;
     } finally {
       this.saving.update(saving => ({ ...saving, [account.username]: false }));
     }
