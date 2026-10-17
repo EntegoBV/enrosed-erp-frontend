@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, computed, effect, inject, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { filter, map } from 'rxjs';
+import { filter, map, take } from 'rxjs';
 import { Auth } from './core/api/auth';
 import { THEMES, Theme } from './core/platform/theme';
 import { WorkQueue } from './core/api/work-queue';
@@ -211,6 +211,12 @@ export class App {
     void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
+    /* The phone push, pop and tab motion (nav-motion.ts) loads after the first screen: it is not needed
+       to show one, and the initial bundle stays within its budget. */
+    const injector = inject(Injector);
+    inject(Router).events.pipe(filter((event) => event instanceof NavigationEnd), take(1)).subscribe(() => {
+      void import('./core/platform/nav-motion').then((m) => injector.get(m.NavMotion));
+    });
   }
 
   readonly auth = inject(Auth);

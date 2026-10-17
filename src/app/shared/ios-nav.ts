@@ -114,7 +114,8 @@ export class IosNav {
 
   goBack(): void {
     const url = this.backUrl();
-    if (url) void this.router.navigateByUrl(url);
+    /* info: the phone motion slides this back like a pop (nav-motion.ts). */
+    if (url) void this.router.navigateByUrl(url, { info: { nav: 'pop' } });
     else this.back.emit();
   }
 }
