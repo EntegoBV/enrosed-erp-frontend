@@ -228,6 +228,12 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   (controls left, muted range text, `.an-bar__end` with "Hoe gerekend" —
   `app-an-how`, texts in `analyses-how.ts` `HOW_TEXTS` — and the tab's
   link). Markt, Bezoekers and Containerkost render their own tool row.
+  ⌥1…⌥8 open the eight tabs in sidebar order (pure `analyses-keys.ts`,
+  tested against `NAV_GROUPS`; `event.code` Digit1…8 because ⌥1 types '¡'
+  on a Mac): desk only, never while typing, behind a sheet/menu, with the
+  Periode / Hoe gerekend / Buffer popover open or with the focus outside the
+  page; the switch replaces the address like the chips. `PAGE_SHORTCUTS`
+  carries "⌥ 1–8 Onderdeel van Analyses" for `/analyses/*`.
 - Phone (< 680): one `ios-page an an-phone` per tab (Kasprognose keeps
   `app-cash-phone`): `app-ios-nav` with the tab title and caption, back =
   the origin, trail [bell proxy · ↻ · ⋯] (Kasprognose: [bell · Link
@@ -315,18 +321,29 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   (result-month-bars.ts), channels as rows, categories as share rows, Per
   maand with "mrt 2026" and every month up to today (`resultAnalysis`
   `today` option; credit notes counted apart: `creditNoteCount`).
-- Markt: its own tool row (period segmented, ECB line, "+ Tarief
-  toevoegen"), tiles fill the card, "Onze laatste offerte … · + 36 %"
-  (`quoteVsMarketPct`). Bezoekers: source and period segmented (capsule
-  selects on the phone) writing `?source=&days=` (`websiteAnalyticsQuery`),
-  KPIs as an-kpis, a value axis on the visits chart.
+- Markt: its own tool row (desk: period segmented, ECB line, "+ Tarief
+  toevoegen"; phone: the tinted capsule "6 maanden ⌄" opening a "Periode"
+  sheet, as the Kasprognose horizon), tiles fill the card, "Onze laatste
+  offerte … · + 36 %" (`quoteVsMarketPct`). The per-pair and Koopkracht
+  horizon cells stay buttons on the same one period (critique N16), drawn
+  as a strip of figures (`.mk-fig` in analyses.scss, current one marked,
+  aria-pressed). Bezoekers: source and period segmented on the desk, tinted
+  capsules opening a "Bron" / "Periode" sheet on the phone, every choice
+  writing `?source=&days=` (`websiteAnalyticsQuery`); on the phone the tool
+  row wraps so the live count never runs off the edge; KPIs as an-kpis
+  ("Pagina's per sessie" nl-BE), a value axis on the visits chart.
+- Kasprognose titles name containers by containerName() (critique N15, see
+  `cash-forecast.ts` below).
+- Revert units: W2c, W5, W5b, W5c, N24, W6c and W6d each revert alone; W6
+  (Markt + Bezoekers) is W6a…W6d together (W6c/W6d rework W6a/W6b's tool
+  rows); W1–W4 revert with the area merge. Style budget: analyses.scss
+  compiles to about 15 850 bytes and analyses-tabs.scss to about 15 400, of
+  the 16 384-byte (16 kB) component-style warning; a next rule needs room
+  made first.
 
-**Left out this round** (stop line, critique B9): ⌥1–8 and its
-`PAGE_SHORTCUTS` row; N15 (register titles by container name): the home's
-`home-agenda-names.test.mts` pins the forecast titles with PO numbers and
-maps them itself, so it needs the home area. Not done either: the Markt
-period as a phone capsule sheet (the iOS segmented is used), the phone
-Bezoekers capsules open native selects instead of sheets.
+**Left out** (stop line, critique B9): nothing of the critique's package list
+is open. Kept on purpose: Inkoop's phone container filter and supplier stay
+native selects styled as capsules (critique B10).
 
 ## Workspaces
 
@@ -2295,6 +2312,15 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   Kasprognose never disagree. Its test (tests/cash-forecast-input.test.mts)
   is a transpile harness that rewrites the imports of the modules it pulls
   in: a new runtime import there breaks it.
+- Titles name a container by `forecastContainerName()` (containerName():
+  Herkenbare naam, else the PO number, else 'Inkoop #id'; a local copy):
+  container terms, Douane & transport, Inspectie, Bijkomende kosten, btw
+  bij invoer, the scenario's sales weeks and the partner advances
+  ("Valentijn 2027 · 70% bij vertrek"). `references` keep the PO number, so
+  the bank still matches it; the PO sheet's title stays "PO-… · alias" and
+  its lines drop the name; an advance whose order the input lacks keeps the
+  input's number (the home's `containerTitleOf` renames those). Kasprognose,
+  the Kaslijn and the home agenda all show the name.
 - `statementsFrom` (Analyses only): movements before it are dropped, an
   account's opening is the balance before its first kept movement, day ends
   before it are null; older unlinked lines stay in `bankLines` for the
