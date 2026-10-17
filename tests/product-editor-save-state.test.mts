@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { priceBasisConfirmation } from '../src/app/features/products/product-sales-unit.ts';
+import { stockCellEdit } from '../src/app/features/products/stock-booking.ts';
 
 /**
  * Run the production save, stock, leave and publication-state expressions with
@@ -34,7 +35,7 @@ function harness() {
   let confirmCalls = 0;
   const exports: { ProductEditor?: new () => any } = {};
   vm.runInNewContext(javascript, {
-    exports, computed, HostListener: () => () => {}, priceBasisConfirmation, escapeHtml: (text: string) => text,
+    exports, computed, HostListener: () => () => {}, priceBasisConfirmation, stockCellEdit, escapeHtml: (text: string) => text,
     window: { confirm: () => { confirmCalls++; return translationDiscard; } },
   });
   const editor = new exports.ProductEditor!();
@@ -363,8 +364,8 @@ test('save sends missing fields through the reveal-and-focus helper before any w
 });
 
 test('blank or invalid stock input restores the previous value without booking a correction', async () => {
-  for (const value of ['', ' \t ', 'not a number', '-1', '1.5', 'Infinity', '9007199254740992']) {
-    const { editor } = harness();
+  for (const value of ['', ' \t ', 'not a number', '-1', '1.5', '1,5', '1e3', 'Infinity', '9007199254740992', '1.00', '10.00.000']) {
+    const { editor, notifications } = harness();
     const level = { locationId: 3, quantity: 24 };
     const field = { value };
     const writes: number[] = [];
@@ -374,6 +375,36 @@ test('blank or invalid stock input restores the previous value without booking a
     assert.equal(field.value, '24', `Restore previous stock for ${JSON.stringify(value)}`);
     assert.equal(editor.stockDraft(), 17, 'Invalid input cannot reach the correction draft');
     assert.deepEqual(writes, []);
+    assert.deepEqual(notifications.at(-1), { message: 'Niet geboekt: geen geldig aantal', type: 'err' }, `Say why for ${JSON.stringify(value)}`);
+  }
+});
+
+test('a stock tile reads Dutch thousands as on /stock: "1.000" books a thousand, never 1', async () => {
+  for (const [value, expected] of [['1.000', 1000], ['1 000', 1000], ['6.012', 6012], [' 1000 ', 1000], ['12', 12]] as const) {
+    const { editor } = harness();
+    const level = { locationId: 3, quantity: 24 };
+    const field = { value };
+    const writes: { locationId: number; quantity: number }[] = [];
+    editor.stockLevels.set([level]);
+    editor.saveStock = async (locationId: number) => {
+      writes.push({ locationId, quantity: editor.stockDraft() });
+      editor.stockLevels.set([{ ...level, quantity: editor.stockDraft() }]);
+    };
+    await editor.quickSetStock(level, field);
+    assert.deepEqual(writes, [{ locationId: 3, quantity: expected }], value);
+  }
+});
+
+test('typing the figure that already stands books nothing and says nothing', async () => {
+  for (const value of ['24', ' 24 ']) {
+    const { editor, notifications } = harness();
+    const field = { value };
+    const writes: number[] = [];
+    editor.saveStock = async (locationId: number) => { writes.push(locationId); };
+    await editor.quickSetStock({ locationId: 3, quantity: 24 }, field);
+    assert.equal(field.value, '24');
+    assert.deepEqual(writes, []);
+    assert.equal(notifications.length, 0);
   }
 });
 
@@ -461,4 +492,10 @@ test('Annuleren on the price basis question leaves the draft exactly as it was',
   assert.deepEqual(editor.draft(), before, 'no carton patch and "klant bestelt per display" stays PACKAGE');
   assert.equal(editor.draft().packaging.orderStep, 'PACKAGE');
   assert.equal(editor.dirty(), true, 'a caller that awaited save() sees the work is still unsaved');
+});
+
+test('the Voorraad tiles are text fields read by parseCount, so the browser never sanitises "1.000" to 1', () => {
+  assert.match(source, /<input class="history-levels__qty num" type="text" inputmode="numeric" autocomplete="off"/);
+  assert.doesNotMatch(source, /history-levels__qty num" type="number"/);
+  assert.doesNotMatch(source, /Geef een heel aantal stuks/);
 });

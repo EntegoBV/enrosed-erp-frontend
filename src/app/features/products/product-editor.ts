@@ -22,7 +22,7 @@ import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, 
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
-import type { BookingKind } from './stock-booking';
+import { stockCellEdit, type BookingKind } from './stock-booking';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -1007,7 +1007,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 @for (level of levels; track level.locationId) {
                   <label class="history-levels__tile">
                     <small>{{ level.name }}{{ level.countsForWebsite ? ' · alle kanalen' : '' }}</small>
-                    <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                    <input class="history-levels__qty num" type="text" inputmode="numeric" autocomplete="off"
                            [attr.aria-label]="'Voorraad op ' + level.name"
                            [value]="level.quantity"
                            (keydown.enter)="$any($event.target).blur()"
@@ -2260,18 +2260,21 @@ export class ProductEditor implements OnDestroy {
 
   readonly editorHistoryOpen = signal(false);
 
-  /** A figure typed straight into a tile: booked at once as a correction. */
+  /**
+   * A figure typed straight into a tile: booked at once as a correction,
+   * read as on /stock ("1.000" is a thousand). Empty, letters, a minus, a
+   * decimal or "1e3" is no count: the old figure comes back, nothing books.
+   */
   async quickSetStock(level: ProductStock, field: HTMLInputElement): Promise<void> {
     const before = level.quantity;
-    if (field.value.trim() === '' || this.stockSaving() || this.saveBusy()) { field.value = String(before); return; }
-    const quantity = Number(field.value);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+    if (this.stockSaving() || this.saveBusy()) { field.value = String(before); return; }
+    const edit = stockCellEdit(field.value, before);
+    if (edit.action !== 'book') {
       field.value = String(before);
-      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      if (edit.action === 'revert') this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
       return;
     }
-    if (quantity === before) { field.value = String(before); return; }
-    this.stockDraft.set(quantity);
+    this.stockDraft.set(edit.quantity);
     try {
       await this.saveStock(level.locationId);
     } finally {
@@ -2292,7 +2295,7 @@ export class ProductEditor implements OnDestroy {
     const quantity = this.stockDraft();
     if (id === null || this.stockSaving()) return;
     if (quantity === null || !Number.isInteger(Number(quantity)) || Number(quantity) < 0) {
-      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
       return;
     }
     this.stockSaving.set(true);
@@ -2311,7 +2314,7 @@ export class ProductEditor implements OnDestroy {
           { ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
       }
       this.stockEditing.set(null);
-      this.ui.toast(`Voorraad gezet op ${quantity}`, 'ok');
+      this.ui.toast(`Voorraad gezet op ${unitCount(productSalesUnit(this.draft()), Number(quantity))}`, 'ok');
       void this.loadStockHistory(id);
       void this.loadStockLevels(id);
     } catch (failure: unknown) {
