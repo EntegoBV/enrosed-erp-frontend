@@ -87,3 +87,10 @@ test('no wording the owner ruled out', () => {
   assert.doesNotMatch(text, /begroot/i);
   assert.doesNotMatch(text, /\bset\b/i);
 });
+
+test('Login-aanvragen is in the 900-1023 rail but not the 680-899 one: Meer carries its count only below 900', () => {
+  const item = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.id === 'login-requests')!;
+  assert.equal(item.countKey, 'loginRequestCount');
+  assert.ok(!item.wide, 'shown in the 900-1023 rail with its own chip (shell.scss hides the Meer copy there)');
+  assert.ok(!item.railMain, 'not in the 680-899 rail: the rail Meer shows the count');
+});

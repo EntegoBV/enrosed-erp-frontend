@@ -23,6 +23,8 @@ test('the desk sidebar: a skip link first, Meldingen op dit toestel in the foot,
   /* The rail Meer carries the login requests (Login-aanvragen is not in the 680-899 rail). */
   const more = shell.slice(shell.indexOf('sidebar__link--rail" [routerLink]="navMore.link"'), shell.indexOf('</a>', shell.indexOf('navMore.link')));
   assert.match(more, /openLoginRequests\(\)/);
+  /* ... only where Login-aanvragen is not in the rail itself: at 900-1023 it is, with its own chip. */
+  assert.match(shellCss, /@media \(min-width: 900px\) and \(max-width: 1023\.98px\) \{\s*\.sidebar \.sidebar__link--rail > \.sidebar__count \{ display: none; \}/);
   assert.match(shellCss, /\.skip-link:not\(:focus\)/);
 });
 

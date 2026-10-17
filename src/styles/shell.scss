@@ -350,3 +350,7 @@
 @media (min-width: 680px) and (max-width: 899.98px) {
   .sidebar .sidebar__link--rail > .sidebar__count { top: 8px; }
 }
+/* 900-1023: Login-aanvragen stands in the rail with its own chip; the same number on Meer would read as twice as many. */
+@media (min-width: 900px) and (max-width: 1023.98px) {
+  .sidebar .sidebar__link--rail > .sidebar__count { display: none; }
+}
