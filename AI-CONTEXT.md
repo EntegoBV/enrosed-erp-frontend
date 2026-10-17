@@ -263,7 +263,11 @@ document is "Verkooporder", as Inkooporder)
 (`EnrosedTitleStrategy`, "X — Enrosed", skipped when only the query
 changes; a page header's own title wins); `WorkQueue.startAutoRefresh()`
 (App, while logged in) refreshes the counts on focus/visibility after a
-minute and every five minutes while visible.
+minute and every five minutes while visible. An unforced `refresh()`
+shares a fetch under way and reuses one that answered without an error
+less than 5 s ago (`QUEUE_REUSE_MS`), so the shell's start refresh and the
+home/bell/Meer asking on arrival are one pair of calls; after a change of
+our own, force it.
 
 **Login and keys** (F7b): the login page preselects the last account
 (`enrosed.login.last`, the name only), focuses the password when it can,
@@ -933,7 +937,13 @@ cijfers'.
   (DesktopViewport), else `app-home-phone`; `/dashboard/agenda` and
   `/dashboard/open` (Open punten) are pushed phone pages. Every home route
   calls `enterHome()`: the day is checked every 60 s and on window focus, a
-  new day loads again, page data older than 20 s is fetched again.
+  new day loads again, and each call older than its own maximum age is
+  fetched again (`home-refresh.ts`: 20 s for sales, purchases, costs,
+  incoming payments, partner financing, planner and bell; 5 min for
+  products, website products, suppliers, website visits and customers;
+  a call whose last attempt failed is always fetched again - `noteAnswer`
+  drops its stamp; partner financing also on a new CashData round;
+  Opnieuw/Vernieuwen fetch all).
 - **`HomeData`** (root, `home-data.ts`) loads and derives everything once:
   sales, purchases, products, families, suppliers, website (7 d), costs,
   incoming payments, partner financing, customers, planner and the bell;
@@ -972,10 +982,107 @@ cijfers'.
   order, no edit mode): Kas, Verkoop, Inkoop & containers, Resultaat,
   Ontvangen, Voorraad, Partners, Website, (Search Console), Markt. One tap
   target each; a failed source reads "— · Opnieuw", never 0. Styles live in
-  the global partials `styles/home-*.scss` (no component styles).
+  the partials `styles/home-*.scss` (plain global rules, no component
+  styles), but they load with the home routes, not from styles.scss:
+  `home-styles.ts` has one unencapsulated carrier per partial, and
+  /dashboard, its Agenda and Open punten render `<app-home-styles hidden />`
+  as their first child (rules before the page's component styles, as in
+  styles.css). That keeps ~39 kB out of the 1 MB initial budget, which the
+  foundation left at 999.9 kB; never load them from styles.scss again.
 - `home-figures.ts` (pure): month windows that follow the day, Δ%, bars,
   next container events, the desk briefing, greeting, week number, the
   Markt quote (own forwarder routes only, never an index in points).
+- **Redesign round (2026-10-17, `redesign/home` design + critique)**:
+  - *Loading.* The first load applies each source as it answers: `loading`
+    ends once Te doen's own sources (verkoop, inkoop, kosten, inkomende
+    betalingen, partnerfinanciering, klanten), the planner and the bell
+    answered; `refreshing` and `loadedAt` ("Alles bijgewerkt om") wait for
+    all, `settled` too. A later load still swaps everything in at once.
+    Every Te doen surface (desk card and pill, brief, phone section and
+    count, Open punten, Alle) waits for `HomeData.tasksReady` - the task
+    sources, a Kas past computing and the catalog count (families, else the
+    products fallback: the Ook nog "Websiteproducten aanvullen" row), or
+    1.5 s (`tasksReveal`) - so the list shows once instead of growing per
+    source.
+  - *Schedules gate.* `forecastSources` (bank, Vooruitblik) is there once the
+    forecast's own calls answered; the forecast itself is built only when
+    `forecastGate` opens: this CashData round's advance schedules answered
+    (`schedulesDone`), or partner financing failed, or 4 s passed. Without
+    the schedules the undated advances are missing and the lowest point is
+    wrong for half a second. Known limit: when Analyses already claimed the
+    round, `loadSchedules` returns at once and the gate opens early;
+    `cash-sources.ts` stays untouched. While it computes, the Kas shows
+    `forecastStartEur` (cash-forecast-input: the forecast's own start, the
+    accounts counting in cash), never the Vooruitblik's `bankEur` (all
+    accounts), so "Op de bank" never jumps when the forecast lands.
+  - *Agenda money.* The open-credit row and the advances without a due day
+    (EXPECTED, not overdue) leave the calendar - the forecast parks them on
+    today; their sum is `agendaModel.undated` ({count, eur}, incl. btw, per
+    schedule row - not the Te doen row's per-container count). Money titles
+    are the container name with the term apart (`containerParts` →
+    `AgendaEntry.term`); parties short.
+  - *Words.* `shortCompany` (home-figures): cut at the comma, drop legal
+    words, cut at the generic tail, keep ≥ 2 words, never touch ≤ 2 words;
+    the full name stays in title/aria. Ook nog: verb = action, chip = reason
+    (Koppelen/laatste 3 mnd, Boeken/staat klaar, Afhandelen/tegoed,
+    Bevestigen/dit jaar, Nakijken/opmerking, Afrekenen/ontvangen,
+    Aanvullen/website); login Goedkeuren; krap keeps Bekijken. Klanten
+    wachten names "de oudste: {klant}" first, before the kinds (the line
+    ellipsizes). The brief: "… en zakt op ma 4
+    januari onder nul." / "De bank staat nu onder nul." (`belowZeroFrom`),
+    the Kas "· nog 1 periode" (`tightCount`). Toevoegen preselects the next
+    workday from 18:00 and at the weekend (`defaultTaskDay`).
+  - *Wait.* `shared/customer-wait.ts` is the one wait rule the bell reads
+    ("< 1 u", "17 u", "1 werkdag", "27 werkdagen"; "vandaag 14:02",
+    "gisteren", "di 13 okt"); home-priority keeps a copy (node-tested, no
+    runtime imports) held equal by `tests/customer-wait.test.mts`. The bell
+    sheet: summary + Vernieuwen (`waitingSummary`: the item count, the
+    badge's number, and the customers when that is not one each - "6
+    meldingen van 4 klanten · de oudste 3 werkdagen"), no foot, oldest first, one button per row
+    with the ✕ beside it, ios variant with inset groups on the phone.
+  - *Desk page.* `app-page-header` "Dashboard" + "vrijdag 16 oktober · week
+    42", the status pill (nowrap, its words give way, Opnieuw stays), one
+    "Nieuw" button, the toolbar bell; the brief starts with the greeting
+    (none before 06:00). From 1280 px (`HomeWide`, one matchMedia for the
+    page and its Agenda card) both columns end on one line: Inkoop takes the
+    rest on the left; Kas, Verkoop and Resultaat share it on the right, each
+    with its figure row at its foot. On a short day Te doen shows the first
+    `min(Ook nog, 6 − shown)` Ook nog rows (the normal row, never counted in
+    the pill or the cap); the footer counts what is still hidden and "{m}
+    voor vandaag". Never ship the stretch rule without that preview (it
+    keeps every band ≤ 70 px; measured ≤ 38 px). 900-1279: Kas over two rows
+    beside Verkoop and Resultaat; 680-899 one column. Meer cijfers rows do
+    not stretch; Search Console spans two columns, Markt is one strip.
+  - *Figure blocks.* No dark card: a negative value is red (`.is-neg`). The
+    small blocks are value + `.home-w__kv` rows (labels wrap, values never);
+    the phone has shorter labels with the long ones in title; "Zonder kost"
+    and "Afrekeningen nog te maken" only when they count. Inkoop shows the
+    supplier short (phone: name, then supplier and "aankomst (verwacht) …").
+    The phone hero names the reading age. Figures that land with the
+    forecast fade in once (`.mo-fade`).
+  - *Desk agenda.* From 1280 px (`HomeWide`) day columns: today and every
+    busy day 1fr, an empty day .55fr, min-height 132 px. Below it rows: a
+    busy day (and today) each, consecutive empty days merged (`dayRuns`,
+    agenda-days.ts: "20–22 di–do · Niets gepland", weekend-only "Vrij",
+    "31 okt – 5 nov" across a month), "Agenda laden…" until the planner
+    answered; the legend opens the foot line there so "+ Afspraak" stays on
+    line one. A money chip: name / amount · term (two lines at most) /
+    party. Daarna ends with "zonder datum · n voorschotten · + €" (→
+    Kasprognose). Taken hides "+ Afspraak" and the card's own "Taken"
+    heading. The view roots fade in (`.mo-fade`), never the planner host.
+  - *Phone.* Task titles take two lines (`ios-cell__title--2`), the context
+    one; the footer cell says "n andere open punten" with "{m} voor vandaag"
+    (`othersOf`, as on the desk). The Agenda card's rows open like Agenda ›
+    Dag (`[interactive]` with the page's planner cards, raised above the
+    card link); on a one-day list only appointments show a time or "dag".
+    The Agenda page shows "Naar vandaag" only off today, its month heading
+    for screen readers only, and Komend ends with "Zonder datum · n
+    voorschotten · + €" (→ Kasprognose). The tab bar keeps the kit's room
+    beside the '+' (no home-only gap).
+  - *Hidden host bell.* The home pages keep an `app-notification-bell
+    class="home-bell-host"` for the Klanten wachten sheet; its button is
+    hidden with `.home-bell-host > .bell { display: none !important }` (the
+    bell's own component rule would otherwise show it).
 - The full market page is Analyses › Markt (`/analyses/market`,
   `analyses/market-analysis.ts`): ECB exchange rates (EUR↔USD, EUR↔CNY; tap
   flips the pair) with a half-year sparkline, month tick labels showing the

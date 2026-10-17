@@ -44,8 +44,9 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
  * The phone's task rows (spec-home §2 rows 3a/3b), one inset group of them:
  * the home's Nu and Vandaag groups and the three groups of Open punten. A
  * row leads with its source tile, or with a tick circle on a planner task
- * (a tap ticks it: Klaar), then the title, the reason chip and the context
- * (both cut by design, the full text in title and aria-label), and the
+ * (a tap ticks it: Klaar), then the title (two lines, so "3 containertermijnen
+ * betalen" reads whole beside its amount), the reason chip and the context
+ * (one line, cut by design, the full text in title and aria-label), and the
  * amount or count, which never are. A row opens its target; the bell and
  * the planner's sheets are the page's (`hosts`), never inside a row - a
  * swipe row is transformed and would trap them.
@@ -55,7 +56,7 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
  * Later). Every action toasts with "Ongedaan maken" (HomeData).
  *
  * Anything projected lands after the rows, inside the group: the home's
- * "Nog n · Alle n ›" cell and Open punten's "Meer in Kosten & bank" row.
+ * "n andere open punten · Alle n ›" cell and Open punten's "Meer in Kosten & bank" row.
  * No styles here: the rules live in styles/home-phone.scss.
  */
 @Component({
@@ -115,7 +116,7 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
 
     <ng-template #body let-task>
       <span class="ios-cell__body">
-        <span class="ios-cell__title ios-cell__title--strong" [title]="task.title">{{ task.title }}</span>
+        <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2" [title]="task.title">{{ task.title }}</span>
         <span class="home-task__sub">
           <span class="wk-pill" [class]="'tone-' + task.chip.tone">{{ task.chip.label }}</span>
           <span class="home-task__context" [title]="task.context">{{ task.context }}</span>

@@ -10,6 +10,7 @@ import { whyOrderLines } from './home-priority';
 import type { HomeTask, Tier } from './home-priority';
 import { HomeTaskCells } from './home-task-cells';
 import { PlannerCards } from './planner-cards';
+import { HomeStyles } from './home-styles';
 
 /** "Nu: geld …" → the tier word in bold, the rest as it is. */
 function whyLine(line: string): { lead: string; rest: string } {
@@ -29,9 +30,10 @@ function whyLine(line: string): { lead: string; rest: string } {
 @Component({
   selector: 'app-open-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, IosNav, Skeleton, NotificationBell, PlannerCards, HomeTaskCells],
+  imports: [RouterLink, Icon, IosNav, Skeleton, NotificationBell, PlannerCards, HomeTaskCells, HomeStyles],
   template: `
     @let t = data.tasks();
+    <app-home-styles hidden />
     <div class="ios-page home-open">
       <app-ios-nav title="Open punten" [subtitle]="subtitle()" backLabel="Vandaag" backUrl="/dashboard" backAriaLabel="Terug naar Vandaag">
         @if (data.loading() || data.refreshing()) {
@@ -42,7 +44,7 @@ function whyLine(line: string): { lead: string; rest: string } {
         }
       </app-ios-nav>
 
-      @if (!t.total && !data.settled()) {
+      @if (!data.tasksReady() || (!t.total && !data.settled())) {
         <div class="ios-group home-todo__skeleton" aria-busy="true"><app-skeleton kind="list" [rows]="5" /></div>
       } @else {
         @if (!t.count && data.settled()) {
@@ -101,7 +103,7 @@ export class OpenPage {
   /** "14 open · eerst wat vandaag moet, dan wie wacht". */
   readonly subtitle = computed(() => {
     const t = this.data.tasks();
-    return t.total || this.data.settled() ? `${t.total} open · eerst wat vandaag moet, dan wie wacht` : 'Laden…';
+    return this.data.tasksReady() && (t.total || this.data.settled()) ? `${t.total} open · eerst wat vandaag moet, dan wie wacht` : 'Laden…';
   });
 
   /** Nu, Vandaag (the home's rows and the ones past the cap) and Ook nog; Ook nog always, it ends with the Kosten & bank row. */

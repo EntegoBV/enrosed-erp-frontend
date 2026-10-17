@@ -137,8 +137,9 @@ export class AgendaActions {
          [class.home-arows--desk]="variant() === 'desk'" [class.home-arows--flat]="flat()" role="list">
       @for (entry of entries(); track entry.key) {
         <div class="home-arow" [class]="toneOf(entry)" [class.is-past]="entry.past" [class.is-done]="entry.done"
-             [class.is-late]="entry.late" [class.is-task]="entry.type === 'taak'" [class.no-when]="!showWhen(entry)" role="listitem">
-          @if (interactive() && entry.type === 'taak' && entry.plannerId !== null) {
+             [class.is-late]="entry.late" [class.is-task]="entry.type === 'taak'" [class.has-check]="hasCheck(entry)"
+             [class.no-when]="!showWhen(entry)" role="listitem">
+          @if (hasCheck(entry)) {
             <button class="home-arow__check" type="button" role="checkbox" [attr.aria-checked]="entry.done"
                     [attr.aria-label]="(entry.done ? 'Terugzetten: ' : 'Afvinken: ') + entry.title" (click)="actions.toggle(entry)">
               <span class="ios-check" [class.is-on]="entry.done"><app-icon name="tick" [size]="14" /></span>
@@ -190,15 +191,27 @@ export class AgendaRows {
   readonly interactive = input(true);
   /** Rows inside a card of their own (the home strip): no inset group, hairlines between rows. */
   readonly flat = input(false);
+  /**
+   * False where a task's tick would push its day out of the date column (the home strip's Komend, a dated list):
+   * every row keeps one lead column, the day; the row still opens the task, whose sheet ticks it.
+   */
+  readonly ticks = input(true);
   readonly signed = signedAmount;
+
+  /** A planner task carries its tick on an interactive list (unless `ticks` is off). */
+  hasCheck(entry: AgendaEntry): boolean {
+    return this.interactive() && this.ticks() && entry.type === 'taak' && entry.plannerId !== null;
+  }
 
   /** A task with its tick on a one-day list has no time to show: the tick takes the time's place. */
   showWhen(entry: AgendaEntry): boolean {
-    return this.dated() || !(this.interactive() && entry.type === 'taak' && entry.plannerId !== null);
+    return this.dated() || !this.hasCheck(entry);
   }
 
+  /** On a dated list the day; on one day an appointment's time or "dag", nothing for the rest (no repeated "dag", P2). */
   whenOf(entry: AgendaEntry): string {
     if (this.dated()) return agendaDay(entry.date, null).day;
+    if (entry.type !== 'afspraak') return '';
     return entry.atTime ? entry.atTime.slice(0, 5) : 'dag';
   }
 
@@ -208,7 +221,7 @@ export class AgendaRows {
   }
 
   subOf(entry: AgendaEntry): string | null {
-    if (entry.type !== 'taak') return entry.sub;
+    if (entry.type !== 'taak') return [entry.term, entry.sub].filter(Boolean).join(' · ') || null;
     const late = entry.late && !this.dated() ? 'te laat' : null;
     return ['Taak', late, entry.sub].filter(Boolean).join(' · ');
   }
@@ -222,7 +235,7 @@ export class AgendaRows {
 
   ariaOf(entry: AgendaEntry): string {
     const when = this.dated() ? `${longDate(entry.date)}${entry.atTime ? ` ${entry.atTime.slice(0, 5)}` : ''}`
-      : entry.atTime ? entry.atTime.slice(0, 5) : 'hele dag';
+      : entry.atTime ? entry.atTime.slice(0, 5) : entry.type === 'afspraak' ? 'hele dag' : null;
     return [`${TYPE_LABEL[entry.type]}: ${entry.title}`, when, this.subOf(entry), entry.eur !== null ? signedAmount(entry.eur) : null,
       entry.done ? 'afgevinkt' : null, entry.past && entry.type !== 'geld' ? 'voorbij' : null].filter(Boolean).join(', ');
   }

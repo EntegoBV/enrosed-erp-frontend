@@ -21,6 +21,10 @@ export interface CashHeadline {
   lowest: { day: string; eur: number; warn: boolean } | null;
   /** The first krap period; null when there is none, or unless 'ready'. */
   tight: { from: string; to: string; lowestEur: number } | null;
+  /** How many krap periods the horizon holds ("nog 1 periode" after the first); 0 unless 'ready'. */
+  tightCount: number;
+  /** The first forecast day whose balance with the scenario is below zero; null when none, or unless 'ready'. */
+  belowZeroFrom: string | null;
   bufferEur: number | null;
   /** The words of "Prognose onvolledig: …" ('partial'), as handed in. */
   warnings: string[];
@@ -33,7 +37,7 @@ export interface CashHeadlineContext {
   warnings: readonly string[];
   /** The forecast is being built (the bank is in, the idle callback has not run yet). */
   computing: boolean;
-  /** The bank balance known before the forecast (the Vooruitblik's bankEur), shown while computing. */
+  /** The bank balance known before the forecast (forecastStartEur: the forecast's own start), shown while computing. */
   startEur?: number | null;
 }
 
@@ -44,7 +48,8 @@ function underBuffer(forecast: Pick<CashForecast, 'mode' | 'bufferEur'>, eur: nu
 
 export function cashHeadline(forecast: CashForecast | null, context: CashHeadlineContext): CashHeadline {
   const warnings = [...new Set(context.warnings)];
-  const empty: CashHeadline = { state: 'loading', startEur: null, accounts: [], lowest: null, tight: null, bufferEur: null, warnings };
+  const empty: CashHeadline = { state: 'loading', startEur: null, accounts: [], lowest: null, tight: null, tightCount: 0, belowZeroFrom: null,
+    bufferEur: null, warnings };
   if (context.bankMissing) return { ...empty, state: 'no-bank' };
   if (!forecast) {
     return context.computing ? { ...empty, state: 'computing', startEur: context.startEur ?? null } : empty;
@@ -59,7 +64,43 @@ export function cashHeadline(forecast: CashForecast | null, context: CashHeadlin
     ...known, state: 'ready',
     lowest: { day: lowest.day, eur: lowest.eur, warn: lowest.eur < 0 || underBuffer(forecast, lowest.eur) },
     tight: tight ? { from: tight.from, to: tight.to, lowestEur: tight.lowestEur } : null,
+    tightCount: forecast.tightWith.length,
+    belowZeroFrom: forecast.days.find((day) => day.withEur < 0)?.day ?? null,
   };
+}
+
+/** "nog 1 periode", "nog 2 periodes" after the first krap period; null when it is the only one. */
+export function moreTightText(tightCount: number): string | null {
+  const more = tightCount - 1;
+  return more > 0 ? `nog ${more} ${more === 1 ? 'periode' : 'periodes'}` : null;
+}
+
+/** How long the home waits for this round's advance schedules before it builds the forecast without them. */
+export const SCHEDULES_WAIT_MS = 4000;
+
+/**
+ * Whether the home may build the forecast (critique B1): only once this CashData round's advance schedules
+ * answered (`schedulesDone` is the round they answered in), or partner financing failed (no schedules can
+ * come), or the schedules took longer than SCHEDULES_WAIT_MS (`timedOut` is the round that ran out), so a
+ * hung call never leaves "Kasprognose wordt berekend…" on screen. Without the schedules the forecast parks
+ * the undated advances on today and shows a wrong lowest point for half a second.
+ */
+export function forecastGate(input: { partnersFailed: boolean; partnersRound: number; schedulesDone: number; timedOut?: number }): boolean {
+  if (input.partnersFailed) return true;
+  return input.partnersRound > 0 && (input.schedulesDone === input.partnersRound || input.timedOut === input.partnersRound);
+}
+
+/** How long Te doen waits for the Kasprognose after its own sources answered (critique B2). */
+export const TASKS_REVEAL_CAP_MS = 1500;
+
+/**
+ * Te doen shows once (critique B2): after its own sources answered on the first load, and once the Kas is no
+ * longer loading or computing (its krap and VAT rows come from the forecast) and the catalog count answered (the
+ * Ook nog "Websiteproducten aanvullen" row: the families, else the products fallback), or TASKS_REVEAL_CAP_MS later.
+ */
+export function tasksReveal(input: { loading: boolean; cashState: CashHeadlineState; capPassed: boolean; catalogLoading?: boolean }): boolean {
+  if (input.loading) return false;
+  return input.capPassed || (input.cashState !== 'loading' && input.cashState !== 'computing' && !input.catalogLoading);
 }
 
 /** The desk Kas card's two Vooruitblik figures; null where a source behind the figure failed. */

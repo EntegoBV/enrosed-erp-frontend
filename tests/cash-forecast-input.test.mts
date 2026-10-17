@@ -35,7 +35,7 @@ const rewrites: Record<string, string> = {
 };
 let inputSource = await readFile(new URL('../src/app/features/finance/cash-forecast-input.ts', import.meta.url), 'utf8');
 for (const [from, to] of Object.entries(rewrites)) inputSource = inputSource.replaceAll(from, to);
-const { cashForecastInput, vooruitblikOf } = await import(dataUrl(transpile(inputSource))) as typeof import('../src/app/features/finance/cash-forecast-input.ts');
+const { cashForecastInput, forecastStartEur, vooruitblikOf } = await import(dataUrl(transpile(inputSource))) as typeof import('../src/app/features/finance/cash-forecast-input.ts');
 const { reconciledBank } = await import(reconciliation) as typeof import('../src/app/features/finance/bank-reconciliation.ts');
 
 /* ------------------------------------------------------------------ raw sources of Example B */
@@ -372,4 +372,25 @@ test('an account known only from a receipt label is label-only and leaves the fo
   assert.equal(forecast.mode, 'absolute');
   assert.equal(forecast.startEur, 32365.27);
   assert.equal(forecast.reconciliation.matches, true);
+});
+
+test('forecastStartEur: the forecast\'s own start, without building it (the home\'s Op de bank while it computes)', () => {
+  const options = { horizonEnd: horizonEndOf(TODAY, 6), scenario: false, includeStock: false, rulesOff: [] as never[], openQuotesOn: false,
+    defaults: NO_DEFAULTS, dismissed: [], pastDays: 42 };
+  /* Wise EUR does not count in cash: the Vooruitblik's bank has it, the forecast's start does not. */
+  const raw = sources();
+  assert.equal(vooruitblikOf(raw).bankEur, 37665.27);
+  assert.equal(forecastStartEur(raw), 32365.27);
+  assert.equal(forecastStartEur(raw), buildCashForecast(cashForecastInput(raw), options).startEur);
+  /* A label-only account (known from a receipt) is not counted and keeps the start absolute. */
+  const labelled = sources({ incomingPayments: [...incomingPayments, receipt(503, 378, 250, '2026-10-09T10:00:00Z', 'KBC Zakelijk')] });
+  assert.equal(forecastStartEur(labelled), buildCashForecast(cashForecastInput(labelled), options).startEur);
+  /* A counted account with lines but no reading makes the forecast relative: no start then. */
+  const unread = sources({ statements: [...statements, statement(301, 'ING ZICHT', -100, '2026-10-12T10:00:00Z', 'Iemand', 'x', { source: null })] });
+  assert.equal(buildCashForecast(cashForecastInput(unread), options).mode, 'relative');
+  assert.equal(forecastStartEur(unread), null);
+  /* Every account counting in cash: the start is the reconciled total. */
+  const all = sources({ bankAccounts: bankAccounts.map((account) => ({ ...account, countsInCash: true })) });
+  assert.equal(forecastStartEur(all), 37665.27);
+  assert.equal(forecastStartEur(all), buildCashForecast(cashForecastInput(all), options).startEur);
 });

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
-  agendaDay, ageText, bars, briefing, countryWithFlag, deltaPct, deltaText, firstName, fromToLong, greeting, latestOwnQuote, longDate, monthBars,
-  monthWindows, nextContainerEvents, overline, weekNumber,
+  agendaDay, ageText, bars, briefHello, briefing, countryWithFlag, deltaPct, deltaText, firstName, fromToLong, greeting, latestOwnQuote, longDate, monthBars,
+  monthWindows, nextContainerEvents, overline, shortCompany, weekNumber, weekdayDayLong,
 } from '../src/app/features/dashboard/home-figures.ts';
 import type { BriefingPart } from '../src/app/features/dashboard/home-figures.ts';
 import { isoWeek } from '../src/app/features/dashboard/agenda-days.ts';
@@ -179,4 +179,38 @@ test('Markt reads our own forwarder quotes only, never an index in points', () =
 test('the top country carries its flag and its Dutch name', () => {
   assert.equal(countryWithFlag('BE'), '🇧🇪 België');
   assert.equal(countryWithFlag(null), null);
+});
+
+test('the brief says the day the bank goes below zero (N9), and "nu" when it already is', () => {
+  const base = { settled: true, agenda: 'ok' as const, count: 3, complete: true, events: [], nowTime: '23:43', today: '2026-10-16' };
+  const tight = { from: '2026-12-02', to: '2026-12-13' };
+  const both = briefing({ ...base, tight, belowZeroFrom: '2027-01-04' });
+  assert.equal(text(both), '3 dingen te doen. Geen afspraken vandaag. De bank wordt krap van 2 tot 13 december en zakt op ma 4 januari onder nul.');
+  assert.deepEqual(both.filter((part) => part.krap).map((part) => part.text), ['2 tot 13 december']);
+  assert.equal(text(briefing({ ...base, tight: null, belowZeroFrom: '2027-01-04' })),
+    '3 dingen te doen. Geen afspraken vandaag. De bank zakt op ma 4 januari onder nul.');
+  assert.equal(text(briefing({ ...base, tight: { from: '2026-10-16', to: '2026-11-02' }, belowZeroFrom: '2026-10-16' })),
+    '3 dingen te doen. Geen afspraken vandaag. De bank wordt krap van 16 oktober tot 2 november. De bank staat nu onder nul.');
+  assert.equal(text(briefing({ ...base, tight, belowZeroFrom: null })), '3 dingen te doen. Geen afspraken vandaag. De bank wordt krap van 2 tot 13 december.');
+  assert.equal(weekdayDayLong('2027-01-04'), 'ma 4 januari');
+});
+
+test('the brief greets from 06:00 only (N10)', () => {
+  assert.equal(briefHello(0, 'Emre'), null);
+  assert.equal(briefHello(5, 'Emre'), null);
+  assert.equal(briefHello(6, 'Emre'), 'Goedemorgen, Emre.');
+  assert.equal(briefHello(23, 'Emre'), 'Goedenavond, Emre.');
+  assert.equal(briefHello(13, null), 'Goedemiddag.');
+});
+
+test('shortCompany keeps the name people use: legal words and the generic tail go, two words at least', () => {
+  assert.equal(shortCompany('Yunnan Pubei Agricultural Science and Technology Co., Ltd'), 'Yunnan Pubei');
+  assert.equal(shortCompany('Shenzen Blossoming Flora Technology Co., Ltd.'), 'Shenzen Blossoming Flora');
+  assert.equal(shortCompany('Yunnan Cullinan Import and Export Co., Ltd.'), 'Yunnan Cullinan');
+  assert.equal(shortCompany('Verhoeven BV'), 'Verhoeven BV');
+  assert.equal(shortCompany('Global Trading Co'), 'Global Trading');
+  assert.equal(shortCompany('Kunming Rose Flowers Limited'), 'Kunming Rose Flowers');
+  assert.equal(shortCompany('Acme, Flower Trading Ltd'), 'Acme, Flower');
+  assert.equal(shortCompany('  '), '');
+  assert.equal(shortCompany(null), '');
 });

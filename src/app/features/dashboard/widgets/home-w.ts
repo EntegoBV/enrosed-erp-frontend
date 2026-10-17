@@ -28,6 +28,9 @@ export function counted(value: number, one: string, many: string): string {
  * is raised above it and never nested in it. A failed source reads
  * "— · Opnieuw" (HomeData.load()), never 0; loading shows two quiet lines.
  * The body is projected and rendered by the block once its data is ready.
+ * The small blocks show their figures as label/value rows (.home-w__kv): a
+ * label wraps, a value never does; no block turns dark (owner: no dark
+ * blocks), a negative value is red instead.
  * No styles here: the rules live in styles/home-widgets.scss.
  */
 @Component({
@@ -68,15 +71,15 @@ export class HomeWidget {
   readonly state = input<SourceState>('ready');
   /** Phone: the full width of the 2-column grid (Verkoop, Inkoop, Website). */
   readonly wide = input(false);
-  /** The dark card (Resultaat below zero, as the old home did). */
-  readonly dark = input(false);
+  /** Desk: one full-width strip (Markt) - the head, the figures inline and the line at the end. */
+  readonly strip = input(false);
   /** A modifier for the block's own rules: 'verkoop' → home-w--verkoop. */
   readonly kind = input<string>('');
 
   readonly classes = computed(() => [
     'home-w', this.variant() === 'desk' ? 'wk-card home-w--desk' : 'ios-widget home-w--phone',
     this.wide() && this.variant() === 'phone' ? 'ios-widget--wide home-w--wide' : '',
-    this.dark() ? 'home-w--dark' : '', this.kind() ? `home-w--${this.kind()}` : '',
+    this.strip() && this.variant() === 'desk' ? 'home-w--strip' : '', this.kind() ? `home-w--${this.kind()}` : '',
     this.state() === 'failed' ? 'is-failed' : '',
   ].filter(Boolean).join(' '));
 }

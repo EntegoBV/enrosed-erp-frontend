@@ -10,6 +10,8 @@
    never inside it. A block is a size container - it holds no sheet, menu or
    bell, so the kit's trap rule does not bite - and its figure row follows
    its own width on every page layout. Amounts and counts never wrap or cut.
+   The small blocks read as label/value rows (.home-w__kv): a label wraps, a
+   value never does. No dark block: a negative value is red (.is-neg).
    ========================================================================== */
 
 app-dashboard-home, app-home-desk, app-home-phone { display: block; }
@@ -55,11 +57,14 @@ app-home-website, app-home-markt { display: contents; }
 .home-w--phone .home-w__value { font-size: 22px; }
 .home-w__value--none { color: var(--muted-2); }
 .home-w__line { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
-.home-w__line.is-warn { color: var(--warn); font-weight: 600; }
 .home-w__delta { color: var(--muted); font-size: 12px; font-weight: 600; }
 .home-w__delta.is-up { color: var(--ok); }
 .home-w__delta.is-down { color: var(--warn); }
 .home-w__empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+/* An empty block (Inkoop without containers) reads as its one muted line. Where the wide desk gives the card room it
+   centres with an icon, a second line and a link (home-desk.scss, from 1280 px); everywhere else those stay hidden. */
+.home-w__none { display: grid; gap: 4px; min-width: 0; }
+.home-w__none > :is(.home-w__none-icon, .home-w__none-text, .home-w__none-link) { display: none; }
 .home-w__split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px 14px; }
 .home-w__figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; padding-top: 10px; border-top: 1px solid var(--line); }
 .home-w__fig { display: grid; align-content: start; gap: 1px; min-width: 0; color: inherit; text-decoration: none; }
@@ -82,6 +87,27 @@ app-home-website, app-home-markt { display: contents; }
   .home-w__fig-value { font-size: 14px; }
 }
 
+/* ---- label/value rows (Resultaat, Ontvangen, Voorraad, Partners) */
+.home-w__value.is-neg { color: var(--danger); }
+.home-w__kv { display: grid; gap: 4px; margin: 0; }
+.home-w__kv > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.home-w__kv dt { min-width: 0; color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+.home-w__kv dt small { display: block; font-size: 12px; }
+.home-w__kv dd { flex: none; margin: 0; color: var(--ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-w__kv .is-warn :is(dt, dd) { color: var(--warn); }
+.home-w__kv .is-warn dt { font-weight: 600; }
+.home-w__kv .is-neg dd { color: var(--danger); }
+.home-w__note { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+.home-w__note.is-warn { color: var(--warn); font-weight: 600; }
+.home-w__split--kv { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 28px; }
+.home-w--desk .home-w__split--kv .home-w__kv { width: 100%; max-width: 300px; margin-left: auto; }
+@container (max-width: 300px) {
+  .home-w__split--kv { grid-template-columns: minmax(0, 1fr); }
+  .home-w--desk .home-w__split--kv .home-w__kv { max-width: none; }
+}
+.home-w--phone .home-w__kv dt { font-size: 12px; }
+.home-w--phone .home-w__kv dd { font-size: 12.5px; }
+
 /* ---- bars (Verkoop months, Website days) */
 /* Raised above the card link so each bar's title shows on hover; a click opens the card (the block's own handler). */
 .home-w__bars { display: flex; align-items: stretch; gap: 5px; height: 56px; min-width: 0; cursor: pointer; }
@@ -95,19 +121,19 @@ app-home-website, app-home-markt { display: contents; }
 /* ---- Inkoop & containers: the next arrivals */
 .home-w__events { display: grid; margin: 0; padding: 0; list-style: none; }
 .home-w__event { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 10px; padding: 5px 0 6px; color: inherit; font-size: 12.5px; text-decoration: none; }
-.home-w__event-name { min-width: 0; color: var(--muted); }
+.home-w__event-name { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .home-w__event-name b { color: var(--ink); font-weight: 650; }
 .home-w__event:hover .home-w__event-name b { text-decoration: underline; text-underline-offset: 2px; }
 .home-w__event-when { color: #3b76b3; font-weight: 650; white-space: nowrap; }
 .home-w__event-when.is-late { color: var(--warn); }
 .home-w__progress { grid-column: 1 / -1; height: 3px; overflow: hidden; border-radius: 2px; background: var(--line); }
 .home-w__progress > i { display: block; height: 100%; border-radius: inherit; background: #3b76b3; }
-
-/* ---- dark (Resultaat below zero) */
-.home-w--dark { border-color: #302a27; background: #272220; color: #fff; }
-.home-w--dark :is(.home-w__sub, .home-w__line, .home-w__chev) { color: #cfc7c2; }
-.home-w--dark .home-w__line.is-warn { color: #f4cf9a; }
-.home-w--dark .home-w__icon { background: #3b3431; color: #e8b7c0; }
+/* Phone: the name on its own line, then the short supplier and "aankomst (verwacht) …" (critique N4). */
+.home-w--phone .home-w__event { grid-template-areas: 'name name' 'sup when' 'bar bar'; row-gap: 1px; }
+.home-w--phone .home-w__event-name { grid-area: name; }
+.home-w--phone .home-w__event-sup { grid-area: sup; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.home-w--phone .home-w__event-when { grid-area: when; font-size: 12px; }
+.home-w--phone .home-w__progress { grid-area: bar; margin-top: 3px; }
 
 /* ---- Markt */
 .home-w__rates { display: grid; gap: 6px; margin: 0; }
@@ -117,6 +143,14 @@ app-home-website, app-home-markt { display: contents; }
 .home-w__rates b { font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .home-w__rates small { color: var(--muted); font-size: 11.5px; }
 .home-w__rates small.is-up { color: var(--ok); }
+/* Desk: one full-width strip under Meer cijfers (the head, the three figures inline, the line at the end). */
+.home-w--strip { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 26px; padding-block: 11px; }
+.home-w--strip .home-w__head { flex: none; }
+.home-w--strip .home-w__chev { display: none; }
+.home-w--strip .home-w__rates { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 6px 22px; }
+.home-w--strip .home-w__rates > div { gap: 8px; padding: 0; border: 0; }
+.home-w--strip .home-w__rates dd { margin: 0; }
+.home-w--strip .home-w__line { flex: none; margin-left: auto; white-space: nowrap; }
 .home-markt__lines { display: grid; color: var(--muted); font-size: 13px; line-height: 1.35; }
 .home-markt__lines b { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -155,4 +189,7 @@ app-home-website, app-home-markt { display: contents; }
 .home-kas-hero__fig b { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; white-space: nowrap; }
 .home-kas-hero__fig b.is-text { font-size: 14px; white-space: normal; }
 .home-kas-hero__fig b.is-warn { color: #f4cf9a; }
+.home-kas-hero__fig b.is-neg { color: #ffb4a8; }
+.home-kas-hero__age { margin: 0 0 2px; color: rgb(255 255 255 / 68%); font-size: 12.5px; }
+.home-kas-hero__age.is-warn { color: #f4cf9a; }
 .home-kas-hero__fig span { color: rgb(255 255 255 / 72%); font-size: 12.5px; line-height: 1.3; }

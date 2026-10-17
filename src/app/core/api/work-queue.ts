@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { SalesApi } from './sales-api';
 import { AppNotification } from './models';
 import { messageOf } from './errors';
-import { QUEUE_INTERVAL_MS, shouldRefreshQueue } from './work-queue-refresh';
+import { QUEUE_INTERVAL_MS, reusesQueueRefresh, shouldRefreshQueue } from './work-queue-refresh';
 
 const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 
@@ -51,8 +51,16 @@ export class WorkQueue {
   readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded));
   readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded));
 
+  /**
+   * Fetches the queue. Not forced, it shares a fetch that is under way, and
+   * one that answered without an error a few seconds ago (QUEUE_REUSE_MS):
+   * the shell's refresh on start and the screen that opens a moment later
+   * (the home, a bell, Meer) are one page load. After a change of our own,
+   * callers force it.
+   */
   refresh(force = false): Promise<void> {
     if (!force && this.refreshPromise) return this.refreshPromise;
+    if (!force && !this.error() && reusesQueueRefresh(this.lastRefreshAt, Date.now())) return Promise.resolve();
     this.lastRefreshAt = Date.now();
     const request = this.fetch();
     this.refreshPromise = request;

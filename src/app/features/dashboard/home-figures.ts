@@ -36,6 +36,20 @@ export function greeting(hour: number): string {
   return 'Goedenavond';
 }
 
+/**
+ * The desk brief's first words (design §2.1, critique N10): "Goedenavond, Emre." ("Goedenavond." without a
+ * name); null before 06:00, when the brief starts with the count (the toolbar already says "Dashboard").
+ */
+export function briefHello(hour: number, name: string | null): string | null {
+  if (hour < 6) return null;
+  return `${greeting(hour)}${name ? `, ${name}` : ''}.`;
+}
+
+/** "ma 4 januari": the day the bank goes below zero in the brief. */
+export function weekdayDayLong(iso: string): string {
+  return `${WEEKDAYS_SHORT[weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS_LONG[Number(iso.slice(5, 7)) - 1]}`;
+}
+
 /** "donderdag 15 oktober". */
 export function longDate(iso: string): string {
   return `${WEEKDAYS_LONG[weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS_LONG[Number(iso.slice(5, 7)) - 1]}`;
@@ -215,6 +229,9 @@ export interface BriefingInput {
   nowTime: string;
   /** The first krap period within the horizon. */
   tight: { from: string; to: string } | null;
+  /** The first forecast day below zero (CashHeadline.belowZeroFrom), with today to tell "nu" from a later day. */
+  belowZeroFrom?: string | null;
+  today?: string;
 }
 
 /** "3 tot 11 november", "28 oktober tot 3 november". */
@@ -264,10 +281,43 @@ export function briefing(input: BriefingInput): BriefingPart[] {
   if (coming.length) {
     parts.push({ text: coming.length === times.length ? ' Eerste afspraak om ' : ' Volgende afspraak om ' }, { text: coming[0], strong: true }, { text: '.' });
   }
+  /* The day the bank goes below zero (critique N9): "zakt op …" stays true when the balance recovers later. */
+  const zero = input.belowZeroFrom ?? null;
+  const zeroNow = zero !== null && !!input.today && zero <= input.today;
   if (input.tight) {
-    parts.push({ text: ' De bank wordt krap van ' }, { text: fromToLong(input.tight.from, input.tight.to), strong: true, krap: true }, { text: '.' });
+    parts.push({ text: ' De bank wordt krap van ' }, { text: fromToLong(input.tight.from, input.tight.to), strong: true, krap: true });
+    parts.push({ text: zero !== null && !zeroNow ? ` en zakt op ${weekdayDayLong(zero)} onder nul.` : '.' });
+  } else if (zero !== null && !zeroNow) {
+    parts.push({ text: ` De bank zakt op ${weekdayDayLong(zero)} onder nul.` });
   }
+  if (zeroNow) parts.push({ text: ' De bank staat nu onder nul.' });
   return parts;
+}
+
+/* ------------------------------------------------------------ companies */
+
+/** Legal forms dropped from the end of a supplier's name (compared without a trailing dot, lower case). */
+const LEGAL_WORDS = new Set(['co', 'company', 'ltd', 'limited', 'inc', 'corp', 'llc', 'gmbh']);
+/** Words that start the generic tail of a Chinese company name ("Agricultural Science and Technology"). */
+const GENERIC_WORDS = new Set(['agricultural', 'science', 'technology', 'trading', 'import', 'export', 'industrial', 'industry',
+  'international', 'development', 'group']);
+
+/**
+ * The short company name the home shows (design §4 #10): "Yunnan Pubei Agricultural Science and Technology
+ * Co., Ltd" → "Yunnan Pubei". Cut at the first comma, drop the legal words at the end, then cut at the first
+ * generic word - always keeping at least two words; a name of two words or fewer ("Verhoeven BV") is never
+ * touched. The full name stays in the title and the aria-label.
+ */
+export function shortCompany(name: string | null | undefined): string {
+  const full = (name ?? '').trim().replace(/\s+/g, ' ');
+  if (full.split(' ').length <= 2) return full;
+  const head = full.split(',')[0].trim();
+  let words = (head.split(' ').length >= 2 ? head : full).split(' ');
+  while (words.length > 2 && LEGAL_WORDS.has(words[words.length - 1].toLowerCase().replace(/\.$/, ''))) words = words.slice(0, -1);
+  const generic = words.findIndex((word, index) => index >= 2 && GENERIC_WORDS.has(word.toLowerCase()));
+  if (generic >= 2) words = words.slice(0, generic);
+  while (words.length > 2 && /^(and|&|en)$/i.test(words[words.length - 1])) words = words.slice(0, -1);
+  return words.join(' ').replace(/,$/, '');
 }
 
 /* -------------------------------------------------------------- market */

@@ -7,7 +7,7 @@ import {
   ADVANCE_SOON_DAYS, COVERAGE_ORDER, CUSTOMER_WAIT_NU_WORKDAYS, HOME_TASK_CAP, KRAP_WITHIN_DAYS, LATER_ESCALATE_COUNT,
   OVERDUE_COST_DAYS_COPY, OVERDUE_INVOICE_MIN_EUR, OVERDUE_INVOICE_NU_DAYS, VAT_LATE_SHOW_DAYS, VAT_NU_DAYS, VAT_SHOW_DAYS,
   coverageOf, filingDeadlineOf, fnv1a8, forecastAnswer, homeMarker, homeMarkersOf, homeTasks, laterNext, laterPruned, nextWorkday,
-  stripHomeMarkers, vatCashByDeadline, whyOrderLines, workdaysBetween,
+  stripHomeMarkers, vatCashByDeadline, whyOrderLines, workdaysBetween, waitLabel, defaultTaskDay, othersOf,
   type CoverageAnswer, type CoverageSource, type HomeTask, type HomeTaskInput, type HomeTaskList,
 } from '../src/app/features/dashboard/home-priority.ts';
 
@@ -137,10 +137,10 @@ test('customers waiting are ONE row with the bell count', () => {
   const rows = all(five).filter((task) => task.source === 'customers');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].count, 5);
-  assert.equal(rows[0].context, '2 websiteaanvragen · wijziging · levertermijn · vracht');
+  assert.equal(rows[0].context, 'de oudste: Klant · 2 websiteaanvragen · wijziging · levertermijn · vracht');
   assert.deepEqual(rows[0].target, { kind: 'bell' });
   const resend = bySource(homeTasks(input({ customers: [customer('OPNIEUW_VERSTUREN', 'OF6')] })), 'customers')!;
-  assert.equal(resend.context, 'opnieuw versturen');
+  assert.equal(resend.context, 'de oudste: Klant · opnieuw versturen');
 });
 
 function customerCases(): unknown {
@@ -401,7 +401,7 @@ test('the B fixture (Thu 15 Oct 20:50): Nu 3, Vandaag 5, Ook nog 6', () => {
   assert.equal(nu[0].chip.label, '3 d over datum');
   assert.equal(nu[2].context, 'Volgens de afspraak bij de container · 70% bij aankomst');
   const customers = bySource(list, 'customers')!;
-  assert.deepEqual([customers.count, customers.tier, customers.context], [5, 'vandaag', '2 websiteaanvragen · wijziging · levertermijn · vracht']);
+  assert.deepEqual([customers.count, customers.tier, customers.context], [5, 'vandaag', 'de oudste: Klant · 2 websiteaanvragen · wijziging · levertermijn · vracht']);
   assert.equal(bySource(list, 'krap'), undefined);
   assert.ok(!all(list).some((row) => row.plannerId === 8));
   assert.deepEqual(list.ookNog.map((row) => row.source).sort(),
@@ -470,4 +470,88 @@ test('"Waarom deze volgorde" is built from the thresholds', () => {
   assert.ok(text.includes('€ 1.000') && text.includes('2 werkdagen'));
   assert.equal(OVERDUE_COST_DAYS_COPY, OVERDUE_COST_DAYS);
   assert.ok(VAT_LATE_SHOW_DAYS === 14 && OVERDUE_INVOICE_MIN_EUR === 1000);
+});
+
+/* ------------------------------------------------- 16. redesign round (H1) */
+
+test('waitLabel: "< 1 u", "17 u", Friday to Monday is 1 werkdag, 27 werkdagen; Nu from the threshold', () => {
+  /* Thursday 15 Oct 09:00 Brussels */
+  const at = '2026-10-15T07:00:00Z';
+  assert.deepEqual(waitLabel(at, Date.parse('2026-10-15T07:30:00Z'), '2026-10-15'), { label: '< 1 u', nu: false });
+  assert.deepEqual(waitLabel(at, Date.parse('2026-10-16T00:10:00Z'), '2026-10-16'), { label: '17 u', nu: false });
+  /* Friday 16:00 → Monday 10:00: 66 hours, one workday */
+  assert.deepEqual(waitLabel('2026-10-16T14:00:00Z', Date.parse('2026-10-19T08:00:00Z'), '2026-10-19'), { label: '1 werkdag', nu: false });
+  assert.equal(waitLabel(at, Date.parse('2026-10-20T07:00:00Z'), '2026-10-20')?.label, '3 werkdagen');
+  assert.equal(waitLabel(at, Date.parse('2026-10-20T07:00:00Z'), '2026-10-20')?.nu, true);
+  /* 27 workdays: Wed 9 Sep → Fri 16 Oct */
+  assert.deepEqual(waitLabel('2026-09-09T08:00:00Z', Date.parse('2026-10-16T21:43:00Z'), '2026-10-16'), { label: '27 werkdagen', nu: true });
+  assert.equal(waitLabel(null, Date.now(), TODAY), null);
+  assert.equal(waitLabel('geen datum', Date.now(), TODAY), null);
+  assert.equal(CUSTOMER_WAIT_NU_WORKDAYS, 2);
+});
+
+test('Klanten wachten names the oldest customer and keeps the chip and detail key', () => {
+  const who = (name: string | null, at: string | null, kind = 'VRACHT', order = 'OF1') => ({ kind, title: kind, orderNumber: order, customer: name, at, detail: '' });
+  const row = bySource(homeTasks(input({ customers: [who('Bloemenhuis Lier', '2026-10-14T09:00:00Z', 'VOORSTEL', 'OF2'),
+    who('Tuincentrum Peeters', '2026-10-12T09:00:00Z'), who(null, null, 'LEVERTERMIJN', 'OF3')] })), 'customers')!;
+  assert.equal(row.context, 'de oudste: Tuincentrum Peeters · wijziging · levertermijn · vracht');
+  assert.deepEqual([row.tier, row.chip.label], ['nu', 'Wacht 3 werkdagen']);
+  assert.equal(row.detail, 'LEVERTERMIJN|OF3,VOORSTEL|OF2,VRACHT|OF1');
+  /* No customer on the oldest item: no name. */
+  const anonymous = bySource(homeTasks(input({ customers: [who(null, '2026-10-12T09:00:00Z'), who('Bloemenhuis Lier', '2026-10-14T09:00:00Z')] })), 'customers')!;
+  assert.equal(anonymous.context, '2 vrachten');
+});
+
+test('Ook nog: the verb is the action and the chip the reason; the login verb is Goedkeuren; krap keeps Bekijken', () => {
+  const list = homeTasks(input({
+    housekeeping: [
+      { kind: 'bank-lines', count: 35, eur: 222426, title: '35 banktransacties nog te koppelen', detail: 'Koppel aan een factuur', location: { view: 'bank' } },
+      { kind: 'recurring-due', count: 2, eur: null, title: '2 vaste kosten staan klaar om te boeken', detail: 'x', location: { view: 'costs' } },
+      { kind: 'open-credits', count: 1, eur: 640, title: '1 creditnota met een tegoed af te handelen', detail: 'x', location: { view: 'incoming' } },
+      { kind: 'regimes', count: 23, eur: null, title: '23 kosten: btw-regeling nog te bevestigen', detail: 'x', location: { view: 'costs' } },
+    ],
+    purchaseCheck: 1, settlements: 3, catalog: 7, loginRequests: 2,
+    tight: { from: days(TODAY, 3), to: days(TODAY, 9), lowestEur: 6100, lowestDay: days(TODAY, 5), bufferEur: 10000 },
+  }));
+  const look = (source: string) => { const row = bySource(list, source)!; return [row.verb, row.chip.label]; };
+  assert.deepEqual(look('bank-lines'), ['Koppelen', 'laatste 3 mnd']);
+  assert.deepEqual(look('recurring-due'), ['Boeken', 'staat klaar']);
+  assert.deepEqual(look('open-credits'), ['Afhandelen', 'tegoed']);
+  assert.deepEqual(look('regimes'), ['Bevestigen', 'dit jaar']);
+  assert.deepEqual(look('purchase-check'), ['Nakijken', 'opmerking']);
+  assert.deepEqual(look('settlement'), ['Afrekenen', 'ontvangen']);
+  assert.deepEqual(look('catalog'), ['Aanvullen', 'website']);
+  assert.equal(bySource(list, 'login')?.verb, 'Goedkeuren');
+  assert.equal(bySource(list, 'krap')?.verb, 'Bekijken');
+  /* The settlement row opens the partners part of Analyses › Inkoop (the query is ignored without that round). */
+  assert.deepEqual(bySource(list, 'settlement')?.target, { kind: 'route', path: ['/analyses/purchasing'], query: { deel: 'partners' } });
+  assert.ok(list.ookNog.every((row) => row.verb !== 'Bekijken'));
+});
+
+test('the footer counts every hidden point and how many of them are for today (9 Nu/Vandaag rows, 6 Ook nog)', () => {
+  const planner = Array.from({ length: 9 }, (_, index) => ({ id: index + 1, kind: 'TASK' as const, title: `Taak ${index + 1}`, onDate: TODAY,
+    done: false, pinned: false, note: null }));
+  const list = homeTasks(input({ planner, purchaseCheck: 1, settlements: 3, catalog: 7, loginRequests: 0,
+    housekeeping: [
+      { kind: 'bank-lines', count: 35, eur: 222426, title: 'b', detail: 'x', location: {} },
+      { kind: 'recurring-due', count: 2, eur: null, title: 'r', detail: 'x', location: {} },
+      { kind: 'regimes', count: 23, eur: null, title: 'g', detail: 'x', location: {} },
+    ] }));
+  assert.deepEqual([list.top.length, list.more.length, list.ookNog.length], [HOME_TASK_CAP, 2, 6]);
+  const others = othersOf(list);
+  assert.deepEqual([others.count, others.urgent], [8, 2]);
+  assert.deepEqual(others.hidden.slice(0, 2).map((row) => row.title), ['Taak 8', 'Taak 9']);
+  /* The desk previews Ook nog rows: they are no longer hidden, the urgent count stays. */
+  const previewed = othersOf(list, 3);
+  assert.deepEqual([previewed.count, previewed.urgent], [5, 2]);
+  assert.deepEqual(othersOf({ more: [], ookNog: [] }), { count: 0, urgent: 0, hidden: [] });
+});
+
+test('the quick task proposes the next workday after 18:00 and at the weekend', () => {
+  assert.equal(defaultTaskDay('2026-10-16', 17), 'today');     // Friday 17:59
+  assert.equal(defaultTaskDay('2026-10-16', 18), 'next');      // Friday 18:00
+  assert.equal(defaultTaskDay('2026-10-16', 23), 'next');      // Friday 23:43
+  assert.equal(defaultTaskDay('2026-10-17', 9), 'next');       // Saturday
+  assert.equal(defaultTaskDay('2026-10-18', 9), 'next');       // Sunday
+  assert.equal(defaultTaskDay('2026-10-19', 0), 'today');      // Monday just after midnight
 });

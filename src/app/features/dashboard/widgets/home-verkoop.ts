@@ -43,7 +43,7 @@ const OPEN_QUOTE = new Set(['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAA
             <span class="home-w__fig-sub">{{ counted(openQuotes().length, 'offerte', 'offertes') }} · excl. btw</span></div>
           <a class="home-w__fig home-w__fig--link home-w__raise" routerLink="/sales" [queryParams]="{ scope: 'ALL', tab: 'FACTUUR', payment: 'open' }">
             <span class="home-w__fig-label">Te ontvangen ›</span><strong class="home-w__fig-value">{{ whole(data.receivables().totalEur) }}</strong>
-            <span class="home-w__fig-sub">{{ counted(data.receivables().count, 'factuur', 'facturen') }} · {{ data.receivables().partialCount }} deels</span></a>
+            <span class="home-w__fig-sub">{{ counted(data.receivables().count, 'open factuur', 'open facturen') }} · {{ data.receivables().partialCount }} deels</span></a>
           <div class="home-w__fig" [class.is-warn]="overdue().count > 0"><span class="home-w__fig-label">Te laat</span>
             <strong class="home-w__fig-value">{{ whole(overdue().eur) }}</strong>
             <span class="home-w__fig-sub">{{ counted(overdue().count, 'factuur', 'facturen') }}</span></div>

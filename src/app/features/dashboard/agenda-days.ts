@@ -84,3 +84,47 @@ export function monthCells(year: number, month1: number, rows: 6 | 'fit' = 6): M
     return { key: date, date, label: Number(date.slice(8, 10)), inMonth: date.startsWith(prefix) };
   });
 }
+
+const WEEKDAYS_SHORT_MON0 = ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'];
+const MONTHS_SHORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+
+/** One row of the desk's 7 dagen below 1280 px: a day of its own, or a run of empty days merged into one row. */
+export type DayRow =
+  | { kind: 'day'; date: IsoDay }
+  | { kind: 'run'; from: IsoDay; to: IsoDay; days: number; weekendOnly: boolean; number: string; weekday: string };
+
+/**
+ * The rows of the desk's 7 dagen below 1280 px (redesign home §2.3): a day with
+ * entries is its own row, and so is today; consecutive empty days merge into
+ * one row - "20–22" "di–do", or "31 okt – 2 nov" across a month - that says
+ * "Vrij" when it holds only weekend days and "Niets gepland" otherwise. A
+ * single empty day stays a day row.
+ */
+export function dayRuns(days: readonly { date: IsoDay; empty: boolean }[], today: IsoDay): DayRow[] {
+  const rows: DayRow[] = [];
+  let run: IsoDay[] = [];
+  const flush = (): void => {
+    if (run.length === 1) rows.push({ kind: 'day', date: run[0] });
+    else if (run.length > 1) {
+      const from = run[0];
+      const to = run[run.length - 1];
+      const sameMonth = from.slice(0, 7) === to.slice(0, 7);
+      const day = (iso: IsoDay): number => Number(iso.slice(8, 10));
+      const month = (iso: IsoDay): string => MONTHS_SHORT[Number(iso.slice(5, 7)) - 1];
+      rows.push({ kind: 'run', from, to, days: run.length, weekendOnly: run.every((iso) => weekdayMon0(iso) >= 5),
+        number: sameMonth ? `${day(from)}–${day(to)}` : `${day(from)} ${month(from)} – ${day(to)} ${month(to)}`,
+        weekday: `${WEEKDAYS_SHORT_MON0[weekdayMon0(from)]}–${WEEKDAYS_SHORT_MON0[weekdayMon0(to)]}` });
+    }
+    run = [];
+  };
+  for (const day of days) {
+    if (day.empty && day.date !== today) {
+      run.push(day.date);
+      continue;
+    }
+    flush();
+    rows.push({ kind: 'day', date: day.date });
+  }
+  flush();
+  return rows;
+}

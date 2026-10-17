@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CashForecast } from '../src/app/features/finance/cash-forecast.ts';
-import { cashHeadline, outlookFigures, sparkPoints } from '../src/app/features/dashboard/home-cash.ts';
+import {
+  SCHEDULES_WAIT_MS, TASKS_REVEAL_CAP_MS, cashHeadline, forecastGate, moreTightText, outlookFigures, sparkPoints, tasksReveal,
+} from '../src/app/features/dashboard/home-cash.ts';
 
 const forecast = (changes: Partial<CashForecast> = {}): CashForecast => ({
   today: '2026-10-15', horizonEnd: '2027-04-15', mode: 'absolute', bufferEur: 10000, startEur: 48215,
@@ -86,4 +88,45 @@ test('Nu te betalen and Nog te ontvangen: a figure whose source failed is null (
   assert.deepEqual(outlookFigures(outlook, { ...none, purchases: true }), { payEur: null, receiveEur: 29175.4 });
   assert.deepEqual(outlookFigures(outlook, { ...none, recurring: true }), { payEur: null, receiveEur: 29175.4 });
   assert.equal(outlookFigures({ ...outlook, openCostsEur: 0.1, containerNowEur: 0.2, upcomingEur: 0 }, none)?.payEur, 0.3);
+});
+
+test('the krap count and the first day below zero come with a ready forecast only', () => {
+  const days = [['2026-10-15', 48215], ['2026-12-02', 9100], ['2027-01-04', -120], ['2027-01-05', -2280], ['2027-01-20', 4000]]
+    .map(([day, withEur]) => ({ day, withEur, baseEur: 0, slowEur: 0, inEur: 0, outEur: 0 }));
+  const head = cashHeadline(forecast({ days } as Partial<CashForecast>), ready);
+  assert.deepEqual([head.tightCount, head.belowZeroFrom], [2, '2027-01-04']);
+  assert.equal(moreTightText(head.tightCount), 'nog 1 periode');
+  assert.equal(moreTightText(3), 'nog 2 periodes');
+  assert.equal(moreTightText(1), null);
+  assert.equal(moreTightText(0), null);
+  const above = cashHeadline(forecast({ days: days.filter((day) => day.withEur >= 0), tightWith: [] } as Partial<CashForecast>), ready);
+  assert.deepEqual([above.tightCount, above.belowZeroFrom], [0, null]);
+  const partial = cashHeadline(forecast({ days } as Partial<CashForecast>), { ...ready, warnings: ['partners'] });
+  assert.deepEqual([partial.tightCount, partial.belowZeroFrom], [0, null]);
+});
+
+test('the forecast waits for this round\'s advance schedules (B1), unless partner financing failed or the wait ran out', () => {
+  assert.equal(forecastGate({ partnersFailed: false, partnersRound: 0, schedulesDone: 0 }), false);
+  assert.equal(forecastGate({ partnersFailed: false, partnersRound: 3, schedulesDone: 2 }), false);
+  assert.equal(forecastGate({ partnersFailed: false, partnersRound: 3, schedulesDone: 3 }), true);
+  assert.equal(forecastGate({ partnersFailed: true, partnersRound: 0, schedulesDone: 0 }), true);
+  assert.equal(forecastGate({ partnersFailed: false, partnersRound: 3, schedulesDone: 2, timedOut: 3 }), true);
+  assert.equal(forecastGate({ partnersFailed: false, partnersRound: 3, schedulesDone: 2, timedOut: 2 }), false);
+  assert.equal(SCHEDULES_WAIT_MS, 4000);
+});
+
+test('Te doen shows once (B2): after its sources, when the Kas is past computing or the cap passed', () => {
+  assert.equal(tasksReveal({ loading: true, cashState: 'ready', capPassed: true }), false);
+  assert.equal(tasksReveal({ loading: false, cashState: 'computing', capPassed: false }), false);
+  assert.equal(tasksReveal({ loading: false, cashState: 'loading', capPassed: false }), false);
+  assert.equal(tasksReveal({ loading: false, cashState: 'computing', capPassed: true }), true);
+  for (const cashState of ['ready', 'partial', 'no-bank', 'no-reading'] as const) {
+    assert.equal(tasksReveal({ loading: false, cashState, capPassed: false }), true, cashState);
+  }
+  assert.equal(TASKS_REVEAL_CAP_MS, 1500);
+  /* The catalog count (the Ook nog "Websiteproducten aanvullen" row) holds the reveal too, inside the same cap. */
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: false, catalogLoading: true }), false);
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: false, catalogLoading: false }), true);
+  assert.equal(tasksReveal({ loading: false, cashState: 'ready', capPassed: true, catalogLoading: true }), true);
+  assert.equal(tasksReveal({ loading: false, cashState: 'computing', capPassed: false, catalogLoading: false }), false);
 });

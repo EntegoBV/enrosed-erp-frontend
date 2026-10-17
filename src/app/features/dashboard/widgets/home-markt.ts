@@ -23,7 +23,9 @@ function change(pct: number | null | undefined): string {
  * through Fx; the change over a month) and our forwarder's latest 40ft
  * quote - never an index in points. Rendered inside @defer on the pages, so
  * the two calls only run when it scrolls into view; either one fails
- * quietly to "—". On the phone it is the Meer cijfers row.
+ * quietly to "—". On the desk one full-width strip (the head, the three
+ * figures inline, "t.o.v. een maand geleden ›"); on the phone the Meer
+ * cijfers row.
  */
 @Component({
   selector: 'app-home-markt',
@@ -31,14 +33,14 @@ function change(pct: number | null | undefined): string {
   imports: [RouterLink, Icon, HomeWidget],
   template: `
     @if (variant() === 'desk') {
-      <app-home-w variant="desk" kind="markt" title="Valuta en containermarkt" icon="exchange" tone="teal" link="/analyses/market">
+      <app-home-w variant="desk" kind="markt" [strip]="true" title="Valuta en containermarkt" icon="exchange" tone="teal" link="/analyses/market">
         <dl class="home-w__rates">
           <div><dt>EUR → USD</dt><dd><b>{{ usd() }}</b>@if (usdChange()) { <small [class.is-up]="usdChange().startsWith('▲')">{{ usdChange() }}</small> }</dd></div>
           <div><dt>EUR → CNY</dt><dd><b>{{ cny() }}</b>@if (cnyChange()) { <small [class.is-up]="cnyChange().startsWith('▲')">{{ cnyChange() }}</small> }</dd></div>
           <div><dt>40ft {{ quote()?.short ?? 'container' }}</dt>
             <dd><b>{{ quote() ? '$\u00a0' + count(quote()!.usd) : '—' }}</b>@if (quote(); as q) { <small>offerte {{ day(q.quotedOn) }}</small> }</dd></div>
         </dl>
-        <span class="home-w__line">Koersen t.o.v. een maand geleden</span>
+        <span class="home-w__line">t.o.v. een maand geleden <span aria-hidden="true">›</span></span>
       </app-home-w>
     } @else {
       <a class="ios-cell ios-cell--tall home-markt" routerLink="/analyses/market" [attr.aria-label]="ariaLabel()">

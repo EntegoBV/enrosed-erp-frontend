@@ -3,6 +3,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { enterHome } from './home-data';
 import { HomeDesk } from './home-desk';
 import { HomePhone } from './home-phone';
+import { HomeStyles } from './home-styles';
 
 /**
  * /dashboard: the operational front door (spec-home §1). A shell that picks
@@ -13,8 +14,8 @@ import { HomePhone } from './home-phone';
 @Component({
   selector: 'app-dashboard-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [HomeDesk, HomePhone],
-  template: `@if (desk()) { <app-home-desk /> } @else { <app-home-phone /> }`,
+  imports: [HomeDesk, HomePhone, HomeStyles],
+  template: `<app-home-styles hidden />@if (desk()) { <app-home-desk /> } @else { <app-home-phone /> }`,
 })
 export class DashboardHome {
   readonly desk = inject(DesktopViewport).active;

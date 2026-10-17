@@ -16,9 +16,10 @@ import type { FinanceLocation } from '../finance/finance-url';
 import { openInvoiceRows, receivableTotals } from '../finance/incoming-money';
 import { containerPayables } from '../finance/payables';
 import { containerName } from '../purchasing/container-name';
-import { agendaForecastMoney } from './agenda-entries';
+import { agendaForecastMoney, agendaUndated } from './agenda-entries';
 import type { AgendaInput, AgendaLink, PlannerItemLite } from './agenda-entries';
 import type { CashHeadline } from './home-cash';
+import { shortCompany } from './home-figures';
 import { filingDeadlineOf, homeMarkersOf, vatCashByDeadline } from './home-priority';
 import type { CoverageSource, HomeTarget, HomeTaskInput, LaterState } from './home-priority';
 import type { PlannerMilestone } from './planner-cards';
@@ -266,13 +267,26 @@ export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
  */
 export function containerTitleOf(item: Pick<ForecastItem, 'title' | 'orderId' | 'source'>,
   orders: ReadonlyMap<number, { id?: number | null; number?: string | null; alias?: string | null }>): string {
-  if (item.orderId === null || (item.source.type !== 'container' && item.source.type !== 'advance')) return item.title;
+  const parts = containerParts(item, orders);
+  return parts.term ? `${parts.name} · ${parts.term}` : parts.name;
+}
+
+/**
+ * containerTitleOf in two parts (design §4 #11): the container's name by containerName() and the term the
+ * forecast wrote after it ("1/3 bij bestelling", "70% bij vertrek"), so a chip can show the name, then the
+ * amount with the term. Any other title is the name, with no term.
+ */
+export function containerParts(item: Pick<ForecastItem, 'title' | 'orderId' | 'source'>,
+  orders: ReadonlyMap<number, { id?: number | null; number?: string | null; alias?: string | null }>): { name: string; term: string | null } {
+  if (item.orderId === null || (item.source.type !== 'container' && item.source.type !== 'advance')) return { name: item.title, term: null };
   const order = orders.get(item.orderId);
   /* The forecast's own prefixes: the order's number, else its 'Inkoop #id' (cash-forecast-input advance rows). */
   for (const prefix of [order?.number, `Inkoop #${item.orderId}`]) {
-    if (prefix && item.title.startsWith(`${prefix} · `)) return `${containerName(order ?? null, item.orderId)} · ${item.title.slice(prefix.length + 3)}`;
+    if (prefix && item.title.startsWith(`${prefix} · `)) {
+      return { name: containerName(order ?? null, item.orderId), term: item.title.slice(prefix.length + 3) || null };
+    }
   }
-  return item.title;
+  return { name: item.title, term: null };
 }
 
 const linkOf = (item: ForecastItem): AgendaLink => {
@@ -308,9 +322,11 @@ export interface HomeAgendaSources {
 
 /**
  * The agenda's input: money from the forecast's BASE items when it is
- * there (agendaForecastMoney: no scenario, nothing overdue; containers
- * named by containerName(), so the chips, Daarna and the Agenda page say
- * what the Te doen rows say), else open
+ * there (agendaForecastMoney: no scenario, nothing overdue, nothing without
+ * a day of its own; containers named by containerName() with their term
+ * apart, so the chips, Daarna and the Agenda page say what the Te doen rows
+ * say; parties short by shortCompany()) and the undated advances as one
+ * sum (agendaUndated), else open
  * invoices on their due day and the recurring costs on their next day,
  * neither once that day has passed; the next VAT filing deadline unless
  * that quarter is paid; the first krap period.
@@ -324,11 +340,16 @@ export function agendaInputOf(s: HomeAgendaSources): AgendaInput {
   const forecastUsable = !!s.forecast && (s.headline.state === 'ready' || s.headline.state === 'no-reading');
   let money: AgendaInput['money'][number][] = [];
   let moneySource: AgendaInput['moneySource'] = null;
+  let undated: AgendaInput['undated'] = null;
   if (forecastUsable) {
     moneySource = 'prognose';
     const orders = new Map(s.purchases.map((row) => [row.order.id, row.order]));
-    money = agendaForecastMoney(s.forecast!.items, vatPeriod.deadline).map((item) => ({ date: item.date, eur: item.amountEur,
-      title: containerTitleOf(item, orders), party: item.party, orderId: item.orderId, link: linkOf(item) }));
+    money = agendaForecastMoney(s.forecast!.items, vatPeriod.deadline).map((item) => {
+      const parts = containerParts(item, orders);
+      return { date: item.date, eur: item.amountEur, title: parts.name, term: parts.term, party: item.party ? shortCompany(item.party) : null,
+        orderId: item.orderId, link: linkOf(item) };
+    });
+    undated = agendaUndated(s.forecast!.items);
   } else if (s.salesOk) {
     moneySource = 'facturen';
     const names = new Map(s.customers.map((customer) => [customer.id, customer.company]));
@@ -354,7 +375,7 @@ export function agendaInputOf(s: HomeAgendaSources): AgendaInput {
       id: item.id, kind: item.kind, title: item.title, onDate: item.onDate, atTime: item.atTime, note: item.note, done: item.done,
       pinned: !!item.pinned, parentId: item.parentId ?? null,
     })),
-    milestones: s.milestones, money, moneySource, vatDeadline,
+    milestones: s.milestones, money, moneySource, vatDeadline, undated,
     tight: s.headline.state === 'ready' && first ? { from: first.from, to: first.to } : null,
   };
 }

@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Icon } from '../../../shared/icon';
 import type { PurchaseOrderView } from '../../../core/api/models';
 import { containerName } from '../../purchasing/container-name';
 import { HomeData } from '../home-data';
-import { nextContainerEvents } from '../home-figures';
+import { nextContainerEvents, shortCompany } from '../home-figures';
 import { HomeWidget, amount, count, counted } from './home-w';
 
 interface Group { eur: number; pieces: number; orders: number; }
@@ -19,12 +20,15 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
  * pieces, orders, the old "Inkoop onderweg"), the next three expected
  * arrivals with a progress line from the order or sailing day, and Besteld ·
  * Op zee · Controleren. Every container is named by containerName(); each
- * arrival row opens its order.
+ * arrival row opens its order. The supplier shows short (shortCompany: "Yunnan
+ * Pubei"), its full name in the row's title and aria-label: on the desk one
+ * line, name · supplier and the arrival; on the phone the name on its own
+ * line, then the supplier and "aankomst (verwacht) …" (the late signal).
  */
 @Component({
   selector: 'app-home-inkoop',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, HomeWidget],
+  imports: [RouterLink, HomeWidget, Icon],
   template: `
     <app-home-w [variant]="variant()" kind="inkoop" title="Inkoop & containers" sub="besteld en onderweg" icon="purchase" tone="amber"
                 link="/analyses/purchasing" [wide]="true" [state]="state()">
@@ -39,8 +43,13 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
               @for (event of events(); track event.orderId) {
                 <li>
                   <a class="home-w__event home-w__raise" [routerLink]="['/purchasing', event.orderId]"
-                     [attr.aria-label]="event.label + ', ' + event.supplier + ', ' + event.text">
-                    <span class="home-w__event-name"><b>{{ event.label }}</b>@if (event.supplier) { · {{ event.supplier }} }</span>
+                     [title]="full(event, ' · ')" [attr.aria-label]="full(event, ', ')">
+                    @if (variant() === 'desk') {
+                      <span class="home-w__event-name"><b>{{ event.label }}</b>@if (event.supplier) { · {{ short(event.supplier) }} }</span>
+                    } @else {
+                      <span class="home-w__event-name"><b>{{ event.label }}</b></span>
+                      <span class="home-w__event-sup">{{ short(event.supplier) }}</span>
+                    }
                     <span class="home-w__event-when" [class.is-late]="event.late">{{ event.text }}</span>
                     <span class="home-w__progress" aria-hidden="true"><i [style.width.%]="event.progressPct"></i></span>
                   </a>
@@ -49,7 +58,14 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
             </ul>
           }
         } @else {
-          <p class="home-w__empty">Geen containers besteld of onderweg</p>
+          <!-- One muted line; where the wide desk gives the card room (home-desk.scss, from 1280 px) the line centres
+               with its icon, a second line and the way to the orders, so a calm day leaves no hole. -->
+          <div class="home-w__none">
+            <span class="home-w__none-icon" aria-hidden="true"><app-icon name="purchase" [size]="18" /></span>
+            <p class="home-w__empty">Geen containers besteld of onderweg</p>
+            <p class="home-w__none-text">Een bestelde container verschijnt hier met zijn verwachte aankomst.</p>
+            <a class="wk-link home-w__none-link home-w__raise" routerLink="/purchasing">Inkooporders <span aria-hidden="true">›</span></a>
+          </div>
         }
         <div class="home-w__figs home-w__figs--3">
           <div class="home-w__fig"><span class="home-w__fig-label">Besteld</span><strong class="home-w__fig-value">{{ whole(ordered().eur) }}</strong>
@@ -71,6 +87,12 @@ export class HomeInkoop {
   readonly whole = amount;
   readonly count = count;
   readonly counted = counted;
+  readonly short = shortCompany;
+
+  /** The row's full words (the whole supplier name): its title and aria-label. */
+  full(event: { label: string; supplier: string; text: string }, separator: string): string {
+    return [event.label, event.supplier, event.text].filter(Boolean).join(separator);
+  }
 
   private readonly open = computed(() => this.data.purchases().filter((row) => row.order.status === 'BESTELD' || row.order.status === 'ONDERWEG'));
   readonly incoming = computed(() => groupOf(this.open()));

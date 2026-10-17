@@ -14,3 +14,19 @@ export function shouldRefreshQueue(lastRefreshAt: number | null, now: number, vi
   if (!visible) return false;
   return lastRefreshAt === null || now - lastRefreshAt > QUEUE_STALE_MS;
 }
+
+/**
+ * How long a refresh that answered serves a screen asking on arrival. The
+ * shell refreshes on start and the home (or a bell, Meer, a list) asks again
+ * a moment later when its route opens: one page load, one pair of calls.
+ */
+export const QUEUE_REUSE_MS = 5_000;
+
+/**
+ * Whether a non-forced refresh may reuse the last one: it started less than
+ * QUEUE_REUSE_MS ago and answered without an error (the caller checks both
+ * that it is no longer running and that it did not fail).
+ */
+export function reusesQueueRefresh(lastRefreshAt: number | null, now: number): boolean {
+  return lastRefreshAt !== null && now >= lastRefreshAt && now - lastRefreshAt < QUEUE_REUSE_MS;
+}

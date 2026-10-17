@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PIN_MIN_EUR as FORECAST_PIN_MIN_EUR } from '../src/app/features/finance/cash-forecast.ts';
 import type { PlannerMilestone } from '../src/app/features/dashboard/planner-cards.ts';
-import { PIN_MIN_EUR, agendaModel, type AgendaInput, type PlannerItemLite } from '../src/app/features/dashboard/agenda-entries.ts';
+import {
+  PIN_MIN_EUR, agendaForecastMoney, agendaModel, agendaUndated, type AgendaInput, type PlannerItemLite,
+} from '../src/app/features/dashboard/agenda-entries.ts';
 
 const TODAY = '2026-10-15';
 const item = (id: number, onDate: string | null, changes: Partial<PlannerItemLite> = {}): PlannerItemLite =>
@@ -142,4 +144,32 @@ test('markers: up to three types in a fixed order, a late task flagged, more tha
 test('notes show without the home marker lines', () => {
   const model = agendaModel(input({ items: [item(1, TODAY, { note: '[home:vat:2026-Q3#0123abcd]\nBoekhouder bellen' })] }));
   assert.equal(model.byDay.get(TODAY)![0].sub, 'Boekhouder bellen');
+});
+
+test('undated money leaves the calendar (design §4 #2, B4): the credit and the advances without a due day; a dated advance stays', () => {
+  const row = (key: string, type: string, amountEur: number, certainty: string, date = TODAY, overdue = false) =>
+    ({ key, layer: 'BASE', overdue, certainty, date, amountEur, title: key, source: { type } });
+  const items = [
+    row('ORDER (2e) · 1/3 bij aankomst', 'advance', 25645, 'EXPECTED'),
+    row('ORDER (3e) · 1/3 bij aankomst', 'advance', 18145, 'EXPECTED'),
+    row('ORDER (3e) · 1/3 na productie', 'advance', 18145, 'EXPECTED'),
+    row('ORDER (4e) · 1/3 bij bestelling', 'advance', 9000, 'FIXED', '2026-10-30'),
+    row('ORDER (5e) · vervallen', 'advance', 4000, 'EXPECTED', TODAY, true),
+    row('Tegoeden klanten', 'credit', -640, 'FIXED'),
+    row('Factuur F2026-0420', 'invoice', 2000, 'FIXED', '2026-10-20'),
+  ];
+  assert.deepEqual(agendaForecastMoney(items, '2026-10-25').map((item) => item.key), ['ORDER (4e) · 1/3 bij bestelling', 'Factuur F2026-0420']);
+  assert.deepEqual(agendaUndated(items), { count: 3, eur: 61935 });
+  assert.equal(agendaUndated(items.slice(3)), null);
+  /* The model carries the sum as handed in; the dated advance sits on its day with its term. */
+  const model = agendaModel(input({
+    money: [{ date: '2026-10-30', eur: 9000, title: 'ORDER (4e)', term: '1/3 bij bestelling', party: 'Yunnan Pubei', orderId: 4, link: null }],
+    undated: { count: 3, eur: 61935 },
+  }));
+  assert.deepEqual(model.undated, { count: 3, eur: 61935 });
+  const dated = model.byDay.get('2026-10-30')![0];
+  assert.deepEqual([dated.title, dated.term, dated.sub], ['ORDER (4e)', '1/3 bij bestelling', 'Yunnan Pubei']);
+  assert.equal(model.byDay.get(TODAY), undefined);
+  assert.equal(agendaModel(input()).undated, null);
+  assert.equal(agendaModel(input({ items: [item(1, TODAY)] })).byDay.get(TODAY)![0].term, null);
 });
