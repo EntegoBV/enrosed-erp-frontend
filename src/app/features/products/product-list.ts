@@ -86,7 +86,7 @@ interface ProductSwipe {
       @if (desktop.active()) {
         <label class="wk-search pl-search">
           <app-icon name="search" [size]="15" />
-          <input type="search" data-page-search placeholder="Zoek naam, SKU, kleur of barcode" aria-label="Producten zoeken"
+          <input type="search" data-page-search [placeholder]="roomy() ? 'Zoek naam, SKU, kleur of barcode' : 'Zoek naam, SKU of barcode'" aria-label="Producten zoeken"
                  [value]="query()" (input)="setQuery($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
           <button class="wk-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="13" /></button>
           <span class="wk-kbd" aria-hidden="true">/</span>
@@ -485,6 +485,8 @@ export class ProductList implements ProductListTableHost {
   /** Desk widths: the table from 900, the full column set and the category chips from 1360. */
   readonly wide = this.media('(min-width: 900px)');
   readonly full = this.media('(min-width: 1360px)');
+  /** From 1180 the search rests wide enough for the full placeholder; below it the shorter one (colour search still works). */
+  readonly roomy = this.media('(min-width: 1180px)');
 
   readonly query = signal('');
   /** The search as the address bar has it: written 300 ms after the typing stops. */
@@ -578,7 +580,12 @@ export class ProductList implements ProductListTableHost {
   readonly deskMenu = signal<{ kind: 'category' | 'status' | 'sort'; title: string; at: MenuPoint; items: ContextMenuItem[] } | null>(null);
   /** Below 1360, or with more than five categories, the chips fold into one "Categorie ▾". */
   readonly categoriesFolded = computed(() => !this.full() || this.categoryChips().filter((chip) => chip.id !== 'none').length > 5);
-  readonly chipTotal = computed(() => this.products().filter((product) => !product.demo).length);
+  /**
+   * "Alle" counts every product, as the subtitle and "x van y" do (demo
+   * pieces included). A category chip counts its products outside the
+   * Demoproducten fold, so a category of demo pieces alone gets no chip.
+   */
+  readonly chipTotal = computed(() => this.products().length);
   readonly categoryChipLabel = computed(() => {
     const category = this.categoryFilter();
     if (category === null) return 'Categorie';

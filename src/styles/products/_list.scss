@@ -123,9 +123,10 @@ app-product-list .swipe--dragging .swipe__row { transform: translateX(var(--swip
   app-product-list .pl-msection__toggle { cursor: pointer; }
   app-product-list .pl-mgroup { border: 1px solid var(--line); border-radius: 16px; }
 }
-/* Up to 1180 the search rests narrower so the subtitle stays whole; it widens while in use. */
+/* Up to 1180 the search rests narrower so the subtitle stays whole (236 px still fits the
+   shorter placeholder "Zoek naam, SKU of barcode" whole); it widens while in use. */
 @media (min-width: 680px) and (max-width: 1179.98px) {
-  app-product-list .pl-search { width: 220px; transition: width var(--dur-2, .2s) var(--ease-out, ease); }
+  app-product-list .pl-search { width: 236px; transition: width var(--dur-2, .2s) var(--ease-out, ease); }
   app-product-list .pl-search:focus-within { width: 300px; }
 }
 @media (min-width: 680px) and (max-width: 1279.98px) {
