@@ -61,3 +61,17 @@ export function tierProblem(tiers: readonly TierLike[]): string | null {
   }
   return null;
 }
+
+/* Percentages are typed the Belgian way, with a comma. A number input
+   refuses "6,5" on most keyboards; a decimal text field accepts both. */
+
+/** 6.5 → "6,5"; nothing for no value. */
+export function percentText(value: number | null | undefined): string {
+  return value == null ? '' : String(value).replace('.', ',');
+}
+
+/** "6,5" or "6.5" → 6.5; anything unreadable → 0. */
+export function percentValue(raw: string): number {
+  const parsed = parseFloat(String(raw).trim().replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}

@@ -2295,7 +2295,7 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   an Opslaan capsule + a "Wissen" banner on the phone, ⌘S on the desk, a dot
   on the tab of a dirty view, and `confirmLeave` when /settings is left.
   Editors: Bedrijfsgegevens (`settings-company.ts`), the legal edit sheet
-  (`settings-legal.ts`), Kortingen (the page's own `discountsEditor`).
+  (`settings-legal.ts`), Kortingen (`settings-discounts.ts`).
 - `CompanyStore` (`company-store.ts`, provided by the page): the one saved
   profile; `save(patch)` PUTs `{...saved, ...patch}`. The backend saves the
   whole profile, so every editor sends only its own changed fields and
@@ -2313,11 +2313,14 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
 - Defaults are said, never faked (`company-fields.ts`, `COMPANY_DEFAULTS`):
   "Standaard: ENR", "Standaard: 24/7 Customs BV"; partner patterns the
   backend ignores (no `{nr`, the old `partner/{jaar}/{nr:3}`) warn.
-- Kortingen: `discount-tiers.ts` counts changes against the saved tiers per
-  order and per product (removing the last tier is a change). Removing a
-  product's discount and "Opruimen" save at once and move only that
-  product's baseline. Thresholds count in the product's own unit
-  (`productSalesUnit().plural`). Styles: `styles/settings-discounts.scss`.
+- Kortingen (`settings-discounts.ts`, its own component with its own
+  styles, so they load with the lazy settings chunk): `discount-tiers.ts`
+  counts changes against the saved tiers per order and per product
+  (removing the last tier is a change). Removing a product's discount and
+  "Opruimen" save at once and move only that product's baseline. Thresholds
+  count in the product's own unit (`productSalesUnit().plural`). Never give
+  a settings view a class name another view uses through a global rule: a
+  shared `.set-input` once right-aligned every Bedrijfsgegevens field.
 - Voorwaarden & privacy: a text identical to the built-in proposal saves as
   null. `/voorwaarden` shows staff the page header (NL | EN, Bewerken) and a
   status line; customers keep the dark bar.

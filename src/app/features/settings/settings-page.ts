@@ -19,16 +19,12 @@ import {
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
-import { SourcingApi } from '../../core/api/sourcing-api';
 import {
-  CatalogImportResult, Category, DiscountTier, HsCode, LANGUAGES, LanguageCode,
-  Product, ProductFamily, Supplier,
+  CatalogImportResult, Category, HsCode, LANGUAGES, LanguageCode,
+  Product, ProductFamily,
 } from '../../core/api/models';
-import { AuthImage } from '../../core/api/auth-image';
-import { salesPhotoUrl } from '../../shared/sales-photo';
 import { PageHeader } from '../../shared/page-header';
-import { ProductPicker } from '../../shared/product-picker';
-import { Sheet, Ui, confirmLeave } from '../../shared/ui';
+import { Ui, confirmLeave } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -47,13 +43,12 @@ import { DateNlPipe, DateTimeNlPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { CompanyStore } from './company-store';
+import { SettingsDiscounts } from './settings-discounts';
 import { SettingsOverview } from './settings-overview';
 import { SettingsCompany } from './settings-company';
 import { LEGAL_LANGUAGES, SettingsLegal } from './settings-legal';
 import { Segmented } from '../../shared/segmented';
 import { SettingsEditor, dirtyStatusText } from './settings-editor';
-import { lineTierChanges, sortedTiers, tierChanges, tierProblem } from './discount-tiers';
-import { productSalesUnit } from '../products/product-sales-unit';
 import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
 import {
@@ -112,18 +107,16 @@ const normalizeCategoryCode = (value: string): string => value
     Icon,
     LoadError,
     NgTemplateOutlet,
-    Sheet,
     SettingsCompany,
     SettingsLegal,
     SettingsOverview,
     Segmented,
     Skeleton,
-    AuthImage,
+    SettingsDiscounts,
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
     PhotoExportSheet,
-    ProductPicker,
     RouterLink,
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
@@ -287,163 +280,7 @@ const normalizeCategoryCode = (value: string): string => value
       }
 
       @if (visited().has('discounts')) {
-      <section class="set-view set-disc mo-fade" [hidden]="view() !== 'discounts'" aria-label="Kortingen">
-      @if (discountsError(); as error) {
-        <app-load-error [message]="error" [busy]="discountsLoading()" (retry)="loadDiscounts()" />
-      } @else if (discountsLoading() && !discountsLoaded()) {
-        @if (desktop.active()) {
-          <div class="disc__grid"><div class="wk-card disc-card"><app-skeleton kind="table" [rows]="4" /></div><div class="wk-card disc-card"><app-skeleton kind="table" [rows]="3" /></div></div>
-        } @else { <app-skeleton kind="group" [rows]="4" /><app-skeleton kind="group" [rows]="3" /> }
-      } @else if (desktop.active()) {
-        <div class="disc">
-          <div class="disc__grid">
-            <!-- Orderkorting -->
-            <section class="wk-card disc-card" aria-labelledby="disc-order-title" [class.disc-card--dirty]="orderTierChanges() > 0">
-              <header class="disc-card__head">
-                <div><h2 id="disc-order-title">Orderkorting</h2><p>Korting op de hele order zodra alle stuks samen een grens halen.</p></div>
-              </header>
-              @for (tier of orderTiers(); track $index; let tierIndex = $index) {
-                <div class="tier">
-                  <span>Vanaf</span>
-                  <input class="disc-input" type="number" min="1" step="50" inputmode="numeric" aria-label="Vanaf aantal"
-                         [value]="tier.minQuantity" (input)="orderMinInput(tierIndex, $any($event.target).value)" (blur)="sortOrderTiers()" />
-                  <span>stuks</span>
-                  <span aria-hidden="true">→</span>
-                  <input class="disc-input" type="text" inputmode="decimal" aria-label="Kortingspercentage"
-                         [value]="pctText(tier.percent)" (input)="orderPctInput(tierIndex, $any($event.target).value)"
-                         (change)="updateOrderTier(tierIndex, { percent: pctValue($any($event.target).value) })" />
-                  <span>%</span>
-                  <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button" aria-label="Drempel verwijderen" (click)="removeTier('ORDER', tierIndex)"><app-icon name="close" [size]="15" /></button>
-                </div>
-              } @empty {
-                <p class="disc-none">Nog geen staffel.</p>
-              }
-              <footer class="disc-card__foot"><button class="wk-btn wk-btn--sm" type="button" (click)="addTier('ORDER')">+ Drempel</button></footer>
-            </section>
-
-            <!-- Lijnkorting per product -->
-            <section class="wk-card disc-card" aria-labelledby="disc-line-title">
-              <header class="disc-card__head">
-                <div><h2 id="disc-line-title">Lijnkorting per product <span class="wk-pill">{{ lineDiscountGroups().length }} {{ lineDiscountGroups().length === 1 ? 'product' : 'producten' }}</span></h2>
-                  <p>Iedere productvariant krijgt zijn eigen staffel. De drempel telt in de eenheid waarin het product verkocht wordt (display, diamant, stuk).</p></div>
-                <button class="wk-btn wk-btn--sm" type="button" [disabled]="!discountPickerProducts().length" (click)="lineDiscountPicker.set(true)">+ Product</button>
-              </header>
-              @if (legacyLineTiers().length) {
-                <div class="wk-banner wk-banner--warn wk-banner--inset disc-legacy" role="status">
-                  <span class="wk-banner__text"><b>Oude algemene lijnkorting staat uit</b> · Deze {{ legacyLineTiers().length }} oude regel{{ legacyLineTiers().length === 1 ? '' : 's' }} wordt niet meer op alle producten toegepast.</span>
-                  <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" (click)="removeLegacyLineTiers()">Opruimen</button></span>
-                </div>
-              }
-              @if (lineDiscountGroups().length) {
-                <div class="disc-products">
-                  @for (group of lineDiscountGroups(); track group.productId) {
-                    <article class="disc-product" [id]="'line-discount-' + group.productId" [class.disc-product--dirty]="lineChanges().has(group.productId)">
-                      <header class="disc-product__head">
-                        @if (discountPhotoUrl(group.product); as photo) {
-                          <img class="disc-product__photo" [appAuthSrc]="photo" [alt]="group.product!.name" />
-                        } @else {
-                          <span class="disc-product__photo disc-product__photo--empty" aria-hidden="true">◈</span>
-                        }
-                        <div class="disc-product__id">
-                          <h3 [attr.title]="group.product?.name || null">{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
-                          <span>@if (group.product?.colour) { {{ group.product!.colour }} · }@if (group.product?.variantSize) { {{ group.product!.variantSize }} · }{{ group.product?.sku || 'Onbekende SKU' }}</span>
-                          @if (group.product && supplierName(group.product); as supplier) { <small>{{ supplier }}</small> }
-                        </div>
-                        <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button"
-                                [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
-                                (click)="removeLineDiscountProduct(group.productId, group.product?.name)"><app-icon name="close" [size]="15" /></button>
-                      </header>
-                      @for (tier of group.tiers; track tier.id ?? $index) {
-                        <div class="tier tier--line">
-                          <span>Vanaf</span>
-                          <input class="disc-input" type="number" min="1" step="1" inputmode="numeric"
-                                 [attr.aria-label]="'Vanaf aantal voor ' + (group.product?.name || group.productId)"
-                                 [value]="tier.minQuantity" (input)="lineMinInput(tier, $any($event.target).value)" />
-                          <span>{{ unitWord(group.product) }}</span>
-                          <span aria-hidden="true">→</span>
-                          <input class="disc-input" type="text" inputmode="decimal"
-                                 [attr.aria-label]="'Kortingspercentage voor ' + (group.product?.name || group.productId)"
-                                 [value]="pctText(tier.percent)" (input)="linePctInput(tier, $any($event.target).value)"
-                                 (change)="updateLineTier(tier, { percent: pctValue($any($event.target).value) })" />
-                          <span>%</span>
-                          <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button" aria-label="Drempel verwijderen" (click)="removeLineTier(tier)"><app-icon name="close" [size]="15" /></button>
-                        </div>
-                      }
-                      <footer class="disc-product__foot"><button class="wk-btn wk-btn--sm" type="button" (click)="addLineTier(group.productId)">+ Drempel</button></footer>
-                    </article>
-                  }
-                </div>
-              } @else {
-                <div class="wk-empty">
-                  <div class="wk-empty__icon"><app-icon name="tag" [size]="22" /></div>
-                  <h3 class="wk-empty__title">Nog geen productspecifieke korting</h3>
-                  <p class="wk-empty__text">Kies een product en geef alleen dat product een staffel.</p>
-                  <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" [disabled]="!discountPickerProducts().length" (click)="lineDiscountPicker.set(true)">Product kiezen</button></div>
-                </div>
-              }
-            </section>
-          </div>
-        </div>
-      } @else {
-        <!-- Phone: inset groups; a tier opens a sheet -->
-        <div class="disc-phone">
-          @if (discountsDirty()) {
-            <div class="ios-banner ios-banner--info mo-fade" role="status"><span>{{ discountsStatus() }}</span>
-              <button class="disc-text-btn" type="button" (click)="revertDiscounts()">Wissen</button></div>
-          }
-          <section class="ios-section">
-            <div class="ios-section__head"><h2>Orderkorting</h2></div>
-            <div class="ios-group">
-              @for (tier of orderTiers(); track $index; let tierIndex = $index) {
-                <button class="ios-cell" type="button" (click)="openTier('ORDER', tierIndex)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">Vanaf {{ countText(tier.minQuantity) }} stuks</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ pctText(tier.percent) }} %</span></span>
-                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                </button>
-              }
-              <button class="ios-cell ios-cell--action" type="button" (click)="addTier('ORDER'); openTier('ORDER', orderTiers().length - 1)">+ Drempel toevoegen</button>
-            </div>
-            <p class="ios-section__foot">Korting op de hele order zodra alle stuks samen een grens halen.</p>
-          </section>
-          <section class="ios-section">
-            <div class="ios-section__head"><h2>Lijnkorting per product</h2><span class="ios-section__trail">{{ lineDiscountGroups().length }}</span></div>
-            @if (legacyLineTiers().length) {
-              <div class="ios-banner" role="status"><span>Oude algemene lijnkorting staat uit ({{ legacyLineTiers().length }})</span>
-                <button class="disc-text-btn" type="button" (click)="removeLegacyLineTiers()">Opruimen</button></div>
-            }
-            @for (group of lineDiscountGroups(); track group.productId) {
-              <div class="ios-group disc-phone__group" [class.disc-product--dirty]="lineChanges().has(group.productId)">
-                <div class="ios-cell ios-cell--tall">
-                  <span class="ios-cell__lead">
-                    @if (discountPhotoUrl(group.product); as photo) { <img class="disc-product__photo" [appAuthSrc]="photo" alt="" /> }
-                    @else { <span class="disc-product__photo disc-product__photo--empty" aria-hidden="true">◈</span> }
-                  </span>
-                  <span class="ios-cell__body">
-                    <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ group.product?.name || 'Verwijderd product #' + group.productId }}</span>
-                    <span class="ios-cell__sub ios-cell__sub--2">@if (group.product?.colour) { {{ group.product!.colour }} · }@if (group.product?.variantSize) { {{ group.product!.variantSize }} · }{{ group.product?.sku || 'Onbekende SKU' }}</span>
-                    @if (group.product && supplierName(group.product); as supplier) { <span class="ios-cell__sub ios-cell__sub--2">{{ supplier }}</span> }
-                  </span>
-                  <button class="ios-circle disc-phone__remove" type="button" [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
-                          (click)="removeLineDiscountProduct(group.productId, group.product?.name)"><app-icon name="close" [size]="16" /></button>
-                </div>
-                @for (tier of group.tiers; track tier.id ?? $index) {
-                  <button class="ios-cell" type="button" (click)="openLineTier(tier)">
-                    <span class="ios-cell__body"><span class="ios-cell__title">Vanaf {{ countText(tier.minQuantity) }} {{ unitWord(group.product) }}</span></span>
-                    <span class="ios-cell__trail"><span class="ios-cell__value">{{ pctText(tier.percent) }} %</span></span>
-                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                  </button>
-                }
-                <button class="ios-cell ios-cell--action" type="button" (click)="addLineTier(group.productId)">+ Drempel</button>
-              </div>
-            }
-            <div class="ios-group">
-              <button class="ios-cell ios-cell--action" type="button" [disabled]="!discountPickerProducts().length" (click)="lineDiscountPicker.set(true)">+ Product kiezen</button>
-            </div>
-            <p class="ios-section__foot">Iedere productvariant krijgt zijn eigen staffel. De drempel telt in de eenheid waarin het product verkocht wordt (display, diamant, stuk).</p>
-          </section>
-        </div>
-      }
-      </section>
+        <app-settings-discounts class="mo-fade" [hidden]="view() !== 'discounts'" />
       }
 
       @if (visited().has('catalog-data')) {
@@ -1092,40 +929,6 @@ const normalizeCategoryCode = (value: string): string => value
     </div>
     }
 
-    @if (tierSheet(); as sheet) {
-      <app-sheet [title]="sheet.scope === 'ORDER' ? 'Orderkorting' : 'Lijnkorting'" variant="ios" (closed)="tierSheet.set(null)">
-        @if (sheetTier(); as tier) {
-          <div body class="ios-group">
-            <label class="disc-field"><span>Vanaf ({{ sheet.scope === 'ORDER' ? 'stuks' : sheetUnit() }})</span>
-              <input type="number" min="1" step="1" inputmode="numeric" [value]="tier.minQuantity" (input)="sheetMin($any($event.target).value)" /></label>
-            <label class="disc-field"><span>Korting (%)</span>
-              <input type="text" inputmode="decimal" [value]="pctText(tier.percent)" (input)="sheetPct($any($event.target).value)" /></label>
-          </div>
-        }
-        <div foot class="disc-sheet-foot">
-          <button class="btn btn--danger" type="button" (click)="removeSheetTier()">Verwijderen</button>
-          <button class="btn btn--primary" type="button" (click)="tierSheet.set(null)">Klaar</button>
-        </div>
-      </app-sheet>
-    }
-
-    @if (lineDiscountPicker()) {
-      <app-product-picker
-        heading="Product voor lijnkorting kiezen"
-        [products]="discountPickerProducts()"
-        [categories]="categories()"
-        [families]="families()"
-        [groupByFamily]="true"
-        [preserveSourceOrder]="true"
-        [selectionOnly]="true"
-        [showPrice]="false"
-        [stockAware]="false"
-        [supplierNameOf]="discountSupplierNameOf"
-        (picked)="chooseDiscountProduct($event.product)"
-        (cancelled)="lineDiscountPicker.set(false)"
-      />
-    }
-
     @if (photoExportOpen()) {
       <app-photo-export-sheet (closed)="photoExportOpen.set(false)" />
     }
@@ -1516,7 +1319,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
-  private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -1558,6 +1360,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   /* ---------------------------------------------- one save model per view */
 
+  private readonly discountsEditor = viewChild(SettingsDiscounts);
   private readonly companyEditor = viewChild(SettingsCompany);
   readonly legalEditor = viewChild(SettingsLegal);
   readonly legalLanguages = LEGAL_LANGUAGES;
@@ -1565,7 +1368,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   /** The editor of a view: its draft, dirty count and save (see SettingsEditor). */
   editorFor(view: SettingsView): SettingsEditor | null {
     switch (view) {
-      case 'discounts': return this.discountsLoaded() ? this.discountsEditor : null;
+      case 'discounts': return this.discountsEditor() ?? null;
       case 'company': return this.companyEditor() ?? null;
       case 'legal': return this.legalEditor() ?? null;
       default: return null;
@@ -1640,7 +1443,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly categories = signal<Category[]>([]);
   readonly products = signal<Product[]>([]);
   readonly families = signal<ProductFamily[]>([]);
-  readonly suppliers = signal<Supplier[]>([]);
   readonly categoryDraft = signal<Category | null>(null);
   private readonly savedCategoryDraft = signal<Category | null>(null);
   readonly categoryDirty = computed(() =>
@@ -1650,46 +1452,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly categoryConflict = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
   readonly hsCodes = signal<HsCode[]>([]);
-  private readonly lineTiers = signal<DiscountTier[]>([]);
-  readonly orderTiers = signal<DiscountTier[]>([]);
-  readonly lineDiscountPicker = signal(false);
-  readonly savingLineProductId = signal<number | null>(null);
-  readonly legacyLineTiers = computed(() =>
-    this.lineTiers().filter((tier) => tier.productId == null));
-  readonly lineDiscountGroups = computed(() => {
-    const products = new Map(this.products().flatMap((product) =>
-      product.id == null ? [] : [[product.id, product] as const]));
-    const groups = new Map<number, DiscountTier[]>();
-    for (const tier of this.lineTiers()) {
-      if (tier.productId == null) continue;
-      const current = groups.get(tier.productId) ?? [];
-      current.push(tier);
-      groups.set(tier.productId, current);
-    }
-    const productRank = new Map(this.products().flatMap((product, index) =>
-      product.id == null ? [] : [[product.id, index] as const]));
-    return [...groups.entries()]
-      .map(([productId, tiers]) => ({
-        productId,
-        product: products.get(productId) ?? null,
-        tiers: [...tiers].sort((left, right) => left.minQuantity - right.minQuantity),
-      }))
-      .sort((left, right) =>
-        (productRank.get(left.productId) ?? Number.MAX_SAFE_INTEGER)
-        - (productRank.get(right.productId) ?? Number.MAX_SAFE_INTEGER));
-  });
-  readonly discountPickerProducts = computed(() => {
-    const configured = new Set(this.lineDiscountGroups().map((group) => group.productId));
-    return this.products().filter((product) =>
-      product.id != null && product.active && !product.demo && !configured.has(product.id));
-  });
-  readonly discountSupplierNameOf = (product: Product): string | null =>
-    this.supplierName(product);
-  /** The product's Hoofdfoto, the same photo quotes and invoices print. */
-  discountPhotoUrl(product: Product | null): string | null {
-    return product?.photos?.length ? salesPhotoUrl(product) : null;
-  }
-
   constructor() {
     if (this.websiteCategoryMode) {
       void this.load();
@@ -1780,7 +1542,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     switch (view) {
       case 'company': return this.companyStore.load();
       case 'duties': return this.loadDuties();
-      case 'discounts': return this.loadDiscounts();
+      /* Kortingen loads itself when it first shows; a reload goes through it. */
+      case 'discounts': return this.discountsEditor()?.load() ?? Promise.resolve();
       case 'device': return this.loadPushDevices();
       default: return Promise.resolve();
     }
@@ -1826,38 +1589,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       if (!this.destroyed) this.dutiesError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
     } finally {
       this.dutiesLoading.set(false);
-    }
-  }
-
-  readonly discountsLoading = signal(false);
-  readonly discountsLoaded = signal(false);
-  readonly discountsError = signal<string | null>(null);
-
-  /** The tiers, plus what the product picker and the product cards need. */
-  async loadDiscounts(): Promise<void> {
-    void this.catalog.unitNames().catch(() => undefined);
-    this.discountsLoading.set(true);
-    this.discountsError.set(null);
-    try {
-      const [line, order, categories, products, families, suppliers] = await Promise.all([
-        this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
-        this.catalog.categories().catch(() => []), this.catalog.products().catch(() => []),
-        this.catalog.productFamilies().catch(() => []), this.sourcing.suppliers().catch(() => []),
-      ]);
-      if (this.destroyed) return;
-      this.lineTiers.set(line);
-      this.orderTiers.set(sortedTiers(order));
-      this.savedLineTiers.set(line);
-      this.savedOrderTiers.set(sortedTiers(order));
-      this.categories.set(categories);
-      this.products.set(products);
-      this.families.set(families);
-      this.suppliers.set(suppliers);
-      this.discountsLoaded.set(true);
-    } catch (failure: unknown) {
-      if (!this.destroyed) this.discountsError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
-    } finally {
-      this.discountsLoading.set(false);
     }
   }
 
@@ -1908,10 +1639,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     } finally {
       this.loadingSettings.set(false);
     }
-  }
-
-  tiers(scope: 'LINE' | 'ORDER'): DiscountTier[] {
-    return scope === 'LINE' ? this.lineTiers() : this.orderTiers();
   }
 
   scrollToSection(section: string): void {
@@ -2294,264 +2021,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
           + 'standaardpercentage van de inkooporder.',
         confirmLabel: 'Verwijderen', danger: true },
       async () => { await this.catalog.deleteHsCode(code.code); await this.loadDuties(); });
-  }
-
-  /* ------------------------------------------------------- staffels */
-
-  addTier(scope: 'LINE' | 'ORDER'): void {
-    const target = scope === 'LINE' ? this.lineTiers : this.orderTiers;
-    target.update((tiers) => [...tiers, {
-      id: null, scope, productId: null, minQuantity: 1, percent: 0,
-    }]);
-  }
-
-  removeTier(scope: 'LINE' | 'ORDER', index: number): void {
-    const target = scope === 'LINE' ? this.lineTiers : this.orderTiers;
-    target.update((tiers) => tiers.filter((_, i) => i !== index));
-  }
-
-  /* ------------------------------------------- Kortingen: one save model */
-
-  /** The tiers as last saved: the dirty count compares against them (bug 5). */
-  private readonly savedOrderTiers = signal<DiscountTier[]>([]);
-  private readonly savedLineTiers = signal<DiscountTier[]>([]);
-  readonly orderTierChanges = computed(() => tierChanges(this.savedOrderTiers(), this.orderTiers()));
-  readonly lineChanges = computed(() => lineTierChanges(this.savedLineTiers(), this.lineTiers()));
-  readonly discountsDirtyCount = computed(() =>
-    this.orderTierChanges() + [...this.lineChanges().values()].reduce((sum, count) => sum + count, 0));
-  readonly discountsDirty = computed(() => this.discountsDirtyCount() > 0);
-  readonly discountsStatus = computed(() => dirtyStatusText(this.discountsDirtyCount()));
-  readonly discountsSaving = signal(false);
-  readonly discountsEditor: SettingsEditor = {
-    dirty: this.discountsDirty,
-    dirtyCount: this.discountsDirtyCount,
-    saving: this.discountsSaving,
-    save: () => this.saveDiscounts(),
-    revert: () => this.revertDiscounts(),
-  };
-
-  /** Opslaan: the order tiers when they changed, then every changed product (removals were saved at once, N8). */
-  async saveDiscounts(): Promise<boolean> {
-    if (this.discountsSaving()) return false;
-    const orderDirty = this.orderTierChanges() > 0;
-    const products = [...this.lineChanges().keys()];
-    const lists = [this.orderTiers(), ...products.map((id) => this.lineTiers().filter((tier) => tier.productId === id))];
-    const problem = lists.map((tiers) => tierProblem(tiers)).find(Boolean);
-    if (problem) {
-      this.ui.toast(problem, 'err');
-      return false;
-    }
-    this.discountsSaving.set(true);
-    try {
-      if (orderDirty) {
-        const saved = sortedTiers(await this.sales.saveTiers('ORDER', sortedTiers(this.orderTiers())));
-        this.orderTiers.set(saved);
-        this.savedOrderTiers.set(saved);
-      }
-      for (const productId of products) {
-        const tiers = sortedTiers(this.lineTiers().filter((tier) => tier.productId === productId));
-        const saved = await this.sales.saveProductTiers(productId, tiers);
-        this.lineTiers.update((current) => [...current.filter((tier) => tier.productId !== productId), ...saved]);
-        this.savedLineTiers.update((current) => [...current.filter((tier) => tier.productId !== productId), ...saved]);
-      }
-      this.ui.toast('Kortingen opgeslagen');
-      return true;
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Kortingen opslaan is niet gelukt. Controleer de verbinding en probeer opnieuw.'), 'err');
-      return false;
-    } finally {
-      this.discountsSaving.set(false);
-    }
-  }
-
-  revertDiscounts(): void {
-    this.orderTiers.set(this.savedOrderTiers());
-    this.lineTiers.set(this.savedLineTiers());
-    this.tierSheet.set(null);
-  }
-
-  /** Typing a threshold: whole numbers only; an empty field waits. */
-  orderMinInput(index: number, raw: string): void {
-    const value = Number(raw);
-    if (raw.trim() && Number.isFinite(value)) this.updateOrderTier(index, { minQuantity: Math.round(value) });
-  }
-
-  /** Typing a percentage the Belgian way: it lands once it ends in a digit ("6," waits for "6,5"). */
-  orderPctInput(index: number, raw: string): void {
-    if (/\d$/.test(raw.trim())) this.updateOrderTier(index, { percent: this.pctValue(raw) });
-  }
-
-  lineMinInput(tier: DiscountTier, raw: string): void {
-    const value = Number(raw);
-    if (raw.trim() && Number.isFinite(value)) this.updateLineTier(tier, { minQuantity: Math.round(value) });
-  }
-
-  linePctInput(tier: DiscountTier, raw: string): void {
-    if (/\d$/.test(raw.trim())) this.updateLineTier(tier, { percent: this.pctValue(raw) });
-  }
-
-  sortOrderTiers(): void {
-    this.orderTiers.update((tiers) => sortedTiers(tiers));
-  }
-
-  /** The unit the threshold counts in: "displays", "diamanten", "stuks". */
-  unitWord(product: Product | null): string {
-    return productSalesUnit(product).plural;
-  }
-
-  countText(value: number): string {
-    return Number.isFinite(value) ? value.toLocaleString('nl-BE') : '';
-  }
-
-  /** Phone: one tier in a sheet; edits go to the draft, Opslaan in the bar saves. */
-  readonly tierSheet = signal<{ scope: 'ORDER' | 'LINE'; index: number } | null>(null);
-  readonly sheetTier = computed(() => {
-    const sheet = this.tierSheet();
-    if (!sheet) return null;
-    return (sheet.scope === 'ORDER' ? this.orderTiers() : this.lineTiers())[sheet.index] ?? null;
-  });
-  readonly sheetUnit = computed(() => {
-    const tier = this.sheetTier();
-    return tier?.productId != null ? this.unitWord(this.products().find((product) => product.id === tier.productId) ?? null) : 'stuks';
-  });
-
-  openTier(scope: 'ORDER' | 'LINE', index: number): void {
-    if (index >= 0) this.tierSheet.set({ scope, index });
-  }
-
-  openLineTier(tier: DiscountTier): void {
-    this.openTier('LINE', this.lineTiers().indexOf(tier));
-  }
-
-  sheetMin(raw: string): void {
-    const sheet = this.tierSheet();
-    const value = Number(raw);
-    if (!sheet || !raw.trim() || !Number.isFinite(value)) return;
-    this.patchSheetTier(sheet, { minQuantity: Math.round(value) });
-  }
-
-  sheetPct(raw: string): void {
-    const sheet = this.tierSheet();
-    if (sheet && /\d$/.test(raw.trim())) this.patchSheetTier(sheet, { percent: this.pctValue(raw) });
-  }
-
-  private patchSheetTier(sheet: { scope: 'ORDER' | 'LINE'; index: number }, changes: Partial<DiscountTier>): void {
-    if (sheet.scope === 'ORDER') this.updateOrderTier(sheet.index, changes);
-    else this.lineTiers.update((tiers) => tiers.map((tier, index) => index === sheet.index ? { ...tier, ...changes } : tier));
-  }
-
-  removeSheetTier(): void {
-    const sheet = this.tierSheet();
-    const tier = this.sheetTier();
-    this.tierSheet.set(null);
-    if (!sheet || !tier) return;
-    if (sheet.scope === 'ORDER') this.removeTier('ORDER', sheet.index);
-    else this.removeLineTier(tier);
-  }
-
-  supplierName(product: Product | null): string | null {
-    if (!product) return null;
-    if (product.supplierId == null) return null;
-    return this.suppliers().find((supplier) => supplier.id === product.supplierId)?.name ?? null;
-  }
-
-  chooseDiscountProduct(product: Product): void {
-    if (product.id == null) return;
-    this.lineDiscountPicker.set(false);
-    if (this.lineTiers().some((tier) => tier.productId === product.id)) {
-      this.scrollToLineDiscount(product.id);
-      return;
-    }
-    this.lineTiers.update((tiers) => [...tiers, {
-      id: null,
-      scope: 'LINE',
-      productId: product.id,
-      minQuantity: Math.max(1, product.carton.piecesPerCarton ?? 1),
-      percent: 0,
-    }]);
-    this.scrollToLineDiscount(product.id);
-  }
-
-  addLineTier(productId: number): void {
-    const existing = this.lineTiers().filter((tier) => tier.productId === productId);
-    const highest = existing.reduce((value, tier) => Math.max(value, tier.minQuantity), 0);
-    this.lineTiers.update((tiers) => [...tiers, {
-      id: null,
-      scope: 'LINE',
-      productId,
-      minQuantity: Math.max(1, highest + 100),
-      percent: 0,
-    }]);
-  }
-
-  updateLineTier(tier: DiscountTier, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
-    this.lineTiers.update((tiers) => tiers.map((candidate) =>
-      candidate === tier ? { ...candidate, ...changes } : candidate));
-  }
-
-  removeLineTier(tier: DiscountTier): void {
-    if (tier.productId != null
-        && this.lineTiers().filter((candidate) => candidate.productId === tier.productId).length === 1) {
-      const productName = this.products().find((product) => product.id === tier.productId)?.name;
-      this.removeLineDiscountProduct(tier.productId, productName);
-      return;
-    }
-    this.lineTiers.update((tiers) => tiers.filter((candidate) => candidate !== tier));
-  }
-
-  updateOrderTier(index: number, changes: Partial<Pick<DiscountTier, 'minQuantity' | 'percent'>>): void {
-    this.orderTiers.update((tiers) => tiers.map((tier, currentIndex) =>
-      currentIndex === index ? { ...tier, ...changes, productId: null } : tier));
-  }
-
-  removeLineDiscountProduct(productId: number, productName?: string | null): void {
-    this.ui.confirm({
-      title: 'Productkorting verwijderen',
-      message: 'De automatische lijnkorting voor dit product wordt verwijderd. Andere producten blijven ongewijzigd.',
-      confirmLabel: 'Verwijderen',
-      danger: true,
-    }, async () => {
-      this.savingLineProductId.set(productId);
-      try {
-        await this.sales.saveProductTiers(productId, []);
-        this.lineTiers.update((tiers) => tiers.filter((tier) => tier.productId !== productId));
-        /* N8: this removal is saved at once; only this product's baseline moves. */
-        this.savedLineTiers.update((tiers) => tiers.filter((tier) => tier.productId !== productId));
-        this.ui.toast(productName ? `Korting voor ${productName} verwijderd` : 'Productkorting verwijderd');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Productkorting verwijderen mislukt'), 'err');
-      } finally {
-        this.savingLineProductId.set(null);
-      }
-    });
-  }
-
-  removeLegacyLineTiers(): void {
-    this.ui.confirm({
-      title: 'Oude algemene lijnkorting opruimen',
-      message: 'Alleen de oude niet-productspecifieke regels worden verwijderd. Productspecifieke staffels blijven staan.',
-      confirmLabel: 'Opruimen',
-      danger: false,
-    }, async () => {
-      try {
-        /* Only the saved product tiers go along: unsaved edits of other products stay a draft (N8). */
-        const valid = this.savedLineTiers().filter((tier) => tier.productId != null);
-        const saved = await this.sales.saveTiers('LINE', valid);
-        this.savedLineTiers.set(saved);
-        this.lineTiers.update((tiers) => tiers.filter((tier) => tier.productId != null));
-        this.ui.toast('Oude algemene lijnkorting opgeruimd');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Oude lijnkorting opruimen mislukt'), 'err');
-      }
-    });
-  }
-
-  private scrollToLineDiscount(productId: number): void {
-    this.document.defaultView?.setTimeout(() => {
-      this.document.getElementById(`line-discount-${productId}`)?.scrollIntoView({
-        behavior: 'smooth', block: 'center',
-      });
-    });
   }
 
   canDeactivate(): boolean | Promise<boolean> {

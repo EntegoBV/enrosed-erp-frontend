@@ -27,3 +27,13 @@ test('sorting and the save check', () => {
   assert.equal(tierProblem([t(10, 120)]), 'Een korting ligt tussen 0 en 100 %.');
   assert.equal(tierProblem([t(10, 2), t(10, 3)]), 'De drempel 10 staat er twee keer.');
 });
+
+test('percentages read and show the Belgian way', async () => {
+  const { percentText, percentValue } = await import('../src/app/features/settings/discount-tiers.ts');
+  assert.equal(percentText(6.5), '6,5');
+  assert.equal(percentText(10), '10');
+  assert.equal(percentText(null), '');
+  assert.equal(percentValue('6,5'), 6.5);
+  assert.equal(percentValue(' 6.5 '), 6.5);
+  assert.equal(percentValue('abc'), 0);
+});
