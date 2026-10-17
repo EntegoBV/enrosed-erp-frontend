@@ -94,15 +94,16 @@ app-files-page#files-workspace {
   /* The arrow keys scroll a row into view below the sticky header and the stuck group row. */
   .files-pane { scroll-padding-top: calc(var(--wk-head-h) + 32px); scroll-padding-bottom: 8px; }
 
-  /* ---- the list: a kit table with the files' columns */
-  .files-table { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 132px 74px 96px; }
-  .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.3fr) minmax(0, 1.4fr) minmax(0, 1.2fr) 132px 74px 96px; }
+  /* ---- the list: a kit table with the files' columns
+     Grootte is 96 px: a folder row shows its total there ("214 bestanden", 87 px at 12.5 px). */
+  .files-table { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 132px 96px 96px; }
+  .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.3fr) minmax(0, 1.4fr) minmax(0, 1.2fr) 132px 96px 96px; }
   @container wk-pane (max-width: 859.98px) {
-    .files-table { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 124px 70px; }
-    .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.3fr) minmax(0, 1.4fr) minmax(0, 1.2fr) 124px 70px; }
+    .files-table { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 124px 96px; }
+    .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.3fr) minmax(0, 1.4fr) minmax(0, 1.2fr) 124px 96px; }
   }
   @container wk-pane (max-width: 719.98px) {
-    .files-table, .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 124px 70px; }
+    .files-table, .files-table.files-table--map { --wk-cols: 16px minmax(0, 2.6fr) minmax(0, 1.5fr) 124px 96px; }
   }
   @container wk-pane (max-width: 559.98px) {
     .files-table, .files-table.files-table--map { --wk-cols: 16px minmax(0, 1fr) 112px 64px; }
@@ -176,6 +177,8 @@ app-files-page#files-workspace {
   .files-insp__none p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
   .files-insp__kv { margin: 0 0 12px; }
   .files-none { color: var(--muted-2); }
+  /* A folder's total never ellipsizes: where Grootte is narrow (a pane under 560 px) it wraps after the count. */
+  .files-total { white-space: normal; overflow-wrap: normal; line-height: 1.25; }
   .files-mosaic { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 14px 18px 0; }
   .files-mosaic > img, .files-mosaic > .files-ext { width: 100%; height: auto; aspect-ratio: 1; border-radius: 10px; background: var(--surface-2); object-fit: cover; font-size: 13px; }
   .files-path { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; color: var(--muted); font-size: 13px; }

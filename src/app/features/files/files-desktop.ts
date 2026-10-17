@@ -208,7 +208,7 @@ const VIEW_PLURALS: Record<string, string> = {
                   <span class="wk-td files-name" role="gridcell"><span class="files-icon files-icon--folder"><app-icon name="folder" [size]="17" /></span><span class="files-name__text">{{ folder.name }}</span></span>
                   <span class="wk-td files-muted" role="gridcell" data-hide="xxs">{{ meta(folder.id) }}</span>
                   @if (showMap()) { <span class="wk-td" role="gridcell" data-hide="xs"></span> }
-                  <span class="wk-td files-none" role="gridcell">—</span><span class="wk-td wk-td--num files-muted" role="gridcell">{{ folderTotal(folder.id) }}</span><span class="wk-td" role="gridcell" data-hide="sm"></span>
+                  <span class="wk-td files-none" role="gridcell">—</span><span class="wk-td wk-td--num files-muted files-total" role="gridcell">{{ folderTotal(folder.id) }}</span><span class="wk-td" role="gridcell" data-hide="sm"></span>
                 </div>
               }
               @for (section of c.sections(); track section.key) {
