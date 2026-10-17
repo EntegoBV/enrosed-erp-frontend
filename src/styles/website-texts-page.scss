@@ -24,8 +24,13 @@
 .ws-texts-ios .ios-subbar .ios-search{width:100%}
 .ws-ph-seg{padding:4px var(--ios-inset) 12px}
 .ws-ph-search{margin-top:8px}
-.ws-ph-edhead{margin:0;padding:6px calc(var(--safe-l) + 20px) 10px}
+/* editor: the centred two-line title under the bar (label / "x van 9 talen"), never cut (design §3.4) */
+.ws-ph-edhead{display:grid;justify-items:center;gap:2px;padding:2px calc(var(--safe-r) + 20px) 12px calc(var(--safe-l) + 20px);text-align:center}
+.ws-ph-edhead h1{margin:0;color:var(--ink);font-size:20px;font-weight:720;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
 .ws-ph-edhead small{color:var(--muted);font-size:13px;font-weight:600}
+/* its bar: the small title gets the room between the back capsule and "…" (centred when the sides allow it) and never runs under them */
+.ws-ph-ednav .ios-nav{grid-template-columns:minmax(max-content,1fr) minmax(0,auto) minmax(max-content,1fr)}
+.ws-ph-ednav .ios-nav__title{min-width:0;max-width:100%}
 .ws-ph-lang{margin:0 2px;padding:0 4px;border:0;background:none;color:inherit;font:inherit;font-weight:750;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 /* each view is its own wrapper (keyed by the view), so every push and pop animates; the editor animates on its own */
 .ws-ph-view.mo-push-view,.ws-ph-editor.mo-push-view{animation:mo-push-in var(--dur-3,320ms) var(--ease-spring,ease) backwards}

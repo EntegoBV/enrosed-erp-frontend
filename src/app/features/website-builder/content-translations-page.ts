@@ -143,10 +143,11 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
       <div class="ios-page ws-ios ws-texts-ios">
         @switch (view()) {
           @case ('editor') {
-            <app-ios-nav [title]="editorTitle()" [largeTitle]="false" [backLabel]="editorBack().label" [backAriaLabel]="'Terug naar ' + editorBack().name" (back)="goBack()">
+            <!-- the two-line title (label / languages) sits centred under the bar and wraps in full; once it scrolls away the bar shows the label small, between the back capsule and "…" -->
+            <app-ios-nav class="ws-ph-ednav" [title]="editorTitle()" [customLarge]="true" [backLabel]="editorBack().label" [backAriaLabel]="'Terug naar ' + editorBack().name" (back)="goBack()">
               <button trail class="ios-circle" type="button" aria-label="Meer voor deze tekstgroep" [disabled]="busy()" (click)="editorMenu.set(true)"><app-icon name="more" [size]="20" /></button>
+              <div hero class="ws-ph-edhead"><h1>{{ editorTitle() }}</h1><small>{{ editorSub() }}</small></div>
             </app-ios-nav>
-            <p class="ws-ph-edhead"><small>{{ editorSub() }}</small></p>
           }
           @case ('area') {
             <app-ios-nav [title]="areaLabel()" [backLabel]="seoMode ? 'Overzicht' : 'Teksten'" [backAriaLabel]="'Terug naar ' + (seoMode ? 'Overzicht' : 'Teksten')" (back)="goBack()" />
