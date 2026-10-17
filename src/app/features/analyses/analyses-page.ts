@@ -682,7 +682,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 @for (product of take('products', m.topProducts); track product.productId) {
                   <a class="an-row an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', product.productId]">
                     <span class="an-rank">{{ $index + 1 }}</span>
-                    <span class="an-row__body"><span class="an-row__title an-row__title--2">{{ product.name }}</span>
+                    <span class="an-row__body"><span class="an-row__title">{{ product.name }}</span>
                       <span class="an-row__sub">{{ product.sku || 'Geen SKU' }} · {{ unitWords(product.productId, product.pieces) }}</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ whole(product.calculatedGoodsValueEur) }}</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
