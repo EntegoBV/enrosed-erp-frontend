@@ -15,7 +15,8 @@ import { Sheet, Ui } from '../../shared/ui';
 import { salesPhotoUrl } from '../../shared/sales-photo';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { productSalesUnit, unitCount } from './product-sales-unit';
-import { stockCellEdit, undoAllowed } from './stock-booking';
+import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from './stock-booking';
+import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 
 interface StockRow {
   product: Product;
@@ -43,7 +44,7 @@ interface StockGroup {
 @Component({
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet, LoadError],
+  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet, LoadError, StockBookingSheet],
   template: `
     <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : subtitle()">
       @if (editing()) {
@@ -311,64 +312,17 @@ interface StockGroup {
             <!-- Broken on the shelf, or handed out as demo: one round mark. -->
             <button class="stock-row__move stock-row__issue" type="button" title="Stuk of demo melden"
                     [attr.aria-label]="'Stuk of demo melden voor ' + row.product.name"
-                    (click)="openTakeout(row)">!</button>
+                    (click)="openBooking(row, 'DAMAGED', view())">!</button>
           } @else {
             <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
-                    (click)="openBook(row, true)">⇄</button>
+                    (click)="openBooking(row, 'TRANSFER', view())">⇄</button>
           }
         </div>
       </div>
     </ng-template>
 
-    <!-- Broken or given away as demo: the piece leaves the shelf with a
-         note that says why, iOS-style in one small sheet. -->
-    @if (takeout(); as out) {
-      <app-sheet [title]="'Stuk of demo · ' + out.row.product.name" (closed)="takeout.set(null)">
-        <div body>
-          <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
-            <button type="button" [class.on]="out.kind === 'DAMAGED'"
-                    (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
-            <button type="button" [class.on]="out.kind === 'DEMO'"
-                    (click)="takeout.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
-          </div>
-          <div class="form-grid mt-12">
-            @if (activeLocations().length > 1) {
-              <div class="field">
-                <label for="to-loc">Locatie</label>
-                <select class="select" id="to-loc" [ngModel]="out.locationId"
-                        (ngModelChange)="takeout.set({ ...out, locationId: +$event })">
-                  @for (location of activeLocations(); track location.id) {
-                    <option [value]="location.id">{{ location.name }} ({{ (out.row.byLocation.get(location.id!) ?? 0) | num }})</option>
-                  }
-                </select>
-              </div>
-            }
-            <div class="field">
-              <label class="req" for="to-qty">Aantal</label>
-              <input class="input num right" id="to-qty" type="number" min="1" step="1" inputmode="numeric"
-                     [ngModel]="out.quantity || null" (ngModelChange)="takeout.set({ ...out, quantity: +$event })" />
-            </div>
-            <div class="field span-2">
-              <label for="to-note">Notitie <span class="opt"></span></label>
-              <input class="input" id="to-note" [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens'"
-                     [ngModel]="out.note" (ngModelChange)="takeout.set({ ...out, note: $event })" />
-            </div>
-          </div>
-          <p class="hint mt-8">Op {{ locationName(out.locationId) }} liggen {{ (out.row.byLocation.get(out.locationId) ?? 0) | num }} {{ unitOf(out.row.product).plural }}.
-            {{ out.quantity > 0 ? 'Er gaan er ' + out.quantity + ' uit de voorraad, geteld als ' + (out.kind === 'DAMAGED' ? 'beschadigd' : 'demo') + '.' : '' }}</p>
-        </div>
-        <div foot style="display:contents">
-          <span class="spacer"></span>
-          <button class="btn" type="button" (click)="takeout.set(null)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="saving() || !(out.quantity > 0)"
-                  (click)="confirmTakeout()">{{ saving() ? 'Bezig…' : 'Melden' }}</button>
-        </div>
-      </app-sheet>
-    }
-
-    <!-- One sheet per product: the figures (typed straight in), moving
-         between locations, and the book underneath. Nothing opens on top
-         of it. -->
+    <!-- One sheet per product: the figures per location, the actions and
+         the book. Voorraad boeken opens on top of it (the sheet stack). -->
     @if (book(); as book) {
       <app-sheet [title]="book.row.product.name" (closed)="closeBook()">
         <div body>
@@ -376,14 +330,13 @@ interface StockGroup {
             <b>{{ book.row.total | num }} {{ book.row.total === 1 ? unitOf(book.row.product).singular : unitOf(book.row.product).plural }}</b></p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
-              <label class="history-levels__tile">
+              <!-- Read-only: a tap opens Hertelling for that location, with the effect shown first. -->
+              <button class="history-levels__tile history-levels__tile--button" type="button"
+                      [attr.aria-label]="'Hertelling op ' + location.name"
+                      (click)="openBooking(book.row, 'RECOUNT', location.id)">
                 <small>{{ location.name }}</small>
-                <input class="history-levels__qty num" type="text" autocomplete="off" inputmode="numeric"
-                       [attr.aria-label]="book.row.product.name + ' op ' + location.name"
-                       [value]="book.row.byLocation.get(location.id!) ?? 0"
-                       (keydown.enter)="$any($event.target).blur()"
-                       (change)="setQuantity(book.row, location.id!, $any($event.target))" />
-              </label>
+                <b class="history-levels__qty num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b>
+              </button>
             }
             @if (expectedFor(book.row.product.id!); as exp) {
               <!-- On the water: the tile is the way to the order it sits on. -->
@@ -394,54 +347,26 @@ interface StockGroup {
               </a>
             }
           </div>
-          <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
+          <p class="hint">Tik een locatie aan voor een hertelling.</p>
 
-          <!-- The three things you come here to do, side by side like an
-               iOS action row: move it, write off breakage or demo, open it. -->
-          <div class="book-actions" role="group" aria-label="Acties">
-            <button class="book-action" type="button" [class.book-action--on]="!!transfer()" (click)="transfer() ? transfer.set(null) : openTransfer()">
-              <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+          <!-- What you come here to do, side by side like an iOS action row;
+               each opens Voorraad boeken on top of this sheet. -->
+          <div class="book-actions book-actions--four" role="group" aria-label="Acties">
+            <button class="book-action" type="button" (click)="openBooking(book.row, 'RECOUNT', view())">
+              <i aria-hidden="true">=</i><span>Hertelling</span>
             </button>
-            <button class="book-action" type="button" (click)="takeoutFromBook()">
-              <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
+            @if (activeLocations().length > 1) {
+              <button class="book-action" type="button" (click)="openBooking(book.row, 'TRANSFER', view())">
+                <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+              </button>
+            }
+            <button class="book-action" type="button" (click)="openBooking(book.row, 'DAMAGED', view())">
+              <i aria-hidden="true" class="book-action__warn">!</i><span>Beschadigd / Demo</span>
             </button>
             <a class="book-action" [routerLink]="['/products', book.row.product.id]" (click)="closeBook()">
               <i aria-hidden="true">›</i><span>Product</span>
             </a>
           </div>
-
-          @if (transfer(); as move) {
-            <div class="transfer-box">
-              <h3 class="history-title">Verplaatsen</h3>
-              <div class="form-grid">
-                <div class="field"><label for="t-from">Van</label>
-                  <select class="select" id="t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-                    @for (location of activeLocations(); track location.id) {
-                      <option [value]="location.id">{{ location.name }} ({{ (book.row.byLocation.get(location.id!) ?? 0) | num }})</option>
-                    }
-                  </select></div>
-                <div class="field"><label for="t-to">Naar</label>
-                  <select class="select" id="t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-                    @for (location of activeLocations(); track location.id) {
-                      <option [value]="location.id">{{ location.name }}</option>
-                    }
-                  </select></div>
-                <div class="field"><label class="req" for="t-qty">Aantal</label>
-                  <input class="input num right" id="t-qty" type="number" min="1" step="1" inputmode="numeric"
-                         [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
-                <div class="field"><label for="t-note">Notitie <span class="opt"></span></label>
-                  <input class="input" id="t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                         (ngModelChange)="patchTransfer({ note: $event })" /></div>
-              </div>
-              <div class="transfer-box__actions">
-                <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (book.row.byLocation.get(move.fromId) ?? 0) | num }} {{ unitOf(book.row.product).plural }}.</span>
-                <button class="btn btn--sm" type="button" (click)="transfer.set(null)">Annuleren</button>
-                <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="confirmTransfer()">
-                  {{ saving() ? 'Bezig…' : 'Verplaatsen' }}
-                </button>
-              </div>
-            </div>
-          }
 
           <h3 class="history-title">Geschiedenis</h3>
           @if (book.moves; as moves) {
@@ -473,6 +398,12 @@ interface StockGroup {
           <button class="btn" type="button" (click)="closeBook()">Sluiten</button>
         </div>
       </app-sheet>
+    }
+
+    <!-- Voorraad boeken, a sibling at page level (stacked over the product sheet when that is open). -->
+    @if (booking(); as open) {
+      <app-stock-booking-sheet [product]="open.row.product" [levels]="open.levels" [kind]="open.kind" [locationId]="open.locationId"
+                               (booked)="onBooked($event)" (closed)="bookingFor.set(null)" />
     }
   `,
   styles: `
@@ -609,7 +540,6 @@ interface StockGroup {
     .edit-bar { border-color: var(--rose-line); background: var(--rose-soft); }
     .stock-row__issue { border-color: #eddcb9; background: var(--warn-soft); color: var(--warn); font-weight: 800; }
     .stock-row__issue:hover { background: #f7e8cd; color: var(--warn); }
-    .takeout-kind { margin-top: 2px; }
     .stock-row--changed { background: var(--warn-soft); }
     .stock-row__product { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0;
       background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -656,14 +586,12 @@ interface StockGroup {
     .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
     .history-levels__tile { display: grid; gap: 2px; flex: 1 1 96px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
     .history-levels__link { flex: 1 1 120px; }
-    .history-levels__qty { width: 100%; min-width: 0; padding: 2px 4px; margin: 0 -4px; border: 1px solid transparent; border-radius: 6px;
-      background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 700; -moz-appearance: textfield; }
-    .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }
-    .history-levels__qty:hover { border-color: var(--line); background: var(--surface); }
-    .history-levels__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
+    .history-levels__qty { display: block; padding: 2px 0; font-size: 16px; font-weight: 700; }
     .book-sub { margin: -6px 0 10px; color: var(--muted); font-size: 12.5px; }
     .book-sub b { color: var(--ink); font-weight: 700; margin-left: 6px; }
-    .book-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 14px; }
+    .book-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin: 10px 0 14px; }
+    .history-levels__tile--button { color: inherit; font: inherit; text-align: left; cursor: pointer; }
+    .history-levels__tile--button:hover { border-color: var(--rose-line); background: var(--rose-soft); }
     .book-action { display: grid; justify-items: center; gap: 4px; padding: 10px 6px 8px;
       border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); color: var(--ink-2);
       font: inherit; font-size: 11.5px; font-weight: 650; text-decoration: none; cursor: pointer;
@@ -681,10 +609,6 @@ interface StockGroup {
     .history-more__chev { width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
       transform: rotate(45deg); transition: transform .15s ease; }
     .history-more__chev--open { transform: rotate(-135deg); }
-    .transfer-box { margin-top: 4px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
-    .transfer-box .history-title { margin-top: 0; }
-    .transfer-box__actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-    .transfer-box__actions .hint { flex: 1; }
     .history-levels span, .history-levels__link { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
     .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
     .history-levels b { font-size: 16px; }
@@ -713,7 +637,6 @@ export class StockPage {
   readonly loading = signal(true);
   /** The page could not load: it says so, with a retry, instead of "Geen producten gevonden". */
   readonly loadError = signal<string | null>(null);
-  readonly saving = signal(false);
   readonly products = signal<Product[]>([]);
   readonly locations = signal<StockLocation[]>([]);
   readonly levels = signal<StockLevel[]>([]);
@@ -865,25 +788,14 @@ export class StockPage {
 
   readonly historyOpen = signal(false);
 
-  openBook(row: StockRow, moving = false): void {
+  openBook(row: StockRow): void {
     this.bookProductId.set(row.product.id!);
-    this.transfer.set(null);
     this.historyOpen.set(false);
     void this.loadMoves(row.product.id!);
-    if (moving) this.openTransfer();
-  }
-
-  /** Stuk/demo from inside the book: the small sheet takes over. */
-  takeoutFromBook(): void {
-    const row = this.book()?.row;
-    if (!row) return;
-    this.closeBook();
-    this.openTakeout(row);
   }
 
   closeBook(): void {
     this.bookProductId.set(null);
-    this.transfer.set(null);
   }
 
   private async loadMoves(productId: number): Promise<void> {
@@ -936,75 +848,40 @@ export class StockPage {
     return this.locations().find((location) => location.id === id)?.name ?? '';
   }
 
-  /* ---- edit mode: figures typed straight in, stuk/demo per row ---- */
+  /* ---- edit mode: figures typed straight in; every other booking through Voorraad boeken ---- */
   readonly editing = signal(false);
-  readonly takeout = signal<{ row: StockRow; kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
 
-  openTakeout(row: StockRow): void {
-    const locations = this.activeLocations();
-    const withStock = locations.find((location) => (row.byLocation.get(location.id!) ?? 0) > 0);
-    this.takeout.set({ row, kind: 'DAMAGED',
-      locationId: this.view() ?? withStock?.id ?? locations[0]?.id ?? 0, quantity: 0, note: '' });
-  }
+  /** The open Voorraad boeken sheet: for which product, which kind, which location. */
+  readonly bookingFor = signal<{ productId: number; kind: BookingKind; locationId: number | null } | null>(null);
+  /** The sheet follows the live row, so its levels are always today's. */
+  readonly booking = computed(() => {
+    const open = this.bookingFor();
+    if (!open) return null;
+    const row = this.rows().find((item) => item.product.id === open.productId);
+    if (!row) return null;
+    const levels: BookingLevel[] = this.activeLocations().map((location) => ({
+      locationId: location.id!, name: location.name, quantity: row.byLocation.get(location.id!) ?? 0,
+    }));
+    return { row, levels, kind: open.kind, locationId: open.locationId };
+  });
 
-  async confirmTakeout(): Promise<void> {
-    const out = this.takeout();
-    if (!out || !(out.quantity > 0)) return;
-    const at = out.row.byLocation.get(out.locationId) ?? 0;
-    const unit = productSalesUnit(out.row.product);
-    if (out.quantity > at) { this.ui.toast(`Op ${this.locationName(out.locationId)} liggen maar ${unitCount(unit, at)}`, 'err'); return; }
-    this.saving.set(true);
-    try {
-      await this.catalog.takeOutStock(out.row.product.id!, {
-        locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
-      this.levels.set(await this.catalog.stockLevels());
-      this.takeout.set(null);
-      this.ui.toast(out.kind === 'DAMAGED'
-        ? `${unitCount(unit, out.quantity)} als beschadigd afgeboekt`
-        : `${unitCount(unit, out.quantity)} als demo afgeboekt`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  /* ---- transfer, inside the sheet ---- */
-  readonly transfer = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
-
-  openTransfer(): void {
-    const locations = this.activeLocations();
-    if (locations.length < 2) {
+  openBooking(row: StockRow, kind: BookingKind, locationId: number | null | undefined): void {
+    if (kind === 'TRANSFER' && this.activeLocations().length < 2) {
       this.ui.toast('Maak eerst een tweede locatie aan onder Voorraadlocaties', 'err');
       return;
     }
-    const fromId = this.view() ?? locations[0].id!;
-    const toId = locations.find((location) => location.id !== fromId)!.id!;
-    this.transfer.set({ fromId, toId, quantity: 0, note: '' });
+    this.bookingFor.set({ productId: row.product.id!, kind, locationId: locationId ?? null });
   }
 
-  patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
-    this.transfer.update((move) => move ? { ...move, ...changes } : move);
-  }
-
-  async confirmTransfer(): Promise<void> {
-    const move = this.transfer();
-    const row = this.book()?.row;
-    if (!move || !row) return;
-    if (move.quantity <= 0) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
-    this.saving.set(true);
+  /** After a booking the table and the open product sheet's history tell the new truth. */
+  async onBooked(event: StockBooked): Promise<void> {
+    const productId = this.bookingFor()?.productId ?? null;
+    this.bookingFor.set(null);
+    void event;
     try {
-      await this.catalog.transferStock(row.product.id!, move.fromId, move.toId, move.quantity, move.note || null);
       this.levels.set(await this.catalog.stockLevels());
-      this.transfer.set(null);
-      void this.loadMoves(row.product.id!);
-      this.ui.toast(`${unitCount(productSalesUnit(row.product), move.quantity)} ${row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
+    } catch { /* the toast already said it was booked; the figures catch up on the next load */ }
+    if (productId !== null && this.bookProductId() === productId) void this.loadMoves(productId);
   }
 
   /* ---- typing a count straight into the table ---- */

@@ -1,1 +1,52 @@
-/* Producten & voorraad: booking (filled by its own package). */
+/* Producten & voorraad: Voorraad boeken (app-stock-booking-sheet), the one
+   sheet for every stock booking. Desk: a dialog with kit fields; phone: an
+   iOS sheet with inset rows and a block capsule. */
+
+app-stock-booking-sheet .bk { display: grid; gap: 12px; }
+app-stock-booking-sheet .bk-sub { margin: -4px 0 0; color: var(--muted); font-size: 13px; }
+app-stock-booking-sheet .bk-kinds { width: 100%; }
+app-stock-booking-sheet .bk-help { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+app-stock-booking-sheet .bk-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+app-stock-booking-sheet .bk-field { display: grid; gap: 5px; min-width: 0; }
+app-stock-booking-sheet .bk-field--wide { grid-column: 1 / -1; }
+app-stock-booking-sheet .bk-field__label { color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
+app-stock-booking-sheet .bk-field__control { width: 100%; min-width: 0; }
+app-stock-booking-sheet .bk-qty { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+app-stock-booking-sheet .bk-hint { color: var(--muted); font-size: 12px; line-height: 1.4; }
+app-stock-booking-sheet .bk-preview {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+  font-size: 13.5px; font-variant-numeric: tabular-nums;
+}
+app-stock-booking-sheet .bk-preview b { font-weight: 750; }
+app-stock-booking-sheet .bk-preview em { font-style: normal; font-weight: 750; color: var(--danger); }
+app-stock-booking-sheet .bk-preview em.plus { color: var(--ok); }
+app-stock-booking-sheet .bk-preview.is-short { border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: var(--danger-soft); color: var(--danger); }
+app-stock-booking-sheet .bk-preview.is-same { color: var(--muted); }
+
+/* Phone: inset rows, label left and the control right, the figure large. */
+@media (max-width: 679.98px) {
+  app-stock-booking-sheet .bk { gap: 14px; padding: 0 16px; }
+  app-stock-booking-sheet .bk-sub { text-align: center; }
+  app-stock-booking-sheet .bk-fields {
+    grid-template-columns: minmax(0, 1fr); gap: 0; overflow: hidden; border-radius: 16px; background: var(--surface);
+  }
+  app-stock-booking-sheet .bk-field {
+    position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; gap: 4px 12px;
+    min-height: 50px; padding: 6px 16px;
+  }
+  app-stock-booking-sheet .bk-field + .bk-field::before {
+    content: ''; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--ios-sep);
+  }
+  app-stock-booking-sheet .bk-field__label { font-size: 15px; font-weight: 500; color: var(--ink); }
+  app-stock-booking-sheet .bk-field__control { border: 0; background: transparent; font-size: 16px; text-align: right; }
+  app-stock-booking-sheet .bk-field--wide { grid-template-columns: minmax(0, 1fr); }
+  app-stock-booking-sheet .bk-field--wide .bk-field__control { text-align: left; padding-left: 0; }
+  app-stock-booking-sheet .bk-qty {
+    justify-self: end; width: 120px; height: 38px; padding: 0 12px; border-radius: 10px;
+    background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 19px;
+  }
+  app-stock-booking-sheet .bk-preview { padding: 12px 16px; border: 0; border-radius: 16px; background: var(--surface); font-size: 15px; }
+  app-stock-booking-sheet .bk-preview.is-short { background: var(--danger-soft); }
+  app-stock-booking-sheet .bk-submit { margin-top: 4px; }
+}

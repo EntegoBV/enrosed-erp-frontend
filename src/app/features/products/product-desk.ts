@@ -1,10 +1,9 @@
 import { ProductCostHistory } from './product-cost-history';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
-import { ChangeDetectionStrategy, Component, computed, effect, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
-import { messageOf } from '../../core/api/errors';
 import { Product } from '../../core/api/models';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { PageHeader } from '../../shared/page-header';
@@ -16,11 +15,9 @@ import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreemen
 import { ProductView } from './product-view';
 import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
+import { StockBookingSheet } from './stock-booking-sheet';
 
-type BookingKind = 'RECOUNT' | 'DAMAGED' | 'SHORTAGE' | 'DEMO';
 interface IssueGroup { key: string; label: string; action: string; link: unknown[]; params: Record<string, string> | null; issues: string[]; }
-
-interface Booking { kind: BookingKind; locationId: number | null; quantity: number | null; note: string; purchaseOrderId: number | null; }
 
 /**
  * The product desk: the product dossier on a wide screen, built like the
@@ -37,7 +34,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
 @Component({
   selector: 'app-product-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton,
+  imports: [ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton, StockBookingSheet,
     CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
   ],
   template: `
@@ -392,7 +389,7 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             @if (stockLevels(); as levels) {
               <div class="pd-levels">
                 @for (level of levels; track level.locationId) {
-                  <button class="pd-level" type="button" [class.pd-level--on]="booking()?.locationId === level.locationId"
+                  <button class="pd-level" type="button" [class.pd-level--on]="bookingSheet()?.locationId === level.locationId"
                           [title]="'Hertelling boeken voor ' + level.name" (click)="openBooking('RECOUNT', level.locationId)">
                     <span><b>{{ level.name }}</b><small>{{ level.kindLabel }} · {{ level.countsForWebsite ? 'alle verkoopkanalen' : 'enkel ter plaatse' }}</small></span>
                     <strong [class.pd-muted]="!level.quantity">{{ level.quantity | num }}</strong>
@@ -404,77 +401,13 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
             } @else {
               <app-skeleton kind="lines" [rows]="2" />
             }
-            @if (booking(); as book) {
-              <form class="pd-booking" (submit)="$event.preventDefault(); confirmBooking()">
-                <div class="per-toggle" role="group" aria-label="Wat boek je?">
-                  <button type="button" [class.on]="book.kind === 'RECOUNT'" (click)="setBookingKind('RECOUNT')">Hertelling</button>
-                  <button type="button" [class.on]="book.kind === 'DAMAGED'" (click)="setBookingKind('DAMAGED')">Beschadigd</button>
-                  <button type="button" [class.on]="book.kind === 'SHORTAGE'" (click)="setBookingKind('SHORTAGE')">Te weinig</button>
-                  <button type="button" [class.on]="book.kind === 'DEMO'" (click)="setBookingKind('DEMO')">Demo</button>
-                </div>
-                <p class="pd-booking__why">{{ bookingHelp(book.kind) }}</p>
-                @if (book.kind === 'DAMAGED' || book.kind === 'SHORTAGE') {
-                  <div class="field">
-                    <label for="pd-book-po">Uit welke container? <span class="opt"></span></label>
-                    <select class="select" id="pd-book-po" (change)="setBookingOrder($any($event.target).value)">
-                      <option value="" [selected]="book.purchaseOrderId === null">Niet aan een container gekoppeld</option>
-                      @for (order of receivedOrders(); track order.id) {
-                        <option [value]="order.id" [selected]="book.purchaseOrderId === order.id">{{ containerLabel(order) }}</option>
-                      }
-                    </select>
-                    <small class="pd-booking__hint">{{ book.purchaseOrderId === null
-                      ? 'Gekoppeld komt de melding in het dossier van die container en als waarschuwing op de volgende leveranciersorder.'
-                      : 'De melding komt in het dossier van deze container en op de volgende leveranciersorder van dit product.' }}</small>
-                  </div>
-                }
-                <div class="desk-form__duo">
-                  @if ((stockLevels() ?? []).length > 1) {
-                    <div class="field">
-                      <label for="pd-book-loc">Locatie</label>
-                      <select class="select" id="pd-book-loc" (change)="setBookingLocation(+$any($event.target).value)">
-                        @for (level of stockLevels(); track level.locationId) {
-                          <option [value]="level.locationId" [selected]="book.locationId === level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                        }
-                      </select>
-                    </div>
-                  }
-                  <div class="field">
-                    <label class="req" for="pd-book-qty">{{ book.kind === 'RECOUNT' ? 'Geteld' : 'Aantal' }} {{ salesUnit(product).plural }}</label>
-                    <input class="input num right" id="pd-book-qty" type="number" min="0" step="1" inputmode="numeric" autofocus
-                           [value]="book.quantity ?? ''" (input)="setBookingQuantity($any($event.target).value)" />
-                  </div>
-                </div>
-                <div class="field">
-                  <label for="pd-book-note">Notitie <span class="opt"></span></label>
-                  <input class="input" id="pd-book-note"
-                         [placeholder]="book.kind === 'RECOUNT' ? 'bijv. telling na inventaris' : book.kind === 'DAMAGED' ? 'bijv. gebarsten bij het uitpakken' : book.kind === 'SHORTAGE' ? 'bijv. doos 12 bevatte 18 in plaats van 24' : 'bijv. klant Janssens'"
-                         [value]="book.note" (input)="setBookingNote($any($event.target).value)" />
-                </div>
-                @if (bookingPreview(); as preview) {
-                  <p class="pd-booking__preview" [class.is-short]="preview.after < 0" [class.is-same]="preview.delta === 0">
-                    @if (preview.after < 0) {
-                      Meer dan er ligt op {{ preview.location }} ({{ preview.before | num }})
-                    } @else if (preview.delta === 0) {
-                      {{ preview.location }} blijft op {{ preview.before | num }}
-                    } @else {
-                      {{ preview.location }}: {{ preview.before | num }} → <b>{{ preview.after | num }}</b>
-                      <em [class.is-minus]="preview.delta < 0" [class.is-plus]="preview.delta > 0">{{ preview.delta > 0 ? '+' : '' }}{{ preview.delta | num }}</em>
-                    }
-                  </p>
-                }
-                <div class="pd-actions">
-                  <button class="btn btn--sm" type="button" (click)="booking.set(null)">Annuleren</button>
-                  <button class="btn btn--sm btn--primary" type="submit" [disabled]="stockSaving() || !bookingReady()">{{ stockSaving() ? 'Bezig…' : bookingLabel(book.kind) }}</button>
-                </div>
-              </form>
-            } @else {
-              <div class="pd-actions">
-                <button class="btn btn--sm btn--primary" type="button" (click)="openBooking('RECOUNT')">Hertelling</button>
-                <button class="btn btn--sm" type="button" (click)="openBooking('DAMAGED')">Beschadigd</button>
-                <button class="btn btn--sm" type="button" (click)="openBooking('SHORTAGE')">Te weinig</button>
-                <button class="btn btn--sm" type="button" (click)="openBooking('DEMO')">Demo</button>
-              </div>
-            }
+            <div class="pd-actions">
+              <button class="btn btn--sm btn--primary" type="button" (click)="openBooking('RECOUNT')">Hertelling</button>
+              <button class="btn btn--sm" type="button" (click)="openBooking('DAMAGED')">Beschadigd</button>
+              <button class="btn btn--sm" type="button" (click)="openBooking('SHORTAGE')">Te weinig</button>
+              <button class="btn btn--sm" type="button" (click)="openBooking('DEMO')">Demo</button>
+              @if ((stockLevels() ?? []).length > 1) { <button class="btn btn--sm" type="button" (click)="openBooking('TRANSFER')">Verplaatsen</button> }
+            </div>
             @if (expected(); as exp) {
               <a class="pd-expected" [routerLink]="['/purchasing', exp.orderIds[0]]">
                 <b>+{{ exp.quantity | num }} {{ salesUnit(product).plural }} onderweg</b>
@@ -649,6 +582,12 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
       @if (historyOpen()) {
         <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
       }
+      <!-- Voorraad boeken: the one sheet for every booking, at page level. -->
+      @if (bookingSheet(); as booking) {
+        <app-stock-booking-sheet [product]="product" [levels]="bookingLevels()" [containers]="receivedOrders()"
+                                 [kind]="booking.kind" [locationId]="booking.locationId"
+                                 (booked)="onBooked($event)" (closed)="bookingSheet.set(null)" />
+      }
     } @else if (loadError(); as error) {
       <app-page-header title="Product" [showBell]="false" />
       <div class="content desk">
@@ -731,13 +670,6 @@ interface Booking { kind: BookingKind; locationId: number | null; quantity: numb
     .pd-level{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;padding:8px 6px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
     .pd-level:hover{background:var(--surface-2)}.pd-level--on{background:var(--rose-soft)}
     .pd-level>span{display:grid;min-width:0}.pd-level b{font-size:12.5px}.pd-level small{color:var(--muted);font-size:10.5px}.pd-level strong{font-size:14px;font-variant-numeric:tabular-nums}
-    .pd-booking{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-    .pd-booking .pd-actions{margin-top:0}.pd-booking .desk-form__duo{gap:8px}
-    .pd-booking__hint { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
-    .pd-booking__why{margin:0;color:var(--muted);font-size:11.5px;line-height:1.4}
-    .pd-booking__preview{display:flex;align-items:center;gap:6px;margin:0;padding:8px 10px;border-radius:10px;background:var(--surface);font-size:12.5px}
-    .pd-booking__preview b{font-weight:750}.pd-booking__preview em{margin-left:auto;font-style:normal;font-weight:750;font-variant-numeric:tabular-nums}.pd-booking__preview em.is-minus{color:var(--danger)}.pd-booking__preview em.is-plus{color:var(--ok)}
-    .pd-booking__preview.is-short{background:var(--danger-soft);color:var(--danger)}.pd-booking__preview.is-same{color:var(--muted)}
     .pd-expected{display:grid;margin-top:12px;padding:9px 12px;border-radius:12px;background:var(--rose-soft);color:var(--rose-dark);text-decoration:none}.pd-expected b{font-size:12.5px}.pd-expected small{font-size:11px}
     .pd-moves{display:grid}.pd-move{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
     .pd-move>span{display:grid;min-width:0}.pd-move b{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.pd-move small{overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
@@ -867,115 +799,6 @@ export class ProductDesk extends ProductView {
   openPriceDetail(): void {
     this.priceOpen.set(true);
     this.scrollTo('pd-price');
-  }
-
-  /* ---- one booking flow: a recount, damaged pieces or a demo, with the effect shown first */
-  readonly booking = signal<Booking | null>(null);
-
-  private levelOf(locationId: number | null) {
-    return (this.stockLevels() ?? []).find((level) => level.locationId === locationId) ?? null;
-  }
-
-  /** A location row opens a recount of that location; the buttons pick the busiest one. */
-  openBooking(kind: BookingKind, locationId?: number): void {
-    const levels = this.stockLevels() ?? [];
-    const location = locationId ?? (levels.find((level) => level.quantity > 0) ?? levels[0])?.locationId ?? null;
-    const level = this.levelOf(location);
-    this.booking.set({ kind, locationId: location, quantity: kind === 'RECOUNT' ? (level?.quantity ?? null) : null, note: '', purchaseOrderId: null });
-  }
-
-  setBookingOrder(raw: string): void {
-    const id = raw === '' ? null : Number(raw);
-    this.booking.update((book) => book && ({ ...book, purchaseOrderId: id === null || Number.isNaN(id) ? null : id }));
-  }
-
-  setBookingKind(kind: BookingKind): void {
-    this.booking.update((book) => book && ({
-      ...book, kind,
-      quantity: kind === 'RECOUNT' ? (this.levelOf(book.locationId)?.quantity ?? null) : (book.kind === 'RECOUNT' ? null : book.quantity),
-    }));
-  }
-
-  setBookingLocation(locationId: number): void {
-    this.booking.update((book) => book && ({
-      ...book, locationId,
-      quantity: book.kind === 'RECOUNT' ? (this.levelOf(locationId)?.quantity ?? null) : book.quantity,
-    }));
-  }
-
-  setBookingQuantity(raw: string): void {
-    const value = raw.trim() === '' ? null : Math.max(0, Math.floor(Number(raw)));
-    this.booking.update((book) => book && ({ ...book, quantity: value === null || Number.isNaN(value) ? null : value }));
-  }
-
-  setBookingNote(note: string): void {
-    this.booking.update((book) => book && ({ ...book, note }));
-  }
-
-  /** What the booking does to the location, before anything is saved. */
-  readonly bookingPreview = computed(() => {
-    const book = this.booking();
-    if (!book || book.quantity === null) return null;
-    const level = this.levelOf(book.locationId);
-    const before = level?.quantity ?? this.product()?.stockQuantity ?? 0;
-    const after = book.kind === 'RECOUNT' ? book.quantity : before - book.quantity;
-    return { location: level?.name ?? 'Voorraad', before, after, delta: after - before };
-  });
-
-  readonly bookingReady = computed(() => {
-    const book = this.booking();
-    const preview = this.bookingPreview();
-    if (!book || !preview || book.quantity === null) return false;
-    return book.kind === 'RECOUNT' ? preview.delta !== 0 : book.quantity > 0 && preview.after >= 0;
-  });
-
-  bookingHelp(kind: BookingKind): string {
-    switch (kind) {
-      case 'RECOUNT': return 'Tel wat er ligt; het verschil boekt als correctie.';
-      case 'DAMAGED': return 'Stuk of beschadigd: de stuks gaan uit de voorraad, met een notitie waarom. Kwam het zo uit een container, koppel die dan.';
-      case 'SHORTAGE': return 'Te weinig geleverd: minder in de dozen dan de paklijst zei. De stuks gaan uit de voorraad en de container hoort het.';
-      default: return 'Weggegeven als demo: uit de voorraad, nooit verkocht.';
-    }
-  }
-
-  bookingLabel(kind: BookingKind): string {
-    return kind === 'RECOUNT' ? 'Boek hertelling' : kind === 'DAMAGED' ? 'Boek beschadigd' : kind === 'SHORTAGE' ? 'Boek tekort' : 'Boek demo';
-  }
-
-  async confirmBooking(): Promise<void> {
-    const product = this.product();
-    const book = this.booking();
-    const preview = this.bookingPreview();
-    if (!product || product.id === null || !book || !preview || !this.bookingReady()) return;
-    this.stockSaving.set(true);
-    try {
-      if (book.kind === 'RECOUNT') {
-        await this.catalog.setStock(product.id, book.quantity!, book.locationId, book.note.trim() || null);
-        this.ui.toast(`Hertelling geboekt: ${preview.delta > 0 ? '+' : ''}${preview.delta.toLocaleString('nl-BE')} op ${preview.location}`);
-      } else {
-        const note = book.note.trim() || null;
-        const container = book.kind === 'DEMO' ? null
-          : this.receivedOrders().find((order) => order.id === book.purchaseOrderId) ?? null;
-        if (container && book.kind !== 'DEMO') {
-          await this.sourcing.reportAfterReceipt(container.id, {
-            productId: product.id, locationId: book.locationId, quantity: book.quantity!, kind: book.kind, note,
-          });
-        } else {
-          await this.catalog.takeOutStock(product.id, {
-            locationId: book.locationId, quantity: book.quantity!, kind: book.kind, note,
-          });
-        }
-        const booked = book.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : book.kind === 'SHORTAGE' ? 'Tekort geboekt' : 'Demo geboekt';
-        this.ui.toast(container ? `${booked} · gemeld op ${container.name}` : booked);
-        void this.sourcing.receiptIssues(product.id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
-      }
-      this.booking.set(null);
-      this.refreshStock(product.id);
-    } catch (failure) {
-      this.ui.toast(messageOf(failure, 'Boeken mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
   }
 
   scrollTo(id: string): void {

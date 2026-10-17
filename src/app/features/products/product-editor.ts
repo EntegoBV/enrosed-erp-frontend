@@ -21,6 +21,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
+import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
+import type { BookingKind } from './stock-booking';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -87,7 +89,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton,
+    Skeleton, StockBookingSheet,
   ],
   template: `
     @if (!desktop.active()) {
@@ -989,7 +991,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                    pattern as the stock page. -->
               <div class="book-actions book-actions--two" role="group" aria-label="Voorraadacties">
                 @if (levels.length > 1) {
-                  <button class="book-action" type="button" (click)="startTransfer(levels)">
+                  <button class="book-action" type="button" (click)="openBooking('TRANSFER')">
                     <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
                   </button>
                 } @else {
@@ -997,7 +999,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     <i aria-hidden="true">+</i><span>Locatie</span>
                   </a>
                 }
-                <button class="book-action" type="button" (click)="startTakeOut(levels, 'DAMAGED')">
+                <button class="book-action" type="button" (click)="openBooking('DAMAGED')">
                   <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
                 </button>
               </div>
@@ -1397,84 +1399,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       }
     }
 
-    @if (takeOutDraft(); as out) {
-      @if (stockLevels(); as levels) {
-        <app-sheet [title]="'Stuk of demo · ' + (draft().name || 'product')" (closed)="takeOutDraft.set(null)">
-          <div body>
-            <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
-              <button type="button" [class.on]="out.kind === 'DAMAGED'"
-                      (click)="takeOutDraft.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
-              <button type="button" [class.on]="out.kind === 'DEMO'"
-                      (click)="takeOutDraft.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
-            </div>
-            <div class="form-grid mt-12">
-              @if (levels.length > 1) {
-                <div class="field">
-                  <label for="po-out-loc">{{ out.kind === 'DAMAGED' ? 'Beschadigd op' : 'Demo uit' }}</label>
-                  <select class="select" id="po-out-loc" [ngModel]="out.locationId"
-                          (ngModelChange)="patchTakeOut({ locationId: +$event })">
-                    @for (level of levels; track level.locationId) {
-                      <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                    }
-                  </select>
-                </div>
-              }
-              <div class="field">
-                <label class="req" for="po-out-qty">Aantal</label>
-                <input class="input num right" id="po-out-qty" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="out.quantity || null" (ngModelChange)="patchTakeOut({ quantity: +$event })" />
-              </div>
-              <div class="field span-2">
-                <label for="po-out-note">{{ out.kind === 'DAMAGED' ? 'Wat is er gebeurd' : 'Aan wie' }} <span class="opt"></span></label>
-                <input class="input" id="po-out-note"
-                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens, beurs Gent'"
-                       [ngModel]="out.note" (ngModelChange)="patchTakeOut({ note: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="takeOutDraft.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="stockSaving() || !(out.quantity > 0)"
-                    (click)="confirmTakeOut()">{{ stockSaving() ? 'Bezig…' : 'Melden' }}</button>
-          </div>
-        </app-sheet>
-      }
-    }
-
-    @if (transferDraft(); as move) {
-      @if (stockLevels(); as levels) {
-        <app-sheet [title]="'Verplaatsen · ' + (draft().name || 'product')" (closed)="transferDraft.set(null)">
-          <div body>
-            <div class="form-grid">
-              <div class="field"><label for="po-t-from">Van</label>
-                <select class="select" id="po-t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-                  @for (level of levels; track level.locationId) {
-                    <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                  }
-                </select></div>
-              <div class="field"><label for="po-t-to">Naar</label>
-                <select class="select" id="po-t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-                  @for (level of levels; track level.locationId) {
-                    <option [value]="level.locationId">{{ level.name }}</option>
-                  }
-                </select></div>
-              <div class="field"><label class="req" for="po-t-qty">Aantal</label>
-                <input class="input num right" id="po-t-qty" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="move.quantity || null" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
-              <div class="field"><label for="po-t-note">Notitie <span class="opt"></span></label>
-                <input class="input" id="po-t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                       (ngModelChange)="patchTransfer({ note: $event })" /></div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="transferDraft.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="stockSaving()"
-                    (click)="confirmTransfer()">{{ stockSaving() ? 'Bezig…' : 'Verplaatsen' }}</button>
-          </div>
-        </app-sheet>
-      }
+    <!-- Voorraad boeken: the one sheet for every booking (the tiles keep their guarded on-blur recount). -->
+    @if (bookingSheet(); as booking) {
+      <app-stock-booking-sheet [product]="draft()" [levels]="stockLevels() ?? []" [kind]="booking.kind" [locationId]="booking.locationId"
+                               (booked)="afterBooking($event)" (closed)="bookingSheet.set(null)" />
     }
     } @else if (!productLoadError()) {
       <div class="editor-loading content" role="status"><span class="editor-loading__shape"></span><h2>Product laden…</h2><p>De gegevens en varianten worden opgehaald.</p></div>
@@ -1726,7 +1654,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       background: var(--surface); border: 1px solid var(--line-strong); font-style: normal; font-size: 15px; font-weight: 700; }
     .book-action--on i { border-color: var(--rose); color: var(--rose-dark); }
     .book-action__warn { background: var(--warn-soft) !important; border-color: #eddcb9 !important; color: var(--warn); }
-    .takeout-kind { margin: 10px 0 8px; }
     .history-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center;
       padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark);
       font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
@@ -2314,24 +2241,34 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
-  /* ---- move pieces between two locations ---- */
-  readonly transferDraft = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
+  /* ---- every other booking: the Voorraad boeken sheet ---- */
+  readonly bookingSheet = signal<{ kind: BookingKind; locationId: number | null } | null>(null);
 
-  startTransfer(levels: ProductStock[]): void {
-    this.takeOutDraft.set(null);
+  openBooking(kind: BookingKind): void {
     this.stockEditing.set(null);
-    const from = levels.find((level) => level.quantity > 0) ?? levels[0];
-    const to = levels.find((level) => level.locationId !== from.locationId) ?? levels[0];
-    this.transferDraft.set({ fromId: from.locationId, toId: to.locationId, quantity: 0, note: '' });
+    this.bookingSheet.set({ kind, locationId: null });
   }
 
-  patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
-    this.transferDraft.update((move) => move ? { ...move, ...changes } : move);
+  /** The figure the sheet booked lands in the draft and its baseline, so the editor never reads dirty from it. */
+  afterBooking(event: StockBooked): void {
+    this.bookingSheet.set(null);
+    const id = this.draft().id;
+    if (id === null) return;
+    const apply = (saved: Product) => {
+      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      const baseline = this.baseline();
+      if (baseline) {
+        const parsed = JSON.parse(baseline) as Product;
+        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      }
+    };
+    if (event.product) apply(event.product);
+    else void this.catalog.product(id).then(apply).catch(() => undefined);
+    void this.loadStockHistory(id);
+    void this.loadStockLevels(id);
   }
 
-  /* ---- broken or given away: out of stock under its own kind ---- */
-  readonly takeOutDraft = signal<{ kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
-
+  /* ---- broken or given away: the counters from the stock book ---- */
   /** Lifetime counts from the stock book: how much broke, how much went out as demo. */
   readonly lossCounters = computed(() => {
     const moves = this.stockHistory();
@@ -2343,68 +2280,6 @@ export class ProductEditor implements OnDestroy {
     }
     return { damaged, demo };
   });
-
-  startTakeOut(levels: ProductStock[], kind: 'DAMAGED' | 'DEMO'): void {
-    this.transferDraft.set(null);
-    const first = levels.find((level) => level.quantity > 0) ?? levels[0];
-    this.takeOutDraft.set({ kind, locationId: first?.locationId ?? 0, quantity: 1, note: '' });
-  }
-
-  patchTakeOut(changes: Partial<{ locationId: number; quantity: number; note: string }>): void {
-    this.takeOutDraft.update((draft) => draft && { ...draft, ...changes });
-  }
-
-  async confirmTakeOut(): Promise<void> {
-    const id = this.draft().id;
-    const out = this.takeOutDraft();
-    if (id === null || !out || this.stockSaving()) return;
-    if (!(out.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    this.stockSaving.set(true);
-    try {
-      const saved = await this.catalog.takeOutStock(id, { locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
-      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      const baseline = this.baseline();
-      if (baseline) {
-        const parsed = JSON.parse(baseline) as Product;
-        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      }
-      this.takeOutDraft.set(null);
-      const taken = unitCount(productSalesUnit(this.draft()), out.quantity);
-      this.ui.toast(out.kind === 'DAMAGED' ? `${taken} als beschadigd afgeboekt` : `${taken} als demo afgeboekt`, 'ok');
-      void this.loadStockHistory(id);
-      void this.loadStockLevels(id);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
-  }
-
-  async confirmTransfer(): Promise<void> {
-    const id = this.draft().id;
-    const move = this.transferDraft();
-    if (id === null || !move || this.stockSaving()) return;
-    if (!(move.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
-    this.stockSaving.set(true);
-    try {
-      const saved = await this.catalog.transferStock(id, move.fromId, move.toId, move.quantity, move.note || null);
-      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      const baseline = this.baseline();
-      if (baseline) {
-        const parsed = JSON.parse(baseline) as Product;
-        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      }
-      this.transferDraft.set(null);
-      this.ui.toast(`${unitCount(productSalesUnit(this.draft()), move.quantity)} verplaatst`, 'ok');
-      void this.loadStockHistory(id);
-      void this.loadStockLevels(id);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
-  }
 
   /* ---- strike a line from the stock book: swipe left, no question ---- */
   readonly moveSwiped = signal<number | null>(null);
@@ -2516,7 +2391,6 @@ export class ProductEditor implements OnDestroy {
   }
 
   startStockEdit(level: ProductStock): void {
-    this.transferDraft.set(null);
     this.stockDraft.set(level.quantity);
     this.stockEditing.set(level.locationId);
     setTimeout(() => document.getElementById('p-stock-' + level.locationId)?.focus());
@@ -2799,7 +2673,7 @@ export class ProductEditor implements OnDestroy {
       if (action === 'damaged' || action === 'demo') {
         const levels = await stockLevelsRequest.then(() => this.stockLevels() ?? []);
         if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
-        if (levels.length) this.startTakeOut(levels, action === 'damaged' ? 'DAMAGED' : 'DEMO');
+        if (levels.length) this.bookingSheet.set({ kind: action === 'damaged' ? 'DAMAGED' : 'DEMO', locationId: null });
       }
       this.syncPriceStrategy(product);
       this.markClean();

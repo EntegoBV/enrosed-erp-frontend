@@ -36,40 +36,24 @@ import { ProductMediaCard } from './product-media-card';
 import { ProductSupplierAgreementPhotoViewer } from './product-supplier-agreement-photo-viewer';
 import { orderedSupplierAgreementPhotos } from './product-supplier-agreement-state';
 import { parseSupplierNote } from './supplier-note';
-import { containerName } from '../purchasing/container-name';
+import { receivedContainersFor, type ReceivedContainer } from './received-containers';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
-import { containerOptionLabel, parseCount } from './stock-booking';
+import { containerOptionLabel, type BookingKind, type BookingLevel } from './stock-booking';
+import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 
 /**
  * Read-first product master. The page deliberately separates the customer
  * story (photo, price, availability) from operational data. Editing remains
  * an explicit action, so a warehouse or sales colleague can safely browse it.
  */
-type TakeoutKind = 'DAMAGED' | 'DEMO' | 'SHORTAGE';
 
-export interface ReceivedContainer {
-  id: number;
-  number: string;
-  /** The container's one name (containerName(): Herkenbare naam, else the number). */
-  name: string;
-  receivedOn: string | null;
-}
-
-/** The received containers that carried this product, newest first, so a report can name its origin. */
-export function receivedContainersFor(orders: readonly PurchaseOrderView[], productId: number): ReceivedContainer[] {
-  return orders
-    .filter((row) => row.order.status === 'ONTVANGEN'
-      && row.order.lines.some((line) => line.productId === productId))
-    .map((row) => ({ id: row.order.id, number: row.order.number, name: containerName(row.order), receivedOn: row.order.receivedOn ?? null }))
-    .sort((left, right) => (right.receivedOn ?? '').localeCompare(left.receivedOn ?? '') || right.id - left.id)
-    .slice(0, 12);
-}
+export type { ReceivedContainer } from './received-containers';
 
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
-    ProductPlacesLine, PageHeader, Icon, Sheet, LoadError, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    ProductPlacesLine, PageHeader, Icon, Sheet, LoadError, StockBookingSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -503,10 +487,11 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
                   </button>
                 }
                 <div class="stock-row__actions">
-                  <button type="button" (click)="correctOpen.set(true)">Corrigeren</button>
-                  <button type="button" (click)="openTakeout('DAMAGED')">Beschadigd</button>
-                  <button type="button" (click)="openTakeout('SHORTAGE')">Te weinig</button>
-                  <button type="button" (click)="openTakeout('DEMO')">Demo</button>
+                  <button type="button" (click)="openBooking('RECOUNT')">Hertelling</button>
+                  <button type="button" (click)="openBooking('DAMAGED')">Beschadigd</button>
+                  <button type="button" (click)="openBooking('SHORTAGE')">Te weinig</button>
+                  <button type="button" (click)="openBooking('DEMO')">Demo</button>
+                  @if ((stockLevels() ?? []).length > 1) { <button type="button" (click)="openBooking('TRANSFER')">Verplaatsen</button> }
                 </div>
               </div>
             </section>
@@ -649,94 +634,11 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
         <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
       }
 
-      <!-- Broken or given away as demo: the piece leaves the shelf with a
-           note that says why - right here, not in the editor. -->
-      @if (takeout(); as out) {
-        <app-sheet [title]="takeoutTitle(out.kind)" (closed)="takeout.set(null)">
-          <div body>
-            <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
-              <button type="button" [class.on]="out.kind === 'DAMAGED'"
-                      (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
-              <button type="button" [class.on]="out.kind === 'SHORTAGE'"
-                      (click)="takeout.set({ ...out, kind: 'SHORTAGE' })">Te weinig geleverd</button>
-              <button type="button" [class.on]="out.kind === 'DEMO'"
-                      (click)="takeout.set({ ...out, kind: 'DEMO', purchaseOrderId: null })">Demo</button>
-            </div>
-            @if (out.kind !== 'DEMO') {
-              <div class="field mt-12">
-                <label for="out-po">Uit welke container? <span class="opt"></span></label>
-                <select class="select" id="out-po"
-                        (change)="takeout.set({ ...out, purchaseOrderId: $any($event.target).value ? +$any($event.target).value : null })">
-                  <option value="" [selected]="out.purchaseOrderId === null">Niet aan een container gekoppeld</option>
-                  @for (order of receivedOrders(); track order.id) {
-                    <option [value]="order.id" [selected]="out.purchaseOrderId === order.id">{{ containerLabel(order) }}</option>
-                  }
-                </select>
-                <small class="takeout-hint">{{ out.purchaseOrderId === null
-                  ? 'Gekoppeld aan een container komt de melding in het dossier van die order en als waarschuwing op de volgende leveranciersorder.'
-                  : 'De melding komt in het dossier van deze container en op de volgende leveranciersorder van dit product.' }}</small>
-              </div>
-            }
-            <div class="form-grid mt-12">
-              @if ((stockLevels() ?? []).length > 1) {
-                <div class="field">
-                  <label for="out-loc">Locatie</label>
-                  <select class="select" id="out-loc"
-                          (change)="takeout.set({ ...out, locationId: +$any($event.target).value })">
-                    @for (level of stockLevels(); track level.locationId) {
-                      <option [value]="level.locationId" [selected]="out.locationId === level.locationId">
-                        {{ level.name }} ({{ level.quantity | num }})
-                      </option>
-                    }
-                  </select>
-                </div>
-              }
-              <div class="field">
-                <label class="req" for="out-qty">Aantal</label>
-                <input class="input num right" id="out-qty" type="number" min="1" step="1" inputmode="numeric"
-                       [value]="out.quantity || ''"
-                       (input)="takeout.set({ ...out, quantity: +$any($event.target).value })" />
-              </div>
-              <div class="field span-2">
-                <label for="out-note">Notitie <span class="opt"></span></label>
-                <input class="input" id="out-note"
-                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gebarsten bij het uitpakken' : out.kind === 'SHORTAGE' ? 'bijv. doos 12 bevatte 18 in plaats van 24' : 'bijv. klant Janssens'"
-                       [value]="out.note"
-                       (input)="takeout.set({ ...out, note: $any($event.target).value })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="takeout.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="stockSaving() || !(out.quantity > 0)"
-                    (click)="confirmTakeout()">{{ stockSaving() ? 'Bezig…' : 'Melden' }}</button>
-          </div>
-        </app-sheet>
-      }
-
-      <!-- A recount: type the number, it books as a correction at once. -->
-      @if (correctOpen()) {
-        <app-sheet title="Voorraad corrigeren" (closed)="correctOpen.set(false)">
-          <div body>
-            <div class="correct-levels">
-              @for (level of stockLevels(); track level.locationId) {
-                <label class="correct-levels__tile">
-                  <small>{{ level.name }}</small>
-                  <input class="correct-levels__qty num" type="text" autocomplete="off" inputmode="numeric"
-                         [attr.aria-label]="level.name" [value]="level.quantity"
-                         (keydown.enter)="$any($event.target).blur()"
-                         (change)="bookCorrection(level.locationId, $any($event.target))" />
-                </label>
-              }
-            </div>
-            <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="correctOpen.set(false)">Sluiten</button>
-          </div>
-        </app-sheet>
+      <!-- Voorraad boeken: the one sheet for every booking, at page level. -->
+      @if (bookingSheet(); as booking) {
+        <app-stock-booking-sheet [product]="product" [levels]="bookingLevels()" [containers]="receivedOrders()"
+                                 [kind]="booking.kind" [locationId]="booking.locationId"
+                                 (booked)="onBooked($event)" (closed)="bookingSheet.set(null)" />
       }
 
     } @else if (loadError(); as error) {
@@ -812,15 +714,6 @@ export function receivedContainersFor(orders: readonly PurchaseOrderView[], prod
       font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
     .stock-more { margin: 2px 0 0; padding: 6px 2px 0; border: 0; background: none; color: var(--muted);
       font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
-    .takeout-hint { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.4; }
-    .takeout-kind { margin-bottom: 4px; }
-    .correct-levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .correct-levels__tile { display: grid; gap: 3px; padding: 10px 11px; border: 1px solid var(--line);
-      border-radius: 12px; background: var(--surface-2); }
-    .correct-levels__tile small { color: var(--muted); font-size: 10px; font-weight: 700;
-      letter-spacing: .05em; text-transform: uppercase; }
-    .correct-levels__qty { width: 100%; border: 0; background: transparent; font: inherit;
-      font-size: 16px; font-weight: 750; }
 
     .expected { color: var(--warn); font-style: normal; font-weight: 700; text-decoration: none; }
     /* On the water: always its own, last line under the stock. */
@@ -1267,78 +1160,32 @@ export class ProductView {
     return this.allMovesOpen() ? history : history.slice(0, 3);
   });
 
-  /* ---- stock actions, right on the page ---- */
-  readonly correctOpen = signal(false);
+  /* ---- stock bookings: one sheet (Voorraad boeken) for every kind ---- */
   readonly stockSaving = signal(false);
-  readonly takeout = signal<{
-    kind: TakeoutKind; locationId: number | null; quantity: number; note: string; purchaseOrderId: number | null;
-  } | null>(null);
   /** Received containers that carried this product: what a damage or shortage report can point at. */
   readonly receivedOrders = signal<ReceivedContainer[]>([]);
+  /** The open Voorraad boeken sheet: which kind, on which location. */
+  readonly bookingSheet = signal<{ kind: BookingKind; locationId: number | null } | null>(null);
+  readonly bookingLevels = computed<BookingLevel[]>(() =>
+    (this.stockLevels() ?? []).map((level) => ({ locationId: level.locationId, name: level.name, quantity: level.quantity })));
 
-  openTakeout(kind: TakeoutKind): void {
-    const levels = this.stockLevels() ?? [];
-    const preferred = levels.find((level) => level.quantity > 0) ?? levels[0];
-    this.takeout.set({ kind, locationId: preferred?.locationId ?? null, quantity: 0, note: '', purchaseOrderId: null });
-  }
-
-  takeoutTitle(kind: TakeoutKind): string {
-    return kind === 'DAMAGED' ? 'Stuk / beschadigd' : kind === 'SHORTAGE' ? 'Te weinig geleverd' : 'Demo weggegeven';
+  /** A location row opens a recount of that location; the buttons start on the first location with stock. */
+  openBooking(kind: BookingKind, locationId?: number | null): void {
+    this.bookingSheet.set({ kind, locationId: locationId ?? null });
   }
 
   containerLabel(order: ReceivedContainer): string {
     return containerOptionLabel(order);
   }
 
-  async confirmTakeout(): Promise<void> {
-    const product = this.product();
-    const out = this.takeout();
-    if (!product || product.id === null || !out || !(out.quantity > 0)) return;
-    this.stockSaving.set(true);
-    try {
-      const note = out.note.trim() || null;
-      const container = out.kind === 'DEMO' ? null : this.receivedOrders().find((order) => order.id === out.purchaseOrderId) ?? null;
-      if (container && out.kind !== 'DEMO') {
-        await this.sourcing.reportAfterReceipt(container.id, {
-          productId: product.id, locationId: out.locationId, quantity: out.quantity, kind: out.kind, note,
-        });
-      } else {
-        await this.catalog.takeOutStock(product.id, {
-          locationId: out.locationId, quantity: out.quantity, kind: out.kind, note,
-        });
-      }
-      this.takeout.set(null);
-      const booked = out.kind === 'DAMAGED' ? 'Beschadigde stuks geboekt' : out.kind === 'SHORTAGE' ? 'Tekort geboekt' : 'Demo geboekt';
-      this.ui.toast(container ? `${booked} · gemeld op ${container.name}` : booked);
-      this.refreshStock(product.id);
-      void this.sourcing.receiptIssues(product.id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
-    } catch (failure) {
-      this.ui.toast(messageOf(failure, 'Boeken mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
-  }
-
-  async bookCorrection(locationId: number, input: HTMLInputElement): Promise<void> {
-    const product = this.product();
-    if (!product || product.id === null) return;
-    const before = this.stockLevels()?.find((level) => level.locationId === locationId)?.quantity ?? 0;
-    const quantity = parseCount(input.value);
-    /* No count (empty, letters, a minus, a decimal) books nothing: the old figure comes back. */
-    if (quantity === null || quantity === before) {
-      input.value = String(before);
-      if (quantity === null) this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
-      return;
-    }
-    this.stockSaving.set(true);
-    try {
-      await this.catalog.setStock(product.id, quantity, locationId);
-      this.ui.toast('Correctie geboekt');
-      this.refreshStock(product.id);
-    } catch (failure) {
-      this.ui.toast(messageOf(failure, 'Correctie boeken mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
+  /** The sheet booked (and toasted): every figure on the page follows, the Schade/tekort list too after a container report. */
+  onBooked(event: StockBooked): void {
+    this.bookingSheet.set(null);
+    const id = this.product()?.id;
+    if (id === null || id === undefined) return;
+    this.refreshStock(id);
+    if (event.containerId !== null) {
+      void this.sourcing.receiptIssues(id).then((issues) => this.receiptIssues.set(issues)).catch(() => {});
     }
   }
 
@@ -1482,8 +1329,7 @@ export class ProductView {
     this.priceBuild.set(null);
     this.stockHistory.set(null);
     this.allMovesOpen.set(false);
-    this.correctOpen.set(false);
-    this.takeout.set(null);
+    this.bookingSheet.set(null);
     this.family.set(null);
     this.familyLoadError.set(false);
     this.familyLoading.set(false);
