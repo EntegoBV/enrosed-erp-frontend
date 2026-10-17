@@ -41,6 +41,7 @@ import { Skeleton } from '../../shared/skeleton';
         }
         @if (status(); as line) { <p class="terms-staff__status">{{ line }}</p> }
         <ng-container [ngTemplateOutlet]="texts" />
+        <p class="tiny muted center mt-24">{{ companyName() }}</p>
       </div>
     } @else {
     <div class="terms">
