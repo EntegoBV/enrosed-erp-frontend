@@ -60,3 +60,10 @@ app-analyses-page { display: block; }
   .an-body--legacy > .an-bar { margin-inline: 0; }
   .an-phone .ios-banner { margin-bottom: 14px; }
 }
+
+/* ---------- desk 680–1023: the tabs as chips (the rail has no sub-items) */
+.an-tabs { display: none; }
+@media (min-width: 680px) and (max-width: 1023.98px) {
+  .an-tabs { display: flex; flex-wrap: nowrap; margin: 0 0 var(--an-gap); overflow-x: auto; scrollbar-width: none; }
+  .an-tabs .wk-chip { flex: none; text-decoration: none; }
+}

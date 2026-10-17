@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
+import { DESK_TAB_ROW } from './analyses-desk-tabs';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import {
@@ -155,6 +156,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
     </app-page-header>
 
     <main class="content analyses-page an" [attr.aria-busy]="busy() || filtering()">
+      @if (deskTabRow) {
       <nav #analysisNavigation class="analysis-tabs" aria-label="Analyseonderdelen">
         @for (tab of analysisTabs; track tab.id) {
           <a [routerLink]="['/analyses', tab.id]" [class.active]="section() === tab.id"
@@ -162,6 +164,14 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             <span class="analysis-tab-icon" [attr.data-tone]="tab.tone"><app-icon [name]="tab.icon" [size]="18" /></span>
             <span>{{ tab.label }}</span>
           </a>
+        }
+      </nav>
+      }
+      <!-- 680–1023: the sidebar is a rail without sub-items, so the tabs show as chips (design §2.2). -->
+      <nav class="wk-chips an-tabs" aria-label="Analyseonderdelen">
+        @for (item of analysisTabs; track item.id) {
+          <a class="wk-chip" [class.is-on]="section() === item.id" [routerLink]="['/analyses', item.id]" [replaceUrl]="true"
+             [attr.aria-current]="section() === item.id ? 'page' : null">{{ item.label }}</a>
         }
       </nav>
 
@@ -966,6 +976,8 @@ export class AnalysesPage {
   private readonly work = inject(WorkQueue);
   private readonly website = viewChild(WebsiteAnalytics);
   readonly analysisTabs = ANALYSIS_TABS;
+  /** The old desk tab row, off since the redesign (analyses-desk-tabs.ts). */
+  readonly deskTabRow = DESK_TAB_ROW;
   readonly section = toSignal(this.route.paramMap.pipe(map((params) =>
     analysisSection(params.get('section')))), { initialValue: 'cash' as AnalysisSection });
   private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
