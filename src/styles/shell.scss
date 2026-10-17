@@ -225,6 +225,9 @@
     transition: opacity var(--dur-2, .2s) var(--ease-out, ease), transform var(--dur-2, .2s) var(--ease-out, ease);
   }
   .appbar--large.appbar--condensed .appbar__title { opacity: 1; transform: none; }
+  /* The last fold step (critique B5): the back control is already a circle and the title
+     still cut, so the pencil gives way; the button keeps its "Titel wijzigen" name. */
+  .appbar--tight .appbar__pencil { display: none; }
   /* Centred unless the trail holds more than one glass circle or any capsule
      (critique B5): then the title sits left, next to the back control. */
   .appbar:has(.appbar__actions > :not(.hide-mobile, .appbar__divider, app-notification-bell, .btn--icon-mobile)) .appbar__lead,

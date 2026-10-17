@@ -26,6 +26,19 @@ import { parentOf } from '../core/platform/page-parent';
 import { isPhoneTabRoot } from '../core/platform/phone-tabs';
 import { capsuleLabel, screenLabel } from '../core/platform/return-label';
 
+/**
+ * Whether a single-line text is cut. Measured unrounded: a Range over the
+ * text reports its full laid-out width even when ellipsized, while
+ * scrollWidth and clientWidth are rounded integers, so an overflow under a
+ * pixel never shows there although the browser draws the ellipsis.
+ */
+export function textCut(element: HTMLElement): boolean {
+  if (element.scrollWidth > element.clientWidth) return true;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  return range.getBoundingClientRect().width > element.getBoundingClientRect().width + 0.01;
+}
+
 /** The screen above this one, as a page names it: label and URL. */
 export interface PageHeaderParent {
   label: string;
@@ -56,9 +69,13 @@ export interface PageHeaderParent {
  * It reads the screen below in the history ("‹ Verkoop", history back);
  * without one, the parent's label (detail screens) or backTo's, else
  * "Meer", and it navigates there. Labels over ten characters, or a title
- * that would be cut, make it a chevron circle. Projected .btn become glass
- * capsules (primary: accent), .btn--icon-mobile glass circles; the bell is
- * a glass circle too.
+ * that would be cut, make it a chevron circle; if the title is still cut,
+ * the pencil of an editable title gives way too (the button keeps its
+ * "Titel wijzigen" name). A document number is never cut for chrome.
+ * "Cut" is measured unrounded (a Range over the text against its box):
+ * scrollWidth rounds a sub-pixel overflow away while the browser still
+ * draws the ellipsis. Projected .btn become glass capsules (primary:
+ * accent), .btn--icon-mobile glass circles; the bell is a glass circle too.
  *
  * The title can be editable — order screens use this so the document number
  * is changed right where it is displayed, instead of in a form field that
@@ -76,7 +93,8 @@ export interface PageHeaderParent {
   imports: [Icon, NotificationBell],
   template: `
     <header class="appbar" #bar [class.appbar--crumb]="!!crumb()" [class.appbar--large]="largeShown()"
-            [class.appbar--condensed]="condensed()" [class.appbar--two]="!largeShown() && !!subtitle()">
+            [class.appbar--condensed]="condensed()" [class.appbar--two]="!largeShown() && !!subtitle()"
+            [class.appbar--tight]="!desktop.active() && fold() === 'none'">
       @if (backControl(); as control) {
         @if (control.text) {
           <button class="appbar__back ios-capsule ios-back" type="button" [attr.aria-label]="control.aria" (click)="back()">
@@ -228,9 +246,10 @@ export class PageHeader {
   readonly condensed = signal(false);
 
   /**
-   * How far the way up has folded so the title (a document number, a
+   * How far the chrome has folded so the title (a document number, a
    * product name) stays whole. Desk: the crumb label, its chevron alone, or
-   * nothing. Phone: the back capsule, then a chevron circle.
+   * nothing. Phone: the back capsule ('full'), a chevron circle ('chevron'),
+   * then also no pencil on an editable title ('none', .appbar--tight).
    */
   readonly fold = signal<'full' | 'chevron' | 'none'>('full');
 
@@ -311,17 +330,26 @@ export class PageHeader {
     this.fitFrame = requestAnimationFrame(() => this.fit());
   }
 
-  /** Folds the way up one step while the title text does not fit; it unfolds only when the room grows. */
+  /** Folds the chrome one step while the title text is cut; it unfolds only when the room grows. */
   private fit(): void {
     const fold = this.fold();
     if (fold === 'none') return;
-    const desk = !!this.crumb();
-    /* Phone: only a labelled back capsule can give way, and only on a bar title (not the large one). */
-    const phone = !desk && fold === 'full' && !this.largeShown() && !!this.backControl()?.text;
-    if (!desk && !phone) return;
     const text = this.titleText()?.nativeElement;
-    if (!text || text.scrollWidth <= text.clientWidth + 0.5) return;
-    this.fold.set(fold === 'full' ? 'chevron' : 'none');
+    if (!text || !textCut(text)) return;
+    if (this.crumb()) {
+      /* Desk: the crumb's label, then the crumb itself. */
+      this.fold.set(fold === 'full' ? 'chevron' : 'none');
+    } else if (this.desktop.active() || this.largeShown()) {
+      return;
+    } else if (fold === 'full' && this.backControl()?.text) {
+      /* Phone bar title: the labelled back capsule becomes a circle first ... */
+      this.fold.set('chevron');
+    } else if (this.titleEditable()) {
+      /* ... then the pencil of an editable title gives way (about 18 px). */
+      this.fold.set('none');
+    } else {
+      return;
+    }
     this.scheduleFit();
   }
 

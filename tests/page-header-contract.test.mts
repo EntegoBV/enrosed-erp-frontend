@@ -49,3 +49,23 @@ test('the phone tab bar lights the tab the screen is listed under', () => {
   }
   assert.doesNotMatch(app, /salesRoute|catalogRoute|moreRoute/);
 });
+
+test('B5: a cut title is measured unrounded, and the phone folds the back label, then the pencil', () => {
+  /* scrollWidth/clientWidth are integers: a sub-pixel overflow never counted, yet the ellipsis was drawn
+     ("OF-2026-01…" at 390). The Range over the text reports its full width even when ellipsized. */
+  const cut = header.slice(header.indexOf('export function textCut('), header.indexOf('/** The screen above this one'));
+  assert.match(cut, /element\.scrollWidth > element\.clientWidth\)/);
+  assert.match(cut, /range\.selectNodeContents\(element\)/);
+  assert.match(cut, /range\.getBoundingClientRect\(\)\.width > element\.getBoundingClientRect\(\)\.width \+ 0\.01/);
+  const fit = header.slice(header.indexOf('private fit(): void {'), header.indexOf('startEditing(): void'));
+  assert.match(fit, /!textCut\(text\)/);
+  assert.doesNotMatch(fit, /clientWidth \+ 0\.5/);
+  /* phone: the labelled capsule becomes a circle, then the pencil of an editable title gives way */
+  assert.ok(fit.indexOf("this.fold.set('chevron')") < fit.indexOf("this.titleEditable()"));
+  assert.match(fit, /else if \(this\.titleEditable\(\)\) \{\s*\/\*[^*]*\*\/\s*this\.fold\.set\('none'\);/);
+  assert.match(header, /\[class\.appbar--tight\]="!desktop\.active\(\) && fold\(\) === 'none'"/);
+  const phone = shell.slice(shell.indexOf('@media (max-width: 679.98px) {\n  :root { --appbar-h'));
+  assert.match(phone.slice(0, phone.indexOf('\n}\n')), /\.appbar--tight \.appbar__pencil \{ display: none; \}/);
+  /* the button keeps its name when the pencil is gone */
+  assert.match(header, /\[attr\.aria-label\]="'Titel wijzigen: ' \+ title\(\)" \(click\)="startEditing\(\)"/);
+});
