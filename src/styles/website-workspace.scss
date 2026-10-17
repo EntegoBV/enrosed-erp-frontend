@@ -37,6 +37,10 @@
 }
 @media (max-width:679.98px){
  body:has(.shell--website .ios-tabbar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 24px)}
+ /* the Homepage and Teksten save bars sit just above the tab bar: a toast stands above them, never on Opslaan (as purchase-phone.scss) */
+ body:has(.shell--website .ws-savebar, .shell--website .ws-ph-editor .ws-edfoot.is-dirty) .toasts{bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 104px)}
+ /* typing: the tab bar steps aside and the save bar sits at the keyboard (critique N22), the toast just above it */
+ body:has(.shell--website .ws-ios .ws-ph-editor textarea:focus) .toasts{bottom:calc(var(--safe-b) + 76px)}
  /* A page that is not on the kit yet still clears the website tab bar with its last row. */
  .shell--website .main>*>.content{padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px)}
 }
