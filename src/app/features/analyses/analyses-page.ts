@@ -126,6 +126,8 @@ const EMPTY_REPORT: ReceiptVarianceReport = {
 };
 /** The tabs that read the page's own load (Markt and Bezoekers load their own data; critique B6). */
 const DATA_TABS = new Set<AnalysisSection>(['cash', 'overview', 'sales', 'inventory', 'purchasing', 'result']);
+/** Lists that stop at 5 on the desk too, beside a shorter card (limitOf). */
+const SHORT_LISTS = new Set(['follow']);
 
 /** Toolbar title and subtitle per tab (design §2.1); Overzicht has no crumb and is called "Analyses". */
 const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = {
@@ -630,7 +632,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
                   @for (order of take('follow', m.attentionOrders); track order.orderId) {
-                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/sales', order.orderId]">
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= limitOf('follow')" [routerLink]="['/sales', order.orderId]">
                       <span class="an-row__body"><span class="an-row__title">{{ order.number }}</span>
                         <span class="an-row__sub">{{ order.customerName }} · {{ dayText(order.orderDate) }}</span>
                         <span class="an-row__chips">@for (reason of order.reasons; track reason) { <span class="an-chip" [attr.data-tone]="order.severity === 'danger' ? 'danger' : null">{{ attentionReason(reason) }}</span> }</span></span>
@@ -864,42 +866,37 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             @else { <app-an-month-bars [months]="r.monthly" [height]="desk.active() ? 180 : 132" [compact]="!desk.active()" /> }
           </div>
         </section>
-        <div class="an-cols">
-          <div class="an-col">
-            <section class="an-card" aria-labelledby="an-rchannel-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="an-rchannel-title">Per verkoopkanaal</h2><span class="an-card__trail">resultaat, excl. btw</span></header>
-              <div class="an-card__body">
-                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
-                  @for (row of r.byChannel; track row.channel) {
-                    <div class="an-row an-row--nolead">
-                      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
-                        <span class="an-row__sub">{{ plural(row.invoiceCount, 'factuur', 'facturen') }} · omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
-                      <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
-                    </div>
-                  } @empty { <p class="an-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
-                }
-              </div>
-            </section>
+        <!-- Per verkoopkanaal (1–3 rows) and Kosten per categorie are full-width cards: side by side the short channel card left a hole of 250+ px (design §2.1.5). -->
+        <section class="an-card" aria-labelledby="an-rchannel-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="an-rchannel-title">Per verkoopkanaal</h2><span class="an-card__trail">resultaat, excl. btw</span></header>
+          <div class="an-card__body">
+            @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+              @for (row of r.byChannel; track row.channel) {
+                <div class="an-row an-row--nolead">
+                  <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
+                    <span class="an-row__sub">{{ plural(row.invoiceCount, 'factuur', 'facturen') }} · omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
+                </div>
+              } @empty { <p class="an-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
+            }
           </div>
-          <div class="an-col">
-            <section class="an-card" aria-labelledby="an-rcat-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="an-rcat-title">Kosten per categorie</h2><span class="an-card__trail"><a class="an-link" routerLink="/costs">alle kosten ›</a></span></header>
-              <div class="an-card__body">
-                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
-                  @for (row of take('categories', r.byCategory); track row.category) {
-                    <div class="an-row an-share" [class.mo-fade]="$index >= listLimit()">
-                      <span class="an-row__body"><span class="an-row__title">{{ categoryLabel(row.category) }}</span></span>
-                      <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
-                      <span class="an-row__value">{{ whole(row.amountEur) }}</span>
-                      <span class="an-row__meta">{{ row.sharePct | pct: 0 }}</span>
-                    </div>
-                  } @empty { <p class="an-empty">Nog geen kosten geboekt in deze periode.</p> }
-                  <ng-container *ngTemplateOutlet="more; context: { key: 'categories', total: r.byCategory.length }" />
-                }
-              </div>
-            </section>
+        </section>
+        <section class="an-card" aria-labelledby="an-rcat-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="an-rcat-title">Kosten per categorie</h2><span class="an-card__trail"><a class="an-link" routerLink="/costs">alle kosten ›</a></span></header>
+          <div class="an-card__body">
+            @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+              @for (row of take('categories', r.byCategory); track row.category) {
+                <div class="an-row an-share" [class.mo-fade]="$index >= limitOf('categories')">
+                  <span class="an-row__body"><span class="an-row__title">{{ categoryLabel(row.category) }}</span></span>
+                  <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
+                  <span class="an-row__value">{{ whole(row.amountEur) }}</span>
+                  <span class="an-row__meta">{{ row.sharePct | pct: 0 }}</span>
+                </div>
+              } @empty { <p class="an-empty">Nog geen kosten geboekt in deze periode.</p> }
+              <ng-container *ngTemplateOutlet="more; context: { key: 'categories', total: r.byCategory.length }" />
+            }
           </div>
-        </div>
+        </section>
         <section class="an-card" aria-labelledby="an-months-title">
           <header class="an-card__head"><h2 class="an-card__title" id="an-months-title">Per maand</h2><span class="an-card__trail">{{ desk.active() ? 'oudste maand eerst' : 'nieuwste maand eerst' }}</span></header>
           @if (loading()) { <div class="an-card__body"><app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /></div> }
@@ -1213,7 +1210,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
     </ng-template>
 
     <ng-template #more let-key="key" let-total="total">
-      @if (total > listLimit()) {
+      @if (total > limitOf(key)) {
         <button class="an-more" type="button" [attr.aria-expanded]="openLists().has(key)" (click)="toggleList(key)">{{ openLists().has(key) ? 'Minder tonen' : 'Alle ' + total + ' tonen' }}</button>
       }
     </ng-template>
@@ -1491,8 +1488,14 @@ export class AnalysesPage {
   /* Lists: 8 rows on the desk, 5 on the phone, the rest behind "Alle n tonen" (design §2.1, §2.3). */
   readonly openLists = signal<ReadonlySet<string>>(new Set());
   readonly listLimit = computed(() => this.desk.active() ? 8 : 5);
+  /**
+   * A list beside a shorter card stops at 5 on the desk too, so both columns end close together (design §2.1.5):
+   * Verkoop's Opvolgen beside Omzet per kanaal.
+   */
+  limitOf(key: string): number { return SHORT_LISTS.has(key) ? 5 : this.listLimit(); }
   take<T>(key: string, rows: readonly T[]): readonly T[] {
-    return this.openLists().has(key) || rows.length <= this.listLimit() ? rows : rows.slice(0, this.listLimit());
+    const limit = this.limitOf(key);
+    return this.openLists().has(key) || rows.length <= limit ? rows : rows.slice(0, limit);
   }
   toggleList(key: string): void {
     this.openLists.update((open) => { const next = new Set(open); if (!next.delete(key)) next.add(key); return next; });
