@@ -27,6 +27,7 @@ import { Diary } from './diary';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
+import { LoadError } from '../../shared/load-error';
 import { Sheet } from '../../shared/ui';
 import { paymentPlanLabel } from './payment-plan';
 import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
@@ -68,7 +69,7 @@ type DeskRow =
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -1196,12 +1197,19 @@ type DeskRow =
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
       }
     } @else {
-      <app-page-header title="Inkoop" subtitle="Inkooporder laden…" [showBack]="true" [showBell]="false" />
-      <div class="content desk-skeleton" role="status" aria-live="polite" aria-label="Inkooporder laden">
-        <app-skeleton kind="card" [rows]="1" />
-        <app-skeleton kind="stats" [rows]="4" />
-        <app-skeleton kind="list" [rows]="5" />
-      </div>
+      @if (loadError(); as error) {
+        <app-page-header title="Inkoop" [showBack]="true" [showBell]="false" />
+        <div class="content desk-skeleton">
+          <app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" />
+        </div>
+      } @else {
+        <app-page-header title="Inkoop" subtitle="Inkooporder laden…" [showBack]="true" [showBell]="false" />
+        <div class="content desk-skeleton" role="status" aria-live="polite" aria-label="Inkooporder laden">
+          <app-skeleton kind="card" [rows]="1" />
+          <app-skeleton kind="stats" [rows]="4" />
+          <app-skeleton kind="list" [rows]="5" />
+        </div>
+      }
     }
   `,
   styles: [`

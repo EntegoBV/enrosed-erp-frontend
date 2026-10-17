@@ -45,7 +45,8 @@ function setup() {
   // than an application injector. This includes reads before load's first await.
   const watches: ReturnType<typeof createWatch>[] = [];
   let effectPending = false;
-  vm.runInNewContext(javascript, { exports, untracked, effect: (callback: () => void) => {
+  vm.runInNewContext(javascript, { exports, untracked, LOAD_ERROR_FALLBACK: 'Controleer de verbinding en probeer opnieuw.',
+    messageOf: (failure: unknown, fallback: string) => (failure as { message?: string })?.message || fallback, effect: (callback: () => void) => {
     const watch = createWatch(callback, () => { effectPending = true; }, true);
     watches.push(watch);
     watch.notify();
@@ -56,7 +57,7 @@ function setup() {
     id: signal('50'), view: signal<ReturnType<typeof order> | null>(null),
     documents: signal<ReturnType<typeof document>[] | null>(null), documentsFailed: signal(false), documentLoadVersion: 0,
     paymentRefreshVersion: 0, previewVersion: 0,
-    paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
+    paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null), loadError: signal(null),
     families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
     stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''), applyFor: signal(null),
     loadPayments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
@@ -82,7 +83,7 @@ test('the route effect loads once and never subscribes to the order view or draf
     await settle();
     assert.equal(state.editor.view().order.id, 50);
     assert.equal(state.effectPending(), false, 'Publishing the loaded view must not restart the route effect');
-    assert.deepEqual(state.calls, ['GET order 50', 'GET documents 50']);
+    assert.deepEqual(state.calls, ['GET documents 50', 'GET order 50'], 'F23: the dossier starts beside the order, not behind it');
     const edited = { ...state.editor.view(), order: { ...state.editor.view().order, alias: 'Nog niet opgeslagen' } };
     state.editor.view.set(edited);
     assert.equal(state.effectPending(), false, 'Typing must not reload the server and discard the draft');
@@ -92,7 +93,7 @@ test('the route effect loads once and never subscribes to the order view or draf
     await settle();
     assert.equal(state.editor.view().order.id, 51);
     assert.equal(state.effectPending(), false);
-    assert.deepEqual(state.calls, ['GET order 50', 'GET documents 50', 'GET order 51', 'GET documents 51']);
+    assert.deepEqual(state.calls, ['GET documents 50', 'GET order 50', 'GET documents 51', 'GET order 51']);
   } finally { state.destroy(); }
 });
 
@@ -105,7 +106,7 @@ test('first-open documents survive a response before the catalogue and order vie
     await settle();
     assert.equal(editor.view(), null, 'The catalogue still holds back the order view');
     assert.deepEqual(editor.documents(), [document(150)]);
-    assert.deepEqual(calls, ['GET order 50', 'GET documents 50']);
+    assert.deepEqual(calls, ['GET documents 50', 'GET order 50']);
   } finally {
     catalogue.resolve([]);
     await opening;
@@ -216,4 +217,25 @@ test('returning to the same order does not revive a request from the previous vi
   old.resolve([document(150)]);
   await first;
   assert.deepEqual(editor.documents(), [document(250)]);
+});
+
+test('a failing order request ends in the error state instead of an endless skeleton; a later load clears it (Inkoop redesign B2)', async () => {
+  const { editor, api } = setup();
+  api.purchaseOrder = async () => { throw new Error('Inkooporder niet gevonden'); };
+  await editor.load(50);
+  assert.equal(editor.view(), null);
+  assert.equal(editor.loadError(), 'Inkooporder niet gevonden');
+  api.purchaseOrder = async (id: number) => order(id);
+  await editor.load(50);
+  assert.equal(editor.loadError(), null);
+  assert.equal(editor.view().order.id, 50);
+  api.products = async () => { throw new Error(''); };
+  editor.view.set(null);
+  await editor.load(50);
+  assert.equal(editor.loadError(), 'Controleer de verbinding en probeer opnieuw.', 'the catalogue failing is a failed load too');
+  editor.id.set('51');
+  api.purchaseOrder = async () => { throw new Error('te laat'); };
+  const late = editor.load(50);
+  await late;
+  assert.equal(editor.loadError(), null, 'a failure of an order the route left never shows');
 });

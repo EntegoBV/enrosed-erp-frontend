@@ -18,6 +18,7 @@ import { purchaseNacalc } from './purchase-nacalc-metrics';
 import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { Diary } from './diary';
 import { Skeleton } from '../../shared/skeleton';
+import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { saveBlob } from '../../core/api/download';
 import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
@@ -77,7 +78,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, AuthImage, Skeleton, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
             IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
   template: `
@@ -706,10 +707,14 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
     } @else {
       <div class="mpo-phone mpo-phone--view">
         <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
-        <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
-          <app-skeleton kind="card" [rows]="3" />
-          <app-skeleton kind="lines" [rows]="4" />
-        </div>
+        @if (loadError(); as error) {
+          <div class="mpo-loading"><app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" /></div>
+        } @else {
+          <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
+            <app-skeleton kind="card" [rows]="3" />
+            <app-skeleton kind="lines" [rows]="4" />
+          </div>
+        }
       </div>
     }
   `,
@@ -1176,8 +1181,19 @@ export class PurchaseView {
     return locations.find((location) => location.id === (id ?? main?.id))?.name ?? 'Magazijn';
   }
 
+  /** The order could not load (B2): app-load-error with 'Opnieuw proberen' instead of an endless skeleton. */
+  readonly loadError = signal<string | null>(null);
+  readonly loadRetrying = signal(false);
+  async retryLoad(): Promise<void> {
+    const id = Number(this.id());
+    if (!id || this.loadRetrying()) return;
+    this.loadRetrying.set(true);
+    try { await this.load(id); } finally { this.loadRetrying.set(false); }
+  }
+
   private async load(id: number): Promise<void> {
     this.view.set(null);
+    this.loadError.set(null);
     this.workspaceSection.set(rootSectionOf(parseTab(this.tab())));
     this.lineSheet.set(null);
     this.stepOpen.set(null);
@@ -1198,13 +1214,21 @@ export class PurchaseView {
     /* The families decide how the product list groups and sorts, so they arrive
        with the order: the list must not paint and then jump into its groups. A
        failing catalogue endpoint still never blocks the screen. */
-    const [view, products, categories, suppliers, families] = await Promise.all([
-      this.sourcing.purchaseOrder(id),
-      this.catalog.products(),
-      this.catalog.categories().catch(() => [] as Category[]),
-      this.sourcing.suppliers(),
-      this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
-    ]);
+    let loaded: [PurchaseOrderView, Product[], Category[], Supplier[], ProductFamily[]];
+    try {
+      loaded = await Promise.all([
+        this.sourcing.purchaseOrder(id),
+        this.catalog.products(),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.sourcing.suppliers(),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
+      ]);
+    } catch (failure: unknown) {
+      if (Number(this.id()) === id) this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+      return;
+    }
+    if (Number(this.id()) !== id) return;
+    const [view, products, categories, suppliers, families] = loaded;
     this.catalog.stockLocations().then((locations) => this.stockLocations.set(locations)).catch(() => undefined);
     this.families.set(families);
     this.products.set(products);

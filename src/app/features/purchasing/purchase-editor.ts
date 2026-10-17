@@ -78,6 +78,7 @@ import { ProductDraft } from '../../shared/product-picker';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
 import { Skeleton } from '../../shared/skeleton';
+import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
 import { PAYMENT_TOLERANCE_EUR, instalmentsOf, paymentPlanLabel, splitTotal, paymentPlanError, type PaymentPlanFields } from './payment-plan';
 import { purchaseGroupSettled, purchaseInstalmentState } from './purchase-instalment-state';
@@ -160,7 +161,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
             IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
@@ -1286,10 +1287,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
     } @else {
       <div class="mpo-phone mpo-phone--edit">
         <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()" />
-        <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
-          <app-skeleton kind="card" [rows]="3" />
-          <app-skeleton kind="lines" [rows]="4" />
-        </div>
+        @if (loadError(); as error) {
+          <div class="mpo-loading"><app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" /></div>
+        } @else {
+          <div class="mpo-loading" role="status" aria-live="polite" aria-label="Inkooporder laden">
+            <app-skeleton kind="card" [rows]="3" />
+            <app-skeleton kind="lines" [rows]="4" />
+          </div>
+        }
       </div>
     }
   `,
@@ -3639,12 +3644,14 @@ export class PurchaseEditor {
   protected async loadPartnerDocs(orderId: number): Promise<void> {
     try {
       const all = await this.sales.orders();
+      if (Number(this.id()) !== orderId) return;
       this.relatedSalesDocs.set(all.filter((view) => view.order.partnerPurchaseOrderId === orderId || view.order.sourcePurchaseOrderId === orderId));
       const deals = all.filter((view) => view.order.partnerPurchaseOrderId === orderId && view.order.purpose !== 'STANDARD');
       this.partnerDocs.set(deals);
       const customerId = deals[0]?.order.customerId;
       if (!customerId) { this.partnerCompany.set(''); this.partnerCustomer.set(null); return; }
       const customers = await this.sales.customers().catch(() => [] as Customer[]);
+      if (Number(this.id()) !== orderId) return;
       const customer = customers.find((row) => row.id === customerId) ?? null;
       this.partnerCustomer.set(customer);
       this.partnerCompany.set(customer?.company ?? '');
@@ -4254,11 +4261,25 @@ export class PurchaseEditor {
     });
   }
 
+  /**
+   * The order could not load (B2): the screen shows app-load-error with
+   * 'Opnieuw proberen' instead of an endless skeleton. Only while no order shows.
+   */
+  readonly loadError = signal<string | null>(null);
+  readonly loadRetrying = signal(false);
+  async retryLoad(): Promise<void> {
+    const orderId = Number(this.id());
+    if (!orderId || this.loadRetrying()) return;
+    this.loadRetrying.set(true);
+    try { await this.load(orderId); } finally { this.loadRetrying.set(false); }
+  }
+
   protected async load(orderId: number): Promise<void> {
     ++this.paymentRefreshVersion;
     ++this.previewVersion;
     ++this.documentLoadVersion;
     this.documents.set(null);
+    this.loadError.set(null);
     if (this.view()?.order.id !== orderId) {
       this.view.set(null);
       /* The Kostprijzen toepassen sheet was for the order being left. */
@@ -4268,27 +4289,39 @@ export class PurchaseEditor {
     this.paymentStateLoading.set(false);
     this.payments.set(null);
     this.families.set([]);
-    /* The families decide how the product list groups and sorts, so they load
-       with the order: the list must not paint and then jump into its groups. An
-       unavailable catalogue endpoint still never holds up opening the order. */
-    const [view, families] = await Promise.all([
-      this.sourcing.purchaseOrder(orderId),
-      this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
-    ]);
-    if (Number(this.id()) !== orderId) return;
-    this.families.set(families);
+    /* F23: what needs only the id starts at once, beside the order (each guards by id/version),
+       instead of waiting behind the order and the families. */
     void this.loadPayments(orderId);
     void this.loadDocuments(orderId);
     void this.loadBankLines();
     void this.loadPartnerDocs(orderId);
+    const failed = (failure: unknown): void => {
+      if (Number(this.id()) === orderId) this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    };
+    /* The families decide how the product list groups and sorts, so they load
+       with the order: the list must not paint and then jump into its groups. An
+       unavailable catalogue endpoint still never holds up opening the order. */
+    let view: PurchaseOrderView;
+    let families: ProductFamily[];
+    try {
+      [view, families] = await Promise.all([
+        this.sourcing.purchaseOrder(orderId),
+        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
+      ]);
+    } catch (failure: unknown) { failed(failure); return; }
+    if (Number(this.id()) !== orderId) return;
+    this.families.set(families);
     this.savedOrder.set(JSON.stringify(view.order));
-    const [products, categories, suppliers, locations, freightRates] = await Promise.all([
-      this.catalog.products(view.order.supplierId),
-      this.catalog.categories().catch(() => [] as Category[]),
-      this.sourcing.suppliers(),
-      this.catalog.stockLocations().catch(() => [] as StockLocation[]),
-      /* A market-context hint must never block opening the order. */
-      this.sourcing.freightRates().catch(() => [] as FreightRate[])]);
+    let products: Product[], categories: Category[], suppliers: Supplier[], locations: StockLocation[], freightRates: FreightRate[];
+    try {
+      [products, categories, suppliers, locations, freightRates] = await Promise.all([
+        this.catalog.products(view.order.supplierId),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.sourcing.suppliers(),
+        this.catalog.stockLocations().catch(() => [] as StockLocation[]),
+        /* A market-context hint must never block opening the order. */
+        this.sourcing.freightRates().catch(() => [] as FreightRate[])]);
+    } catch (failure: unknown) { failed(failure); return; }
     if (Number(this.id()) !== orderId) return;
     this.products.set(products);
     this.categories.set(categories);
