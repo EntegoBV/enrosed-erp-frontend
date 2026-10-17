@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  PRELOAD_PATHS, ROUTE_PROGRESS_DELAY_MS, ROUTE_PROGRESS_GROW_MS, preloadAllowed,
+  PRELOAD_PATHS, ROUTE_PROGRESS_DELAY_MS, ROUTE_PROGRESS_GROW_MS, preloadAllowed, preloadWanted,
 } from '../src/app/core/platform/shell-loading-plan.ts';
 
 const service = readFileSync(new URL('../src/app/core/platform/shell-loading.ts', import.meta.url), 'utf8');
@@ -37,4 +37,18 @@ test('the shell installs it from a lazy chunk', () => {
   for (const side of ['finance/finance-admin-nav', 'files/files-admin-nav', 'website-builder/website-admin-nav']) {
     assert.ok(service.includes(`import('../../features/${side}')`), side);
   }
+});
+
+test('preloading only for a signed-in user on a staff screen: never on /offerte, not before login', () => {
+  assert.equal(preloadWanted(true, false), true);
+  assert.equal(preloadWanted(false, false), false, 'before login (the guard is redirecting)');
+  assert.equal(preloadWanted(false, true), false, 'the login page or a customer on /offerte');
+  assert.equal(preloadWanted(true, true), false, 'a staff member opening a customer link');
+  const gate = app.slice(app.indexOf('private readonly idlePreload = effect('), app.indexOf('logout(): void'));
+  assert.match(gate, /if \(this\.idlePreloadStarted \|\| !preloadWanted\(this\.auth\.isLoggedIn\(\), this\.bare\(\)\)\) return;/);
+  assert.match(gate, /this\.idlePreloadStarted = true;/);
+  assert.match(gate, /m\.startIdlePreload\(this\.router, this\.document\)/);
+  /* the progress line stays unconditional and no longer preloads */
+  const progress = service.slice(service.indexOf('export function installShellLoading('), service.indexOf('export function startIdlePreload('));
+  assert.doesNotMatch(progress, /requestIdleCallback|PRELOAD_PATHS/);
 });

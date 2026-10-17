@@ -22,3 +22,12 @@ export function preloadAllowed(connection: ConnectionHint | null | undefined): b
   const type = connection?.effectiveType ?? '';
   return type !== '2g' && type !== 'slow-2g';
 }
+
+/**
+ * Whether the shell may preload the staff chunks: only for a signed-in user
+ * on a staff screen. A customer on /offerte (often a phone on mobile data)
+ * never uses them, and on /login they wait until after signing in.
+ */
+export function preloadWanted(loggedIn: boolean, bare: boolean): boolean {
+  return loggedIn && !bare;
+}

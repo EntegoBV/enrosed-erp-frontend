@@ -28,6 +28,7 @@ import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
+import { preloadWanted } from './core/platform/shell-loading-plan';
 
 /**
  * App shell.
@@ -415,7 +416,7 @@ export class App {
    */
   readonly phoneTab = computed(() => phoneTabForUrl(this.url()));
 
-  /* The route progress line and the idle preloading (shell-loading.ts), from a lazy chunk. */
+  /* The route progress line (shell-loading.ts), from a lazy chunk. */
   private readonly shellLoading = effect((onCleanup) => {
     let uninstall: (() => void) | null = null;
     let cancelled = false;
@@ -423,6 +424,19 @@ export class App {
       if (!cancelled) uninstall = m.installShellLoading(this.router, this.document, this.desktopViewport);
     });
     onCleanup(() => { cancelled = true; uninstall?.(); });
+  });
+
+  /*
+   * The staff chunks load ahead when the browser is idle, once, and only for
+   * a signed-in user on a staff screen: a customer on /offerte never needs
+   * them, and on /login they wait until after signing in (the effect runs
+   * again when the login lands).
+   */
+  private idlePreloadStarted = false;
+  private readonly idlePreload = effect(() => {
+    if (this.idlePreloadStarted || !preloadWanted(this.auth.isLoggedIn(), this.bare())) return;
+    this.idlePreloadStarted = true;
+    void import('./core/platform/shell-loading').then((m) => m.startIdlePreload(this.router, this.document));
   });
 
   logout(): void {

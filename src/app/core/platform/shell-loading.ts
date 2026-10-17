@@ -17,11 +17,13 @@ import { prefersReducedMotion } from '../../shared/motion';
  *   behind the leave-confirm sheet, N16), grows to 80 % over 2 s, completes
  *   on arrival and fades. Under reduced motion: a still line while waiting.
  *   Above the toolbar (60), under sheets (100); aria-hidden.
- * - Preloading: when the browser is idle after the first screen, the five
- *   tab roots' chunks load ahead, so switching tabs never waits, and so do
- *   the three workspace sides (deferred in the shell). Not on a data-saving
- *   or 2G connection; requestIdleCallback only where it exists (Safari: a
- *   1.5 s timeout, N17).
+ * - Preloading (startIdlePreload): when the browser is idle after the
+ *   first screen, the five tab roots' chunks load ahead, so switching tabs
+ *   never waits, and so do the three workspace sides (deferred in the
+ *   shell). Not on a data-saving or 2G connection; requestIdleCallback only
+ *   where it exists (Safari: a 1.5 s timeout, N17). The shell starts it
+ *   once, for a signed-in user on a staff screen (preloadWanted): never for
+ *   a customer on /offerte, nor on /login.
  */
 export function installShellLoading(router: Router, document: Document, desktop: DesktopViewport): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -81,6 +83,11 @@ export function installShellLoading(router: Router, document: Document, desktop:
     else if (event instanceof NavigationCancel || event instanceof NavigationError) reset();
   });
 
+  return () => { subscription.unsubscribe(); reset(); };
+}
+
+/** Loads the tab roots and the workspace sides ahead once the browser is idle (see above). */
+export function startIdlePreload(router: Router, document: Document): void {
   const view = document.defaultView as (Window & {
     requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
   }) | null;
@@ -101,6 +108,4 @@ export function installShellLoading(router: Router, document: Document, desktop:
     if (typeof view.requestIdleCallback === 'function') view.requestIdleCallback(run, { timeout: 3000 });
     else view.setTimeout(run, 1500);
   }
-
-  return () => { subscription.unsubscribe(); reset(); };
 }
