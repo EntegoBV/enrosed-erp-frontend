@@ -112,6 +112,39 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/analyses/*'],
     rows: [{ keys: ['⌥', '1–8'], text: 'Onderdeel van Analyses' }],
   },
+  /* Website beheren (2026-10-17). */
+  {
+    routes: ['/website/layout'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Ander blok kiezen' },
+      { keys: ['⌥', '↑'], alt: ['⌥', '↓'], text: 'Blok hoger of lager zetten' },
+      { keys: ['Spatie'], text: 'Blok tonen of verbergen' },
+      { keys: ['↵'], text: 'Naar de instellingen van het blok' },
+    ],
+  },
+  {
+    routes: ['/website/texts', '/website/seo'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere tekstgroep kiezen' },
+      { keys: ['↵'], text: 'Naar het tekstveld' },
+      { keys: ['['], alt: [']'], text: 'Vorige of volgende taal' },
+    ],
+  },
+  {
+    routes: ['/website/products'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere reeks kiezen' },
+      { keys: ['↵'], text: 'Reeks openen' },
+    ],
+  },
+  {
+    routes: ['/website/categories'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Andere categorie kiezen' },
+      { keys: ['⌥', '↑'], alt: ['⌥', '↓'], text: 'Categorie hoger of lager zetten' },
+      { keys: ['↵'], text: 'Categorie openen' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */

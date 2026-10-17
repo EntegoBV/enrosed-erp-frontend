@@ -2,26 +2,52 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   HostListener,
+  Injector,
+  ViewEncapsulation,
+  afterNextRender,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
+  viewChild,
 } from '@angular/core';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import {
+  ContentTranslationGroup,
   WebsiteBuilderHomepage,
   WebsiteBuilderSection,
   WebsiteBuilderSectionKey,
 } from '../../core/api/models';
-import { PageHeader } from '../../shared/page-header';
-import { Ui } from '../../shared/ui';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { NavHistory } from '../../core/platform/nav-history-service';
+import { Icon } from '../../shared/icon';
+import { IosNav } from '../../shared/ios-nav';
+import { LoadError } from '../../shared/load-error';
+import { SegmentOption, Segmented } from '../../shared/segmented';
+import { Skeleton } from '../../shared/skeleton';
+import { Sheet, Ui, confirmLeave } from '../../shared/ui';
 import { ContentTranslationWorkspace } from '../settings/content-translation-workspace';
+import { shortMoment } from '../settings/website-sync-copy';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
+import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { environment } from '../../../environments/environment';
+import { WEBSITE_LANGUAGE_ORDER, plural } from './website-attention';
+import { LayoutEdits, editedKeys, layoutEdits, layoutEditsText, normalizeSections } from './website-homepage';
+import { WebsitePhoneBack } from './website-phone-back';
+import { websitePreviewUrl } from './website-preview-url';
+import { WebsiteStatusBar } from './website-status-bar';
+import { WebsiteStore } from './website-store';
+import { displayLabel } from './website-text-areas';
 
 interface SectionDefinition {
   key: WebsiteBuilderSectionKey;
@@ -32,1436 +58,454 @@ interface SectionDefinition {
   manageLabel: string;
   manageRoute: string;
   fixed?: boolean;
+  /** Why moving this block changes nothing on the live site today (HOMEPAGE_SITE_GAPS). */
+  siteGap?: string;
 }
 
 const SECTION_DEFINITIONS: readonly SectionDefinition[] = [
-  {
-    key: 'hero',
-    label: 'Openingsbeeld & tekstband',
-    description: 'Het eerste beeld, de hoofdboodschap en de tekstband eronder.',
-    previewAnchor: 'hero',
-    contentPrefixes: ['home.hero', 'home.marquee'],
-    manageLabel: 'Alle websiteteksten',
-    manageRoute: '/website/texts',
-    fixed: true,
-  },
-  {
-    key: 'range',
-    label: 'Ons assortiment',
-    description: 'De categorieën waarmee een inkoper de collectie binnenkomt.',
-    previewAnchor: 'range',
-    contentPrefixes: ['home.catalog'],
-    manageLabel: 'Categorieën & beelden',
-    manageRoute: '/website/categories',
-  },
-  {
-    key: 'order',
-    label: 'Zo bestelt u',
-    description: 'De drie bestelroutes van aanvraag tot levering.',
-    previewAnchor: 'wholesale',
-    contentPrefixes: ['home.order'],
-    manageLabel: 'Alle websiteteksten',
-    manageRoute: '/website/texts',
-  },
-  {
-    key: 'counter',
-    label: 'Counterdisplays',
-    description: 'Producten die direct op de toonbank kunnen.',
-    previewAnchor: 'displays',
-    contentPrefixes: ['home.counter'],
-    manageLabel: 'Producten & beelden',
-    manageRoute: '/website/products',
-  },
-  {
-    key: 'flowerbox',
-    label: 'Glass bowls & flowerboxes',
-    description: 'Bestsellers; houd de glazen presentaties prominent en hoog.',
-    previewAnchor: 'flowerboxes',
-    contentPrefixes: ['home.flowerbox'],
-    manageLabel: 'Producten & beelden',
-    manageRoute: '/website/products',
-  },
-  {
-    key: 'soap',
-    label: 'Zeep- en foamrozen',
-    description: 'De gift-ready collectie van soap- en foamproducten.',
-    previewAnchor: 'soap-roses',
-    contentPrefixes: ['home.soap'],
-    manageLabel: 'Producten & beelden',
-    manageRoute: '/website/products',
-  },
-  {
-    key: 'occasion',
-    label: 'Kleine cadeaus',
-    description: 'Compacte producten voor een klein gebaar.',
-    previewAnchor: 'gifting',
-    contentPrefixes: ['home.occasion'],
-    manageLabel: 'Producten & beelden',
-    manageRoute: '/website/products',
-  },
-  {
-    key: 'retail',
-    label: 'Geschikt voor retail',
-    description: 'Verkoopomgevingen en toepassingen voor professionele kopers.',
-    previewAnchor: 'retail-channels',
-    contentPrefixes: ['home.retail'],
-    manageLabel: 'Producten & beelden',
-    manageRoute: '/website/products',
-  },
-  {
-    key: 'faq',
-    label: 'Veelgestelde vragen',
-    description: 'Praktische antwoorden voor professionele klanten.',
-    previewAnchor: 'trade-faq',
-    contentPrefixes: ['home.faq'],
-    manageLabel: 'Alle websiteteksten',
-    manageRoute: '/website/texts',
-  },
-  {
-    key: 'catalog',
-    label: 'Volledige collectie',
-    description: 'De uitgebreide productcatalogus op de homepage.',
-    previewAnchor: 'collection',
-    contentPrefixes: ['home.catalog'],
-    manageLabel: 'Categorieën & producten',
-    manageRoute: '/website/categories',
-  },
-  {
-    key: 'quote',
-    label: 'Offerte aanvragen',
-    description: 'Het vaste contactblok onderaan de pagina.',
-    previewAnchor: 'contact',
-    contentPrefixes: ['home.quote'],
-    manageLabel: 'Alle websiteteksten',
-    manageRoute: '/website/texts',
-    fixed: true,
-  },
-] as const;
+  { key: 'hero', label: 'Openingsbeeld & tekstband', description: 'Het eerste beeld, de hoofdboodschap en de tekstband eronder.',
+    previewAnchor: 'hero', contentPrefixes: ['home.hero', 'home.marquee'], manageLabel: 'Alle websiteteksten', manageRoute: '/website/texts', fixed: true },
+  { key: 'range', label: 'Ons assortiment', description: 'De categorieën waarmee een inkoper de collectie binnenkomt.',
+    previewAnchor: 'range', contentPrefixes: ['home.catalog'], manageLabel: 'Categorieën & beelden', manageRoute: '/website/categories' },
+  { key: 'order', label: 'Zo bestelt u', description: 'De drie bestelroutes van aanvraag tot levering.',
+    previewAnchor: 'wholesale', contentPrefixes: ['home.order'], manageLabel: 'Alle websiteteksten', manageRoute: '/website/texts' },
+  { key: 'counter', label: 'Counterdisplays', description: 'Producten die direct op de toonbank kunnen.',
+    previewAnchor: 'displays', contentPrefixes: ['home.counter'], manageLabel: 'Producten & beelden', manageRoute: '/website/products' },
+  { key: 'flowerbox', label: 'Glass bowls & flowerboxes', description: 'Bestsellers: houd de glazen presentaties prominent en hoog op de pagina.',
+    previewAnchor: 'flowerboxes', contentPrefixes: ['home.flowerbox'], manageLabel: 'Producten & beelden', manageRoute: '/website/products' },
+  { key: 'soap', label: 'Zeep- en foamrozen', description: 'Ondersteunende collectie: gift-ready zeep- en foamrozen.',
+    previewAnchor: 'soap-roses', contentPrefixes: ['home.soap'], manageLabel: 'Producten & beelden', manageRoute: '/website/products' },
+  { key: 'occasion', label: 'Kleine cadeaus', description: 'Compacte producten voor een klein gebaar.',
+    previewAnchor: 'gifting', contentPrefixes: ['home.occasion'], manageLabel: 'Producten & beelden', manageRoute: '/website/products' },
+  { key: 'retail', label: 'Geschikt voor retail', description: 'Verkoopomgevingen en toepassingen voor professionele kopers.',
+    previewAnchor: 'retail-channels', contentPrefixes: ['home.retail'], manageLabel: 'Producten & beelden', manageRoute: '/website/products' },
+  { key: 'faq', label: 'Veelgestelde vragen', description: 'Praktische antwoorden voor professionele klanten.',
+    previewAnchor: 'trade-faq', contentPrefixes: ['home.faq'], manageLabel: 'Alle websiteteksten', manageRoute: '/website/texts',
+    siteGap: 'staat op de site in de footer' },
+  { key: 'catalog', label: 'Volledige collectie', description: 'De uitgebreide productcatalogus op de homepage.',
+    previewAnchor: 'collection', contentPrefixes: ['home.catalog'], manageLabel: 'Categorieën & producten', manageRoute: '/website/categories' },
+  { key: 'quote', label: 'Offerte aanvragen', description: 'Het vaste contactblok onderaan de pagina.',
+    previewAnchor: 'contact', contentPrefixes: ['home.quote'], manageLabel: 'Alle websiteteksten', manageRoute: '/website/texts', fixed: true,
+    siteGap: 'niet op de live homepage' },
+];
 
-const SECTION_KEYS = new Set<WebsiteBuilderSectionKey>(
-  SECTION_DEFINITIONS.map((section) => section.key),
-);
+/**
+ * How the live homepage differs from this layout, read on 16 October 2026
+ * (website follow-ups G1-G3). Delete this note, and the siteGap lines above,
+ * once the website follows the builder again.
+ */
+const HOMEPAGE_SITE_GAPS = 'Live homepage, 16 okt: ‘Beurzen’ staat altijd vóór de footer en is hier niet instelbaar; '
+  + 'de veelgestelde vragen staan in de footer; ‘Offerte aanvragen’ staat niet meer op de homepage.';
 
+/** Below a 1100 px main (viewport 1348 with the 248 px side) the preview takes turns with the inspector. */
+const THREE_COLUMNS = '(min-width: 1348px)';
+const PREVIEW_DESK_WIDTH = 1280;
+const PREVIEW_PHONE_WIDTH = 390;
+const PREVIEW_HINT = 'Vraagt het voorbeeld ‘Kies uw taal’? Kies Nederlands en klik Verder.';
+const LIST_URL = '/website/layout';
+
+/**
+ * Homepage of Website beheren (/website/layout): the order and visibility of
+ * the homepage blocks as a list, the chosen block in an inspector with its
+ * texts, and the live site as a preview. Draft and publish with revisions,
+ * conflicts, ⌘S and the unsaved guard work as before; the frame is the kit.
+ * Below a 1100 px main the preview and the inspector take turns
+ * ("Indeling · Voorbeeld"). The phone shows the list, a block view
+ * (?blok=key) and the preview in a sheet; texts are edited in Teksten.
+ */
 @Component({
   selector: 'app-website-builder-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ContentTranslationWorkspace, PageHeader, RouterLink, WebsiteSyncStatus],
+  encapsulation: ViewEncapsulation.None,
+  styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-homepage.scss', '../../../styles/website-texts.scss'],
+  imports: [ContentTranslationWorkspace, Icon, IosNav, LoadError, NgTemplateOutlet, RouterLink, Segmented, Sheet, Skeleton, WebsiteStatusBar, WebsiteSyncStatus],
   template: `
-    <app-page-header
-      title="Homepage builder"
-      subtitle="Kies een blok, wijzig het op één plek en controleer de gepubliceerde website."
-      [showBell]="false"
-    >
-      <a class="btn btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        {{ previewSiteLabel }} openen
-      </a>
-    </app-page-header>
-
-    <main class="content builder-page">
-      <section class="builder-guide" role="note">
-        <span class="builder-guide__step">1</span>
-        <div>
-          <b>Kies een homepageblok</b
-          ><small>Swipe door de paginaopbouw en tik het onderdeel aan.</small>
-        </div>
-        <span class="builder-guide__step">2</span>
-        <div>
-          <b>Pas indeling of tekst aan</b><small>Teksten kunt u nu in deze builder bewerken.</small>
-        </div>
-        <span class="builder-guide__step">3</span>
-        <div>
-          <b>Publiceer de indeling</b
-          ><small>De preview toont bewust de huidige live website.</small>
-        </div>
-      </section>
-
-      <nav class="mobile-tabs" role="tablist" aria-label="Website-builder weergave">
-        <button
-          id="builder-edit-tab"
-          type="button"
-          role="tab"
-          [class.active]="mobileTab() === 'edit'"
-          [attr.aria-selected]="mobileTab() === 'edit'"
-          [attr.tabindex]="mobileTab() === 'edit' ? 0 : -1"
-          aria-controls="builder-edit-pane"
-          (click)="setMobileTab('edit')"
-          (keydown)="onMobileTabKeydown($event, 'edit')"
-        >
-          Bewerken
-        </button>
-        <button
-          id="builder-preview-tab"
-          type="button"
-          role="tab"
-          [class.active]="mobileTab() === 'preview'"
-          [attr.aria-selected]="mobileTab() === 'preview'"
-          [attr.tabindex]="mobileTab() === 'preview' ? 0 : -1"
-          aria-controls="builder-preview-pane"
-          (click)="setMobileTab('preview')"
-          (keydown)="onMobileTabKeydown($event, 'preview')"
-        >
-          Live voorbeeld
-        </button>
-      </nav>
-
-      @if (loading() && !snapshot()) {
-        <section class="load-state card" role="status">
-          <span class="load-dot" aria-hidden="true"></span>
-          <div><b>Website-indeling laden…</b><small>Een ogenblik.</small></div>
-        </section>
-      } @else if (loadError() && !snapshot()) {
-        <section class="load-state load-state--error card" role="alert">
-          <div>
-            <b>Website-indeling kon niet worden geladen</b><small>{{ loadError() }}</small>
+    <ng-template #previewFrame let-phone>
+      <div class="ws-stage" #stage [class.ws-stage--mobile]="phone || previewDevice() === 'mobile'">
+        @if (previewError()) {
+          <div class="wk-empty ws-prev-error" role="alert">
+            <h3 class="wk-empty__title">Het voorbeeld reageert niet</h3>
+            <p class="wk-empty__text">{{ previewError() }}</p>
+            <div class="wk-empty__actions">
+              <button class="wk-btn" type="button" (click)="refreshPreview()"><app-icon name="refresh" [size]="15" />Opnieuw laden</button>
+              <a class="wk-btn" [href]="previewBaseUrl" target="_blank" rel="noopener">{{ previewSiteLabel }} openen <app-icon name="external" [size]="13" /></a>
+            </div>
           </div>
-          <button class="btn btn--primary" type="button" (click)="load()">Opnieuw proberen</button>
-        </section>
-      } @else if (snapshot()) {
-        <div class="builder-layout" [attr.data-mobile-tab]="mobileTab()">
-          <section
-            id="builder-edit-pane"
-            class="builder-pane builder-controls"
-            role="tabpanel"
-            aria-labelledby="builder-edit-tab"
-          >
-            <section class="status-card card" aria-live="polite">
-              <span
-                class="status-mark"
-                [class.status-mark--pending]="dirty() || hasUnpublishedChanges()"
-                aria-hidden="true"
-              ></span>
-              <div>
-                <b>{{ draftStatusTitle() }}</b>
-                <small>{{ draftStatusDetail() }}</small>
-              </div>
-              @if (snapshot()?.updatedAt; as updatedAt) {
-                <time [attr.datetime]="updatedAt">Gewijzigd {{ formatMoment(updatedAt) }}</time>
-              }
-            </section>
+        } @else {
+          @if (!previewLoaded()) { <div class="ws-prev-loading" role="status" aria-label="Voorbeeld laden"><span></span><span></span><span></span></div> }
+          <div class="ws-site" [style.height.px]="phone ? null : frameHeight()">
+            <iframe [src]="previewUrl()" [title]="'Voorbeeld van de ' + previewSiteName" referrerpolicy="strict-origin-when-cross-origin"
+                    [style.width.px]="phone ? null : frameWidth()" [style.height.px]="phone ? null : frameInnerHeight()"
+                    [style.transform]="phone ? null : 'scale(' + frameScale() + ')'"
+                    (load)="markPreviewLoaded()" (error)="markPreviewFailed()"></iframe>
+          </div>
+        }
+      </div>
+      <p class="ws-prev-hint">{{ previewHint }}</p>
+    </ng-template>
 
-            @if (conflict()) {
-              <section class="conflict-card" role="alert">
-                <div>
-                  <b>Iemand anders heeft de website-indeling aangepast</b>
-                  <small>{{ actionError() }}</small>
-                </div>
-                <button class="btn" type="button" [disabled]="busy()" (click)="reloadLatest()">
-                  Nieuwste versie laden
-                </button>
+    @if (desk.active()) {
+      <div class="wk-page ws-page ws-hp-page">
+        <header class="wk-toolbar">
+          <div class="wk-toolbar__lead">
+            <h1 class="wk-toolbar__title">Homepage</h1>
+            @if (!threeColumns()) {
+              <app-segmented label="Rechterkolom" semantics="tabs" [options]="viewOptions" [value]="rightView()" (changed)="setRightView($any($event))" />
+            } @else if (snapshot()) {
+              <span class="ws-sub">{{ visibleCount() }} van {{ sections().length }} blokken zichtbaar</span>
+            }
+          </div>
+          <div class="wk-toolbar__tools">
+            @if (snapshot()) {
+              <span class="ws-state" [class]="'ws-state tone-' + state().tone" [attr.title]="state().detail">
+                <i aria-hidden="true"></i><span class="ws-long">{{ state().label }}</span><span class="ws-short">{{ state().short }}</span>
+              </span>
+            }
+            @if (dirty()) {
+              <button class="wk-btn wk-btn--ghost" type="button" [disabled]="busy()" (click)="revertLayout()">Herstellen</button>
+              <button class="wk-btn" type="button" [disabled]="busy() || copyDirty()" [attr.title]="copyDirty() ? 'Sla eerst de tekst op' : null" (click)="saveDraft()">
+                <span class="ws-long">Concept opslaan</span><span class="ws-short">Opslaan</span><span class="wk-kbd" aria-hidden="true">⌘S</span>
+              </button>
+            }
+            @if (dirty() || hasUnpublishedChanges()) {
+              <button class="wk-btn wk-btn--primary" type="button" [disabled]="busy() || copyDirty()"
+                      [attr.title]="copyDirty() ? 'Sla eerst de tekst op' : null" (click)="publish()">
+                <app-icon name="upload" [size]="15" />{{ publishing() ? 'Publiceren…' : (dirty() ? 'Opslaan & publiceren' : 'Publiceren') }}
+              </button>
+            }
+          </div>
+        </header>
+
+        <div class="wk-notices">
+          <ng-container *ngTemplateOutlet="problems; context: { $implicit: false }" />
+        </div>
+
+        <div class="wk-body">
+          @if (loadError() && !snapshot()) {
+            <div class="wk-pane"><app-load-error title="Website-indeling kon niet worden geladen" [message]="loadError()" [busy]="loading()" (retry)="load()" /></div>
+          } @else {
+            <div class="ws-hp" [class.ws-hp--three]="threeColumns()" [class.ws-hp--preview]="!threeColumns() && rightView() === 'preview'">
+              <section class="ws-hp__list" aria-labelledby="ws-blocks-title">
+                <h2 class="ws-blk-head" id="ws-blocks-title">Volgorde op de homepage @if (snapshot()) {<span>{{ visibleCount() }} van {{ sections().length }} zichtbaar</span>}</h2>
+                @if (!snapshot()) {
+                  <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="8" /></div>
+                } @else {
+                  <div class="ws-blocks" role="list" aria-labelledby="ws-blocks-title" (keydown)="listKey($event)" (keyup)="listKeyUp($event)">
+                    @for (section of sections(); track section.key; let index = $index) {
+                      <div class="ws-blk" role="listitem" [class.is-sel]="selectedSectionIndex() === index" [class.is-hidden]="!section.enabled"
+                           [class.is-moved]="flash() === section.key">
+                        <button class="ws-blk__main" type="button" [attr.tabindex]="selectedSectionIndex() === index ? 0 : -1"
+                                [attr.aria-current]="selectedSectionIndex() === index ? 'true' : null" [attr.data-index]="index" [attr.data-key]="section.key" (click)="selectSection(index)">
+                          <span class="ws-blk__no">{{ positionLabel(index) }}</span>
+                          <span class="ws-blk__body">
+                            <span class="ws-blk__name">{{ definition(section.key).label }}</span>
+                            @if (definition(section.key).siteGap; as gap) { <span class="ws-blk__gap">{{ gap }}</span> }
+                            @if (pillOf(section); as pill) { <span class="ws-blk__meta">{{ pill }}</span> }
+                          </span>
+                          @if (changedKeys().has(section.key)) { <i class="ws-blk__changed" aria-label="gewijzigd"></i> }
+                          @if (pillOf(section); as pill) { <span class="wk-pill wk-pill--outline ws-blk__pill mo-fade">{{ pill }}</span> }
+                        </button>
+                        @if (!definition(section.key).fixed) {
+                          <button class="ws-eye" type="button" tabindex="-1" [class.is-off]="!section.enabled" [attr.aria-pressed]="section.enabled"
+                                  [attr.aria-label]="definition(section.key).label + (section.enabled ? ' verbergen' : ' tonen')"
+                                  [attr.title]="section.enabled ? 'Verbergen' : 'Tonen'" [disabled]="busy()" (click)="toggle(index)">
+                            <app-icon name="eye" [size]="16" />
+                          </button>
+                        } @else { <span class="ws-eye ws-eye--fixed" aria-hidden="true"></span> }
+                      </div>
+                    }
+                  </div>
+                  <p class="sr-only" aria-live="polite">{{ reorderAnnouncement() }}</p>
+                  <p class="ws-note">{{ siteGaps }}</p>
+                }
               </section>
-            } @else if (actionError()) {
-              <section class="error-card" role="alert">
-                <div>
-                  <b>{{ lastAction() === 'publish' ? 'Publiceren mislukt' : 'Opslaan mislukt' }}</b
-                  ><small>{{ actionError() }}</small>
+
+              <section class="ws-hp__insp" aria-label="Gekozen blok">
+                @if (selectedSection(); as section) {
+                  <ng-container *ngTemplateOutlet="inspector; context: { $implicit: section }" />
+                } @else {
+                  <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="6" /></div>
+                }
+              </section>
+
+              <aside class="ws-hp__prev" aria-label="Voorbeeld">
+                <div class="ws-prev-head">
+                  <b>Voorbeeld</b>
+                  <app-segmented label="Toestel" [options]="deviceOptions" [value]="previewDevice()" (changed)="previewDevice.set($any($event))" />
+                  <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button" aria-label="Voorbeeld verversen" title="Voorbeeld verversen" (click)="refreshPreview()"><app-icon name="refresh" [size]="16" /></button>
+                  <a class="wk-btn wk-btn--icon wk-btn--ghost" [href]="previewBaseUrl" target="_blank" rel="noopener" aria-label="Website openen in een nieuw venster" title="Website openen in een nieuw venster"><app-icon name="external" [size]="15" /></a>
                 </div>
-                <div class="error-card__actions">
-                  <button class="btn" type="button" [disabled]="busy()" (click)="reloadLatest()">
-                    Laatste versie laden
-                  </button>
-                  @if (lastAction() === 'publish') {
-                    <button
-                      class="btn btn--primary"
-                      type="button"
-                      [disabled]="busy()"
-                      (click)="publish()"
-                    >
-                      Opnieuw publiceren
-                    </button>
+                @if (previewNote(); as note) { <p class="ws-prev-note" role="status">{{ note }}
+                  @if (sync.pollEnded()) { <button class="wk-link" type="button" (click)="sync.load()">Status vernieuwen</button> · <button class="wk-link" type="button" (click)="refreshPreview()">Voorbeeld verversen</button> }
+                </p> }
+                @if (previewVisible()) { <ng-container *ngTemplateOutlet="previewFrame; context: { $implicit: false }" /> }
+              </aside>
+            </div>
+          }
+        </div>
+        <app-website-status-bar [text]="statusText()" hint="↑↓ kiezen · ⌥↑↓ verplaatsen · spatie tonen/verbergen" />
+      </div>
+    } @else {
+      <div class="ios-page ws-ios ws-hp-ios">
+        @if (blockKey(); as key) {
+          @if (sectionByKey(key); as section) {
+            <app-ios-nav [title]="'Blok ' + positionLabel(indexOf(section.key))" [largeTitle]="false" backLabel="Homepage" backAriaLabel="Terug naar Homepage" (back)="closeBlock()">
+              <button trail class="ios-capsule" type="button" (click)="openPreview()">Voorbeeld</button>
+            </app-ios-nav>
+            <div class="ws-ph-view" [class]="'ws-ph-view ' + viewMotion()">
+              <ng-container *ngTemplateOutlet="problems; context: { $implicit: true }" />
+              <div class="ws-ph-blockhead">
+                <small>Blok {{ positionLabel(indexOf(section.key)) }} van {{ sections().length }}@if (movedFrom(section.key); as was) { · was {{ was }} }</small>
+                <h1>{{ definition(section.key).label }}</h1>
+                <p>{{ definition(section.key).description }}</p>
+              </div>
+              <section class="ios-section">
+                <div class="ios-group">
+                  <label class="ios-cell">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Zichtbaar op de homepage</span></span>
+                    @if (definition(section.key).fixed) { <span class="ios-cell__value">Vast</span> }
+                    @else { <input class="ios-switch" type="checkbox" role="switch" [checked]="section.enabled" [disabled]="busy()" (change)="toggle(indexOf(section.key))" /> }
+                  </label>
+                  <div class="ios-cell">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Positie</span>
+                      <span class="ios-cell__sub">{{ indexOf(section.key) + 1 }} van {{ sections().length }}@if (movedFrom(section.key); as was) { · was {{ +was }} }</span></span>
+                    @if (!definition(section.key).fixed) {
+                      <span class="ws-ph-arrows">
+                        <button class="ios-circle" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omhoog'" [disabled]="busy() || !canMoveUp(indexOf(section.key))" (click)="move(indexOf(section.key), -1)"><app-icon name="chevron-up" [size]="18" /></button>
+                        <button class="ios-circle" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omlaag'" [disabled]="busy() || !canMoveDown(indexOf(section.key))" (click)="move(indexOf(section.key), 1)"><app-icon name="chevron-down" [size]="18" /></button>
+                      </span>
+                    }
+                  </div>
+                </div>
+              </section>
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Teksten @if (store.content()) { · {{ blockGroups(section.key).length }} · {{ blockMissing(section.key) ? plural(blockMissing(section.key), 'ontbreekt', 'ontbreken') : 'alle talen ✓' }} }</h2></div>
+                @if (!store.content()) {
+                  @if (store.errors().content) {
+                    <app-load-error title="Teksten konden niet worden geladen" [message]="store.errors().content!" [busy]="store.isLoading('content')" (retry)="store.refresh(['content'])" />
                   } @else {
-                    <button
-                      class="btn btn--primary"
-                      type="button"
-                      [disabled]="busy() || !dirty()"
-                      (click)="saveDraft()"
-                    >
-                      Opnieuw opslaan
-                    </button>
+                    <app-skeleton kind="group" [rows]="3" />
+                  }
+                } @else {
+                <div class="ios-group">
+                  @for (group of blockGroups(section.key).slice(0, showAllTexts() ? 999 : 6); track group.key) {
+                    <a class="ios-cell" routerLink="/website/texts" [queryParams]="{ key: group.key, returnTo: '/website/layout?blok=' + section.key }">
+                      <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ labelOf(group) }}</span><span class="ios-cell__sub" [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</span></span>
+                      <span class="ios-cell__value" [class.ws-warn-text]="group.missingLanguages.length">{{ group.missingLanguages.length ? group.missingLanguages.length + ' leeg' : languageCount + '/' + languageCount }}</span>
+                      <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
+                    </a>
+                  } @empty {
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen teksten voor dit blok.</span></span></div>
+                  }
+                  @if (!showAllTexts() && blockGroups(section.key).length > 6) {
+                    <button class="ios-cell ws-more-cell" type="button" (click)="showAllTexts.set(true)">Alle {{ blockGroups(section.key).length }} tonen</button>
                   }
                 </div>
-              </section>
-            }
-
-            <section class="card section-editor" aria-labelledby="sections-title">
-              <div class="card__head section-editor__head">
-                <div>
-                  <span class="eyebrow">Paginaopbouw</span>
-                  <h2 id="sections-title">Kies een onderdeel</h2>
-                  <p>Swipe horizontaal. De volgorde in deze rail is de volgorde op de homepage.</p>
-                </div>
-                <span>{{ activeSectionCount() }} actief</span>
-              </div>
-
-              <nav class="section-rail" aria-label="Homepage-onderdelen">
-                @for (
-                  section of sections();
-                  track section.key;
-                  let index = $index;
-                  let count = $count
-                ) {
-                  <button
-                    type="button"
-                    class="section-chip"
-                    [class.section-chip--selected]="selectedSectionIndex() === index"
-                    [class.section-chip--hidden]="!section.enabled"
-                    [attr.aria-current]="selectedSectionIndex() === index ? 'step' : null"
-                    [attr.aria-label]="
-                      definition(section.key).label + ', positie ' + (index + 1) + ' van ' + count
-                    "
-                    [attr.aria-posinset]="index + 1"
-                    [attr.aria-setsize]="count"
-                    [disabled]="copyDirty() || copyBusy()"
-                    (click)="selectSection(index)"
-                  >
-                    <span>{{ positionLabel(index) }}</span>
-                    <b>{{ definition(section.key).label }}</b>
-                    <small>{{ section.enabled ? 'Actief in indeling' : 'Verborgen' }}</small>
-                  </button>
                 }
-              </nav>
-
-              @if (selectedSection(); as activeSection) {
-                <article
-                  class="section-inspector"
-                  [class.section-inspector--hidden]="!activeSection.enabled"
-                >
-                  <header>
-                    <span class="section-number">{{ positionLabel(selectedSectionIndex()) }}</span>
-                    <div>
-                      <small>{{
-                        activeSection.enabled ? 'Actief homepageblok' : 'Verborgen homepageblok'
-                      }}</small>
-                      <h3>{{ definition(activeSection.key).label }}</h3>
-                    </div>
-                    @if (definition(activeSection.key).fixed) {
-                      <span class="fixed-badge">Vast blok</span>
-                    } @else {
-                      <button
-                        class="visibility-toggle"
-                        type="button"
-                        role="switch"
-                        [attr.aria-checked]="activeSection.enabled"
-                        [disabled]="busy() || copyBusy()"
-                        (click)="toggle(selectedSectionIndex())"
-                      >
-                        <span aria-hidden="true"></span>
-                        {{ activeSection.enabled ? 'Zichtbaar' : 'Verborgen' }}
-                      </button>
-                    }
-                  </header>
-                  <p>{{ definition(activeSection.key).description }}</p>
-
-                  <div class="section-inspector__actions">
-                    <div
-                      class="reorder-controls"
-                      role="group"
-                      [attr.aria-label]="'Volgorde van ' + definition(activeSection.key).label"
-                    >
-                      <button
-                        type="button"
-                        [disabled]="!canMoveUp(selectedSectionIndex()) || busy()"
-                        (click)="move(selectedSectionIndex(), -1)"
-                        [attr.aria-label]="
-                          definition(activeSection.key).label + ' één plaats naar voren'
-                        "
-                      >
-                        <i class="chevron chevron--left" aria-hidden="true"></i>
-                        Naar voren
-                      </button>
-                      <button
-                        type="button"
-                        [disabled]="!canMoveDown(selectedSectionIndex()) || busy()"
-                        (click)="move(selectedSectionIndex(), 1)"
-                        [attr.aria-label]="
-                          definition(activeSection.key).label + ' één plaats naar achteren'
-                        "
-                      >
-                        Naar achteren
-                        <i class="chevron chevron--right" aria-hidden="true"></i>
-                      </button>
-                    </div>
-                    <button
-                      class="btn inline-edit-button"
-                      type="button"
-                      [class.inline-edit-button--active]="copyEditorOpen()"
-                      [attr.aria-expanded]="copyEditorOpen()"
-                      [disabled]="copyBusy()"
-                      (click)="toggleCopyEditor()"
-                    >
-                      {{ copyEditorOpen() ? 'Teksteditor sluiten' : 'Teksten hier bewerken' }}
-                    </button>
-                    <a
-                      class="btn context-link"
-                      [routerLink]="definition(activeSection.key).manageRoute"
-                    >
-                      {{ definition(activeSection.key).manageLabel }}
-                      <i class="chevron chevron--right" aria-hidden="true"></i>
-                    </a>
-                  </div>
-
-                  <small class="section-inspector__preview-note">
-                    @if (selectedSectionIsPublished()) {
-                      Het live voorbeeld rechts springt mee naar dit onderdeel.
-                    } @else {
-                      Dit onderdeel staat nog niet zichtbaar in de gepubliceerde website.
-                    }
-                  </small>
-                </article>
+                @if (sharedWith(section.key); as other) { <p class="ios-section__foot">Deze teksten deelt dit blok met ‘{{ other }}’.</p> }
+              </section>
+              <section class="ios-section">
+                <div class="ios-group">
+                  <a class="ios-cell" [routerLink]="definition(section.key).manageRoute"><span class="ios-cell__body">{{ definition(section.key).manageLabel }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="18" /></a>
+                </div>
+              </section>
+            </div>
+          } @else {
+            <app-ios-nav title="Blok" [largeTitle]="false" backLabel="Homepage" backAriaLabel="Terug naar Homepage" (back)="closeBlock()" />
+            <div class="ws-ph-view">
+              @if (loadError() && !snapshot()) {
+                <app-load-error title="Website-indeling kon niet worden geladen" [message]="loadError()" [busy]="loading()" (retry)="load()" />
+              } @else {
+                <app-skeleton kind="group" [rows]="6" />
               }
-              <p class="sr-only" aria-live="polite">{{ reorderAnnouncement() }}</p>
-            </section>
-
-            @if (copyEditorOpen() && selectedSection(); as activeSection) {
-              <section class="inline-copy card" aria-label="Inline websiteteksten bewerken">
-                <div class="inline-copy__notice" role="note">
-                  <div>
-                    <b>Teksten van {{ definition(activeSection.key).label }}</b>
-                    <small
-                      >Tekstwijzigingen worden hier apart opgeslagen en starten daarna automatisch
-                      een website-update.</small
-                    >
-                  </div>
-                  <button
-                    type="button"
-                    [disabled]="copyDirty() || copyBusy()"
-                    (click)="closeCopyEditor()"
-                  >
-                    Sluiten
-                  </button>
+            </div>
+          }
+        } @else {
+          <app-ios-nav title="Homepage" [subtitle]="snapshot() ? visibleCount() + ' van ' + sections().length + ' blokken zichtbaar' : null"
+                       [backLabel]="back.label()" [backUrl]="back.url()" [backAriaLabel]="back.aria()">
+            <button trail class="ios-capsule" type="button" (click)="openPreview()">Voorbeeld</button>
+          </app-ios-nav>
+          <div class="ws-ph-view" [class]="'ws-ph-view ' + viewMotion()">
+            <app-website-sync-status variant="banner" />
+            <ng-container *ngTemplateOutlet="problems; context: { $implicit: true }" />
+            @if (loadError() && !snapshot()) {
+              <app-load-error title="Website-indeling kon niet worden geladen" [message]="loadError()" [busy]="loading()" (retry)="load()" />
+            } @else if (!snapshot()) {
+              <app-skeleton kind="group" [rows]="8" />
+            } @else {
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Volgorde op de homepage</h2>
+                  <button class="ios-section__link" type="button" (click)="reordering.set(!reordering())">{{ reordering() ? 'Klaar' : 'Volgorde wijzigen' }}</button></div>
+                <div class="ios-group ios-group--icons">
+                  @for (section of sections(); track section.key; let index = $index) {
+                    @if (reordering()) {
+                      <div class="ios-cell" [class.is-moved]="flash() === section.key">
+                        <span class="ws-numtile" [class.is-off]="!section.enabled">{{ positionLabel(index) }}</span>
+                        <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ definition(section.key).label }}</span>
+                          <span class="ios-cell__sub ios-cell__sub--wrap" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
+                        @if (!definition(section.key).fixed) {
+                          <span class="ws-ph-arrows">
+                            <button class="ws-arrow" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omhoog'" [disabled]="busy() || !canMoveUp(index)" (click)="move(index, -1)"><app-icon name="chevron-up" [size]="18" /></button>
+                            <button class="ws-arrow" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omlaag'" [disabled]="busy() || !canMoveDown(index)" (click)="move(index, 1)"><app-icon name="chevron-down" [size]="18" /></button>
+                          </span>
+                        }
+                      </div>
+                    } @else {
+                      <button class="ios-cell" type="button" (click)="openBlock(section.key)">
+                        <span class="ws-numtile" [class.is-off]="!section.enabled">{{ positionLabel(index) }}</span>
+                        <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ definition(section.key).label }}</span>
+                          <span class="ios-cell__sub ios-cell__sub--wrap" [class.ws-warn-text]="movedFrom(section.key)">{{ phoneSub(section) }}</span></span>
+                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
+                      </button>
+                    }
+                  }
                 </div>
-                <app-content-translation-workspace
-                  [visible]="true"
-                  title="Inline teksteditor"
-                  description="Swipe door de tekstvelden van dit homepageblok en bewerk de gekozen taal."
-                  [initialScope]="'WEBSITE'"
-                  initialPrefix="ALL"
-                  [keyPrefixes]="definition(activeSection.key).contentPrefixes"
-                  [lockScope]="true"
-                  [allowAdvanced]="false"
-                  [compact]="true"
-                  (dirtyChange)="copyDirty.set($event)"
-                  (busyChange)="copyBusy.set($event)"
-                  (contentSaved)="onCopySaved()"
-                />
+                <p class="ios-section__foot">{{ siteGaps }}</p>
               </section>
             }
-
-            <app-website-sync-status [refreshKey]="syncRefreshKey()" />
-          </section>
-
-          <aside
-            id="builder-preview-pane"
-            class="builder-pane preview-pane"
-            role="tabpanel"
-            aria-labelledby="builder-preview-tab"
-          >
-            <div class="preview-head">
-              <div>
-                <span>Gepubliceerde {{ previewSiteName }}</span>
-                <h2 id="preview-title">Live websitevoorbeeld</h2>
-                <small>Conceptwijzigingen verschijnen hier pas na publiceren.</small>
-              </div>
-              <div class="preview-head__actions">
-                <div class="device-switch" role="group" aria-label="Breedte van websitevoorbeeld">
-                  <button
-                    type="button"
-                    [class.active]="previewDevice() === 'auto'"
-                    [attr.aria-pressed]="previewDevice() === 'auto'"
-                    (click)="previewDevice.set('auto')"
-                  >
-                    Auto
-                  </button>
-                  <button
-                    type="button"
-                    [class.active]="previewDevice() === 'mobile'"
-                    [attr.aria-pressed]="previewDevice() === 'mobile'"
-                    (click)="previewDevice.set('mobile')"
-                  >
-                    Mobiel
-                  </button>
-                </div>
-                <button class="btn" type="button" (click)="refreshPreview()">Verversen</button>
-              </div>
-            </div>
-            <div class="preview-stage" [attr.data-device]="previewDevice()">
-              <div
-                class="preview-frame"
-                [class.preview-frame--loaded]="previewLoaded() && !previewError()"
-              >
-                @if (previewError()) {
-                  <div class="preview-failed" role="alert">
-                    <span aria-hidden="true">!</span>
-                    <b>Het websitevoorbeeld reageert niet</b>
-                    <small>{{ previewError() }}</small>
-                    <div>
-                      <button class="btn" type="button" (click)="refreshPreview()">
-                        Opnieuw laden
-                      </button>
-                      <a
-                        class="btn btn--primary"
-                        [href]="previewBaseUrl"
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        {{ previewSiteLabel }} openen
-                      </a>
-                    </div>
-                  </div>
-                } @else if (!previewLoaded()) {
-                  <div class="preview-loading" role="status">{{ previewSiteLabel }} laden…</div>
-                }
-                <iframe
-                  [src]="previewUrl()"
-                  [title]="'Live voorbeeld van de Enrosed ' + previewSiteName"
-                  loading="lazy"
-                  referrerpolicy="strict-origin-when-cross-origin"
-                  (load)="markPreviewLoaded()"
-                  (error)="markPreviewFailed()"
-                ></iframe>
-              </div>
-            </div>
-            <a class="preview-external" [href]="previewBaseUrl" target="_blank" rel="noopener">
-              Open de {{ previewSiteName }} in een nieuw venster
-              <i class="external-mark" aria-hidden="true"></i>
-            </a>
-          </aside>
-        </div>
-
-        <div class="builder-actions" [attr.aria-busy]="busy() || copyBusy()">
-          <div>
-            <b>{{ actionBarTitle() }}</b>
-            <small>{{ actionBarDetail() }}</small>
           </div>
-          <button
-            class="btn undo-button"
-            type="button"
-            [disabled]="!dirty() || busy()"
-            (click)="revertLayout()"
-          >
-            Herstel concept
-          </button>
-          <button class="btn" type="button" [disabled]="!dirty() || busy()" (click)="saveDraft()">
-            {{ saving() ? 'Opslaan…' : 'Concept opslaan' }}
-          </button>
-          <button
-            class="btn btn--primary"
-            type="button"
-            [disabled]="
-              (!dirty() && !hasUnpublishedChanges()) || busy() || copyDirty() || copyBusy()
-            "
-            (click)="publish()"
-          >
-            {{ publishing() ? 'Publiceren…' : dirty() ? 'Opslaan & publiceren' : 'Publiceren' }}
-          </button>
+        }
+        @if (dirty() || hasUnpublishedChanges()) {
+          <div class="ws-savebar" [class.is-dirty]="dirty()" role="region" aria-label="Opslaan en publiceren">
+            <span class="ws-savebar__text"><b>{{ dirty() ? 'Niet opgeslagen' : 'Concept' }}</b>
+              <small>{{ dirty() ? changedText() : 'niet gepubliceerd' }}</small></span>
+            @if (dirty()) {
+              <button class="ios-capsule ios-capsule--sm ws-savebar__revert" type="button" [disabled]="busy()" (click)="revertLayout()">Herstellen</button>
+              <button class="ios-capsule ios-capsule--sm" type="button" [disabled]="busy()" (click)="saveDraft()">Opslaan</button>
+            }
+            <button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="busy()" (click)="publish()">{{ publishing() ? 'Publiceren…' : 'Publiceren' }}</button>
+          </div>
+        }
+      </div>
+      @if (previewSheet()) {
+        <app-sheet title="Voorbeeld" variant="ios" (closed)="closePreview()">
+          <div body class="ws-prev-sheet">
+            <div class="ws-prev-sheet__tools"><button class="ios-capsule ios-capsule--sm" type="button" (click)="refreshPreview()"><app-icon name="refresh" [size]="15" /> Verversen</button></div>
+            @if (previewNote(); as note) { <p class="ws-prev-note ws-prev-note--ios">{{ note }}</p> }
+            <ng-container *ngTemplateOutlet="previewFrame; context: { $implicit: true }" />
+          </div>
+        </app-sheet>
+      }
+    }
+
+    <ng-template #problems let-phone>
+      @if (conflict()) {
+        <div [class]="phone ? 'ios-banner ios-banner--danger' : 'wk-banner wk-banner--danger'" role="alert">
+          @if (!phone) { <app-icon name="alert" [size]="16" /> }
+          <span [class.wk-banner__text]="!phone"><b>Iemand anders heeft de website-indeling aangepast</b> · {{ actionError() }}</span>
+          <span [class.wk-banner__actions]="!phone"><button [class]="phone ? 'ios-capsule ios-capsule--sm ios-capsule--tinted' : 'wk-btn wk-btn--sm'" type="button" [disabled]="busy()" (click)="reloadLatest()">Nieuwste versie laden</button></span>
+        </div>
+      } @else if (actionError()) {
+        <div [class]="phone ? 'ios-banner ios-banner--danger' : 'wk-banner wk-banner--danger'" role="alert">
+          @if (!phone) { <app-icon name="alert" [size]="16" /> }
+          <span [class.wk-banner__text]="!phone"><b>{{ lastAction() === 'publish' ? 'Publiceren mislukt' : 'Opslaan mislukt' }}</b> · {{ actionError() }}</span>
+          <span [class.wk-banner__actions]="!phone">
+            <button [class]="phone ? 'ios-capsule ios-capsule--sm' : 'wk-btn wk-btn--sm'" type="button" [disabled]="busy()" (click)="reloadLatest()">Laatste versie laden</button>
+            @if (lastAction() === 'publish') {
+              <button [class]="phone ? 'ios-capsule ios-capsule--sm ios-capsule--tinted' : 'wk-btn wk-btn--sm wk-btn--primary'" type="button" [disabled]="busy()" (click)="publish()">Opnieuw publiceren</button>
+            } @else {
+              <button [class]="phone ? 'ios-capsule ios-capsule--sm ios-capsule--tinted' : 'wk-btn wk-btn--sm wk-btn--primary'" type="button" [disabled]="busy() || !dirty()" (click)="saveDraft()">Opnieuw opslaan</button>
+            }
+          </span>
         </div>
       }
-    </main>
-  `,
-  styles: `
-    :host {
-      display: block;
-    }
-    .builder-page {
-      max-width: 1540px;
-      padding-bottom: calc(92px + env(safe-area-inset-bottom));
-    }
-    .builder-guide {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
-      align-items: center;
-      gap: 10px 12px;
-      margin-bottom: 16px;
-      padding: 13px 16px;
-      border: 1px solid var(--rose-line);
-      border-radius: var(--r-sm);
-      background: var(--rose-soft);
-    }
-    .builder-guide__step {
-      display: grid;
-      width: 28px;
-      height: 28px;
-      place-items: center;
-      border-radius: 9px;
-      background: var(--rose-dark);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 850;
-    }
-    .builder-guide > div {
-      display: grid;
-      gap: 1px;
-      min-width: 0;
-    }
-    .builder-guide b {
-      color: var(--rose-dark);
-      font-size: 14px;
-    }
-    .builder-guide small {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
-    }
-    .mobile-tabs {
-      display: none;
-    }
-    .builder-layout {
-      display: grid;
-      grid-template-columns: minmax(520px, 0.92fr) minmax(460px, 1.08fr);
-      gap: 18px;
-      align-items: start;
-    }
-    .builder-pane {
-      min-width: 0;
-    }
-    .builder-controls {
-      display: grid;
-      gap: 16px;
-    }
-    .status-card {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 12px;
-      padding: 15px 16px;
-    }
-    .status-card > div {
-      display: grid;
-      gap: 2px;
-    }
-    .status-card b {
-      font-size: 15px;
-    }
-    .status-card small,
-    .status-card time {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
-    }
-    .status-card time {
-      white-space: nowrap;
-    }
-    .status-mark {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--ok);
-      box-shadow: 0 0 0 5px var(--ok-soft);
-    }
-    .status-mark--pending {
-      background: var(--warn);
-      box-shadow: 0 0 0 5px var(--warn-soft);
-    }
-    .conflict-card,
-    .error-card {
-      padding: 14px;
-      border: 1px solid var(--danger);
-      border-radius: var(--r-sm);
-      background: var(--danger-soft);
-      color: var(--danger);
-    }
-    .conflict-card,
-    .error-card {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-    }
-    .conflict-card > div,
-    .error-card > div:first-child {
-      display: grid;
-      gap: 3px;
-    }
-    .conflict-card small,
-    .error-card small {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
-    }
-    .error-card__actions {
-      display: flex;
-      flex: none;
-      gap: 8px;
-    }
-    .error-card .btn {
-      min-height: 48px;
-    }
-    .section-editor {
-      overflow: hidden;
-    }
-    .section-editor__head {
-      align-items: flex-start;
-      gap: 14px;
-    }
-    .eyebrow {
-      color: var(--rose-dark);
-      font-size: 10px;
-      font-weight: 850;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-    .section-editor__head h2,
-    .preview-head h2 {
-      margin-top: 2px;
-      font-size: 20px;
-      line-height: 1.2;
-    }
-    .section-editor__head p {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.45;
-    }
-    .section-editor__head > span {
-      flex: none;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: var(--rose-soft);
-      color: var(--rose-dark);
-      font-size: 13px;
-      font-weight: 750;
-    }
-    .section-rail {
-      display: flex;
-      gap: 8px;
-      overflow-x: auto;
-      padding: 2px 14px 12px;
-      scroll-padding-inline: 14px;
-      scroll-snap-type: inline mandatory;
-      scrollbar-width: thin;
-    }
-    .section-chip {
-      display: grid;
-      width: 176px;
-      min-width: 176px;
-      min-height: 112px;
-      flex: 0 0 176px;
-      align-content: space-between;
-      gap: 6px;
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--surface-2);
-      color: var(--ink);
-      cursor: pointer;
-      scroll-snap-align: start;
-      text-align: left;
-    }
-    .section-chip > span {
-      color: var(--rose-dark);
-      font-size: 11px;
-      font-weight: 850;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    .section-chip b {
-      font-size: 14px;
-      line-height: 1.28;
-    }
-    .section-chip small {
-      color: var(--ok);
-      font-size: 11px;
-      font-weight: 750;
-    }
-    .section-chip--selected {
-      border-color: var(--rose);
-      background: var(--rose-soft);
-      box-shadow: inset 0 -3px 0 var(--rose);
-    }
-    .section-chip--hidden {
-      opacity: 0.58;
-    }
-    .section-chip--hidden small {
-      color: var(--muted);
-    }
-    .section-chip:disabled {
-      cursor: not-allowed;
-    }
-    .section-inspector {
-      display: grid;
-      gap: 13px;
-      margin: 0 14px 14px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 15px;
-      background: var(--surface);
-    }
-    .section-inspector--hidden {
-      background: var(--surface-2);
-    }
-    .section-inspector > header {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 12px;
-    }
-    .section-number {
-      display: grid;
-      width: 46px;
-      height: 46px;
-      place-items: center;
-      border-radius: 14px;
-      background: var(--ink);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 850;
-      letter-spacing: 0.06em;
-    }
-    .section-inspector header > div {
-      display: grid;
-      gap: 1px;
-    }
-    .section-inspector header small {
-      color: var(--rose-dark);
-      font-size: 10px;
-      font-weight: 800;
-      text-transform: uppercase;
-    }
-    .section-inspector h3 {
-      font-size: 18px;
-      line-height: 1.2;
-    }
-    .section-inspector > p {
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .fixed-badge {
-      padding: 8px 10px;
-      border-radius: 10px;
-      background: var(--surface-2);
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 750;
-      white-space: nowrap;
-    }
-    .visibility-toggle {
-      display: inline-flex;
-      min-width: 122px;
-      min-height: 46px;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface-2);
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 750;
-      cursor: pointer;
-    }
-    .visibility-toggle span {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--muted-2);
-    }
-    .visibility-toggle[aria-checked='true'] {
-      border-color: var(--ok);
-      background: var(--ok-soft);
-      color: var(--ok);
-    }
-    .visibility-toggle[aria-checked='true'] span {
-      background: var(--ok);
-    }
-    .section-inspector__actions {
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(150px, 0.85fr) minmax(150px, 0.85fr);
-      gap: 8px;
-    }
-    .reorder-controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
-    }
-    .reorder-controls button,
-    .inline-copy__notice > button {
-      display: inline-flex;
-      min-height: 48px;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--surface-2);
-      color: var(--ink);
-      font-size: 12px;
-      font-weight: 750;
-      cursor: pointer;
-    }
-    .reorder-controls button:disabled {
-      opacity: 0.32;
-      cursor: default;
-    }
-    .chevron {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      flex: none;
-      border-top: 2px solid currentColor;
-      border-right: 2px solid currentColor;
-    }
-    .chevron--left {
-      transform: rotate(-135deg);
-    }
-    .chevron--right {
-      transform: rotate(45deg);
-    }
-    .inline-edit-button,
-    .context-link {
-      min-height: 48px;
-      border-radius: 12px;
-      font-size: 12px;
-      text-align: center;
-    }
-    .inline-edit-button--active {
-      border-color: var(--rose);
-      background: var(--rose-soft);
-      color: var(--rose-dark);
-    }
-    .context-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      text-decoration: none;
-    }
-    .section-inspector__preview-note {
-      padding-top: 10px;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .inline-copy {
-      overflow: hidden;
-    }
-    .inline-copy__notice {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--line);
-      background: var(--rose-soft);
-    }
-    .inline-copy__notice > div {
-      display: grid;
-      gap: 2px;
-    }
-    .inline-copy__notice b {
-      color: var(--rose-dark);
-      font-size: 15px;
-    }
-    .inline-copy__notice small {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .inline-copy__notice > button {
-      flex: none;
-      background: var(--surface);
-    }
-    .builder-actions {
-      position: sticky;
-      z-index: 8;
-      bottom: 10px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto auto;
-      align-items: center;
-      gap: 9px;
-      margin-top: 16px;
-      padding: 12px;
-      border: 1px solid var(--line-strong);
-      border-radius: 16px;
-      background: color-mix(in srgb, var(--surface) 94%, transparent);
-      box-shadow: var(--sh-2);
-      backdrop-filter: blur(18px);
-    }
-    .builder-actions > div {
-      display: grid;
-      gap: 2px;
-    }
-    .builder-actions b {
-      font-size: 14px;
-    }
-    .builder-actions small {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
-    }
-    .builder-actions .btn {
-      min-height: 48px;
-    }
-    .preview-pane {
-      position: sticky;
-      top: calc(var(--appbar-h) + 14px);
-      display: grid;
-      gap: 10px;
-    }
-    .preview-head {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 12px;
-      padding-inline: 2px;
-    }
-    .preview-head > div:first-child {
-      display: grid;
-      gap: 2px;
-    }
-    .preview-head > div:first-child > span {
-      color: var(--rose-dark);
-      font-size: 11px;
-      font-weight: 850;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-    .preview-head small {
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .preview-head__actions {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
-    .preview-head .btn {
-      min-height: 44px;
-    }
-    .device-switch {
-      display: flex;
-      gap: 3px;
-      padding: 3px;
-      border-radius: 11px;
-      background: var(--surface-2);
-    }
-    .device-switch button {
-      min-height: 38px;
-      padding: 7px 10px;
-      border: 0;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 750;
-      cursor: pointer;
-    }
-    .device-switch button.active {
-      background: var(--surface);
-      color: var(--rose-dark);
-      box-shadow: var(--sh-1);
-    }
-    .preview-stage {
-      display: flex;
-      min-height: 590px;
-      justify-content: center;
-      overflow: hidden;
-      border-radius: 18px;
-      background: #e8e3df;
-    }
-    .preview-frame {
-      position: relative;
-      width: 100%;
-      height: calc(100vh - var(--appbar-h) - 125px);
-      height: calc(100dvh - var(--appbar-h) - 125px);
-      min-height: 590px;
-      overflow: hidden;
-      border: 1px solid var(--line-strong);
-      border-radius: 18px;
-      background: #100b09;
-      box-shadow: var(--sh-2);
-      transition:
-        width 0.2s ease,
-        border-radius 0.2s ease;
-    }
-    .preview-stage[data-device='mobile'] {
-      padding: 12px;
-    }
-    .preview-stage[data-device='mobile'] .preview-frame {
-      width: min(390px, 100%);
-      border-radius: 28px;
-    }
-    .preview-frame iframe {
-      display: block;
-      width: 100%;
-      height: 100%;
-      border: 0;
-      background: #fff;
-      opacity: 0;
-    }
-    .preview-frame--loaded iframe {
-      opacity: 1;
-    }
-    .preview-loading {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      color: #e8ded7;
-      font-size: 14px;
-    }
-    .preview-failed {
-      position: absolute;
-      z-index: 2;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 8px;
-      padding: 24px;
-      background: #100b09;
-      color: #fff;
-      text-align: center;
-    }
-    .preview-failed > span {
-      display: grid;
-      width: 48px;
-      height: 48px;
-      place-items: center;
-      border-radius: 16px;
-      background: rgb(255 255 255 / 10%);
-      color: #ffd1c8;
-      font-size: 20px;
-      font-weight: 800;
-    }
-    .preview-failed b {
-      font-size: 18px;
-    }
-    .preview-failed small {
-      max-width: 420px;
-      color: #d5c9c3;
-      font-size: 14px;
-      line-height: 1.45;
-    }
-    .preview-failed > div {
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 5px;
-    }
-    .preview-external {
-      min-height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      color: var(--rose-dark);
-      font-size: 14px;
-      font-weight: 700;
-      text-decoration: none;
-    }
-    .external-mark {
-      position: relative;
-      display: inline-block;
-      width: 13px;
-      height: 13px;
-      border: 1.8px solid currentColor;
-      border-radius: 2px;
-    }
-    .external-mark::before {
-      position: absolute;
-      top: -4px;
-      right: -4px;
-      width: 8px;
-      height: 8px;
-      border-top: 2px solid currentColor;
-      border-right: 2px solid currentColor;
-      background: var(--bg);
-      content: '';
-    }
-    .external-mark::after {
-      position: absolute;
-      top: 1px;
-      right: -1px;
-      width: 7px;
-      height: 2px;
-      background: currentColor;
-      content: '';
-      transform: rotate(-45deg);
-      transform-origin: right center;
-    }
-    .load-state {
-      display: flex;
-      min-height: 160px;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      padding: 24px;
-    }
-    .load-state > div {
-      display: grid;
-      gap: 3px;
-    }
-    .load-state small {
-      color: var(--muted);
-    }
-    .load-state--error {
-      justify-content: space-between;
-      color: var(--danger);
-    }
-    .load-dot {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--rose);
-      animation: builder-pulse 1s ease-in-out infinite alternate;
-    }
-    @keyframes builder-pulse {
-      to {
-        opacity: 0.35;
-        transform: scale(0.78);
+    </ng-template>
+
+    <ng-template #inspector let-section>
+      @for (key of [section.key]; track key) {
+        <div class="ws-hpi">
+          <div class="ws-hpi__head">
+            <span class="ws-hpi__eyebrow" [class.is-moved]="flash() === section.key">Blok {{ positionLabel(selectedSectionIndex()) }} van {{ sections().length }}@if (movedFrom(section.key); as was) { · was {{ was }} }</span>
+            <h2 class="ws-hpi__title">{{ definition(section.key).label }}</h2>
+            <p class="ws-hpi__desc">{{ definition(section.key).description }}</p>
+          </div>
+          <div class="ws-controls">
+            @if (definition(section.key).fixed) {
+              <p class="ws-fixed">Vast blok: altijd zichtbaar, altijd op deze plaats.</p>
+            } @else {
+              <label class="ws-hp-switch">
+                <span><b>Zichtbaar op de homepage</b></span>
+                <input class="ws-switch" type="checkbox" role="switch" [checked]="section.enabled" [disabled]="busy()" (change)="toggle(selectedSectionIndex())" />
+              </label>
+              <button class="wk-btn" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omhoog'"
+                      [disabled]="busy() || !canMoveUp(selectedSectionIndex())" (click)="move(selectedSectionIndex(), -1)"><app-icon name="chevron-up" [size]="15" />Hoger</button>
+              <button class="wk-btn" type="button" [attr.aria-label]="'Verplaats ' + definition(section.key).label + ' omlaag'"
+                      [disabled]="busy() || !canMoveDown(selectedSectionIndex())" (click)="move(selectedSectionIndex(), 1)"><app-icon name="chevron-down" [size]="15" />Lager</button>
+            }
+            <a class="wk-link ws-manage" [routerLink]="definition(section.key).manageRoute">{{ definition(section.key).manageLabel }} ›</a>
+          </div>
+
+          <section class="ws-panel" aria-labelledby="ws-texts-title">
+            <header class="ws-panel__head">
+              <span id="ws-texts-title">Teksten</span>
+              @if (store.content()) {
+                <small [class.ws-warn-text]="blockMissing(section.key) > 0">{{ blockGroups(section.key).length }} groepen ·
+                  {{ blockMissing(section.key) ? plural(blockMissing(section.key), 'ontbreekt', 'ontbreken') : languageCount + ' talen compleet' }}</small>
+              }
+              <span class="ws-tools">
+                @if (editorOpen()) {
+                  <button class="wk-btn wk-btn--sm wk-btn--ghost" type="button" (click)="closeEditor()">Sluiten</button>
+                } @else if (blockGroups(section.key).length) {
+                  <button class="wk-btn wk-btn--sm" type="button" (click)="openEditor(null)">Teksten bewerken</button>
+                }
+                <a class="wk-link" routerLink="/website/texts" [queryParams]="{ key: blockGroups(section.key)[0]?.key ?? null }">Alle teksten ›</a>
+              </span>
+            </header>
+            @if (sharedWith(section.key); as other) { <p class="ws-panel__note">Deze teksten deelt dit blok met ‘{{ other }}’.</p> }
+            @if (editorOpen()) {
+              <div class="ws-panel__editor">
+                <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="false"
+                  [keyPrefixes]="definition(section.key).contentPrefixes" [initialKey]="editorKey()"
+                  (dirtyChange)="copyDirty.set($event)" (busyChange)="copyBusy.set($event)" (contentSaved)="onCopySaved()" />
+              </div>
+            } @else if (!store.content() && store.errors().content) {
+              <app-load-error title="Teksten konden niet worden geladen" [message]="store.errors().content!" [busy]="store.isLoading('content')" (retry)="store.refresh(['content'])" />
+            } @else if (!store.content()) {
+              <div class="ws-hp__pad"><app-skeleton kind="lines" [rows]="4" /></div>
+            } @else {
+              <div class="ws-panel__list">
+                @for (group of blockGroups(section.key); track group.key) {
+                  <button class="ws-grp ws-grp--two" type="button" [attr.title]="labelOf(group) + ' · ' + group.key" (click)="openEditor(group.key)">
+                    <span class="ws-grp__body"><span class="ws-grp__label">{{ labelOf(group) }}</span><small [attr.title]="dutchOf(group)">{{ dutchOf(group) }}</small></span>
+                    @if (group.missingLanguages.length) { <small class="ws-grp__miss">{{ group.missingLanguages.length }}</small> }
+                    @else { <em>{{ languageCount }}/{{ languageCount }}</em> }
+                  </button>
+                } @empty { <p class="ws-panel__note">Geen teksten voor dit blok.</p> }
+              </div>
+            }
+          </section>
+        </div>
       }
-    }
-    .btn {
-      min-height: 48px;
-    }
-    button:focus-visible,
-    a:focus-visible {
-      outline: 3px solid var(--rose);
-      outline-offset: 2px;
-    }
-    @media (max-width: 1200px) and (min-width: 801px) {
-      .builder-layout {
-        grid-template-columns: minmax(470px, 1fr) minmax(390px, 0.82fr);
-      }
-      .section-inspector__actions {
-        grid-template-columns: 1fr 1fr;
-      }
-      .reorder-controls {
-        grid-column: 1 / -1;
-      }
-      .preview-head {
-        align-items: stretch;
-        flex-direction: column;
-      }
-      .preview-head__actions {
-        justify-content: space-between;
-      }
-    }
-    @media (max-width: 800px) {
-      .builder-page {
-        padding-inline: 12px;
-        padding-bottom: calc(150px + env(safe-area-inset-bottom));
-      }
-      .builder-guide {
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 8px 10px;
-        padding: 12px;
-      }
-      .mobile-tabs {
-        position: sticky;
-        z-index: 7;
-        top: var(--appbar-h);
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 4px;
-        margin: 0 0 12px;
-        padding: 4px;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background: var(--surface);
-        box-shadow: var(--sh-1);
-      }
-      .mobile-tabs button {
-        min-height: 48px;
-        border: 0;
-        border-radius: 10px;
-        background: transparent;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 750;
-      }
-      .mobile-tabs button.active {
-        background: var(--rose-soft);
-        color: var(--rose-dark);
-      }
-      .builder-layout {
-        display: block;
-      }
-      .builder-layout[data-mobile-tab='edit'] .preview-pane,
-      .builder-layout[data-mobile-tab='preview'] .builder-controls {
-        display: none;
-      }
-      .status-card {
-        grid-template-columns: auto minmax(0, 1fr);
-      }
-      .status-card time {
-        grid-column: 2;
-        white-space: normal;
-      }
-      .section-editor__head {
-        flex-direction: column;
-      }
-      .section-rail {
-        margin-inline: -1px;
-        padding-inline: 12px;
-        scroll-padding-inline: 12px;
-      }
-      .section-chip {
-        width: 72vw;
-        min-width: 72vw;
-        flex-basis: 72vw;
-        min-height: 104px;
-      }
-      .section-inspector {
-        margin-inline: 12px;
-        padding: 14px;
-      }
-      .section-inspector > header {
-        grid-template-columns: auto minmax(0, 1fr);
-      }
-      .fixed-badge,
-      .visibility-toggle {
-        grid-column: 2;
-        justify-self: start;
-      }
-      .section-inspector__actions {
-        grid-template-columns: 1fr;
-      }
-      .reorder-controls {
-        grid-column: auto;
-      }
-      .inline-edit-button,
-      .context-link {
-        font-size: 13px;
-      }
-      .inline-copy__notice {
-        align-items: stretch;
-        flex-direction: column;
-      }
-      .inline-copy__notice > button {
-        width: 100%;
-      }
-      .builder-actions {
-        position: fixed;
-        right: 0;
-        bottom: 0;
-        left: 0;
-        grid-template-columns: 1fr 1fr;
-        margin: 0;
-        padding: 9px 12px calc(9px + env(safe-area-inset-bottom));
-        border-width: 1px 0 0;
-        border-radius: 0;
-      }
-      .builder-layout[data-mobile-tab='preview'] + .builder-actions {
-        position: static;
-        margin-top: 10px;
-        padding: 12px;
-        border-width: 1px;
-        border-radius: 14px;
-      }
-      .builder-actions > div {
-        grid-column: 1 / -1;
-      }
-      .builder-actions .btn {
-        width: 100%;
-        min-width: 0;
-        padding-inline: 8px;
-        font-size: 12px;
-      }
-      .undo-button {
-        display: none;
-      }
-      .preview-pane {
-        position: static;
-      }
-      .preview-head {
-        align-items: stretch;
-        flex-direction: column;
-      }
-      .preview-head__actions {
-        justify-content: space-between;
-      }
-      .preview-head .btn {
-        flex: 1;
-      }
-      .preview-frame {
-        height: calc(100vh - var(--appbar-h) - 228px);
-        height: calc(100dvh - var(--appbar-h) - 228px);
-        min-height: 500px;
-        border-radius: 14px;
-      }
-      .preview-stage[data-device='mobile'] {
-        padding: 0;
-      }
-      .preview-stage[data-device='mobile'] .preview-frame {
-        width: 100%;
-        border-radius: 14px;
-      }
-      .preview-failed > div {
-        display: grid;
-        width: 100%;
-        max-width: 320px;
-        grid-template-columns: 1fr;
-      }
-      .preview-failed .btn {
-        width: 100%;
-      }
-      .conflict-card,
-      .error-card {
-        align-items: stretch;
-        flex-direction: column;
-      }
-      .conflict-card .btn,
-      .error-card .btn {
-        min-height: 48px;
-      }
-      .error-card__actions {
-        display: grid;
-        grid-template-columns: 1fr;
-      }
-      .error-card__actions .btn {
-        width: 100%;
-      }
-    }
-    @media (max-width: 420px) {
-      .builder-actions {
-        grid-template-columns: 1fr;
-      }
-      .section-number {
-        width: 42px;
-        height: 42px;
-      }
-      .reorder-controls {
-        grid-template-columns: 1fr;
-      }
-      .preview-head__actions {
-        align-items: stretch;
-        flex-direction: column;
-      }
-      .device-switch {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .load-dot {
-        animation: none;
-      }
-      .preview-frame {
-        transition: none;
-      }
-    }
+    </ng-template>
   `,
 })
 export class WebsiteBuilderPage implements HasUnsavedChanges {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
+  private readonly injector = inject(Injector);
   private readonly sanitizer = inject(DomSanitizer);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  readonly desk = inject(DesktopViewport);
+  readonly store = inject(WebsiteStore);
+  readonly sync = inject(WebsiteSyncStore);
+  readonly back = inject(WebsitePhoneBack);
+  private readonly nav = inject(NavHistory);
+  private readonly location = inject(Location);
+  private readonly stageRef = viewChild<ElementRef<HTMLElement>>('stage');
 
   readonly previewBaseUrl = environment.websitePreviewUrl;
-  readonly previewSiteLabel =
-    environment.environmentLabel === 'TEST'
-      ? 'Testsite'
-      : environment.environmentLabel === 'LOCAL'
-        ? 'Lokale website'
-        : 'Website';
+  readonly previewSiteLabel = environment.environmentLabel === 'TEST' ? 'Testsite'
+    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
   readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
+  readonly previewHint = PREVIEW_HINT;
+  readonly siteGaps = HOMEPAGE_SITE_GAPS;
+  readonly languageCount = WEBSITE_LANGUAGE_ORDER.length;
+  readonly plural = plural;
+  readonly viewOptions: SegmentOption[] = [{ id: 'layout', label: 'Indeling' }, { id: 'preview', label: 'Voorbeeld' }];
+  readonly deviceOptions: SegmentOption[] = [{ id: 'desktop', label: 'Desktop' }, { id: 'mobile', label: 'Mobiel' }];
+
   readonly snapshot = signal<WebsiteBuilderHomepage | null>(null);
   readonly sections = signal<WebsiteBuilderSection[]>([]);
   private readonly baseline = signal('');
@@ -1472,10 +516,11 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   readonly actionError = signal<string | null>(null);
   readonly conflict = signal(false);
   readonly lastAction = signal<'save' | 'publish' | null>(null);
-  readonly mobileTab = signal<'edit' | 'preview'>('edit');
-  readonly previewDevice = signal<'auto' | 'mobile'>('auto');
+  readonly previewDevice = signal<'desktop' | 'mobile'>('desktop');
+  readonly rightView = signal<'layout' | 'preview'>('layout');
   readonly selectedSectionIndex = signal(0);
-  readonly copyEditorOpen = signal(false);
+  readonly editorOpen = signal(false);
+  readonly editorKey = signal<string | null>(null);
   readonly copyDirty = signal(false);
   readonly copyBusy = signal(false);
   readonly reorderAnnouncement = signal('');
@@ -1483,65 +528,145 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   readonly previewAnchor = signal('hero');
   readonly previewLoaded = signal(false);
   readonly previewError = signal<string | null>(null);
-  readonly syncRefreshKey = signal(0);
+  readonly previewSheet = signal(false);
+  readonly reordering = signal(false);
+  readonly showAllTexts = signal(false);
+  /** The blocks he moved, showed or hid since the saved concept: only they count and get marked. */
+  private readonly acted = signal<ReadonlySet<WebsiteBuilderSectionKey>>(new Set());
+  /** The block that just moved: its row and the eyebrow flash once (ws-moved). */
+  readonly flash = signal<string | null>(null);
+  readonly viewMotion = signal('');
+  /** The live revision before this page published; the preview reloads once the site is live on a newer one. */
+  private readonly publishedFrom = signal<string | null | undefined>(undefined);
   private previewWatch: ReturnType<typeof setTimeout> | null = null;
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
 
-  readonly busy = computed(
-    () => this.loading() || this.saving() || this.publishing() || this.copyBusy(),
-  );
+  private readonly threeColumnQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(THREE_COLUMNS) : null;
+  readonly threeColumns = signal(this.threeColumnQuery?.matches ?? true);
+  private readonly stageWidth = signal(0);
+  private readonly blockParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('blok'))), { initialValue: this.route.snapshot.queryParamMap.get('blok') });
+
+  readonly busy = computed(() => this.loading() || this.saving() || this.publishing() || this.copyBusy());
   readonly dirty = computed(() => this.baseline() !== JSON.stringify(this.sections()));
   readonly selectedSection = computed(() => this.sections()[this.selectedSectionIndex()] ?? null);
-  readonly selectedSectionIsPublished = computed(() => {
-    const selected = this.selectedSection();
-    const snapshot = this.snapshot();
-    if (!selected || !snapshot) return false;
-    return !!snapshot.published.sections.find((section) => section.key === selected.key)?.enabled;
-  });
+  readonly visibleCount = computed(() => this.sections().filter((section) => section.enabled).length);
   readonly hasUnpublishedChanges = computed(() => {
     const snapshot = this.snapshot();
-    return (
-      !!snapshot &&
-      JSON.stringify(this.normalize(snapshot.published.sections)) !==
-        JSON.stringify(this.sections())
-    );
+    return !!snapshot && JSON.stringify(normalizeSections(snapshot.published.sections)) !== JSON.stringify(this.sections());
   });
-  readonly activeSectionCount = computed(
-    () => this.sections().filter((section) => section.enabled).length,
-  );
-  readonly previewUrl = computed<SafeResourceUrl>(() => {
-    const separator = this.previewBaseUrl.includes('?') ? '&' : '?';
-    const anchor = this.previewAnchor();
-    const hash = anchor ? `#${encodeURIComponent(anchor)}` : '';
-    return this.sanitizer.bypassSecurityTrustResourceUrl(
-      `${this.previewBaseUrl}${separator}builderPreview=${this.previewNonce()}${hash}`,
-    );
+  private readonly savedSections = computed(() => this.baseline() ? JSON.parse(this.baseline()) as WebsiteBuilderSection[] : []);
+  /** What he changed since the saved concept, counting only the blocks he acted on (website-homepage.ts). */
+  readonly edits = computed<LayoutEdits>(() => layoutEdits(this.savedSections(), this.sections(), this.acted()));
+  /** The rows that get the change dot. */
+  readonly changedKeys = computed(() => editedKeys(this.edits()));
+  readonly changedText = computed(() => layoutEditsText(this.edits()));
+  readonly state = computed(() => {
+    if (this.copyDirty()) return { tone: 'warn', label: 'Tekst niet opgeslagen', short: 'Niet opgeslagen', detail: 'Sla de tekst eerst op in de editor.' };
+    if (this.dirty()) return { tone: 'warn', label: `Niet opgeslagen · ${this.changedText()}`, short: 'Niet opgeslagen', detail: 'Sla het concept op of publiceer meteen.' };
+    if (this.hasUnpublishedChanges()) return { tone: 'warn', label: 'Concept · niet gepubliceerd', short: 'Concept', detail: 'Publiceer wanneer de volgorde klaar is.' };
+    return { tone: 'ok', label: 'Gelijk aan live', short: 'Gelijk aan live', detail: 'Concept en gepubliceerde indeling zijn gelijk.' };
   });
-  readonly draftStatusTitle = computed(() => {
-    if (this.dirty()) return 'Indeling nog niet opgeslagen';
-    if (this.hasUnpublishedChanges()) return 'Conceptindeling opgeslagen';
-    return 'Homepage-indeling is live';
+  readonly statusText = computed(() => {
+    const snapshot = this.snapshot();
+    if (!snapshot) return '';
+    const changed = snapshot.updatedAt ? shortMoment(snapshot.updatedAt) : null;
+    const live = snapshot.publishedAt ? `gepubliceerd ${shortMoment(snapshot.publishedAt)}` : 'standaardindeling, nooit aangepast';
+    return this.threeColumns()
+      ? `${changed ? 'Concept gewijzigd ' + changed : 'Concept nooit gewijzigd'} · live: ${live}`
+      : `Concept ${changed ?? 'nooit gewijzigd'} · live: ${snapshot.publishedAt ? shortMoment(snapshot.publishedAt) : 'standaardindeling'}`;
   });
-  readonly draftStatusDetail = computed(() => {
-    if (this.dirty()) return 'Sla het concept op of publiceer meteen.';
-    if (this.hasUnpublishedChanges()) return 'Publiceer wanneer de volgorde klaar is.';
-    return 'Concept en gepubliceerde indeling zijn gelijk.';
+  readonly blockKey = computed(() => {
+    const key = this.blockParam();
+    return key && SECTION_DEFINITIONS.some((section) => section.key === key) ? key as WebsiteBuilderSectionKey : null;
   });
-  readonly actionBarTitle = computed(() => {
-    if (this.copyDirty()) return 'Tekstwijziging nog niet opgeslagen';
-    if (this.dirty()) return 'Indeling nog niet opgeslagen';
-    if (this.hasUnpublishedChanges()) return 'Concept klaar om te publiceren';
-    return 'Homepage-indeling is live';
+  /** The preview runs only where it can be seen (critique B6.4). */
+  readonly previewVisible = computed(() => this.desk.active()
+    ? this.threeColumns() || this.rightView() === 'preview'
+    : this.previewSheet());
+  readonly previewUrl = computed<SafeResourceUrl>(() => this.sanitizer.bypassSecurityTrustResourceUrl(
+    websitePreviewUrl(this.previewBaseUrl, 'nl', this.previewNonce(), this.previewAnchor())));
+  readonly frameWidth = computed(() => this.previewDevice() === 'mobile' ? PREVIEW_PHONE_WIDTH : PREVIEW_DESK_WIDTH);
+  readonly frameScale = computed(() => {
+    const width = this.stageWidth();
+    if (this.previewDevice() === 'mobile' || !width) return 1;
+    return Math.min(1, width / PREVIEW_DESK_WIDTH);
   });
-  readonly actionBarDetail = computed(() => {
-    if (this.copyDirty()) return 'Sla de tekst eerst op in de inline editor.';
-    if (this.dirty()) return 'Bewaar als concept of publiceer de indeling meteen.';
-    if (this.hasUnpublishedChanges()) return 'Publiceren maakt de conceptvolgorde zichtbaar.';
-    return 'Selecteer een blok om tekst, volgorde of zichtbaarheid aan te passen.';
+  readonly frameInnerHeight = computed(() => Math.round(this.frameHeight() / this.frameScale()));
+  readonly frameHeight = computed(() => this.previewDevice() === 'mobile' ? 760 : Math.max(420, Math.round(this.stageWidth() * 1.35)));
+  readonly previewNote = computed(() => {
+    const status = this.sync.status();
+    if (this.publishedFrom() !== undefined && status?.status === 'TRIGGERED') {
+      return this.sync.pollEnded() ? 'Controle gestopt.' : 'Publicatie geaccepteerd; het voorbeeld ververst zodra de website live is.';
+    }
+    const selected = this.selectedSection();
+    const snapshot = this.snapshot();
+    if (selected && snapshot && !snapshot.published.sections.find((section) => section.key === selected.key)?.enabled) {
+      return `‘${this.definition(selected.key).label}’ staat niet zichtbaar op de live homepage.`;
+    }
+    if (this.hasUnpublishedChanges() || this.dirty()) return 'Nog niet gepubliceerd: het voorbeeld toont wat nu live staat. Het springt naar het gekozen blok.';
+    return null;
   });
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.clearPreviewWatch());
+    this.destroyRef.onDestroy(() => { this.clearPreviewWatch(); if (this.flashTimer) clearTimeout(this.flashTimer); });
+    const onMedia = (event: MediaQueryListEvent) => this.threeColumns.set(event.matches);
+    this.threeColumnQuery?.addEventListener('change', onMedia);
+    this.destroyRef.onDestroy(() => this.threeColumnQuery?.removeEventListener('change', onMedia));
+    void this.store.ensure(['content']);
     void this.load();
+    /* The preview's stage width, for the scaled 1280 px desktop frame. */
+    effect((onCleanup) => {
+      const stage = this.stageRef()?.nativeElement;
+      if (!stage || typeof ResizeObserver === 'undefined') return;
+      this.stageWidth.set(stage.clientWidth - 28);
+      const observer = new ResizeObserver(() => this.stageWidth.set(stage.clientWidth - 28));
+      observer.observe(stage);
+      onCleanup(() => observer.disconnect());
+    });
+    /*
+     * The 15 s watch runs only while the preview can be seen (critique B6.4).
+     * Hidden, the frame is gone: the watch stops and the next show starts a
+     * fresh load with its own loading state and watch.
+     */
+    let shown = false;
+    effect(() => {
+      const visible = this.previewVisible() && !!this.snapshot();
+      untracked(() => {
+        if (visible && !shown && !this.previewLoaded() && this.previewWatch === null) this.startPreviewWatch();
+        if (!visible && shown) {
+          this.clearPreviewWatch();
+          this.previewLoaded.set(false);
+          this.previewError.set(null);
+        }
+        shown = visible;
+      });
+    });
+    /* After a publish: reload the preview once the site is live on a newer revision (N8). */
+    effect(() => {
+      const status = this.sync.status();
+      const from = this.publishedFrom();
+      if (from === undefined || status?.status !== 'LIVE' || status.liveRevision === from) return;
+      untracked(() => {
+        this.publishedFrom.set(undefined);
+        this.refreshPreview();
+        this.ui.toast('De website is bijgewerkt · voorbeeld ververst');
+      });
+    });
+    /* The phone's block view follows ?blok= (back and forward work). */
+    let previous: string | null = this.blockKey();
+    effect(() => {
+      const key = this.blockKey();
+      untracked(() => {
+        if (key === previous) return;
+        this.viewMotion.set(key ? 'mo-push-view' : 'mo-pop-view');
+        previous = key;
+        this.showAllTexts.set(false);
+        if (key) {
+          const index = this.sections().findIndex((section) => section.key === key);
+          if (index >= 0) this.selectedSectionIndex.set(index);
+        }
+      });
+    });
   }
 
   definition(key: WebsiteBuilderSectionKey): SectionDefinition {
@@ -1552,36 +677,123 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     return String(index + 1).padStart(2, '0');
   }
 
-  setMobileTab(tab: 'edit' | 'preview'): void {
-    this.mobileTab.set(tab);
-    if (tab === 'preview' && !this.previewLoaded()) this.refreshPreview();
+  indexOf(key: WebsiteBuilderSectionKey): number {
+    return this.sections().findIndex((section) => section.key === key);
   }
 
-  onMobileTabKeydown(event: KeyboardEvent, current: 'edit' | 'preview'): void {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    const next =
-      event.key === 'Home'
-        ? 'edit'
-        : event.key === 'End'
-          ? 'preview'
-          : current === 'edit'
-            ? 'preview'
-            : 'edit';
-    this.setMobileTab(next);
-    queueMicrotask(() => document.getElementById(`builder-${next}-tab`)?.focus());
+  sectionByKey(key: WebsiteBuilderSectionKey): WebsiteBuilderSection | null {
+    return this.sections().find((section) => section.key === key) ?? null;
+  }
+
+  /** "05" when he moved the block and it stood elsewhere in the saved concept. */
+  movedFrom(key: WebsiteBuilderSectionKey): string | null {
+    if (!this.edits().moved.includes(key)) return null;
+    const before = this.savedSections().findIndex((section) => section.key === key);
+    return before >= 0 ? this.positionLabel(before) : null;
+  }
+
+  pillOf(section: WebsiteBuilderSection): string | null {
+    if (this.definition(section.key).fixed) return 'Vast';
+    return section.enabled ? null : 'Verborgen';
+  }
+
+  /** "Zichtbaar", "Verplaatst · was 05"; with the site gap of N26 on the row it concerns. */
+  phoneSub(section: WebsiteBuilderSection): string {
+    const was = this.movedFrom(section.key);
+    const state = was ? `Verplaatst · was ${was}` : this.definition(section.key).fixed ? 'Vast' : section.enabled ? 'Zichtbaar' : 'Verborgen';
+    const gap = this.definition(section.key).siteGap;
+    return gap ? `${state} · ${gap}` : state;
+  }
+
+  /** The block's text groups from the shared store: no request per block (critique B5). */
+  blockGroups(key: WebsiteBuilderSectionKey): ContentTranslationGroup[] {
+    const roots = this.definition(key).contentPrefixes.map((root) => root.toLowerCase());
+    return this.store.groups().filter((group) => {
+      const groupKey = group.key.toLowerCase();
+      return roots.some((root) => groupKey === root || groupKey.startsWith(`${root}.`));
+    });
+  }
+
+  blockMissing(key: WebsiteBuilderSectionKey): number {
+    return this.blockGroups(key).filter((group) => group.required && group.missingLanguages.length > 0).length;
+  }
+
+  sharedWith(key: WebsiteBuilderSectionKey): string | null {
+    const roots = this.definition(key).contentPrefixes;
+    const other = SECTION_DEFINITIONS.find((section) => section.key !== key && section.contentPrefixes.some((root) => roots.includes(root)));
+    return other?.label ?? null;
+  }
+
+  labelOf(group: ContentTranslationGroup): string {
+    return displayLabel(group);
+  }
+
+  dutchOf(group: ContentTranslationGroup): string {
+    return group.texts.find((text) => text.language === 'NL')?.value?.replace(/\s+/g, ' ').trim() || 'Nog geen Nederlandse tekst';
+  }
+
+  setRightView(view: 'layout' | 'preview'): void {
+    this.rightView.set(view);
   }
 
   selectSection(index: number): void {
     if (this.copyDirty() || this.copyBusy()) {
-      this.ui.toast('Sla de geopende tekst eerst op voordat u van blok wisselt.', 'err');
+      this.ui.toast('Sla de geopende tekst eerst op voordat je van blok wisselt.', 'err');
       return;
     }
     if (index < 0 || index >= this.sections().length) return;
-    this.copyEditorOpen.set(false);
+    this.editorOpen.set(false);
+    this.editorKey.set(null);
     this.selectedSectionIndex.set(index);
     this.syncPreviewAnchor();
     this.previewError.set(null);
+  }
+
+  /**
+   * The block list's keys (one tab stop): ↑/↓ choose another block, ⌥↑/⌥↓
+   * move the chosen block (the same rules as Hoger/Lager), Space shows or
+   * hides it (never a fixed block), Enter goes to the inspector's switch.
+   */
+  listKey(event: KeyboardEvent): void {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('.ws-blk__main');
+    if (!button || event.metaKey || event.ctrlKey) return;
+    const index = Number(button.dataset['index']);
+    const arrow = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (arrow && event.altKey) {
+      event.preventDefault();
+      if (!(arrow < 0 ? this.canMoveUp(index) : this.canMoveDown(index)) || this.busy()) return;
+      const key = this.sections()[index].key;
+      this.move(index, arrow as -1 | 1);
+      this.focusBlock(key);
+    } else if (arrow && !event.altKey) {
+      event.preventDefault();
+      const next = index + arrow;
+      if (next < 0 || next >= this.sections().length) return;
+      this.selectSection(next);
+      if (this.selectedSectionIndex() === next) this.focusBlock(this.sections()[next].key);
+    } else if (event.key === ' ' && !event.altKey) {
+      /* The button's own click (on key up) would only select the block again: Space toggles instead. */
+      event.preventDefault();
+      const section = this.sections()[index];
+      if (!section || this.definition(section.key).fixed || this.busy()) return;
+      this.toggle(index);
+    } else if (event.key === 'Enter' && !event.altKey) {
+      event.preventDefault();
+      if (this.selectedSectionIndex() !== index) this.selectSection(index);
+      if (this.selectedSectionIndex() !== index) return;
+      if (!this.threeColumns()) this.rightView.set('layout');
+      queueMicrotask(() => document.querySelector<HTMLElement>('.ws-hp__insp .ws-switch, .ws-hp__insp .ws-manage')?.focus());
+    }
+  }
+
+  /** Space activates a button on key up: keep that from selecting the block a second time. */
+  listKeyUp(event: KeyboardEvent): void {
+    if (event.key === ' ' && (event.target as HTMLElement).closest('.ws-blk__main')) event.preventDefault();
+  }
+
+  /** After the list has rendered: a moved row is re-inserted, which drops its focus. */
+  private focusBlock(key: WebsiteBuilderSectionKey): void {
+    afterNextRender({ read: () => document.querySelector<HTMLElement>(`.ws-blk__main[data-key="${key}"]`)?.focus() }, { injector: this.injector });
   }
 
   canMoveUp(index: number): boolean {
@@ -1589,60 +801,83 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   }
 
   canMoveDown(index: number): boolean {
-    return (
-      index > 0 &&
-      index < this.sections().length - 2 &&
-      !this.definition(this.sections()[index].key).fixed
-    );
+    return index > 0 && index < this.sections().length - 2 && !this.definition(this.sections()[index].key).fixed;
   }
 
   move(index: number, direction: -1 | 1): void {
     const target = index + direction;
     if (this.busy() || target < 1 || target >= this.sections().length - 1) return;
-    const label = this.definition(this.sections()[index].key).label;
+    const key = this.sections()[index].key;
+    const label = this.definition(key).label;
     this.sections.update((sections) => {
       const next = sections.map((section) => ({ ...section }));
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
-    this.selectedSectionIndex.set(target);
-    this.reorderAnnouncement.set(
-      `${label} staat nu op positie ${target + 1} van ${this.sections().length}.`,
-    );
+    if (this.selectedSectionIndex() === index) this.selectedSectionIndex.set(target);
+    this.act(key);
+    this.reorderAnnouncement.set(`${label} staat nu op positie ${target + 1} van ${this.sections().length}.`);
+    this.markMoved(key);
     this.resetActionState();
   }
 
   toggle(index: number): void {
-    if (this.busy()) return;
-    this.sections.update((sections) =>
-      sections.map((section, current) =>
-        current === index && !this.definition(section.key).fixed
-          ? { ...section, enabled: !section.enabled }
-          : section,
-      ),
-    );
+    const section = this.sections()[index];
+    if (this.busy() || !section || this.definition(section.key).fixed) return;
+    this.act(section.key);
+    this.sections.update((sections) => sections.map((section, current) =>
+      current === index && !this.definition(section.key).fixed ? { ...section, enabled: !section.enabled } : section));
     this.resetActionState();
   }
 
-  toggleCopyEditor(): void {
-    if (this.copyEditorOpen()) {
-      this.closeCopyEditor();
+  openEditor(key: string | null): void {
+    if (this.copyBusy()) return;
+    if (this.editorOpen() && this.copyDirty()) {
+      this.ui.toast('Sla de tekst eerst op of herstel de wijziging.', 'err');
       return;
     }
-    this.copyDirty.set(false);
-    this.copyEditorOpen.set(true);
+    this.editorKey.set(key);
+    this.editorOpen.set(true);
   }
 
-  closeCopyEditor(): void {
+  closeEditor(): void {
     if (this.copyDirty() || this.copyBusy()) {
-      this.ui.toast('Sla de tekst op of wis de wijziging in de editor.', 'err');
+      this.ui.toast('Sla de tekst op of herstel de wijziging in de editor.', 'err');
       return;
     }
-    this.copyEditorOpen.set(false);
+    this.editorOpen.set(false);
+    this.editorKey.set(null);
   }
 
+  /** The workspace patched the store; the website update it started shows in the status. */
   onCopySaved(): void {
-    this.syncRefreshKey.update((value) => value + 1);
+    void this.sync.load();
+  }
+
+  openBlock(key: WebsiteBuilderSectionKey): void {
+    this.cameFromList = true;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { blok: key }, queryParamsHandling: 'merge' });
+  }
+
+  /** Back from the block view: pop the entry when the list is below it (also after a trip to Teksten), else replace (never a loop). */
+  closeBlock(): void {
+    if (this.cameFromList || this.nav.below() === LIST_URL) {
+      this.cameFromList = false;
+      this.location.back();
+      return;
+    }
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { blok: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+  private cameFromList = false;
+
+  openPreview(): void {
+    this.previewSheet.set(true);
+    if (!this.previewLoaded()) this.refreshPreview();
+  }
+
+  closePreview(): void {
+    this.previewSheet.set(false);
+    this.clearPreviewWatch();
   }
 
   async load(): Promise<void> {
@@ -1659,21 +894,20 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     }
   }
 
-  async saveDraft(): Promise<void> {
+  async saveDraft(): Promise<boolean> {
     const snapshot = this.snapshot();
-    if (!snapshot || !this.dirty() || this.busy()) return;
+    if (!snapshot || !this.dirty() || this.busy()) return false;
     this.saving.set(true);
     this.resetActionState();
     this.lastAction.set('save');
     try {
-      const saved = await this.catalog.saveWebsiteBuilderHomepage(
-        snapshot.revision,
-        this.sections(),
-      );
+      const saved = await this.catalog.saveWebsiteBuilderHomepage(snapshot.revision, this.sections());
       this.applySnapshot(saved);
       this.ui.toast('Homepageconcept opgeslagen');
+      return true;
     } catch (failure: unknown) {
       this.handleActionFailure(failure, 'Websiteconcept opslaan mislukt.');
+      return false;
     } finally {
       this.saving.set(false);
     }
@@ -1686,18 +920,19 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.resetActionState();
     this.lastAction.set('publish');
     try {
+      /* N8 compares live revisions: the one before this publish must be known, else nothing is watched (no early "bijgewerkt"). */
+      if (!this.sync.status()) await this.sync.load();
+      const before = this.sync.status();
       if (this.dirty()) {
-        snapshot = await this.catalog.saveWebsiteBuilderHomepage(
-          snapshot.revision,
-          this.sections(),
-        );
+        snapshot = await this.catalog.saveWebsiteBuilderHomepage(snapshot.revision, this.sections());
         this.applySnapshot(snapshot);
       }
       this.lastAction.set('publish');
       const published = await this.catalog.publishWebsiteBuilderHomepage(snapshot.revision);
       this.applySnapshot(published);
-      this.syncRefreshKey.update((value) => value + 1);
-      this.refreshPreview();
+      /* The preview waits for the site to be live on a newer revision (critique N8), not for "LIVE" alone. */
+      if (before) this.publishedFrom.set(before.liveRevision ?? null);
+      void this.sync.load();
       this.ui.toast('Homepage-indeling gepubliceerd');
     } catch (failure: unknown) {
       this.handleActionFailure(failure, 'Website publiceren mislukt.');
@@ -1709,26 +944,19 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   revertLayout(): void {
     if (!this.dirty() || this.busy()) return;
     const selectedKey = this.selectedSection()?.key;
-    this.ui.confirm(
-      {
-        title: 'Conceptindeling herstellen',
-        message: 'Alle niet-opgeslagen wijzigingen aan volgorde en zichtbaarheid worden gewist.',
-        confirmLabel: 'Concept herstellen',
-        danger: true,
-      },
-      () => {
-        const baseline = JSON.parse(this.baseline()) as WebsiteBuilderSection[];
-        this.sections.set(baseline.map((section) => ({ ...section })));
-        this.selectedSectionIndex.set(
-          Math.max(
-            0,
-            baseline.findIndex((section) => section.key === selectedKey),
-          ),
-        );
-        this.resetActionState();
-        this.ui.toast('Niet-opgeslagen indeling hersteld');
-      },
-    );
+    this.ui.confirm({
+      title: 'Indeling herstellen?',
+      message: 'Alle niet-opgeslagen wijzigingen aan volgorde en zichtbaarheid gaan verloren.',
+      confirmLabel: 'Herstellen',
+      danger: true,
+    }, () => {
+      const baseline = JSON.parse(this.baseline()) as WebsiteBuilderSection[];
+      this.sections.set(baseline.map((section) => ({ ...section })));
+      this.acted.set(new Set());
+      this.selectedSectionIndex.set(Math.max(0, baseline.findIndex((section) => section.key === selectedKey)));
+      this.resetActionState();
+      this.ui.toast('Niet-opgeslagen indeling hersteld');
+    });
   }
 
   reloadLatest(): void {
@@ -1736,15 +964,12 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
       void this.load();
       return;
     }
-    this.ui.confirm(
-      {
-        title: 'Nieuwste versie laden',
-        message: 'Uw niet-opgeslagen wijzigingen worden vervangen door de nieuwste versie.',
-        confirmLabel: 'Nieuwste versie laden',
-        danger: true,
-      },
-      () => void this.load(),
-    );
+    this.ui.confirm({
+      title: 'Nieuwste versie laden',
+      message: 'Je niet-opgeslagen wijzigingen worden vervangen door de nieuwste versie.',
+      confirmLabel: 'Nieuwste versie laden',
+      danger: true,
+    }, () => void this.load());
   }
 
   refreshPreview(): void {
@@ -1761,9 +986,42 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   markPreviewFailed(): void {
     this.clearPreviewWatch();
     this.previewLoaded.set(false);
-    this.previewError.set(
-      `Ververs het voorbeeld of open de ${this.previewSiteName} apart om de buildmelding te bekijken.`,
-    );
+    this.previewError.set(`Ververs het voorbeeld of open de ${this.previewSiteName} apart om de buildmelding te bekijken.`);
+  }
+
+  canDeactivate(): boolean | Promise<boolean> {
+    if (this.saving() || this.publishing() || this.copyBusy()) return false;
+    if (this.copyDirty()) return confirmLeave(this.ui, undefined, { message: 'Je hebt websitetekst die nog niet is opgeslagen. Als je dit scherm verlaat, gaat die wijziging verloren.' });
+    if (this.dirty()) return confirmLeave(this.ui, () => this.saveDraft());
+    return true;
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.dirty() && !this.copyDirty() && !this.saving() && !this.publishing() && !this.copyBusy()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
+  /** ⌘S saves the concept; while the inline text is dirty the editor saves the text instead (and the browser dialog never opens). */
+  @HostListener('window:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
+    if (this.copyDirty()) { event.preventDefault(); return; }
+    if (!this.dirty() || this.busy()) return;
+    event.preventDefault();
+    void this.saveDraft();
+  }
+
+  private act(key: WebsiteBuilderSectionKey): void {
+    if (!this.acted().has(key)) this.acted.update((keys) => new Set([...keys, key]));
+  }
+
+  private markMoved(key: string): void {
+    this.flash.set(null);
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    queueMicrotask(() => this.flash.set(key));
+    this.flashTimer = setTimeout(() => this.flash.set(null), 600);
   }
 
   private startPreviewWatch(): void {
@@ -1773,9 +1031,7 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.previewWatch = setTimeout(() => {
       this.previewWatch = null;
       if (!this.previewLoaded()) {
-        this.previewError.set(
-          `De ${this.previewSiteName} bleef te lang laden. De websitebuild kan nog bezig zijn of een fout bevatten.`,
-        );
+        this.previewError.set(`De ${this.previewSiteName} bleef te lang laden. De websitebuild kan nog bezig zijn of een fout bevatten.`);
       }
     }, 15_000);
   }
@@ -1786,109 +1042,32 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
     this.previewWatch = null;
   }
 
-  formatMoment(value: string): string {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'op een onbekend tijdstip';
-    return new Intl.DateTimeFormat('nl-BE', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(date);
-  }
-
-  canDeactivate(): boolean {
-    if (this.saving() || this.publishing() || this.copyBusy()) return false;
-    if (!this.dirty() && !this.copyDirty()) return true;
-    return window.confirm(
-      this.copyDirty()
-        ? 'U heeft websitetekst die nog niet is opgeslagen. Toch verlaten?'
-        : 'U heeft een website-indeling die nog niet is opgeslagen. Toch verlaten?',
-    );
-  }
-
-  @HostListener('window:beforeunload', ['$event'])
-  warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (
-      !this.dirty() &&
-      !this.copyDirty() &&
-      !this.saving() &&
-      !this.publishing() &&
-      !this.copyBusy()
-    )
-      return;
-    event.preventDefault();
-    event.returnValue = '';
-  }
-
-  @HostListener('window:keydown', ['$event'])
-  saveShortcut(event: KeyboardEvent): void {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-    if (!this.dirty() || this.copyDirty() || this.busy()) return;
-    event.preventDefault();
-    void this.saveDraft();
-  }
-
   private applySnapshot(snapshot: WebsiteBuilderHomepage): void {
-    const selectedKey = this.selectedSection()?.key ?? 'hero';
-    const sections = this.normalize(snapshot.draft.sections);
-    this.snapshot.set({
-      ...snapshot,
-      draft: { sections },
-      published: { sections: this.normalize(snapshot.published.sections) },
-    });
+    const selectedKey = this.blockKey() ?? this.selectedSection()?.key ?? 'hero';
+    const sections = normalizeSections(snapshot.draft.sections);
+    const normalized = { ...snapshot, draft: { sections }, published: { sections: normalizeSections(snapshot.published.sections) } };
+    this.snapshot.set(normalized);
+    this.store.setHomepage(normalized);
     this.sections.set(sections.map((section) => ({ ...section })));
     const selectedIndex = sections.findIndex((section) => section.key === selectedKey);
     this.selectedSectionIndex.set(selectedIndex >= 0 ? selectedIndex : 0);
     this.syncPreviewAnchor();
     this.baseline.set(JSON.stringify(sections));
+    this.acted.set(new Set());
     this.loadError.set(null);
     this.resetActionState();
-    if (window.matchMedia('(min-width: 801px)').matches && !this.previewLoaded()) {
-      this.startPreviewWatch();
-    }
-  }
-
-  private normalize(input: WebsiteBuilderSection[]): WebsiteBuilderSection[] {
-    const unique = new Map<WebsiteBuilderSectionKey, boolean>();
-    for (const section of input ?? []) {
-      if (SECTION_KEYS.has(section.key) && !unique.has(section.key)) {
-        unique.set(section.key, !!section.enabled);
-      }
-    }
-    const middle: WebsiteBuilderSection[] = [];
-    for (const section of input ?? []) {
-      if (
-        section.key === 'hero' ||
-        section.key === 'quote' ||
-        !SECTION_KEYS.has(section.key) ||
-        middle.some((item) => item.key === section.key)
-      )
-        continue;
-      middle.push({ key: section.key, enabled: unique.get(section.key) ?? true });
-    }
-    for (const definition of SECTION_DEFINITIONS) {
-      if (definition.fixed || middle.some((section) => section.key === definition.key)) continue;
-      middle.push({ key: definition.key, enabled: unique.get(definition.key) ?? true });
-    }
-    return [{ key: 'hero', enabled: true }, ...middle, { key: 'quote', enabled: true }];
   }
 
   private syncPreviewAnchor(): void {
     const selected = this.selectedSection();
-    this.previewAnchor.set(
-      selected && this.selectedSectionIsPublished()
-        ? this.definition(selected.key).previewAnchor
-        : '',
-    );
+    const live = !!selected && !!this.snapshot()?.published.sections.find((section) => section.key === selected.key)?.enabled;
+    this.previewAnchor.set(selected && live ? this.definition(selected.key).previewAnchor : '');
   }
 
   private handleActionFailure(failure: unknown, fallback: string): void {
     const conflict = isRevisionConflict(failure);
     this.conflict.set(conflict);
-    this.actionError.set(
-      conflict
-        ? 'Laad de nieuwste versie en controleer uw wijzigingen opnieuw.'
-        : messageOf(failure, fallback),
-    );
+    this.actionError.set(conflict ? 'Laad de nieuwste versie en controleer je wijzigingen opnieuw.' : messageOf(failure, fallback));
   }
 
   private resetActionState(): void {

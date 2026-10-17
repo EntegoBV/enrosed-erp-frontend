@@ -1,6 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  HostListener,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -9,19 +13,40 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import {
   ContentTranslationGroup,
+  ContentTranslationOverview,
   ContentTranslationScope,
   ContentTranslationText,
   LanguageCode,
 } from '../../core/api/models';
+import { Icon } from '../../shared/icon';
+import { keyContext } from '../../shared/key-context';
 import { Ui, escapeHtml } from '../../shared/ui';
 import { TRANSLATION_LANGUAGES } from '../products/product-translation-adapter';
+import { WebsiteStore } from '../website-builder/website-store';
+import { displayLabel, groupByArea, homeSubArea, websiteTextArea } from '../website-builder/website-text-areas';
 import { WebsiteSyncStatus } from './website-sync-status';
+
+interface AreaRow {
+  group: ContentTranslationGroup;
+  label: string;
+  /** The Homepage sub-area label above the first row of a sub-area. */
+  subArea: string | null;
+}
+
+interface AreaSection {
+  area: { key: string; label: string };
+  rows: AreaRow[];
+  total: number;
+  missing: number;
+  open: boolean;
+}
 
 const CONTENT_KEY_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
@@ -60,9 +85,84 @@ const PREFIX_LABELS: Record<string, string> = {
 @Component({
   selector: 'app-content-translation-workspace',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, WebsiteSyncStatus],
+  imports: [FormsModule, Icon, NgTemplateOutlet, RouterLink, WebsiteSyncStatus],
   template: `
-    @if (visible()) {
+    <ng-template #advancedPanel>
+            <section class="advanced-panel" aria-labelledby="advanced-content-title">
+              <div class="advanced-panel__head">
+                <div>
+                  <h3 id="advanced-content-title">Geavanceerd beheer</h3>
+                  <p>Technische sleutels, revisies en het aanmaken of verwijderen van tekstgroepen.</p>
+                </div>
+                @if (layout() !== 'inline') {
+                  <button class="btn" type="button" [disabled]="dirty() || busy() || creating()"
+                          (click)="startCreate()">Nieuwe tekstgroep</button>
+                }
+              </div>
+
+              @if (creating()) {
+                <div class="create-group">
+                  <div class="field">
+                    <label for="content-new-label">Naam in het dashboard</label>
+                    <input class="input" id="content-new-label" [ngModel]="newLabel()"
+                           (ngModelChange)="patchNewLabel($event)" placeholder="Bijv. Intro maatwerk" />
+                  </div>
+                  <div class="field">
+                    <label for="content-new-key">Vaste sleutel</label>
+                    <input class="input mono" id="content-new-key" [ngModel]="newKey()"
+                           (ngModelChange)="patchNewKey($event)"
+                           (blur)="normalizeNewKey()"
+                           pattern="[a-z0-9]+(?:[.-][a-z0-9]+)*"
+                           placeholder="customisation.intro" />
+                  </div>
+                  <p class="create-group__hint">
+                    Een nieuwe sleutel start optioneel. Vul eerst alle {{ languages.length }} talen in voordat je hem verplicht maakt.
+                  </p>
+                  @if (createError()) {
+                    <p class="create-group__error" role="alert">{{ createError() }}</p>
+                  }
+                  <div class="create-group__actions">
+                    <button class="btn" type="button" [disabled]="busy()"
+                            (click)="cancelCreate()">Annuleren</button>
+                    <button class="btn btn--primary" type="button"
+                            [disabled]="busy() || !newLabel().trim() || !keyValid()"
+                            (click)="createGroup()">Toevoegen</button>
+                  </div>
+                </div>
+              }
+
+              @if (draft(); as technicalGroup) {
+                <div class="advanced-selected">
+                  <label class="field advanced-selected__label">
+                    <span>Naam in het dashboard</span>
+                    <input class="input" [ngModel]="technicalGroup.label"
+                           [readOnly]="technicalGroup.system"
+                           (ngModelChange)="patchGroup({ label: $event })" />
+                  </label>
+                  <label class="required-toggle">
+                    <input type="checkbox" [ngModel]="technicalGroup.required"
+                           [disabled]="technicalGroup.system || (!technicalGroup.required && technicalGroup.missingLanguages.length > 0)"
+                           [title]="!technicalGroup.required && technicalGroup.missingLanguages.length > 0
+                             ? 'Vul eerst alle ' + languages.length + ' talen in'
+                             : null"
+                           (ngModelChange)="patchGroup({ required: $event })" />
+                    Verplicht in alle talen
+                  </label>
+                  <dl class="technical-meta">
+                    <div><dt>Sleutel</dt><dd class="mono">{{ technicalGroup.key }}</dd></div>
+                    <div><dt>Revisie</dt><dd>{{ technicalGroup.revision }}</dd></div>
+                    <div><dt>Type</dt><dd>{{ technicalGroup.system ? 'Vaste systeemtekst' : 'Eigen tekstgroep' }}</dd></div>
+                  </dl>
+                  @if (!technicalGroup.system) {
+                    <button class="btn danger-link" type="button" [disabled]="dirty()"
+                            (click)="deleteSelected()">Tekstgroep verwijderen</button>
+                  }
+                </div>
+              }
+            </section>
+    </ng-template>
+
+    @if (visible() && layout() === 'card') {
     <section class="card content-translations" [class.content-translations--compact]="compact()"
              aria-labelledby="content-translations-title">
       <div class="card__head content-translations__head">
@@ -171,78 +271,7 @@ const PREFIX_LABELS: Record<string, string> = {
             }
           </div>
 
-          @if (advancedOpen()) {
-            <section class="advanced-panel" aria-labelledby="advanced-content-title">
-              <div class="advanced-panel__head">
-                <div>
-                  <h3 id="advanced-content-title">Geavanceerd beheer</h3>
-                  <p>Technische sleutels, revisies en het aanmaken of verwijderen van tekstgroepen.</p>
-                </div>
-                <button class="btn" type="button" [disabled]="dirty() || busy() || creating()"
-                        (click)="startCreate()">Nieuwe tekstgroep</button>
-              </div>
-
-              @if (creating()) {
-                <div class="create-group">
-                  <div class="field">
-                    <label for="content-new-label">Naam in het dashboard</label>
-                    <input class="input" id="content-new-label" [ngModel]="newLabel()"
-                           (ngModelChange)="patchNewLabel($event)" placeholder="Bijv. Intro maatwerk" />
-                  </div>
-                  <div class="field">
-                    <label for="content-new-key">Vaste sleutel</label>
-                    <input class="input mono" id="content-new-key" [ngModel]="newKey()"
-                           (ngModelChange)="patchNewKey($event)"
-                           (blur)="normalizeNewKey()"
-                           pattern="[a-z0-9]+(?:[.-][a-z0-9]+)*"
-                           placeholder="customisation.intro" />
-                  </div>
-                  <p class="create-group__hint">
-                    Een nieuwe sleutel start optioneel. Vul eerst alle acht talen in voordat u hem verplicht maakt.
-                  </p>
-                  @if (createError()) {
-                    <p class="create-group__error" role="alert">{{ createError() }}</p>
-                  }
-                  <div class="create-group__actions">
-                    <button class="btn" type="button" [disabled]="busy()"
-                            (click)="cancelCreate()">Annuleren</button>
-                    <button class="btn btn--primary" type="button"
-                            [disabled]="busy() || !newLabel().trim() || !keyValid()"
-                            (click)="createGroup()">Toevoegen</button>
-                  </div>
-                </div>
-              }
-
-              @if (draft(); as technicalGroup) {
-                <div class="advanced-selected">
-                  <label class="field advanced-selected__label">
-                    <span>Naam in het dashboard</span>
-                    <input class="input" [ngModel]="technicalGroup.label"
-                           [readOnly]="technicalGroup.system"
-                           (ngModelChange)="patchGroup({ label: $event })" />
-                  </label>
-                  <label class="required-toggle">
-                    <input type="checkbox" [ngModel]="technicalGroup.required"
-                           [disabled]="technicalGroup.system || (!technicalGroup.required && technicalGroup.missingLanguages.length > 0)"
-                           [title]="!technicalGroup.required && technicalGroup.missingLanguages.length > 0
-                             ? 'Vul eerst alle acht talen in'
-                             : null"
-                           (ngModelChange)="patchGroup({ required: $event })" />
-                    Verplicht in alle talen
-                  </label>
-                  <dl class="technical-meta">
-                    <div><dt>Sleutel</dt><dd class="mono">{{ technicalGroup.key }}</dd></div>
-                    <div><dt>Revisie</dt><dd>{{ technicalGroup.revision }}</dd></div>
-                    <div><dt>Type</dt><dd>{{ technicalGroup.system ? 'Vaste systeemtekst' : 'Eigen tekstgroep' }}</dd></div>
-                  </dl>
-                  @if (!technicalGroup.system) {
-                    <button class="btn danger-link" type="button" [disabled]="dirty()"
-                            (click)="deleteSelected()">Tekstgroep verwijderen</button>
-                  }
-                </div>
-              }
-            </section>
-          }
+          @if (advancedOpen()) { <ng-container *ngTemplateOutlet="advancedPanel" /> }
 
           <div class="workspace-grid">
             <nav class="group-list" aria-label="Tekstgroepen">
@@ -287,7 +316,7 @@ const PREFIX_LABELS: Record<string, string> = {
                     <span class="group-status" [class.complete]="!group.missingLanguages.length">
                       {{ group.missingLanguages.length ? group.missingLanguages.length + ' talen ontbreken' : 'Compleet' }}
                     </span>
-                    <button class="btn btn--sm btn--primary" type="button" (click)="copySelectedCodexBrief()">
+                    <button class="btn btn--sm" type="button" (click)="copySelectedCodexBrief()">
                       Kopieer deze vertaalopdracht voor Codex
                     </button>
                   </div>
@@ -354,9 +383,9 @@ const PREFIX_LABELS: Record<string, string> = {
                 }
 
                 <div class="group-editor__actions">
-                  <span class="save-state" aria-live="polite">{{ dirty() ? 'Wijzigingen nog niet opgeslagen' : 'Tekst bijgewerkt' }}</span>
+                  <span class="save-state" aria-live="polite">{{ saveBlockedReason() ?? (dirty() ? 'Wijzigingen nog niet opgeslagen' : 'Tekst bijgewerkt') }}</span>
                   <button class="btn" type="button" [disabled]="!dirty()"
-                          (click)="revertSelected()">Wijzigingen wissen</button>
+                          (click)="revertSelected()">Herstellen</button>
                   <button class="btn btn--primary" type="button"
                           [disabled]="!dirty() || !draftValid()"
                           (click)="saveSelected()">{{ saving() ? 'Opslaan…' : 'Opslaan' }}</button>
@@ -369,6 +398,161 @@ const PREFIX_LABELS: Record<string, string> = {
         }
       </div>
     </section>
+    } @else if (visible()) {
+      @if (loadError()) {
+        <div class="wk-empty ws-ct-state" role="alert">
+          <h2 class="wk-empty__title">Teksten konden niet worden geladen</h2>
+          <p class="wk-empty__text">{{ loadError() }}</p>
+          <div class="wk-empty__actions"><button class="wk-btn" type="button" [disabled]="loading()" (click)="load()">Opnieuw proberen</button></div>
+        </div>
+      } @else if (loading() && !groups().length) {
+        <div class="ws-ct-loading" role="status" aria-label="Teksten laden">
+          <div class="ws-ct-loading__list"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="ws-ct-loading__ed"><span></span><span></span><span></span></div>
+        </div>
+      } @else {
+        <div class="ws-ct" [class.ws-ct--split]="layout() === 'split'" [class.ws-ct--inline]="layout() === 'inline'">
+          @if (layout() === 'split') {
+            <nav class="ws-texts__list" aria-label="Tekstgroepen" (keydown)="listKey($event)">
+              @for (section of areaSections(); track section.area.key) {
+                <button class="ws-area" type="button" [attr.aria-expanded]="section.open" (click)="toggleArea(section.area.key)">
+                  <app-icon name="chevron-right" [size]="13" class="ws-area__chev" />{{ section.area.label }}
+                  <span [class.is-warn]="section.missing > 0">{{ section.total }} · @if (section.missing) { {{ plural(section.missing, 'ontbreekt', 'ontbreken') }} } @else { ✓ }</span>
+                </button>
+                @if (section.open) {
+                  <div class="ws-area__body">
+                    @for (row of section.rows; track row.group.key) {
+                      @if (row.subArea) { <div class="ws-sub-area">{{ row.subArea }}</div> }
+                      <button class="ws-grp" type="button" [class.is-sel]="isSelected(row.group)" [attr.aria-current]="isSelected(row.group) ? 'true' : null"
+                              [attr.data-key]="row.group.key" [attr.tabindex]="rowTabStop() === row.group.key ? 0 : -1"
+                              [attr.title]="row.label + ' · ' + row.group.key" (click)="pick(row.group)">
+                        <span class="ws-grp__label">{{ row.label }}</span>
+                        @if (!row.group.required) { <small class="ws-grp__opt">opt.</small> }
+                        @else if (row.group.missingLanguages.length) { <small class="ws-grp__miss">{{ row.group.missingLanguages.length }}</small> }
+                        @else { <em aria-label="compleet">✓</em> }
+                      </button>
+                    }
+                  </div>
+                }
+              } @empty {
+                <div class="wk-empty ws-ct-empty"><p class="wk-empty__text">Geen tekstgroepen voor deze zoekopdracht.</p></div>
+              }
+              <div class="ws-texts__foot">{{ listCount() }} van {{ scopeGroups().length }} tekstgroepen</div>
+            </nav>
+          } @else {
+            <div class="ws-inline-list" role="list" aria-label="Teksten van dit blok" (keydown)="listKey($event)">
+              @for (group of inlineGroups(); track group.key) {
+                <button class="ws-grp" type="button" role="listitem" [class.is-sel]="isSelected(group)" [attr.aria-current]="isSelected(group) ? 'true' : null"
+                        [attr.data-key]="group.key" [attr.tabindex]="rowTabStop() === group.key ? 0 : -1"
+                        [attr.title]="labelOf(group) + ' · ' + group.key" (click)="pick(group)">
+                  <span class="ws-grp__label">{{ labelOf(group) }}</span>
+                  @if (!group.required) { <small class="ws-grp__opt">opt.</small> }
+                  @else if (group.missingLanguages.length) { <small class="ws-grp__miss">{{ group.missingLanguages.length }}</small> }
+                  @else { <em aria-label="compleet">✓</em> }
+                </button>
+              }
+            </div>
+          }
+
+          <div class="ws-texts__ed">
+            <div class="ws-ed">
+              @if (advancedOpen() && (layout() === 'split' || allowAdvanced())) { <div class="ws-ed__advanced"><ng-container *ngTemplateOutlet="advancedPanel" /></div> }
+              @if (draft(); as group) {
+                <fieldset class="ws-ed__card" [disabled]="busy()" [attr.aria-busy]="busy()">
+                  <legend class="sr-only">{{ labelOf(group) }} vertalen</legend>
+                  @if (layout() === 'split') {
+                    <header class="ws-ed__head">
+                      <div class="ws-ed__titles">
+                        <span class="ws-ed__eyebrow">{{ eyebrowOf(group) }}</span>
+                        <h2 [attr.title]="group.key">{{ labelOf(group) }}</h2>
+                        <small>{{ group.required ? 'Verplicht · ' + completedLanguages(group) + ' van ' + languages.length + ' talen ingevuld' : 'Optioneel' }}</small>
+                      </div>
+                      <div class="ws-ed__tools">
+                        <span class="ws-state" [class.tone-ok]="!group.missingLanguages.length" [class.tone-warn]="group.missingLanguages.length > 0">
+                          <i aria-hidden="true"></i>{{ group.missingLanguages.length ? plural(group.missingLanguages.length, 'taal ontbreekt', 'talen ontbreken') : 'Compleet' }}
+                        </span>
+                        <button class="wk-btn wk-btn--sm ws-ed__codex" type="button" aria-label="Vertaalopdracht kopiëren" title="Vertaalopdracht kopiëren" (click)="copySelectedCodexBrief()">
+                          <app-icon name="copy" [size]="14" /><span class="ws-ed__codex-text">Vertaalopdracht kopiëren</span>
+                        </button>
+                      </div>
+                    </header>
+                  }
+                  @if (legalReview()) {
+                    <div class="legal-review ws-legal" role="note">
+                      <span aria-hidden="true">§</span>
+                      <div><b>Juridisch nazicht nodig</b><small>Laat inhoudelijke wijzigingen controleren vóór publicatie.</small></div>
+                    </div>
+                  }
+                  <div class="ws-langchips" role="group" aria-label="Taal kiezen">
+                    @for (language of languages; track language.code) {
+                      <button class="ws-lc" type="button" [class.is-sel]="selectedLanguage() === language.code"
+                              [class.is-missing]="!hasText(group, language.code)" [attr.aria-pressed]="selectedLanguage() === language.code"
+                              [attr.aria-label]="language.label + ', ' + (hasText(group, language.code) ? 'compleet' : (group.required ? 'ontbreekt' : 'nog leeg'))"
+                              [attr.title]="language.label" (click)="selectedLanguage.set(language.code)">
+                        {{ language.code }}@if (hasText(group, language.code)) {<i aria-hidden="true">✓</i>} @else {<i class="ws-lc__dot" aria-hidden="true"></i>}
+                      </button>
+                    }
+                  </div>
+                  @if (selectedLanguage() !== 'NL') {
+                    <div class="ws-src">
+                      <small>Bron · Nederlands</small>
+                      @if (sourceValue(); as source) { <p>{{ source }}</p> } @else { <p class="ws-src--empty">Nog geen Nederlandse tekst.</p> }
+                    </div>
+                  }
+                  <label class="ws-field">
+                    <small>{{ selectedLanguageLabel() }}</small>
+                    <textarea id="content-translation-value" class="ws-textarea" rows="5" [ngModel]="selectedValue()" (ngModelChange)="patchValue($event)"
+                              [placeholder]="group.required ? 'Verplichte vertaling' : 'Optionele vertaling'"></textarea>
+                  </label>
+                  @if (nextMissingLanguage(); as nextLanguage) {
+                    <button class="ws-next" type="button" (click)="selectedLanguage.set(nextLanguage.code)">
+                      Volgende ontbrekende taal: <b>{{ nextLanguage.label }}</b> <span aria-hidden="true">›</span>
+                    </button>
+                  }
+                  @if (conflict()) {
+                    <div class="wk-banner wk-banner--danger wk-banner--inset ws-ed__msg" role="alert">
+                      <span class="wk-banner__text"><b>Nieuwere versie beschikbaar</b> · {{ saveError() }}</span>
+                      <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" (click)="reloadSelected()">Laatste versie laden</button></span>
+                    </div>
+                  } @else if (saveError()) {
+                    <div class="wk-banner wk-banner--danger wk-banner--inset ws-ed__msg" role="alert"><span class="wk-banner__text">{{ saveError() }}</span></div>
+                  } @else if (!group.label.trim()) {
+                    <div class="wk-banner wk-banner--danger wk-banner--inset ws-ed__msg" role="alert"><span class="wk-banner__text">Vul een herkenbare naam voor deze tekstgroep in.</span></div>
+                  }
+                  <footer class="ws-edfoot" [class.is-dirty]="hasPendingChanges()">
+                    <span class="ws-edfoot__state" aria-live="polite">
+                      @if (saveBlockedReason(); as reason) { <b class="ws-edfoot__why">{{ reason }}</b> }
+                      @else { {{ dirty() ? 'Wijzigingen nog niet opgeslagen' : (scope() === 'WEBSITE' ? 'Opslaan zet een website-update in gang' : 'Tekst bijgewerkt') }} }
+                    </span>
+                    <button class="wk-btn wk-btn--ghost" type="button" [disabled]="!dirty()" (click)="revertSelected()">Herstellen</button>
+                    <button class="wk-btn wk-btn--primary" type="button" [disabled]="!dirty() || !draftValid()" (click)="saveSelected()">
+                      {{ saving() ? 'Opslaan…' : 'Opslaan' }} <span class="wk-kbd ws-kbd-on-primary" aria-hidden="true">⌘S</span>
+                    </button>
+                  </footer>
+                </fieldset>
+
+                @if (layout() === 'split') {
+                  <section class="ws-ed__all" aria-label="Alle talen naast elkaar">
+                    <h3>Alle talen naast elkaar</h3>
+                    @for (language of languages; track language.code) {
+                      <button class="ws-allrow" type="button" [class.is-sel]="selectedLanguage() === language.code" (click)="selectedLanguage.set(language.code)">
+                        <b>{{ language.code }}</b>
+                        <span [attr.title]="valueOf(group, language.code) || null">{{ valueOf(group, language.code) || '' }}</span>
+                        @if (hasText(group, language.code)) { <em aria-label="compleet">✓</em> } @else { <small>leeg</small> }
+                      </button>
+                    }
+                  </section>
+                  @if (scope() === 'WEBSITE') {
+                    <p class="ws-ed__note">Productnamen, productbeschrijvingen en product-SEO staan bij het product: <a class="wk-link" routerLink="/website/products">Producten ›</a></p>
+                  }
+                }
+              } @else {
+                <div class="wk-empty ws-ct-empty"><p class="wk-empty__text">Kies links een tekstgroep.</p></div>
+              }
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
   styles: `
@@ -591,6 +775,9 @@ export class ContentTranslationWorkspace {
   private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
+  private readonly store = inject(WebsiteStore);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private loadStarted = false;
   private focusedInitialKey: string | null = null;
 
@@ -608,12 +795,32 @@ export class ContentTranslationWorkspace {
   readonly initialKey = input<string | null>(null);
   readonly keyPrefixes = input<readonly string[]>([]);
   readonly compact = input(false);
+  /**
+   * card: the original card (Cataloguslabels). split: list of site parts +
+   * editor (Teksten, SEO). inline: the editor of one homepage block. split
+   * and inline render their own ws-* markup (styles/website-texts.scss,
+   * loaded by the pages that use them) and share every piece of logic.
+   */
+  readonly layout = input<'card' | 'split' | 'inline'>('card');
+  /** split: the page's search field. */
+  readonly searchQuery = input<string | null>(null);
+  /** split: only required groups with an empty language. */
+  readonly onlyMissing = input(false);
+  /** split: only groups missing this language; the editor opens on it. */
+  readonly missingLanguage = input<LanguageCode | null>(null);
+  /** split: the page's "Geavanceerd" toggle. */
+  readonly showAdvanced = input<boolean | null>(null);
   readonly lockScope = input(false);
   readonly lockPrefix = input(false);
   readonly allowAdvanced = input(true);
   readonly dirtyChange = output<boolean>();
   readonly busyChange = output<boolean>();
-  readonly contentSaved = output<void>();
+  /** The saved, created or (null) deleted group: the page patches the shared store with it. */
+  readonly contentSaved = output<ContentTranslationGroup | null>();
+  /** The selected group's key, for the page's ?key= address. */
+  readonly selectedKeyChange = output<string | null>();
+  /** The "Geavanceerd" panel opened or closed here, so the page's toggle shows the same. */
+  readonly advancedChange = output<boolean>();
   readonly scope = signal<ContentTranslationScope>('WEBSITE');
   readonly groups = signal<ContentTranslationGroup[]>([]);
   readonly draft = signal<ContentTranslationGroup | null>(null);
@@ -647,23 +854,25 @@ export class ContentTranslationWorkspace {
     .filter((group) => group.scope === this.scope())
     .filter((group) => this.inSelectedKeys(group)));
   readonly completionGroups = computed(() => this.lockPrefix()
-    ? this.scopeGroups().filter((group) => this.groupPrefix(group.key) === this.prefix())
+    ? this.scopeGroups().filter((group) => this.areaKeyOf(group) === this.prefix())
     : this.scopeGroups());
   readonly prefixOptions = computed<ContentPrefixOption[]>(() => {
     const counts = new Map<string, number>();
+    const labels = new Map<string, string>();
     for (const group of this.scopeGroups()) {
-      const prefix = this.groupPrefix(group.key);
+      const prefix = this.areaKeyOf(group);
       counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+      labels.set(prefix, this.groupArea(group));
     }
     return [...counts.entries()]
-      .map(([key, count]) => ({ key, count, label: this.prefixLabel(key) }))
+      .map(([key, count]) => ({ key, count, label: labels.get(key) ?? this.prefixLabel(key) }))
       .sort((left, right) => left.label.localeCompare(right.label, 'nl'));
   });
   readonly visibleGroups = computed(() => {
     const query = this.searchTerm(this.search());
     const prefix = this.prefix();
     return this.scopeGroups()
-      .filter((group) => prefix === 'ALL' || this.groupPrefix(group.key) === prefix)
+      .filter((group) => prefix === 'ALL' || this.areaKeyOf(group) === prefix)
       .filter((group) => !query || this.searchTerm([
         group.label,
         group.key,
@@ -725,6 +934,60 @@ export class ContentTranslationWorkspace {
     const group = this.draft();
     return !!group?.label.trim() && (!group.required || group.missingLanguages.length === 0);
   });
+  /** Why Opslaan waits (critique B18): a required group with an empty language. */
+  readonly saveBlockedReason = computed(() => {
+    const group = this.draft();
+    if (!group || !this.dirty() || !group.required || !group.missingLanguages.length) return null;
+    return `Vul alle ${this.languages.length} talen in, of zet ‘Verplicht in alle talen’ uit onder Geavanceerd.`;
+  });
+  readonly sourceValue = computed(() => this.draft()?.texts.find((text) => text.language === 'NL')?.value?.trim() ?? '');
+
+  /* ---- split and inline */
+  private readonly areaOverrides = signal<Readonly<Record<string, boolean>>>({});
+  /** split: the list after the page's search and filters, in server order. */
+  readonly listGroups = computed(() => {
+    const query = this.searchTerm(this.search());
+    const prefix = this.prefix();
+    const language = this.missingLanguage();
+    return this.scopeGroups()
+      .filter((group) => prefix === 'ALL' || this.areaKeyOf(group) === prefix)
+      .filter((group) => !this.onlyMissing() || (group.required && group.missingLanguages.length > 0))
+      .filter((group) => !language || group.missingLanguages.includes(language))
+      .filter((group) => !query || this.searchTerm([group.label, group.key, ...group.texts.map((text) => text.value ?? '')].join(' ')).includes(query));
+  });
+  readonly listCount = computed(() => this.listGroups().length);
+  readonly areaSections = computed<AreaSection[]>(() => {
+    const filtering = !!this.search().trim() || this.onlyMissing() || !!this.missingLanguage();
+    const draft = this.draft();
+    const overrides = this.areaOverrides();
+    return groupByArea(this.listGroups()).map((section) => {
+      let previous: string | null = null;
+      const rows = section.groups.map((group) => {
+        const sub = section.area.key === 'home' ? homeSubArea(group.key)?.label ?? null : null;
+        const row = { group, label: displayLabel(group, section.area), subArea: sub !== previous ? sub : null };
+        previous = sub;
+        return row;
+      });
+      const holdsSelection = !!draft && section.groups.some((group) => group.key === draft.key && group.scope === draft.scope);
+      return {
+        area: section.area, rows, total: section.groups.length,
+        missing: section.groups.filter((group) => group.required && group.missingLanguages.length > 0).length,
+        open: overrides[section.area.key] ?? (holdsSelection || filtering),
+      };
+    });
+  });
+  /** inline: the block's groups in server order. */
+  readonly inlineGroups = computed(() => this.scopeGroups());
+  /** The rows a keyboard can reach, in list order: open areas only (split), the block's groups (inline). */
+  readonly visibleRowGroups = computed<ContentTranslationGroup[]>(() => this.layout() === 'inline'
+    ? this.inlineGroups()
+    : this.areaSections().filter((section) => section.open).flatMap((section) => section.rows.map((row) => row.group)));
+  /** One tab stop in the list: the chosen group when it shows, else the first row. */
+  readonly rowTabStop = computed(() => {
+    const rows = this.visibleRowGroups();
+    const draft = this.draft();
+    return draft && rows.some((group) => group.key === draft.key) ? draft.key : rows[0]?.key ?? null;
+  });
 
   constructor() {
     effect(() => {
@@ -745,7 +1008,30 @@ export class ContentTranslationWorkspace {
       this.focusedInitialKey = initialKey;
       queueMicrotask(() => this.focusInitialTranslation());
     });
+    effect(() => {
+      const query = this.searchQuery();
+      if (query !== null) untracked(() => this.search.set(query));
+    });
+    effect(() => {
+      const language = this.missingLanguage();
+      if (language) untracked(() => this.selectedLanguage.set(language));
+    });
+    effect(() => {
+      const open = this.showAdvanced();
+      if (open !== null) untracked(() => this.advancedOpen.set(open));
+    });
+    /* split and inline select reactively when the address asks for another group while nothing is pending. */
+    effect(() => {
+      const key = this.initialKey()?.trim();
+      if (!key || this.layout() === 'card') return;
+      untracked(() => {
+        if (this.loading() || this.hasPendingChanges() || this.draft()?.key === key) return;
+        const group = this.groups().find((item) => item.scope === this.scope() && item.key === key);
+        if (group) this.setSelected(group);
+      });
+    });
     effect(() => this.dirtyChange.emit(this.hasPendingChanges()));
+    effect(() => this.advancedChange.emit(this.advancedOpen()));
     effect(() => this.busyChange.emit(this.busy()));
   }
 
@@ -757,8 +1043,20 @@ export class ContentTranslationWorkspace {
       const scopes: ContentTranslationScope[] = this.lockScope()
         ? [this.initialScope()]
         : ['WEBSITE', 'CATALOG'];
-      const overviews = await Promise.all(scopes.map((scope) =>
+      /*
+       * The website's 654 text groups are about 700 kB: split and inline wait
+       * for the shared store (its request under way, or a young answer)
+       * instead of fetching beside it; only when the store has nothing do
+       * they ask themselves (the error then shows here, with its retry).
+       */
+      let fromStore: ContentTranslationOverview | null = null;
+      if (this.layout() !== 'card' && scopes.length === 1 && scopes[0] === 'WEBSITE') {
+        await this.store.ensure(['content']);
+        fromStore = this.store.content();
+      }
+      const overviews = fromStore ? [fromStore] : await Promise.all(scopes.map((scope) =>
         this.catalog.contentTranslations(scope)));
+      if (!fromStore) scopes.forEach((scope, index) => { if (scope === 'WEBSITE') this.store.setContent(overviews[index]); });
       const groups = overviews.flatMap((overview) => overview.groups);
       this.groups.set(groups);
       const current = this.draft();
@@ -766,8 +1064,14 @@ export class ContentTranslationWorkspace {
       const wantedPrefix = this.initialPrefix();
       const candidates = groups.filter((group) => group.scope === this.scope())
         .filter((group) => this.inSelectedKeys(group))
-        .filter((group) => wantedPrefix === 'ALL' || this.groupPrefix(group.key) === wantedPrefix)
+        .filter((group) => wantedPrefix === 'ALL' || this.areaKeyOf(group) === wantedPrefix)
         .sort((left, right) => left.label.localeCompare(right.label, 'nl'));
+      /* split and inline start where the site starts: the first group in site order. */
+      if (this.layout() !== 'card' && this.scope() === 'WEBSITE') {
+        const wanted = new Set(candidates);
+        const ordered = groupByArea(groups.filter((group) => wanted.has(group))).flatMap((section) => section.groups);
+        candidates.splice(0, candidates.length, ...ordered);
+      }
       if (wantedPrefix !== 'ALL' && !candidates.length && !this.lockPrefix()) {
         this.prefix.set('ALL');
       }
@@ -780,6 +1084,8 @@ export class ContentTranslationWorkspace {
         ?? (this.lockPrefix() || hasSelectedKeyFilter
           ? null
           : groups.find((group) => group.scope === this.scope()) ?? groups[0]);
+      /* Only a group the address asked for takes the focus; the first group of a plain visit does not (its ?key= follows). */
+      if (selected && this.layout() !== 'card' && selected.key !== initialKey) this.focusedInitialKey = selected.key;
       this.setSelected(selected ?? null);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, 'Controleer de verbinding en probeer opnieuw.'));
@@ -864,8 +1170,101 @@ export class ContentTranslationWorkspace {
     return this.languages.length - group.missingLanguages.length;
   }
 
+  /** WEBSITE keys belong to a site part by their first segment (website-text-areas); CATALOG keeps its own grouping. */
   groupArea(group: ContentTranslationGroup): string {
-    return this.prefixLabel(this.groupPrefix(group.key));
+    return group.scope === 'WEBSITE' ? websiteTextArea(group.key).label : this.prefixLabel(this.groupPrefix(group.key));
+  }
+
+  areaKeyOf(group: ContentTranslationGroup): string {
+    return group.scope === 'WEBSITE' ? websiteTextArea(group.key).key : this.groupPrefix(group.key);
+  }
+
+  labelOf(group: ContentTranslationGroup): string {
+    return group.scope === 'WEBSITE' ? displayLabel(group) : group.label;
+  }
+
+  eyebrowOf(group: ContentTranslationGroup): string {
+    const sub = group.scope === 'WEBSITE' ? homeSubArea(group.key)?.label : null;
+    return sub ? `${this.groupArea(group)} · ${sub}` : this.groupArea(group);
+  }
+
+  valueOf(group: ContentTranslationGroup, language: LanguageCode): string {
+    return group.texts.find((text) => text.language === language)?.value?.replace(/\s+/g, ' ').trim() ?? '';
+  }
+
+  isSelected(group: ContentTranslationGroup): boolean {
+    const draft = this.draft();
+    return !!draft && draft.key === group.key && draft.scope === group.scope;
+  }
+
+  plural(count: number, one: string, many: string): string {
+    return `${count} ${count === 1 ? one : many}`;
+  }
+
+  toggleArea(key: string): void {
+    const section = this.areaSections().find((item) => item.area.key === key);
+    this.areaOverrides.update((overrides) => ({ ...overrides, [key]: !(section?.open ?? false) }));
+  }
+
+  /**
+   * The list's keys (split and inline): ↑/↓ the previous or next visible
+   * group (the editor follows; refused with the toast while the text is
+   * not saved), Home/End the first or last, Enter to the text field.
+   */
+  listKey(event: KeyboardEvent): void {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('.ws-grp');
+    if (!button || event.altKey || event.metaKey || event.ctrlKey) return;
+    const rows = this.visibleRowGroups();
+    const index = rows.findIndex((group) => group.key === button.dataset['key']);
+    if (index < 0) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.pick(rows[index]);
+      if (this.isSelected(rows[index])) afterNextRender({ read: () => this.host.nativeElement.querySelector<HTMLTextAreaElement>('.ws-textarea')?.focus() }, { injector: this.injector });
+      return;
+    }
+    const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1
+      : event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    const target = rows[next];
+    if (!target || next === index) return;
+    this.pick(target);
+    if (!this.isSelected(target)) return;
+    afterNextRender({ read: () => this.host.nativeElement.querySelector<HTMLElement>(`.ws-grp[data-key="${CSS.escape(target.key)}"]`)?.focus() }, { injector: this.injector });
+  }
+
+  /** Another group while the text is dirty: say why nothing happens (rows stay enabled). */
+  pick(group: ContentTranslationGroup): void {
+    if (this.busy() || this.isSelected(group)) return;
+    if (this.hasPendingChanges()) {
+      this.ui.toast('Sla de tekst eerst op of herstel de wijziging.', 'err');
+      return;
+    }
+    /* The address follows the pick (?key=); that must not pull the focus into the text field. */
+    if (this.layout() !== 'card') this.focusedInitialKey = group.key;
+    /* split: the page's "Geavanceerd" stays open across groups (it follows showAdvanced). */
+    if (this.layout() !== 'split' || !this.showAdvanced()) this.advancedOpen.set(false);
+    this.setSelected(group);
+  }
+
+  /** split and inline: ⌘S saves a dirty text (and never opens the browser's save dialog); [ and ] change the language. */
+  @HostListener('document:keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    if (this.layout() === 'card' || !this.visible() || event.defaultPrevented) return;
+    const context = keyContext(event, this.host.nativeElement, this.document);
+    if (context.overlayOpen) return;
+    if (context.mod && event.key.toLowerCase() === 's' && this.hasPendingChanges() && this.draft()) {
+      event.preventDefault();
+      if (this.draftValid()) void this.saveSelected();
+      return;
+    }
+    if (context.typing || context.mod || event.altKey || !this.draft() || (event.key !== '[' && event.key !== ']')) return;
+    if (this.layout() === 'inline' && !context.inScope) return;
+    event.preventDefault();
+    const index = this.languages.findIndex((language) => language.code === this.selectedLanguage());
+    const next = (index + (event.key === ']' ? 1 : -1) + this.languages.length) % this.languages.length;
+    this.selectedLanguage.set(this.languages[next].code);
   }
 
   async saveSelected(): Promise<void> {
@@ -886,8 +1285,9 @@ export class ContentTranslationWorkspace {
       });
       this.replaceGroup(saved);
       this.setSelected(saved);
+      if (saved.scope === 'WEBSITE') this.store.patchContentGroup(saved);
       this.websiteSyncRefresh.update((value) => value + 1);
-      this.contentSaved.emit();
+      this.contentSaved.emit(saved);
       this.ui.toast('Tekstvertalingen opgeslagen');
     } catch (failure: unknown) {
       const conflict = isRevisionConflict(failure);
@@ -919,9 +1319,9 @@ export class ContentTranslationWorkspace {
     const saved = this.saved();
     if (this.busy() || !this.dirty()) return;
     this.ui.confirm({
-      title: 'Tekstwijzigingen wissen',
+      title: 'Wijzigingen herstellen?',
       message: 'De niet-opgeslagen wijzigingen in deze tekstgroep gaan verloren.',
-      confirmLabel: 'Wijzigingen wissen',
+      confirmLabel: 'Herstellen',
       danger: true,
     }, () => {
       this.draft.set(saved ? this.copy(saved) : null);
@@ -987,8 +1387,9 @@ export class ContentTranslationWorkspace {
       this.groups.update((groups) => [...groups, created]);
       this.creating.set(false);
       this.setSelected(created);
+      if (created.scope === 'WEBSITE') this.store.patchContentGroup(created);
       this.websiteSyncRefresh.update((value) => value + 1);
-      this.contentSaved.emit();
+      this.contentSaved.emit(created);
       this.ui.toast('Tekstgroep toegevoegd');
     } catch (failure: unknown) {
       const message = messageOf(
@@ -1018,8 +1419,9 @@ export class ContentTranslationWorkspace {
           (item) => item.scope !== group.scope || item.key !== group.key,
         ));
         this.setSelected(this.visibleGroups()[0] ?? null);
+        if (group.scope === 'WEBSITE') this.store.removeContentGroup(group.key);
         this.websiteSyncRefresh.update((value) => value + 1);
-        this.contentSaved.emit();
+        this.contentSaved.emit(null);
         this.ui.toast('Tekstgroep verwijderd');
       } catch (failure: unknown) {
         const conflict = isRevisionConflict(failure);
@@ -1040,6 +1442,7 @@ export class ContentTranslationWorkspace {
     this.draft.set(copy);
     this.saveError.set(null);
     this.conflict.set(false);
+    this.selectedKeyChange.emit(group?.key ?? null);
   }
 
   private focusInitialTranslation(attempt = 0): void {
@@ -1051,7 +1454,7 @@ export class ContentTranslationWorkspace {
       return;
     }
     if (!(target instanceof HTMLTextAreaElement)) return;
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.scrollIntoView({ behavior: this.layout() === 'card' ? 'smooth' : 'auto', block: 'center' });
     target.focus({ preventScroll: true });
   }
 

@@ -51,10 +51,10 @@ test('a longer sibling path is not mistaken for a known screen', () => {
 
 test('workspaces, redirects and screens outside the ERP are never a place to return to', () => {
   for (const url of ['', '/', '/costs', '/costs?view=bank', '/files', '/files?view=all&archief=1',
-    '/login', '/offerte/x', '/voorwaarden']) {
+    '/website', '/website/products?filter=live', '/login', '/offerte/x', '/voorwaarden']) {
     assert.equal(isWorkspaceUrl(url), true, url);
   }
-  for (const url of ['/purchasing/46', '/filesystem', '/dashboard', '/sales?view=costs', '/costsheet']) {
+  for (const url of ['/purchasing/46', '/filesystem', '/dashboard', '/sales?view=costs', '/costsheet', '/websites']) {
     assert.equal(isWorkspaceUrl(url), false, url);
   }
 });

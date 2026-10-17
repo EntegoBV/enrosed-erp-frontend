@@ -214,6 +214,7 @@ export const routes: Routes = [
     path: 'website',
     title: 'Website beheren',
     pathMatch: 'full',
+    title: 'Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-admin-page')
@@ -221,7 +222,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/layout',
-    title: 'Website beheren',
+    title: 'Homepage · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -230,7 +231,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/texts',
-    title: 'Website beheren',
+    title: 'Teksten · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -239,7 +240,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/products',
-    title: 'Website beheren',
+    title: 'Producten · Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-products-page')
@@ -247,16 +248,16 @@ export const routes: Routes = [
   },
   {
     path: 'website/categories',
-    title: 'Website beheren',
+    title: 'Categorieën · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
-    data: { websiteCategoryMode: true },
     loadComponent: () =>
-      import('./features/settings/settings-page').then((m) => m.SettingsPage),
+      import('./features/website-builder/website-categories-page')
+        .then((m) => m.WebsiteCategoriesPage),
   },
   {
     path: 'website/seo',
-    title: 'Website beheren',
+    title: 'SEO · Website',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { seoMode: true },
@@ -266,7 +267,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/publication',
-    title: 'Website beheren',
+    title: 'Publicatie · Website',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-publication-page')

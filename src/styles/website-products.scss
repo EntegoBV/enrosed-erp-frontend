@@ -1,0 +1,68 @@
+/* Website beheren · Producten (/website/products). Loaded with the page (encapsulation None). */
+
+.ws-search{width:260px}
+
+/* the table: 50 px rows; the webadres column leaves while the inspector is docked or the pane is narrow */
+.ws-products{--wk-cols:36px minmax(0,1fr) minmax(0,.7fr) 132px 44px 44px 84px 16px;--wk-row-h:50px}
+@container wk-pane (max-width:1023.98px){.ws-products{--wk-cols:36px minmax(0,1fr) 132px 44px 44px 84px 16px}}
+.wk-body--split .ws-products{--wk-cols:36px minmax(0,1fr) 132px 44px 44px 84px 16px}
+@media (max-width:1347.98px){
+ .ws-products{--wk-cols:36px minmax(0,1fr) minmax(0,.7fr) 132px 40px 40px 80px 16px}
+ .wk-body--split .ws-products{--wk-cols:36px minmax(0,1fr) 132px 40px 40px 80px 16px}
+}
+@media (max-width:1347.98px){@container wk-pane (max-width:1023.98px){.ws-products{--wk-cols:36px minmax(0,1fr) 132px 40px 40px 80px 16px}}}
+.ws-thumb{display:block;width:36px;height:36px;border-radius:9px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);object-fit:cover}
+.ws-thumb--none{background:repeating-linear-gradient(135deg,#f1ece7 0 6px,#e8e2dc 6px 12px)}
+.ws-thumb--lg{width:100%;height:100%;border-radius:14px}
+.ws-url{display:block;overflow:hidden;color:var(--muted);font:12px var(--mono);text-overflow:ellipsis;white-space:nowrap}
+.ws-mono{font:12.5px var(--mono);overflow-wrap:anywhere}
+.ws-status{display:flex;align-items:center;gap:8px;overflow:visible}
+.ws-pill--danger{border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:transparent;color:var(--danger)}
+.ws-status.is-changed .wk-pill{animation:mo-fade-in var(--dur-1,120ms) var(--ease-out,ease)}
+.ws-frac{font-variant-numeric:tabular-nums;font-weight:650}
+.ws-frac.is-done{color:var(--ok)}.ws-frac.is-warn{color:var(--warn)}
+.ws-points{color:var(--danger);font-size:12px;font-weight:700}
+.ws-points.is-none{color:var(--muted-2);font-weight:500}
+.ws-chev{color:var(--muted-2)}
+.ws-tag{display:inline-flex;align-items:center;height:16px;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.ws-under{margin:12px 2px 0;color:var(--muted);font-size:13px}
+.ws-scroll>.wk-banner--inset{margin-bottom:12px}
+/* below a 900 px toolbar the kit collapses the search to its icon: the 260 px must not hold it open (the / cap stays with the field) */
+@container wk-bar (max-width:899.98px){.ws-search.wk-search--collapsible{width:auto}}
+
+/* inspector */
+.ws-inspector{--wk-inspector-w:360px}
+.wk-body--split:has(.ws-inspector){--wk-inspector-w:380px}
+.ws-insp-title{display:grid;flex:1;gap:2px;min-width:0}
+.ws-insp-title small{color:var(--muted);font-size:12.5px}
+.ws-insp{display:grid;align-content:start;gap:12px;padding:16px 18px 20px}
+.ws-insp-photo{display:grid;place-items:center;height:168px;overflow:hidden;border-radius:14px;background:var(--surface-2)}
+.ws-insp-photo img{display:block;width:100%;height:168px;object-fit:contain}
+.ws-row-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.ws-row-switch>div{display:grid;gap:1px;min-width:0}
+.ws-row-switch b{font-size:13.5px}.ws-row-switch small{color:var(--muted);font-size:12px}
+.ws-hint{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
+.ws-hint--ok{color:var(--ok)}
+.ws-hint-block{display:grid;justify-items:start;gap:8px}
+.ws-issues{display:grid;gap:4px}
+.ws-issues ul{display:grid;gap:3px;margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.4}
+.ws-figs3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--line)}
+.ws-figs3>div{display:grid;padding:8px 10px;background:var(--surface)}
+.ws-figs3 small{color:var(--muted);font-size:11.5px;font-weight:600}.ws-figs3 strong{font-size:16px;font-variant-numeric:tabular-nums}
+.ws-insp-kv dd small{display:block;color:var(--muted);font-size:12px;font-weight:500}
+.ws-insp-kv a{color:var(--rose-dark);text-decoration:none}.ws-insp-kv a:hover{text-decoration:underline}
+.ws-insp-foot{display:grid;grid-template-columns:1fr 1fr}
+.ws-insp-foot .wk-btn--primary{grid-column:1/-1}
+
+/* phone */
+.ws-ios .ios-group--thumbs .ios-cell{min-height:64px}
+.ws-ios .ios-thumb.ws-thumb--none{display:block}
+.ws-ph-under{margin-top:-8px}
+.ws-sheet{padding-top:4px}
+/* the reeks name in the sheet head gets two lines, so "(Review)", which tells reeksen apart, stays readable (N19) */
+@media (max-width:679.98px){.sheet--ios:has(.ws-sheet) .sheet__head h2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.25;white-space:normal;overflow-wrap:anywhere}}
+.ws-sheet .ws-figs-foot{margin-top:-8px}
+.ws-sheet-photo{display:grid;place-items:center;height:170px;margin:0 var(--ios-inset) 16px;overflow:hidden;border-radius:var(--ios-radius);background:var(--surface)}
+.ws-sheet-photo img{display:block;width:100%;height:170px;object-fit:contain}
+.ws-sheet .ios-section__foot .ws-hint{font-size:12.5px}
+.ws-sheet .ws-issues ul{font-size:13px}

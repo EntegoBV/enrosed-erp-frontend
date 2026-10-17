@@ -14,6 +14,8 @@ export interface IosTab {
   badgeTone?: 'danger' | 'warn';
   /** Tabs replace the history entry unless told otherwise. */
   replaceUrl?: boolean;
+  /** Router navigation info, e.g. { nav: 'tab' } so a tab switch never animates as a push or pop. */
+  info?: unknown;
 }
 
 /**
@@ -32,7 +34,7 @@ export interface IosTab {
       @for (tab of tabs(); track tab.id) {
         <a class="ios-tab" [class.active]="tab.active" [attr.aria-current]="tab.active ? 'page' : null"
            [attr.aria-label]="tab.badge ? tab.label + ', ' + tab.badge + ' open' : null"
-           [routerLink]="tab.link" [queryParams]="tab.query ?? {}" [replaceUrl]="tab.replaceUrl ?? true">
+           [routerLink]="tab.link" [queryParams]="tab.query ?? {}" [replaceUrl]="tab.replaceUrl ?? true" [info]="tab.info">
           <span class="ios-tab__icon">
             <app-icon [name]="tab.icon" [size]="22" />
             @if (tab.badge) {

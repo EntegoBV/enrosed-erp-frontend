@@ -1,0 +1,55 @@
+/* Website beheren · Teksten and SEO pages (and Cataloguslabels, catalogMode). Loaded with the page. */
+
+/* Cataloguslabels keeps its look (products area) */
+.ct-catalog{max-width:1240px;margin-inline:auto;padding-bottom:calc(48px + env(safe-area-inset-bottom))}
+.ct-catalog__guide{display:grid;align-content:start;gap:5px;min-height:112px;margin-bottom:16px;padding:17px 18px;border:1px solid var(--rose-line);border-radius:var(--r-sm);background:var(--rose-soft)}
+.ct-catalog__guide>span{color:var(--rose-dark);font-size:11px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+.ct-catalog__guide b{font-size:17px;line-height:1.35}
+.ct-catalog__guide small{color:var(--muted);font-size:14px;line-height:1.45}
+@media (max-width:460px){.ct-catalog{padding-inline:12px}.ct-catalog__guide{min-height:0;padding:15px}}
+
+/* desk */
+.ws-texts-page .wk-body>app-content-translation-workspace{display:block;height:100%;min-height:0;overflow:hidden}
+.ws-texts-page .ws-sub .ws-long,.ws-texts-page .ws-sub .ws-short{white-space:nowrap}
+.ws-langbar__label{flex:none;color:#7c450b;font-size:12.5px;font-weight:650}
+.ws-langbar{background:var(--warn-soft);border-bottom-color:#f0dcbc}
+.ws-seo{--wk-cols:minmax(0,1.3fr) 84px minmax(0,1.2fr) minmax(0,.9fr) 16px;--wk-row-h:44px}
+.ws-seo-title{font-weight:500!important}
+.ws-mono-line{font-family:var(--mono)}
+.ws-ok-text{color:var(--ok)}
+.ws-chev{color:var(--muted-2)}
+.ws-seo-row{text-decoration:none}
+
+/* phone */
+.ws-texts-ios .ios-subbar .ios-search{width:100%}
+.ws-ph-seg{padding:4px var(--ios-inset) 12px}
+.ws-ph-search{margin-top:8px}
+/* editor: the centred two-line title under the bar (label / "x van 9 talen"), never cut (design §3.4) */
+.ws-ph-edhead{display:grid;justify-items:center;gap:2px;padding:2px calc(var(--safe-r) + 20px) 12px calc(var(--safe-l) + 20px);text-align:center}
+.ws-ph-edhead h1{margin:0;color:var(--ink);font-size:20px;font-weight:720;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
+.ws-ph-edhead small{color:var(--muted);font-size:13px;font-weight:600}
+/* its bar: the small title gets the room between the back capsule and "…" (centred when the sides allow it) and never runs under them */
+.ws-ph-ednav .ios-nav{grid-template-columns:minmax(max-content,1fr) minmax(0,auto) minmax(max-content,1fr)}
+.ws-ph-ednav .ios-nav__title{min-width:0;max-width:100%}
+.ws-ph-lang{margin:0 2px;padding:0 4px;border:0;background:none;color:inherit;font:inherit;font-weight:750;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+/* each view is its own wrapper (keyed by the view), so every push and pop animates; the editor animates on its own */
+.ws-ph-view.mo-push-view,.ws-ph-editor.mo-push-view{animation:mo-push-in var(--dur-3,320ms) var(--ease-spring,ease) backwards}
+.ws-ph-view.mo-pop-view{animation:mo-pop-in var(--dur-3,320ms) var(--ease-spring,ease) backwards}
+.ws-ph-editor{padding:0 var(--ios-inset)}
+.ws-ph-editor .ws-inline-list{display:none}
+.ws-ph-editor .ws-langchips{gap:3px;padding-top:2px}
+.ws-ph-editor .ws-lc{height:32px;font-size:12px}
+.ws-ph-editor .ws-src{padding:12px 14px;border-radius:14px;font-size:15px}
+.ws-ph-editor .ws-textarea{min-height:calc(6lh + 20px);border-radius:14px;font-size:16px}
+.ws-ph-editor .ws-ed__card{background:none}
+/* the save bar: page level, glass, above the tab bar, only while dirty; it stays on every view */
+.ws-ph-editor .ws-edfoot{display:none}
+.ws-ph-editor .ws-edfoot.is-dirty{position:fixed;right:calc(var(--safe-r) + 10px);bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 18px);left:calc(var(--safe-l) + 10px);z-index:39;display:flex;margin:0;padding:6px 6px 6px 16px;border:1px solid var(--glass-edge);border-radius:22px;background:var(--glass-bg-strong);box-shadow:var(--glass-shadow),var(--glass-highlight);backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
+.ws-ph-editor .ws-edfoot .wk-btn{height:36px;border-radius:999px;font-size:14px}
+.ws-ph-editor .ws-edfoot .wk-kbd{display:none}
+.ws-ct-parked .ws-ed>:not(.ws-ed__card),.ws-ct-parked .ws-ed__card>:not(.ws-edfoot){display:none}
+.ws-ct-parked .ws-ed__card{border:0}
+.ws-texts-ios:has(.ws-edfoot.is-dirty){padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 100px)}
+/* typing on a phone: the tab bar steps aside so the save bar sits at the keyboard (critique N22) */
+body:has(.ws-ios textarea:focus) .ios-tabbar,body:has(.ws-ios textarea:focus) .ios-accessory{display:none}
+body:has(.ws-ios textarea:focus) .ws-ph-editor .ws-edfoot.is-dirty{bottom:calc(var(--safe-b) + 10px)}

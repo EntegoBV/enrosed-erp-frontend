@@ -1,159 +1,153 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, inject } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { environment } from '../../../environments/environment';
-import { CatalogApi } from '../../core/api/catalog-api';
-import { messageOf } from '../../core/api/errors';
-import { WebsiteBuilderHomepage } from '../../core/api/models';
-import { PageHeader } from '../../shared/page-header';
-import { WebsiteSyncStatus } from '../settings/website-sync-status';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { IosNav } from '../../shared/ios-nav';
+import { LoadError } from '../../shared/load-error';
+import { Skeleton } from '../../shared/skeleton';
+import { WEBSITE_SYNC_TECHNICAL, detailWithMoment, rebuildTimeline, shortMoment, websiteSyncCopy } from '../settings/website-sync-copy';
+import { WebsiteSyncStore } from '../settings/website-sync-store';
+import { differenceLine, homepageDifferences } from './website-homepage';
+import { WebsiteRecent } from './website-recent';
+import { WebsiteStatusBar } from './website-status-bar';
+import { WebsiteStore } from './website-store';
 
+/**
+ * Publicatie of Website beheren (/website/publication): what stands live and
+ * what is coming. The website update as one state with its four moments
+ * (queued, started, accepted, live), the homepage concept next to what is
+ * live with the differences in words, and the latest changes of reeksen.
+ */
 @Component({
   selector: 'app-website-publication-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, RouterLink, WebsiteSyncStatus],
+  encapsulation: ViewEncapsulation.None,
+  styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-overview.scss', '../../../styles/website-publication.scss'],
+  imports: [IosNav, LoadError, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar],
   template: `
-    <app-page-header
-      title="Website publiceren"
-      subtitle="Zie het verschil tussen opgeslagen, gepubliceerd en werkelijk live."
-      [showBell]="false"
-    >
-      <a class="btn btn--primary btn--sm" [href]="previewBaseUrl" target="_blank" rel="noopener">
-        {{ previewSiteLabel }} openen ↗
-      </a>
-    </app-page-header>
-
-    <main class="content publication-page">
-      <section class="publication-guide" role="note">
-        <span aria-hidden="true">1</span><div><b>Opslaan</b><small>Bewaart een concept in het ERP.</small></div>
-        <i aria-hidden="true">→</i>
-        <span aria-hidden="true">2</span><div><b>Publiceren</b><small>Maakt de gekozen homepage-indeling actief.</small></div>
-        <i aria-hidden="true">→</i>
-        <span aria-hidden="true">3</span><div><b>Website-build</b><small>Vercel verwerkt de nieuwe data op de {{ previewSiteName }}.</small></div>
-      </section>
-
-      <app-website-sync-status />
-
-      @if (loading()) {
-        <section class="snapshot-state card" role="status">Publicatiegegevens laden…</section>
-      } @else if (loadError()) {
-        <section class="snapshot-state snapshot-state--error card" role="alert">
-          <div><b>Publicatiegegevens niet geladen</b><small>{{ loadError() }}</small></div>
-          <button class="btn btn--primary" type="button" (click)="load()">Opnieuw proberen</button>
-        </section>
-      } @else if (snapshot(); as current) {
-        <section class="snapshot-grid" aria-label="Concept en publicatie">
-          <article class="snapshot-card card" [class.snapshot-card--warn]="hasUnpublishedChanges()">
-            <span>Concept</span>
-            <b>{{ hasUnpublishedChanges() ? 'Klaar om te publiceren' : 'Gelijk aan gepubliceerd' }}</b>
-            <small>{{ visibleDraftSections() }} homepage-onderdelen zichtbaar</small>
-            <time [attr.datetime]="current.updatedAt">{{ current.updatedAt ? formatMoment(current.updatedAt) : 'Nog geen wijziging geregistreerd' }}</time>
-          </article>
-          <article class="snapshot-card card snapshot-card--ok">
-            <span>Gepubliceerde indeling</span>
-            <b>{{ visiblePublishedSections() }} onderdelen actief</b>
-            <small>Revisie {{ current.revision }}</small>
-            <time [attr.datetime]="current.publishedAt">{{ current.publishedAt ? formatMoment(current.publishedAt) : 'Nog niet gepubliceerd' }}</time>
-          </article>
-        </section>
-
-        <section class="publication-actions card">
-          <div>
-            <h2>{{ hasUnpublishedChanges() ? 'Er staat een concept klaar' : 'Indeling is gepubliceerd' }}</h2>
-            <p>{{ hasUnpublishedChanges()
-              ? 'Controleer het live voorbeeld en publiceer vanuit Homepage-indeling.'
-              : 'Controleer hierboven of de website-build ook de status Live heeft.' }}</p>
-          </div>
-          <a class="btn btn--primary" routerLink="/website/layout">
-            {{ hasUnpublishedChanges() ? 'Controleren & publiceren' : 'Indeling bekijken' }}
-          </a>
-        </section>
+    <ng-template #updateBody>
+      @if (sync.status() || sync.loadError()) {
+        <div class="ws-live" role="status">
+          <span class="ws-live__state" [class]="'ws-live__state is-' + copy().tone"><i aria-hidden="true"></i>{{ copy().label }}</span>
+          <span class="ws-live__detail">{{ detail() }}</span>
+          @if (copy().error; as error) { <span class="ws-live__error">{{ error }}</span> }
+          @if (copy().nextAttempt; as next) { <span class="ws-live__detail">{{ next }}</span> }
+          @if (copy().action; as action) {
+            @if (action === 'todo') { <a class="wk-btn wk-btn--sm" routerLink="/website" fragment="translation-work">{{ copy().actionLabel }}</a> }
+            @else {
+              <button class="wk-btn wk-btn--sm" type="button" [disabled]="sync.loading() || sync.retrying()"
+                      (click)="action === 'retry' ? sync.retry() : sync.load()">{{ copy().actionLabel }}</button>
+            }
+          }
+          @if (sync.status()?.status === 'NOT_CONFIGURED') {
+            <details class="ws-tech"><summary>Technische uitleg</summary><p>{{ technical }}</p></details>
+          }
+        </div>
+        @if (timeline(); as steps) {
+          <ol class="ws-timeline" aria-label="Verloop van de laatste website-update">
+            @for (step of steps; track step.label) {
+              <li [class]="'is-' + step.state"><i aria-hidden="true"></i><b>{{ step.label }}</b><time>{{ step.moment ?? (step.state === 'current' ? 'bezig' : step.state === 'failed' ? 'mislukt' : '—') }}</time></li>
+            }
+          </ol>
+        }
+      } @else {
+        <div class="ws-scroll"><app-skeleton kind="lines" [rows]="4" /></div>
       }
-    </main>
-  `,
-  styles: `
-    :host { display: block; }
-    .publication-page { max-width: 1380px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
-    .publication-guide {
-      display: grid; grid-template-columns: auto 1fr auto auto 1fr auto auto 1fr; align-items: center;
-      gap: 12px; margin-bottom: 14px; padding: 18px; border: 1px solid var(--line);
-      border-radius: var(--r); background: var(--surface);
-    }
-    .publication-guide > span { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: var(--rose-soft); color: var(--rose-dark); font-weight: 850; }
-    .publication-guide > div { display: grid; gap: 2px; }
-    .publication-guide b { font-size: 15px; }
-    .publication-guide small { color: var(--muted); font-size: 13px; line-height: 1.4; }
-    .publication-guide i { color: var(--muted-2); font-size: 20px; font-style: normal; }
-    .snapshot-state { display: flex; min-height: 150px; align-items: center; justify-content: center; color: var(--muted); }
-    .snapshot-state--error { justify-content: space-between; gap: 16px; padding: 18px; color: var(--danger); }
-    .snapshot-state--error > div { display: grid; gap: 3px; }
-    .snapshot-state--error small { color: var(--muted); }
-    .snapshot-state .btn { min-height: 48px; }
-    .snapshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .snapshot-card { display: grid; gap: 6px; min-height: 170px; align-content: center; padding: 20px; border-left: 5px solid var(--line-strong); }
-    .snapshot-card--warn { border-left-color: var(--warn); background: var(--warn-soft); }
-    .snapshot-card--ok { border-left-color: var(--ok); }
-    .snapshot-card > span { color: var(--muted); font-size: 12px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
-    .snapshot-card b { font-size: 22px; }
-    .snapshot-card small, .snapshot-card time { color: var(--muted); font-size: 14px; }
-    .publication-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 12px; padding: 20px; }
-    .publication-actions h2 { font-size: 21px; }
-    .publication-actions p { margin-top: 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
-    .publication-actions .btn { min-height: 48px; flex: none; }
+    </ng-template>
 
-    @media (max-width: 800px) {
-      .publication-page { padding-inline: 12px; }
-      .publication-guide { grid-template-columns: auto 1fr; }
-      .publication-guide i { display: none; }
-      .snapshot-grid { grid-template-columns: 1fr; }
-      .publication-actions, .snapshot-state--error { align-items: stretch; flex-direction: column; }
-      .publication-actions .btn, .snapshot-state .btn { width: 100%; }
+    <ng-template #homepageBody>
+      @if (store.homepageSummary(); as home) {
+        <dl class="ws-compare">
+          <div class="ws-compare__head"><dt></dt><dd>Concept</dd><dd>Live</dd></div>
+          <div><dt>Blokken zichtbaar</dt><dd>{{ home.draftVisible }}</dd><dd>{{ home.publishedVisible }}</dd></div>
+          <div><dt>Moment</dt>
+            <dd>{{ home.updatedAt ? 'Gewijzigd ' + moment(home.updatedAt) : 'Nooit gewijzigd' }}</dd>
+            <dd>{{ home.publishedAt ? 'Gepubliceerd ' + moment(home.publishedAt) : 'Standaard\u00ADindeling · nooit aangepast' }}</dd></div>
+          <div><dt>Conceptversie</dt><dd>{{ home.revision }}</dd><dd></dd></div>
+        </dl>
+        <div class="ws-diff">
+          @for (line of differences(); track line) { <p>{{ line }}</p> } @empty { <p class="ws-diff--same">Concept en live zijn gelijk.</p> }
+        </div>
+        @if (home.differs) {
+          <div class="ws-card-foot"><a class="wk-btn wk-btn--primary" routerLink="/website/layout">Controleren &amp; publiceren</a></div>
+        }
+      } @else if (store.errors().homepage) {
+        <app-load-error title="Publicatiegegevens niet geladen" [message]="store.errors().homepage!" (retry)="reload()" />
+      } @else {
+        <div class="ws-scroll"><app-skeleton kind="lines" [rows]="4" /></div>
+      }
+    </ng-template>
+
+    @if (desk.active()) {
+      <div class="wk-page ws-page">
+        <header class="wk-toolbar">
+          <div class="wk-toolbar__lead">
+            <h1 class="wk-toolbar__title">Publicatie</h1>
+            <span class="ws-sub">Wat staat er live en wat komt eraan</span>
+          </div>
+          <div class="wk-toolbar__tools"><a class="wk-btn" routerLink="/website/layout">Homepage ›</a></div>
+        </header>
+        <div class="wk-body"><div class="wk-pane"><div class="ws-scroll">
+          <div class="ws-cols ws-pub-cols">
+            <div class="ws-col">
+              <section class="ws-card" aria-labelledby="ws-update-title">
+                <header class="ws-card-head"><h2 id="ws-update-title">Website-update</h2></header>
+                <ng-container *ngTemplateOutlet="updateBody" />
+              </section>
+              <app-website-recent layout="card" [limit]="10" [fetchLimit]="10" />
+            </div>
+            <div class="ws-col">
+              <section class="ws-card" aria-labelledby="ws-home-title">
+                <header class="ws-card-head"><h2 id="ws-home-title">Homepage-indeling</h2></header>
+                <ng-container *ngTemplateOutlet="homepageBody" />
+              </section>
+            </div>
+          </div>
+        </div></div></div>
+        <app-website-status-bar [text]="statusText()" />
+      </div>
+    } @else {
+      <div class="ios-page ws-ios">
+        <!-- no status chip here: the Website-update card is the state (critique N17, once per screen) -->
+        <app-ios-nav title="Publicatie" backLabel="Overzicht" backUrl="/website" backAriaLabel="Terug naar Overzicht" />
+        <section class="ios-section"><div class="ios-section__head"><h2>Website-update</h2></div>
+          <div class="ios-card ws-pub-ios-card"><ng-container *ngTemplateOutlet="updateBody" /></div></section>
+        <section class="ios-section"><div class="ios-section__head"><h2>Homepage-indeling</h2></div>
+          <div class="ios-card ws-pub-ios-card"><ng-container *ngTemplateOutlet="homepageBody" /></div></section>
+        <app-website-recent layout="group" [limit]="5" [fetchLimit]="5" />
+      </div>
     }
   `,
 })
 export class WebsitePublicationPage {
-  private readonly catalog = inject(CatalogApi);
-  readonly previewBaseUrl = environment.websitePreviewUrl;
-  readonly previewSiteLabel = environment.environmentLabel === 'TEST'
-    ? 'Testsite'
-    : environment.environmentLabel === 'LOCAL' ? 'Lokale website' : 'Website';
-  readonly previewSiteName = this.previewSiteLabel.toLocaleLowerCase('nl-BE');
-  readonly loading = signal(true);
-  readonly loadError = signal<string | null>(null);
-  readonly snapshot = signal<WebsiteBuilderHomepage | null>(null);
+  readonly desk = inject(DesktopViewport);
+  readonly store = inject(WebsiteStore);
+  readonly sync = inject(WebsiteSyncStore);
+  readonly technical = WEBSITE_SYNC_TECHNICAL;
 
-  readonly hasUnpublishedChanges = computed(() => {
-    const current = this.snapshot();
-    return !!current && JSON.stringify(current.draft.sections) !== JSON.stringify(current.published.sections);
+  readonly copy = computed(() => websiteSyncCopy({
+    status: this.sync.status(), loading: this.sync.loading(), loadError: this.sync.loadError(), pollEnded: this.sync.pollEnded(),
+  }));
+  readonly detail = computed(() => detailWithMoment(this.copy()));
+  readonly timeline = computed(() => rebuildTimeline(this.sync.status()));
+  readonly differences = computed(() => {
+    const snapshot = this.store.homepage();
+    return snapshot ? homepageDifferences(snapshot).map(differenceLine) : [];
   });
-  readonly visibleDraftSections = computed(() =>
-    this.snapshot()?.draft.sections.filter((section) => section.enabled).length ?? 0,
-  );
-  readonly visiblePublishedSections = computed(() =>
-    this.snapshot()?.published.sections.filter((section) => section.enabled).length ?? 0,
-  );
-
-  private readonly dateFormatter = new Intl.DateTimeFormat('nl-BE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+  readonly statusText = computed(() => {
+    const home = this.store.homepageSummary();
+    return home ? `Homepage: ${home.differs ? 'concept niet gepubliceerd' : 'gelijk aan live'}` : '';
   });
 
-  constructor() { void this.load(); }
-
-  async load(): Promise<void> {
-    if (this.loading() && this.snapshot()) return;
-    this.loading.set(true);
-    this.loadError.set(null);
-    try {
-      this.snapshot.set(await this.catalog.websiteBuilderHomepage());
-    } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'Controleer de verbinding met Enrosed.'));
-    } finally {
-      this.loading.set(false);
-    }
+  constructor() {
+    void this.store.ensure(['homepage']);
   }
 
-  formatMoment(value: string): string {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Tijdstip onbekend' : this.dateFormatter.format(date);
+  reload(): void {
+    void this.store.refresh(['homepage']);
+  }
+
+  moment(value: string): string {
+    return shortMoment(value) ?? 'onbekend';
   }
 }

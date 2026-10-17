@@ -37,7 +37,10 @@ test('route patterns match one segment per parameter and a whole subtree with /*
 test('the page section lists the screen keys and hides elsewhere', () => {
   assert.deepEqual(pageShortcutsFor('/purchasing/62').map((row) => row.keys.join(' ')), ['⌥ 1', '⌥ 2', '⌥ 3']);
   assert.deepEqual(pageShortcutsFor('/sales/79/edit').map((row) => row.text), ['Opslaan']);
-  assert.deepEqual(pageShortcutsFor('/website/layout').map((row) => row.text), ['Opslaan']);
+  assert.deepEqual(pageShortcutsFor('/website/layout').map((row) => row.text),
+    ['Opslaan', 'Ander blok kiezen', 'Blok hoger of lager zetten', 'Blok tonen of verbergen', 'Naar de instellingen van het blok']);
+  assert.deepEqual(pageShortcutsFor('/website/texts?key=home.hero.title').map((row) => row.text),
+    ['Opslaan', 'Andere tekstgroep kiezen', 'Naar het tekstveld', 'Vorige of volgende taal']);
   assert.deepEqual(pageShortcutsFor('/customers'), []);
 });
 
@@ -55,4 +58,9 @@ test('a new product lists no product-page keys: E, B and ⌥←/→ only work on
   assert.ok(!fresh.includes('Voorraad boeken'), fresh.join(', '));
   assert.ok(!fresh.includes('Vorige of volgende kleur'), fresh.join(', '));
   assert.ok(pageShortcutsFor('/products/101/edit').map((row) => row.text).includes('Opslaan'));
+});
+
+test('Categorieën lists its own keys next to Opslaan', () => {
+  assert.deepEqual(pageShortcutsFor('/website/categories?code=domes').map((row) => row.text),
+    ['Opslaan', 'Andere categorie kiezen', 'Categorie hoger of lager zetten', 'Categorie openen']);
 });
