@@ -2,7 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import type { PurchaseOrderView } from '../../core/api/models';
 import { EurPipe } from '../../shared/pipes';
-import type { PayeeBranch, PaymentNode } from './container-payment-tree';
+import { emptyBranch, type PayeeBranch, type PaymentNode } from './container-payment-tree';
 import { PAYEE_TONES } from './finance-format';
 import { FinanceState } from './finance-state';
 
@@ -21,6 +21,10 @@ import { FinanceState } from './finance-state';
   template: `
     @let data = view();
     @for (branch of branches(); track branch.payee) {
+      @if (emptyBranch(branch)) {
+        <!-- A payee with nothing agreed, paid or invoiced: one quiet line, not three € 0,00. -->
+        <div class="fin-stream fin-tree fin-stream--none"><div class="fin-stream__head"><span [class]="'wk-dot tone-' + tone(branch.payee)"></span><span class="wk-amount--muted">{{ branch.label }} · geen</span></div></div>
+      } @else {
       <div class="fin-stream fin-tree">
         <div class="fin-stream__head"><span [class]="'wk-dot tone-' + tone(branch.payee)"></span><b>{{ branch.label }}</b><span class="wk-amount--muted">{{ branch.status }}</span></div>
         <dl class="fin-stream__figures"><div><dt>Afspraak</dt><dd>{{ branch.plannedEur | eur }}</dd></div><div><dt>Betaald</dt><dd>{{ branch.paidEur | eur }}</dd></div><div><dt>Open</dt><dd>{{ branch.remainingEur | eur }}</dd></div></dl>
@@ -41,6 +45,7 @@ import { FinanceState } from './finance-state';
         }
         @for (node of branch.payments; track node.id) { <ng-container *ngTemplateOutlet="payment; context: { $implicit: node, nested: false }" /> }
       </div>
+      }
     }
     <ng-template #payment let-node let-nested="nested">
       <div class="fin-tree__payment" [class.fin-tree__payment--nested]="nested">{{ head(node) }}<ng-container *ngTemplateOutlet="bank; context: { $implicit: node }" />{{ node.firstPaidOn ? ' · eerste ' + day(node.firstPaidOn) : '' }}</div>
@@ -73,6 +78,7 @@ export class ContainerPaymentTreeView {
   readonly noInvoice = computed(() => { const view = this.view(); return view.invoices !== undefined && !view.invoices.length && !(view.invoiceFiles ?? []).length; });
 
   tone(payee: string): string { return PAYEE_TONES[payee] ?? 'grey'; }
+  readonly emptyBranch = emptyBranch;
   /** '02/08', as the order screens write a payment's day. */
   day(date: string): string { return date.slice(8, 10) + '/' + date.slice(5, 7); }
   /**

@@ -76,6 +76,13 @@ const byDay = (left: PurchasePaymentRow, right: PurchasePaymentRow): number => l
  * status here agrees with the order screens. `status` words a stream as the
  * panel does (reconciliationStatusLabel).
  */
+/** A payee with no Afspraak, nothing paid, no invoice and no payment: the tree shows one "… · geen" line for it. */
+export function emptyBranch(branch: PayeeBranch): boolean {
+  const zero = (value: number) => Math.round(value * 100) === 0;
+  return zero(branch.plannedEur) && zero(branch.paidEur) && zero(branch.remainingEur) && !branch.invoices.length && !branch.invoiceFiles.length
+    && !branch.terms.length && !branch.payments.length && !branch.viaSupplier;
+}
+
 export function containerPaymentTree(
   view: PurchaseOrderView, rows: readonly PurchasePaymentRow[],
   line: (row: PurchasePaymentRow) => { accountLabel: string; day: string; lineId?: number | null } | null,

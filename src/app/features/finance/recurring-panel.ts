@@ -12,6 +12,8 @@ import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
+import { blankRecurring } from './finance-sections';
+import { recurringCandidates, type RecurringCandidate } from './recurring-candidates';
 
 type GroupId = 'active' | 'paused' | 'ended';
 
@@ -84,7 +86,18 @@ type GroupId = 'active' | 'paused' | 'ended';
             </div>
           } @else {
             <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="repeat" [size]="22" /></span><p class="wk-empty__title">Nog geen vaste kosten</p>
-              <p class="wk-empty__text">Huur, de boekhouder, software, verzekering: stel ze één keer in, de boekingen volgen vanzelf.</p></div>
+              <p class="wk-empty__text">Huur, de boekhouder, software, verzekering: stel ze één keer in, de boekingen volgen vanzelf.</p>
+              <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openRecurring(null)">Vaste kost instellen</button></div></div>
+            @if (candidates().length) {
+              <!-- Costs booked by hand that come back: set one up from its rhythm, starting at the next expected booking (critique B12). -->
+              <section class="wk-card fin-candidates" aria-labelledby="fin-candidates-title">
+                <header class="wk-card__head"><h2 class="wk-card__title" id="fin-candidates-title">Lijkt te herhalen</h2></header>
+                @for (candidate of candidates(); track candidate.party) {
+                  <div class="fin-candidate"><span><b>{{ candidate.party }}</b><small>{{ candidateText(candidate) }}</small></span>
+                    <button class="wk-btn wk-btn--sm" type="button" (click)="setUp(candidate)">Instellen…</button></div>
+                }
+              </section>
+            }
           }
         </div>
         @if (agenda().length) {
@@ -136,7 +149,21 @@ type GroupId = 'active' | 'paused' | 'ended';
         </section>
       } @empty {
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="repeat" [size]="26" /></span><p class="ios-empty__title">Nog geen vaste kosten</p>
-          <p class="ios-empty__text">Stel ze één keer in met +, de boekingen volgen vanzelf.</p></div>
+          <p class="ios-empty__text">Stel ze één keer in, de boekingen volgen vanzelf.</p>
+          <button class="ios-capsule ios-capsule--tinted" type="button" (click)="state.openRecurring(null)">Vaste kost instellen</button></div>
+        @if (candidates().length) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Lijkt te herhalen</h2></div>
+            <div class="ios-group">
+              @for (candidate of candidates(); track candidate.party) {
+                <button class="ios-cell ios-cell--tall" type="button" (click)="setUp(candidate)">
+                  <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ candidate.party }}</span><span class="ios-cell__sub fin-wrapall">{{ candidateText(candidate) }}</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value">Instellen…</span></span>
+                </button>
+              }
+            </div>
+          </section>
+        }
       }
       @if (agenda().length) {
         <section class="ios-section">
@@ -188,7 +215,9 @@ export class RecurringPanel implements FinanceSectionApi {
     inspect: (key) => this.state.inspectItem({ kind: 'recurring', id: Number(key.split(':')[1]) }),
   });
 
-  readonly strip = computed<StripItem[]>(() => {
+  /** Without any definition the strip's zeros say nothing: the empty state and "Lijkt te herhalen" take its place (N5). */
+  readonly strip = computed<StripItem[] | null>(() => {
+    if (!this.state.recurring().length) return null;
     const next = this.next();
     return [
       { label: 'Per maand', value: `${formatEuro(this.monthlyInclTotal())} incl. (${formatEuro(this.summary().monthlyExclEur)} excl.)`, tone: 'strong' },
@@ -196,6 +225,21 @@ export class RecurringPanel implements FinanceSectionApi {
       { label: 'Volgende', value: next ? `${next.definition.name} op ${dayMonth(next.date)}` : '—', tone: 'muted' },
     ];
   });
+  /** "Lijkt te herhalen": hand-booked costs to one party that come back (recurring-candidates.ts). */
+  readonly candidates = computed(() => this.state.recurring().length ? [] : recurringCandidates(this.state.costs(),
+    this.state.recurring().map((definition) => definition.party ?? definition.name), this.state.today()));
+  /** "6 boekingen sinds apr · laatst € 363,00 · maandelijks". */
+  candidateText(candidate: RecurringCandidate): string {
+    return `${candidate.count} boekingen sinds ${monthLabel(candidate.since).split(' ')[0].slice(0, 3)} · laatst ${formatEuro(cashTotalOf(candidate.last))} · ${intervalLabel(candidate.interval).toLowerCase()}`;
+  }
+  /** The recurring sheet, prefilled from the newest booking (amount excl. and VAT rate as stored) and starting at the next expected day; nothing is saved before Opslaan. */
+  setUp(candidate: RecurringCandidate): void {
+    const last = candidate.last;
+    this.state.recurringDraft.set({ ...blankRecurring(this.state.today()), name: candidate.party, party: candidate.party, category: last.category,
+      amountExclEur: last.amountExclEur, vatPct: last.vatPct, salesChannel: last.salesChannel, interval: candidate.interval, startDate: candidate.nextDate,
+      vatRegime: last.vatRegime ?? 'BE', vatRegimeConfirmed: !!last.vatRegime, supplierCountry: last.supplierCountry ?? 'BE', costKind: last.costKind,
+      expenseType: last.expenseType ?? 'STANDARD', vatDeductiblePct: last.vatDeductiblePct ?? 100, taxDeductiblePct: last.taxDeductiblePct ?? 100 });
+  }
   readonly status = computed(() => `${this.state.recurring().length} vaste ${this.state.recurring().length === 1 ? 'kost' : 'kosten'}`);
 
   handle(command: FinanceCommand): boolean {

@@ -219,11 +219,15 @@
   .fin-table--costs { --wk-cols: 28px 84px minmax(180px, 1fr) minmax(0, 150px) minmax(0, 110px) minmax(0, 104px) 40px 100px 88px 108px 112px; --wk-group-span: 8;
     .fin-sum--excl { grid-column: 8; } .fin-sum--vat { grid-column: 9; } .fin-sum--incl { grid-column: 10; } }
   .wk-body--split .fin-table--costs { @include costs-without-reference; }
-  .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px; }
+  .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px;
+    /* "Factuurdatum · vervalt" and "vervalt 11 okt · 6 d te laat" take a second line in their column (no new track, B5) */
+    .wk-th, .wk-td__sub { white-space: normal; overflow: visible; text-overflow: clip; } .wk-th { line-height: 1.25; } .wk-td__sub b { white-space: nowrap; } }
   /* "KBC-zichtrekening · 09/10 ›" takes a second line in its column rather than an ellipsis. */
   .fin-wrap-link { white-space: normal; text-align: left; }
   /* Ontvangen's "Transactie" and Containers' "Op de bank" (2026-10-16) step aside first: md and xs. */
   .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
+  .fin-table--receipts.fin-table--one { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 200px) 124px 36px; }
+  .fin-narrow-only { display: none; }
   .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
   /* Vaste kosten: sized by its own column (container fin-rec), since the agenda may sit beside it. */
   .fin-recurring__main { min-width: 0; container: fin-rec / inline-size; }
@@ -251,6 +255,24 @@
   .fin-expand { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 12px var(--wk-pad-x) 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
   .fin-expand__streams { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .fin-expand__payments { display: grid; align-content: start; gap: 4px; font-size: 13px; > .wk-link { justify-self: start; margin-top: 6px; } }
+  /* Te ontvangen › Laatst ontvangen: moment · factuur en klant · soort · bedrag */
+  .fin-recv { margin-top: 16px; }
+  .fin-recv__row { display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 150px) 120px; align-items: start; gap: 12px; width: 100%; padding: 8px 16px;
+    border: 0; border-top: 1px solid var(--line); background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; &:hover { background: var(--surface-2); } }
+  .fin-recv__when, .fin-recv__kind { color: var(--muted); font-size: 12px; }
+  .fin-recv__what { overflow-wrap: anywhere; }
+  .fin-recv__amount { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .fin-recv__empty { padding: 0 16px 14px; }
+  @container wk-pane (max-width: 719.98px) { .fin-recv__row { grid-template-columns: 96px minmax(0, 1fr) 108px; } .fin-recv__kind { display: none; } }
+  /* Vaste kosten › Lijkt te herhalen */
+  .fin-candidates { margin-top: 16px; }
+  .fin-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line);
+    > span { display: grid; min-width: 0; } b { font-size: 13.5px; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 12px; } .wk-btn { flex: none; } }
+  .fin-more-paid { display: block; color: var(--muted); font-size: 11.5px; font-weight: 500; }
+  .fin-stream--none .fin-stream__head { margin: 0; }
+  /* Facturen & kosten: a long description wraps whole rather than ending in "…" */
+  .fin-table--costs .fin-desc { white-space: normal; overflow-wrap: anywhere; }
+  .fin-sum__note { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
   .fin-stream { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 12.5px; }
   .fin-stream__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; b { font-size: 13px; } }
   .fin-stream__figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0;
@@ -282,6 +304,7 @@
   /* ---- Uitgaven › Aan wie & beurzen: two cards, each a table */
   .fin-lists { display: grid; gap: 16px; .wk-card + .wk-card { margin-top: 0; } .wk-card__head > .wk-btn { margin-left: 8px; } }
   .fin-table--parties { --wk-cols: minmax(160px, 1fr) minmax(0, 220px) 190px 110px 112px 84px; }
+  .fin-table--parties.fin-table--no-iban { --wk-cols: minmax(200px, 1fr) minmax(0, 220px) 110px 112px 84px; }
   .fin-table--fairs { --wk-cols: minmax(160px, 1fr) 140px 110px 112px 64px; }
   .fin-iban { font-variant-numeric: tabular-nums; }
 
@@ -310,13 +333,14 @@
     .fin-hide-lg { display: none !important; }
   }
   @container wk-pane (max-width: 1023.98px) {
-    .fin-table--parties { --wk-cols: minmax(140px, 1fr) minmax(0, 180px) 100px 108px 76px; }
+    .fin-table--parties, .fin-table--parties.fin-table--no-iban { --wk-cols: minmax(140px, 1fr) minmax(0, 180px) 100px 108px 76px; }
     .fin-lists-md { display: none !important; }
     .fin-table--payables { --wk-cols: 28px 96px minmax(150px, 1fr) minmax(0, 140px) 112px 100px; --wk-group-span: 5; .fin-group__sum { grid-column: 5; } }
     .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 80px minmax(140px, 1fr) minmax(0, 124px) 96px 104px 108px; --wk-group-span: 5;
       .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
+    .fin-table--receipts.fin-table--one { --wk-cols: 140px minmax(160px, 1fr) 130px 116px 36px; .fin-narrow-only { display: block; } }
     .fin-table--containers { --wk-cols: minmax(170px, 1fr) 104px 108px 108px 108px minmax(0, 150px) 36px; }
     .fin-analysis-grid, .fin-vat__kaders { grid-template-columns: minmax(0, 1fr); }
     .fin-expand { grid-template-columns: minmax(0, 1fr); }
@@ -324,16 +348,17 @@
   @container wk-pane (max-width: 859.98px) {
     .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) 116px 112px 24px; }
     .fin-table--receipts { --wk-cols: 124px minmax(140px, 1fr) 120px 112px 36px; }
+    .fin-table--receipts.fin-table--one { --wk-cols: 140px minmax(160px, 1fr) 130px 116px 36px; }
     .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px minmax(0, 150px) 36px; }
   }
   @container wk-pane (max-width: 719.98px) {
-    .fin-table--parties { --wk-cols: minmax(130px, 1fr) minmax(0, 150px) 90px 104px; }
+    .fin-table--parties, .fin-table--parties.fin-table--no-iban { --wk-cols: minmax(130px, 1fr) minmax(0, 150px) 90px 104px; }
     .fin-table--fairs { --wk-cols: minmax(130px, 1fr) 90px 104px 56px; }
     .fin-lists-sm { display: none !important; }
     .fin-table--payables { --wk-cols: 28px 88px minmax(130px, 1fr) minmax(0, 120px) 104px 96px; --wk-group-span: 5; .fin-group__sum { grid-column: 5; } }
     .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 72px minmax(120px, 1fr) 100px 100px; --wk-group-span: 4; .fin-sum--incl { grid-column: 4; } }
     .fin-table--receivables { --wk-cols: 96px minmax(120px, 1fr) 104px 104px 24px; }
-    .fin-table--receipts { --wk-cols: 116px minmax(130px, 1fr) 108px 36px; }
+    .fin-table--receipts, .fin-table--receipts.fin-table--one { --wk-cols: 116px minmax(130px, 1fr) 108px 36px; }
     .fin-table--containers { --wk-cols: minmax(130px, 1fr) 100px 100px 36px; }
   }
   @container wk-pane (min-width: 1100px) {

@@ -6,7 +6,7 @@ import { EurPipe } from '../../shared/pipes';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth } from './finance-format';
-import { cashTotalOf, openOf, paidOf, regimeLabel, vatOf } from './finance-metrics';
+import { cashTotalOf, openOf, paidOf, regimeLabel, reverseChargeOf, vatOf } from './finance-metrics';
 import { FinanceState } from './finance-state';
 import { daysBetween } from './payables';
 
@@ -49,13 +49,13 @@ import { daysBetween } from './payables';
           </span>
         } @else {
           <span class="wk-td" role="gridcell">{{ date() }}</span>
-          <span class="wk-td" role="gridcell">{{ row.description }}@if (row.recurringCostId) { <app-icon class="fin-inline-icon" name="repeat" [size]="13" title="Geboekt als vaste kost" /> }@if (regimeNote()) { <span class="wk-pill wk-pill--outline" [title]="regimeNote()">te bevestigen</span> }@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
+          <span class="wk-td fin-desc" role="gridcell">{{ row.description }}@if (row.recurringCostId) { <app-icon class="fin-inline-icon" name="repeat" [size]="13" title="Geboekt als vaste kost" /> }@if (regimeNote()) { <i class="wk-dot tone-warn fin-regime-dot" role="img" [attr.title]="regimeNote()" [attr.aria-label]="regimeNote()"></i> }@if (row.party) { <span class="wk-td__sub">{{ row.party }}</span> }</span>
           <span class="wk-td wk-td--wrap" role="gridcell" data-hide="xs"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
           <span class="wk-td fin-hide-lg" role="gridcell" data-hide="md inspecting">{{ row.reference || '—' }}</span>
           <span class="wk-td fin-hide-lg" role="gridcell" data-hide="md inspecting">{{ row.salesChannel ? channel(row.salesChannel) : '—' }}</span>
           <span class="wk-td fin-clip" role="gridcell" data-hide="md">@if (documents()) { <app-icon name="clip" [size]="14" />{{ documents() }} }@if (banked() !== 'none') { <app-icon name="bank" [size]="14" [attr.title]="bankTitle()" [style.opacity]="banked() === 'some' ? .55 : null" /> }</span>
           <span class="wk-td wk-td--num" role="gridcell" data-hide="xs">{{ row.amountExclEur | eur }}</span>
-          <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ vat() | eur }}</span>
+          <span class="wk-td wk-td--num" role="gridcell" data-hide="md">{{ vat() | eur }}@if (reverse()) { <span class="wk-td__sub">verlegd</span> }</span>
           <span class="wk-td wk-td--num" role="gridcell"><b>{{ incl() | eur }}</b></span>
           <span class="wk-td fin-status" role="gridcell">
             @switch (status()) {
@@ -110,7 +110,8 @@ import { daysBetween } from './payables';
               @if (documents()) { <span><app-icon name="clip" [size]="12" />{{ documents() }} {{ documents() === 1 ? 'document' : 'documenten' }}</span> }
               @if (banked() !== 'none') { <span><app-icon name="bank" [size]="12" />{{ banked() === 'some' ? 'Deels bankgekoppeld' : 'Bankgekoppeld' }}</span> }
             </span>
-            @if (regimeNote()) { <span class="fin-cost-cell__vat">Btw: {{ regimeNote() }}</span> }
+            @if (reverse()) { <span class="fin-cost-cell__vat">Btw verlegd@if (regimeNote()) { <i class="wk-dot tone-warn fin-regime-dot" role="img" [attr.aria-label]="regimeNote()"></i> }</span> }
+            @else if (regimeNote()) { <span class="fin-cost-cell__vat">Btw: {{ regimeShort() }}<i class="wk-dot tone-warn fin-regime-dot" role="img" [attr.aria-label]="regimeNote()"></i></span> }
           </button>
         </div>
       </div>
@@ -133,6 +134,10 @@ export class CostRow {
   readonly key = computed(() => `cost:${this.cost().id}`);
   readonly incl = computed(() => cashTotalOf(this.cost()));
   readonly vat = computed(() => vatOf(this.cost()));
+  /** The reverse-charge part of the VAT ("verlegd"): in the return, never paid. */
+  readonly reverse = computed(() => reverseChargeOf(this.cost()));
+  /** The regime alone, without "· te bevestigen" (the dot says that). */
+  readonly regimeShort = computed(() => regimeLabel(this.cost().vatRegime));
   /** What is still to pay; the server's figure, so a cost paid in parts reads right everywhere. */
   readonly open = computed(() => openOf(this.cost()));
   readonly credit = computed(() => this.incl() < 0);
