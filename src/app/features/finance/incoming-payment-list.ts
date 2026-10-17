@@ -55,7 +55,7 @@ import { Sheet } from '../../shared/ui';
                 <span class="wk-td" role="gridcell" data-hide="sm">@if (offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> } @else if (account(row); as name) { {{ name }} } @else { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }</span>
               }
               <span class="wk-td wk-td--wrap" role="gridcell" data-hide="md">@if (one() && offset(row)) { <span class="wk-td__sub">geen bankbeweging</span> }
-                @if (!offset(row)) { @if (one() && !account(row)) { <span class="wk-pill tone-warn" title="Telt niet mee in je banksaldo">geen rekening</span> }
+                @if (!offset(row)) { @if (one() && !account(row)) { <span class="wk-pill tone-warn fin-pill-lead" title="Telt niet mee in je banksaldo">geen rekening</span> }
                   @if (lineOf(row); as line) { <button class="wk-link fin-wrap-link" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openLine(line.id)">{{ lineText(line) }} ›</button> } @else { <span class="wk-amount--muted">niet op de bank</span> } }</span>
               <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0 && !offset(row)" [class.wk-amount--muted]="offset(row)">{{ signed(row.amountEur) }}</b></span>
               <span class="wk-td fin-td-end" role="gridcell">

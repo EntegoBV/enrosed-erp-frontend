@@ -76,3 +76,13 @@ test('the receipt menu names a credit note and anchors a desk right-click', () =
   assert.deepEqual(Array.from(menu.items, (item: any) => item.label), ['Creditnota openen']);
   assert.equal(menu.title, `F-2026-0041 · ${signedEur(-200)}`);
 });
+
+test('Ontvangen with one account: "geen rekening" keeps a space before "niet op de bank" in the Transactie cell', async () => {
+  const source = await readFile(new URL('../src/app/features/finance/incoming-payment-list.ts', import.meta.url), 'utf8');
+  const cell = source.slice(source.indexOf('<span class="wk-td wk-td--wrap" role="gridcell" data-hide="md">'));
+  const pill = /<span class="wk-pill tone-warn([^"]*)" title="Telt niet mee in je banksaldo">geen rekening<\/span>/.exec(cell);
+  assert.ok(pill && pill.index < cell.indexOf('niet op de bank'), 'the pill leads the cell');
+  assert.match(pill![1], /\bfin-pill-lead\b/, 'Angular drops the whitespace between the blocks, so the pill carries the gap');
+  const scss = (await readFile(new URL('../src/styles/finance-workspace.scss', import.meta.url), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(scss, /\.fin-pill-lead \{ margin-right: 6px; \}/);
+});

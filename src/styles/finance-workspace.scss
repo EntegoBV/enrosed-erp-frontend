@@ -230,6 +230,8 @@
   /* Ontvangen's "Transactie" and Containers' "Op de bank" (2026-10-16) step aside first: md and xs. */
   .fin-table--receipts { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 160px) minmax(0, 170px) 124px 36px; }
   .fin-table--receipts.fin-table--one { --wk-cols: 150px minmax(180px, 1fr) 150px minmax(0, 200px) 124px 36px; }
+  /* one account: "geen rekening" leads the Transactie cell, a word's space before "niet op de bank" */
+  .fin-pill-lead { margin-right: 6px; }
   .fin-narrow-only { display: none; }
   .fin-table--containers { --wk-cols: minmax(200px, 1fr) 112px 116px 116px 116px minmax(150px, 210px) 36px; }
   /* Vaste kosten: sized by its own column (container fin-rec), since the agenda may sit beside it. */
