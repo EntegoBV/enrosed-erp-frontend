@@ -45,7 +45,9 @@ app-home-add-sheet { display: contents; }
   .home-todo__unsure { overflow: visible; text-overflow: clip; white-space: normal; }
   .home-todo__note { color: var(--muted); font-size: 13px; line-height: 1.35; }
   .home-todo__more { min-height: 48px; }
-  .home-todo__more-text { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .home-todo__more-body { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .home-todo__more-text { color: var(--ink-2); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .home-todo__urgent { flex: none; }
   .home-todo__all { flex: none; white-space: nowrap; }
 
   /* ---- a task row (home-task-cells.ts) */

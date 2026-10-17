@@ -52,8 +52,11 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
       <div class="ios-page home-agenda">
         <app-ios-nav [title]="title()" [subtitle]="subtitle()" backLabel="Vandaag" backUrl="/dashboard" backAriaLabel="Terug naar Vandaag">
           <div trail class="home-agenda__trail">
-            <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="goToday()"
-                    [attr.aria-label]="'Naar vandaag, ' + todayLabel()">Vandaag</button>
+            <!-- One way back to today, and only when another day is shown (the back capsule already says "Vandaag", P8). -->
+            @if (selected() !== data.today()) {
+              <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="goToday()"
+                      [attr.aria-label]="'Naar vandaag, ' + todayLabel()">Naar vandaag</button>
+            }
             <button class="ios-circle" type="button" aria-label="Toevoegen" aria-haspopup="dialog" (click)="adding.set(true)">
               <app-icon name="plus" [size]="22" />
             </button>
@@ -88,7 +91,8 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 
         <section class="ios-card home-agenda__card" aria-label="Maand">
           <div class="home-agenda__months">
-            <h2 class="home-agenda__month">{{ monthLabel() }}</h2>
+            <!-- The large title names the month already: this heading is for a screen reader only (P8). -->
+            <h2 class="home-agenda__month sr-only">{{ monthLabel() }}</h2>
             <button class="ios-circle" type="button" aria-label="Vorige maand" (click)="shiftMonth(-1)"><app-icon name="chevron-left" [size]="20" /></button>
             <button class="ios-circle" type="button" aria-label="Volgende maand" (click)="shiftMonth(1)"><app-icon name="chevron-right" [size]="20" /></button>
           </div>
@@ -138,6 +142,12 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
                   </section>
                 } @empty {
                   <div class="ios-group"><p class="home-agenda__empty">Niets gepland de komende 30 dagen</p></div>
+                }
+                <!-- The advances without a due day: no day of their own, one row after the dated ones (critique B4). -->
+                @if (undatedRow(); as row) {
+                  <section class="ios-section home-agenda__undated">
+                    <app-agenda-rows variant="phone" [entries]="[row]" [cards]="cards() ?? null" />
+                  </section>
                 }
               }
               <div class="ios-group home-agenda__more">
@@ -251,6 +261,15 @@ export class AgendaPage {
       group.entries.push(entry);
     }
     return groups;
+  });
+
+  /** "Zonder datum · 3 voorschotten · + € 61.935" (the forecast's advance rows without a due day), to the Kasprognose. */
+  readonly undatedRow = computed<AgendaEntry | null>(() => {
+    const undated = this.agenda().undated;
+    if (!undated) return null;
+    return { key: 'undated', date: this.data.today(), atTime: null, type: 'geld', title: 'Zonder datum', term: null,
+      sub: `${undated.count} ${undated.count === 1 ? 'voorschot' : 'voorschotten'}`, eur: undated.eur, past: false, late: false, done: false,
+      pinned: false, deadline: false, plannerId: null, orderId: null, link: { path: ['/analyses/cash'] }, milestoneKind: null };
   });
 
   tone = dotTone;

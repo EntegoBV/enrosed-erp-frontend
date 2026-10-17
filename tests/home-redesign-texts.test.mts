@@ -79,3 +79,31 @@ test('H2: the Ook nog preview and the footer that says how many are for today (B
   /* No second row pattern for the preview. */
   assert.doesNotMatch(await read('styles/home-desk.scss'), /home-task--peek/);
 });
+
+test('H5: the phone rows read whole and the footer says what the desk says', async () => {
+  const cells = await read('app/features/dashboard/home-task-cells.ts');
+  assert.match(cells, /class="ios-cell__title ios-cell__title--strong ios-cell__title--2"/);
+  const phone = await read('app/features/dashboard/home-phone.ts');
+  assert.doesNotMatch(phone, /klusje/);
+  assert.match(phone, /'ander open punt' : 'andere open punten'/);
+  assert.match(phone, /\{\{ others\.urgent \}\} voor vandaag/);
+  assert.match(phone, /<app-agenda-strip variant="phone" \[cards\]="cards" \/>/);
+  /* N17: the tab bar keeps the kit's room beside the '+'. */
+  assert.match(await read('styles/home-phone.scss'), /right: calc\(var\(--safe-r\) \+ 12px \+ var\(--tabbar-h\)\)/);
+});
+
+test('H5: agenda rows open like Agenda › Dag, say no repeated "dag", and the page has one way back to today', async () => {
+  const strip = await read('app/features/dashboard/agenda-strip.ts');
+  assert.doesNotMatch(strip, /\[interactive\]="false"/);
+  assert.equal((strip.match(/class="home-strip__raise" \[variant\]="variant\(\)"/g) ?? []).length, 2);
+  const rows = await read('app/features/dashboard/agenda-month.ts');
+  assert.match(rows, /if \(entry\.type !== 'afspraak'\) return '';/);
+  assert.match(rows, /return \[entry\.term, entry\.sub\]\.filter\(Boolean\)\.join\(' · '\) \|\| null;/);
+  const page = await read('app/features/dashboard/agenda-page.ts');
+  assert.match(page, /@if \(selected\(\) !== data\.today\(\)\) \{[\s\S]*>Naar vandaag<\/button>/);
+  assert.match(page, /<h2 class="home-agenda__month sr-only">/);
+  /* B4: the advances without a due day, one row after Komend's days. */
+  assert.match(page, /title: 'Zonder datum'/);
+  assert.match(page, /'voorschot' : 'voorschotten'/);
+  assert.match(page, /link: \{ path: \['\/analyses\/cash'\] \}/);
+});

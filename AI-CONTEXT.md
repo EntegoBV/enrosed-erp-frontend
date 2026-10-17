@@ -914,6 +914,15 @@ cijfers'.
     supplier short (phone: name, then supplier and "aankomst (verwacht) …").
     The phone hero names the reading age. Figures that land with the
     forecast fade in once (`.mo-fade`).
+  - *Phone.* Task titles take two lines (`ios-cell__title--2`), the context
+    one; the footer cell says "n andere open punten" with "{m} voor vandaag"
+    (`othersOf`, as on the desk). The Agenda card's rows open like Agenda ›
+    Dag (`[interactive]` with the page's planner cards, raised above the
+    card link); on a one-day list only appointments show a time or "dag".
+    The Agenda page shows "Naar vandaag" only off today, its month heading
+    for screen readers only, and Komend ends with "Zonder datum · n
+    voorschotten · + €" (→ Kasprognose). The tab bar keeps the kit's room
+    beside the '+' (no home-only gap).
   - *Hidden host bell.* The home pages keep an `app-notification-bell
     class="home-bell-host"` for the Klanten wachten sheet; its button is
     hidden with `.home-bell-host > .bell { display: none !important }` (the

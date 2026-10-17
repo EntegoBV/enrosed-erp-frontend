@@ -197,8 +197,10 @@ export class AgendaRows {
     return this.dated() || !(this.interactive() && entry.type === 'taak' && entry.plannerId !== null);
   }
 
+  /** On a dated list the day; on one day an appointment's time or "dag", nothing for the rest (no repeated "dag", P2). */
   whenOf(entry: AgendaEntry): string {
     if (this.dated()) return agendaDay(entry.date, null).day;
+    if (entry.type !== 'afspraak') return '';
     return entry.atTime ? entry.atTime.slice(0, 5) : 'dag';
   }
 
@@ -222,7 +224,7 @@ export class AgendaRows {
 
   ariaOf(entry: AgendaEntry): string {
     const when = this.dated() ? `${longDate(entry.date)}${entry.atTime ? ` ${entry.atTime.slice(0, 5)}` : ''}`
-      : entry.atTime ? entry.atTime.slice(0, 5) : 'hele dag';
+      : entry.atTime ? entry.atTime.slice(0, 5) : entry.type === 'afspraak' ? 'hele dag' : null;
     return [`${TYPE_LABEL[entry.type]}: ${entry.title}`, when, this.subOf(entry), entry.eur !== null ? signedAmount(entry.eur) : null,
       entry.done ? 'afgevinkt' : null, entry.past && entry.type !== 'geld' ? 'voorbij' : null].filter(Boolean).join(', ');
   }

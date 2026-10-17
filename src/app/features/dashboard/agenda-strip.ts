@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Icon } from '../../shared/icon';
 import { addDaysIso, isoWeek, weekdayMon0 } from './agenda-days';
 import { AgendaRows, WEEKDAYS_SHORT, countdown, dayAria, dotTone } from './agenda-month';
+import type { AgendaSheets } from './agenda-month';
 import { HomeData } from './home-data';
 import { shortDate } from './home-figures';
 
@@ -13,8 +14,10 @@ const TODAY_ROWS = 4;
  * <app-agenda-strip variant="phone">: the home's Agenda card (spec-home §2
  * row 4). The pin countdown, the 7 days from today with a dot per type,
  * the rest of today and the next three moments from tomorrow on. The whole
- * card opens the Agenda page; a day and the pin open it on that day (they
- * sit above the stretched card link, never inside it). The card is its
+ * card opens the Agenda page; a day and the pin open it on that day, and a
+ * row opens what it is (the planner's sheet on the page's `cards`, or its
+ * link), as in Agenda › Dag - all of them sit above the stretched card
+ * link, never inside it (P9). The card is its
  * own ios-card (a wk-card on the desk variant, kept for later).
  * No styles here: the rules live in styles/home-agenda.scss.
  */
@@ -69,14 +72,15 @@ const TODAY_ROWS = 4;
       @if (!loading()) {
         <h3 class="home-strip__label">Vandaag</h3>
         @if (today().length) {
-          <app-agenda-rows [variant]="variant()" [entries]="today()" [interactive]="false" [flat]="true" />
+          <app-agenda-rows class="home-strip__raise" [variant]="variant()" [entries]="today()" [interactive]="true" [cards]="cards()" [flat]="true" />
           @if (todayMore()) { <p class="home-strip__more">Nog {{ todayMore() }} vandaag</p> }
         } @else {
           <p class="home-strip__empty">Vandaag niets meer gepland</p>
         }
         <h3 class="home-strip__label">Komend</h3>
         @if (komend().length) {
-          <app-agenda-rows [variant]="variant()" [entries]="komend()" [dated]="true" [month]="data.today().slice(0, 7)" [interactive]="false" [flat]="true" />
+          <app-agenda-rows class="home-strip__raise" [variant]="variant()" [entries]="komend()" [dated]="true" [month]="data.today().slice(0, 7)"
+                           [interactive]="true" [cards]="cards()" [flat]="true" />
         } @else {
           <p class="home-strip__empty">Niets gepland de komende 30 dagen</p>
         }
@@ -88,6 +92,8 @@ export class AgendaStrip {
   readonly data = inject(HomeData);
   /** 'phone' is the home card; 'desk' renders the same in a wk-card (the desk draws its own 7 columns today). */
   readonly variant = input<'phone' | 'desk'>('phone');
+  /** The page's planner sheets (its app-planner-cards): an appointment or task row opens there. */
+  readonly cards = input<AgendaSheets | null>(null);
   readonly countdown = countdown;
 
   readonly loading = computed(() => !this.data.planner.loaded() && !this.data.planner.error());

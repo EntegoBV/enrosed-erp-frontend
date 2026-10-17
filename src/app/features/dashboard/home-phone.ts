@@ -13,6 +13,7 @@ import { HomeAdd } from './home-add-actions';
 import { HomeAddSheet } from './home-add-sheet';
 import { HomeData } from './home-data';
 import { greeting, longDate } from './home-figures';
+import { othersOf } from './home-priority';
 import type { HomeTask, Tier } from './home-priority';
 import { HomeTaskCells } from './home-task-cells';
 import { PlannerCards } from './planner-cards';
@@ -37,9 +38,9 @@ const MENU: ContextMenuItem[] = [
  * The phone home (spec-home §2, below 680 px), one calm page: the large
  * title "Vandaag" with the greeting and the date, the glass bell (the same
  * count as "Klanten wachten") and "…"; the Kas hero; Te doen, at most seven
- * rows in Nu and Vandaag with "Nog n · Alle n ›" to Open punten; the
- * Agenda card (W7's strip, a card of its own); the figure blocks in
- * their fixed order; and Meer cijfers. The ERP tab bar stays, narrowed
+ * rows in Nu and Vandaag with "n andere open punten · Alle n ›" to Open punten; the
+ * Agenda card (W7's strip, a card of its own, its rows open like Agenda ›
+ * Dag); the figure blocks in their fixed order; and Meer cijfers. The ERP tab bar stays, narrowed
  * on /dashboard (app.ts shell--home), with the '+' beside it opening
  * Toevoegen.
  *
@@ -117,8 +118,8 @@ const MENU: ContextMenuItem[] = [
         }
       </section>
 
-      <!-- Agenda: W7's card - the pin, the next seven days, the rest of today and what comes -->
-      <div class="home-phone__agenda"><app-agenda-strip variant="phone" /></div>
+      <!-- Agenda: W7's card - the pin, the next seven days, the rest of today and what comes; its rows open like Agenda › Dag -->
+      <div class="home-phone__agenda"><app-agenda-strip variant="phone" [cards]="cards" /></div>
 
       <!-- Cijfers: the blocks in their fixed order -->
       <section class="ios-section home-phone__figures" aria-labelledby="home-figures-title">
@@ -158,9 +159,14 @@ const MENU: ContextMenuItem[] = [
       <button class="ios-accessory" type="button" aria-label="Toevoegen" (click)="adding.set(true)"><app-icon name="plus" [size]="26" /></button>
     </div>
 
+    <!-- The desk's words (critique B3): every hidden open point, and how many of them are for today. -->
     <ng-template #more>
+      @let others = moreCount();
       <a class="ios-cell home-todo__more" routerLink="/dashboard/open" [attr.aria-label]="moreText() + '. Alle ' + data.tasks().total + ' open punten'">
-        <span class="ios-cell__body"><span class="home-todo__more-text">{{ moreText() }}</span></span>
+        <span class="ios-cell__body home-todo__more-body">
+          <b class="home-todo__more-text">{{ others.count }} {{ others.count === 1 ? 'ander open punt' : 'andere open punten' }}</b>
+          @if (others.urgent) { <span class="wk-pill tone-warn home-todo__urgent">{{ others.urgent }} voor vandaag</span> }
+        </span>
         <span class="ios-section__link home-todo__all">Alle {{ data.tasks().total }} ›</span>
       </a>
     </ng-template>
@@ -202,12 +208,13 @@ export class HomePhone {
       .filter((group) => group.rows.length > 0);
   });
 
-  /** "Nog 4 · 6 klusjes": the rows past the cap and the housekeeping; null when every open point is on screen. */
+  /** What the rows leave out: every hidden open point and how many are Nu or Vandaag past the cap (othersOf, as on the desk). */
+  readonly moreCount = computed(() => othersOf(this.data.tasks()));
+  /** "6 andere open punten, 1 voor vandaag"; null when every open point is on screen. */
   readonly moreText = computed(() => {
-    const t = this.data.tasks();
-    if (t.total <= t.top.length) return null;
-    const parts = [t.more.length ? `Nog ${t.more.length}` : '', t.ookNog.length ? `${t.ookNog.length} ${t.ookNog.length === 1 ? 'klusje' : 'klusjes'}` : ''];
-    return parts.filter(Boolean).join(' · ');
+    const { count, urgent } = this.moreCount();
+    if (!count) return null;
+    return `${count} ${count === 1 ? 'ander open punt' : 'andere open punten'}${urgent ? `, ${urgent} voor vandaag` : ''}`;
   });
 
   menuPick(id: string): void {
