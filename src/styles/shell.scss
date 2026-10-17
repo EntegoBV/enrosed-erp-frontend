@@ -725,3 +725,16 @@
 @media (min-width: 680px) {
   .tabbar, .fab { display: none; }
 }
+
+/* ---- the confirm sheet (Ui.confirm, confirmLeave): <app-sheet variant="ios">
+   Desk: Annuleren · second choice · main choice, right-aligned (as before).
+   Phone: stacked 50 px buttons, the main (or danger) choice on top, then the
+   second choice, Annuleren last. */
+.confirm-message { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.confirm-actions { display: flex; flex: 1; justify-content: flex-end; gap: 8px; }
+.confirm-actions > .btn { flex: none; }
+@media (max-width: 679.98px) {
+  .sheet--ios .confirm-message { padding: 4px 20px 0; }
+  .confirm-actions { flex-direction: column-reverse; }
+  .confirm-actions > .btn { width: 100%; min-height: 50px; }
+}
