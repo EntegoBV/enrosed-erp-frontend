@@ -12,6 +12,7 @@ import { isPerLanguageSizeIssue } from '../products/publication-issues';
 import { websiteCounts, websiteTodos } from './website-attention';
 import { publicFamilyName } from './website-family-label';
 import { homepageSummary } from './website-homepage';
+import { StoreWrite, rememberWrite, replayWrites, writesSince } from './website-store-writes';
 
 export type WebsitePart = 'families' | 'categories' | 'content' | 'homepage';
 export const WEBSITE_PARTS: readonly WebsitePart[] = ['families', 'categories', 'content', 'homepage'];
@@ -37,7 +38,8 @@ export function websitePartLabel(part: WebsitePart): string {
  * languages, about 700 kB) and the homepage layout. Each part keeps its last
  * answer and its time; ensure() fetches only what is missing or older than
  * a minute, one request per part at a time, and a failed part keeps its last
- * value. Writes patch the store, so the counts follow without a refetch.
+ * value. Writes patch the store, so the counts follow without a refetch;
+ * an answer that started before a patch gets the patch replayed on it.
  * The workspace never polls (the website sync store keeps its own poll).
  */
 @Injectable({ providedIn: 'root' })
@@ -56,6 +58,8 @@ export class WebsiteStore {
 
   private readonly loadedAt: Partial<Record<WebsitePart, number>> = {};
   private readonly inFlight = new Map<WebsitePart, Promise<void>>();
+  /** Patches per part, replayed on an answer that started before them (website-store-writes.ts). */
+  private readonly writes: Partial<Record<WebsitePart, StoreWrite<unknown>[]>> = {};
 
   /** The WEBSITE text groups, or an empty list before they arrive. */
   readonly groups = computed<readonly ContentTranslationGroup[]>(() => this.content()?.groups ?? []);
@@ -111,7 +115,9 @@ export class WebsiteStore {
   }
 
   patchFamily(family: ProductFamily): void {
-    this.families.update((list) => list?.map((item) => item.id !== null && item.id === family.id ? family : item) ?? list);
+    const apply = (list: ProductFamily[] | null) => list?.map((item) => item.id !== null && item.id === family.id ? family : item) ?? list;
+    this.families.update(apply);
+    this.remember('families', apply);
   }
 
   setFamilies(list: ProductFamily[]): void {
@@ -133,7 +139,7 @@ export class WebsiteStore {
 
   /** A saved or created text group; the counts follow without fetching the 654 groups again. */
   patchContentGroup(group: ContentTranslationGroup): void {
-    this.content.update((overview) => {
+    const apply = (overview: ContentTranslationOverview | null) => {
       if (!overview) return overview;
       const exists = overview.groups.some((item) => item.scope === group.scope && item.key === group.key);
       return {
@@ -142,12 +148,22 @@ export class WebsiteStore {
           ? overview.groups.map((item) => item.scope === group.scope && item.key === group.key ? group : item)
           : [...overview.groups, group],
       };
-    });
+    };
+    this.content.update(apply);
+    this.remember('content', apply);
   }
 
   /** A deleted text group. */
   removeContentGroup(key: string): void {
-    this.content.update((overview) => overview && { ...overview, groups: overview.groups.filter((item) => item.key !== key) });
+    const apply = (overview: ContentTranslationOverview | null) =>
+      overview && { ...overview, groups: overview.groups.filter((item) => item.key !== key) };
+    this.content.update(apply);
+    this.remember('content', apply);
+  }
+
+  /** A patch is kept a while, so an older answer still under way cannot undo it. */
+  private remember<T>(part: WebsitePart, apply: (value: T) => T): void {
+    this.writes[part] = rememberWrite(this.writes[part] ?? [], { at: Date.now(), apply: apply as (value: unknown) => unknown });
   }
 
   private valueOf(part: WebsitePart): unknown {
@@ -191,9 +207,12 @@ export class WebsiteStore {
     this.loading.update((state) => ({ ...state, [part]: true }));
     const task = this.fetch(part)
       .then((value) => {
-        /* A write that landed while this answer was under way is newer: keep it. */
+        /* A full list set while this answer was under way is newer: keep it. */
         if ((this.loadedAt[part] ?? 0) > started) return;
-        this.set(part, value);
+        /* Patches made since this request started are newer than its answer: replay them on it. */
+        const writes = this.writes[part] ?? [];
+        this.writes[part] = writesSince(writes, started);
+        this.set(part, replayWrites(value, writes, started));
       })
       .catch((failure: unknown) => {
         this.errors.update((errors) => ({ ...errors, [part]: messageOf(failure, 'Controleer de verbinding en probeer opnieuw.') }));
