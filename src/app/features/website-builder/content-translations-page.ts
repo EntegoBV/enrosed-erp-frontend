@@ -17,6 +17,7 @@ import { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { ContentTranslationGroup, LANGUAGES, LanguageCode } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { capsuleLabel, screenLabel } from '../../core/platform/return-label';
+import { ContextMenu, ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { PageHeader } from '../../shared/page-header';
@@ -48,7 +49,7 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-texts.scss', '../../../styles/website-texts-page.scss'],
-  imports: [ContentTranslationWorkspace, Icon, IosNav, NgTemplateOutlet, PageHeader, RouterLink, Segmented, Skeleton, WebsiteProductSeoAudit, WebsiteStatusBar, WebsiteSyncStatus],
+  imports: [ContentTranslationWorkspace, ContextMenu, Icon, IosNav, NgTemplateOutlet, PageHeader, RouterLink, Segmented, Skeleton, WebsiteProductSeoAudit, WebsiteStatusBar, WebsiteSyncStatus],
   template: `
     @if (catalogMode) {
       <app-page-header title="Cataloguslabels" subtitle="Algemene labels voor de PDF-catalogus, los van de website."
@@ -137,7 +138,9 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
       <div class="ios-page ws-ios ws-texts-ios">
         @switch (view()) {
           @case ('editor') {
-            <app-ios-nav [title]="editorTitle()" [largeTitle]="false" [backLabel]="editorBack().label" [backAriaLabel]="'Terug naar ' + editorBack().name" (back)="goBack()" />
+            <app-ios-nav [title]="editorTitle()" [largeTitle]="false" [backLabel]="editorBack().label" [backAriaLabel]="'Terug naar ' + editorBack().name" (back)="goBack()">
+              <button trail class="ios-circle" type="button" aria-label="Meer voor deze tekstgroep" [disabled]="busy()" (click)="editorMenu.set(true)"><app-icon name="more" [size]="20" /></button>
+            </app-ios-nav>
             <p class="ws-ph-edhead"><small>{{ editorSub() }}</small></p>
           }
           @case ('area') {
@@ -218,13 +221,18 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
           }
           @if (editorKey()) {
             <div class="ws-ph-editor" [class.ws-ct-parked]="view() !== 'editor'">
-              <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="false"
+              <app-content-translation-workspace layout="inline" [visible]="true" initialScope="WEBSITE" [lockScope]="true" [allowAdvanced]="true"
                 [keyPrefixes]="[editorKey()!]" [initialKey]="editorKey()" [initialLanguage]="initialLanguage"
                 (dirtyChange)="dirty.set($event)" (busyChange)="busy.set($event)" (contentSaved)="saved($event)" />
             </div>
           }
         </div>
       </div>
+    }
+
+    @if (editorMenu()) {
+      <app-context-menu title="Tekstgroep" variant="ios" cancelLabel="Annuleren" [items]="editorMenuItems()"
+                        (pick)="editorAction($event)" (closed)="editorMenu.set(false)" />
     }
 
     <ng-template #groupValue let-group>
@@ -257,6 +265,8 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
   readonly busy = signal(false);
   readonly query = signal('');
   readonly advanced = signal(false);
+  /** The phone editor's "…" menu: Vertaalopdracht kopiëren and Geavanceerd (design §3.4). */
+  readonly editorMenu = signal(false);
   readonly textFilter = signal<'all' | 'missing'>('all');
   readonly language = signal<LanguageCode | null>(null);
   readonly seoFilter = signal<SeoFilter>('aandacht');
@@ -421,6 +431,22 @@ export class ContentTranslationsPage implements HasUnsavedChanges {
 
   saved(group: ContentTranslationGroup | null): void {
     if (group) this.store.patchContentGroup(group);
+  }
+
+  editorMenuItems(): ContextMenuItem[] {
+    const open = this.workspace()?.advancedOpen() ?? false;
+    return [
+      { id: 'copy', label: 'Vertaalopdracht kopiëren', iconName: 'copy' },
+      { id: 'advanced', label: open ? 'Geavanceerd verbergen' : 'Geavanceerd', hint: 'Sleutel, revisie, verplicht in alle talen', iconName: 'settings' },
+    ];
+  }
+
+  editorAction(item: ContextMenuItem): void {
+    this.editorMenu.set(false);
+    const workspace = this.workspace();
+    if (!workspace) return;
+    if (item.id === 'copy') void workspace.copySelectedCodexBrief();
+    else if (item.id === 'advanced') workspace.advancedOpen.update((open) => !open);
   }
 
   /** The selected group goes into the address without building history. */

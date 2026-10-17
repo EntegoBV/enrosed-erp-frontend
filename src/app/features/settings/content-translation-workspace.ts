@@ -93,8 +93,10 @@ const PREFIX_LABELS: Record<string, string> = {
                   <h3 id="advanced-content-title">Geavanceerd beheer</h3>
                   <p>Technische sleutels, revisies en het aanmaken of verwijderen van tekstgroepen.</p>
                 </div>
-                <button class="btn" type="button" [disabled]="dirty() || busy() || creating()"
-                        (click)="startCreate()">Nieuwe tekstgroep</button>
+                @if (layout() !== 'inline') {
+                  <button class="btn" type="button" [disabled]="dirty() || busy() || creating()"
+                          (click)="startCreate()">Nieuwe tekstgroep</button>
+                }
               </div>
 
               @if (creating()) {
@@ -453,7 +455,7 @@ const PREFIX_LABELS: Record<string, string> = {
 
           <div class="ws-texts__ed">
             <div class="ws-ed">
-              @if (advancedOpen() && layout() === 'split') { <div class="ws-ed__advanced"><ng-container *ngTemplateOutlet="advancedPanel" /></div> }
+              @if (advancedOpen() && (layout() === 'split' || allowAdvanced())) { <div class="ws-ed__advanced"><ng-container *ngTemplateOutlet="advancedPanel" /></div> }
               @if (draft(); as group) {
                 <fieldset class="ws-ed__card" [disabled]="busy()" [attr.aria-busy]="busy()">
                   <legend class="sr-only">{{ labelOf(group) }} vertalen</legend>
