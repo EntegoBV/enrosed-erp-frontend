@@ -146,6 +146,36 @@ export function newBookingDraft(kind: BookingKind, levels: readonly BookingLevel
   };
 }
 
+/**
+ * The host's figures changed while the sheet is open (they arrived after
+ * the sheet, or a booking elsewhere landed): what was typed and chosen
+ * stays. Only a location that no longer exists is put right, and a recount
+ * whose count was not typed shows the figure that lies there now.
+ */
+export function refreshBookingDraft(draft: BookingDraft, levels: readonly BookingLevel[], asked: number | null, countTyped: boolean): BookingDraft {
+  const known = (id: number | null) => id !== null && levels.some((level) => level.locationId === id);
+  const locationId = known(draft.locationId) ? draft.locationId : defaultBookingLocation(levels, asked);
+  const toLocationId = draft.kind !== 'TRANSFER' ? null
+    : known(draft.toLocationId) && draft.toLocationId !== locationId ? draft.toLocationId : defaultTargetLocation(levels, locationId);
+  const quantity = draft.kind === 'RECOUNT' && !countTyped
+    ? levels.find((level) => level.locationId === locationId)?.quantity ?? draft.quantity
+    : draft.quantity;
+  return { ...draft, locationId, toLocationId, quantity };
+}
+
+/** The count as the field shows it: Dutch thousands ("6.000"), which parseCount reads back. */
+export function countText(quantity: number | null): string {
+  return quantity === null ? '' : quantity.toLocaleString('nl-BE');
+}
+
+/** "Glass Bowl - M - Red": the colour follows the name only when the name does not already end with it. */
+export function bookingSubtitle(name: string, colour: string | null | undefined): string {
+  const tint = colour?.trim();
+  if (!tint) return name;
+  const escaped = tint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}$`, 'iu').test(name.trim()) ? name : `${name} · ${tint}`;
+}
+
 /** Switching the kind keeps the location and note; a recount refills its count, the others keep theirs. */
 export function switchBookingKind(draft: BookingDraft, kind: BookingKind, levels: readonly BookingLevel[]): BookingDraft {
   const level = levels.find((item) => item.locationId === draft.locationId);

@@ -10,7 +10,7 @@ import { productSalesUnit } from './product-sales-unit';
 import { receivedContainersFor, type ReceivedContainer } from './received-containers';
 import {
   bookingHelp, bookingKinds, bookingLabel, bookingNeedsContainer, bookingNotePlaceholder, bookingPreview, bookingReady,
-  bookingToast, containerOptionLabel, newBookingDraft, parseCount, switchBookingKind,
+  bookingSubtitle, bookingToast, containerOptionLabel, countText, newBookingDraft, parseCount, refreshBookingDraft, switchBookingKind,
   type BookingDraft, type BookingKind, type BookingLevel,
 } from './stock-booking';
 
@@ -43,7 +43,7 @@ export interface StockBooked {
   template: `
     <app-sheet title="Voorraad boeken" [variant]="desktop.active() ? 'default' : 'ios'" (closed)="closed.emit()">
       <div body class="bk">
-        <p class="bk-sub">{{ product().name }}@if (product().colour) { · {{ product().colour }}}</p>
+        <p class="bk-sub">{{ subtitle() }}</p>
         <app-segmented class="bk-kinds" [class.ios-seg--stacked]="!desktop.active()" [variant]="desktop.active() ? 'desk' : 'ios'"
                        label="Wat boek je?" [options]="kindOptions()" [value]="draft().kind" (changed)="setKind($any($event))" />
         <p class="bk-help">{{ help() }}</p>
@@ -155,6 +155,7 @@ export class StockBookingSheet {
   private containersAsked = false;
 
   readonly units = computed(() => productSalesUnit(this.product()));
+  readonly subtitle = computed(() => bookingSubtitle(this.product().name, this.product().colour));
   readonly kindOptions = computed<SegmentOption[]>(() =>
     bookingKinds(this.levels().length).map((option) => ({ id: option.kind, label: option.label, icon: option.icon })));
   readonly help = computed(() => bookingHelp(this.draft().kind, this.units().plural));
@@ -166,13 +167,32 @@ export class StockBookingSheet {
   readonly ready = computed(() => bookingReady(this.draft(), this.levels(), this.product().stockQuantity ?? 0));
   readonly optionLabel = containerOptionLabel;
 
+  /** What the host opened the sheet on; a new kind or location from the host starts a fresh draft. */
+  private opened: { kind: BookingKind; locationId: number | null } | null = null;
+  /** The count was typed by hand: new figures from the host never overwrite it. */
+  private countTyped = false;
+
   constructor() {
-    /* The sheet opens on what the host asked: the kind and, for a location row, that location. */
+    /*
+     * The sheet opens on what the host asked: the kind and, for a location
+     * row, that location. When only the host's figures change (they arrive
+     * after the sheet, or another booking lands), the draft stays: the
+     * typed count, the location and the kind are kept (refreshBookingDraft).
+     */
     effect(() => {
-      const draft = newBookingDraft(this.kind(), this.levels(), this.locationId());
+      const kind = this.kind();
+      const locationId = this.locationId();
+      const levels = this.levels();
       untracked(() => {
-        this.draft.set(draft);
-        this.raw.set(draft.quantity === null ? '' : String(draft.quantity));
+        const opened = this.opened;
+        if (opened === null || opened.kind !== kind || opened.locationId !== locationId) {
+          this.opened = { kind, locationId };
+          this.fill(newBookingDraft(kind, levels, locationId));
+          return;
+        }
+        const next = refreshBookingDraft(this.draft(), levels, locationId, this.countTyped);
+        if (this.countTyped || next.kind !== 'RECOUNT') this.draft.set(next);
+        else this.fill(next);
       });
     });
     /* Damage and shortage can point at a container: without the host's list, ask once. */
@@ -203,10 +223,17 @@ export class StockBookingSheet {
     return value.toLocaleString('nl-BE');
   }
 
+  /** A draft with its count in the field ("6.000"), as prefilled, not typed. */
+  private fill(draft: BookingDraft): void {
+    this.draft.set(draft);
+    this.raw.set(countText(draft.quantity));
+    this.countTyped = false;
+  }
+
   setKind(kind: BookingKind): void {
     const next = switchBookingKind(this.draft(), kind, this.levels());
-    this.draft.set(next);
-    if (next.kind === 'RECOUNT' || this.draft().quantity === null) this.raw.set(next.quantity === null ? '' : String(next.quantity));
+    if (next.kind === 'RECOUNT' || next.quantity === null) this.fill(next);
+    else this.draft.set(next);
   }
 
   setLocation(raw: string): void {
@@ -221,7 +248,7 @@ export class StockBookingSheet {
       }
       return next;
     });
-    if (this.draft().kind === 'RECOUNT') this.raw.set(level ? String(level.quantity) : '');
+    if (this.draft().kind === 'RECOUNT') this.fill(this.draft());
   }
 
   setTarget(raw: string): void {
@@ -231,6 +258,7 @@ export class StockBookingSheet {
 
   setQuantity(raw: string): void {
     this.raw.set(raw);
+    this.countTyped = true;
     this.draft.update((draft) => ({ ...draft, quantity: parseCount(raw) }));
   }
 

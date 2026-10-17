@@ -31,8 +31,9 @@ app-stock-booking-sheet .bk-preview.is-same { color: var(--muted); }
   app-stock-booking-sheet .bk-fields {
     grid-template-columns: minmax(0, 1fr); gap: 0; overflow: hidden; border-radius: 16px; background: var(--surface);
   }
+  /* The label takes what it needs, the control the rest: "Zaltbommel (6.000)" is never cut at 360. */
   app-stock-booking-sheet .bk-field {
-    position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; gap: 4px 12px;
+    position: relative; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px;
     min-height: 50px; padding: 6px 16px;
   }
   app-stock-booking-sheet .bk-field + .bk-field::before {

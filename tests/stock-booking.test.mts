@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  bookingHelp, bookingKinds, bookingLabel, bookingPreview, bookingReady, bookingToast, containerOptionLabel,
-  dayLabel, newBookingDraft, parseCount, stockCellEdit, switchBookingKind, undoAllowed,
+  bookingHelp, bookingKinds, bookingLabel, bookingPreview, bookingReady, bookingSubtitle, bookingToast, containerOptionLabel,
+  countText, dayLabel, newBookingDraft, parseCount, refreshBookingDraft, stockCellEdit, switchBookingKind, undoAllowed,
   type BookingDraft, type BookingKind, type BookingLevel,
 } from '../src/app/features/products/stock-booking.ts';
 
@@ -125,4 +125,56 @@ test('container options read name and received date', () => {
   assert.equal(dayLabel('2026-12-20'), '20/12/2026');
   assert.equal(containerOptionLabel({ name: 'container/2026/002', receivedOn: '2026-09-03' }), 'container/2026/002 · ontvangen 03/09/2026');
   assert.equal(containerOptionLabel({ name: 'PO-2026-013', receivedOn: null }), 'PO-2026-013');
+});
+
+test('new figures from the host keep what was typed and chosen', () => {
+  /* Typed 5.990 on Tica Brussel as a damage, then the host's levels change. */
+  const typed: BookingDraft = { kind: 'DAMAGED', locationId: 2, toLocationId: null, quantity: 3, note: 'gebarsten', containerId: 9 };
+  const later: BookingLevel[] = [{ locationId: 1, name: 'Zaltbommel', quantity: 5990 }, { locationId: 2, name: 'Tica Brussel', quantity: 7 }];
+  assert.deepEqual(refreshBookingDraft(typed, later, 1, true), typed);
+  /* A typed recount stays as typed. */
+  const recount: BookingDraft = { ...newBookingDraft('RECOUNT', levels, 1), quantity: 5900 };
+  assert.equal(refreshBookingDraft(recount, later, 1, true).quantity, 5900);
+  /* An untouched recount shows the figure that lies there now. */
+  assert.equal(refreshBookingDraft(newBookingDraft('RECOUNT', levels, 1), later, 1, false).quantity, 5990);
+});
+
+test('a sheet opened before the figures arrived settles on the asked location once they do', () => {
+  const early = newBookingDraft('RECOUNT', [], 2);
+  assert.equal(early.locationId, 2);
+  assert.equal(early.quantity, null);
+  const settled = refreshBookingDraft(early, levels, 2, false);
+  assert.equal(settled.locationId, 2);
+  assert.equal(settled.quantity, 8);
+  const unasked = refreshBookingDraft(newBookingDraft('RECOUNT', [], null), levels, null, false);
+  assert.equal(unasked.locationId, 1, 'the first location with stock');
+  assert.equal(unasked.quantity, 6000);
+});
+
+test('a move keeps its Van and Naar, and repairs only a location that is gone', () => {
+  const move: BookingDraft = { kind: 'TRANSFER', locationId: 2, toLocationId: 1, quantity: 4, note: '', containerId: null };
+  assert.deepEqual(refreshBookingDraft(move, levels, null, true), move);
+  const three: BookingLevel[] = [...levels, { locationId: 3, name: 'Beurs', quantity: 0 }];
+  const gone = refreshBookingDraft({ ...move, toLocationId: 5 }, three, null, true);
+  assert.equal(gone.locationId, 2);
+  assert.equal(gone.toLocationId, 1, 'the first other location');
+  assert.equal(gone.quantity, 4);
+});
+
+test('the count field shows Dutch thousands, which parseCount reads back', () => {
+  assert.equal(countText(6000), '6.000');
+  assert.equal(countText(1234567), '1.234.567');
+  assert.equal(countText(8), '8');
+  assert.equal(countText(null), '');
+  for (const value of [0, 8, 999, 6000, 1234567]) assert.equal(parseCount(countText(value)), value);
+});
+
+test('the subtitle names the colour only when the name does not already end with it', () => {
+  assert.equal(bookingSubtitle('Glass Bowl - M - Red', 'Red'), 'Glass Bowl - M - Red');
+  assert.equal(bookingSubtitle('Glass Bowl - M - red', 'Red'), 'Glass Bowl - M - red');
+  assert.equal(bookingSubtitle('Glass Bowl - M', 'Red'), 'Glass Bowl - M · Red');
+  assert.equal(bookingSubtitle('Bowl Redwood', 'wood'), 'Bowl Redwood · wood', 'only a whole word counts');
+  assert.equal(bookingSubtitle('Rose In Dome (Light Pink)', 'Light Pink)'), 'Rose In Dome (Light Pink)');
+  assert.equal(bookingSubtitle('Ribbon Roll Satin', null), 'Ribbon Roll Satin');
+  assert.equal(bookingSubtitle('Ribbon Roll Satin', '  '), 'Ribbon Roll Satin');
 });
