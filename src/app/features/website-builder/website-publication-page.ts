@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, inject
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
@@ -25,7 +24,7 @@ import { WebsiteStore } from './website-store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-overview.scss', '../../../styles/website-publication.scss'],
-  imports: [Icon, IosNav, LoadError, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus],
+  imports: [IosNav, LoadError, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus],
   template: `
     <ng-template #updateBody>
       @if (sync.status() || sync.loadError()) {
