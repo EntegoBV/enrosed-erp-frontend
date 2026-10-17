@@ -35,3 +35,9 @@ test('the route, the nav link and the settings pointer', async () => {
   assert.match(settings, /<a class="btn btn--sm" routerLink="\/douane">Naar Douane ›<\/a>/);
   assert.doesNotMatch(settings, /saveHsCode|removeHsCode|addHsCode|hsCodes\(\)/, 'the old editor is gone from Instellingen');
 });
+
+test('the saved row fades back: the transition is on the row, not on the class that goes', async () => {
+  const partial = await readFile(new URL('../src/styles/douane.scss', import.meta.url), 'utf8');
+  assert.match(partial, /app-douane-page \.dt-row\{[^}]*transition:background var\(--dur-2,200ms\)/);
+  assert.match(partial, /app-douane-page \.dt-row--saved\{background:var\(--rose-soft\)\}/);
+});

@@ -16,8 +16,9 @@ app-douane-page .dt-error{display:block;margin-top:3px;color:var(--danger);font-
 
 /* ---- desk: the table and its one open row */
 app-douane-page .dt-table{--wk-cols:150px minmax(0,1.6fr) 110px 110px 44px}
-app-douane-page .dt-row{min-height:46px}
-app-douane-page .dt-row--saved{background:var(--rose-soft);transition:background var(--dur-2,200ms) var(--ease-out,ease-out)}
+/* The saved flash: the transition sits on the row, so the rose fades back over --dur-2 when the class goes (design §4). */
+app-douane-page .dt-row{min-height:46px;transition:background var(--dur-2,200ms) var(--ease-out,ease-out)}
+app-douane-page .dt-row--saved{background:var(--rose-soft)}
 app-douane-page .dt-actions{display:flex;justify-content:flex-end;overflow:visible}
 app-douane-page .dt-edit{border-bottom:1px solid var(--line);background:var(--surface-2);box-shadow:inset 3px 0 0 var(--rose)}
 app-douane-page .dt-edit__cells{display:grid;grid-template-columns:var(--wk-cols);align-items:start;column-gap:var(--wk-gap,12px);padding:10px var(--wk-pad-x,16px) 6px}
