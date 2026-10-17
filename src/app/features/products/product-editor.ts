@@ -94,12 +94,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
   template: `
     @if (!desktop.active()) {
       <header class="product-mobile-header">
-        <a class="product-mobile-back" [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']" aria-label="Terug naar product">‹</a>
-        <div><span>{{ isNew() ? 'Nieuw product' : 'Product bewerken' }}</span><h1>{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1></div>
+        <!-- A long name gets the room: the back capsule folds to the kit's circle (foundation rule B10). -->
+        <a class="product-mobile-back" [class.ios-capsule]="!phoneBackCompact()" [class.ios-circle]="phoneBackCompact()"
+           [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']"
+           [attr.aria-label]="!isNew() && editorReady() ? 'Terug naar product' : 'Terug naar Producten'"><app-icon name="chevron-left" [size]="18" />@if (!phoneBackCompact()) {<span>{{ !isNew() && editorReady() ? 'Product' : 'Producten' }}</span>}</a>
+        <div class="product-mobile-title"><h1 [title]="draft().name">{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1>@if (!isNew() || draft().name) {<span>{{ isNew() ? 'Nieuw product' : 'Bewerken' }}</span>}</div>
         @if (editorReady() && !isNew()) {
-          <button class="product-mobile-actions" type="button" aria-haspopup="dialog"
+          <button class="product-mobile-actions ios-capsule" type="button" aria-haspopup="dialog"
                   [attr.aria-expanded]="!!toolbarMenu()" [disabled]="toolbarBusy()"
-                  (click)="openToolbarMenu($event)">Acties <span aria-hidden="true">⌄</span></button>
+                  (click)="openToolbarMenu($event)">Acties</button>
+        } @else {
+          <span class="product-mobile-actions" aria-hidden="true"></span>
         }
       </header>
     }
@@ -135,15 +140,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     <header class="editor-toolbar">
       <div class="editor-toolbar__title">
-        <a routerLink="/products">Producten</a><span aria-hidden="true">/</span>
-        <h1>{{ id() && id() !== 'new' ? 'Product bewerken' : 'Nieuw product' }}</h1>
+        @if (editorReady() && !isNew()) {
+          <a class="editor-toolbar__crumb" [routerLink]="['/products', draft().id]" [title]="savedDraft()?.name || draft().name">{{ savedDraft()?.name || draft().name || 'Product' }}</a>
+        } @else {
+          <a class="editor-toolbar__crumb" routerLink="/products">Producten</a>
+        }
+        <app-icon class="editor-toolbar__sep" name="chevron-right" [size]="14" aria-hidden="true" />
+        <div class="editor-toolbar__titles">
+          <h1>{{ id() && id() !== 'new' ? 'Bewerken' : 'Nieuw product' }}</h1>
+          <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
+            {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
+          </span>
+        </div>
       </div>
       <div class="editor-toolbar__actions">
-        <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
-          {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
-        </span>
         @if (editorReady() && !isNew()) {
-          <a class="btn btn--sm" [routerLink]="['/products', draft().id]">Bekijken</a>
           @if (catalogueNeighbours(); as around) {
             <span class="editor-toolbar__nav" role="group" aria-label="Door producten bladeren">
               <a class="editor-toolbar__step" data-product-step="previous"
@@ -153,7 +164,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                  [attr.tabindex]="!around.previous || toolbarBusy() ? -1 : 0"
                  [attr.aria-label]="catalogueStepLabel('previous')" [title]="catalogueStepLabel('previous')">‹</a>
               <small class="editor-toolbar__position" [attr.aria-label]="'Kleur ' + (around.index + 1) + ' van ' + around.total"
-                     [title]="around.current.groupName + ' · ' + around.current.optionLabel">{{ around.index + 1 }}/{{ around.total }}</small>
+                     [title]="around.current.groupName + ' · ' + around.current.optionLabel">{{ around.total > 1 ? 'Kleur ' + (around.index + 1) + '/' + around.total : 'Product' }}</small>
               <a class="editor-toolbar__step" data-product-step="next"
                  [routerLink]="around.next && !toolbarBusy() ? ['/products', around.next.productId, 'edit'] : null"
                  [queryParams]="{ tab: activeTab() }"
@@ -168,7 +179,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             Acties <span aria-hidden="true">⌄</span>
           </button>
         }
-        <button class="btn btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
+        <button class="btn btn--sm btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
       </div>
     </header>
 
@@ -193,21 +204,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span><app-icon name="media" [size]="12" /></span>
         </button>
         <div class="product-mobile-variant">
-          <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { <small>· {{ draft().variantSize }}</small> }</strong>
-          <span>{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
+          <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { · {{ draft().variantSize }} }</strong>
+          <span><span [class.mono]="!!draft().sku">{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
+            @if (!isNew() && variantNeighbours(); as around) {
+              @if (around.total > 1) {
+                <span class="product-mobile-colours" role="group" aria-label="Kleurvariant kiezen">
+                  <a [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null" [attr.aria-disabled]="!around.previous" [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"><app-icon name="chevron-left" [size]="15" /></a>
+                  <small class="mono">{{ around.index + 1 }}/{{ around.total }}</small>
+                  <a [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null" [attr.aria-disabled]="!around.next" [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"><app-icon name="chevron-right" [size]="15" /></a>
+                </span>
+              }
+            }
+          </span>
         </div>
-        @if (!isNew() && variantNeighbours(); as around) {
-          @if (around.total > 1) {
-            <div class="product-mobile-colours" role="group" aria-label="Kleurvariant kiezen">
-              <a [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null" [attr.aria-disabled]="!around.previous" [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'">‹</a>
-              <small>{{ around.index + 1 }}/{{ around.total }}</small>
-              <a [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null" [attr.aria-disabled]="!around.next" [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'">›</a>
-            </div>
-          }
-        }
         <div class="product-mobile-metrics">
-          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
-          <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('sales')" [attr.aria-label]="'Verkoopprijs per ' + salesUnit(draft()).singular + ': ' + (salesPrice() > 0 ? (salesPrice() | eur: 2) : 'instellen')"><small>per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></button>
+          <button type="button" (click)="showTab('stock')" [attr.aria-label]="'Voorraad: ' + workspaceStockLabel() + ' ' + salesUnit(draft()).plural"><small>voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></button>
         </div>
       </section>
     }
@@ -229,25 +241,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
           <div class="erp-workspace__identity product-editor-hero__identity">
             <span class="erp-workspace__eyebrow">
-              {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}
+              {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}@if (draft().sku) {<span class="product-editor-hero__sku"> · {{ draft().sku }}</span>}
             </span>
             <h2 class="erp-workspace__title">{{ draft().name || 'Geef dit product een naam' }}</h2>
-            <p class="erp-workspace__meta">
-              @if (draft().colour) { <span>{{ draft().colour }}</span> }
-              @if (draft().variantSize) { <span>{{ draft().variantSize }}</span> }
-              @if (draft().sku) { <span class="mono">{{ draft().sku }}</span> }
-            </p>
             <div class="erp-workspace__badges" aria-label="Productstatus">
               <span class="erp-workspace__badge"
+                    [class.erp-workspace__badge--ok]="draft().active && !draft().demo"
                     [class.erp-workspace__badge--warn]="!draft().active || draft().demo">
                 {{ draft().active ? (draft().demo ? 'Demo' : 'Actief') : 'Inactief' }}
               </span>
-              @if (desktop.active()) {
-                <span class="erp-workspace__badge"
-                      [class.erp-workspace__badge--ok]="workspacePublicationLive()"
-                      [class.erp-workspace__badge--warn]="workspacePublicationNeedsAttention()">
-                  {{ workspacePublicationLabel() }}
-                </span>
+              @if (draft().colour || draft().variantSize) {
+                <span class="erp-workspace__badge product-editor-hero__variant">@if (draft().colourHex) {<i [style.background]="draft().colourHex"></i>}{{ draft().colour }}@if (draft().colour && draft().variantSize) { · }{{ draft().variantSize }}</span>
               }
               @if (workspaceDirty()) {
                 <span class="erp-workspace__badge erp-workspace__badge--dirty">Niet opgeslagen</span>
@@ -268,33 +272,52 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
           </div>
 
-          <div class="erp-workspace__facts product-editor-hero__facts">
-            <button class="erp-workspace__fact" type="button" (click)="showTab('stock')">
-              <span class="erp-workspace__fact-label">Voorraad</span>
-              <strong class="erp-workspace__fact-value num">{{ workspaceStockLabel() }}</strong>
-              <small class="erp-workspace__fact-note">{{ isNew() ? 'na aanmaken' : 'over alle locaties' }}</small>
+          <!-- The five figures the form drives, live from the draft: a typed price moves Verkoopprijs and Marge at once. -->
+          <div class="pe-strip" aria-label="Kerncijfers">
+            <button class="pe-fig" type="button" (click)="showTab('stock')">
+              <small>Voorraad</small>
+              <strong>{{ workspaceStockLabel() }}@if (workspaceStockLabel() !== 'Onbekend') {<em>{{ salesUnit(draft()).plural }}</em>}</strong>
+              <span>{{ isNew() ? 'na aanmaken' : 'alle locaties' }}</span>
             </button>
-            <button class="erp-workspace__fact" type="button" (click)="showTab('sales')">
-              <span class="erp-workspace__fact-label">Verkoopprijs per {{ salesUnit(draft()).singular }}</span>
-              <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
-              <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
+            <button class="pe-fig" type="button" (click)="draft().id !== null ? costHistoryOpen.set(true) : showTab('purchasing')"
+                    [title]="draft().id !== null ? 'Kostprijshistoriek' : 'Inkoop & kostprijs'">
+              <small>Kostprijs <app-icon name="chevron-right" [size]="12" /></small>
+              @if (draft().landedCostEur; as landed) {
+                <strong>{{ landed | eur: 2 }}</strong>
+                <span>geland@if (draft().landedCostSource) { · <span class="pe-nowrap">{{ draft().landedCostSource }}</span>}</span>
+              } @else {
+                <strong>—</strong>
+                <span>nog geen kostprijs</span>
+              }
             </button>
-            @if (desktop.active()) {
-              <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
-                      (click)="openPublicationWorkspace()">
-                <span class="erp-workspace__fact-label">Publicatie</span>
-                <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
-                <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
-              </button>
-            }
+            <button class="pe-fig" type="button" (click)="showTab('sales')">
+              <small>Verkoopprijs</small>
+              <strong [class.is-dirty]="savedPriceDiffers()">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}@if (salesPrice() > 0) {<em>per {{ salesUnit(draft()).singular }}</em>}</strong>
+              <span>{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : '+ ' + (draft().markupPct ?? 0) + ' % op de kostprijs' }}</span>
+              @if (savedPriceDiffers()) {
+                <span class="pe-fig__saved">bewaard {{ savedDraft()!.computedSalesPriceEur | eur: 2 }}</span>
+              }
+            </button>
+            <button class="pe-fig" type="button" (click)="showTab('sales')"
+                    [class.pe-fig--ok]="draft().landedCostEur && salesPrice() > 0 && unitMargin() >= 0"
+                    [class.pe-fig--bad]="draft().landedCostEur && salesPrice() > 0 && unitMargin() < 0">
+              <small>Marge</small>
+              @if (draft().landedCostEur && salesPrice() > 0) {
+                <strong>{{ unitMargin() | eur: 2 }}<em>per {{ salesUnit(draft()).singular }}</em></strong>
+                <span>{{ marginPercent() | num: 0 }} % van de prijs</span>
+              } @else {
+                <strong>—</strong>
+                <span>{{ draft().landedCostEur ? 'nog geen prijs' : 'nog geen kostprijs' }}</span>
+              }
+            </button>
+            <button class="pe-fig" type="button" (click)="openPublicationWorkspace()"
+                    [class.pe-fig--ok]="workspacePublicationLive()"
+                    [class.pe-fig--warn]="workspacePublicationNeedsAttention()">
+              <small>Publicatie</small>
+              <strong class="pe-fig__word">{{ workspacePublicationShortLabel() }}</strong>
+              <span>website &amp; orderapp</span>
+            </button>
           </div>
-
-          <!-- Saving lives in the page header alone; the hero only offers the way back to the view. -->
-          @if (!isNew()) {
-            <div class="product-editor-hero__actions">
-              <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
-            </div>
-          }
         </section>
       </div>
     </div>
@@ -335,7 +358,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <fieldset class="editor-canvas erp-workspace__main" [disabled]="formWriteBusy()" [attr.aria-busy]="formWriteBusy()" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
       @if (activeTab() !== 'media') {
-        <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
+        @if (sectionSaveHint(activeTab()); as hint) {
+          @if (activeTab() === 'stock') {
+            <!-- Desk: a chip with the sentence as its title; phone: the sentence, as before. -->
+            <div class="editor-section-note editor-section-note--stock"><span class="editor-save-chip" [title]="hint"><app-icon name="check" [size]="14" />Bewaart meteen</span><app-icon name="activity" [size]="17" /><p>{{ hint }}</p></div>
+          } @else {
+            <div class="editor-section-note"><app-icon name="settings" [size]="17" /><p>{{ hint }}</p></div>
+          }
+        }
       }
       @if (saveError(); as error) {
         <div class="editor-feedback editor-feedback--error" role="alert"><b>Opslaan niet voltooid</b><p>{{ error }}</p></div>
@@ -915,7 +945,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 @if (draft().fixedSalesPriceEur; as fixed) {
                   <span class="hint"
                         [class.warn-text]="fixed < landed">
-                    Kostprijs incl. rechten {{ landed | eur: 2 }} —
+                    Kostprijs {{ landed | eur: 2 }} —
                     @if (fixed < landed) {
                       deze prijs ligt <b>onder kostprijs</b>
                     } @else {
@@ -923,7 +953,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     }
                   </span>
                 } @else {
-                  <span class="hint">Kostprijs incl. rechten {{ landed | eur: 2 }}</span>
+                  <span class="hint">Kostprijs {{ landed | eur: 2 }}</span>
                 }
               } @else {
                 <span class="hint">Dit bedrag blijft gelijk als je kostprijs later verandert.</span>
@@ -1329,8 +1359,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <h3>Kostprijs &amp; marge</h3>
           <div class="desk-chain">
             <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per {{ salesUnit(draft()).singular }} }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
-            <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
-            <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
+            <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Kostprijs <small>@if (draft().landedCostSource) {geland · uit <span class="pe-nowrap">{{ draft().landedCostSource }}</span>} @else {nog geen calculatie}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
+            <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de kostprijs' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
             <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs per {{ salesUnit(draft()).singular }} <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
           </div>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('sales')">Prijs aanpassen ›</button>
@@ -1431,27 +1461,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     :host#product-editor-workspace .product-section-arrow { position: absolute; right: 15px; top: 22px; color: var(--section-tone); }
     :host#product-editor-workspace .product-section-translation { min-height: 48px; margin-top: 14px; border-radius: 16px; }
     @media (max-width: 679px) {
-      :host#product-editor-workspace .product-mobile-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
-      :host#product-editor-workspace .product-mobile-back { min-width: 44px; }
-      :host#product-editor-workspace .product-mobile-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto;
-        gap: 12px; padding: 14px 16px 16px; }
-      :host#product-editor-workspace .product-mobile-photo { width: 64px; height: 74px; border-radius: 19px; }
-      :host#product-editor-workspace .product-mobile-variant { grid-column: 2; }
-      :host#product-editor-workspace .product-mobile-variant > strong { font-size: 15px; }
-      :host#product-editor-workspace .product-mobile-colours { grid-column: 3; grid-template-columns: 44px minmax(28px, auto) 44px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
-      :host#product-editor-workspace .product-mobile-colours > a { width: 44px; height: 44px; }
-      :host#product-editor-workspace .product-mobile-colours > a:last-child { grid-column: 3; }
-      :host#product-editor-workspace .product-mobile-colours > small { grid-column: 2; grid-row: 1; padding: 0; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      :host#product-editor-workspace .product-mobile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
-      :host#product-editor-workspace .product-mobile-metrics > button { display: flex; align-items: center; gap: 9px; min-width: 0;
-        min-height: 54px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--rose-dark); text-align: left; }
-      :host#product-editor-workspace .product-mobile-metrics > button > span:first-of-type { flex: 1; min-width: 0; display: grid; gap: 3px; }
-      :host#product-editor-workspace .product-mobile-metrics small { color: var(--muted); font-size: 10px; font-weight: 500; }
-      :host#product-editor-workspace .product-mobile-metrics b { color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
-      :host#product-editor-workspace .product-mobile-tabs button { min-height: 52px; color: var(--ink-2); }
-      :host#product-editor-workspace .product-mobile-tabs button > app-icon { color: var(--section-tone, var(--muted)); }
-      :host#product-editor-workspace .product-mobile-tabs button.is-active { background: var(--surface); color: var(--ink);
-        box-shadow: 0 1px 6px rgb(24 30 28 / 8%), inset 0 0 0 1px var(--line); }
       :host#product-editor-workspace .section-head { align-items: center; }
       :host#product-editor-workspace .product-editor-dock { border-radius: 22px 22px 0 0; }
       :host#product-editor-workspace .product-editor-dock__save { min-height: 48px; border-radius: 16px; }
@@ -1869,14 +1878,15 @@ export class ProductEditor implements OnDestroy {
     return ({ identity: 'Artikel, kleur en afmetingen', media: 'Productfoto’s en galerij', packaging: 'Inhoud en transportmaten', purchasing: 'Leverancier en kosten', sales: 'Hoe je verkoopt, prijs en marge', stock: 'Aantallen per locatie', agreements: 'Notities en bijlagen', publication: 'Publicatie en teksten' } as Record<string, string>)[id] ?? '';
   }
 
-  sectionSaveHint(id: string): string {
+  /** Null for the tabs that save with Opslaan like any form (Basisgegevens, Omdoos, Inkoop, Verkoopprijs): no note there. */
+  sectionSaveHint(id: string): string | null {
     if (id === 'media') return this.isNew()
       ? 'Foto’s worden samen met het nieuwe product opgeslagen.'
       : 'Foto’s, fotokeuzes en de volgorde worden meteen bewaard; Opslaan is daarvoor niet nodig.';
     if (id === 'stock') return 'Een aangepast voorraadaantal wordt direct geboekt zodra je het veld verlaat. Verplaatsen en stuk/demo bevestig je apart.';
     if (id === 'agreements') return 'Sla je notitie op met Opslaan. Fotoacties worden apart verwerkt; controleer ook de opslagstatus bij de bijlagen.';
     if (id === 'publication') return 'Publicatie-instellingen sla je bovenaan op. Vertalingen hebben een eigen opslagknop. Reeksteksten gelden voor alle varianten.';
-    return 'Je bewerkt deze variant. Wisselen van onderdeel behoudt je wijzigingen; bevestig ze met Opslaan.';
+    return null;
   }
 
   showTab(id: string): void {
@@ -2668,6 +2678,16 @@ export class ProductEditor implements OnDestroy {
     if (this.priceStrategy() === 'FIXED') return product.fixedSalesPriceEur ?? 0;
     const cost = product.landedCostEur ?? 0;
     return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
+  });
+
+  /** Phone bar: a name longer than the room beside "‹ Product" folds the back capsule to a circle. */
+  readonly phoneBackCompact = computed(() => (this.draft().name || '').trim().length > 16);
+
+  /** A typed price that differs from the saved one: the hero shows "bewaard € x" on its own line. */
+  readonly savedPriceDiffers = computed(() => {
+    const saved = this.savedDraft();
+    if (!saved || !this.priceTouched()) return false;
+    return Math.round((saved.computedSalesPriceEur ?? 0) * 100) !== Math.round(this.salesPrice() * 100);
   });
 
   readonly unitMargin = computed(() =>
