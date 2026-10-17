@@ -50,9 +50,10 @@
    * Inkoop & kosten and Te betalen have four long tabs ("Facturen & kosten" … "Aan wie & beurzen", or with their
    * counts) beside a search and a wide split. Below 1400 the segmented sizes each tab to its words (the selected one
    * raised, no sliding indicator) and the search takes 196 px; that keeps every tab clear of the tools at 1440 px
-   * wide (a 1152 px bar) with the title. Narrower, Inkoop & kosten's title steps aside (the sidebar marks the
-   * place), then the search folds to its icon (as the kit does below 900) until the toolbar's short labels take
-   * over below a 940 px bar. Measured from 680 to 1440: nothing slides under the search.
+   * wide (a 1152 px bar) with the title. From 940 to 1150 Inkoop & kosten's title steps aside (the sidebar marks the
+   * place), and the search folds to its icon (as the kit does below 900) until the toolbar's short labels take
+   * over below 940; then the title has room again, down to 720 (a 760 px bar). Measured from 680 to 1440: nothing
+   * slides under the search.
    */
   @container wk-bar (max-width: 1399.98px) {
     .fin-toolbar--tabs .wk-toolbar__lead > .wk-seg { grid-auto-columns: auto;
@@ -61,7 +62,8 @@
       .wk-seg__opt[aria-selected='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
   }
   @container wk-bar (min-width: 1020px) and (max-width: 1399.98px) { .fin-toolbar--tabs .wk-search { width: 196px; } }
-  @container wk-bar (max-width: 1149.98px) {
+  /* below a 980 px bar (940 content) the short labels free the room again: the title stays down to 760 (§3.12) */
+  @container wk-bar (min-width: 940px) and (max-width: 1149.98px) {
     .fin-toolbar--costs .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
   /* 940–1019: the full labels (and Te betalen's counts) need the room; the search keeps its icon and opens on focus. */

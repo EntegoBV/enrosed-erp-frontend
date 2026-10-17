@@ -44,7 +44,8 @@
    * option carries the raised look itself instead of the sliding indicator, and "Transacties ophalen" keeps its icon
    * (aria-label and title keep the words). That keeps, at 1440 px wide (a 1152 px bar), the title, the "Te koppelen"
    * count and the whole search placeholder "Bedrag, naam of mededeling" (the kit's 240 px search, at every width from
-   * 900). Narrower, the title steps aside (the sidebar marks the place); the "Te koppelen" count stays at every width
+   * 900). From 940 to 1120 the title steps aside (the sidebar marks the place); below 940 the toolbar's short labels
+   * leave room for it again, down to 720 (a 760 px bar, tight()). The "Te koppelen" count stays at every width
    * (a key number). Only from 940 to 970, where "Nieuw" still carries its words beside the 240 px search, the options
    * narrow to 7 px sides and the count stands without its dot (16 px to spare with a three-digit count); below 900
    * "Inkomend" and "Uitgaand" read "In" and "Uit" and the search folds to its icon (the kit). The widths are the bar's
@@ -57,7 +58,8 @@
       .wk-seg__opt { padding: 0 10px; }
       .wk-seg__opt[aria-checked='true'] { background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 12%), 0 0 0 .5px rgb(26 22 20 / 6%); } }
   }
-  @container wk-bar (max-width: 1119.98px) {
+  /* below a 980 px bar (940 content) the toolbar's short labels free the room again: the title stays down to 760 (§3.12) */
+  @container wk-bar (min-width: 940px) and (max-width: 1119.98px) {
     .fin-toolbar--tx .fin-toolbar__title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
   @container wk-bar (min-width: 940px) and (max-width: 969.98px) {
