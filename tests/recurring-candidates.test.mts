@@ -84,3 +84,12 @@ test('"Lijkt te herhalen" reads "sinds mrt", and "Instellen…" keeps a derived 
   panel.setUp({ ...candidate, last: { ...last, vatRegime: null, vatRegimeConfirmed: true } });
   assert.deepEqual([draft.vatRegime, draft.vatRegimeConfirmed], ['BE', false], 'no regime at all: a default to confirm');
 });
+
+test('the phone shows the € 0 figures only once a vaste kost exists, as the desk strip does (N5.3)', async () => {
+  const source = await readFile(new URL('../src/app/features/finance/recurring-panel.ts', import.meta.url), 'utf8');
+  const figures = source.indexOf('<div class="ios-figures ios-figures--3">');
+  assert.ok(figures > 0);
+  assert.match(source.slice(figures - 200, figures), /\} @else \{[\s\S]*@if \(strip\(\)\) \{\s*$/, 'the phone figures sit behind the strip\'s own guard');
+  assert.match(source, /readonly strip = computed<StripItem\[\] \| null>\(\(\) => \{\s*if \(!this\.state\.recurring\(\)\.length\) return null;/, 'no definitions: no strip');
+  assert.ok(source.indexOf('ios-empty__title">Nog geen vaste kosten') > figures, 'the empty state and "Lijkt te herhalen" follow below');
+});

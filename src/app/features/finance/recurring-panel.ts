@@ -115,11 +115,14 @@ type GroupId = 'active' | 'paused' | 'ended';
         }
       </div>
     } @else {
-      <div class="ios-figures ios-figures--3">
-        <div><small>Per maand</small><strong>{{ monthlyInclTotal() | eur: 0 }}</strong></div>
-        <div><small>Per jaar</small><strong>{{ summary().yearlyInclEur | eur: 0 }}</strong></div>
-        <div><small>Volgende</small><strong>{{ next() ? day(next()!.date) : '—' }}</strong></div>
-      </div>
+      <!-- as on the desk: without any definition the zeros say nothing; the empty state and "Lijkt te herhalen" take their place (N5) -->
+      @if (strip()) {
+        <div class="ios-figures ios-figures--3">
+          <div><small>Per maand</small><strong>{{ monthlyInclTotal() | eur: 0 }}</strong></div>
+          <div><small>Per jaar</small><strong>{{ summary().yearlyInclEur | eur: 0 }}</strong></div>
+          <div><small>Volgende</small><strong>{{ next() ? day(next()!.date) : '—' }}</strong></div>
+        </div>
+      }
       @for (group of groups(); track group.id) {
         <section class="ios-section">
           <div class="ios-section__head"><h2>{{ group.label }}</h2><span class="ios-section__trail">{{ group.rows.length }}</span></div>
