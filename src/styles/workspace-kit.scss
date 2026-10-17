@@ -428,8 +428,9 @@ app-load-error{display:block}
 .ios-disclosure__body .ios-cell__title{font-size:15px}
 .ios-disclosure__body .ios-cell__sub{font-size:12.5px;line-height:1.3;white-space:normal}
 .ios-disclosure__body>.ios-cell+.ios-cell::before{content:'';position:absolute;top:0;right:0;left:58px;height:.5px;background:var(--ios-sep)}
+/* only a disclosure with one .ios-disclosure__body animates open (Meer); the approved disclosures elsewhere stay instant and unclipped */
 @supports selector(::details-content){
- .ios-disclosure::details-content{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-2,.2s) var(--ease-out,ease),content-visibility var(--dur-2,.2s) allow-discrete}
- .ios-disclosure[open]::details-content{grid-template-rows:1fr}
- .ios-disclosure>:not(summary){min-height:0;overflow:hidden}
+ .ios-disclosure:has(>.ios-disclosure__body)::details-content{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-2,.2s) var(--ease-out,ease),content-visibility var(--dur-2,.2s) allow-discrete}
+ .ios-disclosure:has(>.ios-disclosure__body)[open]::details-content{grid-template-rows:1fr}
+ .ios-disclosure>.ios-disclosure__body{min-height:0;overflow:hidden}
 }

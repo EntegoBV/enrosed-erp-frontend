@@ -31,6 +31,16 @@ test('the kit pieces the areas use exist, and the motion layer is loaded after t
     assert.ok(kit.includes(cls), cls);
   }
   assert.doesNotMatch(kit, /\.wk-subbar\{[^}]*(transform|filter|container)/, 'trap rule: the subbar itself takes no transform, filter or container');
+  /* The open animation is Meer's (one body wrapper): Kosten & bank, the PO nacalculatie and payments and the
+     files inspector keep their disclosures instant and unclipped (the kit's approved geometry). */
+  const additions = kit.slice(kit.indexOf('Foundation additions'));
+  const detailsRules = [...additions.matchAll(/\n\s+([^{}@\n]*::details-content[^{}\n]*)\{/g)];
+  assert.equal(detailsRules.length, 2);
+  for (const rule of detailsRules) {
+    assert.match(rule[1], /\.ios-disclosure:has\(>\.ios-disclosure__body\)/, rule[1]);
+  }
+  assert.doesNotMatch(additions, /\.ios-disclosure>:not\(summary\)/);
+  assert.match(additions, /\.ios-disclosure>\.ios-disclosure__body\{min-height:0;overflow:hidden\}/);
   const shell = await read('src/styles/shell.scss');
   assert.match(shell, /\.content\.content--narrow \{ max-width: 960px; \}/);
   const styles = await read('src/styles.scss');
