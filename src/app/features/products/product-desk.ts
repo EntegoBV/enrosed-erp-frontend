@@ -4,7 +4,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ViewEncapsulation, comp
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
-import { Product, StockLevel } from '../../core/api/models';
+import { Product } from '../../core/api/models';
 import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
@@ -114,7 +114,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                 <div class="pdk-series__chips">
                   @for (member of variantMembers(); track member.productId) {
                     @let current = member.productId === product.id;
-                    @let total = seriesTotal(member.productId);
+                    @let total = memberStock(member.productId);
                     <a class="pdk-series__chip" [class.now]="current" [class.off]="!member.active"
                        [routerLink]="current ? null : ['/products', member.productId]" [attr.aria-current]="current ? 'page' : null"
                        [title]="member.sku ? member.sku + (total !== null ? ' · ' + (total | num) + ' op voorraad' : '') : ''">
@@ -700,9 +700,7 @@ export class ProductDesk extends ProductView {
   readonly twoColumns = mediaSignal('(min-width: 1200px)');
   readonly descriptionOpen = signal(false);
   readonly noteOpen = signal(false);
-  /** Every product's stock over all locations, asked once after the product shows: the series chips (B7). */
-  private readonly allLevels = signal<StockLevel[] | null>(null);
-  private levelsFor: number | null = null;
+  private openedFor: number | null = null;
 
   /** The build-up loads with the product, so "Opbouw tonen" opens at once. */
   constructor() {
@@ -711,25 +709,14 @@ export class ProductDesk extends ProductView {
       const product = this.product();
       if (product && product.id !== null && this.priceBuild() === null) void this.loadPriceBuild(product);
     });
+    /* Another product: its description and supplier note open folded. The series chips' stock is ProductView's memberStock. */
     effect(() => {
-      const product = this.product();
-      if (!product || product.id === null || this.levelsFor === product.id) return;
-      this.levelsFor = product.id;
+      const id = this.product()?.id ?? null;
+      if (id === null || this.openedFor === id) return;
+      this.openedFor = id;
       this.descriptionOpen.set(false);
       this.noteOpen.set(false);
-      if (product.familyId == null) return;
-      this.allLevels.set(null);
-      void this.catalog.stockLevels().then((levels) => {
-        if (this.product()?.id === product.id) this.allLevels.set(levels);
-      }).catch(() => undefined);
     });
-  }
-
-  /** A series member's stock over every location; null until the one request answers. */
-  seriesTotal(productId: number): number | null {
-    const levels = this.allLevels();
-    if (!levels) return null;
-    return levels.filter((level) => level.productId === productId).reduce((sum, level) => sum + level.quantity, 0);
   }
 
   /** "{SKU} · {publieke naam}" when the series sells under another name than the product, else the SKU. */

@@ -33,6 +33,9 @@ app-product-view .pph-pub { margin: 3px 0 0; color: var(--muted); font-size: 12.
 app-product-view .pph-variants {
   display: flex; gap: 6px; margin: 12px -14px 0; padding: 0 14px 2px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-inline: contain;
 }
+/* "Reeks · 4 kleuren": how many colours, also when the last chips scroll off-screen. */
+app-product-view .pph-series { margin: 12px 0 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+app-product-view .pph-series + .pph-variants { margin-top: 6px; }
 app-product-view .pph-variants::-webkit-scrollbar { display: none; }
 app-product-view .pph-variant {
   display: inline-flex; flex: none; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px;

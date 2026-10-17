@@ -108,6 +108,7 @@ export type { ReceivedContainer } from './received-containers';
               </div>
             </div>
             @if (variantMembers().length > 1) {
+              <p class="pph-series">Reeks · {{ variantMembers().length }} kleuren</p>
               <div class="pph-variants" #variantRail role="list" aria-label="Kleuren in deze reeks">
                 @for (member of variantMembers(); track member.productId) {
                   @let total = memberStock(member.productId);
@@ -662,13 +663,21 @@ export class ProductView {
     if (levels.length <= 1) return 'in voorraad';
     return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`).join(' · ');
   });
-  /** Every product's stock over all locations, asked once after the product shows: the colour chips (B7). */
+  /**
+   * Every product's stock over all locations, asked once after the product
+   * shows: the colour chips (B7), on the desk and the phone. A booking here
+   * patches the booked product's levels in (refreshStock).
+   */
   private readonly memberLevels = signal<StockLevel[] | null>(null);
+  /** The request failed: each chip shows its product's own stock figure, as before the redesign. */
+  private readonly memberLevelsFailed = signal(false);
   private memberLevelsFor: number | null = null;
 
   memberStock(productId: number): number | null {
     const levels = this.memberLevels();
-    if (!levels) return null;
+    if (!levels) {
+      return this.memberLevelsFailed() ? this.catalogueProducts().find((item) => item.id === productId)?.stockQuantity ?? null : null;
+    }
     return levels.filter((level) => level.productId === productId).reduce((sum, level) => sum + level.quantity, 0);
   }
 
@@ -901,9 +910,15 @@ export class ProductView {
     }
   }
 
-  /** After a booking every figure on the page tells the new truth. */
+  /** After a booking every figure on the page tells the new truth, the series chips too. */
   protected refreshStock(productId: number): void {
-    this.catalog.productStock(productId).then((levels) => this.stockLevels.set(levels)).catch(() => {});
+    this.catalog.productStock(productId).then((levels) => {
+      this.stockLevels.set(levels);
+      this.memberLevels.update((all) => all && [
+        ...all.filter((level) => level.productId !== productId),
+        ...levels.map((level) => ({ productId, locationId: level.locationId, quantity: level.quantity })),
+      ]);
+    }).catch(() => {});
     this.loadStockHistory(productId);
     this.catalog.product(productId).then((product) => this.product.set(product)).catch(() => {});
   }
@@ -979,12 +994,15 @@ export class ProductView {
     });
     effect(() => {
       const product = this.product();
-      if (this.desktop.active() || !product || product.id === null || product.familyId == null || this.memberLevelsFor === product.id) return;
+      if (!product || product.id === null || product.familyId == null || this.memberLevelsFor === product.id) return;
       this.memberLevelsFor = product.id;
       this.memberLevels.set(null);
+      this.memberLevelsFailed.set(false);
       void this.catalog.stockLevels().then((levels) => {
         if (this.product()?.id === product.id) this.memberLevels.set(levels);
-      }).catch(() => undefined);
+      }).catch(() => {
+        if (this.product()?.id === product.id) this.memberLevelsFailed.set(true);
+      });
     });
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = Number(params.get('id'));
