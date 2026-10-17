@@ -88,7 +88,8 @@ export function displayLabel(group: Pick<ContentTranslationGroup, 'key' | 'label
   }
   const parts = label.split(' · ');
   if (parts.length > 1 && parts[0].trim().toLocaleLowerCase('nl') === area.label.toLocaleLowerCase('nl')) {
-    return parts.slice(1).join(' · ');
+    const rest = parts.slice(1).join(' · ');
+    return rest.charAt(0).toLocaleUpperCase('nl') + rest.slice(1);
   }
   return label;
 }

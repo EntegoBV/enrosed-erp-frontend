@@ -512,7 +512,7 @@ const PREFIX_LABELS: Record<string, string> = {
                   } @else if (!group.label.trim()) {
                     <div class="wk-banner wk-banner--danger wk-banner--inset ws-ed__msg" role="alert"><span class="wk-banner__text">Vul een herkenbare naam voor deze tekstgroep in.</span></div>
                   }
-                  <footer class="ws-edfoot">
+                  <footer class="ws-edfoot" [class.is-dirty]="hasPendingChanges()">
                     <span class="ws-edfoot__state" aria-live="polite">
                       @if (saveBlockedReason(); as reason) { <b class="ws-edfoot__why">{{ reason }}</b> }
                       @else { {{ dirty() ? 'Wijzigingen nog niet opgeslagen' : (scope() === 'WEBSITE' ? 'Opslaan zet een website-update in gang' : 'Tekst bijgewerkt') }} }
@@ -1037,6 +1037,12 @@ export class ContentTranslationWorkspace {
         .filter((group) => this.inSelectedKeys(group))
         .filter((group) => wantedPrefix === 'ALL' || this.areaKeyOf(group) === wantedPrefix)
         .sort((left, right) => left.label.localeCompare(right.label, 'nl'));
+      /* split and inline start where the site starts: the first group in site order. */
+      if (this.layout() !== 'card' && this.scope() === 'WEBSITE') {
+        const wanted = new Set(candidates);
+        const ordered = groupByArea(groups.filter((group) => wanted.has(group))).flatMap((section) => section.groups);
+        candidates.splice(0, candidates.length, ...ordered);
+      }
       if (wantedPrefix !== 'ALL' && !candidates.length && !this.lockPrefix()) {
         this.prefix.set('ALL');
       }

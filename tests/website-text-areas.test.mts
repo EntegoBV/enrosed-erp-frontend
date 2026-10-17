@@ -47,6 +47,7 @@ test('homepage sub-areas follow the blocks', () => {
 test('labels lose the repeated area word; a bare key shows its Dutch text', () => {
   assert.equal(displayLabel(group('home.hero.title', 'Homepage · Hero · titel')), 'Hero · titel');
   assert.equal(displayLabel(group('contact.form.name', 'contact · Formulier · naam')), 'Formulier · naam');
+  assert.equal(displayLabel(group('notFound.title', '404-pagina · titel')), 'Titel', 'the first word starts with a capital');
   assert.equal(displayLabel(group('meta.home.title', 'Homepage · SEO-titel')), 'Homepage · SEO-titel', 'meta keeps the page name');
   assert.equal(displayLabel(group('footer', 'Footer')), 'Footer');
   assert.equal(displayLabel(group('consent.enabled', 'consent.enabled', 'Ingeschakeld')), 'Ingeschakeld');
