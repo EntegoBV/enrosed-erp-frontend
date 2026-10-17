@@ -1310,6 +1310,7 @@ export class FinanceState {
           this.bankCostLinkPending.set(null);
           void this.refreshBank(); void this.refreshCosts();
           this.ui.toast('Kost bewaard en banktransactie gekoppeld', 'ok');
+      this.flash(line.id);
         } catch (failure) {
           this.bankCostLinkError.set(`Kost bewaard. De bankbetaling kon nog niet worden bevestigd: ${messageOf(failure, 'Probeer opnieuw.')} Opnieuw proberen maakt geen extra betaling.`);
           this.paySheet.set({ costs: [saved] });
@@ -2280,6 +2281,7 @@ export class FinanceState {
       this.bankStatements.update((rows) => rows.map((row) => outcome.lines.find((saved) => saved.id === row.id) ?? row));
       const purchase = target.kind === 'term-new' || target.kind === 'purchase-existing';
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', ...(purchase ? ['containers' as const] : [])])]);
+      this.flash(line.id);
       if (options.toast !== false) {
         const followed = preview.rows.some((row) => (row.label === 'Bedrag' || row.label === 'Betaald op' || row.label === 'Ontvangen op') && row.changed)
           && !['sales-new', 'cost-new', 'term-new'].includes(target.kind) && preview.primaryLabel === 'Koppelen en aanpassen';
@@ -2305,6 +2307,7 @@ export class FinanceState {
     try {
       await undoLink({ banking: this.banking, sourcing: this.sourcing, finance: this.finance }, line, target, { costPaymentId, purchase: outcome.purchasePayments });
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
+      this.flash(line.id);
       const paid = target.kind === 'purchase-existing' ? this.payments().find((row) => row.id === target.paymentId)
         : target.kind === 'cost-existing' ? this.costs().flatMap((cost) => cost.payments ?? []).find((row) => row.id === target.costPaymentId) : null;
       this.ui.toast(followed && paid ? `Ontkoppeld. De betaling houdt ${formatEuro(paid.amountEur)} op ${shortDay(paid.paidOn)}; pas ze aan in de betaling als dat niet klopt.` : 'Ontkoppeld.');
@@ -2390,6 +2393,7 @@ export class FinanceState {
       try {
         if (receipt) await this.banking.unallocate(line.id); else await this.banking.unlinkPayments(line.id);
         await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
+        this.flash(line.id);
         this.ui.toast('Koppeling losgemaakt');
       } catch (failure: unknown) {
         this.ui.toast(messageOf(failure, 'Losmaken mislukt'), 'err');
@@ -2406,6 +2410,7 @@ export class FinanceState {
     try {
       await this.banking.unclassify(line.id);
       await this.refreshBank();
+      this.flash(line.id);
       this.ui.toast('Boeken als ongedaan gemaakt');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ongedaan maken mislukt'), 'err');

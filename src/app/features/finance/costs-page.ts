@@ -54,6 +54,8 @@ import { VatReturnPanel } from './vat-return-panel';
 /** A quiet refresh when the page comes back after this long. */
 const STALE_MS = 5 * 60_000;
 /** The shortcuts of the open transaction (spec-bank-forecast §1.1): they act on the transaction shown, not on the list's focus. */
+/** A transaction's detail docks beside the list from an 840 px host (1100 wide): Bedrag stays in view while linking. */
+const LINE_DOCK_MIN_PX = 840;
 const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlink', 'open-linked', 'link']);
 
 /**
@@ -242,7 +244,8 @@ export class CostsPage {
   readonly current = computed(() => financeSection(this.state.location().view));
   readonly selectedCount = computed(() => this.section()?.selectedCosts?.().length ?? 0);
   private readonly width = elementWidth(() => this.host.nativeElement);
-  readonly docked = computed(() => this.width() >= WK_DOCK_MIN_PX);
+  /** A transaction docks from an 840 px host (1100 wide), so its amounts stay beside the list while linking; the rest from the kit's 1000. */
+  readonly docked = computed(() => this.width() >= (this.state.inspect()?.kind === 'line' ? LINE_DOCK_MIN_PX : WK_DOCK_MIN_PX));
   readonly readView = computed(() => this.state.location().view === 'analysis' || (this.state.location().view === 'bank' && this.state.location().tab !== 'movements'));
   readonly hasFilters = computed(() => {
     const { view, tab } = this.state.location();
@@ -390,6 +393,8 @@ export class CostsPage {
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
         { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
         ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : []),
+        ...(this.state.location().view === 'bank' && this.state.location().tab === 'movements' && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
+          label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
       ],
       pick: (id) => {
         if (id === 'sync') void this.sync.syncBank();
@@ -400,6 +405,7 @@ export class CostsPage {
         else if (id === 'help') this.state.helpOpen.set(true);
         else if (id === 'odoo') this.sync.sheetOpen.set(true);
         else if (id === 'archived') this.state.archivedOpen.set(true);
+        else if (id === 'historical') this.state.showHistorical.set(!this.state.showHistorical());
       },
     });
   }

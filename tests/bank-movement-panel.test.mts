@@ -25,7 +25,9 @@ import { receiptInstant, receiptLocalParts, receiptRequest } from '../src/app/sh
 import { paymentLocalDay, paymentMomentLabel } from '../src/app/features/finance/incoming-money.ts';
 import { bankTextOf } from '../src/app/features/finance/bank-text.ts';
 import { signedEur as signedMoney } from '../src/app/features/finance/finance-format.ts';
-import { containerName } from '../src/app/features/purchasing/container-name.ts';
+import { containerName, containerNumberHint } from '../src/app/features/purchasing/container-name.ts';
+import { paymentPayeeLabel } from '../src/app/features/finance/cost-ledger.ts';
+import { incomingPurposeLabel } from '../src/app/features/finance/incoming-money.ts';
 
 /* The same helper as shared/ui.ts (that file has Angular decorators, so it cannot be imported here). */
 const escapeHtml = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -125,6 +127,7 @@ function harness() {
     bookAsLine: signal<BankStatementLine | null>(null), attachmentsFor: () => [], unlinkLine: (_row: BankStatementLine) => {}, unclassifyLine: async (_row: BankStatementLine) => {},
     linkLine: async () => '', accountLabel: (key: string) => key,
     today: () => '2026-10-16', accountsView: () => [] as { account: string }[],
+    showHistorical: signal(false), flashLine: signal<number | null>(null),
   };
   const confirms: { title: string; message: string; confirmLabel?: string; danger?: boolean }[] = [];
   const ui = {
@@ -159,7 +162,7 @@ function harness() {
       throw new Error(`Unexpected service injection: ${String(token)}`);
     },
     bankAccountKey: bankExports.bankAccountKey, receiptLocalParts, receiptRequest,
-    paymentLocalDay, paymentMomentLabel, bankTextOf, signedMoney, containerName, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
+    paymentLocalDay, paymentMomentLabel, bankTextOf, signedMoney, containerName, containerNumberHint, paymentPayeeLabel, incomingPurposeLabel, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
@@ -484,7 +487,7 @@ test('revealing historical manual rows keeps them outside bank movement totals',
   state.officialBankLine = (row: BankStatementLine) => row.source === 'ODOO';
   state.bankStatements.set([{ ...movement(1, 50), source: 'ODOO' }, movement(2, 50)]);
   assert.equal(panel.filteredLines().length, 1); assert.equal(panel.historicalCount(), 1);
-  panel.showHistorical.set(true); assert.equal(panel.filteredLines().length, 2);
+  state.showHistorical.set(true); assert.equal(panel.filteredLines().length, 2, 'the state holds the switch (toolbar ⋯, phone ⋯, bar chip)');
   assert.equal(panel.totals().incoming, 50);
 });
 
@@ -1331,4 +1334,29 @@ test('Transacties over every account: the search reads amounts four ways, In · 
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [2, 3]);
   assert.equal(panel.statusLabel(other), 'Interne overboeking');
   assert.equal(panel.statusLabel(fee), 'Te koppelen');
+});
+
+test('Transacties rows: "Zoek een match" when nothing is found, a why line under a container link, one account drops the account column', () => {
+  const { panel, state } = harness();
+  const open = movement(720, -120), linked = { ...movement(721, -33867), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([open, linked]);
+  state.payments.set([{ id: 301, orderId: 11, orderNumber: 'PO-2026-011', orderAlias: null, payee: 'SUPPLIER', bankStatementLineId: 721 },
+    { id: 302, orderId: 11, orderNumber: 'PO-2026-011', orderAlias: null, payee: 'LOGISTICS', bankStatementLineId: 721 }]);
+  assert.deepEqual([panel.koppeling(open)?.find, panel.koppeling(open)?.text], [true, 'Zoek een match']);
+  assert.equal(panel.koppeling(linked)?.sub, 'Leverancier + Douane & transport', 'the payees; no PO hint when the name is the number');
+  assert.equal(panel.phoneSub(open), 'Bank reference');
+  assert.ok(panel.phoneSub(linked).endsWith(' · Leverancier + Douane & transport'));
+  assert.equal(panel.one(), true, 'no active account list in the harness: one account');
+  assert.deepEqual(['link', 'open', 'book'].map((kind) => panel.swipeIcon(kind as 'link')), ['link', 'eye', 'receipt']);
+});
+
+test('several containers on one transfer: "Inkoop · 3 containers" with the names on the why line', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(112, -16500), source: 'ODOO' as const, allocated: true };
+  state.bankStatements.set([row]);
+  state.payments.set([{ id: 905, orderId: 45, orderNumber: 'PO-2026-045', payee: 'SUPPLIER', bankStatementLineId: 112 },
+    { id: 904, orderId: 44, orderNumber: 'PO-2026-044', orderAlias: 'Foam Bear', payee: 'SUPPLIER', bankStatementLineId: 112 },
+    { id: 903, orderId: 43, orderNumber: 'PO-2026-043', payee: 'SUPPLIER', bankStatementLineId: 112 }]);
+  assert.equal(panel.koppeling(row)?.text, 'Inkoop · 3 containers');
+  assert.equal(panel.koppeling(row)?.sub, 'PO-2026-043, Foam Bear en PO-2026-045');
 });

@@ -125,6 +125,10 @@
     .fin-acct--wide .fin-acct__open { grid-template-columns: minmax(min-content, 1fr) minmax(0, 150px); grid-template-areas: 'head spark' 'balance spark' 'source source' 'foot foot'; gap: 4px 18px; }
   }
   app-bank-account-card.fin-tx-account .fin-acct--wide { display: flex; align-items: center; padding-right: 10px; }
+  @container fin-acct-wide (max-width: 519.98px) {
+    .fin-acct--wide .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'spark' 'source' 'foot'; }
+    .fin-acct--wide .fin-acct__spark { max-width: 160px; }
+  }
 
   /* the Geld strip: four cells, each opens its section */
   .fin-geld { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; }
@@ -277,15 +281,44 @@
     app-finance-filters { display: flex; align-items: center; gap: 8px; } }
   .fin-tx-bar__totals { margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; small { color: var(--muted); font-size: 11px; } }
   /*
-   * Transacties' tracks must fit the pane: the tracks, the 12 px gaps, the rows' 2 × 16 px and the table's border within
-   * the pane minus its 2 × 24 px. Koppeling steps aside below 1024 (data-hide md), Saldo below 720 (xs: the day heads keep
-   * "Saldo einde dag", the detail its own saldo). Beside the detail (wk-body--split) Koppeling and the action go; the
-   * cockpit's compact list has neither Koppeling nor Saldo. :not(compact) keeps the pane sets off the compact list.
+   * Transacties' tracks (critique B3): one set per state, for the head, the rows and their empty cells alike. The full
+   * list: party · status · Koppeling (the action folded in) · bedrag · saldo · ⋯ from a 1024 px pane; below it the
+   * status becomes a dot before the party; beside a docked detail no Koppeling (the detail links), and below a 720 px
+   * pane beside it only party and bedrag. Several accounts (no --one) put the 10 px account dot first. The cockpit's
+   * compact list keeps its action in a cell of its own (auto: it collapses when no row has one). The tracks, the
+   * 12 px gaps and the rows' 2 × 16 px fit the pane minus its 2 × 24 px at every width.
    */
-  .fin-table--tx { --wk-cols: 10px minmax(216px, 1fr) 112px minmax(150px, 200px) 96px 120px 116px 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(200px, 1fr) 112px 120px 116px 36px; }
-  .fin-table--tx-compact, .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 92px 112px 30px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
-  .wk-body--split .fin-table--tx-compact { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
+  .fin-table--tx { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .fin-table--full.fin-table--one { --wk-cols: minmax(240px, 1fr) 108px minmax(200px, 300px) 128px 120px 36px; }
+  .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(230px, 1fr) 108px minmax(200px, 300px) 128px 120px 36px; }
+  .wk-body--split .fin-table--full.fin-table--one { --wk-cols: minmax(200px, 1fr) 108px 124px 116px 36px; }
+  .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(190px, 1fr) 108px 124px 116px 36px; }
+  .wk-body--split .fin-table--full .fin-col-link { display: none; }
+  .fin-table--tx-compact { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(160px, 1fr) 104px auto 120px 30px; }
+  .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(150px, 1fr) 100px auto 112px 30px; }
+  .wk-body--split .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(160px, 1fr) 104px 120px 30px; }
+  .wk-body--split .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(150px, 1fr) 100px 112px 30px; }
+  .wk-body--split .fin-table--tx-compact .fin-col-act { display: none; }
+  .fin-tx__dot { display: none; flex: none; width: 8px; height: 8px; margin-top: 6px; }
+  .fin-th-short { display: none; }
+  @container wk-pane (max-width: 1023.98px) {
+    .wk-body:not(.wk-body--split) .fin-table--full.fin-table--one { --wk-cols: minmax(170px, 1fr) minmax(170px, 240px) 116px 112px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(160px, 1fr) minmax(160px, 230px) 116px 112px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full { .fin-col-status { display: none; } .fin-tx__dot { display: block; } }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    .wk-body:not(.wk-body--split) .fin-table--full.fin-table--one { --wk-cols: minmax(140px, 1fr) minmax(140px, 200px) 104px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(130px, 1fr) minmax(130px, 190px) 104px 36px; }
+    .wk-body--split .fin-table--full.fin-table--one { --wk-cols: minmax(150px, 1fr) 116px 36px; }
+    .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(140px, 1fr) 116px 36px; }
+    .fin-table--full { .fin-col-status, .fin-col-saldo, .fin-th-full { display: none; } .fin-tx__dot, .fin-th-short { display: block; } }
+    .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(120px, 1fr) auto 104px 30px; }
+    .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(110px, 1fr) auto 104px 30px; }
+    .wk-body--split .fin-table--tx-compact.fin-table--one { --wk-cols: minmax(140px, 1fr) 104px 30px; }
+    .wk-body--split .fin-table--tx-compact:not(.fin-table--one) { --wk-cols: 10px minmax(130px, 1fr) 104px 30px; }
+    .fin-table--tx-compact { .fin-col-status { display: none; } .fin-tx__dot { display: block; } }
+  }
   /* The cockpit's list reads without its column heads (kept for screen readers; the day heads stick to the top): one row more above the fold. */
   .fin-table--tx-compact { --wk-head-h: 0px; }
   .fin-table--tx-compact > .wk-thead { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; clip-path: inset(50%); border: 0; white-space: nowrap; }
@@ -294,37 +327,32 @@
   .fin-tx-day__saldo { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-tx { min-height: 48px; }
   /*
-   * Nothing in a row is cut (1440 with or without the detail, the cockpit's compact list): the counterparty, its sub
-   * line, the Koppeling and "Saldo onbekend vóór {dd/mm}" take a second line instead of an ellipsis.
+   * One line each (bankTextOf): the party wraps whole (two lines beside the docked detail, N7); the cleaned reference is
+   * the one text that may end in "…", its whole words in its title and the raw text in the detail. A link, a target and
+   * its why line keep one line with their title.
    */
+  .fin-tx__who { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+  .fin-tx__what { display: grid; min-width: 0; }
   .fin-tx__party { display: block; font-weight: 650; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx .wk-td__sub { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx__link { display: grid; align-content: center; gap: 2px; white-space: normal;
-    .bank-document-link { padding: 0; font-size: 12.5px; } }
-  .fin-tx__target { display: block; color: var(--ink-2); font-size: 12.5px; overflow-wrap: anywhere; white-space: normal; }
-  .fin-tx__reasons { display: flex; flex-wrap: wrap; gap: 3px; .wk-pill { height: 17px; padding: 0 6px; font-size: 10px; } }
+  .fin-tx .wk-td__sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tx__link { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; align-content: center; gap: 1px 8px; white-space: normal;
+    &:has(> .wk-btn) { grid-template-columns: minmax(0, 1fr) auto; } > .wk-btn { grid-row: 1 / span 3; grid-column: 2; }
+    > .bank-document-link, > .fin-tx__find { justify-self: start; display: block; max-width: 100%; padding: 0; overflow: hidden; font-size: 12.5px; text-align: left; text-overflow: ellipsis; white-space: nowrap; } }
+  .fin-tx__target { display: block; overflow: hidden; color: var(--ink-2); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tx__why { display: block; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-tx__find { color: var(--muted); font-weight: 600; &:hover { color: var(--rose-dark); } }
+  .fin-tx-bar .fin-unbanked-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 9px; border: 1px solid #f0dcbc; border-radius: 999px;
+    background: var(--warn-soft); color: #7c450b; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
   .fin-tx__saldo { color: var(--ink-2); font-size: 12px; line-height: 1.3; white-space: normal; }
   /* "Interne overboeking" is wider than the 112 px column: the chip takes two lines rather than cutting the word. */
   .fin-tx__status .wk-pill { height: auto; min-height: 20px; padding-block: 2px; line-height: 1.2; white-space: normal; }
   .fin-tx-foot { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
-  .bank-unbanked { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 10px; padding: 10px 14px; border: 1px solid #f0dcbc; border-radius: 12px; background: var(--warn-soft);
-    color: #7c450b; font: inherit; font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; span { flex: 1; } }
   .bank-searched { margin: 0 0 10px; }
 
   @container wk-pane (max-width: 1023.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(180px, 1fr) 104px 96px 116px 112px 36px; }
     .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }
     .fin-kaslijn__grid { grid-template-columns: minmax(0, 1fr); }
     .fin-kaslijn__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 16px 12px; padding: 8px 0 0; border-top: 1px solid var(--line); border-left: 0; }
-  }
-  @container wk-pane (max-width: 859.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(130px, 1fr) 96px 88px 104px 102px 36px; }
-    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(170px, 1fr) 104px 116px 112px 36px; }
-  }
-  @container wk-pane (max-width: 719.98px) {
-    .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 36px; }
-    .wk-body--split .fin-table--tx:not(.fin-table--tx-compact) { --wk-cols: 10px minmax(140px, 1fr) 104px 112px 36px; }
-    .fin-table--tx-compact { --wk-cols: 10px minmax(110px, 1fr) 96px 88px 104px 30px; }
   }
 
   /* ==================================================== the transaction detail */
@@ -426,6 +454,12 @@
   .fin-tree__adjusted { padding-left: 22px; color: var(--muted); font-size: 11.5px; &.fin-tree__payment--nested { padding-left: 34px; } }
 }
 
+/* a row a link, a booking or an undo just changed: one soft flash (the user's actions only, never a data load) */
+@keyframes fin-flash { from { background-color: var(--rose-soft); } }
+@media (prefers-reduced-motion: no-preference) {
+  #finance-workspace .fin-tx.is-flash, #finance-workspace .fin-txrow.is-flash { animation: fin-flash 900ms var(--ease-out, ease-out); }
+}
+
 /* ==================================================== phone */
 @media (max-width: 679.98px) {
   #finance-workspace {
@@ -492,8 +526,19 @@
     .fin-tx-account .fin-acct--wide { display: block; margin: 0 var(--ios-inset) 12px;
       .fin-acct__open { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'head' 'balance' 'source' 'foot'; } .fin-acct__spark { display: none; }
       .fin-acct__more { position: absolute; top: 10px; right: 10px; span { display: none; } } }
-    .bank-unbanked, .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
-    .bank-totals-line { margin: 0 var(--ios-inset) 10px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; span { color: var(--muted); } }
+    .bank-searched { width: calc(100% - 2 * var(--ios-inset)); margin-inline: var(--ios-inset); }
+    /* Transacties: search, one chip row (Periode a chip at its end), a caption with the totals and the period, then the days */
+    .fin-tx-filters { display: grid; gap: 4px; margin: 0 0 4px; }
+    .fin-period-chip { display: inline-flex; align-items: center; gap: 5px; }
+    .fin-tx-caption { margin: 2px calc(var(--ios-inset) + 4px) 12px; color: var(--muted); font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+    .fin-tx-caption__clear { position: relative; padding: 0; font-size: 13px; &::before { content: ''; position: absolute; inset: -12px -6px; } }
+    .fin-unbanked-group { margin-bottom: 16px; }
+    .fin-unbanked-cell .ios-cell__title { font-weight: 600; }
+    .ios-section:has(> .bank-day-head) { margin-bottom: 14px; }
+    /* the transaction sheet's own ⋯ (Intrekken and every other line action) */
+    .fin-txd--phone .fin-txd__hero { position: relative; }
+    .fin-txd--phone .fin-txd__dir { display: flex; align-items: center; min-height: 40px; padding-right: 48px; }
+    .fin-txd__more { position: absolute; top: 8px; right: 8px; }
     .fin-txd--phone { padding: 0 2px; .wk-section { padding: 12px 16px; } }
     /* Each button starts from its own words ("Registreren en koppelen" is 180 px) and the two share what is left; a pair that does not fit takes two lines. */
     .fin-txd__foot--phone { display: flex; flex-wrap: wrap; gap: 8px; .btn { flex: 1 1 auto; } }

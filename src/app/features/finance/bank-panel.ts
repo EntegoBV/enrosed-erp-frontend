@@ -30,7 +30,8 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
   imports: [Icon, EurPipe, BankMovementPanel, BankAccountCard, BankCockpit, FinanceFilters],
   template: `
     @if (state.location().tab === 'movements') {
-      @if (selectedAccount(); as account) {
+      <!-- The phone's one account lives in Bank's hero: Transacties starts with its search (critique: 4½ rows a screen). -->
+      @if (state.desk() || state.location().account ? selectedAccount() : null; as account) {
         @if (account.archived) {
           <p class="fin-note-line"><app-icon name="archive" [size]="14" />{{ account.label }} is gearchiveerd · alleen historiek
             <button class="wk-link" type="button" [disabled]="restoring()" (click)="restore(account.account)">Terugzetten</button></p>
@@ -47,6 +48,12 @@ type UnbankedItem = FinanceState['unbanked'] extends () => (infer T)[] ? T : nev
             </div>
           }
           <app-finance-filters />
+          @if (unbankedCount(); as count) {
+            <button class="fin-unbanked-chip" type="button" (click)="state.unbankedOpen.set(true)"><app-icon name="alert" [size]="14" />{{ count }} {{ count === 1 ? 'betaling' : 'betalingen' }} zonder transactie<app-icon name="chevron-right" [size]="14" /></button>
+          }
+          @if (state.showHistorical() && state.historicalCount()) {
+            <span class="wk-chip is-on" title="Deze handmatige registraties blijven bewaard. Ze tellen niet mee in het saldo van je Odoo-rekening.">Eerdere registraties · {{ state.historicalCount() }}<button class="wk-chip__x" type="button" aria-label="Eerdere registraties verbergen" (click)="state.showHistorical.set(false)"><app-icon name="close" [size]="11" /></button></span>
+          }
           @if (exactCount(); as count) {
             <button class="wk-btn wk-btn--sm" type="button" (click)="state.exactLinksOpen.set(true)"><app-icon name="link" [size]="14" />{{ count }} {{ count === 1 ? 'exacte suggestie' : 'exacte suggesties' }} koppelen</button>
           }
@@ -85,6 +92,8 @@ export class BankPanel implements FinanceSectionApi {
   transactionCount(key: string): number { return this.accountLines(key).length; }
   /** Every official line on the active accounts (Transacties without an account). */
   private readonly activeLines = computed(() => this.state.bankStatements().filter(line => this.state.officialBankLine(line) && !this.state.archivedBankLine(line)));
+  /** Payments marked paid without a transaction, and receipts on an Odoo account no line carries: the bar's chip (was a banner). */
+  readonly unbankedCount = computed(() => this.state.unbanked().length + this.state.pendingReceipts().length);
   /** "{k} exacte suggesties koppelen": the exact suggestions of the lines on screen (one account, or all). */
   readonly exactCount = computed(() => {
     const account = this.state.location().account ? this.state.canonicalAccount(this.state.location().account) : '';

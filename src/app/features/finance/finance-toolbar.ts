@@ -264,6 +264,8 @@ export class FinanceToolbar {
       items: [
         ...(bank ? [{ id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
           ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : [])] : []),
+        ...(this.transactions() && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
+          label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
         { id: 'csv', label: 'Exporteer CSV', iconName: 'download', divider: bank },
         { id: 'package', label: 'Boekhouderspakket…', iconName: 'archive' },
         { id: 'keys', label: 'Sneltoetsen', hint: '?', iconName: 'list' },
@@ -271,6 +273,7 @@ export class FinanceToolbar {
       pick: (id) => {
         if (id === 'odoo') this.sync.sheetOpen.set(true);
         else if (id === 'archived') this.state.archivedOpen.set(true);
+        else if (id === 'historical') this.state.showHistorical.set(!this.state.showHistorical());
         else if (id === 'csv') this.section()?.exportCsv ? this.section()!.exportCsv!() : this.state.exportThisYear();
         else if (id === 'package') this.state.openPackage();
         else this.state.shortcutsOpen.set(true);

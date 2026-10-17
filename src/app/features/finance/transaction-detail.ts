@@ -81,6 +81,8 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
             @if (row.sourceReconciled) { <span class="wk-pill tone-ok">Afgepunt in Odoo ✓</span> }
             @if (!state.officialBankLine(row)) { <span class="wk-pill tone-grey">Historische registratie</span> }</span>
           <span class="fin-txd__saldo">{{ saldoAfter(row) }}</span>
+          <!-- The phone row has no ⋯ any more: every line action (Intrekken too) is here, the sheet's own ⋯ at the top right (critique B6). -->
+          @if (!state.desk()) { <button class="ios-circle fin-txd__more" type="button" [attr.aria-label]="'Meer acties voor ' + titleOf(row)" (click)="lineMenu(row, null)"><app-icon name="more" [size]="20" /></button> }
         </section>
 
         @switch (status()) {
