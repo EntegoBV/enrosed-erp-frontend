@@ -85,7 +85,9 @@ export function phoneKrapBanner(forecast: CashForecast): KrapBanner | null {
 /* -------------------------------------------------------------------- KPIs */
 
 export interface KpiCard { id: 'bank' | 'lowest' | 'end' | 'zero' | 'scenario'; label: string; value: string; sub: string; foot: string;
-  footWarn: boolean; valueTone: 'normal' | 'warn' | 'danger'; }
+  footWarn: boolean; valueTone: 'normal' | 'ok' | 'warn' | 'danger';
+  /** 'text' for a value in words ("Blijft boven nul"): it may wrap (critique B2). */
+  kind?: 'text'; }
 
 function checkedText(forecast: CashForecast): { text: string; warn: boolean } {
   const stale = forecast.startAccounts.find((account) => account.stale);
@@ -119,10 +121,12 @@ export function kpiCards(forecast: CashForecast): KpiCard[] {
     { id: 'end', label: `Op ${end}`, value: eurWhole(forecast.endWithEur), sub: 'met scenario',
       foot: `T.o.v. vandaag ${signedWhole(forecast.endWithEur - forecast.startEur)}`, footWarn: false, valueTone: forecast.endWithEur < 0 ? 'danger' : 'normal' },
     { id: 'zero', label: 'Zonder nieuwe verkoop', value: forecast.zeroBase ? dayMon(forecast.zeroBase) : relative ? 'Niet lager dan vandaag' : 'Blijft boven nul',
+      kind: forecast.zeroBase ? undefined : 'text',
       sub: forecast.zeroBase ? (relative ? 'lager dan vandaag vanaf die dag' : 'onder nul vanaf die dag') : '', foot: `Op ${end} ${eurWhole(forecast.endBaseEur)}`, footWarn: false,
       valueTone: forecast.zeroBase ? 'danger' : 'normal' },
     { id: 'scenario', label: 'Scenario binnen', value: `+ ${eurWhole(forecast.scenario.inHorizonEur)}`, sub: `tot ${end} · incl. btw`,
-      foot: `Marge op goederen ${eurWhole(forecast.scenario.marginEur)} · ${included} ${included === 1 ? 'bron' : 'bronnen'}`, footWarn: false, valueTone: 'normal' },
+      foot: `Marge op goederen ${eurWhole(forecast.scenario.marginEur)} · ${included} ${included === 1 ? 'bron' : 'bronnen'}`, footWarn: false,
+      valueTone: forecast.scenario.inHorizonEur > 0 ? 'ok' : 'normal' },
   ];
 }
 
@@ -560,6 +564,34 @@ export function peakMonth(seasonal: readonly number[] | null): string | null {
 }
 
 /* ----------------------------------------------------------------- loading */
+
+/**
+ * The forecast may build once the advance schedules of this round are in
+ * (critique N13): without them the first figures showed a wrong lowest point
+ * for half a second. Not needed when no financing has a schedule or the
+ * partner financings failed to load.
+ */
+export function forecastReady(generation: number, schedulesFor: number, schedulesNeeded: boolean): boolean {
+  return !schedulesNeeded || schedulesFor === generation;
+}
+
+/**
+ * A past bank row's text without the account plumbing (design §3.1): IBANs,
+ * BICs, "KBC Mobile", masked card numbers and repeated spaces go; the
+ * counterparty and the free text stay. The full text stays in the title.
+ */
+export function bankTextShort(text: string | null | undefined): string {
+  if (!text) return '';
+  return text
+    .replace(/\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/g, ' ')
+    .replace(/\b[A-Z]{4}(?:BE|NL|DE|FR|LU|GB|IT|ES|AT|CH|PL|CN|HK|US|IE|DK|SE|NO|FI|PT|CZ)[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g, ' ')
+    .replace(/\bKBC[- ]Mobile\b/gi, ' ')
+    .replace(/\b\d{4}[ -]?[X*]{2,4}[ -]?[X*]{2,4}[ -]?\d{4}\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/(?:\s*[,;:/|-]\s*){2,}/g, ' - ')
+    .replace(/^[\s,;:/|-]+|[\s,;:/|-]+$/g, '')
+    .trim();
+}
 
 /** The first day of the month three months before today ('2026-10-15' → '2026-07-01'). */
 export function threeMonthsBack(today: string): string {

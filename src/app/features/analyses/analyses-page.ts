@@ -42,6 +42,7 @@ import { CashOverviewCard } from './cash-overview-card';
 import { CashPhone } from './cash-phone';
 import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
+import { financingsWithSchedule } from './cash-view';
 import { IosNav } from '../../shared/ios-nav';
 import { NotificationBell } from '../../shared/notification-bell';
 import { Sheet } from '../../shared/ui';
@@ -1622,6 +1623,10 @@ export class AnalysesPage {
   });
   readonly attentionCount = computed(() => this.attention().filter((row) => row.count > 0).length);
 
+  /** Advance schedules to wait for before the first forecast (critique N13): only with partner financings that have one. */
+  private readonly schedulesNeeded = computed(() => !this.dataWarnings().includes('partnerfinanciering')
+    && financingsWithSchedule(this.partnerSummaries()).length > 0);
+
   /** What the Kasprognose reads from this page's own load (spec §4.1: never fetched twice). */
   private readonly cashPage = computed<CashPageData>(() => ({
     purchases: this.purchases(), suppliers: this.suppliers(), products: this.products(), salesOrders: this.salesOrders(),
@@ -1629,7 +1634,7 @@ export class AnalysesPage {
   }));
 
   constructor() {
-    this.cashState.attach(this.cashPage, this.loading, this.today);
+    this.cashState.attach(this.cashPage, this.loading, this.today, this.schedulesNeeded);
     /* The page's data load the first time a data tab shows; Markt and Bezoekers never trigger it (critique B6). */
     effect(() => {
       const section = this.section();

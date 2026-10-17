@@ -15,7 +15,7 @@ import { cashOptionsOf } from './cash-options';
 import { CashPageData, CashSources } from './cash-sources';
 import { cashLink, cashQueryParams, parseCashLocation, withoutScenarioDefaults } from './cash-url';
 import type { CashLocation } from './cash-url';
-import { CHOICE_FIELDS, adjusted, forecastWrite } from './cash-view';
+import { CHOICE_FIELDS, adjusted, forecastReady, forecastWrite } from './cash-view';
 
 const SAVE_DELAY_MS = 600;
 /** The choices a link can carry for every container (the rest only exists per order). */
@@ -45,6 +45,9 @@ export class CashState {
   /** Today as the page keeps it (a signal: the forecast rolls over at midnight and after a refresh). */
   private todaySignal: Signal<string> = signal('');
   private pageSeen = false;
+  /** True when the page has partner financings with an advance schedule (critique N13). */
+  private schedulesNeeded: Signal<boolean> = signal(false);
+  private scheduleSeen = false;
 
   /** Choices typed here and not yet saved (or, on a server without this round, kept for this visit only). */
   private readonly pending = signal<ReadonlyMap<number, PurchaseOrderForecastWrite>>(new Map());
@@ -59,10 +62,11 @@ export class CashState {
     });
   }
 
-  attach(page: Signal<CashPageData>, loading: Signal<boolean>, today: Signal<string>): void {
+  attach(page: Signal<CashPageData>, loading: Signal<boolean>, today: Signal<string>, schedulesNeeded?: Signal<boolean>): void {
     this.page = page;
     this.pageLoading = loading;
     this.todaySignal = today;
+    if (schedulesNeeded) this.schedulesNeeded = schedulesNeeded;
   }
 
   get today(): string { return this.todaySignal(); }
@@ -89,6 +93,11 @@ export class CashState {
     /* The first page load must finish; a refresh keeps the last good data on screen meanwhile. */
     if (this.pageLoading() && !this.pageSeen) return null;
     this.pageSeen = true;
+    /* The first build waits for this round's advance schedules; later rounds keep the last figures meanwhile. */
+    if (!this.scheduleSeen) {
+      if (!forecastReady(this.sources.generation(), this.sources.schedulesFor(), this.schedulesNeeded())) return null;
+      this.scheduleSeen = true;
+    }
     const sources = this.sources.sourcesWith(this.page(), this.todaySignal());
     return sources ? cashForecastInput(sources) : null;
   });

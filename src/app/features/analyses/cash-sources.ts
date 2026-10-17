@@ -80,6 +80,8 @@ export class CashData {
   readonly warnings = signal<string[]>([]);
   /** Bumped by every new round; the page loads the advance schedules once per round. */
   readonly generation = signal(0);
+  /** The round whose advance schedules have loaded (also when they failed); -1 before the first (critique N13). */
+  readonly schedulesFor = signal(-1);
   /** When the last round finished (epoch ms), and for which day it loaded; null before the first. */
   readonly loadedAt = signal<number | null>(null);
   readonly loadedFor = signal<string | null>(null);
@@ -173,7 +175,12 @@ export class CashData {
   async loadSchedules(financings: readonly PartnerFinancing[], round: number): Promise<void> {
     if (round <= 0 || this.schedulesRound === round) return;
     this.schedulesRound = round;
-    const results = await Promise.allSettled(financingsWithSchedule(financings).map((id) => this.sourcing.partnerAdvanceSchedule(id)));
+    let results: PromiseSettledResult<PartnerAdvanceSchedule>[];
+    try {
+      results = await Promise.allSettled(financingsWithSchedule(financings).map((id) => this.sourcing.partnerAdvanceSchedule(id)));
+    } finally {
+      this.schedulesFor.set(round);
+    }
     const loaded = results.filter((result): result is PromiseFulfilledResult<PartnerAdvanceSchedule> => result.status === 'fulfilled').map((result) => result.value);
     const failures = results.length - loaded.length;
     if (!failures) this.advanceSchedules.set(loaded);

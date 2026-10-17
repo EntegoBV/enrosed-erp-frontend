@@ -323,3 +323,18 @@ test('advance schedules load only for financings that still invoice advances', (
     financing(47, {}),
   ]), [44, 45]);
 });
+
+test('bankTextShort drops IBAN, BIC, "KBC Mobile" and card numbers; the counterparty and free text stay', () => {
+  const raw = 'Bloemen Lotus BV   BE68 5390 0754 7034  GKCCBEBB  KBC Mobile  Betaling factuur F2026-0138 4871 XXXX XXXX 1234';
+  assert.equal(view.bankTextShort(raw), 'Bloemen Lotus BV Betaling factuur F2026-0138');
+  assert.equal(view.bankTextShort('BETALING VIA KBC-Mobile aan NL91ABNA0417164300 ABNANL2A Kwekerij'), 'BETALING VIA aan Kwekerij', 'an uppercase word like BETALING is no BIC');
+  assert.equal(view.bankTextShort(''), '');
+  assert.equal(view.bankTextShort(null), '');
+});
+
+test('the first forecast waits for this round\'s advance schedules only when there are some (critique N13)', () => {
+  assert.equal(view.forecastReady(2, -1, true), false, 'schedules of round 2 not in yet');
+  assert.equal(view.forecastReady(2, 1, true), false, 'last round\'s schedules do not count');
+  assert.equal(view.forecastReady(2, 2, true), true);
+  assert.equal(view.forecastReady(2, -1, false), true, 'no financing with a schedule, or the financings failed: nothing to wait for');
+});
