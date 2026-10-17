@@ -22,6 +22,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   inventory: [
     'Een actuele momentopname uit de productkaart en open inkooporders; het tempo komt van de facturen van de laatste 90 dagen.',
     'De kostwaarde bevat de Enrosed-kost. Voor de boekhouding: Jaarinventaris.',
+    'Voorraad telt alle locaties; aantallen staan in de verkoopeenheid van elk product (stuks of displays).',
   ],
   'purchasing-kosten': ['Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.'],
   'purchasing-kwaliteit': ['Actuele containerwaarde plus de ontvangen orders in de gekozen periode. Perfect: alles bruikbaar ontvangen zoals besteld. Op tijd: ontvangen op of voor de laatst opgeslagen ETA.'],

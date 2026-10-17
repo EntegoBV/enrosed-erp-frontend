@@ -15,7 +15,7 @@ import {
   ReceiptVarianceReport,
   ReceiptVarianceRow,
   SalesOrderView,
-  Supplier, CompanyCost, IncomingPaymentRow, PartnerFinancing,
+  Supplier, CompanyCost, IncomingPaymentRow, PartnerFinancing, StockLevel,
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
@@ -59,6 +59,7 @@ import { containerPaymentResultTotals } from './container-payment-result-metrics
 import { changeOverMonths } from './market-math';
 import type { Months } from './market-math';
 import { AnVisitorsRow } from './analyses-visitors-row';
+import { withAllLocations } from './analyses-stock';
 import { LoadError } from '../../shared/load-error';
 import { AnHow, HOW_TEXTS } from './analyses-how';
 import { AnPeriodPicker, AnPeriodSheet } from './analyses-period-picker';
@@ -1283,6 +1284,10 @@ export class AnalysesPage {
   readonly purchases = signal<PurchaseOrderView[]>([]);
   readonly suppliers = signal<Supplier[]>([]);
   readonly products = signal<Product[]>([]);
+  /** Pieces per location (critique N14); null until loaded or when the call failed (then the warehouse figure counts). */
+  readonly stockLevels = signal<StockLevel[] | null>(null);
+  /** Voorraad and Overzicht count every location; Kasprognose keeps its own inputs. */
+  readonly stockProducts = computed(() => { const levels = this.stockLevels(); return levels ? withAllLocations(this.products(), levels) : this.products(); });
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
   readonly partnerSummaries = signal<PartnerFinancing[]>([]);
@@ -1352,11 +1357,11 @@ export class AnalysesPage {
   readonly sailingCount = computed(() => this.incomingOrders()
     .filter((row) => row.order.status === 'ONDERWEG').length);
 
-  readonly valuedInventory = computed(() => this.products().filter((product) =>
+  readonly valuedInventory = computed(() => this.stockProducts().filter((product) =>
     product.inventoryKnown === true && product.stockQuantity > 0 && product.landedCostEur != null));
-  readonly unvaluedInventory = computed(() => this.products().filter((product) =>
+  readonly unvaluedInventory = computed(() => this.stockProducts().filter((product) =>
     product.inventoryKnown === true && product.stockQuantity > 0 && product.landedCostEur == null));
-  readonly inventoryUnknownSkuCount = computed(() => this.products()
+  readonly inventoryUnknownSkuCount = computed(() => this.stockProducts()
     .filter((product) => product.inventoryKnown !== true).length);
   readonly inventoryValuedPieces = computed(() => this.valuedInventory()
     .reduce((sum, product) => sum + product.stockQuantity, 0));
@@ -1364,7 +1369,7 @@ export class AnalysesPage {
     .reduce((sum, product) => sum + product.stockQuantity, 0));
   readonly inventoryPurchaseValue = computed(() => this.valuedInventory()
     .reduce((sum, product) => sum + product.stockQuantity * product.landedCostEur!, 0));
-  readonly saleableInventory = computed(() => this.products().filter((product) =>
+  readonly saleableInventory = computed(() => this.stockProducts().filter((product) =>
     product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity > 0));
   readonly inventorySalesValue = computed(() => this.saleableInventory()
     .reduce((sum, product) => sum + product.stockQuantity * product.computedSalesPriceEur, 0));
@@ -1444,7 +1449,7 @@ export class AnalysesPage {
   readonly categoryLabel = categoryLabel;
 
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
-    this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: this.today() }));
+    this.stockProducts(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: this.today() }));
 
   /** Onderweg as a list (design §5.11): soonest arrival first, then the most pieces; containers by name (N11). */
   readonly incomingRows = computed(() => [...this.inventoryMetrics().incoming.rows]
@@ -1764,7 +1769,7 @@ export class AnalysesPage {
       this.loadedFilterKey = JSON.stringify(filters);
       const overviewFilters = this.overviewFilters();
       const sameFilters = this.sameFilters(filters, overviewFilters);
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels] = await Promise.allSettled([
         this.sourcing.receiptVariances(filters),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -1776,6 +1781,7 @@ export class AnalysesPage {
         this.sales.incomingPayments(), this.sourcing.partnerFinancings(),
         sameFilters ? Promise.resolve(null) : this.sourcing.receiptVariances(overviewFilters),
         filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null }),
+        this.catalog.stockLevels(),
       ] as const);
       const warnings: string[] = [];
       if (report.status === 'fulfilled') this.acceptReport(report.value);
@@ -1793,8 +1799,10 @@ export class AnalysesPage {
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');
       if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value); else warnings.push('inkomende betalingen');
       if (partners.status === 'fulfilled') this.partnerSummaries.set(partners.value); else warnings.push('partnerfinanciering');
+      if (levels.status === 'fulfilled' && Array.isArray(levels.value)) this.stockLevels.set(levels.value);
+      else { this.stockLevels.set(null); warnings.push('voorraadlocaties'); }
       this.dataWarnings.set(warnings);
-      this.loadFailed.set([report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners].every((call) => call.status === 'rejected'));
+      this.loadFailed.set([report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, levels].every((call) => call.status === 'rejected'));
       const now = new Date();
       this.loadedAt.set(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     } finally {
