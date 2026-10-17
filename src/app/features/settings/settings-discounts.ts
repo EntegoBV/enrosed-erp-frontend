@@ -90,7 +90,7 @@ import { SettingsEditor, dirtyStatusText } from './settings-editor';
                       }
                       <div class="disc-product__id">
                         <h3 [attr.title]="group.product?.name || null">{{ group.product?.name || 'Verwijderd product #' + group.productId }}</h3>
-                        <span>@if (group.product?.colour) { {{ group.product!.colour }} · }@if (group.product?.variantSize) { {{ group.product!.variantSize }} · }{{ group.product?.sku || 'Onbekende SKU' }}</span>
+                        <span>{{ variantLine(group.product) }}</span>
                         @if (group.product && supplierName(group.product); as supplier) { <small>{{ supplier }}</small> }
                       </div>
                       <button class="wk-btn wk-btn--icon wk-btn--ghost" type="button"
@@ -164,7 +164,7 @@ import { SettingsEditor, dirtyStatusText } from './settings-editor';
                 </span>
                 <span class="ios-cell__body">
                   <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ group.product?.name || 'Verwijderd product #' + group.productId }}</span>
-                  <span class="ios-cell__sub ios-cell__sub--2">@if (group.product?.colour) { {{ group.product!.colour }} · }@if (group.product?.variantSize) { {{ group.product!.variantSize }} · }{{ group.product?.sku || 'Onbekende SKU' }}</span>
+                  <span class="ios-cell__sub ios-cell__sub--2">{{ variantLine(group.product) }}</span>
                   @if (group.product && supplierName(group.product); as supplier) { <span class="ios-cell__sub ios-cell__sub--2">{{ supplier }}</span> }
                 </span>
                 <button class="ios-circle disc-phone__remove" type="button" [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
@@ -513,6 +513,11 @@ export class SettingsDiscounts implements SettingsEditor {
     if (!sheet || !tier) return;
     if (sheet.scope === 'ORDER') this.removeTier('ORDER', sheet.index);
     else this.removeLineTier(tier);
+  }
+
+  /** "Rood · L · ROSE-BOX-1": what tells one variant's tiers from another's, desk and phone alike. */
+  variantLine(product: Product | null): string {
+    return [product?.colour, product?.variantSize, product?.sku || 'Onbekende SKU'].filter(Boolean).join(' · ');
   }
 
   supplierName(product: Product | null): string | null {
