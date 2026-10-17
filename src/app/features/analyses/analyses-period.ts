@@ -119,11 +119,15 @@ export function periodParams(choice: PeriodChoice, keys: PeriodKeys): Record<str
   return { [keys.preset]: null, [keys.from]: choice.from || null, [keys.to]: choice.to || null };
 }
 
-/** The Inkoop part from ?deel, with ?orderId meaning Afwijkingen. */
+/**
+ * The Inkoop part from ?deel; without one, ?orderId means Afwijkingen (today's
+ * deep link from a purchase order). An explicit part wins: the order focus
+ * stays while he looks at another part, which simply ignores it.
+ */
 export function parsePart(get: (key: string) => string | null): InkoopPart {
-  if (parseOrderId(get) !== null) return 'afwijkingen';
   const part = get('deel');
-  return part && (INKOOP_PARTS as readonly string[]).includes(part) ? part as InkoopPart : 'kosten';
+  if (part && (INKOOP_PARTS as readonly string[]).includes(part)) return part as InkoopPart;
+  return parseOrderId(get) !== null ? 'afwijkingen' : 'kosten';
 }
 
 export function partParams(part: InkoopPart): { deel: string | null } {

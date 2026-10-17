@@ -1,7 +1,6 @@
 import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, effect, inject, signal, afterRenderEffect, ElementRef, untracked, viewChild } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
@@ -22,7 +21,6 @@ import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
-import { DateField } from '../../shared/date-field';
 import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
@@ -63,9 +61,17 @@ import { AnVisitorsRow } from './analyses-visitors-row';
 import { LoadError } from '../../shared/load-error';
 import { AnHow, HOW_TEXTS } from './analyses-how';
 import { AnPeriodPicker, AnPeriodSheet } from './analyses-period-picker';
-import { DEFAULT_PERIOD, SALES_PERIOD_KEYS, parsePeriod, periodLabel, periodParams, periodRange, samePeriod, yearStart } from './analyses-period';
+import {
+  DEFAULT_PERIOD, RECEIPT_PERIOD_KEYS, SALES_PERIOD_KEYS, parseOrderId, parsePart, parsePeriod, parseReceiptPeriod, parseSupplier, partParams,
+  periodLabel, periodParams, periodRange, samePeriod, yearStart,
+} from './analyses-period';
+import type { InkoopPart } from './analyses-period';
+import { Segmented } from '../../shared/segmented';
+import type { SegmentOption } from '../../shared/segmented';
+import { scrollBehavior } from '../../shared/motion';
+import type { PartnerFinancingRow } from './analysis-metrics';
 import type { PeriodChoice } from './analyses-period';
-import { advanceTermsSub, dollarValue, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
+import { advanceTermsSub, dayMonth, dollarValue, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
 
 type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -128,15 +134,17 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
 };
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
 /** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
-const LEGACY_BODIES = new Set<AnalysisSection>(['sales', 'inventory', 'purchasing', 'result', 'market', 'website']);
+const LEGACY_BODIES = new Set<AnalysisSection>(['sales', 'inventory', 'result', 'market', 'website']);
 /** The phone ⋯ sheet: the links the desk shows in the tool row. */
 const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
   sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
   inventory: [{ label: 'Jaarinventaris', url: '/stock/inventaris', icon: 'stock' }],
-  purchasing: [{ label: 'Kosten & bank', url: '/costs', icon: 'bank' }],
   result: [{ label: 'Alle kosten', url: '/costs', icon: 'receipt' }],
 };
-type PageSheet = 'period' | 'how' | 'menu' | null;
+type PageSheet = 'period' | 'receipt' | 'partner' | 'value' | 'how' | 'menu' | null;
+const RECEIPT_PERIOD_NOTE = 'Geldt voor Kwaliteit en Afwijkingen. Een order telt op zijn ontvangstdatum.';
+const PART_LABELS: Record<InkoopPart, string> = { kosten: 'Containerkost', kwaliteit: 'Kwaliteit', partners: 'Partners', afwijkingen: 'Afwijkingen' };
+const PART_PHONE: Record<InkoopPart, string> = { kosten: 'Kosten', kwaliteit: 'Kwaliteit', partners: 'Partners', afwijkingen: 'Afwijkingen' };
 
 /** One "Aandacht" row of Overzicht. */
 interface AttentionRow {
@@ -169,13 +177,11 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   providers: [CashState],
   /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
   encapsulation: ViewEncapsulation.None,
-  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-legacy.scss'],
+  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-legacy.scss'],
   host: { '(document:visibilitychange)': 'visible()' },
-  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Sheet, Skeleton,
-    FormsModule,
+  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
     PageHeader,
-    DateField,
     DateNlPipe,
     EurPipe,
     NumPipe,
@@ -248,6 +254,60 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                                (picked)="setSalesPeriod($event); sheet.set(null)" (changed)="setSalesPeriod($event)" />
         </app-sheet>
       }
+      @case ('receipt') {
+        <app-sheet title="Periode" variant="ios" (closed)="sheet.set(null)">
+          <app-an-period-sheet body [value]="receiptPeriod()" [today]="today()" [note]="receiptNote"
+                               (picked)="setReceiptPeriod($event); sheet.set(null)" (changed)="setReceiptPeriod($event)" />
+        </app-sheet>
+      }
+      @case ('partner') {
+        @if (partnerSheetRow(); as row) {
+          <app-sheet [title]="partnerName(row)" variant="ios" (closed)="sheet.set(null)">
+            <div body class="an-sheet-body">
+              <div class="ios-group">
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Partner</span></span><span class="ios-cell__value">{{ row.partnerName }}@if (row.sharePct !== null) { · {{ row.sharePct | num }} % }</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Externe kost</span><span class="ios-cell__sub">{{ row.costFinalized ? 'definitief' : 'verwacht' }}</span></span><span class="ios-cell__value">{{ whole(row.landedEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Ontvangen</span><span class="ios-cell__sub">incl. btw</span></span><span class="ios-cell__value">{{ whole(row.receivedEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Voorschot gefactureerd</span><span class="ios-cell__sub">excl. btw</span></span><span class="ios-cell__value">{{ whole(row.invoicedEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Gecrediteerd</span></span><span class="ios-cell__value">{{ whole(row.creditedEur) }}</span></div>
+                <a class="ios-cell" [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }" (click)="sheet.set(null)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Te factureren</span>
+                    <span class="ios-cell__sub">{{ row.unbilledAdvanceCount ? plural(row.unbilledAdvanceCount, 'termijn', 'termijnen') : 'geen termijnen' }}@if (row.nextAdvanceDueDate) { · volgende {{ dayText(row.nextAdvanceDueDate) }} } · naar betalingen</span></span>
+                  <span class="ios-cell__value" [class.is-danger]="row.overdueUnbilledAdvanceEur > 0">{{ whole(row.unbilledAdvanceEur) }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Open</span><span class="ios-cell__sub">incl. btw</span></span><span class="ios-cell__value" [class.is-warn]="row.openEur > 0">{{ whole(row.openEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Eigen kasinleg</span></span><span class="ios-cell__value">{{ whole(row.ownExposureEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Resultaat</span><span class="ios-cell__sub">{{ partnerState(row) }}</span></span><span class="ios-cell__value" [class.is-danger]="row.resultEur < 0">{{ whole(row.resultEur) }}</span></div>
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Credit</span></span><span class="ios-cell__value">{{ whole(row.creditEur) }}</span></div>
+              </div>
+              <div class="ios-section">
+                <div class="ios-section__head"><h3 class="ios-section__title">Documenten</h3></div>
+                <div class="ios-group">
+                  @for (doc of row.documents; track doc.id) {
+                    <a class="ios-cell" [routerLink]="['/sales', doc.id, 'edit']" (click)="sheet.set(null)"><span class="ios-cell__body"><span class="ios-cell__title">{{ doc.number }}</span><span class="ios-cell__sub">{{ documentKind(doc) }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+                  } @empty { <div class="ios-cell"><span class="ios-cell__sub">Geen documenten</span></div> }
+                </div>
+              </div>
+              <a class="ios-capsule ios-capsule--accent ios-capsule--block" [routerLink]="['/purchasing', row.purchaseOrderId]" (click)="sheet.set(null)">Inkooporder openen</a>
+            </div>
+          </app-sheet>
+        }
+      }
+      @case ('value') {
+        @if (valueSheetRow(); as row) {
+          <app-sheet title="Waarde per stuk" variant="ios" (closed)="sheet.set(null)">
+            <div body class="an-sheet-body">
+              <p class="ios-caption an-value-sheet__what">{{ productLabel(row) }} · {{ containerOf(row.orderId, row.orderNumber, row.orderAlias) }}</p>
+              <div class="ios-group"><label class="ios-cell an-value-cell"><span class="ios-cell__body"><span class="ios-cell__title">Waarde per stuk</span></span>
+                <span class="an-money an-money--ios"><span aria-hidden="true">€</span><input type="text" inputmode="decimal" autocomplete="off" [value]="draftValue(row)" [disabled]="savingValue() === valueKey(row)"
+                  (input)="setDraftValue(row, $any($event.target).value)" (keydown.enter)="saveValue(row)" /></span></label></div>
+              <p class="ios-section__foot" [class.is-warn]="row.receiptUnitValueEur === null">{{ valueHint(row) }}</p>
+            </div>
+            <div foot class="an-sheet-foot">
+              <button class="btn btn--primary" type="button" [attr.aria-label]="'Bewaar waarde per stuk voor ' + productLabel(row)" [disabled]="!canSaveValue(row)" (click)="saveValue(row)">{{ savingValue() === valueKey(row) ? 'Bewaren…' : 'Bewaren' }}</button>
+            </div>
+          </app-sheet>
+        }
+      }
       @case ('how') {
         <app-sheet title="Hoe gerekend" variant="ios" (closed)="sheet.set(null)">
           <div body class="an-sheet-text">@for (line of howLines(); track $index) { <p>{{ line }}</p> }</div>
@@ -286,7 +346,13 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             <div class="an-bar__end"><app-an-how [lines]="how.inventory" /><a class="wk-btn" routerLink="/stock/inventaris">Jaarinventaris ›</a></div></div>
         }
         @case ('purchasing') {
-          <div class="an-bar"><div class="an-bar__end"><app-an-how [lines]="purchasingHow" /><a class="wk-btn" routerLink="/costs">Kosten &amp; bank ›</a></div></div>
+          <div class="an-bar">
+            <app-segmented label="Deel" semantics="tabs" [options]="partOptions()" [value]="part()" (changed)="setPart($any($event))" />
+            <div class="an-bar__end"><app-an-how [lines]="howLines()" />
+              @if (part() === 'kosten') { <a class="wk-btn" routerLink="/costs">Kosten &amp; bank ›</a> }
+              @if (part() === 'partners') { <a class="wk-btn" routerLink="/sales">Verkooporders ›</a> }
+            </div>
+          </div>
         }
         @case ('result') {
           <div class="an-bar">
@@ -302,6 +368,11 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @case ('result') { <ng-container *ngTemplateOutlet="phonePeriod; context: { $implicit: ' · alles excl. btw' }" /> }
         @case ('inventory') {
           <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo over 90 dagen</span></div>
+        }
+        @case ('purchasing') {
+          <div class="an-bar an-bar--seg">
+            <app-segmented class="an-parts" variant="ios" label="Deel" semantics="tabs" [options]="partOptionsPhone()" [value]="part()" (changed)="setPart($any($event))" />
+          </div>
         }
       }
       }
@@ -783,233 +854,263 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'purchasing') {
-      <app-container-cost-analysis [purchases]="purchases()" [loading]="loading()" />
-      <section class="analysis-section purchase-summary" aria-labelledby="purchase-summary-title">
-        <header class="section-copy">
-          <span class="eyebrow">Inkoopanalyse</span>
-          <h2 id="purchase-summary-title">Onderweg en ontvangen kwaliteit</h2>
-          <p>Actuele containerwaarde plus blijvend geregistreerde tekorten en schade.</p>
-        </header>
-        <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Inkoop onderweg</span><strong>{{ incomingValue() | eur: 0 }}</strong><p>{{ incomingPieces() | num }} stuks in {{ incomingOrders().length }} order(s)</p></article>
-          <article class="card metric-card metric-card--quality"><span class="metric-card__label">Perfect ontvangen</span><strong>{{ supplierPerformance().perfectPct === null ? '—' : (supplierPerformance().perfectPct | pct: 1) }}</strong><p>{{ supplierPerformance().perfectOrders }} van {{ supplierPerformance().comparableOrders }} vergelijkbare orders</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Op tijd</span><strong>{{ supplierPerformance().onTimePct === null ? '—' : (supplierPerformance().onTimePct | pct: 0) }}</strong><p>{{ supplierPerformance().onTimeOrders }} van {{ supplierPerformance().datedOrders }} ontvangsten tegen de laatst opgeslagen ETA</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Doorlooptijd</span><strong>{{ leadDays() === null ? '—' : leadDays() + ' dagen' }}</strong><p>Van bestelling tot ontvangst, gemiddeld over de gefilterde orders</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Bekende verliesimpact</span><strong>{{ report().totals.totalLossValueEur | eur: 0 }}</strong><p>{{ report().totals.missingPieces + report().totals.damagedPieces | num }} afwijkende stuks</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Zonder waarde</span><strong>{{ report().totals.unvaluedLossPieces | num }} st</strong><p>Vul de ontvangstwaarde in om de impact compleet te maken</p></article>
-        </div>
-
-        <article class="card analysis-list scorecard-card">
-          <header><div><span>Leveranciers</span><h3>Scorekaart per leverancier</h3></div><small>ontvangen orders in de gekozen periode</small></header>
-          @if (supplierCards().length) {
-            <div class="scorecard-scroll">
-              <table class="scorecard">
-                <thead><tr><th>Leverancier</th><th>Orders</th><th>Waarde</th><th>Perfect</th><th>Op tijd</th><th>Doorlooptijd</th><th>Laatste ontvangst</th></tr></thead>
-                <tbody>
-                  @for (card of supplierCards(); track card.supplierId) {
-                    <tr>
-                      <td data-label="Leverancier"><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
-                      <td data-label="Orders">{{ card.orders }}</td>
-                      <td data-label="Waarde">{{ card.totalEur | eur: 0 }}</td>
-                      <td data-label="Perfect" [class.scorecard__warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
-                      <td data-label="Op tijd" [class.scorecard__warn]="card.onTimePct !== null && card.onTimePct < 80">{{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</td>
-                      <td data-label="Doorlooptijd">{{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }}</td>
-                      <td data-label="Laatste ontvangst">{{ card.latestReceivedOn | dateNl }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          } @else {
-            <p class="list-empty">Nog geen ontvangen orders in deze periode.</p>
-          }
-        </article>
-
-        <header class="section-copy section-copy--sub">
-          <span class="eyebrow">Partnercontainers</span>
-          <h2>Zelf betaald of met een partner</h2>
-          <p>De partner financiert de afgesproken kosten vooraf of samen met ons. Elke termijn krijgt een eigen voorschotfactuur. Het resultaat volgt uit uitgegeven deel- en slotafrekeningen, naar de werkelijk afgerekende hoeveelheden.</p>
-        </header>
-        <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark"><span class="metric-card__label">Kosten partnercontainers</span><strong>{{ financing().partner.landedEur | eur: 0 }}</strong><p>{{ financing().partner.count }} containers · werkelijke kosten en nog open verplichtingen</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Afgesproken voorfinanciering</span><strong>{{ financing().committedAdvanceEur | eur: 0 }}</strong><p>{{ financing().invoicedEur | eur: 0 }} voorschot gefactureerd · excl. btw</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().overdueUnbilledAdvanceEur > 0"><span class="metric-card__label">Voorschotten nog factureren</span><strong>{{ financing().unbilledAdvanceEur | eur: 0 }}</strong><p>{{ financing().unbilledAdvanceCount }} geplande termijnen · excl. btw@if (financing().overdueUnbilledAdvanceEur > 0) { · {{ financing().overdueUnbilledAdvanceEur | eur: 0 }} met vervaldatum bereikt }</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Netto van partners ontvangen</span><strong>{{ financing().receivedEur | eur: 0 }}</strong><p>ontvangsten min terugbetalingen · incl. btw</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Nog te ontvangen</span><strong>{{ financing().openEur | eur: 0 }}</strong><p>resterende uitgegeven facturen, na deelbetalingen · incl. btw</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Eigen kasinleg</span><strong>{{ financing().ownExposureEur | eur: 0 }}</strong><p>betaalde containerkosten min ontvangen partnergeld, minimaal nul</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().resultEur < 0"><span class="metric-card__label">Gerealiseerd partnerresultaat</span><strong>{{ financing().resultEur | eur: 0 }}</strong><p>uitgegeven deel- en slotafrekeningen · voorschotten tellen niet als winst</p></article>
-          <article class="card metric-card"><span class="metric-card__label">Credit voor partners</span><strong>{{ financing().creditEur | eur: 0 }}</strong><p>tegoeden op creditnota\u2019s en afrekeningen, te verrekenen of terug te betalen</p></article>
-          <article class="card metric-card" [class.metric-card--danger]="financing().awaitingSettlement > 0"><span class="metric-card__label">Nog af te rekenen</span><strong>{{ financing().awaitingSettlement }}</strong><p>partnercontainer{{ financing().awaitingSettlement === 1 ? '' : 's' }} ontvangen, veilingoverzicht nog niet afgerekend</p></article>
-        </div>
-        <article class="card analysis-list scorecard-card">
-          <header><div><span>Partners</span><h3>Per partnercontainer</h3></div><small>{{ financing().rows.length }} container{{ financing().rows.length === 1 ? '' : 's' }}</small></header>
-          @if (financing().rows.length) {
-            <div class="scorecard-scroll">
-              <table class="scorecard">
-                <thead><tr><th>Container</th><th>Partner</th><th>Externe kost</th><th>Ontvangen</th><th>Open / eigen kas</th><th>Resultaat</th><th>Documenten</th></tr></thead>
-                <tbody>
-                  @for (row of financing().rows; track row.purchaseOrderId) {
-                    <tr>
-                      <td data-label="Container"><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ row.alias || row.number }}</a>@if (row.alias) { <small class="muted"> {{ row.number }}</small> }</td>
-                      <td data-label="Partner">{{ row.partnerName }}@if (row.sharePct !== null) { <small class="muted"> · {{ row.sharePct | num }} %</small> }</td>
-                      <td data-label="Externe kost">{{ row.landedEur | eur: 0 }}<small class="muted"> {{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
-                      <td data-label="Ontvangen">{{ row.receivedEur | eur: 0 }}<small class="muted"> {{ row.invoicedEur | eur: 0 }} voorschot gefactureerd excl. btw</small>@if (row.creditedEur) { <small class="muted"> {{ row.creditedEur | eur: 0 }} gecrediteerd</small> }@if (row.unbilledAdvanceCount) { <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }">{{ row.unbilledAdvanceCount }} termijnen factureren · {{ row.unbilledAdvanceEur | eur: 0 }}</a>@if (row.nextAdvanceDueDate) { <small class="muted">volgende vervaldatum {{ row.nextAdvanceDueDate | dateNl }}</small> } }</td>
-                      <td data-label="Open / eigen kas" [class.scorecard__warn]="row.openEur > 0">{{ row.openEur | eur: 0 }} open<small class="muted"> {{ row.ownExposureEur | eur: 0 }} eigen kasinleg</small></td>
-                      <td data-label="Resultaat" [class.scorecard__warn]="row.resultEur < 0">{{ row.resultEur | eur: 0 }}<small class="muted"> {{ row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? (row.remainingQuantity | num) + ' stuks resteren' : 'afrekening nog uitgeven' }}</small>@if (row.creditEur) { <small class="muted"> {{ row.creditEur | eur: 0 }} credit</small> }</td>
-                      <td data-label="Documenten">@for (doc of row.documents; track doc.id; let last = $last) {<a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small class="muted"> {{ doc.docType === 'CREDITNOTA' ? (doc.status === 'CONCEPT' ? 'creditnota · concept' : 'creditnota') : doc.status === 'CONCEPT' ? 'concept' : doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot' }}</small>{{ last ? '' : ' · ' }}}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          } @else {
-            <p class="list-empty">Nog geen container met een partner: alles betalen we zelf.</p>
-          }
-        </article>
-      </section>
-
-      <section class="analysis-section receipt-section" aria-labelledby="receipt-analysis-title">
-        <header class="section-copy section-copy--receipt">
-          <div>
-            <span class="eyebrow">Inkoopcontrole</span>
-            <h2 id="receipt-analysis-title">Ontvangstafwijkingen</h2>
-            <p>Tekorten en schade blijven hier staan, ook nadat de container is afgerond.</p>
-          </div>
-          @if (focusedOrderId() !== null) {
-            <button class="btn btn--sm" type="button" (click)="clearOrderFocus()">Alle orders tonen</button>
-          }
-        </header>
-
-        <form class="card receipt-filters" (submit)="$event.preventDefault(); applyFilters()">
-          <label>
-            <span>Van</span>
-            <app-date-field fieldId="analysis-from" [value]="fromDate()"
-                            (valueChange)="fromDate.set($event)" />
-          </label>
-          <label>
-            <span>Tot en met</span>
-            <app-date-field fieldId="analysis-to" [value]="toDate()"
-                            (valueChange)="toDate.set($event)" />
-          </label>
-          <label>
-            <span>Leverancier</span>
-            <select class="input" [ngModel]="supplierId() ?? ''" name="supplier"
-                    (ngModelChange)="changeSupplier($event)">
-              <option value="">Alle leveranciers</option>
-              @for (supplier of suppliers(); track supplier.id) {
-                <option [value]="supplier.id">{{ supplier.name }}</option>
-              }
-            </select>
-          </label>
-          <div class="receipt-filters__actions">
-            <button class="btn" type="button" (click)="showAllTime()">Alle jaren</button>
-            <button class="btn btn--primary" type="submit" [disabled]="filtering()">
-              {{ filtering() ? 'Laden…' : 'Toepassen' }}
-            </button>
-          </div>
-        </form>
-
-        @if (receiptError()) {
-          <div class="card receipt-error" role="alert">
-            <div><b>Ontvangstafwijkingen niet beschikbaar</b><p>{{ receiptError() }}</p></div>
-            <button class="btn btn--sm" type="button" (click)="loadVariances()">Opnieuw</button>
-          </div>
-        } @else {
-          <div class="receipt-totals" aria-label="Samenvatting ontvangstafwijkingen">
-            <article class="card receipt-total receipt-total--loss">
-              <span>Inkoopimpact</span>
-              <strong>{{ report().totals.totalLossValueEur | eur: 0 }}</strong>
-              <small>{{ report().totals.affectedOrders }} order(s) · {{ report().totals.affectedLines }} regels</small>
-            </article>
-            <article class="card receipt-total">
-              <span>Ontbreekt</span>
-              <strong>{{ report().totals.missingPieces | num }} st</strong>
-              <small>{{ report().totals.missingValueEur | eur: 0 }}</small>
-            </article>
-            <article class="card receipt-total">
-              <span>Beschadigd</span>
-              <strong>{{ report().totals.damagedPieces | num }} st</strong>
-              <small>{{ report().totals.damagedValueEur | eur: 0 }}</small>
-            </article>
-            <article class="card receipt-total" [class.receipt-total--warn]="!report().totals.valuationComplete">
-              <span>Zonder waarde</span>
-              <strong>{{ report().totals.unvaluedLossPieces | num }} st</strong>
-              <small>{{ report().totals.valuationComplete ? 'Alles gewaardeerd' : 'Vul waarde per stuk aan' }}</small>
-            </article>
-          </div>
-
-          @if (!report().totals.valuationComplete) {
-            <div class="valuation-note" role="status">
-              De bekende waarde is {{ report().totals.totalLossValueEur | eur: 0 }}.
-              {{ report().totals.unvaluedLossPieces | num }} afwijkende stuks tellen pas mee zodra hun ontvangstwaarde is ingevuld.
-            </div>
-          }
-
-          <div class="variance-list">
-            @for (group of varianceGroups(); track group.orderId) {
-              <article class="card variance-order">
-                <header class="variance-order__head">
-                  <a [routerLink]="['/purchasing', group.orderId]">
-                    <span>{{ group.supplierName }}</span>
-                    <strong>{{ group.orderAlias || group.orderNumber }}</strong>
-                    <small>{{ group.orderNumber }} · ontvangen {{ group.receivedOn | dateNl }}</small>
-                  </a>
-                  <span class="variance-order__value">
-                    <b>{{ group.totalLossValueEur | eur: 0 }}</b>
-                    @if (group.unvaluedLossPieces) { <small>+ {{ group.unvaluedLossPieces }} st onbekend</small> }
-                    <a [routerLink]="['/purchasing', group.orderId]">Open order ›</a>
-                  </span>
-                </header>
-
-                <div class="variance-lines">
-                  @for (row of group.rows; track row.lineId ?? row.productId) {
-                    <div class="variance-line">
-                      <div class="variance-line__product">
-                        <strong>{{ row.productName }}</strong>
-                        <span>{{ row.productSku || 'Geen SKU' }} · {{ row.usablePieces | num }} bruikbaar van {{ row.orderedPieces | num }}</span>
-                        <div class="variance-line__chips">
-                          @if (row.missingPieces) { <span>{{ row.missingPieces | num }} ontbreekt</span> }
-                          @if (row.damagedPieces) { <span>{{ row.damagedPieces | num }} beschadigd</span> }
-                          @if (row.overReceivedPieces) { <span class="ok">+{{ row.overReceivedPieces | num }} extra</span> }
-                        </div>
-                      </div>
-                      <div class="variance-line__impact">
-                        <span>Impact</span>
-                        <b>{{ row.totalLossValueEur === null ? 'Onbekend' : (row.totalLossValueEur | eur: 2) }}</b>
-                      </div>
-                      <div class="variance-line__valuation">
-                        <label [attr.for]="valueInputId(row)">Inkoopwaarde per stuk</label>
-                        <div class="value-edit">
-                          <span>€</span>
-                          <input class="input num" [id]="valueInputId(row)" type="number" min="0" step="0.0001"
-                                 inputmode="decimal" [disabled]="row.lineId === null || savingValue() === valueKey(row)"
-                                 [ngModel]="draftValue(row)" [ngModelOptions]="{ standalone: true }"
-                                 (ngModelChange)="setDraftValue(row, $event)" />
-                          <button class="btn btn--sm" type="button"
-                                  [attr.aria-label]="'Bewaar inkoopwaarde voor ' + row.productName"
-                                  [disabled]="row.lineId === null || savingValue() === valueKey(row)"
-                                  (click)="saveValue(row)">
-                            {{ savingValue() === valueKey(row) ? '…' : 'Bewaar' }}
-                          </button>
-                        </div>
-                        @if (row.lineId === null) { <small>Historische regel zonder regelnummer</small> }
-                      </div>
-                    </div>
-                  }
-                </div>
-              </article>
-            } @empty {
-              <div class="card receipt-empty">
-                <span aria-hidden="true">✓</span>
-                <div><b>Geen afwijkingen in deze selectie</b>
-                  <p>Er zijn geen ontbrekende of beschadigde stuks gevonden.</p></div>
+        @switch (part()) {
+          @case ('kosten') { <app-container-cost-analysis [purchases]="purchases()" [loading]="loading()" /> }
+          @case ('kwaliteit') {
+            <ng-container *ngTemplateOutlet="receiptBar; context: { $implicit: false }" />
+            @if (loading()) {
+              <div class="an-kpis an-kpis--6" aria-label="Kwaliteit laden">@for (n of [1, 2, 3, 4, 5, 6]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+            } @else {
+              @let perf = supplierPerformance();
+              @let q = qualityReport().totals;
+              <div class="an-kpis an-kpis--6">
+                <div class="an-kpi"><span class="an-kpi__label">Besteld en onderweg</span><span class="an-kpi__value">{{ whole(incomingValue()) }}</span>
+                  <span class="an-kpi__sub">{{ incomingPieces() | num }} st in {{ plural(incomingOrders().length, 'order', 'orders') }} · externe kost</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Perfect ontvangen</span><span class="an-kpi__value">{{ perf.perfectPct === null ? '—' : (perf.perfectPct | pct: 1) }}</span>
+                  <span class="an-kpi__sub">{{ perf.perfectOrders }} van {{ plural(perf.comparableOrders, 'vergelijkbare order', 'vergelijkbare orders') }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Op tijd</span><span class="an-kpi__value">{{ perf.onTimePct === null ? '—' : (perf.onTimePct | pct: 0) }}</span>
+                  <span class="an-kpi__sub">{{ perf.onTimeOrders }} van {{ plural(perf.datedOrders, 'ontvangst', 'ontvangsten') }} tegen de laatst opgeslagen ETA</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Doorlooptijd</span><span class="an-kpi__value">{{ leadDays() === null ? '—' : plural(leadDays()!, 'dag', 'dagen') }}</span>
+                  <span class="an-kpi__sub">van bestelling tot ontvangst, gemiddeld</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">{{ whole(q.totalLossValueEur) }}</span>
+                  <span class="an-kpi__sub">{{ q.missingPieces + q.damagedPieces | num }} afwijkende stuks</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="q.unvaluedLossPieces ? 'warn' : null">{{ q.unvaluedLossPieces | num }} st</span>
+                  <span class="an-kpi__sub">{{ q.valuationComplete ? 'alles gewaardeerd' : 'Vul de ontvangstwaarde in om de impact compleet te maken' }}</span><span class="an-kpi__foot"></span></div>
               </div>
+              <section class="an-card" aria-labelledby="an-score-title">
+                <header class="an-card__head"><h2 class="an-card__title" id="an-score-title">Scorekaart per leverancier</h2><span class="an-card__trail">ontvangen orders in de gekozen periode</span></header>
+                @if (!supplierCards().length) { <p class="an-empty">Nog geen ontvangen orders in deze periode.</p> }
+                @else if (desk.active()) {
+                  <div class="an-table-wrap" tabindex="0" role="region" aria-label="Scorekaart per leverancier">
+                    <table class="an-table">
+                      <thead><tr><th>Leverancier</th><th>Orders</th><th>Waarde</th><th>Perfect</th><th>Op tijd</th><th>Doorlooptijd</th><th>Laatste ontvangst</th></tr></thead>
+                      <tbody>
+                        @for (card of supplierCards(); track card.supplierId) {
+                          <tr>
+                            <td><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
+                            <td>{{ plural(card.orders, 'order', 'orders') }}</td>
+                            <td>{{ whole(card.totalEur) }}</td>
+                            <td [class.is-warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
+                            <td [class.is-warn]="card.onTimePct !== null && card.onTimePct < 80">{{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</td>
+                            <td>{{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }}</td>
+                            <td>{{ dayText(card.latestReceivedOn) }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <div class="an-card__body">
+                    @for (card of supplierCards(); track card.supplierId) {
+                      <a class="an-row an-row--nolead an-row--chev" [routerLink]="['/suppliers', card.supplierId]">
+                        <span class="an-row__body"><span class="an-row__title">{{ card.name }}</span>
+                          <span class="an-row__sub">{{ plural(card.orders, 'order', 'orders') }} · {{ whole(card.totalEur) }} · {{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }} · laatst {{ dayText(card.latestReceivedOn) }}</span></span>
+                        <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="card.perfectPct !== null && card.perfectPct < 80 ? 'warn' : null">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</span>
+                          <span class="an-row__meta" [attr.data-tone]="card.onTimePct !== null && card.onTimePct < 80 ? 'warn' : null">op tijd {{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</span></span>
+                        <span class="an-row__chev" aria-hidden="true">›</span>
+                      </a>
+                    }
+                  </div>
+                }
+              </section>
             }
-          </div>
+          }
+          @case ('partners') {
+            @if (loading()) {
+              <div class="an-kpis an-kpis--3" aria-label="Partners laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+            } @else {
+              @let f = financing();
+              <div class="an-kpis an-kpis--3">
+                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Kosten partnercontainers' : 'Containerkosten' }}</span><span class="an-kpi__value">{{ whole(f.partner.landedEur) }}</span>
+                  <span class="an-kpi__sub">{{ plural(f.partner.count, 'container', 'containers') }}{{ desk.active() ? ' · werkelijke kosten en nog open verplichtingen' : '' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Afgesproken voorfinanciering' : 'Voorfinanciering' }}</span><span class="an-kpi__value">{{ whole(f.committedAdvanceEur) }}</span>
+                  <span class="an-kpi__sub">excl. btw</span><span class="an-kpi__foot">{{ whole(f.invoicedEur) }} voorschot gefactureerd</span></div>
+                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Voorschotten nog factureren' : 'Nog factureren' }}</span>
+                  <span class="an-kpi__value" [attr.data-tone]="f.overdueUnbilledAdvanceEur > 0 ? 'danger' : null">{{ whole(f.unbilledAdvanceEur) }}</span>
+                  <span class="an-kpi__sub">excl. btw · {{ plural(f.unbilledAdvanceCount, 'geplande termijn', 'geplande termijnen') }}</span>
+                  <span class="an-kpi__foot" [class.is-warn]="f.overdueUnbilledAdvanceEur > 0">{{ f.overdueUnbilledAdvanceEur > 0 ? whole(f.overdueUnbilledAdvanceEur) + ' met vervaldatum bereikt' : nextAdvanceDue() ? 'volgende vervaldatum ' + dayText(nextAdvanceDue()) : '' }}</span></div>
+                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Netto van partners ontvangen' : 'Netto ontvangen' }}</span><span class="an-kpi__value">{{ whole(f.receivedEur) }}</span>
+                  <span class="an-kpi__sub">incl. btw{{ desk.active() ? ' · ontvangsten min terugbetalingen' : '' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Nog te ontvangen</span><span class="an-kpi__value">{{ whole(f.openEur) }}</span>
+                  <span class="an-kpi__sub">incl. btw{{ desk.active() ? ' · open uitgegeven facturen, na deelbetalingen' : '' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Eigen kasinleg</span><span class="an-kpi__value">{{ whole(f.ownExposureEur) }}</span>
+                  <span class="an-kpi__sub">{{ desk.active() ? 'betaalde containerkosten min ontvangen partnergeld' : 'betaald min partnergeld' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Gerealiseerd partnerresultaat' : 'Partnerresultaat' }}</span>
+                  <span class="an-kpi__value" [attr.data-tone]="f.resultEur < 0 ? 'danger' : null">{{ whole(f.resultEur) }}</span>
+                  <span class="an-kpi__sub">{{ desk.active() ? 'uit deel- en slotafrekeningen; voorschotten zijn geen winst' : 'uit afrekeningen' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Credit voor partners</span><span class="an-kpi__value">{{ whole(f.creditEur) }}</span>
+                  <span class="an-kpi__sub">{{ desk.active() ? 'op creditnota’s en afrekeningen, te verrekenen of terug te betalen' : 'te verrekenen of terug te betalen' }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Nog af te rekenen</span>
+                  <span class="an-kpi__value" [attr.data-tone]="f.awaitingSettlement > 0 ? 'warn' : null">{{ f.awaitingSettlement }} <small>{{ f.awaitingSettlement === 1 ? 'container' : 'containers' }}</small></span>
+                  <span class="an-kpi__sub">{{ desk.active() ? 'ontvangen, veilingoverzicht nog niet afgerekend' : 'veilingoverzicht wacht' }}</span><span class="an-kpi__foot"></span></div>
+              </div>
+              <section class="an-card" aria-labelledby="an-partner-title">
+                <header class="an-card__head"><h2 class="an-card__title" id="an-partner-title">Per partnercontainer</h2><span class="an-card__trail">{{ plural(f.rows.length, 'container', 'containers') }}</span></header>
+                @if (!f.rows.length) { <p class="an-empty">Nog geen container met een partner: alles betalen we zelf.</p> }
+                @else if (desk.active()) {
+                  <div class="an-table-wrap" tabindex="0" role="region" aria-label="Per partnercontainer">
+                    <table class="an-table an-ptable" data-detail>
+                      <thead><tr><th>Container</th><th>Externe kost</th><th>Ontvangen</th><th>Te factureren</th><th>Open</th><th>Eigen kas</th><th>Resultaat</th><th class="an-col-docs">Documenten</th></tr></thead>
+                      <tbody>
+                        @for (row of f.rows; track row.purchaseOrderId) {
+                          <tr>
+                            <td><a [routerLink]="['/purchasing', row.purchaseOrderId]">{{ partnerName(row) }}</a>
+                              <small>@if (row.alias) { {{ row.number }} · }{{ row.partnerName }}@if (row.sharePct !== null) { · {{ row.sharePct | num }}&nbsp;% }</small>
+                              <span class="an-docs an-docs--inline"><ng-container *ngTemplateOutlet="partnerDocs; context: { $implicit: row }" /></span></td>
+                            <td>{{ whole(row.landedEur) }}<small>{{ row.costFinalized ? 'definitief' : 'verwacht' }}</small></td>
+                            <td>{{ whole(row.receivedEur) }}<small>gefactureerd {{ whole(row.invoicedEur) }}</small>@if (row.creditedEur) { <small>{{ whole(row.creditedEur) }} gecrediteerd</small> }</td>
+                            <td>@if (row.unbilledAdvanceCount) {
+                                <a [routerLink]="['/purchasing', row.purchaseOrderId]" [queryParams]="{ section: 'payments' }" [class.is-danger]="row.overdueUnbilledAdvanceEur > 0">{{ whole(row.unbilledAdvanceEur) }} ›</a>
+                                <small>{{ plural(row.unbilledAdvanceCount, 'termijn', 'termijnen') }}@if (row.nextAdvanceDueDate) { · volgende {{ dayText(row.nextAdvanceDueDate) }} }</small>
+                              } @else { — }</td>
+                            <td [class.is-warn]="row.openEur > 0">{{ whole(row.openEur) }}</td>
+                            <td>{{ whole(row.ownExposureEur) }}</td>
+                            <td [class.is-danger]="row.resultEur < 0">{{ whole(row.resultEur) }}<small>{{ partnerState(row) }}</small>@if (row.creditEur) { <small>{{ whole(row.creditEur) }} credit</small> }</td>
+                            <td class="an-col-docs"><span class="an-docs"><ng-container *ngTemplateOutlet="partnerDocs; context: { $implicit: row }" /></span></td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <div class="an-card__body">
+                    @for (row of f.rows; track row.purchaseOrderId) {
+                      <button class="an-row an-row--nolead an-row--chev" type="button" data-detail (click)="partnerSheetId.set(row.purchaseOrderId); sheet.set('partner')">
+                        <span class="an-row__body"><span class="an-row__title ios-cell__title--2">{{ partnerName(row) }}</span>
+                          <span class="an-row__sub">{{ row.partnerName }}@if (row.sharePct !== null) { · {{ row.sharePct | num }} % } · {{ whole(row.landedEur) }} {{ row.costFinalized ? 'definitief' : 'verwacht' }}</span></span>
+                        <span class="an-row__end">
+                          @if (row.unbilledAdvanceEur > 0) {
+                            <span class="an-row__value" [attr.data-tone]="row.overdueUnbilledAdvanceEur > 0 ? 'danger' : 'warn'">{{ whole(row.unbilledAdvanceEur) }}</span><span class="an-row__meta" data-tone="warn">te factureren</span>
+                          } @else {
+                            <span class="an-row__value">{{ whole(row.ownExposureEur) }}</span><span class="an-row__meta">eigen kas</span>
+                          }
+                        </span>
+                        <span class="an-row__chev" aria-hidden="true">›</span>
+                      </button>
+                    }
+                  </div>
+                }
+              </section>
+            }
+          }
+          @case ('afwijkingen') {
+            <ng-container *ngTemplateOutlet="receiptBar; context: { $implicit: true }" />
+            @if (receiptError()) {
+              <div [class]="desk.active() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
+                <span class="wk-banner__text"><b>Ontvangstafwijkingen niet beschikbaar.</b> {{ receiptError() }}</span>
+                <button [class]="desk.active() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" (click)="loadVariances()">Opnieuw</button>
+              </div>
+            } @else if (loading()) {
+              <div class="an-kpis" aria-label="Afwijkingen laden">@for (n of [1, 2, 3, 4]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+            } @else {
+              @let t = report().totals;
+              <div class="an-kpis" [attr.aria-busy]="filtering()">
+                <div class="an-kpi"><span class="an-kpi__label">Inkoopimpact</span><span class="an-kpi__value">{{ whole(t.totalLossValueEur) }}</span>
+                  <span class="an-kpi__sub">{{ plural(t.affectedOrders, 'order', 'orders') }} · {{ plural(t.affectedLines, 'regel', 'regels') }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Ontbreekt</span><span class="an-kpi__value">{{ t.missingPieces | num }} st</span>
+                  <span class="an-kpi__sub">{{ whole(t.missingValueEur) }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Beschadigd</span><span class="an-kpi__value">{{ t.damagedPieces | num }} st</span>
+                  <span class="an-kpi__sub">{{ whole(t.damagedValueEur) }}</span><span class="an-kpi__foot"></span></div>
+                <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="t.valuationComplete ? null : 'warn'">{{ t.unvaluedLossPieces | num }} st</span>
+                  <span class="an-kpi__sub">{{ t.valuationComplete ? 'alles gewaardeerd' : 'vul de waarde per stuk aan' }}</span><span class="an-kpi__foot"></span></div>
+              </div>
+              @if (!t.valuationComplete) {
+                <div [class]="desk.active() ? 'wk-banner wk-banner--warn wk-banner--inset' : 'ios-banner'" role="status"><span class="wk-banner__text">
+                  De bekende waarde is {{ whole(t.totalLossValueEur) }}.
+                  {{ t.unvaluedLossPieces | num }} afwijkende stuks tellen pas mee zodra hun ontvangstwaarde is ingevuld.</span></div>
+              }
+              @for (group of varianceGroups(); track group.orderId) {
+                <section class="an-card an-order" [id]="'an-order-' + group.orderId" [class.is-focus]="focusedOrderId() === group.orderId" [attr.aria-label]="containerOf(group.orderId, group.orderNumber, group.orderAlias)">
+                  <header class="an-card__head an-order__head">
+                    <a class="an-order__who" [routerLink]="['/purchasing', group.orderId]">
+                      <span class="an-order__supplier">{{ group.supplierName }}</span>
+                      <span class="an-order__name">{{ containerOf(group.orderId, group.orderNumber, group.orderAlias) }}</span>
+                      <span class="an-order__meta">@if (containerOf(group.orderId, group.orderNumber, group.orderAlias) !== group.orderNumber) { {{ group.orderNumber }} · }ontvangen {{ dayText(group.receivedOn) }}</span>
+                    </a>
+                    <span class="an-order__end"><b>{{ whole(group.totalLossValueEur) }}</b>
+                      @if (group.unvaluedLossPieces) { <small>+ {{ group.unvaluedLossPieces | num }} st onbekend</small> }
+                      <a class="an-link" [routerLink]="['/purchasing', group.orderId]">Open order ›</a></span>
+                  </header>
+                  <div class="an-card__body">
+                    @for (row of group.rows; track row.lineId ?? row.productId) {
+                      <div class="an-vline">
+                        <div class="an-vline__product">
+                          <b>{{ productLabel(row) }}</b>
+                          <span>{{ row.productSku || 'Geen SKU' }} · {{ row.usablePieces | num }} bruikbaar van {{ row.orderedPieces | num }}</span>
+                          <span class="an-row__chips">
+                            @if (row.missingPieces) { <span class="an-chip" data-tone="danger">{{ row.missingPieces | num }} ontbreekt</span> }
+                            @if (row.damagedPieces) { <span class="an-chip" data-tone="danger">{{ row.damagedPieces | num }} beschadigd</span> }
+                            @if (row.overReceivedPieces) { <span class="an-chip" data-tone="ok">+{{ row.overReceivedPieces | num }} extra</span> }
+                          </span>
+                        </div>
+                        <div class="an-vline__impact"><span>Impact</span><b>{{ row.totalLossValueEur === null ? 'Onbekend' : (row.totalLossValueEur | eur: 2) }}</b></div>
+                        @if (desk.active()) {
+                          <div class="an-vline__value">
+                            <label [attr.for]="valueInputId(row)">Waarde per stuk</label>
+                            <div class="an-money">
+                              <span aria-hidden="true">€</span>
+                              <input [id]="valueInputId(row)" type="text" inputmode="decimal" autocomplete="off" [disabled]="row.lineId === null || savingValue() === valueKey(row)"
+                                     [value]="draftValue(row)" (input)="setDraftValue(row, $any($event.target).value)" (keydown.enter)="saveValue(row)" />
+                              <button class="wk-btn wk-btn--sm" type="button" [attr.aria-label]="'Bewaar waarde per stuk voor ' + productLabel(row)"
+                                      [disabled]="!canSaveValue(row)" (click)="saveValue(row)">{{ savingValue() === valueKey(row) ? '…' : 'Bewaren' }}</button>
+                            </div>
+                            <small [class.is-warn]="row.lineId !== null && row.receiptUnitValueEur === null">{{ valueHint(row) }}</small>
+                          </div>
+                        } @else {
+                          <button class="an-vline__cell" type="button" [disabled]="row.lineId === null" (click)="openValueSheet(row)">
+                            <span>Waarde per stuk</span><b>{{ row.receiptUnitValueEur === null ? '—' : unitValue(row.receiptUnitValueEur) }}</b>
+                            <small [class.is-warn]="row.lineId !== null && row.receiptUnitValueEur === null">{{ valueHint(row) }}</small>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                </section>
+              } @empty {
+                <div class="an-card an-done">
+                  <span class="an-done__icon" aria-hidden="true">✓</span>
+                  <div><b>Geen afwijkingen in deze selectie</b><p>Er zijn geen ontbrekende of beschadigde stuks gevonden.</p></div>
+                </div>
+              }
+            }
+          }
         }
-      </section>
       }
       }
+    </ng-template>
+
+    <ng-template #receiptBar let-withChip>
+      @if (desk.active()) {
+        <div class="an-bar an-bar--sub">
+          <app-an-period [value]="receiptPeriod()" [today]="today()" [note]="receiptNote" idPrefix="an-receipt" (changed)="setReceiptPeriod($event)" />
+          <select class="an-select" aria-label="Leverancier" [value]="receiptSupplier() ?? ''" (change)="setSupplier($any($event.target).value)">
+            <option value="">Alle leveranciers</option>
+            @for (supplier of suppliers(); track supplier.id) { <option [value]="supplier.id" [selected]="supplier.id === receiptSupplier()">{{ supplier.name }}</option> }
+          </select>
+          <span class="an-bar__text">{{ receiptRangeText() }} · op ontvangstdatum</span>
+          @if (withChip && focusedOrderId() !== null) {
+            <button class="wk-chip is-on" type="button" [attr.aria-label]="'Alle orders tonen, niet alleen ' + focusName()" (click)="clearOrderFocus()">Alleen {{ focusName() }} <span aria-hidden="true">✕</span></button>
+          }
+        </div>
+      } @else {
+        <div class="an-bar an-bar--sub">
+          <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog" (click)="sheet.set('receipt')">
+            <app-icon name="calendar" [size]="15" />{{ receiptPeriodLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
+          <select class="an-capsule-select" aria-label="Leverancier" [value]="receiptSupplier() ?? ''" (change)="setSupplier($any($event.target).value)">
+            <option value="">Alle leveranciers</option>
+            @for (supplier of suppliers(); track supplier.id) { <option [value]="supplier.id" [selected]="supplier.id === receiptSupplier()">{{ supplier.name }}</option> }
+          </select>
+          @if (withChip && focusedOrderId() !== null) {
+            <button class="ios-chip an-focus-chip" type="button" aria-pressed="true" [attr.aria-label]="'Alle orders tonen, niet alleen ' + focusName()" (click)="clearOrderFocus()">Alleen {{ focusName() }} ✕</button>
+          }
+        </div>
+      }
+    </ng-template>
+
+    <ng-template #partnerDocs let-row>
+      @for (doc of row.documents; track doc.id) {
+        <span><a [routerLink]="['/sales', doc.id, 'edit']">{{ doc.number }}</a><small> · {{ documentKind(doc) }}</small></span>
+      } @empty { <small>geen documenten</small> }
     </ng-template>
 
     <ng-template #phonePeriod let-basis>
@@ -1052,17 +1153,24 @@ export class AnalysesPage {
   /** The crumb "Analyses ›" on the seven tabs; Overzicht is the area's own top (critique N1). */
   readonly parent = computed(() => this.section() === 'overview' ? null : ANALYSES_PARENT);
   readonly how = HOW_TEXTS;
-  readonly purchasingHow = [...HOW_TEXTS['purchasing-kosten'], ...HOW_TEXTS['purchasing-kwaliteit'], ...HOW_TEXTS['purchasing-partners'], ...HOW_TEXTS['purchasing-afwijkingen']];
   readonly salesNote = SALES_PERIOD_NOTE;
   readonly sheet = signal<PageSheet>(null);
+  private focusScrolled = false;
+  private varianceTimer: ReturnType<typeof setTimeout> | undefined;
+  private varianceRound = 0;
+  private loadedFilterKey = '';
   /** Phone caption under the large title: the subtitle, or the year so far on Overzicht. */
   readonly phoneCaption = computed(() => this.section() === 'overview' ? `Dit jaar · t/m ${weekdayDayMonth(this.today())}` : this.head().subtitle);
   readonly howLines = computed<readonly string[]>(() => {
     const section = this.section();
-    if (section === 'purchasing') return this.purchasingHow;
+    if (section === 'purchasing') return HOW_TEXTS[`purchasing-${this.part()}`];
     return section === 'market' || section === 'website' ? [] : HOW_TEXTS[section];
   });
-  readonly menuLinks = computed(() => MENU_LINKS[this.section()] ?? []);
+  readonly menuLinks = computed(() => {
+    if (this.section() !== 'purchasing') return MENU_LINKS[this.section()] ?? [];
+    if (this.part() === 'kosten') return [{ label: 'Kosten & bank', url: '/costs', icon: 'bank' }];
+    return this.part() === 'partners' ? [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }] : [];
+  });
 
   /*
    * Phone back (critique B8): the screen below this one in the in-app history. The chips replace the URL,
@@ -1124,8 +1232,6 @@ export class AnalysesPage {
   readonly costs = signal<CompanyCost[]>([]);
   readonly expectedStock = signal<ExpectedStock[]>([]);
 
-  readonly fromDate = signal(yearStart(this.today()));
-  readonly toDate = signal(this.today());
   /** Verkoop and Resultaat share one period (design §2.4); the dates follow today. */
   readonly salesPeriod = signal<PeriodChoice>(parsePeriod((key) => this.route.snapshot.queryParamMap.get(key), SALES_PERIOD_KEYS));
   readonly salesRange = computed(() => periodRange(this.salesPeriod(), this.today()));
@@ -1134,19 +1240,42 @@ export class AnalysesPage {
   readonly salesRangeText = computed(() => rangeLabel(this.salesFromDate(), this.salesToDate()));
   readonly salesRangeShort = computed(() => rangeLabelShort(this.salesFromDate(), this.salesToDate(), this.today()));
   readonly salesPeriodLabel = computed(() => periodLabel(this.salesPeriod(), this.today()));
-  readonly supplierId = signal<number | null>(null);
-  private readonly appliedFromDate = signal(yearStart(this.today()));
-  private readonly appliedToDate = signal(this.today());
-  private readonly appliedSupplierId = signal<number | null>(null);
-  readonly focusedOrderId = signal<number | null>(null);
+  /*
+   * Inkoop (design §3.5, critique B10, N8): four parts, ?deel; Kwaliteit and Afwijkingen share one receipt
+   * period and supplier (?ontvangst/ovan/otot, ?leverancier); ?orderId focuses Afwijkingen on one order.
+   */
+  private readonly urlGet = (key: string) => this.route.snapshot.queryParamMap.get(key);
+  readonly part = signal<InkoopPart>(parsePart(this.urlGet));
+  readonly receiptPeriod = signal<PeriodChoice>(parseReceiptPeriod(this.urlGet));
+  readonly receiptSupplier = signal<number | null>(parseSupplier(this.urlGet));
+  readonly focusedOrderId = signal<number | null>(parseOrderId(this.urlGet));
+  readonly receiptRange = computed(() => periodRange(this.receiptPeriod(), this.today()));
+  readonly receiptRangeText = computed(() => rangeLabel(this.receiptRange().from, this.receiptRange().to));
+  readonly receiptPeriodLabel = computed(() => periodLabel(this.receiptPeriod(), this.today()));
+  readonly receiptNote = RECEIPT_PERIOD_NOTE;
+  /** Kwaliteit's report: the receipt filter without the order focus (N8). */
+  private readonly unfocusedReport = signal<ReceiptVarianceReport>(EMPTY_REPORT);
+  readonly qualityReport = computed(() => this.focusedOrderId() === null ? this.report() : this.unfocusedReport());
+  readonly partnerSheetId = signal<number | null>(null);
+  readonly partnerSheetRow = computed(() => this.financing().rows.find((row) => row.purchaseOrderId === this.partnerSheetId()) ?? null);
+  readonly valueSheetKey = signal<string | null>(null);
+  readonly valueSheetRow = computed(() => this.report().rows.find((row) => this.valueKey(row) === this.valueSheetKey()) ?? null);
+  readonly partOptions = computed<SegmentOption[]>(() => this.partsWith(PART_LABELS, true));
+  readonly partOptionsPhone = computed<SegmentOption[]>(() => this.partsWith(PART_PHONE, false));
+  readonly nextAdvanceDue = computed(() => this.financing().rows.map((row) => row.nextAdvanceDueDate).filter((day): day is string => !!day).sort()[0] ?? null);
+  readonly focusName = computed(() => {
+    const id = this.focusedOrderId();
+    if (id === null) return '';
+    const row = this.report().rows.find((candidate) => candidate.orderId === id);
+    return this.containerOf(id, row?.orderNumber ?? '', row?.orderAlias ?? null);
+  });
   readonly savingValue = signal<string | null>(null);
   readonly valueDrafts = signal<Record<string, string>>({});
 
   readonly receivedForPerformance = computed(() => this.purchases().filter((row) =>
     row.order.status === 'ONTVANGEN'
-    && inDateRange(row.order.receivedOn, this.appliedFromDate() || undefined, this.appliedToDate() || undefined)
-    && (this.appliedSupplierId() === null || row.order.supplierId === this.appliedSupplierId())
-    && (this.focusedOrderId() === null || row.order.id === this.focusedOrderId())));
+    && inDateRange(row.order.receivedOn, this.receiptRange().from || undefined, this.receiptRange().to || undefined)
+    && (this.receiptSupplier() === null || row.order.supplierId === this.receiptSupplier())));
   readonly supplierPerformance = computed(() => supplierReceiptPerformance(
     this.receivedForPerformance().map((row) => ({
       receivedOn: row.order.receivedOn,
@@ -1286,7 +1415,8 @@ export class AnalysesPage {
 
   /* ---------- Overzicht: its own periods, never another tab's filter (critique B5) */
   readonly fx = inject(Fx);
-  readonly whole = eurWhole;
+  /** Whole euros (Kasprognose's format); the sign, € and the number never part over two lines. */
+  readonly whole = (value: number | null | undefined): string => eurWhole(value).replace(/ /g, '\u00a0');
   readonly plural = plural;
   readonly openContainersLine = openContainersLine;
   readonly paymentResultLine = paymentResultLine;
@@ -1335,19 +1465,19 @@ export class AnalysesPage {
     const plain = { value: null, valueTone: null, meta: null, metaTone: null, query: null } as const;
     return [
       { ...plain, key: 'quotes', count: this.openSales().length, tone: null, title: 'Open offertes', link: '/analyses/sales',
-        sub: `${eurWhole(this.pipelineValue())} in de pijplijn${missing ? ` · ${plural(missing, 'regel', 'regels')} zonder kost` : ''}` },
+        sub: `${this.whole(this.pipelineValue())} in de pijplijn${missing ? ` · ${plural(missing, 'regel', 'regels')} zonder kost` : ''}` },
       { ...plain, key: 'overdue', count: invoices.overdue, tone: 'danger', title: 'Vervallen facturen', link: '/analyses/sales', sub: overdueSub(invoices.overdue),
-        value: eurWhole(invoices.overdueValueEur), valueTone: invoices.overdue ? 'danger' : null },
+        value: this.whole(invoices.overdueValueEur), valueTone: invoices.overdue ? 'danger' : null },
       { ...plain, key: 'stock', count: inventory.zeroStock.withoutIncomingCount, tone: 'warn', title: 'Producten zonder voorraad én inkoop', link: '/analyses/inventory',
         sub: `${plural(inventory.dataGaps.unknownStockSkuCount, 'SKU', 'SKU’s')} zonder betrouwbare voorraadstand` },
       { ...plain, key: 'variance', count: report.totals.affectedOrders, tone: 'warn', title: variance.title, sub: variance.sub, link: '/analyses/purchasing',
-        query: { deel: 'afwijkingen' }, value: eurWhole(report.totals.totalLossValueEur), meta: 'bekende impact' },
+        query: { deel: 'afwijkingen' }, value: this.whole(report.totals.totalLossValueEur), meta: 'bekende impact' },
       { ...plain, key: 'settle', count: financing.awaitingSettlement, tone: 'warn', title: 'Partnercontainers af te rekenen', link: '/analyses/purchasing',
         query: { deel: 'partners' }, sub: financing.awaitingSettlement ? 'Ontvangen; het veilingoverzicht wacht' : 'Geen ontvangen partnercontainer wacht' },
       { ...plain, key: 'advance', count: financing.unbilledAdvanceCount, tone: overdueAdvance > 0 ? 'danger' : null, title: 'Voorschottermijnen te factureren',
         link: '/analyses/purchasing', query: { deel: 'partners' }, sub: advanceTermsSub(terms, this.today()),
-        value: eurWhole(financing.unbilledAdvanceEur), valueTone: overdueAdvance > 0 ? 'danger' : null,
-        meta: overdueAdvance > 0 ? `waarvan ${eurWhole(overdueAdvance)} vervallen` : 'excl. btw', metaTone: overdueAdvance > 0 ? 'danger' : null },
+        value: this.whole(financing.unbilledAdvanceEur), valueTone: overdueAdvance > 0 ? 'danger' : null,
+        meta: overdueAdvance > 0 ? `waarvan ${this.whole(overdueAdvance)} vervallen` : 'excl. btw', metaTone: overdueAdvance > 0 ? 'danger' : null },
     ];
   });
   readonly attentionCount = computed(() => this.attention().filter((row) => row.count > 0).length);
@@ -1420,14 +1550,48 @@ export class AnalysesPage {
         navigation.scrollTo({ left: active.offsetLeft - navigation.clientWidth / 2 + active.offsetWidth / 2, behavior: 'instant' });
       }
     });
-    const orderId = Number(this.route.snapshot.queryParamMap.get('orderId'));
-    if (Number.isInteger(orderId) && orderId > 0) {
-      this.focusedOrderId.set(orderId);
-      this.fromDate.set('');
-      this.toDate.set('');
-      this.appliedFromDate.set('');
-      this.appliedToDate.set('');
-    }
+    /*
+     * Inkoop in the URL (critique N9): a link with any Inkoop key sets the part, receipt period, supplier and
+     * order focus; a bare link (the sidebar, a chip) gets the current state written back.
+     */
+    effect(() => {
+      const params = this.queryParams();
+      if (this.section() !== 'purchasing') return;
+      untracked(() => {
+        const get = (key: string) => params.get(key);
+        if (!['deel', 'orderId', 'leverancier', ...Object.values(RECEIPT_PERIOD_KEYS)].some((key) => params.has(key))) {
+          this.writeParams(this.inkoopParams());
+          return;
+        }
+        const focus = parseOrderId(get);
+        if (focus !== this.focusedOrderId()) { this.focusedOrderId.set(focus); this.focusScrolled = false; }
+        const part = parsePart(get);
+        if (part !== this.part()) this.part.set(part);
+        const period = parseReceiptPeriod(get);
+        if (!samePeriod(period, this.receiptPeriod())) this.receiptPeriod.set(period);
+        const supplier = parseSupplier(get);
+        if (supplier !== this.receiptSupplier()) this.receiptSupplier.set(supplier);
+      });
+    });
+    /* Filters apply at once; the variance report reloads 300 ms after the last change. */
+    effect(() => {
+      const key = JSON.stringify(this.filters());
+      if (this.data() !== 'ready') return;
+      untracked(() => {
+        if (key === this.loadedFilterKey) return;
+        clearTimeout(this.varianceTimer);
+        this.varianceTimer = setTimeout(() => void this.loadVariances(), 300);
+      });
+    });
+    /* ?orderId: once the report is on screen, the focused order scrolls into view with its ring (design §3.5). */
+    afterRenderEffect(() => {
+      const id = this.focusedOrderId();
+      if (id === null || this.focusScrolled || this.part() !== 'afwijkingen' || this.section() !== 'purchasing' || !this.varianceGroups().length) return;
+      const card = document.getElementById(`an-order-${id}`);
+      if (!card) return;
+      this.focusScrolled = true;
+      card.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
+    });
   }
 
   /** Vernieuwen reloads what the visible tab shows (critique B6: branch on the tab before any guard). */
@@ -1457,7 +1621,7 @@ export class AnalysesPage {
   dataTab(section: AnalysisSection): boolean { return DATA_TABS.has(section); }
   /** A source whose last load failed: its figures read "—" instead of zero. */
   failed(label: string): boolean { return this.dataWarnings().includes(label); }
-  signedWhole(value: number): string { return value < 0 ? eurWhole(value) : `+ ${eurWhole(value)}`; }
+  signedWhole(value: number): string { return value < 0 ? this.whole(value) : `+\u00a0${this.whole(value)}`; }
   /** A purchase order by its container name (containerName()), from the loaded orders or the report row. */
   containerOf(orderId: number, number: string, alias: string | null): string {
     const view = this.purchases().find((row) => row.order.id === orderId);
@@ -1488,9 +1652,10 @@ export class AnalysesPage {
     this.receiptError.set('');
     try {
       const filters = this.filters();
+      this.loadedFilterKey = JSON.stringify(filters);
       const overviewFilters = this.overviewFilters();
       const sameFilters = this.sameFilters(filters, overviewFilters);
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused] = await Promise.allSettled([
         this.sourcing.receiptVariances(filters),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -1501,6 +1666,7 @@ export class AnalysesPage {
         this.finance.costs(),
         this.sales.incomingPayments(), this.sourcing.partnerFinancings(),
         sameFilters ? Promise.resolve(null) : this.sourcing.receiptVariances(overviewFilters),
+        filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null }),
       ] as const);
       const warnings: string[] = [];
       if (report.status === 'fulfilled') this.acceptReport(report.value);
@@ -1508,6 +1674,7 @@ export class AnalysesPage {
       /* Overzicht reuses Afwijkingen' report while its filter is the default (this year, everything). */
       const overviewReport = sameFilters ? report : overview;
       if (overviewReport.status === 'fulfilled' && overviewReport.value) this.overviewReport.set(overviewReport.value);
+      if (unfocused.status === 'fulfilled' && unfocused.value) this.unfocusedReport.set(unfocused.value);
       if (purchases.status === 'fulfilled') this.purchases.set(purchases.value); else warnings.push('inkoop');
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value); else warnings.push('leveranciers');
       if (products.status === 'fulfilled') this.products.set(products.value); else warnings.push('voorraad');
@@ -1527,51 +1694,117 @@ export class AnalysesPage {
   }
 
   async loadVariances(): Promise<void> {
-    if (this.filtering()) return;
+    const round = ++this.varianceRound;
     this.filtering.set(true);
     this.receiptError.set('');
+    const filters = this.filters();
+    this.loadedFilterKey = JSON.stringify(filters);
     try {
-      const filters = this.filters();
-      const report = await this.sourcing.receiptVariances(filters);
+      const [report, unfocused] = await Promise.all([this.sourcing.receiptVariances(filters),
+        filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null })]);
+      if (round !== this.varianceRound) return;
       this.acceptReport(report);
+      if (unfocused) this.unfocusedReport.set(unfocused);
       if (this.sameFilters(filters, this.overviewFilters())) this.overviewReport.set(report);
     } catch (failure: unknown) {
-      this.receiptError.set(messageOf(failure, 'De ontvangstafwijkingen konden niet worden geladen.'));
+      if (round === this.varianceRound) this.receiptError.set(messageOf(failure, 'De ontvangstafwijkingen konden niet worden geladen.'));
     } finally {
-      this.filtering.set(false);
+      if (round === this.varianceRound) this.filtering.set(false);
     }
   }
 
-  applyFilters(): void {
-    this.appliedFromDate.set(this.fromDate());
-    this.appliedToDate.set(this.toDate());
-    this.appliedSupplierId.set(this.supplierId());
-    void this.loadVariances();
+  setPart(part: InkoopPart): void {
+    this.part.set(part);
+    this.writeParams(partParams(part));
   }
 
-  showAllTime(): void {
-    this.fromDate.set('');
-    this.toDate.set('');
-    this.appliedFromDate.set('');
-    this.appliedToDate.set('');
-    this.appliedSupplierId.set(this.supplierId());
-    this.focusedOrderId.set(null);
-    void this.loadVariances();
+  setReceiptPeriod(choice: PeriodChoice): void {
+    this.receiptPeriod.set(choice);
+    this.writeParams(this.receiptParams());
   }
 
+  setSupplier(value: string | number | null): void {
+    const parsed = Number(value);
+    this.receiptSupplier.set(value === '' || value === null || !Number.isSafeInteger(parsed) || parsed <= 0 ? null : parsed);
+    this.writeParams({ leverancier: this.receiptSupplier() === null ? null : String(this.receiptSupplier()) });
+  }
+
+  /** "Alleen … ✕": the focus goes, and with it ?orderId; the receipt period is the link's own or the default (N8). */
   clearOrderFocus(): void {
     this.focusedOrderId.set(null);
-    this.fromDate.set(yearStart(this.today()));
-    this.toDate.set(this.today());
-    this.appliedFromDate.set(yearStart(this.today()));
-    this.appliedToDate.set(this.today());
-    this.appliedSupplierId.set(this.supplierId());
-    void this.loadVariances();
+    const params = this.route.snapshot.queryParamMap;
+    this.receiptPeriod.set(parsePeriod((key) => params.get(key), RECEIPT_PERIOD_KEYS, DEFAULT_PERIOD));
+    this.writeParams({ orderId: null, ...this.receiptParams() });
   }
 
-  changeSupplier(value: string | number | null): void {
-    const parsed = Number(value);
-    this.supplierId.set(value === '' || value === null || !Number.isFinite(parsed) ? null : parsed);
+  private receiptParams(): Record<string, string | null> {
+    const params = periodParams(this.receiptPeriod(), RECEIPT_PERIOD_KEYS);
+    /* With an order focus the default is "Alle jaren", so "Dit jaar" must be written out. */
+    const period = this.receiptPeriod();
+    if (this.focusedOrderId() !== null && 'preset' in period && period.preset === 'jaar') params[RECEIPT_PERIOD_KEYS.preset] = 'jaar';
+    return params;
+  }
+
+  private inkoopParams(): Record<string, string | null> {
+    return { ...partParams(this.part()), ...this.receiptParams(), leverancier: this.receiptSupplier() === null ? null : String(this.receiptSupplier()),
+      orderId: this.focusedOrderId() === null ? null : String(this.focusedOrderId()) };
+  }
+
+  private partsWith(labels: Record<InkoopPart, string>, desk: boolean): SegmentOption[] {
+    const financing = this.financing();
+    const warn = financing.awaitingSettlement > 0 || financing.overdueUnbilledAdvanceEur > 0;
+    const affected = this.report().totals.affectedOrders;
+    return (['kosten', 'kwaliteit', 'partners', 'afwijkingen'] as const).map((id) => ({
+      id, label: labels[id],
+      dot: id === 'partners' && warn ? (financing.overdueUnbilledAdvanceEur > 0 ? 'danger' : 'warn') : null,
+      count: desk && id === 'afwijkingen' && affected > 0 ? affected : null,
+    }));
+  }
+
+  /** "23 sep", with the year when it is not this year. */
+  dayText(day: string | null | undefined): string { return day ? dayMonth(day, this.today().slice(0, 4)) : '—'; }
+
+  partnerName(row: PartnerFinancingRow): string { return containerName({ id: row.purchaseOrderId, number: row.number, alias: row.alias }); }
+
+  partnerState(row: PartnerFinancingRow): string {
+    return row.settled ? 'volledig afgerekend' : row.remainingQuantity > 0 ? `${new Intl.NumberFormat('nl-BE').format(row.remainingQuantity)} st resteren` : 'afrekening nog uitgeven';
+  }
+
+  documentKind(doc: PartnerFinancingRow['documents'][number]): string {
+    if (doc.docType === 'CREDITNOTA') return doc.status === 'CONCEPT' ? 'creditnota · concept' : 'creditnota';
+    if (doc.status === 'CONCEPT') return 'concept';
+    return doc.docType === 'OFFERTE' ? 'offerte' : doc.settlement ? 'afrekening' : 'voorschot';
+  }
+
+  /** The catalogue's name and colour for a variance line; the line's own text when the product is gone (design §5.19). */
+  productLabel(row: ReceiptVarianceRow): string {
+    const product = this.products().find((candidate) => candidate.id === row.productId);
+    if (!product) return row.productName;
+    return product.colour ? `${product.name} · ${product.colour}` : product.name;
+  }
+
+  /** "€ 1,26": a stored value per piece (up to four decimals). */
+  unitValue(value: number): string {
+    return `€ ${value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+  }
+
+  /** Critique B3: the stored value counts in the impact; empty means unknown, never the cost price. */
+  valueHint(row: ReceiptVarianceRow): string {
+    if (row.lineId === null) return 'Historische regel zonder regelnummer';
+    if (row.receiptUnitValueEur === null) return 'Nog geen waarde: vul de waarde per stuk in.';
+    return `Telt mee in de impact: ${new Intl.NumberFormat('nl-BE').format(row.missingPieces + row.damagedPieces)} st × ${this.unitValue(row.receiptUnitValueEur)}.`;
+  }
+
+  /** Bewaren only for a valid, changed, non-empty value (no "Wissen": empty means unknown). */
+  canSaveValue(row: ReceiptVarianceRow): boolean {
+    if (row.lineId === null || this.savingValue() === this.valueKey(row)) return false;
+    const value = parseValue(this.draftValue(row));
+    return value !== null && Number.isFinite(value) && value >= 0 && value !== row.receiptUnitValueEur;
+  }
+
+  openValueSheet(row: ReceiptVarianceRow): void {
+    this.valueSheetKey.set(this.valueKey(row));
+    this.sheet.set('value');
   }
 
   supplierName(id: number): string {
@@ -1603,7 +1836,7 @@ export class AnalysesPage {
   valueKey(row: ReceiptVarianceRow): string { return `${row.orderId}:${row.lineId ?? 'legacy'}`; }
   valueInputId(row: ReceiptVarianceRow): string { return `receipt-value-${row.orderId}-${row.lineId ?? row.productId}`; }
   draftValue(row: ReceiptVarianceRow): string {
-    return this.valueDrafts()[this.valueKey(row)] ?? (row.receiptUnitValueEur?.toString() ?? '');
+    return this.valueDrafts()[this.valueKey(row)] ?? formatValue(row.receiptUnitValueEur);
   }
 
   setDraftValue(row: ReceiptVarianceRow, value: string | number | null): void {
@@ -1612,8 +1845,8 @@ export class AnalysesPage {
 
   async saveValue(row: ReceiptVarianceRow): Promise<void> {
     if (row.lineId === null) return;
-    const raw = this.draftValue(row).trim().replace(',', '.');
-    const value = raw === '' ? null : Number(raw);
+    if (!this.canSaveValue(row)) return;
+    const value = parseValue(this.draftValue(row));
     if (value !== null && (!Number.isFinite(value) || value < 0)) {
       this.ui.toast('Vul een geldige waarde per stuk in', 'err');
       return;
@@ -1641,18 +1874,28 @@ export class AnalysesPage {
 
   private filters() {
     return {
-      from: this.appliedFromDate() || null,
-      to: this.appliedToDate() || null,
-      supplierId: this.appliedSupplierId(),
+      from: this.receiptRange().from || null,
+      to: this.receiptRange().to || null,
+      supplierId: this.receiptSupplier(),
       orderId: this.focusedOrderId(),
     };
   }
 
   private acceptReport(report: ReceiptVarianceReport): void {
     this.report.set(report);
-    this.valueDrafts.set(Object.fromEntries(report.rows.map((row) =>
-      [this.valueKey(row), row.receiptUnitValueEur?.toString() ?? ''])));
+    this.valueDrafts.set(Object.fromEntries(report.rows.map((row) => [this.valueKey(row), formatValue(row.receiptUnitValueEur)])));
   }
+}
+
+/** A stored value per piece as the field shows it: "1,26" (no grouping, up to four decimals). */
+function formatValue(value: number | null): string {
+  return value === null ? '' : value.toLocaleString('nl-BE', { useGrouping: false, maximumFractionDigits: 4 });
+}
+
+/** The field's text as a number; a comma is accepted. Empty is null. */
+function parseValue(text: string): number | null {
+  const raw = text.trim().replace(/\s/g, '').replace(',', '.');
+  return raw === '' ? null : Number(raw);
 }
 
 function localIsoDay(date = new Date()): string {

@@ -43,7 +43,7 @@ test('Inkoop parts: ?deel, kosten by default, ?orderId means Afwijkingen over al
   assert.equal(parsePart(url('deel=partners')), 'partners');
   assert.equal(parsePart(url('deel=onzin')), 'kosten');
   assert.equal(parsePart(url('orderId=12')), 'afwijkingen');
-  assert.equal(parsePart(url('deel=partners&orderId=12')), 'afwijkingen');
+  assert.equal(parsePart(url('deel=partners&orderId=12')), 'partners', 'an explicit part wins; the focus waits on Afwijkingen');
   assert.equal(parsePart(url('orderId=abc')), 'kosten');
   assert.deepEqual(partParams('kosten'), { deel: null });
   assert.deepEqual(partParams('kwaliteit'), { deel: 'kwaliteit' });

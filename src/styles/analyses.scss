@@ -45,7 +45,7 @@ app-analyses-page { display: block; }
 .an-kpi { position: relative; display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 3px; align-content: start; min-width: 0;
   padding: 14px 16px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%);
   color: inherit; text-decoration: none; }
-.an-kpi__label { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+.an-kpi__label { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .an-kpi__value { align-self: end; margin-top: 3px; font-size: 25px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.035em; line-height: 1.1; white-space: nowrap; }
 .an-kpi__value[data-kind=text] { font-size: 19px; letter-spacing: -.01em; white-space: normal; }
 .an-kpi__value small { margin-left: 3px; color: var(--muted); font-size: 13px; font-weight: 650; letter-spacing: 0; }
