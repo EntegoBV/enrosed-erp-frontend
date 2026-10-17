@@ -44,3 +44,12 @@ test('the saved row fades back: the transition is on the row, not on the class t
   assert.match(partial, /app-douane-page \.dt-row\{[^}]*transition:background var\(--dur-2,200ms\)/);
   assert.match(partial, /app-douane-page \.dt-row--saved\{background:var\(--rose-soft\)\}/);
 });
+
+test('the code column holds the new row\'s placeholder whole at 1440 and 1100 (149 px text + 30 px padding)', async () => {
+  const partial = (await readFile(new URL('../src/styles/douane.scss', import.meta.url), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const width = Number(/app-douane-page \.dt-table\{--wk-cols:(\d+)px /.exec(partial)?.[1]);
+  assert.ok(width >= 180, `code column ${width}px`);
+  const page = await read('features/purchasing/douane-page.ts');
+  assert.equal(page.split('placeholder="bijv. 0603 90 00 00"').length - 1, 2, 'desk row and phone sheet keep the design\'s example');
+});
+

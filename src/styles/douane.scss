@@ -15,7 +15,9 @@ app-douane-page .dt-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:c
 app-douane-page .dt-error{display:block;margin-top:3px;color:var(--danger);font-size:12px;font-weight:600}
 
 /* ---- desk: the table and its one open row */
-app-douane-page .dt-table{--wk-cols:150px minmax(0,1.6fr) 110px 110px 44px}
+/* The code column holds the new row's placeholder 'bijv. 0603 90 00 00' whole (149 px of mono text in a 30 px padded field):
+   at 150 px it read 'bijv. 0603 90 0'. */
+app-douane-page .dt-table{--wk-cols:184px minmax(0,1.6fr) 110px 110px 44px}
 /* The saved flash: the transition sits on the row, so the rose fades back over --dur-2 when the class goes (design §4). */
 app-douane-page .dt-row{min-height:46px;transition:background var(--dur-2,200ms) var(--ease-out,ease-out)}
 app-douane-page .dt-row--saved{background:var(--rose-soft)}
