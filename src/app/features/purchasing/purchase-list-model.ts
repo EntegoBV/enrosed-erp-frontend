@@ -101,6 +101,16 @@ export function phoneTrail(order: Parameters<typeof statusLine>[0], payment: Lis
   return { text: order.status === 'CONCEPT' ? 'calculatie' : statusLine({ ...order, stockBooked: null }), due: false };
 }
 
+/**
+ * The phone's status line split before its day: 'verwacht ' + '20/11/2026'. The row lets the line break
+ * there when a long container name needs the room, never inside the day. A line without a day stays whole.
+ */
+export function dayParts(text: string): { lead: string; day: string } {
+  const match = /^(.*?)\s*(\d{2}\/\d{2}\/\d{4})$/.exec(text);
+  if (!match) return { lead: text, day: '' };
+  return { lead: match[1] ? `${match[1]} ` : '', day: match[2] };
+}
+
 /** A server text with amounts in it ('Betaling open: … (€ 4500,00)'): the euro sign never wraps away from its figure (N9). */
 export function keepEuro(text: string): string {
   return text.replace(/€ (?=[\d−-])/g, '€\u00a0');

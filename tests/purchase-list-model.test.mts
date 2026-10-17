@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { PurchaseOrderView } from '../src/app/core/api/models.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
 import {
-  fillTone, foldText, groupSums, keepEuro, listPayments, matchesQuery, phoneTrail, statusLine,
+  dayParts, fillTone, foldText, groupSums, keepEuro, listPayments, matchesQuery, phoneTrail, statusLine,
 } from '../src/app/features/purchasing/purchase-list-model.ts';
 
 // The Inkoop list (redesign I1, 2026-10-17): the payment cell, the status line, the search and the fill colour.
@@ -88,3 +88,16 @@ test('an amount in a server text keeps its euro sign (N9)', () => {
   assert.equal(keepEuro('Betaling open: 30% bij bestelling (€ 4500,00)'), 'Betaling open: 30% bij bestelling (€\u00a04500,00)');
   assert.equal(keepEuro('€ − 12 en € x'), '€\u00a0− 12 en € x');
 });
+
+test('the phone status line splits before its day, never inside it; a line without a day stays whole', () => {
+  assert.deepEqual(dayParts('verwacht 20/11/2026'), { lead: 'verwacht ', day: '20/11/2026' });
+  assert.deepEqual(dayParts('ontvangen 07/10/2026'), { lead: 'ontvangen ', day: '07/10/2026' });
+  assert.deepEqual(dayParts('calculatie'), { lead: 'calculatie', day: '' });
+  assert.deepEqual(dayParts('vertrokken'), { lead: 'vertrokken', day: '' });
+  assert.deepEqual(dayParts('20/11/2026'), { lead: '', day: '20/11/2026' });
+  for (const text of ['verwacht 20/11/2026', 'calculatie', 'ontvangen 23/08/2026']) {
+    const parts = dayParts(text);
+    assert.equal(parts.lead + parts.day, text, 'nothing lost');
+  }
+});
+

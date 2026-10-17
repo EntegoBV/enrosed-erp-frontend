@@ -80,11 +80,18 @@ app-purchase-list .pl-ptitle{font-size:16px;font-weight:600;line-height:1.25;ove
 app-purchase-list .pl-psub{color:var(--muted);font-size:13px;line-height:1.35}
 app-purchase-list .pl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
 app-purchase-list .pl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
-app-purchase-list .pl-ptrail{gap:2px;max-width:48%}
+/* The trail gives way before the name (fix round 2): the body sizes from its content and both shrink, so a long container name
+   keeps its two lines and the status line breaks before its day ('verwacht' / '20/11/2026'). At 360 a one-line 'verwacht
+   20/11/2026' (~127 px) had squeezed 'ORDER (3e) OOSTENRIJKER / STOLP FRANS- 40FTHQ' to four lines. */
+app-purchase-list .pl-prow>.ios-cell__body{flex:1 1 auto}
+app-purchase-list .pl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}
 app-purchase-list .pl-ptrail .wk-pill{height:18px}
 app-purchase-list .pl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
 app-purchase-list .pl-pline{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap}
 app-purchase-list .pl-pline.pl-warn{font-weight:700}
+app-purchase-list .pl-pline--day{white-space:normal}
+/* Phones under 375 px: 45-character names need 216 px for two lines at 16 px, the row leaves 208; at 15 px they need 204. */
+@media (max-width:374px){app-purchase-list .pl-ptitle{font-size:15px}}
 app-purchase-list .pl-loading{margin:0 var(--ios-inset)}
 
 /* ---- the new-calculation sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),

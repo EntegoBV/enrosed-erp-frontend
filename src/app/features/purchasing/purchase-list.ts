@@ -22,7 +22,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerPayables } from '../finance/payables';
 import { containerName, containerNumberHint } from './container-name';
 import { statusTone } from './purchase-phone-model';
-import { fillTone, groupSums, keepEuro, listPayments, matchesQuery, phoneTrail, statusLine, type ListPayment } from './purchase-list-model';
+import { dayParts, fillTone, groupSums, keepEuro, listPayments, matchesQuery, phoneTrail, statusLine, type ListPayment } from './purchase-list-model';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { SupplierAddress } from '../../shared/supplier-address';
@@ -279,7 +279,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                       <span class="ios-cell__trail pl-ptrail">
                         <span class="pl-ptotal">{{ row.costing.totals.totalEur | eur: 0 }}</span>
                         <span class="wk-pill" [class]="statusTone(row.order.status)">{{ statusLabel(row.order.status) }}</span>
-                        @if (trail.due) { <span class="pl-pline pl-warn">{{ pay!.nowEur | eur: 0 }} nu</span> } @else { <span class="pl-pline">{{ trail.text }}</span> }
+                        @if (trail.due) { <span class="pl-pline pl-warn">{{ pay!.nowEur | eur: 0 }} nu</span> } @else {
+                          @let day = dayParts(trail.text);
+                          <span class="pl-pline pl-pline--day">{{ day.lead }}<span class="pl-nw">{{ day.day }}</span></span>
+                        }
                       </span>
                     </a>
                     @if (row.order.status !== 'ONTVANGEN') {
@@ -449,6 +452,7 @@ export class PurchaseList {
   readonly containerName = containerName;
   readonly statusTone = statusTone;
   readonly keepEuro = keepEuro;
+  readonly dayParts = dayParts;
   readonly desktop = inject(DesktopViewport);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
