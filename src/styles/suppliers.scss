@@ -47,7 +47,9 @@ app-supplier-list .sup-pair>.sup-sec+.sup-sec{border-left:1px solid var(--line)}
 app-supplier-list .sup-contact{display:grid;gap:3px;margin-top:8px;font-size:13px}
 app-supplier-list .sup-contact a{overflow-wrap:anywhere}
 app-supplier-list .sup-notes{margin:0;font-size:13px;line-height:1.45;white-space:pre-wrap}
-@media (max-width:1100px){app-supplier-list .sup-search{width:240px}app-supplier-list .sup-table{--wk-cols:minmax(200px,2.2fr) 64px minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}}
+/* The search keeps its 280 px at 1100 and 1024: at 240 the '/' key cap covered the end of 'Zoek op naam, stad of haven'.
+   The money columns keep room for their heads ('NU TE BETALEN' 97 px, 'LAATSTE ORDER' 102 px): at 1024 they lost their first letters. */
+@media (max-width:1100px){app-supplier-list .sup-table{--wk-cols:minmax(200px,2.2fr) 64px minmax(0,1.3fr) minmax(104px,1fr) minmax(64px,1fr) minmax(108px,1fr)}}
 
 /* ---- phone */
 app-supplier-list .sup--phone{--ios-inset:4px}

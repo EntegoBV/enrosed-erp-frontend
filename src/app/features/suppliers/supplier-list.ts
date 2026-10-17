@@ -75,7 +75,8 @@ function blank(): Supplier {
       <div class="content sup">
         @if (loadError(); as error) {
           <div class="wk-card"><app-load-error [message]="error" [busy]="loading()" (retry)="reload()" /></div>
-        } @else if (loading()) {
+        } @else if (loading() && !suppliers().length) {
+          <!-- Only the first load: after Opslaan or Verwijderen the table and the detail stay while the list refreshes. -->
           <div class="wk-card" role="status" aria-label="Leveranciers laden"><app-skeleton kind="table" [rows]="4" /></div>
         } @else if (!suppliers().length) {
           <div class="wk-card"><div class="wk-empty">
@@ -224,7 +225,7 @@ function blank(): Supplier {
         </div>
         @if (loadError(); as error) {
           <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
-        } @else if (loading()) {
+        } @else if (loading() && !suppliers().length) {
           <div class="sup-loading" role="status" aria-label="Leveranciers laden"><app-skeleton kind="group" [rows]="4" /></div>
         } @else if (!suppliers().length) {
           <div class="ios-empty">
@@ -289,8 +290,8 @@ function blank(): Supplier {
                 <span class="wk-pill">{{ draft().currency }}</span>
               </div>
               <div class="sup-capsules">
+                <!-- Bewerken is the sheet's primary at its foot (the iOS sheet pattern), not a second button here. -->
                 <button class="ios-capsule ios-capsule--tinted" type="button" (click)="newCalculation(draft())"><app-icon name="plus" [size]="16" />Nieuwe calculatie</button>
-                <button class="ios-capsule" type="button" (click)="editMode.set(true)">Bewerken</button>
               </div>
               <div class="ios-figures sup-figures">
                 <div><small>Nu te betalen</small><strong [class.sup-warn]="(row?.nowEur ?? 0) > 0">{{ containersState() === 'ready' ? ((row?.nowEur ?? 0) | eur: 0) : '—' }}</strong></div>
