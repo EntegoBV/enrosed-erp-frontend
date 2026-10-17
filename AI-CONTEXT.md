@@ -903,8 +903,9 @@ cijfers'.
   fetched again (`home-refresh.ts`: 20 s for sales, purchases, costs,
   incoming payments, partner financing, planner and bell; 5 min for
   products, website products, suppliers, website visits and customers;
-  partner financing also on a new CashData round; Opnieuw/Vernieuwen fetch
-  all).
+  a call whose last attempt failed is always fetched again - `noteAnswer`
+  drops its stamp; partner financing also on a new CashData round;
+  Opnieuw/Vernieuwen fetch all).
 - **`HomeData`** (root, `home-data.ts`) loads and derives everything once:
   sales, purchases, products, families, suppliers, website (7 d), costs,
   incoming payments, partner financing, customers, planner and the bell;

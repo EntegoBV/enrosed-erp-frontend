@@ -32,7 +32,7 @@ import { monthWindows } from './home-figures';
 import { readLater, writeLater } from './home-later';
 import { coverageOf, forecastAnswer, homeMarker, homeTasks, laterNext, nextWorkday } from './home-priority';
 import type { CoverageAnswer, CoverageSource, HomeTask, LaterState } from './home-priority';
-import { staleSources } from './home-refresh';
+import { noteAnswer, staleSources } from './home-refresh';
 import type { HomeFetchKey } from './home-refresh';
 import { agendaInputOf, attentionOf, homeTaskInputOf, vatOf } from './home-sources';
 import type { HomeCashSources } from './home-sources';
@@ -430,7 +430,8 @@ export class HomeData {
     this.busy = true;
     const first = !this.loadedOnce();
     const want = (key: HomeFetchKey): boolean => first || !only || only.has(key);
-    const stamp = (key: HomeFetchKey): void => { this.fetchedAt[key] = Date.now(); };
+    /* A good answer is stamped; a failed one loses its stamp, so the next return fetches it again (never fresh). */
+    const stamp = (key: HomeFetchKey, ok = true): void => noteAnswer(this.fetchedAt, key, ok, Date.now());
     this.refreshing.set(true);
     if (first) this.loading.set(true);
     this.dismissed.set(readDismissed());
@@ -445,7 +446,7 @@ export class HomeData {
     };
     const track = <T>(source: HomeSource, call: () => Promise<T>, apply: (value: T) => void): Promise<void> => (want(source) ? call().then(
       (value) => { stamp(source); land(() => { apply(value); this.setState(source, 'ready'); }); },
-      () => land(() => this.setState(source, 'failed')),
+      () => { stamp(source, false); land(() => this.setState(source, 'failed')); },
     ).finally(() => answered(source)) : Promise.resolve());
     try {
       const products = want('voorraad') ? this.catalog.products() : null;
@@ -476,6 +477,9 @@ export class HomeData {
         want('bell') ? this.work.refresh().then(() => { this.bellAnswered.set(true); if (!this.work.error()) stamp('bell'); }, () => undefined)
           .finally(() => answered('bell')) : Promise.resolve(),
       ]);
+      /* The planner and the bell keep their own error (they never reject): a failed one loses its stamp too. */
+      if (want('planner') && this.planner.error()) stamp('planner', false);
+      if (want('bell') && this.work.error()) stamp('bell', false);
       for (const apply of batch) apply();
     } finally {
       if (first) {

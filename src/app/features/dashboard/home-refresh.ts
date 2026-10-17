@@ -4,7 +4,8 @@
  * what changes during the day (sales, purchases, costs, incoming payments,
  * partner financing, the planner, the bell), 5 min for what hardly does
  * (products, website products, suppliers, website visits, customers). A
- * call that never answered is always stale. "Opnieuw" and "Vernieuwen"
+ * call that never answered, or whose last attempt failed, is always stale
+ * (noteAnswer drops its stamp: a failed round is never fresh). "Opnieuw" and "Vernieuwen"
  * fetch everything; a new CashData round fetches partner financing again
  * (its advance schedules need that round's financings).
  *
@@ -33,4 +34,10 @@ export function staleSources(fetchedAt: Readonly<Partial<Record<HomeFetchKey, nu
     const at = fetchedAt[key];
     return at === undefined || nowMs - at > maxAgeOf(key);
   });
+}
+
+/** Records one call's answer: a good one is stamped now, a failed one loses its stamp, so the next return fetches it again. */
+export function noteAnswer(fetchedAt: Partial<Record<HomeFetchKey, number>>, key: HomeFetchKey, ok: boolean, nowMs: number): void {
+  if (ok) fetchedAt[key] = nowMs;
+  else delete fetchedAt[key];
 }
