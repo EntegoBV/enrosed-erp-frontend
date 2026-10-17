@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, afterRenderEffect, ElementRef, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, effect, inject, signal, afterRenderEffect, ElementRef, untracked, viewChild } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
@@ -40,6 +41,12 @@ import { CashOverviewCard } from './cash-overview-card';
 import { CashPhone } from './cash-phone';
 import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
+import { LoadError } from '../../shared/load-error';
+import { AnHow, HOW_TEXTS } from './analyses-how';
+import { AnPeriodPicker } from './analyses-period-picker';
+import { DEFAULT_PERIOD, SALES_PERIOD_KEYS, parsePeriod, periodParams, periodRange, samePeriod, yearStart } from './analyses-period';
+import type { PeriodChoice } from './analyses-period';
+import { rangeLabel, weekdayDayMonth } from './analyses-words';
 
 type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -86,29 +93,33 @@ const EMPTY_REPORT: ReceiptVarianceReport = {
   },
   rows: [],
 };
-const TODAY = localIsoDay();
-const CURRENT_YEAR_START = `${TODAY.slice(0, 4)}-01-01`;
-const CURRENT_MONTH_START = `${TODAY.slice(0, 7)}-01`;
-const CURRENT_QUARTER_START = `${TODAY.slice(0, 4)}-${String(Math.floor((Number(TODAY.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`;
-const LAST_YEAR = String(Number(TODAY.slice(0, 4)) - 1);
+/** The tabs that read the page's own load (Markt and Bezoekers load their own data; critique B6). */
+const DATA_TABS = new Set<AnalysisSection>(['cash', 'overview', 'sales', 'inventory', 'purchasing', 'result']);
 
-type SalesPresetId = 'month' | 'quarter' | 'year' | 'lastYear' | 'all';
-
-/** The periods a sales question is usually asked about; the date fields stay for the rest. */
-const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: string; to: string }> = [
-  { id: 'month', label: 'Deze maand', from: CURRENT_MONTH_START, to: TODAY },
-  { id: 'quarter', label: 'Dit kwartaal', from: CURRENT_QUARTER_START, to: TODAY },
-  { id: 'year', label: 'Dit jaar', from: CURRENT_YEAR_START, to: TODAY },
-  { id: 'lastYear', label: LAST_YEAR, from: `${LAST_YEAR}-01-01`, to: `${LAST_YEAR}-12-31` },
-  { id: 'all', label: 'Alle jaren', from: '', to: '' },
-];
+/** Toolbar title and subtitle per tab (design §2.1); Overzicht has no crumb and is called "Analyses". */
+const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = {
+  cash: { title: 'Kasprognose', subtitle: 'Banksaldo vandaag en wat er komt' },
+  overview: { title: 'Analyses', subtitle: 'Overzicht · de belangrijkste cijfers per onderdeel' },
+  sales: { title: 'Verkoop', subtitle: 'Van offerte tot betaling' },
+  inventory: { title: 'Voorraad', subtitle: 'Waarde, tekorten en wat onderweg is' },
+  purchasing: { title: 'Inkoop', subtitle: 'Containerkost, kwaliteit, partners en afwijkingen' },
+  result: { title: 'Resultaat', subtitle: 'Marge op goederen min eigen kosten' },
+  market: { title: 'Markt & container', subtitle: 'Wisselkoersen, koopkracht en containervracht' },
+  website: { title: 'Bezoekers', subtitle: 'Wie de website bezoekt en wat ze doen' },
+};
+const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
+const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op hun documentdatum, ontvangsten op hun betaaldatum.';
 
 /** Company-wide analysis with durable receipt losses as its operational drill-down. */
 @Component({
   selector: 'app-analyses-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [CashState],
-  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone,
+  /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
+  encapsulation: ViewEncapsulation.None,
+  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-legacy.scss'],
+  host: { '(document:visibilitychange)': 'visible()' },
+  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, LoadError,
     FormsModule,
     RouterLink,
     PageHeader,
@@ -123,14 +134,11 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
     @if (section() === 'cash' && !desk.active()) {
       <app-cash-phone [tabs]="analysisTabs" [pageWarnings]="dataWarnings()" (refreshed)="refresh()" />
     } @else {
-    <app-page-header title="Analyses" [subtitle]="sectionSubtitle()">
-      @if (section() !== 'market' && section() !== 'website') {
-        <button class="btn btn--sm" type="button" [disabled]="loading() || refreshing()"
-                (click)="refresh()">{{ refreshing() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
-      }
+    <app-page-header [title]="head().title" [subtitle]="head().subtitle" [parent]="parent()">
+      <button class="btn" type="button" [disabled]="busy()" (click)="refresh()"><app-icon name="refresh" [size]="15" />{{ busy() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
     </app-page-header>
 
-    <main class="content analyses-page" [attr.aria-busy]="loading() || filtering()">
+    <main class="content analyses-page an" [attr.aria-busy]="busy() || filtering()">
       <nav #analysisNavigation class="analysis-tabs" aria-label="Analyseonderdelen">
         @for (tab of analysisTabs; track tab.id) {
           <a [routerLink]="['/analyses', tab.id]" [class.active]="section() === tab.id"
@@ -140,6 +148,45 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
           </a>
         }
       </nav>
+
+      @for (tab of [section()]; track tab) {
+      <div class="an-body mo-fade">
+      @switch (tab) {
+        @case ('overview') {
+          <div class="an-bar"><span class="an-bar__text">Dit jaar, {{ yearRangeText() }}@if (loadedAt()) { · bijgewerkt {{ loadedAt() }} }</span>
+            <div class="an-bar__end"><app-an-how [lines]="how.overview" /></div></div>
+        }
+        @case ('sales') {
+          <div class="an-bar">
+            <app-an-period [value]="salesPeriod()" [today]="today()" [note]="salesNote" idPrefix="an-sales" (changed)="setSalesPeriod($event)" />
+            <span class="an-bar__text">{{ salesRangeText() }} · op documentdatum</span>
+            <div class="an-bar__end"><app-an-how [lines]="how.sales" /><a class="wk-btn" routerLink="/sales">Verkooporders ›</a></div>
+          </div>
+        }
+        @case ('inventory') {
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo over de facturen van {{ inventoryMetrics().velocity.days }} dagen</span>
+            <div class="an-bar__end"><app-an-how [lines]="how.inventory" /><a class="wk-btn" routerLink="/stock/inventaris">Jaarinventaris ›</a></div></div>
+        }
+        @case ('purchasing') {
+          <div class="an-bar"><div class="an-bar__end"><app-an-how [lines]="purchasingHow" /><a class="wk-btn" routerLink="/costs">Kosten &amp; bank ›</a></div></div>
+        }
+        @case ('result') {
+          <div class="an-bar">
+            <app-an-period [value]="salesPeriod()" [today]="today()" [note]="salesNote" idPrefix="an-result" (changed)="setSalesPeriod($event)" />
+            <span class="an-bar__text">{{ salesRangeText() }} · alles excl. btw</span>
+            <div class="an-bar__end"><app-an-how [lines]="how.result" /><a class="wk-btn" routerLink="/costs">Alle kosten ›</a></div>
+          </div>
+        }
+      }
+      @if (tab !== 'cash' && dataTab(tab) && dataWarnings().length && !loadFailed()) {
+        <div class="wk-banner wk-banner--warn wk-banner--inset" role="status"><app-icon name="alert" [size]="16" />
+          <span class="wk-banner__text">Niet alle actuele cijfers konden laden: {{ dataWarnings().join(', ') }}.</span>
+          <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="refresh()">Opnieuw</button></span>
+        </div>
+      }
+      @if (tab !== 'cash' && dataTab(tab) && loadFailed()) {
+        <app-load-error [busy]="busy()" (retry)="refresh()" />
+      } @else {
 
       @if (section() === 'cash') {
         <app-cash-desk [pageWarnings]="dataWarnings()" />
@@ -161,11 +208,6 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             }
           </div>
         } @else {
-          @if (dataWarnings().length) {
-            <div class="analysis-warning" role="status">
-              Niet alle actuele cijfers konden laden: {{ dataWarnings().join(', ') }}.
-            </div>
-          }
           <div class="analysis-kpis">
             <article class="card metric-card metric-card--quality">
               <span class="metric-card__label">Perfect ontvangen</span>
@@ -250,30 +292,10 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
 
       @if (section() === 'sales') {
       <section class="analysis-section" aria-labelledby="sales-analysis-title">
-        <header class="section-copy section-copy--split">
-          <div>
-            <span class="eyebrow">Verkoopanalyse</span>
-            <h2 id="sales-analysis-title">Van offerte tot betaling</h2>
-            <p>De periode volgt de aanmaakdatum van de verkoopdocumenten.</p>
-          </div>
-          <div class="period-chips" role="group" aria-label="Periode">
-            @for (preset of salesPresets; track preset.id) {
-              <button class="chip" type="button" [class.active]="salesPreset() === preset.id" [attr.aria-pressed]="salesPreset() === preset.id"
-                      (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
-            }
-          </div>
+        <header class="section-copy">
+          <span class="eyebrow">Verkoopanalyse</span>
+          <h2 id="sales-analysis-title">Van offerte tot betaling</h2>
         </header>
-
-        <details class="card analysis-filter-disclosure">
-          <summary><span><b>Periode aanpassen</b><small>{{ salesFromDate() ? (salesFromDate() | dateNl) : 'Alle jaren' }}{{ salesToDate() ? ' – ' + (salesToDate() | dateNl) : '' }}</small></span><span class="disclosure-chevron" aria-hidden="true">⌄</span></summary>
-          <div class="period-filter">
-          <label><span>Van</span><app-date-field fieldId="sales-analysis-from" [value]="salesFromDate()"
-            (valueChange)="salesFromDate.set($event)" /></label>
-          <label><span>Tot en met</span><app-date-field fieldId="sales-analysis-to" [value]="salesToDate()"
-            (valueChange)="salesToDate.set($event)" /></label>
-          <p>Facturen volgen hun documentdatum; ontvangsten hun echte betaaldatum. Voorschotten blijven financiering tot de slotafrekening. Oude documenten kunnen nog actuele productprijzen gebruiken.</p>
-          </div>
-        </details>
 
         <div class="analysis-kpis analysis-kpis--flow">
           <article class="card metric-card metric-card--dark">
@@ -518,11 +540,6 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
             <span class="eyebrow">Resultaat</span>
             <h2 id="result-analysis-title">Wat we overhouden</h2>
             <p>De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten. Verkoop telt op de factuurdatum, kosten op hun datum; alles excl. btw.</p>
-          </div>
-          <div class="period-chips" role="group" aria-label="Periode">
-            @for (preset of salesPresets; track preset.id) {
-              <button class="chip" type="button" [class.active]="salesPreset() === preset.id" [attr.aria-pressed]="salesPreset() === preset.id" (click)="applySalesPreset(preset.id)">{{ preset.label }}</button>
-            }
           </div>
         </header>
         <div class="analysis-kpis analysis-kpis--flow">
@@ -826,55 +843,11 @@ const SALES_PRESETS: ReadonlyArray<{ id: SalesPresetId; label: string; from: str
         }
       </section>
       }
+      }
+      </div>
+      }
     </main>
     }
-  `,
-  styles: `
-    :host{display:block}.analyses-page{max-width:1180px;padding-bottom:110px}.analysis-section+.analysis-section{margin-top:34px}
-    .analysis-tabs{position:sticky;z-index:5;top:58px;display:flex;gap:5px;margin:-2px -2px 20px;padding:7px 2px;overflow-x:auto;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);scrollbar-width:none}.analysis-tabs::-webkit-scrollbar{display:none}.analysis-tabs a{flex:none;padding:8px 11px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:730;text-decoration:none;white-space:nowrap}.analysis-tabs a:hover{border-color:var(--rose-line);color:var(--ink)}.analysis-tabs a.active{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
-    .section-copy{margin-bottom:12px;padding:0 2px}.section-copy .eyebrow{display:block;color:var(--rose);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.section-copy h1,.section-copy h2{margin-top:3px;font-size:21px}.section-copy p{margin-top:4px;color:var(--muted);font-size:12.5px}.section-copy--receipt,.section-copy--split{display:flex;align-items:end;justify-content:space-between;gap:12px}
-    .attention-grid{display:grid;gap:9px}.attention-card{display:grid;gap:3px;padding:15px;color:inherit;text-decoration:none;transition:border-color .15s,transform .15s}.attention-card:hover{border-color:var(--rose-line);transform:translateY(-1px)}.attention-card>span{color:var(--rose);font-size:9.5px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.attention-card>strong{font-size:15px}.attention-card>small{color:var(--muted);font-size:10.5px}
-    .period-filter{display:grid;gap:10px;margin-bottom:10px;padding:13px}.period-filter label{display:grid;gap:4px}.period-filter label>span{color:var(--muted);font-size:9.5px;font-weight:760;text-transform:uppercase}.period-filter p{align-self:end;color:var(--muted);font-size:10.5px;line-height:1.35}.metric-card--danger{border-color:var(--danger);background:var(--danger-soft)}.metric-card--danger>strong{color:var(--danger)}
-    .funnel-card{display:grid;gap:8px;margin-top:10px;padding:13px 14px 12px}.funnel-card__head{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:6px 12px;margin-bottom:4px}.funnel-card__head span{color:var(--rose);font-size:9px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.funnel-card__head h3{margin-top:2px;font-size:14px}.funnel-card__head small{color:var(--muted);font-size:10.5px}
-    .funnel-row{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(0,2fr) auto;align-items:center;gap:10px}.funnel-row__label{display:grid;min-width:0}.funnel-row__label b{font-size:12.5px;font-weight:650}.funnel-row__label small{color:var(--muted);font-size:10.5px}.funnel-row__track{height:12px;overflow:hidden;border-radius:999px;background:var(--surface-2)}.funnel-row__track i{display:block;height:100%;border-radius:inherit;background:rgb(143 41 66 / 42%);transition:width .3s}.funnel-row--accent .funnel-row__track i{background:var(--ok)}.funnel-row__count{min-width:34px;font-size:15px;text-align:right;font-variant-numeric:tabular-nums}.funnel-row--accent .funnel-row__count{color:var(--ok)}
-    .funnel-card__foot{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}.funnel-card__foot b{color:var(--ink)}
-    .analysis-columns{display:grid;gap:10px;margin-top:10px}.analysis-list{overflow:hidden}.analysis-list>header{display:flex;align-items:end;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}.analysis-list>header span{color:var(--rose);font-size:9px;font-weight:780;letter-spacing:.06em;text-transform:uppercase}.analysis-list>header h3{margin-top:2px;font-size:14px}.analysis-list>header>small{color:var(--muted);font-size:9.5px;text-align:right}.rank-row,.stock-row,.attention-row,.capital-row{color:inherit;text-decoration:none}.rank-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:9px;padding:11px 14px}.rank-row+.rank-row{border-top:1px solid var(--line)}.rank-row:hover,.stock-row:hover,.attention-row:hover,.capital-row:hover{background:var(--surface-2)}.rank-row .rank{display:grid;width:22px;height:22px;place-items:center;border-radius:50%;background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750}.rank-row div,.stock-row div,.attention-row>div,.capital-row div{display:grid;min-width:0}.rank-row b,.stock-row b,.attention-row b,.capital-row b{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.rank-row small,.stock-row small,.attention-row small,.capital-row small{color:var(--muted);font-size:9.5px}.rank-row>strong,.attention-row>strong,.capital-row>strong{font-size:12px;text-align:right}.list-empty{padding:17px;color:var(--muted);font-size:11px}
-    .attention-list{margin-top:10px}.attention-row{display:grid;gap:8px;padding:12px 14px;border-left:3px solid transparent}.attention-row+.attention-row{border-top:1px solid var(--line)}.attention-row--danger{border-left-color:var(--danger)}.reason-chips{display:flex!important;flex-flow:row wrap!important;gap:4px}.reason-chips span{padding:3px 6px;border-radius:99px;background:var(--warn-soft);color:var(--warn);font-size:9px;font-weight:700}.attention-row--danger .reason-chips span{background:var(--danger-soft);color:var(--danger)}
-    .data-gap-strip{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;padding:9px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.data-gap-strip span{padding:5px 8px;border-radius:8px;background:var(--surface);color:var(--muted);font-size:9.5px}.data-gap-strip b{color:var(--ink)}.stock-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px}.stock-row+.stock-row{border-top:1px solid var(--line)}.stock-row>span{max-width:45%;color:var(--warn);font-size:9.5px;font-weight:700;text-align:right}.stock-row>span.ok-text{color:var(--ok)}.capital-list{margin-top:10px}.capital-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto auto;align-items:center;gap:9px;padding:11px 14px}.capital-row+.capital-row{border-top:1px solid var(--line)}.capital-row__bar{height:5px;overflow:hidden;border-radius:99px;background:var(--surface-2)}.capital-row__bar i{display:block;height:100%;border-radius:inherit;background:var(--rose)}.capital-row>small{min-width:42px;text-align:right}.purchase-summary+.receipt-section{margin-top:22px}
-    .analysis-kpis{display:grid;gap:10px}.analysis-kpis>.card,.attention-grid>.card,.receipt-totals>.card{margin:0}.metric-card{position:relative;min-width:0;padding:17px;overflow:hidden}.metric-card__label{display:block;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}.metric-card>strong{display:block;margin-top:5px;color:var(--ink);font-size:27px;line-height:1}.metric-card>p{margin-top:7px;color:var(--muted);font-size:12px}.metric-card__sub{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:2px 8px;margin-top:14px;padding-top:11px;border-top:1px solid var(--line)}.metric-card__sub span{color:var(--muted);font-size:10px;text-transform:uppercase}.metric-card__sub b{font-size:15px;text-align:right}.metric-card__sub small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.metric-card--quality:before{content:'';position:absolute;inset:0 auto 0 0;width:4px;background:var(--ok)}.metric-card--dark{border-color:#302a27;background:#272220;color:#fff}.metric-card--dark :is(.metric-card__label,.metric-card>p,.metric-card__sub span,.metric-card__sub small){color:#cfc7c2}.metric-card--dark>strong,.metric-card--dark .metric-card__sub b{color:#fff}.metric-card--dark .metric-card__sub{border-color:#49413d}
-    .metric-card--loading span,.metric-card--loading b,.metric-card--loading i{display:block;border-radius:99px;background:var(--surface-2);animation:pulse 1.1s ease-in-out infinite}.metric-card--loading span{width:42%;height:10px}.metric-card--loading b{width:65%;height:28px;margin-top:14px}.metric-card--loading i{width:82%;height:9px;margin-top:16px}.analysis-warning,.valuation-note{margin-bottom:10px;padding:10px 12px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft);color:var(--ink-2);font-size:12px}
-    .receipt-filters{display:grid;gap:10px;margin-bottom:12px;padding:14px}.receipt-filters label{display:grid;gap:4px;min-width:0}.receipt-filters label>span{color:var(--muted);font-size:10px;font-weight:750;text-transform:uppercase}.receipt-filters__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.receipt-filters__actions .btn{min-height:44px}
-    .receipt-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px}.receipt-error p{margin-top:3px;color:var(--muted);font-size:12px}
-    .receipt-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.receipt-total{padding:13px}.receipt-total>span{display:block;color:var(--muted);font-size:9.5px;font-weight:760;text-transform:uppercase}.receipt-total>strong{display:block;margin-top:3px;font-size:20px}.receipt-total>small{display:block;margin-top:3px;color:var(--muted);font-size:10.5px}.receipt-total--loss{border-color:var(--rose-line);background:var(--rose-soft)}.receipt-total--loss strong{color:var(--rose-dark)}.receipt-total--warn{border-color:#eddcb9;background:var(--warn-soft)}
-    .variance-list{display:grid;gap:10px}.variance-order{overflow:hidden}.variance-order__head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}.variance-order__head>a{display:grid;min-width:0;color:inherit;text-decoration:none}.variance-order__head>a>span{color:var(--rose);font-size:9.5px;font-weight:760;text-transform:uppercase}.variance-order__head>a>strong{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.variance-order__head>a>small{color:var(--muted);font-size:10.5px}.variance-order__head>a:hover strong{color:var(--rose-dark);text-decoration:underline}.variance-order__value{display:grid;flex:none;text-align:right}.variance-order__value b{font-size:14px}.variance-order__value small{color:var(--warn);font-size:9.5px}.variance-order__value a{margin-top:5px;color:var(--rose-dark);font-size:11px;font-weight:720;text-decoration:none}.variance-order__value a:hover{text-decoration:underline}
-    .variance-lines{display:grid}.variance-line{display:grid;gap:11px;padding:14px}.variance-line+.variance-line{border-top:1px solid var(--line)}.variance-line__product{display:grid;min-width:0}.variance-line__product>strong{overflow:hidden;font-size:13.5px;text-overflow:ellipsis;white-space:nowrap}.variance-line__product>span{color:var(--muted);font-size:10.5px}.variance-line__chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.variance-line__chips span{padding:3px 7px;border-radius:99px;background:var(--danger-soft);color:var(--danger);font-size:10px;font-weight:700}.variance-line__chips .ok{background:var(--ok-soft);color:var(--ok)}.variance-line__impact{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:var(--surface-2)}.variance-line__impact span{color:var(--muted);font-size:10px;text-transform:uppercase}.variance-line__impact b{font-size:13px}.variance-line__valuation{display:grid;gap:4px}.variance-line__valuation>label{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase}.variance-line__valuation>small{color:var(--warn);font-size:10px}.value-edit{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center}.value-edit>span{align-self:stretch;display:grid;place-items:center;padding:0 9px;border:1px solid var(--line);border-right:0;border-radius:var(--r-sm) 0 0 var(--r-sm);background:var(--surface-2);color:var(--muted);font-size:12px}.value-edit .input{min-width:0;border-radius:0}.value-edit .btn{min-height:44px;border-radius:0 var(--r-sm) var(--r-sm) 0}.receipt-empty{display:flex;align-items:center;gap:12px;padding:18px}.receipt-empty>span{display:grid;width:38px;height:38px;flex:none;place-items:center;border-radius:50%;background:var(--ok-soft);color:var(--ok);font-weight:800}.receipt-empty p{margin-top:2px;color:var(--muted);font-size:12px}
-    @media(min-width:680px){.analysis-tabs{top:0}.analysis-kpis,.attention-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.period-filter{grid-template-columns:190px 190px minmax(0,1fr);align-items:end}.funnel-row{grid-template-columns:minmax(180px,.5fr) minmax(0,2fr) 60px}.analysis-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.attention-row{grid-template-columns:minmax(180px,.7fr) minmax(240px,1fr) auto;align-items:center}.receipt-filters{grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end}.receipt-filters__actions{grid-template-columns:auto auto}.receipt-totals{grid-template-columns:repeat(4,minmax(0,1fr))}.variance-line{grid-template-columns:minmax(220px,1fr) 145px minmax(235px,.8fr);align-items:end}.variance-line__impact{display:grid;align-content:center;text-align:right}.variance-line__impact b{margin-top:2px}.analyses-page{padding-bottom:40px}}
-    @media(min-width:980px){.analysis-kpis,.attention-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.analysis-kpis--flow{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}.analysis-columns--three{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    .period-chips{display:flex;flex-wrap:wrap;gap:6px}.period-chips .chip{min-height:34px}
-    .trend-card{margin-top:10px}.trend-card__body{padding:10px 14px 14px}
-    .capital-text{color:var(--ink-2)!important;font-weight:700}
-    .scorecard-card{margin-top:10px}.scorecard-scroll{overflow-x:auto}.scorecard{width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px}.scorecard th{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.05em;text-align:left;text-transform:uppercase}.scorecard td{padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}.scorecard tr:last-child td{border-bottom:0}.scorecard td a{color:inherit;font-weight:650;text-decoration:none}.scorecard td a:hover{color:var(--rose-dark);text-decoration:underline}.scorecard__warn{color:var(--warn);font-weight:700}
-
-    .analysis-tabs{top:var(--appbar-h);gap:4px;margin:-4px 0 20px;padding:6px;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);border-radius:24px;background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:0 4px 18px rgb(25 35 45 / 5%);backdrop-filter:blur(16px);scroll-padding-inline:6px}
-    .analysis-tabs a{display:flex;align-items:center;gap:7px;min-height:44px;padding:5px 12px 5px 7px;border:1px solid transparent;background:transparent;font-size:12px;transition:background .18s,box-shadow .18s}
-    .analysis-tabs a.active{border-color:var(--line);background:var(--surface);color:var(--ink);box-shadow:0 2px 7px rgb(25 35 45 / 8%)}
-    .analysis-tab-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:10px;color:#2365b5;background:#eaf2ff}
-    .analysis-tab-icon[data-tone=rose]{color:#b73568;background:#fdebf1}.analysis-tab-icon[data-tone=green]{color:#247656;background:#e6f5ee}.analysis-tab-icon[data-tone=amber]{color:#9b641b;background:#fff1dc}.analysis-tab-icon[data-tone=purple]{color:#7550bc;background:#f1eafd}
-    .analysis-filter-disclosure{margin-bottom:14px;border-radius:18px;overflow:hidden}.analysis-filter-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:58px;padding:12px 15px;cursor:pointer;list-style:none}.analysis-filter-disclosure>summary::-webkit-details-marker{display:none}.analysis-filter-disclosure>summary>span:first-child{display:grid;gap:3px}.analysis-filter-disclosure b{font-size:13px}.analysis-filter-disclosure small{color:var(--muted);font-size:12px}.disclosure-chevron{transition:transform .18s}.analysis-filter-disclosure[open] .disclosure-chevron{transform:rotate(180deg)}.analysis-filter-disclosure .period-filter{margin:0;border-top:1px solid var(--line)}
-    .section-copy{margin-bottom:16px}.section-copy h2{font-size:24px;letter-spacing:-.035em;line-height:1.16}.section-copy p{line-height:1.55}.metric-card{border-radius:20px;box-shadow:0 2px 8px rgb(20 30 40 / 3%)}.metric-card>strong{font-variant-numeric:tabular-nums;letter-spacing:-.045em}.metric-card--dark{background:linear-gradient(135deg,#263d36,#172721);border-color:#2b443a}.metric-card--dark .metric-card__label,.metric-card--dark>p{color:#d3e5dc}.analysis-list,.attention-card,.variance-order{border-radius:20px}.analysis-list>header{padding:16px;background:transparent}.analysis-list>header h3{font-size:16px;letter-spacing:-.02em}.analysis-list>header span{font-size:10px}.period-chips .chip{min-height:44px;flex:none;padding-inline:14px;font-size:12px}.period-chips .chip:active,.analysis-tabs a:active{transform:scale(.97)}.rank-row,.stock-row,.attention-row,.capital-row{min-height:58px}.rank-row b,.stock-row b,.attention-row b,.capital-row b{font-size:13px}.rank-row small,.stock-row small,.attention-row small,.capital-row small{font-size:11px}.channel-row{padding:12px 15px}
-    @media(max-width:679px){
-      .analyses-page{padding-top:8px}.section-copy--split,.section-copy--receipt{align-items:stretch;flex-direction:column}.section-copy p{font-size:13px}.period-chips{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:2px 0 4px;scrollbar-width:none}.period-chips::-webkit-scrollbar{display:none}
-      .analysis-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.metric-card{padding:14px 12px}.metric-card__label{font-size:10px;line-height:1.4;letter-spacing:.035em;min-height:28px}.metric-card>strong{font-size:clamp(20px,5.6vw,29px);line-height:1.18;overflow-wrap:anywhere}.metric-card>p{font-size:11px;line-height:1.45}.metric-card__sub{grid-template-columns:1fr;margin-top:10px;padding-top:8px}.metric-card__sub b{text-align:left;font-size:14px}.metric-card__sub small{font-size:10.5px}.metric-card--dark:last-child:nth-child(odd){grid-column:1/-1}
-      .attention-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attention-card{padding:14px 12px}.attention-card>strong{font-size:14px}.attention-card>small{font-size:11px;line-height:1.45}.funnel-row{grid-template-columns:minmax(110px,1fr) minmax(45px,1fr) 32px;gap:8px}.funnel-row__label b{font-size:12px}.funnel-row__label small{font-size:11px}.analysis-list>header{align-items:start;flex-wrap:wrap;gap:5px}.analysis-list>header>small{text-align:left;font-size:11px}.capital-row{grid-template-columns:30px minmax(0,1fr) auto;gap:8px}.capital-row>small{grid-column:3;min-width:0}.channel-row{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px}.channel-row__bar{grid-column:1;grid-row:2}.channel-row strong{grid-column:2;grid-row:1}.channel-row>small:last-child{grid-column:2;grid-row:2}
-      .scorecard-scroll{overflow:visible}.scorecard{display:block;min-width:0;width:100%}.scorecard thead{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.scorecard tbody{display:grid;gap:10px;padding:0 10px 10px}.scorecard tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.scorecard td{display:flex;flex-direction:column;gap:3px;min-width:0;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;font-size:13px;font-variant-numeric:tabular-nums}.scorecard td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:650}.scorecard td:first-child{grid-column:1/-1;font-size:15px;font-weight:750;padding-bottom:9px;border-bottom:1px solid var(--line)}.scorecard td a{display:inline-block;padding:4px 0;line-height:1.5}.scorecard td[data-label=Documenten]{grid-column:1/-1;gap:5px}.scorecard .muted{line-height:1.4}
-      .receipt-filters{grid-template-columns:repeat(2,minmax(0,1fr));border-radius:20px}.receipt-filters>label:nth-child(3),.receipt-filters__actions{grid-column:1/-1}.receipt-filters label>span{font-size:11px}.period-filter{grid-template-columns:repeat(2,minmax(0,1fr))}.period-filter p{grid-column:1/-1;font-size:11.5px;line-height:1.5}.variance-order__head{padding:14px}.variance-line__product>strong{white-space:normal}.variance-line__product>span{font-size:12px}
-    }
-    @media(min-width:680px){.analysis-tabs{top:var(--appbar-h);width:max-content;max-width:100%}.analysis-tabs a{font-size:13px}.period-chips{justify-content:flex-end}}
-    @media(prefers-reduced-motion:reduce){.analyses-page *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-
-    @keyframes pulse{50%{opacity:.48}}
-    .section-copy--sub{margin-top:8px}.scorecard .muted{color:var(--muted);font-size:11px}
-    .channel-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto 44px;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}.channel-row:first-of-type{border-top:0}.channel-row b{display:block}.channel-row small{color:var(--muted);font-size:11px}.channel-row__bar{display:block;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden}.channel-row__bar i{display:block;height:100%;border-radius:999px;background:var(--rose)}.channel-row strong{font-variant-numeric:tabular-nums}.channel-row>small:last-child{text-align:right}
   `,
 })
 export class AnalysesPage {
@@ -883,28 +856,55 @@ export class AnalysesPage {
   private readonly sales = inject(SalesApi);
   private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly documentTitle = inject(Title);
   private readonly ui = inject(Ui);
   readonly desk = inject(DesktopViewport);
   private readonly cashSources = inject(CashSources);
   private readonly cashState = inject(CashState);
 
   private readonly analysisNavigation = viewChild<ElementRef<HTMLElement>>('analysisNavigation');
+  private readonly market = viewChild(MarketAnalysis);
+  private readonly website = viewChild(WebsiteAnalytics);
   readonly analysisTabs = ANALYSIS_TABS;
   readonly section = toSignal(this.route.paramMap.pipe(map((params) =>
     analysisSection(params.get('section')))), { initialValue: 'cash' as AnalysisSection });
-  readonly sectionSubtitle = computed(() => ({
-    cash: 'Banksaldo vandaag en wat er komt',
-    overview: 'De belangrijkste signalen op één plek',
-    result: 'Wat we overhouden: marge op de goederen min onze eigen kosten',
-    sales: 'Pijplijn, conversie en facturen',
-    inventory: 'Kapitaal, dekking en aankomende voorraad',
-    purchasing: 'Containerafrekening, werkelijke kosten en ontvangstkwaliteit',
-    market: 'Wisselkoersen met verloop, koopkracht en containervracht',
-    website: 'Wie de website bezoekt, vanwaar, wanneer en waar ze naartoe gaan',
-  })[this.section()]);
+  private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+  readonly head = computed(() => TAB_HEADS[this.section()]);
+  /** The crumb "Analyses ›" on the seven tabs; Overzicht is the area's own top (critique N1). */
+  readonly parent = computed(() => this.section() === 'overview' ? null : ANALYSES_PARENT);
+  readonly how = HOW_TEXTS;
+  readonly purchasingHow = [...HOW_TEXTS['purchasing-kosten'], ...HOW_TEXTS['purchasing-kwaliteit'], ...HOW_TEXTS['purchasing-partners'], ...HOW_TEXTS['purchasing-afwijkingen']];
+  readonly salesNote = SALES_PERIOD_NOTE;
 
-  readonly loading = signal(true);
+  /** Today, kept fresh: refreshed when the page becomes visible again and on Vernieuwen (design §2.8). */
+  readonly today = signal(localIsoDay());
+  readonly todayText = computed(() => weekdayDayMonth(this.today()));
+  readonly yearRangeText = computed(() => rangeLabel(yearStart(this.today()), this.today()));
+
+  /**
+   * The page's own data: idle until the first data tab shows, loading during
+   * that first load, ready after it (critique B6). A refresh keeps 'ready'
+   * and shows refreshing() instead, so the figures stay on screen.
+   */
+  readonly data = signal<'idle' | 'loading' | 'ready'>('idle');
+  readonly loading = computed(() => this.data() !== 'ready');
+  /** Every source failed: the tab shows app-load-error instead of zeros. */
+  readonly loadFailed = signal(false);
+  /** "21:14": when the page's data last arrived. */
+  readonly loadedAt = signal('');
   readonly refreshing = signal(false);
+  /** The toolbar's Vernieuwen per tab: Markt and Bezoekers reload their own sources. */
+  readonly busy = computed(() => {
+    switch (this.section()) {
+      case 'market': return this.market()?.loading() ?? false;
+      case 'website': {
+        const website = this.website();
+        return website ? (website.source() === 'INTERNAL' ? website.loading() : website.googleBusy()) : false;
+      }
+      default: return this.data() === 'loading' || this.refreshing();
+    }
+  });
   readonly filtering = signal(false);
   readonly receiptError = signal('');
   readonly dataWarnings = signal<string[]>([]);
@@ -919,13 +919,17 @@ export class AnalysesPage {
   readonly costs = signal<CompanyCost[]>([]);
   readonly expectedStock = signal<ExpectedStock[]>([]);
 
-  readonly fromDate = signal(CURRENT_YEAR_START);
-  readonly toDate = signal(TODAY);
-  readonly salesFromDate = signal(CURRENT_YEAR_START);
-  readonly salesToDate = signal(TODAY);
+  readonly fromDate = signal(yearStart(this.today()));
+  readonly toDate = signal(this.today());
+  /** Verkoop and Resultaat share one period (design §2.4); the dates follow today. */
+  readonly salesPeriod = signal<PeriodChoice>(parsePeriod((key) => this.route.snapshot.queryParamMap.get(key), SALES_PERIOD_KEYS));
+  readonly salesRange = computed(() => periodRange(this.salesPeriod(), this.today()));
+  readonly salesFromDate = computed(() => this.salesRange().from);
+  readonly salesToDate = computed(() => this.salesRange().to);
+  readonly salesRangeText = computed(() => rangeLabel(this.salesFromDate(), this.salesToDate()));
   readonly supplierId = signal<number | null>(null);
-  private readonly appliedFromDate = signal(CURRENT_YEAR_START);
-  private readonly appliedToDate = signal(TODAY);
+  private readonly appliedFromDate = signal(yearStart(this.today()));
+  private readonly appliedToDate = signal(this.today());
   private readonly appliedSupplierId = signal<number | null>(null);
   readonly focusedOrderId = signal<number | null>(null);
   readonly savingValue = signal<string | null>(null);
@@ -994,20 +998,20 @@ export class AnalysesPage {
   readonly salesMetrics = computed(() => salesAnalysis(this.salesOrders(), this.customers(), {
     from: this.salesFromDate() || undefined,
     to: this.salesToDate() || undefined,
-    today: TODAY,
+    today: this.today(),
     topLimit: 8,
   }));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers(), this.partnerSummaries()));
   readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
   /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
   readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
-    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, TODAY), openEur: openOf,
+    from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, this.today()), openEur: openOf,
   }));
   readonly channelLabel = channelLabel;
   readonly categoryLabel = categoryLabel;
 
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
-    this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: TODAY }));
+    this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: this.today() }));
 
   /** The month by month view as two lines: what was invoiced, what was accepted. */
   readonly salesTrend = computed<TrendSeries[]>(() => {
@@ -1033,13 +1037,6 @@ export class AnalysesPage {
     ];
   });
 
-  readonly salesPresets = SALES_PRESETS;
-  /** Which preset the two dates spell, if any; a hand-picked range lights none. */
-  readonly salesPreset = computed<SalesPresetId | null>(() => {
-    const from = this.salesFromDate();
-    const to = this.salesToDate();
-    return SALES_PRESETS.find((preset) => preset.from === from && preset.to === to)?.id ?? null;
-  });
 
   readonly supplierCards = computed(() => supplierScorecards(this.receivedForPerformance().map((row) => ({
     supplierId: row.order.supplierId,
@@ -1087,11 +1084,39 @@ export class AnalysesPage {
   }));
 
   constructor() {
-    this.cashState.attach(this.cashPage, this.loading, TODAY);
+    this.cashState.attach(this.cashPage, this.loading, this.today);
+    /* The page's data load the first time a data tab shows; Markt and Bezoekers never trigger it (critique B6). */
+    effect(() => {
+      const section = this.section();
+      if (DATA_TABS.has(section) && untracked(this.data) === 'idle') untracked(() => void this.load());
+    });
     /* The bank and forecast data load the first time Kasprognose or Overzicht is shown. */
     effect(() => {
       const section = this.section();
-      if (section === 'cash' || section === 'overview') untracked(() => this.cashSources.ensure(TODAY));
+      if (section === 'cash' || section === 'overview') untracked(() => this.cashSources.ensure(this.today()));
+    });
+    /*
+     * The period lives in the URL on Verkoop and Resultaat only (critique N9): a link with the keys sets it;
+     * a link without them (the sidebar) gets the current choice written back.
+     */
+    effect(() => {
+      const params = this.queryParams();
+      const section = this.section();
+      if (section !== 'sales' && section !== 'result') return;
+      untracked(() => {
+        const keys = [SALES_PERIOD_KEYS.preset, SALES_PERIOD_KEYS.from, SALES_PERIOD_KEYS.to];
+        if (keys.some((key) => params.has(key))) {
+          const parsed = parsePeriod((key) => params.get(key), SALES_PERIOD_KEYS);
+          if (!samePeriod(parsed, this.salesPeriod())) this.salesPeriod.set(parsed);
+        } else if (!samePeriod(this.salesPeriod(), DEFAULT_PERIOD)) {
+          this.writeParams(periodParams(this.salesPeriod(), SALES_PERIOD_KEYS));
+        }
+      });
+    });
+    /* "Analyses · Verkoop — Enrosed" (critique N19): after PageHeader's own title effect. */
+    afterRenderEffect(() => {
+      const section = this.section();
+      this.documentTitle.setTitle(section === 'overview' ? 'Analyses — Enrosed' : `Analyses · ${TAB_HEADS[section].title} — Enrosed`);
     });
     /* The advance schedules need the page's partner financings: once per round, after the page loaded. */
     effect(() => {
@@ -1116,19 +1141,45 @@ export class AnalysesPage {
       this.appliedFromDate.set('');
       this.appliedToDate.set('');
     }
-    void this.load();
   }
 
+  /** Vernieuwen reloads what the visible tab shows (critique B6: branch on the tab before any guard). */
   async refresh(): Promise<void> {
-    if (this.loading() || this.refreshing()) return;
+    const section = this.section();
+    if (section === 'market') {
+      const market = this.market();
+      if (market && !market.loading()) await market.load();
+      return;
+    }
+    if (section === 'website') { this.website()?.reloadSelected(); return; }
+    if (this.data() === 'loading' || this.refreshing()) return;
+    this.today.set(localIsoDay());
     this.refreshing.set(true);
     try {
-      await Promise.all([this.load(), this.cashSources.state() === 'idle' ? Promise.resolve() : this.cashSources.reload(TODAY)]);
+      await Promise.all([this.load(), this.cashSources.state() === 'idle' ? Promise.resolve() : this.cashSources.reload(this.today())]);
     } finally { this.refreshing.set(false); }
   }
 
+  /** The page became visible again: a new day rolls the presets and "vandaag" over. */
+  visible(): void {
+    if (document.visibilityState !== 'visible') return;
+    const day = localIsoDay();
+    if (day !== this.today()) this.today.set(day);
+  }
+
+  dataTab(section: AnalysisSection): boolean { return DATA_TABS.has(section); }
+
+  setSalesPeriod(choice: PeriodChoice): void {
+    this.salesPeriod.set(choice);
+    this.writeParams(periodParams(choice, SALES_PERIOD_KEYS));
+  }
+
+  private writeParams(params: Record<string, string | null>): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   async load(): Promise<void> {
-    this.loading.set(true);
+    if (this.data() === 'idle') this.data.set('loading');
     this.receiptError.set('');
     try {
       const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners] = await Promise.allSettled([
@@ -1155,8 +1206,11 @@ export class AnalysesPage {
       if (incoming.status === 'fulfilled') this.incomingPayments.set(incoming.value); else warnings.push('inkomende betalingen');
       if (partners.status === 'fulfilled') this.partnerSummaries.set(partners.value); else warnings.push('partnerfinanciering');
       this.dataWarnings.set(warnings);
+      this.loadFailed.set([report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners].every((call) => call.status === 'rejected'));
+      const now = new Date();
+      this.loadedAt.set(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     } finally {
-      this.loading.set(false);
+      this.data.set('ready');
     }
   }
 
@@ -1192,10 +1246,10 @@ export class AnalysesPage {
 
   clearOrderFocus(): void {
     this.focusedOrderId.set(null);
-    this.fromDate.set(CURRENT_YEAR_START);
-    this.toDate.set(TODAY);
-    this.appliedFromDate.set(CURRENT_YEAR_START);
-    this.appliedToDate.set(TODAY);
+    this.fromDate.set(yearStart(this.today()));
+    this.toDate.set(this.today());
+    this.appliedFromDate.set(yearStart(this.today()));
+    this.appliedToDate.set(this.today());
     this.appliedSupplierId.set(this.supplierId());
     void this.loadVariances();
   }
@@ -1203,13 +1257,6 @@ export class AnalysesPage {
   changeSupplier(value: string | number | null): void {
     const parsed = Number(value);
     this.supplierId.set(value === '' || value === null || !Number.isFinite(parsed) ? null : parsed);
-  }
-
-  applySalesPreset(id: SalesPresetId): void {
-    const preset = SALES_PRESETS.find((row) => row.id === id);
-    if (!preset) return;
-    this.salesFromDate.set(preset.from);
-    this.salesToDate.set(preset.to);
   }
 
   supplierName(id: number): string {

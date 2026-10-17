@@ -42,7 +42,8 @@ export class CashState {
 
   private page: Signal<CashPageData> | null = null;
   private pageLoading: Signal<boolean> = signal(true);
-  private todayValue = '';
+  /** Today as the page keeps it (a signal: the forecast rolls over at midnight and after a refresh). */
+  private todaySignal: Signal<string> = signal('');
   private pageSeen = false;
 
   /** Choices typed here and not yet saved (or, on a server without this round, kept for this visit only). */
@@ -58,19 +59,19 @@ export class CashState {
     });
   }
 
-  attach(page: Signal<CashPageData>, loading: Signal<boolean>, today: string): void {
+  attach(page: Signal<CashPageData>, loading: Signal<boolean>, today: Signal<string>): void {
     this.page = page;
     this.pageLoading = loading;
-    this.todayValue = today;
+    this.todaySignal = today;
   }
 
-  get today(): string { return this.todayValue; }
+  get today(): string { return this.todaySignal(); }
   readonly cashRound = computed(() => this.sources.cashRound());
   /** The stored choices or the settings could not load: the container controls and the buffer wait for "Opnieuw". */
   readonly choicesFailed = computed(() => this.sources.choicesFailed());
 
   /** "Opnieuw" after the choices failed to load. */
-  retryChoices(): void { void this.sources.reload(this.todayValue); }
+  retryChoices(): void { void this.sources.reload(this.todaySignal()); }
 
   /** The stored choice per order: the server's rows with what is still waiting to be saved on top. */
   readonly stored = computed<PurchaseOrderForecast[]>(() => {
@@ -88,7 +89,7 @@ export class CashState {
     /* The first page load must finish; a refresh keeps the last good data on screen meanwhile. */
     if (this.pageLoading() && !this.pageSeen) return null;
     this.pageSeen = true;
-    const sources = this.sources.sourcesWith(this.page(), this.todayValue);
+    const sources = this.sources.sourcesWith(this.page(), this.todaySignal());
     return sources ? cashForecastInput(sources) : null;
   });
 
@@ -98,7 +99,7 @@ export class CashState {
     return this.pending().size ? { ...core, stored: this.stored() } : core;
   });
 
-  readonly options = computed<ForecastOptions>(() => cashOptionsOf(this.location(), this.todayValue, this.dismissed()));
+  readonly options = computed<ForecastOptions>(() => cashOptionsOf(this.location(), this.todaySignal(), this.dismissed()));
 
   readonly forecast = computed<CashForecast | null>(() => {
     const input = this.input();

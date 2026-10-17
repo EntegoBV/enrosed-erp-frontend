@@ -1,0 +1,40 @@
+/* ==========================================================================
+   Analyses (redesign 2026-10-17; design analyses/design.md + critique.md).
+   Loaded by AnalysesPage (styleUrls, ViewEncapsulation.None) so it stays in
+   the lazy analyses chunk: styles.css is at the 1 MB initial budget. Every
+   rule is scoped under the page (.an, app-analyses-page, an-* classes).
+
+   Part 1 — the frame (.an-*): tool row, period picker, "Hoe gerekend",
+   figures, cards, rows. Kit tokens only (critique N3); no transform, filter,
+   backdrop-filter or container-type on anything that can hold a sheet or a
+   popover with fixed children (trap rule); media queries, never container
+   queries.
+   Today's page styles live in analyses-legacy.scss until each body package
+   has replaced them (critique B9).
+   ========================================================================== */
+
+app-analyses-page { display: block; }
+
+/* ---------- Part 1: frame */
+.an { --an-gap: 14px; }
+.an-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 40px; margin: 0 0 var(--an-gap); }
+.an-bar__text { min-width: 0; color: var(--muted); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.an-bar__end { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.an-pick .an-pick__chev { margin-left: -1px; color: var(--muted); }
+.an-link { display: inline-flex; align-items: center; gap: 2px; color: var(--rose-dark); font-size: 12.5px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.an-link:hover { text-decoration: underline; }
+.an-pop { left: 0; right: auto; width: 300px; gap: 10px; }
+.an-pop__list { display: grid; gap: 1px; margin: -4px -4px 0; }
+.an-pop__opt { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: none;
+  color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.an-pop__opt:hover { background: var(--surface-2); }
+.an-pop__opt.is-on { background: var(--rose-soft); color: var(--rose-dark); }
+.an-pop__dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.an-pop__head { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.an-pop__dates label { display: grid; gap: 4px; min-width: 0; }
+.an-pop__dates label > span { color: var(--muted); font-size: 11px; font-weight: 650; }
+.an-pop__note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.an-how__pop { width: 340px; gap: 8px; }
+.an-how__pop p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+.an .wk-banner--inset { margin-bottom: var(--an-gap); }
+
