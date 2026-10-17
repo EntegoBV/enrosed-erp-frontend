@@ -3,6 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Segmented } from '../../shared/segmented';
+import { Icon } from '../../shared/icon';
+import { Sheet } from '../../shared/ui';
 import type { SegmentOption } from '../../shared/segmented';
 import { AnalyticsApi, WebsiteAnalyticsReport, WebsitePageKind } from '../../core/api/analytics-api';
 import { messageOf } from '../../core/api/errors';
@@ -46,7 +48,7 @@ const RANGES: readonly Range[] = [
 @Component({
   selector: 'app-website-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NumPipe, GoogleWebsiteAnalytics, Segmented],
+  imports: [NumPipe, GoogleWebsiteAnalytics, Segmented, Icon, Sheet],
   template: `
     <!-- The tab's tool row (critique N10, design §3.8): source and period; Vernieuwen is the page's. -->
     <div class="an-bar">
@@ -54,12 +56,12 @@ const RANGES: readonly Range[] = [
         <app-segmented label="Bron van de websitecijfers" [options]="sourceOptions" [value]="source()" (changed)="setSource($any($event))" />
         <app-segmented label="Periode" [options]="rangeOptions()" [value]="'' + days()" (changed)="setDays(+$event)" />
       } @else {
-        <select class="an-capsule-select" aria-label="Bron van de websitecijfers" (change)="setSource($any($event.target).value)">
-          @for (choice of sources; track choice.id) { <option [value]="choice.id" [selected]="source() === choice.id">{{ choice.label }}</option> }
-        </select>
-        <select class="an-capsule-select" aria-label="Periode" (change)="setDays(+$any($event.target).value)">
-          @for (range of rangeOptions(); track range.id) { <option [value]="range.id" [selected]="'' + days() === range.id">{{ range.label }}</option> }
-        </select>
+        <!-- Phone: tinted capsules that open a sheet each (design §3.8). -->
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                [attr.aria-label]="'Bron: ' + sourceLabel()" (click)="phoneSheet.set('source')">{{ sourceLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
+                [attr.aria-label]="'Periode: ' + rangeLabel()" (click)="phoneSheet.set('days')">
+          <app-icon name="calendar" [size]="15" />{{ rangeLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
       }
       @if (source() === 'INTERNAL') { @if (report(); as r) {
         <span class="an-bar__end"><span class="wa__live" [class.wa__live--on]="r.totals.activeNow > 0" [title]="'Bezoekers gezien in het laatste half uur'">
@@ -83,7 +85,7 @@ const RANGES: readonly Range[] = [
           <span class="an-kpi__sub">{{ deltaLine(r.totals.visitors, r.previous.visitors) }}</span><span class="an-kpi__foot"></span></div>
         <div class="an-kpi"><span class="an-kpi__label">Sessies</span><span class="an-kpi__value">{{ r.totals.sessions | num }}</span>
           <span class="an-kpi__sub">{{ deltaLine(r.totals.sessions, r.previous.sessions) }}</span><span class="an-kpi__foot"></span></div>
-        <div class="an-kpi"><span class="an-kpi__label">Pagina’s per sessie</span><span class="an-kpi__value">{{ r.totals.pagesPerSession }}</span>
+        <div class="an-kpi"><span class="an-kpi__label">Pagina’s per sessie</span><span class="an-kpi__value">{{ r.totals.pagesPerSession | num: 1 }}</span>
           <span class="an-kpi__sub">{{ r.totals.sessions ? r.totals.bounceRatePct + ' % haakt na één pagina af' : 'nog geen sessies' }}</span><span class="an-kpi__foot"></span></div>
         <div class="an-kpi"><span class="an-kpi__label">Sessieduur</span><span class="an-kpi__value">{{ duration(r.totals.avgSessionSeconds) }}</span>
           <span class="an-kpi__sub">gemiddeld, bij meer dan één pagina</span><span class="an-kpi__foot"></span></div>
@@ -259,6 +261,38 @@ const RANGES: readonly Range[] = [
       </footer>
     }
     }
+
+    @switch (phoneSheet()) {
+      @case ('source') {
+        <app-sheet title="Bron" variant="ios" (closed)="phoneSheet.set(null)">
+          <div body>
+            <div class="ios-group" role="radiogroup" aria-label="Bron van de websitecijfers">
+              @for (choice of sources; track choice.id) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="source() === choice.id" (click)="pickSource(choice.id)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ choice.label }}</span></span>
+                  @if (source() === choice.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+            <p class="ios-section__foot">Google gebruikt andere meetregels dan de eigen websitemeting; de aantallen worden niet samengevoegd.</p>
+          </div>
+        </app-sheet>
+      }
+      @case ('days') {
+        <app-sheet title="Periode" variant="ios" (closed)="phoneSheet.set(null)">
+          <div body>
+            <div class="ios-group" role="radiogroup" aria-label="Periode">
+              @for (range of rangeOptions(); track range.id) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="'' + days() === range.id" (click)="pickDays(+range.id)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ range.label }}</span></span>
+                  @if ('' + days() === range.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+          </div>
+        </app-sheet>
+      }
+    }
   `,
   styles: `
     :host{display:block}
@@ -352,6 +386,10 @@ export class WebsiteAnalytics {
   /** "Vandaag" reads "Laatste dag" for Google zoeken (its data lag a day). */
   readonly rangeOptions = computed<SegmentOption[]>(() => RANGES.map((range) => ({ id: String(range.days),
     label: this.source() === 'SEARCH_CONSOLE' && range.days === 1 ? 'Laatste dag' : range.label })));
+  /** The phone capsules' texts and their sheets. */
+  readonly sourceLabel = computed(() => this.sources.find((choice) => choice.id === this.source())?.label ?? '');
+  readonly rangeLabel = computed(() => this.rangeOptions().find((option) => option.id === String(this.days()))?.label ?? this.range().label);
+  readonly phoneSheet = signal<'source' | 'days' | null>(null);
   readonly googleRefresh = signal(0);
   readonly googleBusy = signal(false);
   readonly weekdays = WEEKDAYS;
@@ -413,6 +451,17 @@ export class WebsiteAnalytics {
     if (!RANGES.some((range) => range.days === days)) return;
     this.days.set(days);
     this.writeQuery();
+  }
+
+  /** A choice in a phone sheet: apply and close. */
+  pickSource(source: WebsiteAnalyticsSource): void {
+    this.setSource(source);
+    this.phoneSheet.set(null);
+  }
+
+  pickDays(days: number): void {
+    this.setDays(days);
+    this.phoneSheet.set(null);
   }
 
   half(value: number): number { return Math.round(value / 2); }

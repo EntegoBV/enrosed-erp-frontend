@@ -194,6 +194,8 @@ app-website-analytics .wa__plot { display: grid; grid-template-columns: auto min
 app-website-analytics .wa__yaxis { display: flex; flex-direction: column; justify-content: space-between; min-width: 28px; color: var(--muted);
   font-size: 10.5px; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; }
 @media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { margin-inline: 0; } }
+/* Phone: the live count may take a line of its own, never a cut at the screen edge. */
+@media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { flex-wrap: wrap; overflow: visible; } }
 
 /* ---------- Resultaat: five figures only from 1280; narrower 3 + 2 without a hole (critique B2.3) */
 .an-kpis--5 { --an-cols: 5; }
