@@ -21,7 +21,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
-import { DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
+import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
@@ -135,7 +135,7 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
 };
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
 /** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
-const LEGACY_BODIES = new Set<AnalysisSection>(['inventory', 'result', 'market', 'website']);
+const LEGACY_BODIES = new Set<AnalysisSection>(['result', 'market', 'website']);
 /** The phone ⋯ sheet: the links the desk shows in the tool row. */
 const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
   sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
@@ -183,7 +183,6 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
     PageHeader,
-    DateNlPipe,
     EurPipe,
     NumPipe,
     PctPipe,
@@ -686,113 +685,141 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'inventory') {
-      <section class="analysis-section" aria-labelledby="inventory-analysis-title">
-        <header class="section-copy">
-          <span class="eyebrow">Voorraadanalyse</span>
-          <h2 id="inventory-analysis-title">Waarde, tekorten en wat onderweg is</h2>
-          <p>Een actuele momentopname uit de productkaart en open inkooporders; het tempo komt van de facturen van de laatste {{ inventoryMetrics().velocity.days }} dagen.</p>
-        </header>
-
-        <div class="analysis-kpis analysis-kpis--flow">
-          <article class="card metric-card metric-card--dark">
-            <span class="metric-card__label">Kostwaarde voorraad</span>
-            <strong>{{ inventoryMetrics().stock.costValueEur | eur: 0 }}</strong>
-            <p>{{ inventoryMetrics().stock.valuedPieces | num }} gewaardeerde stuks</p>
-            <p>Bevat de Enrosed kost. Voor de boekhouding: <a routerLink="/stock/inventaris" style="color:inherit;font-weight:700;white-space:nowrap">Jaarinventaris ›</a></p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Eigen voorraadwaarde</span>
-            <strong>{{ inventoryMetrics().stock.ownCostValueEur | eur: 0 }}</strong>
-            <p>@if (inventoryMetrics().stock.partnerPieces) { daarnaast ligt hier {{ inventoryMetrics().stock.partnerCostValueEur | eur: 0 }} voor een partner: {{ inventoryMetrics().stock.partnerPieces | num }} stuks al gefactureerd, nog te verzenden } @else { niets van de voorraad is al aan een partner gefactureerd }</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Verkoopwaarde</span>
-            <strong>{{ inventoryMetrics().stock.salesValueEur | eur: 0 }}</strong>
-            <p>{{ inventoryMetrics().stock.saleablePieces | num }} actieve verkoopbare stuks</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Bekende voorraad</span>
-            <strong>{{ inventoryMetrics().stock.knownPieces | num }} st</strong>
-            <p>{{ inventoryMetrics().stock.knownSkuCount }} SKU's · {{ inventoryMetrics().stock.unknownSkuCount }} onbekend</p>
-          </article>
-          <article class="card metric-card metric-card--quality">
-            <span class="metric-card__label">Onderweg</span>
-            <strong>{{ inventoryMetrics().incoming.pieces | num }} st</strong>
-            <p>{{ inventoryMetrics().incoming.skuCount }} SKU's · eerst verwacht {{ inventoryMetrics().incoming.nextArrival | dateNl }}</p>
-          </article>
-          <article class="card metric-card">
-            <span class="metric-card__label">Verkooptempo</span>
-            <strong>{{ inventoryMetrics().velocity.weeklyPieces | num }}</strong>
-            <p>stuks per week · {{ inventoryMetrics().velocity.piecesSold | num }} gefactureerd in {{ inventoryMetrics().velocity.days }} dagen over {{ inventoryMetrics().velocity.skuCount }} SKU's</p>
-          </article>
-          <article class="card metric-card" [class.metric-card--danger]="inventoryMetrics().reorder.count > 0">
-            <span class="metric-card__label">Snel bestellen</span>
-            <strong>{{ inventoryMetrics().reorder.count }} {{ inventoryMetrics().reorder.count === 1 ? 'SKU' : 'SKU’s' }}</strong>
-            <p>Binnen {{ inventoryMetrics().reorder.horizonWeeks }} weken op, ook met wat onderweg is</p>
-          </article>
+        @let im = inventoryMetrics();
+        @if (loading()) {
+          <div class="an-kpis an-kpis--6" aria-label="Voorraad laden">@for (n of [1, 2, 3, 4, 5, 6]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+        } @else {
+          <div class="an-kpis an-kpis--6">
+            <div class="an-kpi"><span class="an-kpi__label">Kostwaarde</span><span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(im.stock.costValueEur) }}</span>
+              <span class="an-kpi__sub">{{ im.stock.valuedPieces | num }} gewaardeerde stuks</span>
+              <span class="an-kpi__foot">eigen {{ whole(im.stock.ownCostValueEur) }} · partner {{ whole(im.stock.partnerCostValueEur) }}@if (im.stock.partnerPieces) { voor {{ im.stock.partnerPieces | num }} st, al gefactureerd, nog te verzenden }</span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Verkoopwaarde</span><span class="an-kpi__value">{{ whole(im.stock.salesValueEur) }}</span>
+              <span class="an-kpi__sub">{{ im.stock.saleablePieces | num }} actieve verkoopbare stuks</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Bekende voorraad</span><span class="an-kpi__value">{{ im.stock.knownPieces | num }} <small>st</small></span>
+              <span class="an-kpi__sub">{{ plural(im.stock.knownSkuCount, 'SKU', 'SKU’s') }} · {{ im.stock.unknownSkuCount | num }} onbekend</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Onderweg</span><span class="an-kpi__value">{{ im.incoming.pieces | num }} <small>st</small></span>
+              <span class="an-kpi__sub">{{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}@if (im.incoming.nextArrival) { · eerst verwacht {{ dayText(im.incoming.nextArrival) }} }</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Verkooptempo</span><span class="an-kpi__value">{{ im.velocity.weeklyPieces | num }} <small>st/week</small></span>
+              <span class="an-kpi__sub">{{ im.velocity.piecesSold | num }} gefactureerd in {{ im.velocity.days }} dagen · {{ plural(im.velocity.skuCount, 'SKU', 'SKU’s') }}</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Snel bestellen</span>
+              <span class="an-kpi__value" [attr.data-tone]="im.reorder.count > 0 ? 'danger' : null">{{ plural(im.reorder.count, 'SKU', 'SKU’s') }}</span>
+              <span class="an-kpi__sub">Binnen {{ im.reorder.horizonWeeks }} weken op, ook met wat onderweg is</span><span class="an-kpi__foot"></span></div>
+          </div>
+          <p class="an-quality" role="status">Datakwaliteit:
+            <span [class.is-warn]="im.dataGaps.unknownStockSkuCount > 0"><b>{{ im.dataGaps.unknownStockSkuCount }}</b> voorraad onbekend</span> ·
+            <span [class.is-warn]="im.dataGaps.unvaluedStockSkuCount > 0"><b>{{ im.dataGaps.unvaluedStockSkuCount }}</b> zonder kostwaarde</span> ·
+            <span [class.is-warn]="im.dataGaps.missingCartonSkuCount > 0"><b>{{ im.dataGaps.missingCartonSkuCount }}</b> zonder outer carton</span> ·
+            <span [class.is-warn]="im.dataGaps.negativeStockSkuCount > 0"><b>{{ im.dataGaps.negativeStockSkuCount }}</b> negatief</span></p>
+        }
+        <div class="an-cols">
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-zero-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-zero-title">Nulvoorraad</h2>
+                @if (!loading()) { <span class="an-card__trail">{{ im.zeroStock.withoutIncomingCount }} zonder aanvulling · {{ im.zeroStock.count }} in totaal</span> }</header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  @for (row of take('zero', im.zeroStock.rows); track row.productId) {
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span><span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} }</span></span>
+                      <span class="an-row__end">@if (row.expectedPieces > 0) { <span class="an-row__meta" data-tone="ok">{{ unitWords(row.productId, row.expectedPieces) }} onderweg</span> }
+                        @else { <span class="an-row__meta" data-tone="warn">Geen inkoop onderweg</span> }</span>
+                      <span class="an-row__chev" aria-hidden="true">›</span>
+                    </a>
+                  } @empty { <p class="an-empty">Geen actieve producten met nulvoorraad.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'zero', total: im.zeroStock.rows.length }" />
+                }
+              </div>
+            </section>
+            <section class="an-card" aria-labelledby="an-carton-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-carton-title">Minder dan één outer carton</h2>
+                @if (!loading()) { <span class="an-card__trail">{{ plural(im.belowCarton.count, 'SKU', 'SKU’s') }}</span> }</header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="2" /> } @else {
+                  @for (row of take('carton', im.belowCarton.rows); track row.productId) {
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span><span class="an-row__sub">{{ row.sku || 'Geen SKU' }} · {{ unitWords(row.productId, row.stockPieces) }} op voorraad</span></span>
+                      <span class="an-row__end"><span class="an-row__meta" data-tone="warn">{{ unitWords(row.productId, row.missingPiecesToCarton ?? 0) }} nodig voor carton</span></span>
+                      <span class="an-row__chev" aria-hidden="true">›</span>
+                    </a>
+                  } @empty { <p class="an-empty">Alle bekende positieve voorraden vullen minstens één outer carton.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'carton', total: im.belowCarton.rows.length }" />
+                }
+              </div>
+            </section>
+          </div>
+          <div class="an-col">
+            <section class="an-card" aria-labelledby="an-incoming-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-incoming-title">Onderweg</h2>
+                @if (!loading()) { <span class="an-card__trail">{{ im.incoming.pieces | num }} st · {{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}</span> }</header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  @for (row of take('incoming', incomingRows()); track row.productId) {
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}@if (row.colour) { · {{ row.colour }} }</span>
+                        <span class="an-row__sub">{{ row.sku || 'Geen SKU' }} · {{ row.containers }}</span></span>
+                      <span class="an-row__end"><span class="an-row__value">{{ unitWords(row.productId, row.pieces) }}</span>
+                        <span class="an-row__meta">{{ row.expectedArrival ? dayText(row.expectedArrival) : 'zonder ETA' }}</span></span>
+                      <span class="an-row__chev" aria-hidden="true">›</span>
+                    </a>
+                  } @empty { <p class="an-empty">Niets onderweg: geen open inkooporders met producten.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'incoming', total: incomingRows().length }" />
+                }
+              </div>
+            </section>
+            <section class="an-card" aria-labelledby="an-reorder-title">
+              <header class="an-card__head"><h2 class="an-card__title" id="an-reorder-title">Raakt binnenkort op</h2><span class="an-card__trail">op het tempo van {{ im.velocity.days }} dagen</span></header>
+              <div class="an-card__body">
+                @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="2" /> } @else {
+                  @for (row of take('reorder', im.reorder.rows); track row.productId) {
+                    <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span>
+                        <span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ unitWords(row.productId, row.stockPieces) }} op voorraad@if (row.expectedPieces) { · {{ unitWords(row.productId, row.expectedPieces) }} onderweg } · {{ row.weeklyPieces | num }} st/week</span></span>
+                      <span class="an-row__end"><span class="an-row__meta" [attr.data-tone]="(row.weeksLeftWithIncoming ?? 0) >= 4 ? 'ok' : 'warn'">{{ weeksLabel(row.weeksLeftWithIncoming) }}</span></span>
+                      <span class="an-row__chev" aria-hidden="true">›</span>
+                    </a>
+                  } @empty { <p class="an-empty">Niets raakt binnen {{ im.reorder.horizonWeeks }} weken op, of er werd nog niets gefactureerd.</p> }
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'reorder', total: im.reorder.rows.length }" />
+                }
+              </div>
+            </section>
+          </div>
         </div>
-
-        <div class="data-gap-strip" role="status">
-          <span><b>{{ inventoryMetrics().dataGaps.unknownStockSkuCount }}</b> voorraad onbekend</span>
-          <span><b>{{ inventoryMetrics().dataGaps.unvaluedStockSkuCount }}</b> zonder kostwaarde</span>
-          <span><b>{{ inventoryMetrics().dataGaps.missingCartonSkuCount }}</b> zonder outer carton</span>
-          <span><b>{{ inventoryMetrics().dataGaps.negativeStockSkuCount }}</b> negatief</span>
-        </div>
-
-        <div class="analysis-columns">
-          <article class="card analysis-list">
-            <header><div><span>Direct controleren</span><h3>Nulvoorraad</h3></div><small>{{ inventoryMetrics().zeroStock.withoutIncomingCount }} zonder aanvulling</small></header>
-            @for (row of inventoryMetrics().zeroStock.rows; track row.productId) {
-              <a class="stock-row" [routerLink]="['/products', row.productId]">
-                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} }</small></div>
-                <span [class.ok-text]="row.expectedPieces > 0">{{ row.expectedPieces > 0 ? (row.expectedPieces | num) + ' onderweg' : 'Geen inkoop onderweg' }}</span>
-              </a>
-            } @empty { <p class="list-empty">Geen actieve producten met nulvoorraad.</p> }
-          </article>
-          <article class="card analysis-list">
-            <header><div><span>Verpakking</span><h3>Minder dan één outer carton</h3></div><small>{{ inventoryMetrics().belowCarton.count }} SKU's</small></header>
-            @for (row of inventoryMetrics().belowCarton.rows; track row.productId) {
-              <a class="stock-row" [routerLink]="['/products', row.productId]">
-                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }} · {{ row.stockPieces | num }} op voorraad</small></div>
-                <span>{{ row.missingPiecesToCarton | num }} nodig voor carton</span>
-              </a>
-            } @empty { <p class="list-empty">Alle bekende positieve voorraden vullen minstens één outer carton.</p> }
-          </article>
-        </div>
-
-        <div class="analysis-columns">
-          <article class="card analysis-list">
-            <header><div><span>Bestellen</span><h3>Raakt binnenkort op</h3></div><small>op het tempo van {{ inventoryMetrics().velocity.days }} dagen</small></header>
-            @for (row of inventoryMetrics().reorder.rows; track row.productId) {
-              <a class="stock-row" [routerLink]="['/products', row.productId]">
-                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ row.stockPieces | num }} op voorraad@if (row.expectedPieces) { · {{ row.expectedPieces | num }} onderweg } · {{ row.weeklyPieces }} st/week</small></div>
-                <span [class.ok-text]="(row.weeksLeftWithIncoming ?? 0) >= 4">{{ weeksLabel(row.weeksLeftWithIncoming) }}</span>
-              </a>
-            } @empty { <p class="list-empty">Niets raakt binnen {{ inventoryMetrics().reorder.horizonWeeks }} weken op, of er werd nog niets gefactureerd.</p> }
-          </article>
-          <article class="card analysis-list">
-            <header><div><span>Stilstaand</span><h3>Trage verkopers</h3></div><small>{{ inventoryMetrics().slowMovers.valueEur | eur: 0 }} in {{ inventoryMetrics().slowMovers.count }} SKU's</small></header>
-            @for (row of inventoryMetrics().slowMovers.rows; track row.productId) {
-              <a class="stock-row" [routerLink]="['/products', row.productId]">
-                <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ row.stockPieces | num }} stuks zonder verkoop</small></div>
-                <span class="capital-text">{{ row.costValueEur | eur: 0 }}</span>
-              </a>
-            } @empty { <p class="list-empty">Elke gewaardeerde voorraadpositie verkocht in de laatste {{ inventoryMetrics().velocity.days }} dagen.</p> }
-          </article>
-        </div>
-
-        <article class="card analysis-list capital-list">
-          <header><div><span>Kapitaal</span><h3>Grootste voorraadposities</h3></div><small>op bekende kostwaarde</small></header>
-          @for (row of inventoryMetrics().topCapital; track row.productId) {
-            <a class="capital-row" [routerLink]="['/products', row.productId]">
-              <span class="capital-row__bar"><i [style.width.%]="row.sharePct"></i></span>
-              <div><b>{{ row.name }}</b><small>{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ row.stockPieces | num }} stuks</small></div>
-              <strong>{{ row.costValueEur | eur: 0 }}</strong>
-              <small>{{ row.sharePct | pct: 1 }}</small>
-            </a>
-          } @empty { <p class="list-empty">Nog geen actuele voorraad met kostwaarde.</p> }
-        </article>
-      </section>
+        @let merged = slowSameAsCapital();
+        <section class="an-card" aria-labelledby="an-capital-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="an-capital-title">Grootste voorraadposities</h2>
+            <span class="an-card__trail">op bekende kostwaarde@if (merged && !loading()) { · alles zonder verkoop in {{ im.velocity.days }} dagen: {{ whole(im.slowMovers.valueEur) }} in {{ plural(im.slowMovers.count, 'SKU', 'SKU’s') }} }</span></header>
+          <div class="an-card__body">
+            @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+              @for (row of take('capital', im.topCapital); track row.productId) {
+                <a class="an-row an-share an-row--link" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                  <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span>
+                    <span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ unitWords(row.productId, row.stockPieces) }}{{ merged ? ' zonder verkoop' : '' }}</span></span>
+                  <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
+                  <span class="an-row__value">{{ whole(row.costValueEur) }}</span>
+                  <span class="an-row__meta">{{ row.sharePct | pct: 1 }}</span>
+                </a>
+              } @empty { <p class="an-empty">Nog geen actuele voorraad met kostwaarde.</p> }
+              <ng-container *ngTemplateOutlet="more; context: { key: 'capital', total: im.topCapital.length }" />
+            }
+          </div>
+        </section>
+        @if (!merged && !loading()) {
+          <section class="an-card" aria-labelledby="an-slow-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="an-slow-title">Trage verkopers</h2>
+              <span class="an-card__trail">{{ whole(im.slowMovers.valueEur) }} in {{ plural(im.slowMovers.count, 'SKU', 'SKU’s') }}</span></header>
+            <div class="an-card__body">
+              @for (row of take('slow', im.slowMovers.rows); track row.productId) {
+                <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
+                  <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span>
+                    <span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ unitWords(row.productId, row.stockPieces) }} zonder verkoop</span></span>
+                  <span class="an-row__end"><span class="an-row__value">{{ whole(row.costValueEur) }}</span></span>
+                  <span class="an-row__chev" aria-hidden="true">›</span>
+                </a>
+              } @empty { <p class="an-empty">Elke gewaardeerde voorraadpositie verkocht in de laatste {{ im.velocity.days }} dagen.</p> }
+              <ng-container *ngTemplateOutlet="more; context: { key: 'slow', total: im.slowMovers.rows.length }" />
+            </div>
+          </section>
+        }
       }
 
       @if (section() === 'result') {
@@ -1418,6 +1445,18 @@ export class AnalysesPage {
 
   readonly inventoryMetrics = computed(() => inventoryAnalysis(
     this.products(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: this.today() }));
+
+  /** Onderweg as a list (design §5.11): soonest arrival first, then the most pieces; containers by name (N11). */
+  readonly incomingRows = computed(() => [...this.inventoryMetrics().incoming.rows]
+    .sort((left, right) => (left.expectedArrival ?? '9999').localeCompare(right.expectedArrival ?? '9999') || right.pieces - left.pieces)
+    .map((row) => ({ ...row, containers: row.orderIds.map((id, index) => this.containerOf(id, row.orderNumbers[index] ?? `Inkoop #${id}`, null)).join(', ') })));
+  /** Trage verkopers folds into the capital card when it lists the same products (design §3.4). */
+  readonly slowSameAsCapital = computed(() => {
+    const metrics = this.inventoryMetrics();
+    const slow = metrics.slowMovers.rows.map((row) => row.productId).sort((a, b) => a - b).join(',');
+    const capital = metrics.topCapital.map((row) => row.productId).sort((a, b) => a - b).join(',');
+    return slow.length > 0 && slow === capital && metrics.slowMovers.count === metrics.topCapital.length;
+  });
 
   /** The month by month view as two lines: what was invoiced, what was accepted. */
   readonly salesTrend = computed<TrendSeries[]>(() => {
