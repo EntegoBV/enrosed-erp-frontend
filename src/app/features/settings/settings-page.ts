@@ -1862,8 +1862,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   async load(): Promise<void> {
     if (!this.websiteCategoryMode) {
-      /* Settings views: read again what the opened views show. */
-      await Promise.all([...this.loadedViews].map((view) =>
+      /* Settings views: read again what the opened views show; a view with an unsaved draft keeps it. */
+      await Promise.all([...this.loadedViews].filter((view) => !this.editorFor(view)?.dirty()).map((view) =>
         view === 'company' ? this.companyStore.load(true) : this.loadViewData(view)));
       return;
     }
@@ -2262,7 +2262,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     if (!code.code.trim()) { this.ui.toast('Vul een code in', 'err'); return; }
     await this.catalog.saveHsCode(code);
     this.ui.toast('Tarief opgeslagen');
-    await this.load();
+    /* Only Douane: load() re-reads every opened view and would wipe an unsaved Kortingen draft. */
+    await this.loadDuties();
   }
 
   /** Codes as loaded from the server; anything else is an unsaved draft. */
@@ -2291,7 +2292,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         message: `<b>${code.code}</b> verwijderen? Producten vallen terug op het `
           + 'standaardpercentage van de inkooporder.',
         confirmLabel: 'Verwijderen', danger: true },
-      async () => { await this.catalog.deleteHsCode(code.code); await this.load(); });
+      async () => { await this.catalog.deleteHsCode(code.code); await this.loadDuties(); });
   }
 
   /* ------------------------------------------------------- staffels */
