@@ -236,4 +236,8 @@
 
 /* ---- toasts clear the dock and the save bar */
 body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 96px)}
+/* Inkoop redesign I5a (2026-10-17): while the read view's dock shows, the ERP tab bar steps aside as it does in the editors;
+   the dock and the scroll padding follow --tabbar-h down to the bottom. One rule, its own commit: the easiest to undo. */
+body:has(app-purchase-view .mpo-dock){--tabbar-h:0px}
+body:has(app-purchase-view .mpo-dock) .tabbar{display:none}
 }
