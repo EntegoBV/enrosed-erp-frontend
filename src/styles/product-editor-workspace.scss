@@ -1,3 +1,84 @@
+// The editor's base hero, canvas and rail rules (moved from the component in P7a, so its
+// styles stay under the 24 kB budget). They come first: the id-scoped rules below win by order.
+#product-editor-workspace {
+  .product-editor-page { background: transparent; }
+  .product-editor-lead { background: transparent; }
+  .product-editor-lead__content { padding-bottom: 10px; }
+  .product-editor-hero { display: grid; grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-areas: 'media identity' 'facts facts'; gap: 10px 12px; align-items: center;
+    padding: 12px; border: 1px solid rgb(255 255 255 / 74%); border-radius: 19px;
+    background: var(--surface); box-shadow: var(--sh-1); }
+  .product-editor-hero__media { grid-area: media; position: relative; display: grid; width: 76px; height: 76px;
+    place-items: center; align-content: center; gap: 3px; overflow: hidden; border: 1px solid var(--line);
+    border-radius: 16px; background: var(--surface-2); }
+  .product-editor-hero__media img { width: 100%; height: 100%; object-fit: cover; }
+  .product-editor-hero__placeholder { color: var(--rose); font-size: 25px; line-height: 1; }
+  .product-editor-hero__media > small { color: var(--muted); font-size: 10px; font-weight: 700; }
+  .product-editor-hero__photo-count { position: absolute; right: 6px; bottom: 6px; padding: 3px 7px;
+    border-radius: 999px; background: rgb(26 22 20 / 74%); color: #fff; font-size: 9px; font-weight: 750; }
+  .product-editor-hero__identity { grid-area: identity; min-width: 0; }
+  .product-editor-hero__identity .erp-workspace__title { font-size: clamp(17px, 2.2vw, 24px); }
+  .product-editor-hero__facts { grid-area: facts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px; border: 1px solid var(--line); border-radius: 14px; background: var(--line); }
+  .product-editor-hero__facts .erp-workspace__fact { min-width: 0; gap: 2px; padding: 9px 10px;
+    border: 0; border-radius: 0; background: var(--surface); color: inherit;
+    font: inherit; text-align: left; cursor: pointer; }
+  .product-editor-hero__facts .erp-workspace__fact-value { overflow: hidden; font-size: 14px;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .product-editor-hero__facts .erp-workspace__fact-label { color: var(--muted); font-size: 8.5px;
+    font-weight: 760; letter-spacing: .07em; text-transform: uppercase; }
+  .product-editor-hero__facts .erp-workspace__fact-note { overflow: hidden; color: var(--muted);
+    font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .product-editor-hero__actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .section-head > div { min-width: 0; }
+  .product-load-error {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding-block: 10px; color: var(--danger);
+  }
+  .product-load-error > span { display: grid; gap: 2px; }
+  .product-load-error small { font-size: 10px; }
+  .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
+  /* Desktop: the sections stand as a list on the left, the form takes the
+     middle, and on a wide desk a summary rail on the right keeps the cost
+     chain, the carton and what is still missing in view. */
+  .editor-rail { display: none; }
+  @media (min-width: 1024px) {
+    .product-editor-lead__content { padding-bottom: 0; }
+    /* Desk: the steps run as one bar across the top, the form below takes the
+       width a desk has; on a wide desk the summary rail stands to the right. */
+    .product-editor-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 16px; align-items: start; }
+    .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 8px); z-index: 30; grid-column: 1 / -1; grid-row: 1; width: 100%; max-width: none; margin: 0;
+      padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); }
+    .product-editor-page > .editor-canvas { grid-column: 1; grid-row: 2; max-width: none; margin: 0; }
+    .product-editor-page > :not(.subnav):not(.editor-canvas):not(.editor-rail) { grid-column: 1 / -1; }
+  }
+  @media (min-width: 1360px) {
+    .product-editor-page { grid-template-columns: minmax(0, 1fr) 292px; }
+    .editor-rail { position: sticky; top: calc(var(--appbar-h) + 80px); display: grid; grid-column: 2; grid-row: 2; gap: 10px; max-height: calc(100dvh - var(--appbar-h) - 94px); overflow-y: auto; }
+  }
+  .editor-rail__card { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
+  .editor-rail__card--warn { border-color: #eddcb9; background: var(--warn-soft); }
+  .editor-rail__card h3 { margin: 0 0 8px; color: var(--rose); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
+  .editor-rail__link { display: inline-block; margin-top: 8px; font-size: 12px; }
+  .editor-rail__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .editor-rail__list button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+  .editor-rail__list button:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+  .editor-rail__list i { display: grid; width: 18px; height: 18px; flex: none; place-items: center; border-radius: 50%; background: var(--warn); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; }
+  .editor-rail__list span { flex: 1; min-width: 0; }
+  .editor-rail__list b { color: var(--muted); }
+  .editor-rail__ok { display: flex; gap: 8px; margin: 0; color: var(--ok); font-size: 12px; }
+  .editor-rail__note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
+  .editor-rail .desk-chain__row b { font-variant-numeric: tabular-nums; }
+  .editor-rail .desk-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
+  .editor-desktop-only { scroll-margin-top: 112px; }
+  @media (min-width: 680px) {
+    .product-editor-hero { grid-template-columns: 104px minmax(0, 1fr) auto;
+      grid-template-areas: 'media identity actions' 'media facts facts'; padding: 14px 16px; }
+    .product-editor-hero__media { width: 104px; height: 104px; border-radius: 18px; }
+    .product-editor-hero__facts { max-width: 620px; }
+  }
+}
+
 // Scoped workspace shell: sections stay mounted so drafts and upload queues survive navigation.
 #product-editor-workspace {
   display: block;
