@@ -173,7 +173,7 @@ export const NAV_WORKSPACES: readonly NavItem[] = [
 
 /** This device's settings: the desk sidebar foot and Meer "App op dit toestel". */
 export const NAV_DEVICE: readonly NavItem[] = [
-  { id: 'notifications', label: 'Meldingen op dit toestel', meerLabel: 'Meldingen', icon: 'bell', link: '/settings',
+  { id: 'notifications', label: 'Meldingen op dit toestel', short: 'Meldingen', meerLabel: 'Meldingen', icon: 'bell', link: '/settings',
     query: { sectie: 'notifications' }, tone: 'grey', hint: 'Pushmeldingen en geluiden op dit toestel' },
 ];
 

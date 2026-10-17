@@ -257,3 +257,63 @@
   /* Content right under a large title starts close to it (critique N8: only there). */
   app-page-header:has(> .appbar__large) + .content { padding-top: 4px; }
 }
+
+/* ------------------------------------------------------- sidebar functions
+   What the desk sidebar does, in any skin: the skip link, the rail's
+   numeric count chips (capped at 9+), the Meldingen item in the foot and
+   the hairline before the workspace doors. */
+
+/* "Naar de inhoud": the first Tab stop, visible only while it has the focus. */
+.skip-link {
+  position: fixed;
+  top: calc(var(--safe-t) + 8px);
+  left: 8px;
+  z-index: 200;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.skip-link:not(:focus) {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip-link:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+.main:focus { outline: none; }
+
+/* A count chip carries the whole number; the rail prints at most 9+. */
+.sidebar__count-rail { display: none; }
+.sidebar__rule { display: none; }
+
+@media (min-width: 680px) and (max-width: 1023.98px) {
+  .sidebar .sidebar__count-full { display: none; }
+  .sidebar .sidebar__count-rail { display: inline; }
+  /* 16 px, top right of the icon. */
+  .sidebar .sidebar__link > .sidebar__count {
+    top: 4px;
+    right: auto;
+    left: calc(50% + 3px);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-size: 10.5px;
+    font-weight: 750;
+    line-height: 16px;
+  }
+  .sidebar .sidebar__link--rail { position: relative; }
+  .sidebar .sidebar__foot .sidebar__link.sidebar__link--device { display: flex; margin-bottom: 6px; }
+}
+@media (min-width: 1024px) {
+  .sidebar__foot .sidebar__link--device { margin: 0 -4px; }
+}
+@media (min-width: 680px) and (max-width: 899.98px) {
+  .sidebar .sidebar__link--rail > .sidebar__count { top: 8px; }
+}

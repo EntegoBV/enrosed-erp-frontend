@@ -4,7 +4,7 @@ import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { filter, map, startWith } from 'rxjs';
+import { filter, map } from 'rxjs';
 import { Auth } from './core/api/auth';
 import { THEMES, Theme } from './core/platform/theme';
 import { WorkQueue } from './core/api/work-queue';
@@ -18,7 +18,7 @@ import { DesktopViewport } from './core/platform/desktop-viewport';
 import { WorkspaceReturn } from './core/platform/workspace-return';
 import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import {
-  NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew,
+  NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew,
 } from './core/platform/nav-items';
 import type { NavCountKey, NavGroup, NavItem } from './core/platform/nav-items';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
@@ -49,7 +49,9 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
       } @else if (financeWorkspace()) {
         <app-finance-admin-nav />
       } @else if (!bare()) {
-        <aside class="sidebar">
+        <!-- Keyboard: the first stop skips the navigation (visible on focus). -->
+        <a class="skip-link" href="#inhoud" (click)="skipToContent($event)">Naar de inhoud</a>
+        <aside class="sidebar" [class.sidebar--animate]="userToggled()">
           <a class="sidebar__brand" routerLink="/dashboard" aria-label="Naar dashboard">
             <app-brand-mark subtitle="Sales &amp; Sourcing" />
           </a>
@@ -66,7 +68,9 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
                 } @else {
                   <span class="sidebar__text">{{ item.label }}</span>
                 }
-                @if (countOf(item.countKey); as n) { <span class="sidebar__count">{{ n }}</span> }
+                @if (countOf(item.countKey); as n) {
+                  <span class="sidebar__count"><span class="sidebar__count-full">{{ n }}</span><span class="sidebar__count-rail">{{ n > 9 ? '9+' : n }}</span></span>
+                }
                 @if (itemNew(item)) { <span class="sidebar__new">nieuw</span> }
               </a>
             </ng-template>
@@ -92,14 +96,17 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
               </button>
               <div class="sidebar__sub" [id]="'sidebar-' + group.id"
                    [class.sidebar__sub--closed]="!groupOpen(group.id)">
-                @for (item of group.items; track item.id) {
-                  <ng-container [ngTemplateOutlet]="navLink" [ngTemplateOutletContext]="{ $implicit: item }" />
-                }
+                <div class="sidebar__sub-list">
+                  @for (item of group.items; track item.id) {
+                    <ng-container [ngTemplateOutlet]="navLink" [ngTemplateOutletContext]="{ $implicit: item }" />
+                  }
+                </div>
               </div>
             }
 
-            <!-- The workspaces everyone opens daily stand on their own, above
-                 the company group: the library, the money, the website. -->
+            <!-- The workspaces everyone opens daily stand on their own, below a
+                 hairline: the library, the money, the website. -->
+            <div class="sidebar__rule" aria-hidden="true"></div>
             @for (item of navWorkspaces; track item.id) {
               <a class="sidebar__link sidebar__link--workspace" [routerLink]="item.link"
                  [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null">
@@ -111,12 +118,27 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
 
             <!-- The narrow rail has no room for group headers; the Meer page
                  carries the long tail there. -->
-            <a class="sidebar__link sidebar__link--rail" [routerLink]="navMore.link" [class.active]="itemActive(navMore)">
-              <app-icon class="sidebar__icon" [name]="navMore.icon" [size]="18" /> {{ navMore.label }}
+            <a class="sidebar__link sidebar__link--rail" [routerLink]="navMore.link" [class.active]="itemActive(navMore)"
+               [attr.aria-current]="itemActive(navMore) ? 'page' : null">
+              <app-icon class="sidebar__icon" [name]="navMore.icon" [size]="18" />
+              <span class="sidebar__text">{{ navMore.label }}</span>
+              <!-- Login-aanvragen is not in the 680-899 rail: its count shows on Meer, as on the phone tab. -->
+              @if (openLoginRequests(); as n) {
+                <span class="sidebar__count"><span class="sidebar__count-rail">{{ n > 9 ? '9+' : n }}</span></span>
+              }
             </a>
           </nav>
 
           <div class="sidebar__foot">
+            <!-- This device's push messages and sounds; the bell's sheet is "Meldingen", so this says where. -->
+            @for (item of navDevice; track item.id) {
+              <a class="sidebar__link sidebar__link--device" [routerLink]="item.link" [queryParams]="item.query ?? null"
+                 [title]="item.hint ?? ''" [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null">
+                <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
+                <span class="sidebar__text sidebar__text--full">{{ item.label }}</span>
+                <span class="sidebar__text sidebar__text--rail">{{ item.short ?? item.label }}</span>
+              </a>
+            }
             <div class="sidebar__theme" role="radiogroup" aria-label="Kleurschema">
               @for (option of themes; track option.key) {
                 <button type="button" role="radio" [title]="option.label"
@@ -135,7 +157,7 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
         </aside>
       }
 
-      <div class="main">
+      <div class="main" id="inhoud" tabindex="-1">
         <router-outlet />
       </div>
 
@@ -198,22 +220,36 @@ export class App {
   private readonly router = inject(Router);
   private readonly work = inject(WorkQueue);
 
+  private readonly document = inject(DOCUMENT);
+
+  /**
+   * The open URL. Before the first navigation ends, router.url is still '/':
+   * starting from the address bar keeps a hard load of /costs, /files or
+   * /website (and /login) from flashing the ERP sidebar first.
+   */
   readonly url = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
       map((event) => event.urlAfterRedirects),
-      startWith(this.router.url),
     ),
-    { initialValue: this.router.url },
+    { initialValue: this.initialUrl() },
   );
 
   /** The route decides which accordion section should be recognisable and open. */
   readonly currentGroup = computed(() => sidebarGroupForUrl(this.url()));
 
   /** One open section keeps the long desktop navigation calm and scannable. */
-  private readonly openGroup = signal<SidebarGroup | null>(sidebarGroupForUrl(this.router.url));
+  private readonly openGroup = signal<SidebarGroup | null>(sidebarGroupForUrl(this.url()));
+  /**
+   * Only a group the user opens or closes animates; when the route opens or
+   * closes one, the change is instant, so the item just clicked never
+   * slides away under the cursor.
+   */
+  readonly userToggled = signal(false);
   private readonly syncOpenGroupWithRoute = effect(() => {
-    this.openGroup.set(this.currentGroup());
+    const group = this.currentGroup();
+    this.userToggled.set(false);
+    this.openGroup.set(group);
   });
 
   /* The navigation table, shared with Meer. */
@@ -221,6 +257,7 @@ export class App {
   readonly navGroups = NAV_GROUPS;
   readonly navWorkspaces = NAV_WORKSPACES;
   readonly navMore = NAV_MORE;
+  readonly navDevice = NAV_DEVICE;
 
   itemActive(item: NavItem): boolean {
     return navItemActive(item, this.url());
@@ -249,7 +286,20 @@ export class App {
   }
 
   toggleGroup(group: SidebarGroup): void {
+    this.userToggled.set(true);
     this.openGroup.update((open) => toggleSidebarGroup(open, group));
+  }
+
+  /** The skip link moves the focus to the page without touching the URL (a #fragment would be a router navigation). */
+  skipToContent(event: Event): void {
+    event.preventDefault();
+    this.document.getElementById('inhoud')?.focus();
+  }
+
+  /** The address bar's path and query, for the first frame. */
+  private initialUrl(): string {
+    const location = this.document.location;
+    return location ? `${location.pathname}${location.search}` || '/' : this.router.url;
   }
 
   /**
@@ -261,14 +311,17 @@ export class App {
   readonly openWork = this.work.actionCount;
   readonly openLoginRequests = this.work.loginRequestCount;
 
-  /** Aanmeldpagina en klantportaal krijgen geen navigatie. */
+  /**
+   * The login page and the customer portal get no navigation. The terms
+   * page too for a customer; staff read it inside the shell, with the tab
+   * bar (Meer lit) as the way back in the iPhone app.
+   */
   readonly bare = computed(() => {
     const url = this.url();
     return url.startsWith('/login') || url.startsWith('/offerte')
-        || url.startsWith('/voorwaarden');
+        || (url.startsWith('/voorwaarden') && !this.auth.isLoggedIn());
   });
 
-  private readonly document = inject(DOCUMENT);
   private readonly syncStaffTouch = effect(onCleanup => {
     if (this.auth.isLoggedIn() && !this.bare()) {
       onCleanup(installStaffTouchPolicy(this.document));
