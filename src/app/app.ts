@@ -70,7 +70,8 @@ import { ShortcutsSheet } from './shared/shortcuts-sheet';
           <!-- Rendered from NAV_GROUPS (core/platform/nav-items.ts), the table Meer shares. -->
           <nav class="sidebar__nav">
             <ng-template #navLink let-item>
-              <a class="sidebar__link" [routerLink]="item.link" [queryParams]="item.query ?? null"
+              <!-- The title names the item in full where the 88 px rail cuts its label ("Login-aanv…"). -->
+              <a class="sidebar__link" [routerLink]="item.link" [queryParams]="item.query ?? null" [attr.title]="item.label"
                  [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null"
                  [class.sidebar__link--wide]="item.wide" [attr.data-rail-main]="item.railMain ? '' : null">
                 <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
@@ -120,7 +121,7 @@ import { ShortcutsSheet } from './shared/shortcuts-sheet';
                  hairline: the library, the money, the website. -->
             <div class="sidebar__rule" aria-hidden="true"></div>
             @for (item of navWorkspaces; track item.id) {
-              <a class="sidebar__link sidebar__link--workspace" [routerLink]="item.link"
+              <a class="sidebar__link sidebar__link--workspace" [routerLink]="item.link" [attr.title]="item.label"
                  [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null">
                 <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
                 <span class="sidebar__text sidebar__text--full">{{ item.label }}</span>

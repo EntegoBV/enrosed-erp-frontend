@@ -26,6 +26,10 @@ test('the desk sidebar: a skip link first, Meldingen op dit toestel in the foot,
   /* ... only where Login-aanvragen is not in the rail itself: at 900-1023 it is, with its own chip. */
   assert.match(shellCss, /@media \(min-width: 900px\) and \(max-width: 1023\.98px\) \{\s*\.sidebar \.sidebar__link--rail > \.sidebar__count \{ display: none; \}/);
   assert.match(shellCss, /\.skip-link:not\(:focus\)/);
+  /* the rail cuts long labels at 76 px ("Login-aanv…"): every link names its item in full in a title */
+  assert.match(shell, /<a class="sidebar__link" \[routerLink\]="item\.link" \[queryParams\]="item\.query \?\? null" \[attr\.title\]="item\.label"/);
+  assert.match(shell, /<a class="sidebar__link sidebar__link--workspace" \[routerLink\]="item\.link" \[attr\.title\]="item\.label"/);
+  assert.match(shell, /sidebar__link--device"[^>]*\[title\]="item\.hint \?\? ''"/);
 });
 
 test('the shell starts from the address bar and keeps staff inside it on /voorwaarden', () => {
