@@ -347,7 +347,7 @@ export class ActivityPage {
       if (id !== this.requestId) return;
       this.items.set(page.items);
       this.nextBefore.set(page.nextBefore);
-      void this.names.load();
+      void this.names.load(page.items);
     } catch {
       if (id !== this.requestId) return;
       this.items.set([]);
@@ -371,6 +371,7 @@ export class ActivityPage {
       if (id !== this.requestId) return;
       this.items.update((current) => [...current, ...page.items]);
       this.nextBefore.set(page.nextBefore);
+      void this.names.load(page.items);
     } catch {
       if (id === this.requestId) this.moreError.set(true);
     } finally {

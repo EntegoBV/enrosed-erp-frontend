@@ -349,3 +349,32 @@ export function todayEvents(events: readonly Pick<ActivityEvent, 'at'>[], now: D
   const today = dayKey(now);
   return events.filter((event) => { const at = new Date(event.at); return !Number.isNaN(at.getTime()) && dayKey(at) === today; }).length;
 }
+
+/* ------------------------------------------------- names behind the ids */
+
+/** How long the container and supplier names stay fresh before a Logboek or overview refresh reads them again. */
+export const NAMES_MAX_AGE_MS = 10 * 60_000;
+/** A purchase order the rows name but the lookup lacks (new, or deleted) is looked up again at most this often. */
+export const NAMES_MISSING_RETRY_MS = 60_000;
+
+/**
+ * Whether the names behind the Logboek's ids should be read (again): the
+ * first time, after a failed lookup (a network blip or a cold start must
+ * not leave PO numbers for the rest of the visit), when they are old, or
+ * when the rows name a purchase order the lookup does not know yet.
+ */
+export function namesReloadDue(
+  state: { inFlight: boolean; failed: boolean; loadedAt: number | null; missing: boolean },
+  now: number,
+): boolean {
+  if (state.inFlight) return false;
+  if (state.loadedAt === null || state.failed) return true;
+  const age = now - state.loadedAt;
+  return age > NAMES_MAX_AGE_MS || (state.missing && age > NAMES_MISSING_RETRY_MS);
+}
+
+/** The purchase order ids the events name (their record, not their changes). */
+export function purchaseOrderIds(events: readonly ActivityEvent[]): string[] {
+  return [...new Set(events.flatMap((event) =>
+    event.entityType.trim().toUpperCase() === 'PURCHASE_ORDER' && event.entityId ? [event.entityId] : []))];
+}

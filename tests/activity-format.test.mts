@@ -108,3 +108,18 @@ test('overview of the loaded events', () => {
   assert.deepEqual(overview.categories.map((c) => [c.category, c.count]), [['PURCHASING', 2], ['CATALOGUE', 1]]);
   assert.equal(overview.records[0].entityId, '62');
 });
+
+test('names behind the ids: read again after a failure, when old, or when a named purchase order is missing', async () => {
+  const { namesReloadDue, purchaseOrderIds, NAMES_MAX_AGE_MS, NAMES_MISSING_RETRY_MS } = await import('../src/app/features/activity/activity-format.ts');
+  const now = 1_000_000_000;
+  const state = (extra: Partial<{ inFlight: boolean; failed: boolean; loadedAt: number | null; missing: boolean }> = {}) =>
+    ({ inFlight: false, failed: false, loadedAt: now - 5_000, missing: false, ...extra });
+  assert.equal(namesReloadDue(state({ loadedAt: null }), now), true, 'first time');
+  assert.equal(namesReloadDue(state(), now), false, 'fresh and complete');
+  assert.equal(namesReloadDue(state({ failed: true }), now), true, 'one failed lookup never sticks for the visit');
+  assert.equal(namesReloadDue(state({ failed: true, inFlight: true }), now), false, 'never twice at once');
+  assert.equal(namesReloadDue(state({ loadedAt: now - NAMES_MAX_AGE_MS - 1 }), now), true, 'old');
+  assert.equal(namesReloadDue(state({ missing: true }), now), false, 'a missing order waits a minute');
+  assert.equal(namesReloadDue(state({ missing: true, loadedAt: now - NAMES_MISSING_RETRY_MS - 1 }), now), true, 'a new order gets its name');
+  assert.deepEqual(purchaseOrderIds([ev(1), ev(2), ev(3, { entityType: 'PRODUCT', entityId: '9' }), ev(4, { entityId: null })]), ['62']);
+});

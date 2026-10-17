@@ -455,7 +455,7 @@ export class SettingsOverview {
       case 'categories': void this.categories.load(() => this.catalog.categories()); break;
       case 'trash': void this.trash.load(() => this.deleted.list()); break;
       case 'devices': void this.devices.load(() => this.pushSetup.devices()); break;
-      case 'activity': void this.activity.load(() => this.activityApi.list({ limit: 50 })).then(() => void this.names.load()); break;
+      case 'activity': void this.activity.load(() => this.activityApi.list({ limit: 50 })).then(() => void this.names.load(this.newest())); break;
       case 'staff': void this.staff.load(() => this.staffApi.accounts()); break;
     }
   }
