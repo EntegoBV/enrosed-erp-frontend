@@ -28,11 +28,12 @@ app-purchase-list .pl-subbar__end b{font-weight:700}
 /* ---- desk table: the container name wraps and is never cut (B4); rows grow with it */
 app-purchase-list .pl-card{container:wk-pane/inline-size}
 app-purchase-list .pl-table{--wk-cols:minmax(260px,2.3fr) minmax(0,1.15fr) minmax(0,1.05fr) minmax(0,1.35fr) 112px 32px}
+/* The folded Lading part is hidden by default, BEFORE the container query: the same specificity later in the file would always win. */
+app-purchase-list .pl-lading-inline{display:none}
 @container wk-pane (max-width:859.98px){
   app-purchase-list .pl-table{--wk-cols:minmax(220px,2.4fr) minmax(0,1.1fr) minmax(0,1.35fr) 104px 32px}
   app-purchase-list .pl-lading-inline{display:inline}
 }
-app-purchase-list .pl-lading-inline{display:none}
 app-purchase-list .pl-group__name{color:var(--ink);font-weight:700}
 app-purchase-list .pl-group .wk-group__label{white-space:normal}
 app-purchase-list .pl-row{min-height:58px;align-items:center;row-gap:2px;color:var(--ink);text-decoration:none}
