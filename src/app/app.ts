@@ -27,6 +27,7 @@ import { installReducedMotionScroll } from './core/platform/reduced-motion';
 import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
+import { ShortcutsSheet } from './shared/shortcuts-sheet';
 
 /**
  * App shell.
@@ -38,7 +39,7 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet, RouterLink, NgTemplateOutlet, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav],
+  imports: [RouterOutlet, RouterLink, NgTemplateOutlet, UiHost, BrandMark, Icon, WebsiteAdminNav, FilesAdminNav, FinanceAdminNav, ShortcutsSheet],
   template: `
     <div class="shell" [class.shell--bare]="bare()" [class.shell--website]="websiteWorkspace()" [class.shell--files]="filesWorkspace()" [class.shell--finance]="financeWorkspace()"
          [class.shell--workspace]="deskWorkspace()" [class.shell--workspace-phone]="phoneWorkspace()" [class.shell--home]="homeRoute()">
@@ -152,7 +153,9 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
               }
             </div>
             <div class="sidebar__account">
-              <div class="sidebar__user">{{ auth.username() }}</div>
+              <div class="sidebar__user" [title]="auth.username() ?? ''">{{ auth.username() }}</div>
+              <button class="sidebar__key" type="button" title="Sneltoetsen (?)" aria-label="Sneltoetsen"
+                      (click)="shortcutsOpen.set(true)">?</button>
               <button class="sidebar__logout" type="button" (click)="logout()">Afmelden</button>
             </div>
           </div>
@@ -198,6 +201,13 @@ import { phoneTabForUrl } from './core/platform/phone-tabs';
         </nav>
       }
     </div>
+
+    <!-- Sneltoetsen: loaded when first asked for ('?' or the key cap). -->
+    @if (shortcutsOpen()) {
+      @defer (on immediate) {
+        <app-shortcuts-sheet [url]="url()" (closed)="shortcutsOpen.set(false)" />
+      }
+    }
 
     <app-ui-host />
   `,
@@ -387,4 +397,22 @@ export class App {
     this.auth.logout();
     this.router.navigate(['/login']);
   }
+
+  /** The Sneltoetsen sheet. */
+  readonly shortcutsOpen = signal(false);
+
+  /* The '/' and '?' keys (app-shortcut-keys.ts), from a lazy chunk with the shortcut tables. */
+  private readonly shortcutKeys = effect((onCleanup) => {
+    let uninstall: (() => void) | null = null;
+    let cancelled = false;
+    void import('./core/platform/app-shortcut-keys').then((m) => {
+      if (cancelled) return;
+      uninstall = m.installShortcutKeys(this.document, {
+        url: () => this.url(),
+        active: () => !this.bare(),
+        openHelp: () => this.shortcutsOpen.set(true),
+      });
+    });
+    onCleanup(() => { cancelled = true; uninstall?.(); });
+  });
 }

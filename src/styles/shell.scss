@@ -94,6 +94,30 @@
 .appbar__actions { display: flex; flex: none; align-items: center; }
 .appbar__divider { display: none; }
 
+/* The Sneltoetsen key cap in the desk sidebar's account row (1024 px and up);
+   it takes the side's text colour, so it reads on the dark and the light skin. */
+.sidebar__key { display: none; }
+@media (min-width: 1024px) {
+  .sidebar .sidebar__user { margin-right: auto; }
+  .sidebar__key {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 26px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: 650 12px var(--mono);
+    opacity: .75;
+    cursor: pointer;
+  }
+  .sidebar__key:hover { opacity: 1; }
+}
+
 /* ------------------------------------------------------------ desk toolbar
    52 px, solid, a crumb to the screen above, the title at the kit's
    .wk-toolbar__title size, compact actions, a divider and the bell. */
