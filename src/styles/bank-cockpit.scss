@@ -279,6 +279,8 @@
   .fin-txd__steps .fin-alloc { gap: 10px; }
   .fin-txd__pattern { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; > span { min-width: 0; } .btn { flex: none; } }
   .fin-txd .btn:not(.wk-btn) { font: inherit; }
+  /* a document already paid stays in the score order, muted (its receipt may be the line's match) */
+  .bank-alloc-document.is-paid .bank-alloc-document__amount b { color: var(--muted); }
 
   /* "Verdelen over containers" */
   .fin-split { display: grid; gap: 6px; margin: 8px 0; }

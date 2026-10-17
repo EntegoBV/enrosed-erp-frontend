@@ -38,10 +38,21 @@ export function paymentLocalDay(payment: Pick<IncomingMoneyRow, 'receivedAt' | '
   } catch { return payment.receivedAt.slice(0, 10); }
 }
 
-export function paymentMomentLabel(payment: Pick<IncomingMoneyRow, 'receivedAt' | 'timeZone'>): string {
+const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+
+/**
+ * "8 okt · 23:21" in the payment's own zone; "8 okt 2025 · 23:21" in another year than `today` (and without a
+ * `today`, so a caller that knows no day never drops the year).
+ */
+export function paymentMomentLabel(payment: Pick<IncomingMoneyRow, 'receivedAt' | 'timeZone'>, today: string | null = null): string {
   if (!Number.isFinite(Date.parse(payment.receivedAt))) return 'Tijdstip onbekend';
   try {
-    return new Intl.DateTimeFormat('nl-BE', { timeZone: payment.timeZone || 'Europe/Brussels', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(new Date(payment.receivedAt));
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: payment.timeZone || 'Europe/Brussels', year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(payment.receivedAt));
+    const part = (type: string) => parts.find((row) => row.type === type)?.value ?? '';
+    const year = part('year');
+    const day = `${Number(part('day'))} ${MONTHS[Number(part('month')) - 1]}${!today || today.slice(0, 4) !== year ? ` ${year}` : ''}`;
+    return `${day} · ${part('hour')}:${part('minute')}`;
   } catch { return payment.receivedAt; }
 }
 

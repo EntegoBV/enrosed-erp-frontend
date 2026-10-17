@@ -41,6 +41,6 @@ export class AccountHistorySheet {
     .sort((a, b) => bankCheckpoint(b) - bankCheckpoint(a) || (b.id ?? 0) - (a.id ?? 0)));
 
   moment(asOfAt: string | null | undefined, date: string, timeZone: string | null | undefined): string {
-    return asOfAt ? paymentMomentLabel({ receivedAt: asOfAt, timeZone: timeZone || 'Europe/Brussels' }) : `${dayMonthYear(date)}, einde van de dag`;
+    return asOfAt ? paymentMomentLabel({ receivedAt: asOfAt, timeZone: timeZone || 'Europe/Brussels' }, this.state.today()) : `${dayMonthYear(date)}, einde van de dag`;
   }
 }

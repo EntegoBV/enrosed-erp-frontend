@@ -205,7 +205,7 @@ export class IncomingPaymentList {
   }
 
   moment(row: IncomingPaymentRow): string {
-    return paymentMomentLabel(row);
+    return paymentMomentLabel(row, this.state.today());
   }
 
   clock(row: IncomingPaymentRow): string {

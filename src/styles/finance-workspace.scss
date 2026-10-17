@@ -31,6 +31,8 @@
   .fin-td-end { display: flex; justify-content: flex-end; }
   .fin-chev { color: var(--muted-2); }
   .fin-age { margin-left: 4px; }
+  /* a container's PO number as small print beside its name (containerNumberHint) */
+  .fin-hint-number { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-foot-link { margin: 20px 0 0; text-align: right; }
   .fin-pay-line { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; padding: 6px 0;
     border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; font: inherit; font-size: 13px; text-align: left;

@@ -61,6 +61,7 @@ import { containerPayables, daysBetween, payableTotals, payablesFor } from './pa
 import { containerPaymentTree, type PayeeBranch } from './container-payment-tree';
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
 import { shareToast } from '../purchasing/purchase-payment-share';
+import { containerName } from '../purchasing/container-name';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -1023,8 +1024,11 @@ export class FinanceState {
   inspectTitle(target: InspectTarget): string {
     switch (target.kind) {
       case 'cost': return this.costs().find((row) => row.id === target.id)?.description || 'Kost';
-      case 'container': return this.purchaseViews().find((view) => view.order.id === target.id)?.order.number
-        ?? this.payments().find((row) => row.orderId === target.id)?.orderNumber ?? 'Container';
+      case 'container': {
+        const order = this.purchaseViews().find((view) => view.order.id === target.id)?.order;
+        const payment = order ? null : this.payments().find((row) => row.orderId === target.id);
+        return order ? containerName(order) : payment ? containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias }) : 'Container';
+      }
       case 'invoice': return this.receivables().find((row) => row.id === target.id)?.number ?? 'Document';
       case 'line': return 'Transactie';
       default: return this.recurring().find((row) => row.id === target.id)?.name || 'Vaste kost';

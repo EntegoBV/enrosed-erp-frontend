@@ -17,7 +17,8 @@ import type { LineSuggestion } from './bank-suggestions';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { dayMonth as ddmm } from './cash-format';
 import { ContainerSplit } from './container-split';
-import { dayMonth } from './finance-format';
+import { dayMonth, signedEur as signedMoney } from './finance-format';
+import { containerName } from '../purchasing/container-name';
 import { SERVER_PENDING } from './finance-state';
 
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -71,8 +72,9 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
       @if (line(); as row) {
         <section class="wk-section fin-txd__hero">
           <span class="fin-txd__dir">{{ row.amountEur > 0 ? 'Ontvangen van' : 'Betaald aan' }}</span>
-          <div class="fin-txd__who"><h2 class="fin-txd__party">{{ row.counterparty || 'Onbekende tegenpartij' }}</h2>
+          <div class="fin-txd__who"><h2 class="fin-txd__party">{{ titleOf(row) }}</h2>
             <strong class="fin-txd__amount" [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</strong></div>
+          @if (textOf(row).sub) { <span class="fin-txd__meta fin-txd__clean">{{ textOf(row).sub }}</span> }
           <span class="fin-txd__meta">{{ meta(row) }}</span>
           @if (row.reference) { <code class="fin-txd__ref">{{ row.reference }}</code> }
           <span class="fin-txd__pills"><span [class]="'wk-pill ' + statusTone(row)">{{ statusLabel(row) }}</span>
@@ -99,7 +101,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
                 @for (other of part.others; track other.lineId) { <button class="wk-link fin-txd__other" type="button" (click)="state.openLine(other.lineId)">{{ other.text }} ›</button> }
               } @empty { <p class="fin-hint">{{ row.allocationLabel || 'Gekoppeld' }}</p> }
               @if (linkedParts().length) {
-                <p class="fin-txd__sum" [class.is-off]="!sumMatches()">{{ sumMatches() ? 'Samen gelijk aan de transactie ' + eur(abs(row.amountEur)) + ' ✓' : 'Verschil ' + eur(sumDifference()) }}</p>
+                <p class="fin-txd__sum" [class.is-off]="!sumMatches()">{{ sumMatches() ? 'Samen gelijk aan de transactie ' + eur(abs(row.amountEur)) + ' ✓' : 'Verschil ' + signed(sumDifference()) }}</p>
               }
             </section>
             @if (invoiceRows().length || linkedOrder()) {
@@ -350,7 +352,7 @@ export class TransactionDetail extends BankMovementPanel {
     const other = this.amountOf(target);
     rows.push({ label: 'Deze transactie', value: euro.format(line) });
     const difference = (cents(line) - cents(other)) / 100;
-    rows.push({ label: 'Verschil', value: euro.format(difference) + (Math.abs(cents(difference)) <= 2 ? ' ✓' : ''), ok: Math.abs(cents(difference)) <= 2 });
+    rows.push({ label: 'Verschil', value: signedMoney(difference) + (Math.abs(cents(difference)) <= 2 ? ' ✓' : ''), ok: Math.abs(cents(difference)) <= 2 });
     return rows;
   });
   /**
@@ -399,7 +401,7 @@ export class TransactionDetail extends BankMovementPanel {
     if (!part || part.row.id !== paymentId || part.withIds.length || part.refused || (part.foreign && this.outgoingForeignInput().trim())) return null;
     const payment = this.state.payments().find((row) => row.id === paymentId);
     if (!payment) return null;
-    const order = payment.orderNumber || payment.orderAlias || `#${payment.orderId}`;
+    const order = containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias });
     const groupSize = payment.groupId != null ? this.state.payments().filter((row) => row.groupId === payment.groupId).length : 1;
     return this.enriched({ kind: 'purchase-existing', orderId: payment.orderId, paymentId: payment.id, title: `Inkoop · ${order}${payment.label ? ' · ' + payment.label : ''}`,
       amountEur: payment.amountEur, paidOn: payment.paidOn, currency: payment.currency ?? 'EUR', amount: payment.amount ?? payment.amountEur, account: null, proofCount: 0,
@@ -417,8 +419,8 @@ export class TransactionDetail extends BankMovementPanel {
       const index = group.findIndex((item) => item.id === payment.id);
       const payee = PAYEE_LABEL[payment.payee ?? 'SUPPLIER'];
       parts.push({ key: `p${payment.id}`, amountEur: payment.amountEur, open: () => this.state.inspectRelated({ kind: 'container', id: payment.orderId }),
-        title: group.length > 1 ? `Deel ${index + 1} van ${group.length} · ${payment.label || payee}` : `${payment.orderNumber || payment.orderAlias || 'Container'} · ${payee}${payment.label ? ' · ' + payment.label : ''}`,
-        sub: group.length > 1 ? `${payment.orderNumber || 'Container'} · ${payee}` : null,
+        title: group.length > 1 ? `Deel ${index + 1} van ${group.length} · ${payment.label || payee}` : `${this.orderName(payment)} · ${payee}${payment.label ? ' · ' + payment.label : ''}`,
+        sub: group.length > 1 ? `${this.orderName(payment)} · ${payee}` : null,
         others: group.filter((item) => item.id !== payment.id && item.bankStatementLineId != null).map((item) => {
           const other = this.state.bankStatements().find((line) => line.id === item.bankStatementLineId);
           return { lineId: item.bankStatementLineId!, text: `andere delen: ${other ? this.accountName(other.account) : 'op de bank'} ${ddmm(item.paidOn)} ${euro.format(item.amountEur)}` };
@@ -686,10 +688,16 @@ export class TransactionDetail extends BankMovementPanel {
     const date = new Date(instant);
     return Number.isFinite(date.getTime()) ? `${date.toLocaleDateString('nl-BE', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Brussels' })} ${date.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' })}` : '';
   }
-  containerLine(view: { order: { number: string; status: string; expectedArrival?: string | null; receivedOn?: string | null } }): string {
+  containerLine(view: { order: { id?: number; number: string; alias?: string | null; status: string; expectedArrival?: string | null; receivedOn?: string | null } }): string {
     const arrival = view.order.receivedOn ?? view.order.expectedArrival;
-    return [view.order.number, STATUS_LABEL[view.order.status] ?? view.order.status, arrival ? `aankomst ${dayMonth(arrival)}` : ''].filter(Boolean).join(' · ');
+    return [containerName(view.order), STATUS_LABEL[view.order.status] ?? view.order.status, arrival ? `aankomst ${dayMonth(arrival)}` : ''].filter(Boolean).join(' · ');
   }
   eur(value: number): string { return euro.format(value); }
+  /** "− € 95,58" / "+ € 0,01": the sign before the euro. */
+  signed(value: number): string { return signedMoney(value); }
+  /** A container payment's container by its name (alias, else number). */
+  orderName(payment: { orderId: number; orderNumber?: string | null; orderAlias?: string | null }): string {
+    return containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias });
+  }
   keepWord(value: KeepAs): string { return KEEP_LABEL[value]; }
 }

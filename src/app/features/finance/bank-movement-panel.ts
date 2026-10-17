@@ -895,7 +895,7 @@ export class BankMovementPanel {
       const invoice = row.salesOrderId ? this.invoiceMap().get(row.salesOrderId) : null;
       /* Every term: the counterparty, the reference, the account (key and label), a linked target, or the amount (§3.4). */
       const matches = !search || bankSearchMatches(row, search, [row.account, this.accountName(row.account), invoice?.order.number,
-        invoice ? this.customerName(invoice.order.customerId) : '', ...this.linkedDocuments(row).map(document => document.label)]);
+        invoice ? this.customerName(invoice.order.customerId) : '', ...this.linkedDocuments(row).flatMap(document => [document.label, document.number ?? ''])]);
       const link = this.linkFilter();
       return (!this.accountFilter() || this.state.canonicalAccount(row.account) === this.state.canonicalAccount(this.accountFilter()))
         && (this.directionFilter() === 'ALL' || (this.directionFilter() === 'INCOMING' ? row.amountEur > 0 : row.amountEur < 0))
@@ -970,7 +970,7 @@ export class BankMovementPanel {
     && (!this.choice()?.existingPaymentId || this.matchDifference(this.choice()!) === null || Math.abs(Math.round(this.matchDifference(this.choice()!)! * 100)) <= 2)
     && (!!this.choice()?.existingPaymentId || !this.chosenInvoiceHasExistingMatches() || this.newBookingConfirmed()));
 
-  stamp(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }); }
+  stamp(at: string, timeZone: string): string { return paymentMomentLabel({ receivedAt: at, timeZone }, this.state.today()); }
   invoiceNumber(id: number): string { return this.invoiceMap().get(id)?.order.number || `Factuur #${id}`; }
   customerName(id: number | null): string { return id == null ? '' : this.customerNames().get(id) ?? ''; }
   available(view: SalesOrderView): number { return this.selected()?.amountEur && this.selected()!.amountEur < 0 ? view.paymentSummary?.refundableEur ?? 0 : view.paymentSummary?.remainingEur ?? 0; }
@@ -1046,7 +1046,7 @@ export class BankMovementPanel {
       parts.set(key, [...(parts.get(key) ?? []), payment]);
     }
     for (const payment of this.state.payments()) add(payment.bankStatementLineId,
-      { kind: 'container', id: payment.orderId, label: containerLinkLabel(parts.get(`${payment.bankStatementLineId}:${payment.orderId}`) ?? [payment]) });
+      { kind: 'container', id: payment.orderId, label: containerLinkLabel(parts.get(`${payment.bankStatementLineId}:${payment.orderId}`) ?? [payment]), number: payment.orderNumber || undefined });
     return links;
   });
   linkedDocuments(row: BankStatementLine): LinkedDocument[] {
@@ -1060,18 +1060,17 @@ export class BankMovementPanel {
         : marker.kind === 'kostbetaling' ? this.state.costs().find(cost => cost.payments?.some(payment => payment.id === marker.id)) : null;
       const payment = marker.kind === 'containerbetaling' ? this.state.payments().find(payment => payment.id === marker.id) : null;
       const target: LinkedDocument | null = cost?.id ? { kind: 'cost', id: cost.id, label: `Kost · ${cost.reference || cost.description}` }
-        : payment ? { kind: 'container', id: payment.orderId, label: `Inkoop · ${payment.orderNumber || '#' + payment.orderId}` } : null;
+        : payment ? { kind: 'container', id: payment.orderId, label: `Inkoop · ${containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias })}`,
+          number: payment.orderNumber || undefined } : null;
       if (target && !targets.some(item => item.kind === target.kind && item.id === target.id)) targets.push(target);
     }
     return targets;
   }
   linkedLabel(row: BankStatementLine): string {
     const documents = this.linkedDocuments(row);
-    // One transfer for several containers (owner addition 2026-10-15): 'Inkoop · 3 containers (PO-…, PO-…, PO-…)'.
+    // One transfer for several containers (owner addition 2026-10-15): 'Inkoop · 3 containers (naam, naam, naam)'.
     if (documents.length > 1 && documents.every(document => document.kind === 'container')) {
-      const numbers = documents.map(document => { const payment = this.state.payments().find(item => item.orderId === document.id);
-        return payment?.orderNumber || payment?.orderAlias || '#' + document.id; }).sort((a, b) => a.localeCompare(b, 'nl', { numeric: true }));
-      return `Inkoop · ${documents.length} containers (${numbers.join(', ')})`;
+      return `Inkoop · ${documents.length} containers (${this.containerNames(documents).join(', ')})`;
     }
     return documents.length > 1 ? `${documents.length} gekoppelde documenten` : documents[0]?.label || 'Gekoppeld document bekijken';
   }
@@ -1141,7 +1140,7 @@ export class BankMovementPanel {
       ...(!row.classification && (linked || documents.length) ? [{ id: 'document', label: documents.length > 1 ? 'Gekoppelde documenten openen' : 'Gekoppeld document openen', iconName: 'document' }] : []),
       ...(this.canRemove(row) ? [{ id: 'withdraw', label: 'Intrekken', iconName: 'trash', danger: true, divider: true }] : []),
     ];
-    this.state.openMenu({ title: `${row.counterparty || row.reference || 'Banktransactie'} · ${euro.format(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren', items,
+    this.state.openMenu({ title: `${this.titleOf(row)} · ${euro.format(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren', items,
       pick: id => {
         if (id === 'open' || id === 'link' || id === 'split') this.openLine(row);
         else if (id === 'book') this.state.bookAsLine.set(row);
@@ -1212,11 +1211,10 @@ export class BankMovementPanel {
     if (documents.length) return { text: 'Eerdere registratie', sub: null, reasons: [], open: true };
     return { text: 'Geen factuur gevonden', sub: null, reasons: [], open: false };
   }
-  /** "{account} · {reference}"; a manual line starts with its time. With one active account its name is left out (it is every line's). */
+  /** "{clock} · {account} · {clean reference}": the clock only on a manual line, the account only with two or more active accounts. */
   subOf(row: BankStatementLine): string {
-    const active = this.state.accountsView();
-    const only = active.length === 1 && active[0].account === this.state.canonicalAccount(row.account);
-    return [this.imported(row) ? '' : this.clock(row), only ? '' : this.accountName(row.account), row.counterparty ? row.reference : ''].filter(Boolean).join(' · ');
+    const several = this.state.accountsView().length > 1;
+    return [this.imported(row) ? '' : this.clock(row), several ? this.accountName(row.account) : '', this.textOf(row).sub].filter(Boolean).join(' · ');
   }
   /** The saldo after the line: over the active accounts, or the chosen account's own. */
   saldoText(row: BankStatementLine): string {
@@ -1356,13 +1354,13 @@ export class BankMovementPanel {
   private async run(work: () => Promise<unknown>): Promise<void> { if (this.busy()) return; this.busy.set(true); this.error.set(''); try { await work(); } catch (failure) { this.error.set(messageOf(failure, 'Bankbewerking mislukt')); } finally { this.busy.set(false); } }
 }
 
-/** 'Inkoop · PO-2026-021', or for a line that paid several payees of the container 'Goederen + zeevracht + inspectie (PO-2026-021)'. */
+/** 'Inkoop · {naam}', or for a line that paid several payees of the container 'Goederen + zeevracht + inspectie · {naam}'. */
 export function containerLinkLabel(payments: readonly PurchasePaymentRow[]): string {
   const first = payments[0];
-  const number = first?.orderNumber || first?.orderAlias || '#' + first?.orderId;
+  const number = containerName({ id: first?.orderId, number: first?.orderNumber, alias: first?.orderAlias });
   const payees = PAYEE_SEQUENCE.filter(payee => payments.some(payment => (payment.payee ?? 'SUPPLIER') === payee));
   if (payees.length < 2) return `Inkoop · ${number}`;
   const words = payees.map(payee => payee === 'SUPPLIER' && payments.some(payment => (payment.payee ?? 'SUPPLIER') === 'SUPPLIER' && payment.instalmentDue === 'FREIGHT')
     ? PAYEE_PART.SUPPLIER + ' + zeevracht' : PAYEE_PART[payee]).join(' + ');
-  return `${words.charAt(0).toUpperCase()}${words.slice(1)} (${number})`;
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)} · ${number}`;
 }

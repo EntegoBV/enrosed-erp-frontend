@@ -11,6 +11,7 @@ import { dayMonth } from './finance-format';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { ContainerPaymentTreeView } from './container-payment-tree-view';
+import { containerName, containerNumberHint } from '../purchasing/container-name';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' };
@@ -48,7 +49,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
                    [attr.aria-expanded]="expanded().has(view.order.id)" (focus)="table.focused(key(view))" (click)="table.click(key(view), $event)" (dblclick)="toggle(view.order.id)"
                    appMenuTrigger (menuTrigger)="menu(view, $event)">
                 <!-- The alias takes a second line beside the inspector rather than an ellipsis. -->
-                <span class="wk-td wk-td--wrap" role="gridcell"><b>{{ view.order.number }}</b>{{ view.order.alias ? ' · ' + view.order.alias : '' }}
+                <span class="wk-td wk-td--wrap" role="gridcell"><b>{{ name(view) }}</b>@if (hint(view); as number) { <span class="fin-hint-number">{{ number }}</span> }
                   @if (view.order.archivedAt) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }</span>
                 <span class="wk-td" role="gridcell" data-hide="xs"><span class="wk-pill" [class.tone-ok]="row.reconciliation.totals.finalized">{{ statusOf(view) }}</span></span>
                 <span class="wk-td wk-td--num" role="gridcell" data-hide="sm">{{ row.reconciliation.totals.plannedExternalEur | eur }}</span>
@@ -79,7 +80,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
         <div class="ios-chips" role="group" aria-label="Welke containers">
           <button class="ios-chip" type="button" [attr.aria-pressed]="!state.location().scope" (click)="state.go({ scope: '' })">Lopend</button>
           <button class="ios-chip" type="button" [attr.aria-pressed]="state.location().scope === 'all'" (click)="state.go({ scope: 'all' })">Alles</button>
-          @if (state.location().container) { <button class="ios-chip" type="button" aria-pressed="true" (click)="state.go({ container: null })" aria-label="Filter op container wissen">{{ rows()[0]?.view?.order?.number ?? 'Container' }} <app-icon name="close" [size]="12" /></button> }
+          @if (state.location().container) { <button class="ios-chip" type="button" aria-pressed="true" (click)="state.go({ container: null })" aria-label="Filter op container wissen">{{ rows()[0] ? name(rows()[0].view) : 'Container' }} <app-icon name="close" [size]="12" /></button> }
         </div>
         <p class="ios-section__foot fin-ios-note">Containerbetalingen zijn inkoop, geen bedrijfskosten; btw wordt niet afgeleid.</p>
         @if (state.containersLoading() && !state.purchaseViews().length) {
@@ -89,7 +90,7 @@ const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BES
             @for (row of rows(); track row.view.order.id) {
               <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'container', id: row.view.order.id })">
                 <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ row.view.order.number }}{{ row.view.order.alias ? ' · ' + row.view.order.alias : '' }}</span>
+                <span class="ios-cell__body"><span class="ios-cell__title fin-wrap">{{ name(row.view) }}@if (hint(row.view); as number) { <small class="fin-hint-number">{{ number }}</small> }</span>
                   <!-- At 390 each figure keeps its words together and the line breaks at the dot rather than cutting. -->
                   <span class="ios-cell__sub fin-wrap"><span class="fin-nobreak">Betaald {{ row.reconciliation.totals.paidEur | eur }}</span> · <span class="fin-nobreak">Open {{ row.reconciliation.totals.remainingEur | eur }}</span></span>
                   @let bank = onBank(row.view.order.id);
@@ -214,5 +215,8 @@ export class ContainerPaymentsPanel implements FinanceSectionApi {
   }
 
   key(view: PurchaseOrderView): string { return `container:${view.order.id}`; }
+  /** The container by its name (alias, else PO number); the number as small print when the name is the alias. */
+  name(view: PurchaseOrderView): string { return containerName(view.order); }
+  hint(view: PurchaseOrderView): string | null { return containerNumberHint(containerName(view.order), view.order.number); }
   statusOf(view: PurchaseOrderView): string { return view.reconciliation?.totals?.finalized ? 'Afgerond' : STATUS_LABEL[view.order.status] ?? view.order.status; }
 }

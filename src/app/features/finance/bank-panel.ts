@@ -202,6 +202,6 @@ export class BankPanel implements FinanceSectionApi {
   }
 
   stamp(asOfAt: string | null | undefined, date: string, timeZone: string | null | undefined): string {
-    return asOfAt ? paymentMomentLabel({ receivedAt: asOfAt, timeZone: timeZone || 'Europe/Brussels' }) : `${dayMonth(date)}, einde dag`;
+    return asOfAt ? paymentMomentLabel({ receivedAt: asOfAt, timeZone: timeZone || 'Europe/Brussels' }, this.state.today()) : `${dayMonth(date)}, einde dag`;
   }
 }

@@ -25,6 +25,10 @@ test('received moment is the entered timezone calendar date and includes exact h
   const late = payment({ receivedAt: '2026-09-08T22:17:00Z' });
   assert.equal(paymentLocalDay(late), '2026-09-09');
   assert.match(paymentMomentLabel(late), /00:17/);
+  assert.equal(paymentMomentLabel(late, '2026-10-16'), '9 sep · 00:17', 'the day and month of this year, then the clock');
+  assert.equal(paymentMomentLabel(late, '2027-01-02'), '9 sep 2026 · 00:17', 'another year names it');
+  assert.equal(paymentMomentLabel(late), '9 sep 2026 · 00:17', 'without today the year stays');
+  assert.equal(paymentMomentLabel(payment({ receivedAt: '2026-10-08T21:21:00Z' }), '2026-10-16'), '8 okt · 23:21');
   assert.equal(incomingMoneyTotals([late], '2026-09-09', '2026-09-09').count, 1);
   assert.equal(incomingMoneyTotals([late], '2026-09-08', '2026-09-08').count, 0);
 });

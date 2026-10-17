@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CompanyCost, PurchaseOrderView, PurchaseReconciliationStream, RecurringCost } from '../src/app/core/api/models.ts';
-import { containerPayables, payableTotals, payablesFor } from '../src/app/features/finance/payables.ts';
+import { containerPayables, containerTitle, payableSearchTexts, payableTotals, payablesFor } from '../src/app/features/finance/payables.ts';
+import { containerName } from '../src/app/features/purchasing/container-name.ts';
 import type { ContainerPayable, OpenCost } from '../src/app/features/finance/payables.ts';
 
 type Status = 'CONCEPT' | 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
@@ -93,7 +94,7 @@ test('recurring costs are coming up, with the direct debit flag; containers foll
     upcoming30: [{ definition, date: '2026-10-01', amountExclEur: 100, amountInclEur: 121 }], containerRows: [container] });
   assert.deepEqual(rows.map((row) => [row.kind, row.bucket, row.autoPaid, row.estimated]),
     [['cost', 'now', false, false], ['container', 'now', false, true], ['recurring', 'soon', true, false]]);
-  assert.equal(rows[1].title, 'INK-2026-01 · voor Frans');
+  assert.equal(rows[1].title, 'voor Frans', 'the container\'s name (its alias); the PO number goes in the sub');
   assert.deepEqual(rows.map((row) => [row.amountEur, row.ofEur]), [[10, 10], [80, 80], [121, 121]]);
 });
 
@@ -178,4 +179,19 @@ test('a term whose planned day passed while the order is still Besteld keeps tha
   const containerDates = new Map([['container:2:SEPARATE', { date: '2026-09-24', certainty: 'ESTIMATED' as const, overdue: true, originalDate: '2026-09-10' }]]);
   const [dated] = payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: [{ ...row, bucket: 'later' }], containerDates });
   assert.deepEqual([dated.bucket, dated.date, dated.plannedDate, dated.dueWord], ['soon', '2026-09-24', '2026-09-10', 'voor vertrek']);
+});
+
+test('a container row\'s title is containerName(): the alias, else the number, else "Inkoop #id"', () => {
+  for (const row of [{ alias: 'ORDER (3e) OOSTENRIJKER', orderNumber: 'PO-2026-011', orderId: 11 }, { alias: null, orderNumber: 'PO-2026-013', orderId: 13 },
+    { alias: '  ', orderNumber: '', orderId: 7 }]) {
+    assert.equal(containerTitle(row), containerName({ id: row.orderId, number: row.orderNumber, alias: row.alias }));
+  }
+});
+
+test('Te betalen\'s search finds a container by its PO number and its alias, now that the title is the name (B9)', () => {
+  const [row] = payablesFor({ today: '2026-09-24', openCosts: [], upcoming30: [], containerRows: containerPayables([order(1, 'BESTELD', [stream('SEPARATE', 80)])]) });
+  const texts = payableSearchTexts(row).filter(Boolean).map((text) => text!.toLocaleLowerCase('nl-BE'));
+  assert.equal(row.title, 'voor Frans');
+  assert.ok(texts.some((text) => text.includes('ink-2026-01')), 'the PO number');
+  assert.ok(texts.some((text) => text.includes('voor frans')), 'the alias');
 });

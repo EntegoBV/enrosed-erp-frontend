@@ -159,6 +159,16 @@ function addDays(day: string, days: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** A container's name: containerName() of purchasing/container-name.ts, inlined (alias, else number, else 'Inkoop #id'); the PO number goes in the sub. */
+export function containerTitle(row: Pick<ContainerPayable, 'alias' | 'orderNumber' | 'orderId'>): string {
+  return row.alias?.trim() || row.orderNumber?.trim() || `Inkoop #${row.orderId}`;
+}
+
+/** What Te betalen's search reads of a row besides the category words: a container is also found by its PO number and alias (B9). */
+export function payableSearchTexts(row: Pick<PayableRow, 'title' | 'party' | 'cost' | 'container'>): (string | null | undefined)[] {
+  return [row.title, row.party, row.cost?.reference, row.container?.orderNumber, row.container?.alias];
+}
+
 const BUCKET_ORDER: Readonly<Record<PayableBucket, number>> = { now: 0, soon: 1, later: 2 };
 const KIND_ORDER: Readonly<Record<PayableRow['kind'], number>> = { cost: 0, recurring: 1, container: 2 };
 
@@ -183,7 +193,7 @@ export function payablesFor(input: PayablesInput): PayableRow[] {
     const dated = input.containerDates?.get(container.key) ?? null;
     const bucket: PayableBucket = !dated || container.bucket === 'now' ? container.bucket : dated.date <= horizon ? 'soon' : 'later';
     rows.push({ ...empty, key: container.key, kind: 'container', bucket, date: dated?.date ?? null, ageDays: null,
-      title: container.alias ? `${container.orderNumber} · ${container.alias}` : container.orderNumber, party: null,
+      title: containerTitle(container), party: null,
       amountEur: container.remainingEur, ofEur: container.remainingEur, estimated: true, autoPaid: false, orderId: container.orderId, container,
       dateCertainty: dated?.certainty ?? null, dueWord: containerDueWord(container),
       plannedDate: dated?.overdue && container.bucket !== 'now' ? dated.originalDate : null });

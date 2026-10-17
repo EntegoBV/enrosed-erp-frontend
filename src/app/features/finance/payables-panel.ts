@@ -13,7 +13,8 @@ import { SortDirection, sortRows } from './finance-selection';
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
-import { PayableBucket, PayableRow, payableTotals } from './payables';
+import { PayableBucket, PayableRow, payableSearchTexts, payableTotals } from './payables';
+import { containerNumberHint } from '../purchasing/container-name';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const BUCKETS: readonly { id: PayableBucket; label: string; phone: string }[] = [
@@ -170,7 +171,8 @@ export class PayablesPanel implements FinanceSectionApi {
     const { tab, q } = this.state.location();
     const kind = tab === 'costs' ? 'cost' : tab === 'containers' ? 'container' : tab === 'recurring' ? 'recurring' : null;
     const needle = q.trim().toLocaleLowerCase('nl-BE');
-    return this.state.payables().filter((row) => (!kind || row.kind === kind) && (!needle || [row.title, row.party, row.cost?.reference,
+    /* A container is found by its name, its PO number and its alias, whatever the row shows (B9). */
+    return this.state.payables().filter((row) => (!kind || row.kind === kind) && (!needle || [...payableSearchTexts(row),
       row.cost ? categoryLabel(row.cost.category) : null, row.container ? paymentPayeeLabel(row.container.payee) : null,
       row.upcoming ? categoryLabel(row.upcoming.definition.category) : null]
       .some((part) => part?.toLocaleLowerCase('nl-BE').includes(needle))));
@@ -268,8 +270,9 @@ export class PayablesPanel implements FinanceSectionApi {
   containerSub(row: PayableRow): string {
     const container = row.container;
     if (!container) return '';
+    const hint = containerNumberHint(row.title, container.orderNumber);
     return this.payee(row) + (container.viaSupplier ? ' · via leverancier' : '') + (container.termLabel ? ' · ' + container.termLabel : '')
-      + (container.invoiceNumber ? ' · Factuur ' + container.invoiceNumber : '');
+      + (container.invoiceNumber ? ' · Factuur ' + container.invoiceNumber : '') + (hint ? ' · ' + hint : '');
   }
   payeeTone(row: PayableRow): string { return PAYEE_TONES[row.container?.payee ?? 'OTHER'] ?? 'grey'; }
   day(date: string | null): string { return dayMonth(date); }

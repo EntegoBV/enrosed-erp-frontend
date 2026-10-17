@@ -5,7 +5,8 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
-import { dayMonth } from './finance-format';
+import { dayMonth, dayMonthYear } from './finance-format';
+import { containerName as nameOfContainer, containerNumberHint } from '../purchasing/container-name';
 import { defaultReturnPeriod } from './finance-metrics';
 import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section';
 import { FinanceState, formatEuro } from './finance-state';
@@ -22,7 +23,6 @@ const KADERS: readonly { kader: Kader; title: string; phone: string }[] = [
 /** The desk's two columns: sales and what is due on the left, purchases and the deduction on the right. */
 const DESK_COLUMNS: readonly (readonly Kader[])[] = [['II', 'IV'], ['III', 'V']];
 const QUARTERS = [1, 2, 3, 4] as const;
-const dashDay = (day: string): string => `${day.slice(8, 10)}-${day.slice(5, 7)}-${day.slice(0, 4)}`;
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 /**
@@ -108,7 +108,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
               @for (container of result().notReceived; track container.id) {
                 <li class="fin-vat__row">
                   <span>—</span>
-                  <span><button class="wk-link" type="button" (click)="state.openContainer(container.id)">{{ containerName(container) }}</button></span>
+                  <span><button class="wk-link" type="button" (click)="state.openContainer(container.id)">{{ containerName(container) }}</button>@if (containerHint(container); as number) { <span class="fin-hint-number">{{ number }}</span> }</span>
                   <i>goederen</i>
                   <b>{{ container.goodsEur | eur }}</b>
                 </li>
@@ -167,7 +167,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
           <div class="ios-group">
             @for (container of result().notReceived; track container.id) {
               <button class="ios-cell" type="button" (click)="state.openContainer(container.id)">
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ containerName(container) }}</span><span class="ios-cell__sub">Telt mee in het kwartaal van ontvangst</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ containerName(container) }}@if (containerHint(container); as number) { <small class="fin-hint-number">{{ number }}</small> }</span><span class="ios-cell__sub">Telt mee in het kwartaal van ontvangst</span></span>
                 <span class="ios-cell__trail"><span class="ios-cell__value">{{ container.goodsEur | eur }}</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
@@ -263,9 +263,9 @@ export class VatReturnPanel implements FinanceSectionApi {
     { label: 'Btw op verkopen (54)', value: formatEuro(this.grid('54').eur) },
     { label: 'Aftrekbaar (59)', value: formatEuro(this.grid('59').eur) },
     { label: 'Te bevestigen', value: String(this.pendingCount()), tone: this.pendingCount() ? 'warn' : 'muted' },
-    { label: 'Indienen vóór', value: dashDay(this.result().filingDeadline), tone: this.late() ? 'warn' : undefined },
+    { label: 'Indienen vóór', value: dayMonthYear(this.result().filingDeadline), tone: this.late() ? 'warn' : undefined },
   ]);
-  readonly status = computed(() => `${this.result().status === 'ready' ? 'Klaar' : 'Voorlopig'} · Q${this.period().quarter} ${this.period().year} · indienen vóór ${dashDay(this.result().filingDeadline)}`);
+  readonly status = computed(() => `${this.result().status === 'ready' ? 'Klaar' : 'Voorlopig'} · Q${this.period().quarter} ${this.period().year} · indienen vóór ${dayMonthYear(this.result().filingDeadline)}`);
 
   readonly openGrid = computed(() => (this.openGridCode() ? this.result().grids.find((grid) => grid.code === this.openGridCode()) ?? null : null));
 
@@ -324,8 +324,12 @@ export class VatReturnPanel implements FinanceSectionApi {
     else if (costId) this.state.inspectItem({ kind: 'cost', id: costId });
   }
 
+  /** The container by its name (alias, else PO number); the number as small print beside an alias. */
   containerName(container: ContainerLine): string {
-    return container.alias ? `${container.number} · ${container.alias}` : container.number;
+    return nameOfContainer({ id: container.id, number: container.number, alias: container.alias });
+  }
+  containerHint(container: ContainerLine): string | null {
+    return containerNumberHint(this.containerName(container), container.number);
   }
 
   private costOf(costId: number | null) {

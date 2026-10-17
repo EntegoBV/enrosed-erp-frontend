@@ -1087,13 +1087,28 @@ test('a line that paid goods and the inspection of one container names both; one
   state.bankStatements.set([row]);
   state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 },
     { id: 202, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SEPARATE', bankStatementLineId: 610 }]);
-  assert.equal(panel.linkedLabel(row), 'Goederen + inspectie (PO-2026-021)');
+  assert.equal(panel.linkedLabel(row), 'Goederen + inspectie · PO-2026-021');
   state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 },
     { id: 203, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', instalmentDue: 'FREIGHT', bankStatementLineId: 610 },
     { id: 202, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SEPARATE', bankStatementLineId: 610 }]);
-  assert.equal(panel.linkedLabel(row), 'Goederen + zeevracht + inspectie (PO-2026-021)');
+  assert.equal(panel.linkedLabel(row), 'Goederen + zeevracht + inspectie · PO-2026-021');
   state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', payee: 'SUPPLIER', bankStatementLineId: 610 }]);
   assert.equal(panel.linkedLabel(row), 'Inkoop · PO-2026-021');
+  state.payments.set([{ id: 201, orderId: 21, orderNumber: 'PO-2026-021', orderAlias: 'ORDER (3e) OOSTENRIJKER', payee: 'SUPPLIER', bankStatementLineId: 610 }]);
+  assert.equal(panel.linkedLabel(row), 'Inkoop · ORDER (3e) OOSTENRIJKER', 'the container name, not its number');
+});
+
+test('a line linked to a container is found by the PO number, whatever its label shows (B9); rows read bankTextOf', () => {
+  const { panel, state } = harness();
+  const row = { ...movement(611, -33867), source: 'ODOO' as const, allocated: true, counterparty: 'Yunnan Pubei Agricultural Science A',
+    reference: 'YUNNAN PUBEI AGRICULTURAL SCIENCE A Instantoverschrijving LU16 0670 0000 1234 5678 BIC: CHASLULXXXX PI 20260907 glass 09.59 uur KBC Mobile' };
+  state.bankStatements.set([row, movement(612, 10)]);
+  state.payments.set([{ id: 301, orderId: 11, orderNumber: 'PO-2026-011', orderAlias: 'ORDER (3e) OOSTENRIJKER / STOLP FRANS- 40FTHQ', payee: 'SUPPLIER', bankStatementLineId: 611 }]);
+  panel.search.set('PO-2026-011');
+  assert.deepEqual(panel.filteredLines().map(line => line.id), [611]);
+  assert.equal(panel.titleOf(row), 'Yunnan Pubei Agricultural Science A');
+  assert.equal(panel.subOf(row), 'PI 20260907 glass');
+  assert.equal(panel.verschil({ ...row, allocationDifferenceEur: -0.01 }).replace(/\u00a0/g, ' '), 'Verschil − € 0,01');
 });
 
 test('one transfer for several containers reads "Inkoop · 3 containers (…)", the numbers in order (owner addition)', () => {
@@ -1104,6 +1119,8 @@ test('one transfer for several containers reads "Inkoop · 3 containers (…)", 
     { id: 904, orderId: 44, orderNumber: 'PO-2026-044', payee: 'SUPPLIER', bankStatementLineId: 112 },
     { id: 903, orderId: 43, orderNumber: 'PO-2026-043', payee: 'SUPPLIER', bankStatementLineId: 112 }]);
   assert.equal(panel.linkedLabel(row), 'Inkoop · 3 containers (PO-2026-043, PO-2026-044, PO-2026-045)');
+  state.payments.update(rows => rows.map(payment => payment.orderId === 44 ? { ...payment, orderAlias: 'Foam Bear' } : payment));
+  assert.equal(panel.linkedLabel(row), 'Inkoop · 3 containers (PO-2026-043, Foam Bear, PO-2026-045)', 'names, in PO order');
 });
 
 test('Factuur of uitgave: goods and the inspection paid via the supplier become two payments on the one bank line', async () => {
