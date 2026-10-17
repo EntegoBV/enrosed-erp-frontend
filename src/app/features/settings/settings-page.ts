@@ -16,7 +16,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import {
-  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, LANGUAGES, LanguageCode,
+  CatalogImportResult, Category, CompanyProfile, DiscountTier, LANGUAGES, LanguageCode,
   Product, ProductFamily, Supplier,
 } from '../../core/api/models';
 import { AuthImage } from '../../core/api/auth-image';
@@ -620,41 +620,12 @@ const normalizeCategoryCode = (value: string): string => value
         </div>
       </div>
 
-      <!-- ======================================= douanetarieven -->
+      <!-- ======================================= douanetarieven: their own screen under Inkoop since 2026-10-17; this card points there for old links -->
       <div [class.settings-section--folded]="folded('duties')" class="card settings-section" id="duties">
-        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2><span class="spacer"></span>
-          <button class="btn btn--sm" type="button" (click)="addHsCode()">+</button></div>
+        <div (click)="toggleSection('duties', $event)" class="card__head settings-head"><h2>Douanetarieven</h2></div>
         <div class="card__body">
-          <div class="alert alert--warn" style="margin-bottom:14px">
-            <span class="alert__icon">!</span>
-            <div>
-              Kijk deze percentages na in de <b>TARIC-databank</b> van de EU. Wat hier staat is
-              configuratie, geen douaneadvies.
-            </div>
-          </div>
-          @for (code of hsCodes(); track code.code) {
-            <div style="border:1px solid var(--line);border-radius:var(--r-sm);
-                        padding:10px 12px;margin-bottom:10px">
-              <div class="row" style="margin-bottom:8px">
-                <input class="input input--sm mono" style="max-width:140px" aria-label="HS-code"
-                       [ngModel]="code.code" (ngModelChange)="code.code = $event" />
-                <input class="input input--sm num right" style="max-width:80px" type="text"
-                       inputmode="decimal" aria-label="Invoerrecht"
-                       [value]="pctText(code.dutyRatePct)"
-                       (change)="code.dutyRatePct = pctValue($any($event.target).value)" />
-                <span class="small muted">%</span>
-                <button class="btn btn--sm" type="button" (click)="saveHsCode(code)">✓</button>
-                <button class="btn btn--sm btn--danger" type="button"
-                        (click)="removeHsCode(code)">✕</button>
-              </div>
-              <input class="input input--sm" aria-label="Omschrijving" placeholder="Omschrijving"
-                     [ngModel]="code.description" (ngModelChange)="code.description = $event" />
-            </div>
-          }
-          <p class="small muted">
-            Het invoerrecht geldt over de <b>douanewaarde</b>: goederen + lokale kosten China +
-            zeevracht. De kosten vanaf de aankomsthaven vallen erbuiten.
-          </p>
+          <p class="small muted">De douanetarieven hebben nu een eigen scherm onder Inkoop.</p>
+          <a class="btn btn--sm" routerLink="/douane">Naar Douane ›</a>
         </div>
       </div>
 
@@ -1463,7 +1434,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   readonly categorySaveError = signal<string | null>(null);
   readonly categoryConflict = signal(false);
   readonly deletingCategoryId = signal<number | null>(null);
-  readonly hsCodes = signal<HsCode[]>([]);
   private readonly lineTiers = signal<DiscountTier[]>([]);
   readonly orderTiers = signal<DiscountTier[]>([]);
   readonly lineDiscountPicker = signal(false);
@@ -1609,10 +1579,10 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         this.scrollToDeepLink();
         return;
       }
-      const [categories, products, families, suppliers, hsCodes, line, order, company] = await Promise.all([
+      const [categories, products, families, suppliers, line, order, company] = await Promise.all([
         this.catalog.categories(), this.catalog.products().catch(() => []),
         this.catalog.productFamilies().catch(() => []),
-        this.sourcing.suppliers().catch(() => []), this.catalog.hsCodes(),
+        this.sourcing.suppliers().catch(() => []),
         this.sales.tiers('LINE'), this.sales.tiers('ORDER'),
         this.sales.company(),
       ]);
@@ -1625,8 +1595,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       this.products.set(products);
       this.families.set(families);
       this.suppliers.set(suppliers);
-      this.hsCodes.set(hsCodes);
-      this.savedHsCodes = new Set(hsCodes.map((code) => code.code));
       this.lineTiers.set(line);
       this.orderTiers.set(order);
       this.scrollToDeepLink();
@@ -2057,23 +2025,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       });
   }
 
-  /* -------------------------------------------------- douanetarieven */
-
-  addHsCode(): void {
-    this.hsCodes.update((codes) =>
-      [...codes, { id: null, code: '', description: '', dutyRatePct: 0 }]);
-  }
-
-  async saveHsCode(code: HsCode): Promise<void> {
-    if (!code.code.trim()) { this.ui.toast('Vul een code in', 'err'); return; }
-    await this.catalog.saveHsCode(code);
-    this.ui.toast('Tarief opgeslagen');
-    await this.load();
-  }
-
-  /** Codes as loaded from the server; anything else is an unsaved draft. */
-  private savedHsCodes = new Set<string>();
-
   /* Percentages are typed the Belgian way, with a comma. A number input
      refuses "6,5" on most keyboards; a decimal text field accepts both. */
   pctText(value: number | null | undefined): string {
@@ -2083,21 +2034,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   pctValue(raw: string): number {
     const parsed = parseFloat(String(raw).trim().replace(',', '.'));
     return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  removeHsCode(code: HsCode): void {
-    /* A freshly added row has nothing on the server yet: drop it locally,
-       no dialog - that was the "X does nothing" on a new tariff. */
-    if (!this.savedHsCodes.has(code.code)) {
-      this.hsCodes.update((codes) => codes.filter((candidate) => candidate !== code));
-      return;
-    }
-    this.ui.confirm(
-      { title: 'Tariefcode verwijderen',
-        message: `<b>${code.code}</b> verwijderen? Producten vallen terug op het `
-          + 'standaardpercentage van de inkooporder.',
-        confirmLabel: 'Verwijderen', danger: true },
-      async () => { await this.catalog.deleteHsCode(code.code); await this.load(); });
   }
 
   /* ------------------------------------------------------- staffels */

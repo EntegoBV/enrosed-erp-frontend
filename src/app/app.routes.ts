@@ -130,6 +130,15 @@ export const routes: Routes = [
       import('./features/suppliers/supplier-list').then((m) => m.SupplierList),
   },
   {
+    /* Inkoop redesign I8 (2026-10-17): the HS codes on their own screen; Instellingen › Douanetarieven points here. */
+    path: 'douane',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    title: 'Douane',
+    loadComponent: () =>
+      import('./features/purchasing/douane-page').then((m) => m.DouanePage),
+  },
+  {
     path: 'products',
     canActivate: [authGuard],
     loadComponent: () => import('./features/products/product-list').then((m) => m.ProductList),

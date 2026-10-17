@@ -105,8 +105,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { id: 'purchasing', label: 'Inkooporders', short: 'Inkoop', icon: 'purchase', link: '/purchasing', railMain: true, tabRoot: true },
       { id: 'suppliers', label: 'Leveranciers', icon: 'suppliers', link: '/suppliers', hint: 'Contacten, valuta en levertijden' },
-      { id: 'duties', label: 'Douane', icon: 'truck', link: '/settings', query: { sectie: 'duties' }, wide: true,
-        hint: 'HS-codes en invoerrechten' },
+      { id: 'duties', label: 'Douane', icon: 'truck', link: '/douane', hint: 'HS-codes en invoerrechten' },
     ],
   },
   {

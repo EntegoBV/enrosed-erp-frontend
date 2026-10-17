@@ -48,6 +48,15 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
       { keys: ['⌥', '3'], text: 'Nacalculatie' },
     ],
   },
+  /* Inkoop redesign I8 (2026-10-17): Douane. */
+  {
+    routes: ['/douane'],
+    rows: [
+      { keys: ['↩'], text: 'Tarief bewerken of opslaan' },
+      { keys: ['Esc'], text: 'Wijziging annuleren' },
+      { keys: ['N'], text: 'Nieuw tarief' },
+    ],
+  },
   {
     routes: ['/sales/:id/edit', '/purchasing/:id/edit', '/products/:id/edit', '/website/*'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
