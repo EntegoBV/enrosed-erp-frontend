@@ -1,1 +1,121 @@
-/* Producten & voorraad: product-phone (filled by its own package). */
+/* Producten & voorraad: the product page on the phone (app-product-view,
+   below 680 px). The styleUrl of ProductView (ViewEncapsulation.None), every
+   rule scoped under the host. The kit's iOS bar with the product as its
+   hero card, then inset groups on the beige page; no Bewerken dock. */
+
+app-product-view { display: block; min-width: 0; }
+app-product-view .pd-phone .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+app-product-view .pd-phone .mono { font-family: var(--mono); font-size: 13px; }
+app-product-view .pph-edit { font-size: 15px; }
+
+/* ---- hero card ---- */
+app-product-view .pph-card { margin: 4px 16px 18px; padding: 14px; border-radius: 22px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 5%); outline: none; }
+app-product-view .pph-top { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 14px; align-items: start; }
+app-product-view .pph-photo-col { display: grid; gap: 5px; }
+app-product-view .pph-photo {
+  position: relative; display: grid; place-items: center; width: 118px; height: 118px; padding: 0; overflow: hidden;
+  border: 0; border-radius: 16px; background: var(--surface-2); color: var(--muted-2); touch-action: pan-y; cursor: zoom-in;
+}
+app-product-view .pph-photo img { width: 100%; height: 100%; object-fit: cover; }
+app-product-view .pph-photo--empty { cursor: default; }
+app-product-view .pph-photo__count { position: absolute; right: 6px; bottom: 6px; padding: 1px 7px; border-radius: 999px; background: rgb(26 22 20 / 60%); color: #fff; font-size: 10.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+/* Where customers see this slide, one line under the photo (N12). */
+app-product-view .pph-badges { color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.3; }
+app-product-view .pph-id { display: grid; gap: 2px; min-width: 0; }
+app-product-view .pph-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px; }
+app-product-view .pph-cat { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+app-product-view .pph-title { margin: 0; font-size: 22px; font-weight: 780; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+app-product-view .pph-opt { display: flex; align-items: center; gap: 6px; margin: 3px 0 0; color: var(--ink-2); font-size: 14px; font-weight: 600; }
+app-product-view .pph-opt i { flex: none; width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%); }
+app-product-view .pph-sku { margin: 1px 0 0; color: var(--muted); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+app-product-view .pph-supplier { justify-self: start; margin-top: 2px; color: var(--rose-dark); font-size: 13px; font-weight: 600; text-decoration: none; }
+app-product-view .pph-pub { margin: 3px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+app-product-view .pph-variants {
+  display: flex; gap: 6px; margin: 12px -14px 0; padding: 0 14px 2px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-inline: contain;
+}
+app-product-view .pph-variants::-webkit-scrollbar { display: none; }
+app-product-view .pph-variant {
+  display: inline-flex; flex: none; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+app-product-view .pph-variant i { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%); }
+app-product-view .pph-variant b { color: var(--muted); font-size: 11.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+app-product-view .pph-variant.now { background: var(--rose); color: #fff; }
+app-product-view .pph-variant.now b { color: rgb(255 255 255 / 80%); }
+app-product-view .pph-variant.off { opacity: .6; }
+app-product-view .pph-variant-error { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+/* The four figures, 2 × 2; sub-lines wrap, never cut. */
+app-product-view .pph-figs {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5px; margin: 12px -14px -14px; overflow: hidden;
+  border-top: .5px solid var(--ios-sep); border-radius: 0 0 22px 22px; background: var(--ios-sep);
+}
+app-product-view .pph-figs > button { display: grid; align-content: start; gap: 0; min-width: 0; padding: 10px 14px 11px; border: 0; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+app-product-view .pph-figs small { color: var(--muted); font-size: 12px; font-weight: 600; }
+app-product-view .pph-figs strong { font-size: 19px; font-weight: 720; letter-spacing: -.01em; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+app-product-view .pph-figs strong em { margin-left: 4px; color: var(--muted); font-size: 12.5px; font-style: normal; font-weight: 600; }
+app-product-view .pph-figs strong.is-bad { color: var(--danger); }
+app-product-view .pph-figs span { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+app-product-view .pph-figs .ok strong { color: var(--ok); }
+app-product-view .pph-figs .bad strong { color: var(--danger); }
+
+/* ---- onderweg bar ---- */
+app-product-view .pph-onway {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; margin: 0 16px 18px; padding: 11px 16px;
+  border-radius: 16px; background: var(--rose-soft); color: var(--rose-dark); font-size: 14.5px; font-weight: 650; text-decoration: none;
+}
+app-product-view .pph-onway small { font-size: 12.5px; font-weight: 600; }
+
+/* ---- sections ---- */
+app-product-view .pph-group { overflow: visible; }
+app-product-view .pph-places { padding: 12px 16px 14px; }
+app-product-view .pph-places__actions { display: flex; margin-top: 10px; }
+app-product-view .pph-nophoto { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 15px; }
+app-product-view .pph-zero { color: var(--muted-2); }
+app-product-view .pph-move .ios-cell__title { font-size: 15px; }
+app-product-view .pph-move .ios-cell__sub { white-space: normal; }
+/* A movement reference may be cut (today's behaviour); the line under it wraps. */
+app-product-view .pph-delta { flex: none; color: var(--ok); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+app-product-view .pph-delta.minus { color: var(--danger); }
+app-product-view .pph-ok { color: var(--ok); font-weight: 650; }
+app-product-view .pph-bad { color: var(--danger); font-weight: 650; }
+app-product-view .pph-live { color: var(--muted); }
+app-product-view .pph-live.on { color: var(--ok); font-weight: 600; }
+app-product-view .pph-warn { color: var(--warn); font-weight: 600; }
+app-product-view .pph-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+app-product-view .ios-cell__trail .pph-wrap { text-align: right; }
+app-product-view .pph-points { padding: 0 16px 12px; }
+app-product-view .pph-points__group { padding: 8px 0; }
+app-product-view .pph-points__group b { font-size: 14px; }
+app-product-view .pph-points__group ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13.5px; line-height: 1.45; }
+app-product-view .pph-prose { margin: 0; padding: 0 16px 12px; color: var(--ink-2); font-size: 15px; line-height: 1.45; white-space: pre-wrap; }
+app-product-view .pph-media { display: block; padding: 14px 16px 16px; }
+app-product-view .pph-agreement { display: grid; gap: 10px; padding: 0 16px 14px; }
+app-product-view .pph-private { margin: 0; color: var(--muted); font-size: 13px; }
+app-product-view .pph-private b { color: var(--ink-2); }
+app-product-view .pph-scope { margin: 0; color: var(--muted); font-size: 13px; }
+app-product-view .pph-scope a { display: inline-block; margin-top: 2px; color: var(--rose-dark); font-weight: 600; }
+app-product-view .pph-muted { margin: 0; color: var(--muted); font-size: 13.5px; }
+app-product-view .pph-note { padding: 10px 12px; border-radius: 12px; background: var(--warn-soft); color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+app-product-view .pph-note p { margin: 0; white-space: pre-line; }
+app-product-view .pph-note p + p, app-product-view .pph-note ul + p, app-product-view .pph-note p + ul { margin-top: 6px; }
+app-product-view .pph-note ul { margin: 0; padding-left: 18px; }
+app-product-view .pph-note ul ul { color: var(--muted); }
+app-product-view .pph-refs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+app-product-view .pph-refs button { position: relative; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+app-product-view .pph-refs img { display: block; width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--surface-2); object-fit: cover; }
+app-product-view .pph-refs span { position: absolute; top: 5px; left: 5px; padding: 1px 6px; border-radius: 999px; background: rgb(16 13 12 / 72%); color: #fff; font-size: 10px; font-weight: 700; }
+app-product-view .pph-refs p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+app-product-view .pph-note-line { font-style: italic; }
+app-product-view .pph-loading { display: grid; gap: 14px; padding: 8px 16px; }
+
+/* the price build-up sheet */
+.sheet--ios .pph-sheet { display: grid; gap: 12px; padding: 0 16px; }
+.sheet--ios .pph-sheet .price-build__list { margin: 0; padding: 0; }
+.sheet--ios .pph-sheet .price-build__list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.sheet--ios .pph-sheet .price-build__list > div:last-child { border-bottom: 0; }
+.sheet--ios .pph-sheet .price-build__list dt small { display: block; color: var(--muted); font-size: 12px; }
+.sheet--ios .pph-sheet .price-build__list dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.sheet--ios .pph-sheet .price-build__sum { font-weight: 700; }
+.sheet--ios .pph-sheet .price-build__note dd { color: var(--ok); }
+.sheet--ios .pph-sheet .price-build__aside { color: var(--muted); font-size: 13px; }
+.sheet--ios .pph-sheet .price-build__source { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }

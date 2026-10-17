@@ -422,9 +422,9 @@ test('desk, phone and editor each open the history sheet from the cost', async (
   assert.equal(desk.match(/<app-product-cost-history-sheet /g)?.length, 1);
   /* Catalogusprijs and Marge keep opening the build-up. */
   assert.equal(desk.match(/\(click\)="openPriceDetail\(\)"/g)?.length, 2);
-  /* Phone: the Kostprijs and Bron tiles. */
-  assert.match(view, /\(click\)="openHistory\(\)">\s*<i class="tile-chev" aria-hidden="true"><\/i>\s*<span>Kostprijs incl\. rechten<\/span>/);
-  assert.match(view, /\(click\)="openHistory\(\)">\s*<span>Bron kostprijs<\/span>/);
+  /* Phone: the "Kostprijs ›" figure of the hero and the Kostprijs cell of Prijs & marge, which also names the source (Bron). */
+  assert.match(view, /<button type="button" \(click\)="openHistory\(\)">\s*<small>Kostprijs ›<\/small>/);
+  assert.match(view, /<button class="ios-cell" type="button" \(click\)="openHistory\(\)">\s*<span class="ios-cell__body"><span class="ios-cell__title">Kostprijs<\/span><span class="ios-cell__sub pph-wrap">\{\{ product\.landedCostSource \? 'geland · ' \+ product\.landedCostSource/);
   assert.equal(view.match(/<app-product-cost-history-sheet /g)?.length, 1);
   assert.match(view, /openPriceInfo\(product: Product\): void \{\s*this\.priceTab\.set\('build'\);/);
   /* Editor: beside "Berekend uit", only for a saved product; no new styles there. */
