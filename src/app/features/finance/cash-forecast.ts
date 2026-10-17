@@ -275,6 +275,16 @@ const monthLabel = (day: Iso): string => MONTHS[Number(day.slice(5, 7)) - 1];
 const grouped = (value: number): string => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 /** "… · nu" for a date moved to today, unless the text already says nu. */
 const withNu = (text: string): string => (/(^|· )nu( ·|$)/.test(text) ? text : `${text} · nu`);
+/**
+ * The container in a title: its Herkenbare naam, else the PO number, else 'Inkoop #id' (the owner's one name for a
+ * container, containerName() in purchasing/container-name.ts; a local copy, this module imports types only). The
+ * PO number stays in `references`, so the bank still recognises the payment.
+ */
+export const forecastContainerName = (order: Pick<ForecastOrder, 'orderId' | 'number' | 'alias'>): string => {
+  const alias = typeof order.alias === 'string' ? order.alias.trim() : '';
+  const number = typeof order.number === 'string' ? order.number.trim() : '';
+  return alias || number || `Inkoop #${order.orderId}`;
+};
 
 /* money */
 const finite = (value: number | null | undefined): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
@@ -706,9 +716,10 @@ function containerDraft(order: ForecastOrder, row: ForecastContainerRow, stored:
   let rule: DateRule;
   let title: string;
   let party: string | null = null;
+  const name = forecastContainerName(order);
   if (row.payee === 'SUPPLIER') {
     party = order.supplierName || null;
-    title = `${order.number} · ${row.termLabel || 'Leverancier'}`;
+    title = `${name} · ${row.termLabel || 'Leverancier'}`;
     if (row.due === null || row.due === 'ORDERED') {
       const ordered = orderDayOf(order, stored);
       rule = status === 'CONCEPT' ? { date: ordered, certainty: 'SCENARIO', text: `bij bestelling ${dm(ordered)}` }
@@ -723,16 +734,16 @@ function containerDraft(order: ForecastOrder, row: ForecastContainerRow, stored:
       rule = { ...arrival, text: `bij aankomst · ${arrival.text}` };
     }
   } else if (row.payee === 'LOGISTICS') {
-    title = `${order.number} · Douane & transport`;
+    title = `${name} · Douane & transport`;
     if (status === 'ONTVANGEN') rule = fixedToday(receivedText(order));
     else { const arrival = arrivalOf(order, stored); rule = { date: addDays(arrival.date, LOGISTICS_DAYS_AFTER_ARRIVAL), certainty: arrival.certainty, text: `aankomst ${dm(arrival.date)} + ${LOGISTICS_DAYS_AFTER_ARRIVAL} d` }; }
   } else if (row.payee === 'SEPARATE') {
-    title = `${order.number} · Inspectie & andere kosten`;
+    title = `${name} · Inspectie & andere kosten`;
     party = order.inspectionViaSupplier ? order.supplierName || null : null;
     if (goneOrArrived) rule = fixedToday(shippedText(order));
     else { const departure = departureOf(order, stored); rule = { date: addDays(departure.date, -INSPECTION_DAYS_BEFORE_DEPARTURE), certainty: departure.certainty, text: `vertrek ${dm(departure.date)} − ${INSPECTION_DAYS_BEFORE_DEPARTURE} d (inspectie)` }; }
   } else {
-    title = `${order.number} · Bijkomende kosten`;
+    title = `${name} · Bijkomende kosten`;
     if (status === 'ONTVANGEN') rule = fixedToday(receivedText(order));
     else { const arrival = arrivalOf(order, stored); rule = { date: arrival.date, certainty: arrival.certainty, text: `bij aankomst ${dm(arrival.date)}` }; }
   }
@@ -753,7 +764,7 @@ function importVatDraft(input: CashForecastInput, order: ForecastOrder, stored: 
   return {
     key: `importvat:${order.orderId}`, layer, rule: 'containers', kind: 'IMPORT_VAT', certainty: arrival.certainty, ruleDate: arrival.date,
     ruleText: `btw bij invoer · inklaring België · ${arrival.text}${order.clearanceConfirmed ? '' : ' · inklaring te bevestigen'}`,
-    amountCents: -vat, deductibleCents: vat, title: `${order.number} · btw bij invoer`, party: 'Douane', orderId: order.orderId,
+    amountCents: -vat, deductibleCents: vat, title: `${forecastContainerName(order)} · btw bij invoer`, party: 'Douane', orderId: order.orderId,
     source: { type: 'container', orderId: order.orderId },
   };
 }
@@ -845,11 +856,16 @@ function baseItems(input: CashForecastInput): ForecastItem[] {
     drafts.push({ key: 'credit', layer: 'BASE', rule: 'invoices', kind: 'CREDIT', certainty: 'FIXED', ruleDate: today, ruleText: 'tegoed af te handelen',
       amountCents: -toCents(input.openCreditEur), title: 'Tegoeden klanten', party: null, orderId: null, source: { type: 'credit' } });
   }
+  /* An advance names its partner container like the container's own rows; an order the input does not carry keeps its number. */
+  const advanceName = (row: ForecastAdvanceRow): string => {
+    const order = orders.get(row.orderId);
+    return order ? forecastContainerName(order) : row.orderNumber;
+  };
   for (const row of input.advanceRows) {
     const amount = toCents(row.amountInclEur);
     if (amount <= 0) continue;
     const base = { key: `advance:${row.orderId}:${row.rowId}`, layer: 'BASE' as const, rule: 'partner' as const, kind: 'PARTNER' as const,
-      amountCents: amount, vatCents: toCents(row.vatEur), vatDate: 'date' as const, title: `${row.orderNumber} · ${row.label}`,
+      amountCents: amount, vatCents: toCents(row.vatEur), vatDate: 'date' as const, title: `${advanceName(row)} · ${row.label}`,
       party: row.party || null, orderId: row.orderId, source: { type: 'advance' as const, orderId: row.orderId, rowId: row.rowId } };
     drafts.push(row.dueDate
       ? { ...base, certainty: 'FIXED', ruleDate: row.dueDate, ruleText: `voorschotschema · vervalt ${dm(row.dueDate)}`,
@@ -1051,7 +1067,7 @@ function scenarioOf(input: CashForecastInput, options: ForecastOptions): Scenari
       continue;
     }
     const choice = resolveChoice(order, own, options.defaults, input.history, today, input.products);
-    const plan = salesPlan(input, `sales:${order.orderId}`, order.number, order.orderId, order.lines, choice, salesStartOf(order, own, today));
+    const plan = salesPlan(input, `sales:${order.orderId}`, forecastContainerName(order), order.orderId, order.lines, choice, salesStartOf(order, own, today));
     if (choice.included) {
       if (order.status === 'CONCEPT') {
         for (const row of input.containerRows) {
@@ -1456,12 +1472,13 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
   const pool = [...base.activeBefore.filter((item) => !outflowKeys.has(item.key) && item.kind !== 'VAT'), ...outflows];
   const matches = likelyPaid(pool, input.bankLines, today, options.dismissed).filter((match) => outflowKeys.has(match.itemKey));
   const matchOf = new Map(matches.map((match) => [match.itemKey, match]));
-  const plan = choice ? salesPlan(input, `sales:${orderId}`, order.number, orderId, order.lines, choice, salesStartOf(order, stored, today)) : null;
+  const plan = choice ? salesPlan(input, `sales:${orderId}`, forecastContainerName(order), orderId, order.lines, choice, salesStartOf(order, stored, today)) : null;
 
   const paidCents = toCents(order.paidEur);
   const outstandingCents = -sumCents(outflows);
   const backCents = plan?.backCents ?? 0;
-  const short = (item: ForecastItem): string => item.title.startsWith(`${order.number} · `) ? item.title.slice(order.number.length + 3) : item.title;
+  const name = forecastContainerName(order);
+  const short = (item: ForecastItem): string => item.title.startsWith(`${name} · `) ? item.title.slice(name.length + 3) : item.title;
 
   /* Events of the lane: the paid total, the open outflows (a likely-paid one on its line's day), the sales excl. btw on their cash day. */
   const events: { day: Iso; cents: number; outflow: boolean }[] = [];

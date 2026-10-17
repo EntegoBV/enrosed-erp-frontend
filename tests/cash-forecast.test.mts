@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseOrderForecast } from '../src/app/core/api/models.ts';
 import {
-  CERTAINTY_LABEL, NO_DEFAULTS, balanceHistory, buildCashForecast, dayEndBalances, defaultSellWeeks, distributeCents, horizonEndOf,
+  CERTAINTY_LABEL, NO_DEFAULTS, balanceHistory, buildCashForecast, dayEndBalances, defaultSellWeeks, distributeCents, forecastContainerName, horizonEndOf,
   likelyPaid, parsePaymentTerms, poSheet, resolveChoice, runningBalances, seasonalProfile, suggestOrderDate,
 } from '../src/app/features/finance/cash-forecast.ts';
 import type {
@@ -518,6 +518,35 @@ test('Example C: the PO sheet of PO-2026-043', () => {
   assert.equal(sheet.lane[0].eur, -9000);
   assert.equal(sheet.lane.find((point) => point.day === '2027-04-23')!.eur, 0.02);
   assert.equal(sheet.lane[sheet.lane.length - 1].eur, 18500);
+});
+
+test('container titles name the container by containerName(): Herkenbare naam, else the PO number; the bank still matches the number', () => {
+  const base = exampleC();
+  const input: CashForecastInput = { ...base,
+    orders: [{ ...base.orders[0], alias: 'Valentijn 2027' }, base.orders[1], order41({ orderId: 44, number: 'PO-2026-044', alias: 'Partner Van Gils', partner: true })],
+    advanceRows: [...base.advanceRows, { orderId: 52, orderNumber: 'Inkoop #52', rowId: 1, label: 'Voorschot 1', party: 'Kwekerij Van Gils', dueDate: '2026-12-02', amountInclEur: 1210, vatEur: 210 }] };
+  const forecast = buildCashForecast(input, options({ scenario: true }));
+  const byKey = new Map(forecast.items.map((item) => [item.key, item]));
+  assert.equal(byKey.get('container:43:SUPPLIER:SHIPPED')!.title, 'Valentijn 2027 · 70% bij vertrek');
+  assert.equal(byKey.get('container:43:LOGISTICS')!.title, 'Valentijn 2027 · Douane & transport');
+  assert.equal(byKey.get('container:43:SEPARATE')!.title, 'Valentijn 2027 · Inspectie & andere kosten');
+  assert.equal(byKey.get('importvat:43')!.title, 'Valentijn 2027 · btw bij invoer');
+  assert.equal(byKey.get('container:41:SUPPLIER:ARRIVED')!.title, 'PO-2026-041 · Saldo bij aankomst');
+  /* An advance takes its container's name; an order the input does not carry keeps the number the input gave it. */
+  assert.equal(byKey.get('advance:44:7')!.title, 'Partner Van Gils · 2e voorschot');
+  assert.equal(byKey.get('advance:52:1')!.title, 'Inkoop #52 · Voorschot 1');
+  assert.equal(forecast.items.find((item) => item.kind === 'SALES')!.title, 'Valentijn 2027 · verkoop week 1/18');
+  /* The deposit on the bank still matches by the PO number in its reference. */
+  assert.deepEqual(forecast.likelyPaid.map((match) => [match.itemKey, match.title]), [['container:43:SUPPLIER:ORDERED', 'Valentijn 2027 · 30% bij bestelling']]);
+  /* The PO sheet keeps both in its title and drops the name from its own lines. */
+  const sheet = poSheet(input, options({ scenario: true }), 43)!;
+  assert.equal(sheet.title, 'PO-2026-043 · Valentijn 2027');
+  assert.deepEqual(sheet.flows.filter((flow) => flow.kind === 'open' || flow.kind === 'likely').map((flow) => flow.title),
+    ['30% bij bestelling', 'Inspectie & andere kosten', '70% bij vertrek', 'Douane & transport']);
+  /* The name rule itself: trimmed alias, else the number, else 'Inkoop #id'. */
+  assert.equal(forecastContainerName({ orderId: 7, number: 'PO-2026-007', alias: '  Moederdag  ' }), 'Moederdag');
+  assert.equal(forecastContainerName({ orderId: 7, number: 'PO-2026-007', alias: '   ' }), 'PO-2026-007');
+  assert.equal(forecastContainerName({ orderId: 7, number: '', alias: null }), 'Inkoop #7');
 });
 
 /* ------------------------------------------------------------------ Example D: the order-date suggestion */

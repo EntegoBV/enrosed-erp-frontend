@@ -62,8 +62,8 @@ const headline: CashHeadline = { state: 'ready', startEur: 90000, accounts: [], 
 test('the agenda\'s money names its containers by containerName(): Herkenbare naam, else the PO number', () => {
   const forecast = buildCashForecast(forecastInput(), { horizonEnd: horizonEndOf(TODAY, 6), scenario: false, includeStock: false, rulesOff: [],
     openQuotesOn: false, defaults: NO_DEFAULTS, dismissed: [], pastDays: 42 });
-  /* The forecast itself still says the number (Analyses › Kasprognose is not the home's to change). */
-  assert.ok(forecast.items.some((item) => item.title === 'PO-2026-030 · 70% bij vertrek'));
+  /* The forecast names the containers it carries itself (Analyses W5c); the home renames what it titled by number. */
+  assert.ok(forecast.items.some((item) => item.title === 'Valentijn 2027 · 70% bij vertrek'));
   const input = agendaInputOf({
     today: TODAY, nowTime: '08:40', planner: [], milestones: [], forecast, headline,
     purchases: [view(30, 'PO-2026-030', 'Valentijn 2027'), view(43, 'PO-2026-043', null), view(47, 'PO-2026-047', 'Partner Van Gils')],
