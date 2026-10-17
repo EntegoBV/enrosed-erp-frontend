@@ -1,7 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api/auth';
 import type { PlannerItem } from '../../core/api/planner-api';
@@ -11,6 +10,7 @@ import type { ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { NotificationBell } from '../../shared/notification-bell';
+import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { weekdayDayMonth } from '../finance/cash-format';
@@ -19,10 +19,11 @@ import { localPlannerDate } from './dashboard-today-state';
 import { HOME_ADD_MENU, HomeAdd } from './home-add-actions';
 import { HomeData } from './home-data';
 import { HomeDeskAgenda } from './home-desk-agenda';
-import { briefing, firstName, greeting, overline } from './home-figures';
-import { VAT_SHOW_DAYS, nextWorkday, whyOrderLines } from './home-priority';
+import { briefHello, briefing, firstName, overline } from './home-figures';
+import { VAT_SHOW_DAYS, nextWorkday, othersOf, whyOrderLines } from './home-priority';
 import type { HomeSource, HomeTask } from './home-priority';
 import { homeTargetLink } from './home-sources';
+import { HomeWide } from './home-wide';
 import { amount, count } from './widgets/home-w';
 import { HomeInkoop } from './widgets/home-inkoop';
 import { HomeKas } from './widgets/home-kas';
@@ -60,51 +61,54 @@ function whyParts(line: string): { lead: string | null; rest: string } {
 type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
 
 /**
- * The desk home (spec-home §3, ≥ 680 px): a calm page that scrolls
- * normally. The header greets and briefs in one sentence, with the status,
- * "+ Nieuw" and the bell on the right. Row 1 is "Vandaag te doen" (at most
- * seven ranked rows, the reason chip, a verb and a "⋯" menu per row) beside
- * Kas, Verkoop, Resultaat and Inkoop & containers; row 2 the Agenda card;
- * row 3 the other figure blocks. "Alle n" (and ?alle=1) opens every open
+ * The desk home (spec-home §3, ≥ 680 px; redesign design §2.1-2.2): a calm
+ * page that scrolls normally. The foundation toolbar says "Dashboard" with
+ * the day and week, the status, one "Nieuw" button and the bell; the brief
+ * under it greets and says the day in one sentence. Row 1 is "Vandaag te
+ * doen" (at most seven ranked rows, the reason chip, a verb and a "⋯" menu
+ * per row; from 1280 px, on a short day, the first Ook nog rows follow) beside
+ * Kas, Verkoop and Resultaat, with Inkoop & containers under Te doen - from
+ * 1280 px both columns end on one line, their last card taking the rest. Then
+ * the Agenda card and Meer cijfers. "Alle n" (and ?alle=1) opens every open
  * point in one sheet, with the ranking explained underneath.
  *
  * The layout uses media queries only (home-desk.scss): no container query
- * may sit above the planner sheets, the bell or a menu.
+ * may sit above the planner sheets, the bell or a menu. The page keeps a
+ * hidden bell of its own for the "Klanten wachten" row (the toolbar's bell
+ * lives inside the page header).
  */
 @Component({
   selector: 'app-home-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    NgTemplateOutlet, RouterLink, Icon, Skeleton, Sheet, ContextMenu, NotificationBell, DashboardSearchConsole, HomeDeskAgenda,
+    NgTemplateOutlet, RouterLink, Icon, Skeleton, Sheet, ContextMenu, NotificationBell, PageHeader, DashboardSearchConsole, HomeDeskAgenda,
     HomeKas, HomeVerkoop, HomeResultaat, HomeInkoop, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite, HomeMarkt,
   ],
+  providers: [HomeWide],
   template: `
     @let t = data.tasks();
+    <!-- The foundation toolbar: "Dashboard" with the day and week, the status, one "Nieuw" button, then its own bell. -->
+    <app-page-header title="Dashboard" [subtitle]="over()" [parent]="null">
+      <!-- The status never wraps (critique N5): its words give way with an ellipsis, "Opnieuw" stays. -->
+      @switch (status().kind) {
+        @case ('busy') { <span class="wk-pill home-desk-status" role="status"><span class="home-desk-status__text">{{ status().text }}</span></span> }
+        @case ('warn') {
+          <span class="wk-pill tone-warn home-desk-status" role="status" [title]="status().text">
+            <span class="home-desk-status__text">{{ status().text }}</span> ·
+            <button type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
+        }
+        @default {
+          <span class="wk-pill tone-ok home-desk-status" role="status" [title]="status().text"><span class="wk-pill__dot"></span>
+            <span class="home-desk-status__text">{{ status().text }}</span></span>
+        }
+      }
+      <button #addButton class="btn btn--primary home-desk__new" type="button" aria-haspopup="menu" aria-label="Nieuw: kies wat je toevoegt"
+              [attr.aria-expanded]="!!addAnchor()" (click)="openAdd()">
+        <app-icon name="plus" [size]="15" /> Nieuw <app-icon name="chevron-down" [size]="14" /></button>
+    </app-page-header>
     <main class="content home-desk" [attr.aria-busy]="data.loading() || data.refreshing() || null">
-      <header class="home-desk__head">
-        <div class="home-desk__lead">
-          <p class="home-desk__over">{{ over() }}</p>
-          <h1 class="home-desk__title">{{ title() }}</h1>
-          <p class="home-desk__brief">@for (part of brief(); track $index) {@if (part.krap) {<a class="home-desk__krap" routerLink="/analyses/cash">{{ part.text }}</a>} @else if (part.strong) {<b>{{ part.text }}</b>} @else {<span>{{ part.text }}</span>}}</p>
-        </div>
-        <div class="home-desk__tools">
-          @switch (status().kind) {
-            @case ('busy') { <span class="wk-pill home-desk__status" role="status">{{ status().text }}</span> }
-            @case ('warn') {
-              <span class="wk-pill tone-warn home-desk__status" role="status">{{ status().text }} ·
-                <button type="button" [disabled]="data.refreshing()" (click)="data.load()">Opnieuw</button></span>
-            }
-            @default { <span class="wk-pill tone-ok home-desk__status" role="status"><span class="wk-pill__dot"></span>{{ status().text }}</span> }
-          }
-          <span class="wk-split">
-            <button #addButton class="wk-btn wk-btn--primary" type="button" aria-haspopup="menu" (click)="openAdd()">
-              <app-icon name="plus" [size]="15" /> Nieuw</button>
-            <button class="wk-btn wk-btn--primary" type="button" aria-haspopup="menu" aria-label="Nieuw: kies wat" (click)="openAdd()">
-              <app-icon name="chevron-down" [size]="14" /></button>
-          </span>
-          <app-notification-bell />
-        </div>
-      </header>
+      <!-- One line (two reserved, so nothing moves when the forecast lands): the greeting, then the day in one sentence. -->
+      <p class="home-desk__brief">@if (hello(); as hello) {<b class="home-desk__hello">{{ hello }}</b>{{ ' ' }}}@for (part of brief(); track $index) {@if (part.krap) {<a class="home-desk__krap" routerLink="/analyses/cash">{{ part.text }}</a>} @else if (part.strong) {<b>{{ part.text }}</b>} @else {<span>{{ part.text }}</span>}}</p>
 
       <div class="home-desk__top">
         <!-- Two columns from 1280 px that each stack their own cards, so a short Te doen leaves no hole under it
@@ -168,10 +172,22 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
               }
             }
 
+            <!-- From 1280 px, on a short day: the first Ook nog rows fill the room beside Kas and Verkoop (critique B5).
+                 The same rows as in Alle; never counted in the pill, never part of the cap of seven. -->
+            @if (preview().length) {
+              <h3 class="home-todo__group"><b class="is-ooknog">Ook nog</b> · opruimen zonder termijn</h3>
+              <ul class="home-tasks">
+                @for (task of preview(); track task.key) { <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: task, sheet: false }" /> }
+              </ul>
+            }
+
             @if (data.tasksReady() && t.total > t.top.length) {
               <footer class="home-todo__foot">
-                <b>{{ others() }} {{ others() === 1 ? 'ander open punt' : 'andere open punten' }}</b>
-                <span [title]="othersTitles()">{{ othersTitles() }}</span>
+                @if (others().count) {
+                  <b>{{ others().count }} {{ others().count === 1 ? 'ander open punt' : 'andere open punten' }}</b>
+                  @if (others().urgent) { <span class="wk-pill tone-warn home-todo__urgent">{{ others().urgent }} voor vandaag</span> }
+                  <span class="home-todo__titles" [title]="othersTitles()">{{ othersTitles() }}</span>
+                }
                 <button class="wk-link home-todo__all" type="button" (click)="openAll()">Alle {{ t.total }} ›</button>
               </footer>
             }
@@ -206,7 +222,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
         @defer (on viewport) {
           <app-home-markt variant="desk" />
         } @placeholder {
-          <div class="wk-card home-desk__placeholder" aria-hidden="true"></div>
+          <div class="wk-card home-desk__placeholder home-desk__placeholder--strip" aria-hidden="true"></div>
         }
       </div>
     </main>
@@ -216,6 +232,8 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
     @if (addAnchor(); as anchor) {
       <app-context-menu title="Nieuw" [items]="addItems" [anchor]="anchor" (pick)="pickAdd($event.id)" (closed)="addAnchor.set(null)" />
     }
+    <!-- The page's own bell for the "Klanten wachten" row; its button stays hidden (home-phone.scss, critique B6). -->
+    <app-notification-bell class="home-bell-host" />
     @if (rowMenu(); as menu) {
       @if (!menu.inSheet) { <ng-container [ngTemplateOutlet]="rowMenuTpl" [ngTemplateOutletContext]="{ $implicit: menu }" /> }
     }
@@ -322,6 +340,8 @@ export class HomeDesk {
   private readonly bell = viewChild.required(NotificationBell);
   private readonly photo = viewChild.required<ElementRef<HTMLInputElement>>('photo');
   private readonly addButton = viewChild.required<ElementRef<HTMLButtonElement>>('addButton');
+  /** From 1280 px (one listener for the page and its Agenda card). */
+  private readonly wide = inject(HomeWide).active;
   private readonly whyAnchor = viewChild<ElementRef<HTMLElement>>('whyAnchor');
 
   readonly vatDays = VAT_SHOW_DAYS;
@@ -335,11 +355,10 @@ export class HomeDesk {
 
   /* ------------------------------------------------------------- header */
 
+  /** The toolbar's subtitle: "vrijdag 16 oktober · week 42". */
   readonly over = computed(() => overline(this.data.today()));
-  readonly title = computed(() => {
-    const name = firstName(this.auth.username());
-    return `${greeting(this.data.hour())}${name ? `, ${name}` : ''}`;
-  });
+  /** "Goedenavond, Emre." before the brief; none before 06:00 (critique N10). */
+  readonly hello = computed(() => briefHello(this.data.hour(), firstName(this.auth.username())));
   /** "7 dingen te doen en 2 afspraken vandaag. Eerste afspraak om 10:00. De bank wordt krap van 3 tot 11 november." */
   readonly brief = computed(() => {
     const t = this.data.tasks();
@@ -371,17 +390,23 @@ export class HomeDesk {
   readonly vandaag = computed(() => this.data.tasks().top.filter((task) => task.tier === 'vandaag'));
   readonly allNu = computed(() => { const t = this.data.tasks(); return [...t.top, ...t.more].filter((task) => task.tier === 'nu'); });
   readonly allVandaag = computed(() => { const t = this.data.tasks(); return [...t.top, ...t.more].filter((task) => task.tier === 'vandaag'); });
-  /** Everything the seven rows leave out: Nu/Vandaag beyond the cap, then Ook nog. */
-  private readonly hidden = computed(() => { const t = this.data.tasks(); return [...t.more, ...t.ookNog]; });
-  readonly others = computed(() => this.hidden().length);
+  /**
+   * The Ook nog preview (critique B5): from 1280 px, the first min(Ook nog, 6 − shown) Ook nog rows - six on a
+   * day without Nu or Vandaag, none from six shown rows on - so the room beside Kas and Verkoop is overview.
+   */
+  readonly preview = computed(() => {
+    if (!this.wide() || !this.data.tasksReady()) return [];
+    const t = this.data.tasks();
+    return t.ookNog.slice(0, Math.max(0, Math.min(t.ookNog.length, 6 - t.top.length)));
+  });
+  /** What the card still leaves out (Nu/Vandaag beyond the cap, then Ook nog past the preview) and how many are for today. */
+  readonly others = computed(() => othersOf(this.data.tasks(), this.preview().length));
   readonly othersTitles = computed(() => {
-    const hidden = this.hidden();
+    const hidden = this.others().hidden;
     return hidden.slice(0, 3).map((task) => task.title).join(' · ') + (hidden.length > 3 ? ' …' : '');
   });
 
   constructor() {
-    const documentTitle = inject(Title);
-    effect(() => documentTitle.setTitle(`${greeting(this.data.hour())} — Enrosed`));
     /* ?alle=1 opens "Alle open punten" (the phone's Open punten page on a desk lands here). */
     effect(() => {
       if (this.params().get('alle') === '1') this.allOpen.set(true);
@@ -470,7 +495,7 @@ export class HomeDesk {
   /* -------------------------------------------------------- "+ Nieuw" */
 
   openAdd(): void {
-    const rect = this.addButton().nativeElement.closest('.wk-split')!.getBoundingClientRect();
+    const rect = this.addButton().nativeElement.getBoundingClientRect();
     this.addAnchor.set({ x: Math.max(8, rect.right - 280), y: rect.bottom + 4 });
   }
 

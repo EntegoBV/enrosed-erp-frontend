@@ -20,7 +20,10 @@ app-home-add-sheet { display: contents; }
 }
 .home-phone { --ios-tabbar-h: var(--tabbar-h); }
 /* The bell lives at page-host level; the nav shows a proxy button (G14). */
-.home-bell-host .bell { display: none; }
+/* The page's own bell (the phone and desk homes, Open punten) only hosts the sheet the "Klanten wachten" row opens;
+   its button stays hidden. !important and the child combinator because the bell's component rule (.bell[_ngcontent],
+   same specificity, inserted after the global styles) sets display: grid (critique B6). */
+.home-bell-host > .bell { display: none !important; }
 
 /* ---- nav: the bell's badge, the status caption */
 .home-phone__badge { position: absolute; top: 3px; right: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;

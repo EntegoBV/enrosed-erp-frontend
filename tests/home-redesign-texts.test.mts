@@ -53,3 +53,29 @@ test('H4: the two "te ontvangen" say why, the Kas names the next krap periods, I
   assert.match(inkoop, /\[title\]="full\(event, ' · '\)"/);
   assert.match(await widget('home-markt'), /t\.o\.v\. een maand geleden <span aria-hidden="true">›<\/span>/);
 });
+
+test('H2: the desk home sits under the foundation toolbar "Dashboard" with one Nieuw button; the greeting starts the brief', async () => {
+  const desk = await read('app/features/dashboard/home-desk.ts');
+  assert.match(desk, /<app-page-header title="Dashboard" \[subtitle\]="over\(\)" \[parent\]="null">/);
+  assert.match(desk, /aria-label="Nieuw: kies wat je toevoegt"/);
+  assert.doesNotMatch(desk, /wk-split|home-desk__head|setTitle/);
+  assert.match(desk, /<b class="home-desk__hello">\{\{ hello \}\}<\/b>/);
+  assert.match(desk, /briefHello\(this\.data\.hour\(\), firstName\(this\.auth\.username\(\)\)\)/);
+  /* N5: the status words give way, Opnieuw stays outside them. */
+  assert.match(desk, /<span class="home-desk-status__text">\{\{ status\(\)\.text \}\}<\/span> ·\s*<button/);
+  /* The page's own bell for Klanten wachten, hidden for good (B6). */
+  assert.match(desk, /<app-notification-bell class="home-bell-host" \/>/);
+  assert.match(await read('styles/home-phone.scss'), /\.home-bell-host > \.bell \{ display: none !important; \}/);
+});
+
+test('H2: the Ook nog preview and the footer that says how many are for today (B3, B5)', async () => {
+  const desk = await read('app/features/dashboard/home-desk.ts');
+  assert.match(desk, /t\.ookNog\.slice\(0, Math\.max\(0, Math\.min\(t\.ookNog\.length, 6 - t\.top\.length\)\)\)/);
+  assert.match(desk, /if \(!this\.wide\(\) \|\| !this\.data\.tasksReady\(\)\) return \[\];/);
+  assert.match(desk, /<h3 class="home-todo__group"><b class="is-ooknog">Ook nog<\/b> · opruimen zonder termijn<\/h3>/);
+  assert.match(desk, /othersOf\(this\.data\.tasks\(\), this\.preview\(\)\.length\)/);
+  assert.match(desk, /\{\{ others\(\)\.urgent \}\} voor vandaag/);
+  assert.match(desk, /'ander open punt' : 'andere open punten'/);
+  /* No second row pattern for the preview. */
+  assert.doesNotMatch(await read('styles/home-desk.scss'), /home-task--peek/);
+});
