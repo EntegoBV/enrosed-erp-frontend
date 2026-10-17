@@ -102,7 +102,9 @@
 .ws-prev-sheet{display:grid;gap:8px}
 .ws-prev-sheet__tools{display:flex;justify-content:flex-end;padding:0 var(--ios-inset)}
 .ws-prev-sheet .ws-stage{padding:0;background:none}
-.ws-prev-sheet .ws-site{margin:0 var(--ios-inset);border-radius:14px}
+/* the frame fills the sheet between the insets (not the 390 px desk phone frame, which overflowed by the inset)
+   and is as tall as its iframe, so no white block shows under it */
+.ws-prev-sheet .ws-site{width:auto;max-width:none;height:auto;margin:0 var(--ios-inset);border-radius:14px}
 .ws-prev-sheet .ws-site iframe{width:100%;height:calc(100dvh - 220px)}
 .ws-prev-note--ios{margin:0 var(--ios-inset);border:0;border-radius:12px}
 .ws-hp-ios .ios-section__head .ios-section__link{flex:none;white-space:nowrap}
