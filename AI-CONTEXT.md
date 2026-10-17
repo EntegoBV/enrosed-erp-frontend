@@ -209,6 +209,125 @@ Annuleren) for `canDeactivate(): boolean | Promise<boolean>`.
 render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache.
 
+## Analyses (2026-10-17 redesign)
+
+Contract: scratchpad redesign/analyses/design.md + critique.md (the critique
+wins). Built on the foundation (page header crumb, NavHistory, screenLabel,
+app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
+
+**Frame** (`analyses-page.ts`):
+- Desk: `app-page-header` with the tab title (Overzicht: "Analyses", no
+  crumb; the other seven `[parent]` "Analyses" → /analyses/overview), the
+  design's subtitles and one "Vernieuwen" with its icon on all eight tabs.
+  Document title "Analyses · Verkoop — Enrosed" (an afterRenderEffect after
+  PageHeader's own). No tab row on the desk (the sidebar group is the
+  navigation): `DESK_TAB_ROW = false` in analyses-desk-tabs.ts keeps the old
+  row's markup, centring and styles switched off, so reverting W2c (or
+  flipping the flag) brings it back; 680–1023 shows the tabs as
+  `wk-chips .an-tabs`. Every tab starts with a tool row `.an-bar`
+  (controls left, muted range text, `.an-bar__end` with "Hoe gerekend" —
+  `app-an-how`, texts in `analyses-how.ts` `HOW_TEXTS` — and the tab's
+  link). Markt, Bezoekers and Containerkost render their own tool row.
+- Phone (< 680): one `ios-page an an-phone` per tab (Kasprognose keeps
+  `app-cash-phone`): `app-ios-nav` with the tab title and caption, back =
+  the origin, trail [bell proxy · ↻ · ⋯] (Kasprognose: [bell · Link
+  kopiëren · ⋯]); the eight tabs as `ios-chips` (replaceUrl, current one
+  centred); ⋯ opens a sheet with "Hoe gerekend" and the tab's links (Markt:
+  "Tarief toevoegen"). Bodies are one `ng-template #body` shared by desk and
+  phone. Every sheet (period, receipt period, partner, value, how, menu) and
+  the real `app-notification-bell` sit at page level, never in the nav, the
+  tool row or the faded body (critique B7, N5).
+- Origin (critique B8): `NavHistory.below()` mapped by the pure
+  `analyses-origin.ts` `originOf(url, screenLabel, isWorkspaceUrl)`: none,
+  another Analyses tab or a workspace → "‹ Meer" (/more); else that screen
+  ("‹ Vandaag"; "Inkooporder" is longer than ten characters → chevron
+  circle). Back = history back when the origin is the entry below, else
+  navigate with `info: { nav: 'pop' }`.
+- State model (critique B6): `data` idle | loading | ready; the first data
+  tab (cash, overview, sales, inventory, purchasing, result) loads; Markt
+  and Bezoekers never trigger `load()`. `loading` = data !== ready (also
+  CashState's page-loading). Vernieuwen branches on the tab first: Markt →
+  `MarketAnalysis.load()`, Bezoekers → `reloadSelected()`, data tabs →
+  `load()` + the cash sources; the button's busy flag is per tab. `today`
+  is a signal (visibilitychange, Vernieuwen). One partial-failure banner
+  ("Niet alle actuele cijfers konden laden: …" + Opnieuw); every source
+  failing shows `app-load-error`. Tab switches fade the body (`.mo-fade`).
+- Period (`analyses-period.ts`, pure): a `PeriodChoice` (preset maand |
+  kwartaal | jaar | vorigjaar | alle, or two dates) derived from today.
+  Verkoop and Resultaat share one (`?periode=` / `?van=&tot=`, "jaar"
+  omitted, written only on those two tabs; a link without the keys gets the
+  choice written back). Desk: `app-an-period` (popover, Esc and outside
+  click close); phone: tinted capsule → "Periode" sheet (`app-an-period-sheet`).
+- Lists show 8 rows on the desk, 5 on the phone, the rest behind "Alle n
+  tonen" (`take(key, rows)`, `toggleList`). Plurals and words come from the
+  pure `analyses-words.ts` (plural, monthLabel "mrt 2026", rangeLabel,
+  eurShort, the Overzicht sentences, `monthBars`). Whole euros use
+  `eurWhole` with non-breaking spaces (a figure never splits).
+- Styles: `src/styles/analyses.scss` (frame, figures, cards, rows, phone)
+  and `analyses-tabs.scss` (per tab, Containerkost, Markt, Bezoekers),
+  loaded through the page's `styleUrls` with `ViewEncapsulation.None`, so
+  they stay in the lazy chunk (styles.css is about 20 kB under the 1 MB
+  initial budget); every rule is scoped under `.an` / `an-*` / a child's
+  host tag. Figures `.an-kpis` (fixed column counts `--an-cols`, `--5` /
+  `--6` / `--3`; each `.an-kpi` spans four subgrid rows label · value · sub
+  · foot so values align; labels may wrap, values never cut). Rows
+  `.an-row` (titles and subs wrap; nothing that carries a figure ellipsizes).
+
+**Tabs**:
+- Overzicht (critique B5: its own periods): year to date for Verkoop and
+  Resultaat (`ytdSales`, `ytdResult`), all years for overdue invoices
+  (`allSales`) and open quotes (`openSales`), its own receipt-variance
+  report (`overviewReport`: this year, no supplier or order; reused from
+  Afwijkingen while that filter is the default), Perfect/Op tijd over this
+  calendar year (`yearPerformance`). Four figures, "Per onderdeel" (one row
+  per tab: Inkoop from the Containerkost helpers, Markt from the root `Fx`
+  and Markt's stored period, Bezoekers `a[appAnVisitorsRow]` inside
+  `@defer (on viewport)`), "Aandacht" (six rows incl. partner settlement
+  and advance terms; zero rows stay, muted).
+- Verkoop: eight figures with the btw basis (new Omzet excl. = Resultaat's;
+  Gefactureerd foot voorschot/gecrediteerd; Ontvangen with its split;
+  Vervallen foot "+ n van vóór deze periode"), the funnel (open, gesloten,
+  geannuleerd, overige), monthly trend, channels, Opvolgen, Landen /
+  Klanten / Producten (counts in the product's sales unit).
+- Voorraad: six figures, a Datakwaliteit line, Nulvoorraad, Minder dan één
+  outer carton, the new Onderweg list (containers by name), Raakt binnenkort
+  op, Grootste voorraadposities (Trage verkopers folds in when identical).
+  Stock counts every location (critique N14): `catalog.stockLevels()` with
+  the page load, `withAllLocations()` (analyses-stock.ts) feeds Voorraad and
+  Overzicht; on failure the warehouse figure counts and the banner says
+  "voorraadlocaties". Kasprognose keeps its own inputs.
+- Inkoop in four parts (`?deel=kosten|kwaliteit|partners|afwijkingen`,
+  kosten omitted; `?orderId` without `deel` means Afwijkingen): row 1 the
+  parts (warn dot on Partners, affected-order count on Afwijkingen); row 2
+  per part (critique B10). Kwaliteit and Afwijkingen share the receipt period
+  (`?ontvangst` / `?ovan&otot`) and `?leverancier`, applied at once with a
+  300 ms debounced reload. The order focus applies to Afwijkingen only
+  (critique N8; Kwaliteit reads `qualityReport`, the unfocused report); the
+  chip "Alleen {container} ✕" clears it and `?orderId`. A deep link scrolls
+  to the order card (`#an-order-{id}`, ring `.is-focus`). Value field
+  (critique B3): it shows the stored `receiptUnitValueEur` ("1,26"), label
+  "Waarde per stuk", hint "Telt mee in de impact: n st × € 1,26." or "Nog
+  geen waarde: vul de waarde per stuk in.", no "Wissen", "Bewaren" only for
+  a changed non-empty value (empty means unknown, never the cost price).
+  Containerkost (`container-cost-analysis.ts`) has no component styles left;
+  on the phone each container opens a sheet with every figure (critique B1).
+- Resultaat: five figures (3 + 2 below 1280), `app-an-month-bars`
+  (result-month-bars.ts), channels as rows, categories as share rows, Per
+  maand with "mrt 2026" and every month up to today (`resultAnalysis`
+  `today` option; credit notes counted apart: `creditNoteCount`).
+- Markt: its own tool row (period segmented, ECB line, "+ Tarief
+  toevoegen"), tiles fill the card, "Onze laatste offerte … · + 36 %"
+  (`quoteVsMarketPct`). Bezoekers: source and period segmented (capsule
+  selects on the phone) writing `?source=&days=` (`websiteAnalyticsQuery`),
+  KPIs as an-kpis, a value axis on the visits chart.
+
+**Left out this round** (stop line, critique B9): ⌥1–8 and its
+`PAGE_SHORTCUTS` row; N15 (register titles by container name): the home's
+`home-agenda-names.test.mts` pins the forecast titles with PO numbers and
+maps them itself, so it needs the home area. Not done either: the Markt
+period as a phone capsule sheet (the iOS segmented is used), the phone
+Bezoekers capsules open native selects instead of sheets.
+
 ## Workspaces
 
 ### Kosten & bank
@@ -2109,8 +2228,14 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   `voorraad=0`, `uit` (comma list facturen, offertes, partner, containers,
   kosten, btw) and `open=1`. Invalid values fall back to the default. The
   buffer is never in the link; "Link kopiëren" copies the address.
-- Desk: header with horizon, Buffer and Link kopiëren; krap banner ("Toon
-  die dagen" filters the register); five figures; "Saldo per dag" with pins,
+- Desk: one tool row (since the 2026-10-17 redesign: horizon, Buffer ·
+  "Hoe gerekend", Link kopiëren; the old eyebrow, heading and paragraph live
+  in "Hoe gerekend"); krap banner ("Toon die dagen" filters the register);
+  five light figures (five columns only when `.cf` is at least 960 px wide,
+  else 3 + 2 on a six-column grid; values in words such as "Blijft boven
+  nul" carry `data-kind="text"` and wrap at 19 px; "Scenario binnen" is a
+  light card, value `data-tone="ok"` when positive); past bank rows show
+  `bankTextShort()` with the full text in the title; "Saldo per dag" with pins,
   the month strip (fixed 104 px columns in their own scroller) and "Per
   maand ›"; "Komende bewegingen" (past bank rows, the black today bar, month
   groups, filters, CSV); the scenario column (360 px, sticky; the container
@@ -2123,7 +2248,9 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   to `/costs?container=`). Under 760 px everything stacks. Texts wrap;
   nothing ends in "…".
 - Phone: one `ios-page` with its own nav and the Analyses tabs as chips (the
-  page renders neither its header nor its tab row then): hero, banner,
+  page renders neither its header nor its tab row then; since 2026-10-17 the
+  nav's back is the page's origin (`backLabel` / `(back)`) and its trail
+  starts with the bell proxy (`bellCount`, `bellLabel`, `(bell)`)): hero, banner,
   compact chart (short marker labels "Laagste € x", "Onder nul · 3 jan"),
   four figures, scenario cells with their sheets, result, order-date card,
   movements (8, then "Alle {n} bewegingen") and cells for Per maand, Wat telt
@@ -2138,6 +2265,23 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   last write wins, a refusal shows inline and reverts; "Terug naar
   standaard" deletes the row. A stored choice wins over the link default,
   which wins over history.
+- First build waits for the advance schedules (2026-10-17, critique N13):
+  `CashData.schedulesFor` records the round whose schedules have loaded
+  (also on failure); `CashState.attach(page, loading, today, schedulesNeeded)`
+  builds the first forecast only once `forecastReady(generation,
+  schedulesFor, needed)` (cash-view.ts); later rounds keep the last figures.
+  `today` is a Signal now (the page's), so the forecast rolls over at
+  midnight.
+- Scenario default (2026-10-17, critique B4): `history.realisedMarkupPct`
+  is null unless the last year holds at least 3 regular invoices and
+  € 10.000 recognised revenue (`REALISED_MIN_INVOICES`,
+  `REALISED_MIN_REVENUE_EUR` in cash-forecast-input.ts); then the default is
+  50 %. The raw figure stays in `history.realisedSample { invoices,
+  revenueEur, markupPct }`: the hint ("12 mnd: -2,5 % (1 factuur, te weinig
+  om op te rekenen) · standaard: te weinig verkoophistoriek (1 factuur)",
+  `realisedHint` / `standardMarkupNote`) and the container sheet's chip
+  "vorig jaar -2,5 %" read it. The home's Kas uses the scenario and can move
+  with it; the Kaslijn in Kosten & bank does not.
 
 ### `cash-forecast.ts` and its input (shared by both pages)
 - Both pages compute every forecast figure as
