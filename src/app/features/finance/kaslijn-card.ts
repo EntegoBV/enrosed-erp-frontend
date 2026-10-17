@@ -28,7 +28,7 @@ import { FinanceState } from './finance-state';
       <section class="wk-card fin-kaslijn" aria-labelledby="fin-kaslijn-title">
         <header class="fin-kaslijn__head">
           <h2 class="wk-card__title" id="fin-kaslijn-title">Kaslijn</h2>
-          <span class="fin-kaslijn__sub">alle rekeningen die meetellen · 4 weken terug, {{ state.kaslijnWeeks() }} weken vooruit</span>
+          <span class="fin-kaslijn__sub">{{ subText() }}</span>
           <app-segmented label="Kaslijn" [options]="spans" [value]="'' + state.kaslijnWeeks()" (changed)="setWeeks($event)" />
           <button class="wk-link fin-kaslijn__more" type="button" (click)="toForecast()">Per dag in Kasprognose ›</button>
         </header>
@@ -59,8 +59,8 @@ import { FinanceState } from './finance-state';
       </section>
     } @else {
       <section class="ios-card fin-kaslijn-phone" aria-label="Kaslijn">
-        <div class="fin-kaslijn-phone__head"><h2>Kaslijn <small>· {{ state.kaslijnWeeks() }} weken</small></h2>
-          <button class="ios-section__link" type="button" (click)="state.outlookOpen.set(true)">Vooruitblik ›</button></div>
+        <div class="fin-kaslijn-phone__head"><h2>Kaslijn</h2>
+          <app-segmented variant="ios" label="Kaslijn: weken vooruit" [options]="phoneSpans" [value]="'' + state.kaslijnWeeks()" (changed)="setWeeks($event)" /></div>
         <app-cash-chart variant="compact" [height]="150" [series]="series()" [today]="state.today()" [bufferEur]="k.bufferEur" [tight]="tight()"
                         [pins]="[]" [markers]="markers()" ariaLabel="Kaslijn: saldo per dag" />
         @if (banner(); as match) {
@@ -68,12 +68,19 @@ import { FinanceState } from './finance-state';
             <span><b>{{ eurOf(match.amountEur) }} telt mogelijk dubbel</b> tot je {{ match.counterparty || 'deze transactie' }} van {{ dayShort(match.day) }} koppelt.</span></button>
         }
         <dl class="fin-kaslijn-phone__rows">
-          <div><dt>Laagste stand · {{ weekday(k.lowestBase.day) }}</dt><dd>{{ eurOf(k.lowestBase.eur) }}</dd></div>
+          <div><dt>Laagste stand · {{ weekday(k.lowestBase.day) }}@if (k.lowestBase.causes[0]) { <small>na {{ k.lowestBase.causes[0] }}</small> }</dt><dd>{{ eurOf(k.lowestBase.eur) }}</dd></div>
+          <div><dt>Onder buffer
+            @if (state.cashRound()) { <button class="wk-link fin-kaslijn-phone__buffer" type="button" (click)="state.bufferOpen.set(true)">buffer {{ eurOf(k.bufferEur) }} · aanpassen</button> }
+            @else { <small>buffer {{ eurOf(k.bufferEur) }}</small> }</dt><dd>{{ tightText() }}</dd></div>
+          @if (largest(); as item) {
+            <div><dt>Grootste uitgave · ± {{ mon(item.date) }}<small>{{ item.title }} ({{ certainty(item) }})</small></dt><dd>{{ eurOf(item.amountEur) }}</dd></div>
+          } @else { <div><dt>Grootste uitgave<small>niets te betalen in deze periode</small></dt><dd>Geen</dd></div> }
           @if (hasReading()) {
-            <div><dt>Na wat nu betaald moet worden</dt><dd>{{ eurOf(state.outlook().afterPayablesEur) }}</dd></div>
-            <div><dt>Als alles betaald en ontvangen is</dt><dd>{{ eurOf(state.outlook().expectedEur) }}</dd></div>
+            <div class="is-total"><dt>Na wat nu betaald moet worden</dt><dd>{{ eurOf(state.outlook().afterPayablesEur) }}</dd></div>
+            <div><dt>Als alles betaald en ontvangen is<small>alle termijnen, ook na {{ state.kaslijnWeeks() }} weken</small></dt><dd [class.fin-warn-text]="state.outlook().expectedEur < 0">{{ eurOf(state.outlook().expectedEur) }}</dd></div>
           } @else { <div><dt>Netto open positie</dt><dd>{{ eurOf(state.outlook().netOpenEur) }}</dd></div> }
         </dl>
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted fin-kaslijn-phone__more" type="button" (click)="state.outlookOpen.set(true)">Hele vooruitblik ›</button>
       </section>
     }
   `,
@@ -82,6 +89,12 @@ export class KaslijnCard {
   readonly state = inject(FinanceState);
   private readonly router = inject(Router);
   readonly spans: SegmentOption[] = [{ id: '4', label: '4 w' }, { id: '8', label: '8 w' }, { id: '13', label: '13 w' }];
+  readonly phoneSpans: SegmentOption[] = this.spans.map((span) => ({ ...span, ariaLabel: `${span.id} weken` }));
+  /** "4 weken terug · 8 weken vooruit", plus " · zonder Wise EUR" for an account that does not count. */
+  readonly subText = computed(() => {
+    const without = this.state.kaslijn().excludedAccounts.map((account) => account.label);
+    return `4 weken terug · ${this.state.kaslijnWeeks()} weken vooruit${without.length ? ` · zonder ${without.join(', ')}` : ''}`;
+  });
 
   readonly hasReading = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
   /** The bank so far (to today's start) solid, then what is fixed or expected dashed. */
@@ -98,7 +111,7 @@ export class KaslijnCard {
     const last = k.days[k.days.length - 1];
     return [
       { day: k.lowestBase.day, eur: k.lowestBase.eur, kind: 'lowest', label: `Laagste ${eurWhole(k.lowestBase.eur)}` },
-      ...(last ? [{ day: last.day, eur: last.baseEur, kind: 'end' as const, label: `Verwacht ${eurWhole(last.baseEur)}` }] : []),
+      ...(last ? [{ day: last.day, eur: last.baseEur, kind: 'end' as const, label: `${dayMon(last.day)} ${eurWhole(last.baseEur)}` }] : []),
     ];
   });
   readonly tight = computed(() => this.state.kaslijn().tightWith.map((period) => ({ from: period.from, to: period.to })));

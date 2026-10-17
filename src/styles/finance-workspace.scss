@@ -262,12 +262,7 @@
   .fin-tree__part { padding-left: 22px; color: var(--muted); &.fin-tree__payment--nested { padding-left: 34px; } }
   .fin-insp-tree { display: grid; gap: 10px; }
 
-  .fin-attention__list { margin: 0; padding: 0 0 6px; list-style: none; }
-  .fin-attention__row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 6px 16px; border-top: 1px solid var(--line); }
-  .fin-attention__icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--tone) 14%, var(--surface)); color: var(--tone); }
-  .fin-attention__text { display: grid; min-width: 0; b { font-size: 14px; font-weight: 600; } small { color: var(--muted); font-size: 12px; } }
-  .fin-attention__amount { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .fin-attention__more { margin: 4px 16px 12px; }
+  /* Vraagt aandacht lives with the cockpit (bank-cockpit.scss). */
 
   /* ---- Bank › Rekeningen */
   .fin-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
