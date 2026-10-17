@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivityApi } from '../../core/api/activity-api';
@@ -13,12 +13,14 @@ import { PageHeader } from '../../shared/page-header';
 import { SegmentOption, Segmented } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
+import { WK_DOCK_MIN_PX, elementWidth } from '../../shared/workspace-layout';
 import {
   activityActionLabel, activityCategory, activityCategoryColor, activityCategoryIcon, activityCategoryLabel, activityEntityLabel,
+  activityQueryParams, activityRoute,
 } from './activity-copy';
 import {
   ActivityFilters, ActivityRow, CategoryChip, activityDays, activityEntityText, activityFiltersFromQuery, activityQueryFromFilters,
-  activityRows, activitySummaryText, categoryRequest, changePreview, keepForChip, rowTime, todayEvents,
+  activityOverview, activityRows, activitySummaryText, categoryRequest, changePreview, keepForChip, rowTime, todayEvents,
 } from './activity-format';
 import { ActivityInspector } from './activity-inspector';
 import { ActivityNames } from './activity-names';
@@ -91,7 +93,8 @@ const MAX_EXTRA_PAGES = 4;
             <h2 class="ios-empty__title">Geen activiteiten gevonden</h2><p class="ios-empty__text">Kies een ander onderdeel of een andere medewerker.</p></div>
         }
       } @else if (desktop.active()) {
-        <section class="wk-card log-card" aria-label="Activiteiten">
+        <div class="log-body" [class.log-body--docked]="docked()">
+        <section class="wk-card log-card" aria-label="Activiteiten" (keydown)="rowKeys($event)">
           @for (day of days(); track day.key) {
             <div class="log-day" role="heading" aria-level="2">{{ day.label }} <span>· {{ day.count }}</span></div>
             @for (row of day.rows; track row.key) {
@@ -108,6 +111,14 @@ const MAX_EXTRA_PAGES = 4;
             }
           }
         </section>
+        @if (docked()) {
+          <!-- Docked: a sticky grid column, no transform or container (trap rule) -->
+          <aside class="wk-card log-dock" aria-label="Details">
+            <app-activity-inspector layout="dock" [row]="selectedRow()" [events]="items()" [ctx]="names.context()" [overview]="overview()"
+                                    (selectEvent)="selectEvent($event)" (filterEntity)="filterEntity($event)" />
+          </aside>
+        }
+        </div>
       } @else {
         @for (day of days(); track day.key) {
           <section class="ios-section">
@@ -142,12 +153,12 @@ const MAX_EXTRA_PAGES = 4;
 
     <!-- Overlays at page-host level (trap rule): the desk drawer, the phone sheet and the actor menu -->
     @if (selectedRow(); as row) {
-      @if (desktop.active()) {
+      @if (desktop.active() && !docked()) {
         <aside class="wk-inspector wk-inspector--drawer log-drawer" aria-label="Details">
           <app-activity-inspector layout="drawer" [row]="row" [events]="items()" [ctx]="names.context()"
                                   (selectEvent)="selectEvent($event)" (filterEntity)="filterEntity($event)" (closed)="selectedKey.set(null)" />
         </aside>
-      } @else {
+      } @else if (!desktop.active()) {
         <app-sheet [title]="rowAction(row)" variant="ios" (closed)="selectedKey.set(null)">
           <div body><app-activity-inspector layout="sheet" [row]="row" [events]="items()" [ctx]="names.context()"
                                             (selectEvent)="selectEvent($event)" (filterEntity)="filterEntity($event)" /></div>
@@ -179,6 +190,11 @@ const MAX_EXTRA_PAGES = 4;
     .log-main em { color: var(--ink-2); font-style: normal; }
     .log-actor { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink-2); font-size: 13px; }
     .log-av { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface-2); font-size: 10px; font-weight: 800; }
+    .log-body--docked { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+    .log-dock { position: sticky; top: calc(var(--appbar-h, 52px) + var(--wk-subbar-h, 48px) + 12px); max-height: calc(100dvh - var(--appbar-h, 52px) - 84px);
+      overflow-y: auto; overscroll-behavior: contain; }
+    .log-dock + .log-dock { margin-top: 0; }
+    .log-body--docked > .wk-card + .wk-card { margin-top: 0; }
     .log-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px; }
     .log-more--error { color: var(--danger); font-size: 13px; }
     .log-drawer { --wk-status-h: 0px; overflow-y: auto; }
@@ -197,6 +213,10 @@ export class ActivityPage {
   private readonly staff = inject(StaffContactsApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** The detail docks beside the list when the page host is at least 1000 px wide; below, it is a drawer. */
+  private readonly width = elementWidth(() => this.host.nativeElement.closest('.main') ?? this.host.nativeElement.querySelector('main'));
+  readonly docked = computed(() => this.desktop.active() && this.width() >= WK_DOCK_MIN_PX);
 
   readonly chips = CHIP_ORDER;
   private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
@@ -226,6 +246,8 @@ export class ActivityPage {
     return key === null ? null : this.rows().find((row) => row.key === key) ?? null;
   });
   readonly subtitle = computed(() => `${this.items().length} geladen · nieuwste eerst`);
+  /** With nothing selected the docked pane shows who did what in the loaded events: never an empty pane. */
+  readonly overview = computed(() => activityOverview(this.items(), (event) => activityCategory(event)));
   readonly todayText = computed(() => `${todayEvents(this.items())} vandaag`);
   readonly actorOptions = computed<SegmentOption[]>(() => [
     { id: 'ALL', label: 'Iedereen' },
@@ -411,12 +433,56 @@ export class ActivityPage {
     return changePreview(row.events[0], this.names.context());
   }
 
-  /** Esc closes the drawer (desk); keys never act while typing or behind another overlay. */
-  @HostListener('document:keydown.escape', ['$event'])
-  escape(event: Event): void {
-    if (!this.desktop.active() || this.selectedKey() === null) return;
-    const context = keyContext(event as KeyboardEvent, null);
-    if (context.typing) return;
-    this.selectedKey.set(null);
+  /**
+   * Desk keys: ↑/↓ select the previous or next row (and scroll it into
+   * view), Enter opens the record, Esc clears the selection or closes the
+   * drawer. Never while typing or behind another overlay.
+   */
+  @HostListener('document:keydown', ['$event'])
+  keys(event: KeyboardEvent): void {
+    if (!this.desktop.active() || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) return;
+    const context = keyContext(event, this.host.nativeElement);
+    if (context.typing || context.overlayOpen || !context.inScope) return;
+    const target = event.target as HTMLElement | null;
+    if (event.key === 'Escape') {
+      if (this.selectedKey() !== null) { this.selectedKey.set(null); event.preventDefault(); }
+      return;
+    }
+    if (event.key === 'Enter') {
+      /* A focused button (a row, a chip, Openen) does its own job. */
+      if (target && target !== this.document.body && !target.classList.contains('log-row')) return;
+      const row = this.selectedRow();
+      const route = row ? activityRoute(row.events[0]) : null;
+      if (row && route) {
+        event.preventDefault();
+        void this.router.navigate(route, { queryParams: activityQueryParams(row.events[0]) ?? undefined });
+      }
+      return;
+    }
+    this.step(event.key === 'ArrowDown' ? 1 : -1);
+    event.preventDefault();
   }
+
+  /** ↑/↓ inside the list moves focus with the selection. */
+  rowKeys(event: KeyboardEvent): void {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      this.host.nativeElement.querySelector<HTMLElement>(`.log-row[data-row="${this.selectedKey()}"]`)?.focus({ preventScroll: true });
+    }
+  }
+
+  private step(direction: 1 | -1): void {
+    const rows = this.rows();
+    if (!rows.length) return;
+    const index = rows.findIndex((row) => row.key === this.selectedKey());
+    const next = rows[index < 0 ? (direction > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + direction))];
+    this.selectedKey.set(next.key);
+    requestAnimationFrame(() => {
+      const element = this.host.nativeElement.querySelector<HTMLElement>(`.log-row[data-row="${next.key}"]`);
+      element?.scrollIntoView({ block: 'nearest' });
+      element?.focus({ preventScroll: true });
+    });
+  }
+
+  private readonly document = this.host.nativeElement.ownerDocument;
 }
