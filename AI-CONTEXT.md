@@ -1352,7 +1352,8 @@ and on copies. Without the blocks (older backend) every screen is as before.
   revision on every call and the conflict handling of all four screens.
 
 ### Purchasing
-- List rows swipe left (iOS pattern) to a confirm-guarded delete.
+- List rows swipe left (iOS pattern) to a confirm-guarded delete; the
+  buttons under a row only show while it is open, dragged or focused.
 - List → **read-only view first** (on a phone: the summary card over five
   tabs, see "Phone purchase order" below; the desk reads and edits in
   PurchaseDesk), edit behind a button. New orders open straight in the
@@ -1370,10 +1371,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   the order date (409, shown as toast) and corrects `receivedOn` through the
   normal order PUT on a received order, so both edit forms show an editable
   'Ontvangen op' (a cleared field never patches null). The list puts the date
-  under the 'Ontvangen' pill (`.po-row-date`, not in the ellipsed meta line)
-  and in the row menu; the desk hero meta says 'ontvangen dd/mm/jjjj' instead
-  of 'verwacht …' and the last KPI tile carries it; the phone read view shows
-  it as the Ontvangen progress date and under Order › Ontvangen op.
+  in the Status line ('ontvangen dd/mm/jjjj', phone: the third trailing line)
+  and in the hint of the row menu's Openen; the desk's summary card shows it
+  as the Ontvangen step date (the Afgerond tile repeats it); the phone read
+  view shows it as the Ontvangen progress date and under Order › Ontvangen op
+  (Inkoop redesign, 2026-10-17).
 - Status one step back (2026-10-14): a container set to Vertrokken
   (ONDERWEG) or Besteld by mistake goes back through 'Status terugzetten…',
   one place each, only on BESTELD/ONDERWEG: desk Afronden rail tab inside
@@ -1409,8 +1411,10 @@ and on copies. Without the blocks (older backend) every screen is as before.
   the card as [hero]) over five sticky stacked tabs Overzicht · Producten ·
   Kosten · Betalingen · Dossier on the beige page, grouped inset lists and
   host-level sheets. Classes `mpo-*`, styles in `styles/purchase-phone.scss`
-  (global, phone-only, every rule scoped to a purchase host). The editor's
-  component styles keep only the receive, issue and document sheets.
+  (global, phone-only, every rule scoped to a purchase host). The receive,
+  issue and document sheets are iOS sheets on grouped rows since the Inkoop
+  redesign (2026-10-17); while the read view's dock shows, the ERP tab bar
+  steps aside (`body:has(app-purchase-view .mpo-dock)`, its own commit I5a).
 - Tab model in `purchase-phone-model.ts` (pure, node-tested): `?tab=`
   producten|kosten|betalingen|dossier (Overzicht is absent), written in place
   by `replaceTabInUrl` (Location.replaceState: no history entry, no scroll to
@@ -1439,7 +1443,8 @@ and on copies. Without the blocks (older backend) every screen is as before.
 - Read view: card with status pill, route, name (`containerName`), PO ·
   supplier, creator, the four progress steps with their days (verwacht
   arrival), tiles Totaal geland and the payment headline; Overzicht has the
-  figures, Actie vereist, Ontvangstcontrole, the Nacalculatie headline
+  figures (Lading in the container's word via `countWords`, Volume, and a
+  full-width Vulling row with a meter), Actie vereist, Ontvangstcontrole, the Nacalculatie headline
   (`app-purchase-nacalc-glance`), Volgende stap, Order, Route en container,
   the partner panel; Producten models/variants with a line sheet; Kosten the
   three cost groups and the complete Nacalculatie (never collapsed);
@@ -1494,6 +1499,80 @@ and on copies. Without the blocks (older backend) every screen is as before.
   End keydown and a frame after every scroll; lower down the lift is 0.
   Tests: purchase-phone-model, purchase-phone-step, purchase-phone-templates,
   purchase-phone-scroll, purchase-nacalc-metrics.
+
+### Inkoop redesign (2026-10-17)
+Area 3 of the ERP redesign, on the foundation (shell and motion above). One
+commit per package; revert units: I4, I6, I1, I5, I5a, I7, I8 alone; I2 + I3
+(+ the attention-amount commit) together.
+- Container desk (`purchase-desk.ts`): the toolbar title is `containerName`
+  (the herkenbare naam), the PO number its small print
+  (`containerNumberHint`); no rename from the toolbar (the Order form has
+  Herkenbare naam and Ordernummer). The dark hero and the amber banner are one
+  light summary card `.pdk-head`: status pill, 'inklaring te bevestigen' pill,
+  the supplier on up to two lines, a wrapping meta line (container, route,
+  lossen op, maker, T&T), the phone's `progressSteps` as four steps with their
+  days, six tiles (three per row below a 980px card; tile lines never
+  clamped; amounts never split) and the attention foot with 'Afronden ›'.
+  Tiles use the phone helpers: `countWords` (Stuks / Displays / Eenheden),
+  `paymentTile` (a concept shows its Afspraak), `readNextStep` (incl.
+  Kostprijzen toepassen) through one `runNextStep()`, so the template keeps a
+  single `(click)="apply()"`.
+- The panel (Order · Kosten · Partner · Dossier · Afronden) docks beside the
+  products from a 1140px host (`PDK_DOCK_MIN_PX`, `elementWidth`), else it is
+  the kit's `.wk-inspector--drawer` at host level, opened from ghost buttons
+  in the view bar. Its content is one `<ng-template #railPanel>` rendered
+  docked or in the drawer, never both. `showRail(tab, focusTab)` is the only
+  way in from outside (deep link `?section=payments` on a partner container,
+  Track & trace after Vertrokken, tile 4, 'Afronden ›'). The products card
+  stays mounted with `[hidden]` behind Betalingen and Nacalculatie; a pane
+  fades in only after a user switch. The B/L of a departure is uploaded after
+  the status save (`enqueue` is protected). Rates print with four decimals.
+- List (`purchase-list.ts` + pure `purchase-list-model.ts`): desk = one kit
+  table per supplier group (Container, Lading, Status, Betaling, Totaal
+  geland, ⋯), search (also product names), status chips with counts, subbar
+  sums; the Betaling cell is `listPayments` over finance's
+  `containerPayables` (the same numbers as Kosten & bank's Te betalen and the
+  desk's payment tile, checked on the mock). Phone = segmented, one search row
+  with a round status filter over the native picker, rows without a tags line
+  (five on a 390×844 screen), the count and 'nu te betalen' in the large-title
+  caption. Row menu = the kit's context menu; Openen carries 'leverancier ·
+  status · totaal · ontvangen …'. `/purchasing?nieuw=1&leverancier={id}` opens
+  the new-calculation sheet with that supplier.
+- Leveranciers (`supplier-list.ts` + pure `suppliers/supplier-overview.ts`):
+  desk = a table of all suppliers (containers, Nu te betalen, Later, Laatste
+  order) with the chosen one in full below it; phone = list + sheet with its
+  containers and open amounts. 'Nieuwe calculatie' uses the link above.
+- Douane (`/douane`, `douane-page.ts` + pure `douane-codes.ts`): HS codes
+  grouped 4-2-2-2 / 4-2-2, one row edited in place with its strip ('Enter
+  slaat op, Esc annuleert', Opslaan), a dirty row blocks another ('Eerst
+  opslaan of Esc') and the leave guard asks; per-row save without reload;
+  products without a code and products whose code is a tariff in another
+  spelling (the server matches exactly) at the card's foot. Instellingen ›
+  Douanetarieven is a pointer to it; the nav link points to `/douane`.
+- Money words: `pctLabel` ('51,02 %'), no container average in the partner
+  sentence when several products, server notes in the owner's words
+  (`ownerWords`: Afspraak, never budget), bridge rows '− € 0,01'
+  (`signedEur`), `landedRangeText` for a series ('Geland / stuk': one figure
+  or the range, never the average), the payment sheet's 'Verdelen over
+  containers' switch and its read-only summary line (`purchaseSheetSummary`).
+- Load errors: list, editor/desk, phone view, Leveranciers and Douane show
+  `app-load-error` with 'Opnieuw proberen'; the editor starts payments,
+  documents, bank lines and partner documents beside the order.
+- Styles: the area partials `styles/purchase-desk.scss`, `purchase-list.scss`,
+  `suppliers.scss`, `douane.scss` (every rule under its page host) load with
+  their screens through a style host component in each page's own file
+  (`app-purchase-desk-styles`, `app-purchase-list-styles`,
+  `app-supplier-list-styles`, `app-douane-page-styles`: encapsulation None,
+  rendered once by their page, so each package reverts alone), not from styles.scss:
+  the initial bundle's 1 MB error budget had about 20 kB left. Moved
+  component rules (table column widths, the landed cell, dossier names) live
+  in the desk partial. Test: `tests/purchase-area-styles.test.mts` finds the
+  style hosts itself (no list to edit), so a reverted package takes its own
+  check along; the phone packages have their own test files
+  (`purchase-phone-tabbar`, `purchase-phone-sheets`).
+- Backend follow-ups (not built): BE-1 'Vertrokken op' choosable (today the
+  step date is the day the status was set); BE-2 the Toelichting's 'Budget op
+  bestelde aantallen' in the server's own words.
 
 ### Kostprijshistoriek and Kostprijzen toepassen (2026-10-16)
 - Backend `product_cost_history` (migration 2026-10-16/product-cost-history-basis:
