@@ -12,7 +12,7 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { NO_ACCOUNT } from './finance-url';
-import { incomingMoneyTotals, incomingPurposeLabel, isOffsetRow, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import { foreignZoneName, incomingMoneyTotals, incomingPurposeLabel, isOffsetRow, paymentLocalDay, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
 import { FinanceFilterFields } from './finance-filter-fields';
 import { Sheet } from '../../shared/ui';
 
@@ -91,7 +91,7 @@ import { Sheet } from '../../shared/ui';
             @for (row of day.rows; track row.id) {
               <button class="ios-cell" [class.fin-offset-row]="offset(row)" type="button" (click)="rowMenu(row, null)">
                 <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ offset(row) ? 'Verrekening · ' + row.orderNumber + ' ↔ ' + (row.offsetOrderNumber || 'document') : row.orderNumber + (customer(row) ? ' · ' + customer(row) : '') }}</span>
-                  <span class="ios-cell__sub">{{ clock(row) }} · @if (offset(row)) { geen bankbeweging } @else if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
+                  <span class="ios-cell__sub">@if (clock(row); as time) { {{ time }} · }@if (offset(row)) { geen bankbeweging } @else if (account(row); as name) { {{ name }} } @else { <span class="fin-warn-text">geen rekening</span> }</span></span>
                 <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="row.amountEur > 0 && !offset(row)">{{ signed(row.amountEur) }}</span></span>
               </button>
             }
@@ -214,12 +214,17 @@ export class IncomingPaymentList {
     return incomingPurposeLabel(row.purpose);
   }
 
+  /** "8 okt · 23:21", "· GMT+8" in another zone; a receipt entered with a date only reads "8 okt" (no 00:00). */
   moment(row: IncomingPaymentRow): string {
-    return paymentMomentLabel(row, this.state.today());
+    return paymentMomentLabel(row, this.state.today(), true);
   }
 
+  /** The phone's clock under the day head: '' for a date-only receipt, the zone after it when it is not Brussels'. */
   clock(row: IncomingPaymentRow): string {
-    return clockOf(row.receivedAt, row.timeZone);
+    const clock = clockOf(row.receivedAt, row.timeZone);
+    if (clock === '00:00') return '';
+    const zone = foreignZoneName(row);
+    return zone ? `${clock} · ${zone}` : clock;
   }
 
   signed(amount: number): string {
@@ -228,13 +233,18 @@ export class IncomingPaymentList {
 
   /** Right-click or ⋯ on a desk, a tap on a phone: the invoice, and the container of a partner receipt. */
   rowMenu(row: IncomingPaymentRow, anchor: MenuPoint | null): void {
-    this.state.openMenu({
-      title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
-      items: [
-        { id: 'invoice', label: row.docType === 'CREDITNOTA' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' },
-        ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
-      ],
-      pick: (id) => (id === 'container' ? this.state.openPartnerContainer(row.purchaseOrderId!) : this.state.openInvoice(row.salesOrderId)),
-    });
+    receiptMenu(this.state, row, anchor);
   }
+}
+
+/** The menu of one receipt (Ontvangen, and "Laatst ontvangen" on Te ontvangen): its invoice, and the container of a partner receipt. */
+export function receiptMenu(state: FinanceState, row: { orderNumber: string; amountEur: number; docType?: string | null; purchaseOrderId: number | null; salesOrderId: number }, anchor: MenuPoint | null): void {
+  state.openMenu({
+    title: `${row.orderNumber} · ${signedEur(row.amountEur)}`, anchor, cancelLabel: anchor ? '' : 'Annuleren',
+    items: [
+      { id: 'invoice', label: row.docType === 'CREDITNOTA' ? 'Creditnota openen' : 'Factuur openen', iconName: 'document' },
+      ...(row.purchaseOrderId ? [{ id: 'container', label: 'Container openen', iconName: 'truck' }] : []),
+    ],
+    pick: (id) => (id === 'container' ? state.openPartnerContainer(row.purchaseOrderId!) : state.openInvoice(row.salesOrderId)),
+  });
 }

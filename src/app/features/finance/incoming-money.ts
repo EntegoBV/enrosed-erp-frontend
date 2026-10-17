@@ -40,19 +40,40 @@ export function paymentLocalDay(payment: Pick<IncomingMoneyRow, 'receivedAt' | '
 
 const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 
+const HOME_ZONE = 'Europe/Brussels';
+const CLOCK_PARTS: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+
 /**
- * "8 okt · 23:21" in the payment's own zone; "8 okt 2025 · 23:21" in another year than `today` (and without a
- * `today`, so a caller that knows no day never drops the year).
+ * The zone of a moment recorded elsewhere ("GMT+8"), when its clock differs from Brussels'; '' for Brussels and for a
+ * zone that reads the same there (Amsterdam), so a time in another zone is never read as Brussels time.
  */
-export function paymentMomentLabel(payment: Pick<IncomingMoneyRow, 'receivedAt' | 'timeZone'>, today: string | null = null): string {
+export function foreignZoneName(payment: Pick<IncomingMoneyRow, 'receivedAt' | 'timeZone'>): string {
+  const zone = payment.timeZone || HOME_ZONE;
+  if (zone === HOME_ZONE || !Number.isFinite(Date.parse(payment.receivedAt))) return '';
+  try {
+    const instant = new Date(payment.receivedAt);
+    const there = new Intl.DateTimeFormat('en-GB', { ...CLOCK_PARTS, timeZone: zone }).format(instant);
+    if (there === new Intl.DateTimeFormat('en-GB', { ...CLOCK_PARTS, timeZone: HOME_ZONE }).format(instant)) return '';
+    return new Intl.DateTimeFormat('nl-BE', { timeZone: zone, timeZoneName: 'short' }).formatToParts(instant).find((part) => part.type === 'timeZoneName')?.value ?? zone;
+  } catch { return ''; }
+}
+
+/**
+ * "8 okt · 23:21" in the payment's own zone, with that zone when it is not Brussels' clock ("9 okt · 05:21 · GMT+8");
+ * "8 okt 2025 · 23:21" in another year than `today` (and without a `today`, so a caller that knows no day never drops
+ * the year). `dateOnly` leaves out a 00:00 clock: a receipt entered with a date only (the bank-text rule).
+ */
+export function paymentMomentLabel(payment: Pick<IncomingMoneyRow, 'receivedAt' | 'timeZone'>, today: string | null = null, dateOnly = false): string {
   if (!Number.isFinite(Date.parse(payment.receivedAt))) return 'Tijdstip onbekend';
   try {
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: payment.timeZone || 'Europe/Brussels', year: 'numeric', month: 'numeric', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(payment.receivedAt));
+    const parts = new Intl.DateTimeFormat('en-GB', { ...CLOCK_PARTS, timeZone: payment.timeZone || HOME_ZONE }).formatToParts(new Date(payment.receivedAt));
     const part = (type: string) => parts.find((row) => row.type === type)?.value ?? '';
     const year = part('year');
     const day = `${Number(part('day'))} ${MONTHS[Number(part('month')) - 1]}${!today || today.slice(0, 4) !== year ? ` ${year}` : ''}`;
-    return `${day} · ${part('hour')}:${part('minute')}`;
+    const clock = `${part('hour')}:${part('minute')}`;
+    if (dateOnly && clock === '00:00') return day;
+    const zone = foreignZoneName(payment);
+    return `${day} · ${clock}${zone ? ` · ${zone}` : ''}`;
   } catch { return payment.receivedAt; }
 }
 

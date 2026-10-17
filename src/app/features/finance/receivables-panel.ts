@@ -7,9 +7,9 @@ import { FINANCE_SECTION, FinanceSectionApi, StripItem } from './finance-section
 import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, ReceivableRow, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
-import { incomingPurposeLabel, paymentLocalDay, uniqueIncomingPayments } from './incoming-money';
-import { clockOf, dayMonthYear } from './finance-format';
-import { IncomingPaymentList } from './incoming-payment-list';
+import { incomingPurposeLabel, paymentMomentLabel, uniqueIncomingPayments } from './incoming-money';
+import type { IncomingMoneyRow } from './incoming-money';
+import { IncomingPaymentList, receiptMenu } from './incoming-payment-list';
 import type { MenuPoint } from '../../shared/context-menu-position';
 
 const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNER_ADVANCE: 'Partnervoorschot', PARTNER_SETTLEMENT: 'Partnerafrekening' };
@@ -64,7 +64,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
         <header class="wk-card__head"><h2 class="wk-card__title" id="fin-recv-title">Laatst ontvangen</h2>
           <button class="wk-link wk-card__trail" type="button" (click)="state.go({ tab: 'received' }, 'push')">Alles bij Ontvangen ›</button></header>
         @for (payment of lastReceived(); track payment.id) {
-          <button class="fin-recv__row" type="button" (click)="state.inspectItem({ kind: 'invoice', id: payment.salesOrderId })">
+          <button class="fin-recv__row" type="button" (click)="openReceived(payment)" appMenuTrigger (menuTrigger)="receivedMenu(payment, $event)">
             <span class="fin-recv__when">{{ moment(payment) }}</span>
             <span class="fin-recv__what">{{ payment.orderNumber }}{{ customerOf(payment) ? ' · ' + customerOf(payment) : '' }}</span>
             <span class="fin-recv__kind">{{ purpose(payment) }}</span>
@@ -105,7 +105,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = { STANDARD: 'Klant', PARTNE
         <div class="ios-section__head"><h2>Laatst ontvangen</h2></div>
         <div class="ios-group">
           @for (payment of lastReceived().slice(0, 3); track payment.id) {
-            <button class="ios-cell ios-cell--tall" type="button" (click)="state.inspectItem({ kind: 'invoice', id: payment.salesOrderId })">
+            <button class="ios-cell ios-cell--tall" type="button" (click)="openReceived(payment)">
               <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ payment.orderNumber }}{{ customerOf(payment) ? ' · ' + customerOf(payment) : '' }}</span>
                 <span class="ios-cell__sub fin-wrapall">{{ moment(payment) }} · {{ purpose(payment) }}</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong" [class.wk-amount--in]="payment.amountEur > 0">{{ payment.amountEur > 0 ? '+' : '−' }} {{ abs(payment.amountEur) | eur }}</span></span>
@@ -200,11 +200,21 @@ export class ReceivablesPanel implements FinanceSectionApi {
 
   /** The five newest receipts (verrekeningen are no money in): the "Laatst ontvangen" card. */
   readonly lastReceived = computed(() => uniqueIncomingPayments(this.state.incomingPayments()).filter((payment) => payment.offsetPaymentId == null).slice(0, 5));
-  /** "8 okt · 23:21" ("8 okt 2025 · …" in another year), in the receipt's own zone. */
+  /** "8 okt · 23:21" ("8 okt 2025 · …" in another year, "· GMT+8" in another zone), in the receipt's own zone; a date-only receipt reads "14 okt". */
   moment(payment: { receivedAt: string; timeZone: string }): string {
-    const day = paymentLocalDay(payment);
-    return `${day.slice(0, 4) === this.state.today().slice(0, 4) ? dayMonth(day) : dayMonthYear(day)} · ${clockOf(payment.receivedAt, payment.timeZone)}`;
+    return paymentMomentLabel(payment, this.state.today(), true);
   }
+  /**
+   * A receipt of "Laatst ontvangen": its invoice in the inspector while that invoice is still open. A paid one has no
+   * inspector (it left Openstaand), so the desk opens the invoice and the phone the receipt's menu, as Ontvangen does.
+   */
+  openReceived(payment: IncomingMoneyRow): void {
+    if (this.state.receivables().some((row) => row.id === payment.salesOrderId)) { this.state.inspectItem({ kind: 'invoice', id: payment.salesOrderId }); return; }
+    if (this.state.desk()) this.state.openInvoice(payment.salesOrderId);
+    else receiptMenu(this.state, payment, null);
+  }
+  /** Right-click on a desk row: the invoice, and the container of a partner receipt (Ontvangen's menu). */
+  receivedMenu(payment: IncomingMoneyRow, anchor: MenuPoint): void { receiptMenu(this.state, payment, anchor); }
   purpose(payment: { purpose: 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT' }): string { return incomingPurposeLabel(payment.purpose); }
   customerOf(payment: { customerId: number | null }): string { return this.state.customerNames().get(payment.customerId ?? -1) ?? ''; }
   abs(value: number): number { return Math.abs(value); }
