@@ -60,6 +60,9 @@ test('the bell keeps its button and badge; the sheet has no foot, a summary with
   /* The ✕ is a sibling of the row's button, never inside it. */
   assert.match(bell, /<\/button>\s*<button class="bell-row__x"/);
   assert.doesNotMatch(bell, /import .*home-priority/);
+  /* The phone shows the customer's message on two lines (fix round 1); the desk keeps one with its title. */
+  assert.match(bell, /\.bell--ios \.bell-row__detail \{ display: -webkit-box; white-space: normal;[^}]*-webkit-line-clamp: 2; \}/);
+  assert.match(bell, /\[title\]="detail"/);
 });
 
 test('the bell\'s summary counts the items and names how many customers they come from', () => {
