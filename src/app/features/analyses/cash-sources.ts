@@ -179,8 +179,10 @@ export class CashData {
     try {
       results = await Promise.allSettled(financingsWithSchedule(financings).map((id) => this.sourcing.partnerAdvanceSchedule(id)));
     } finally {
-      this.schedulesFor.set(round);
+      /* Only the latest round counts: an older round answering last must not pull schedulesFor back (N13). */
+      if (round === this.schedulesRound) this.schedulesFor.set(round);
     }
+    if (round !== this.schedulesRound) return;
     const loaded = results.filter((result): result is PromiseFulfilledResult<PartnerAdvanceSchedule> => result.status === 'fulfilled').map((result) => result.value);
     const failures = results.length - loaded.length;
     if (!failures) this.advanceSchedules.set(loaded);

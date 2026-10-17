@@ -25,7 +25,7 @@ async function compile(relativePath: string): Promise<string> {
 const code = await compile('../src/app/features/analyses/cash-sources.ts');
 const TODAY = '2026-10-15';
 
-function harness() {
+function harness(overrides: { schedule?: (id: number) => Promise<unknown>; withSchedule?: () => number[] } = {}) {
   const failing = new Set<string>();
   const calls: string[] = [];
   const answer = <T>(name: string, value: T) => async (): Promise<T> => {
@@ -37,7 +37,7 @@ function harness() {
   const services = new Map<symbol, object>([
     [tokens.banking, { accounts: answer('accounts', []), list: answer('statements', [{ id: 1 }]) }],
     [tokens.finance, { bankBalances: answer('balances', []), recurringCosts: answer('recurring', []) }],
-    [tokens.sourcing, { purchasePayments: answer('payments', []), partnerAdvanceSchedule: answer('schedule', null) }],
+    [tokens.sourcing, { purchasePayments: answer('payments', []), partnerAdvanceSchedule: overrides.schedule ?? answer('schedule', null) }],
     [tokens.sales, { company: answer('company', null) }],
     [tokens.cash, { forecasts: answer('forecasts', []), settings: answer('settings', null) }],
   ]);
@@ -51,7 +51,7 @@ function harness() {
     },
     BankingApi: tokens.banking, FinanceApi: tokens.finance, SourcingApi: tokens.sourcing, SalesApi: tokens.sales, CashForecastApi: tokens.cash,
     threeMonthsBack: () => '2026-07-01', bankAccountKey: (key: string) => key, canonicalBankAccount: (key: string) => key,
-    bankCheckpoint: () => Number.NaN, paymentLocalDay: () => null, financingsWithSchedule: () => [],
+    bankCheckpoint: () => Number.NaN, paymentLocalDay: () => null, financingsWithSchedule: overrides.withSchedule ?? (() => []),
   });
   assert.ok(exports.CashData && exports.cashDataStale, 'production CashData compiled');
   return { data: new exports.CashData(), failing, calls, cashDataStale: exports.cashDataStale };
@@ -119,4 +119,27 @@ test('cashDataStale: idle, another day, too old, or anything left out', () => {
   assert.equal(cashDataStale({ ...clean, loadedAt: null }, TODAY, now), true);
   assert.equal(cashDataStale({ ...clean, warnings: ['vaste kosten'] }, TODAY, now), true);
   assert.equal(cashDataStale({ ...clean, bankMissing: true }, TODAY, now), true);
+});
+
+test('an older schedule round answering last never pulls schedulesFor back (N13)', async () => {
+  const pending: { round: number; resolve: (value: unknown) => void }[] = [];
+  let round = 0;
+  const { data } = harness({
+    withSchedule: () => [44],
+    schedule: (id: number) => {
+      const asked = round;
+      return new Promise((resolve) => pending.push({ round: asked, resolve: () => resolve({ purchaseOrderId: id, round: asked, rows: [] }) }));
+    },
+  });
+  round = 1;
+  const first = data.loadSchedules([], 1);
+  round = 2;
+  const second = data.loadSchedules([], 2);
+  pending.find((call) => call.round === 2)!.resolve(null);
+  await second;
+  assert.equal(data.schedulesFor(), 2);
+  pending.find((call) => call.round === 1)!.resolve(null);
+  await first;
+  assert.equal(data.schedulesFor(), 2, 'round 1 answered last: still round 2');
+  assert.equal(JSON.stringify(data.advanceSchedules().map((row) => (row as unknown as { round: number }).round)), '[2]', 'the stale round\'s schedules are dropped');
 });
