@@ -359,9 +359,10 @@ export class App {
    * bar (Meer lit) as the way back in the iPhone app.
    */
   readonly bare = computed(() => {
-    const url = this.url();
-    return url.startsWith('/login') || url.startsWith('/offerte')
-        || (url.startsWith('/voorwaarden') && !this.auth.isLoggedIn());
+    /* By whole path segment: /login-requests or /offertes are staff addresses (a 404 inside the shell), not the login page. */
+    const path = this.url().split(/[?#]/)[0];
+    const is = (root: string) => path === root || path.startsWith(root + '/');
+    return is('/login') || is('/offerte') || (is('/voorwaarden') && !this.auth.isLoggedIn());
   });
 
   private readonly syncStaffTouch = effect(onCleanup => {

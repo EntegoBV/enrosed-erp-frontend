@@ -83,6 +83,9 @@ app-home-desk-agenda { display: block; }
 .home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-desk__more > app-dashboard-search-console { grid-column: 1 / -1; }
 .home-desk__more .search-summary { border-radius: 16px; }
+/* Search Console spans two columns beside Website: both end on the row's line (the card fills its host). */
+.home-desk__more > app-dashboard-search-console { display: flex; flex-direction: column; }
+.home-desk__more > app-dashboard-search-console > .search-summary { flex: 1; }
 .home-desk__placeholder { min-height: 180px; }
 .home-desk__placeholder--wide, .home-desk__placeholder--strip { grid-column: 1 / -1; }
 .home-desk__placeholder--strip { min-height: 58px; }
