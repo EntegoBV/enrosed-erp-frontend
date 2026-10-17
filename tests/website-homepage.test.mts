@@ -40,3 +40,11 @@ test('differences name moved and hidden blocks', () => {
   const retail = differences.find((row) => row.key === 'retail')!;
   assert.deepEqual([retail.draftVisible, retail.liveVisible], [false, true]);
 });
+
+test('a difference reads as one line', async () => {
+  const { differenceLine } = await import('../src/app/features/website-builder/website-homepage.ts');
+  assert.equal(differenceLine({ key: 'occasion', draftPosition: 7, livePosition: 7, draftVisible: false, liveVisible: true }),
+    'Kleine cadeaus · verborgen in concept, zichtbaar live');
+  assert.equal(differenceLine({ key: 'flowerbox', draftPosition: 3, livePosition: 5, draftVisible: true, liveVisible: true }),
+    'Glass bowls & flowerboxes · positie 3 in concept, 5 live');
+});

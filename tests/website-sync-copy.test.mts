@@ -57,3 +57,15 @@ test('missing translations, a failed load and the first load', () => {
   const first = copy(null, { loading: true });
   assert.deepEqual([first.label, first.needsBanner], ['Status ophalen', false]);
 });
+
+test('the update timeline counts only moments of the current cycle', async () => {
+  const { rebuildTimeline } = await import('../src/app/features/settings/website-sync-copy.ts');
+  assert.equal(rebuildTimeline(status('NOT_CONFIGURED'), now), null);
+  const triggered = rebuildTimeline(status('TRIGGERED', { queuedAt: at(17, 9, 0), lastAttemptAt: at(17, 9, 1), hookAcceptedAt: at(17, 9, 2), liveAt: at(16, 23, 40) }), now)!;
+  assert.deepEqual(triggered.map((step) => step.state), ['done', 'done', 'done', 'current']);
+  assert.deepEqual(triggered.map((step) => step.moment), ['09:00', '09:01', '09:02', null]);
+  const failed = rebuildTimeline(status('FAILED_OR_STALE', { queuedAt: at(17, 9, 0), lastAttemptAt: at(17, 9, 1), hookAcceptedAt: at(16, 8, 0) }), now)!;
+  assert.deepEqual(failed.map((step) => step.state), ['done', 'done', 'failed', 'todo'], 'an acceptance from an earlier cycle does not count');
+  const live = rebuildTimeline(status('LIVE', { queuedAt: at(16, 23, 38), lastAttemptAt: at(16, 23, 39), hookAcceptedAt: at(16, 23, 39), liveAt: at(16, 23, 40) }), now)!;
+  assert.deepEqual(live.map((step) => step.state), ['done', 'done', 'done', 'done']);
+});

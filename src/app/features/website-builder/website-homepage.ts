@@ -86,3 +86,22 @@ export function homepageDifferences(snapshot: WebsiteBuilderHomepage): HomepageD
       draftVisible: section.enabled, liveVisible: !!live?.enabled }];
   });
 }
+
+/** The block names as the builder shows them (SECTION_DEFINITIONS of website-builder-page.ts). */
+export const HOMEPAGE_SECTION_LABELS: Readonly<Record<WebsiteBuilderSectionKey, string>> = {
+  hero: 'Openingsbeeld & tekstband', range: 'Ons assortiment', order: 'Zo bestelt u', counter: 'Counterdisplays',
+  flowerbox: 'Glass bowls & flowerboxes', soap: 'Zeep- en foamrozen', occasion: 'Kleine cadeaus', retail: 'Geschikt voor retail',
+  faq: 'Veelgestelde vragen', catalog: 'Volledige collectie', quote: 'Offerte aanvragen',
+};
+
+/** "Kleine cadeaus · verborgen in concept, zichtbaar live", "Glass bowls & flowerboxes · positie 3 in concept, 5 live". */
+export function differenceLine(difference: HomepageDifference): string {
+  const parts: string[] = [];
+  if (difference.draftVisible !== difference.liveVisible) {
+    parts.push(difference.draftVisible ? 'zichtbaar in concept, verborgen live' : 'verborgen in concept, zichtbaar live');
+  }
+  if (difference.draftPosition !== difference.livePosition) {
+    parts.push(`positie ${difference.draftPosition} in concept, ${difference.livePosition} live`);
+  }
+  return `${HOMEPAGE_SECTION_LABELS[difference.key]} · ${parts.join(' · ')}`;
+}

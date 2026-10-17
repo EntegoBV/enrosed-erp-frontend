@@ -122,3 +122,44 @@ function syncCopyOf(input: WebsiteSyncInput): Omit<WebsiteSyncCopy, 'shortLabel'
         detail: 'De status van de website wordt gecontroleerd.', action: null, actionLabel: null };
   }
 }
+
+export type RebuildStepState = 'done' | 'current' | 'failed' | 'todo';
+
+export interface RebuildStep {
+  label: string;
+  /** "16/10 23:40", or null while the step has not happened in this cycle. */
+  moment: string | null;
+  state: RebuildStepState;
+}
+
+/**
+ * The four moments of one website update, from the status's own fields:
+ * In wachtrij (queuedAt) → Update gestart (lastAttemptAt) → Update
+ * geaccepteerd (hookAcceptedAt) → Live (liveAt). A step counts as done only
+ * when its time falls in the current cycle (at or after queuedAt). Null when
+ * the website is not updated automatically.
+ */
+export function rebuildTimeline(status: WebsiteRebuildStatus | null, now: Date = new Date()): RebuildStep[] | null {
+  if (!status || status.status === 'NOT_CONFIGURED') return null;
+  const start = status.queuedAt ? Date.parse(status.queuedAt) : Number.NaN;
+  const inCycle = (value: string | null) => {
+    if (!value) return false;
+    const time = Date.parse(value);
+    return !Number.isNaN(time) && (Number.isNaN(start) || time >= start);
+  };
+  const done = [
+    !!status.queuedAt,
+    inCycle(status.lastAttemptAt),
+    inCycle(status.hookAcceptedAt),
+    status.status === 'LIVE' && (inCycle(status.liveAt) || !status.queuedAt),
+  ];
+  const times = [status.queuedAt, status.lastAttemptAt, status.hookAcceptedAt, status.liveAt];
+  const labels = ['In wachtrij', 'Update gestart', 'Update geaccepteerd', 'Live'];
+  const firstOpen = done.indexOf(false);
+  return labels.map((label, index) => {
+    const state: RebuildStepState = done[index] ? 'done'
+      : index !== firstOpen ? 'todo'
+        : status.status === 'FAILED_OR_STALE' ? 'failed' : 'current';
+    return { label, moment: done[index] ? shortMoment(times[index], now) : null, state };
+  });
+}
