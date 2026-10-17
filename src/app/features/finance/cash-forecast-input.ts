@@ -80,6 +80,48 @@ export function vooruitblikOf(sources: VooruitblikSources): CashOutlook {
   return cashOutlook(ledger.totalEur, openCostsInclEur, upcomingInclEur, invoices.totalEur, totals.containerNowEur, totals.containerLaterEur, invoices.creditNoteEur);
 }
 
+/* ---------------------------------------------------------------- accounts */
+
+type BankSources = Pick<CashForecastSources, 'bankAccounts' | 'balances' | 'statements' | 'incomingPayments'>;
+type LedgerAccount = ReturnType<typeof reconciledBank>['accounts'][number];
+
+/** A line the forecast reads on its account: on an Odoo account only Odoo's own lines. */
+const officialLine = (line: BankStatementLine, source: 'ODOO' | 'MANUAL'): boolean => source !== 'ODOO' || line.source === 'ODOO';
+
+/** One reconciled account as the forecast counts it (countsInCash, labelOnly), with its official statement lines. */
+function forecastAccountOf(account: LedgerAccount, sources: BankSources, statements: readonly BankStatementLine[]): { forecast: ForecastAccount; lines: BankStatementLine[] } {
+  const keyOf = (value: string | null | undefined): string => canonicalBankAccount(value, sources.bankAccounts);
+  const registry = sources.bankAccounts.find((row) => bankAccountKey(row.key) === account.account);
+  const checkpoints = sources.balances.filter((row) => keyOf(row.account) === account.account).map(bankCheckpoint).filter(Number.isFinite);
+  const lines = statements.filter((line) => keyOf(line.account) === account.account && officialLine(line, account.source));
+  const readingAt = account.reading ? bankCheckpoint(account.reading) : Number.NaN;
+  const latestReading = account.reading && Number.isFinite(readingAt) ? { atMs: readingAt, balanceEur: finite(account.reading.balanceEur) } : null;
+  return {
+    forecast: {
+      key: account.account, label: account.label, source: account.source, archived: account.archived,
+      countsInCash: registry?.countsInCash !== false && !account.archived, currentEur: account.currentEur, checkedAt: account.checkedAt,
+      firstReadingAtMs: checkpoints.length ? Math.min(...checkpoints) : null, latestReading, labelOnly: !latestReading && !lines.length,
+    },
+    lines,
+  };
+}
+
+/**
+ * The bank the forecast starts from, without building it: the accounts buildCashForecast counts (countedAccounts:
+ * not archived, not label-only, counting in cash), summed in cents; null when one of them has no reading (the
+ * forecast is relative then and shows no bank). The home shows it while the forecast is being built, so "Op de
+ * bank" reads one figure from the first paint on - the Vooruitblik's bankEur also counts the accounts that do not
+ * count in cash (Kosten & bank's equation, unchanged).
+ */
+export function forecastStartEur(sources: BankSources): number | null {
+  const statements = [...new Map(sources.statements.map((line) => [line.id, line])).values()];
+  const ledger = reconciledBank(sources.balances, statements, sources.incomingPayments, sources.bankAccounts);
+  const counted = ledger.accounts.map((account) => forecastAccountOf(account, sources, statements).forecast)
+    .filter((account) => !account.archived && !account.labelOnly && account.countsInCash);
+  if (counted.some((account) => account.currentEur === null)) return null;
+  return eur(counted.reduce((sum, account) => sum + cents(account.currentEur), 0));
+}
+
 /* ------------------------------------------------------------------ input */
 
 /** Everything the forecast needs, field by field as §2.4 of the spec describes it. */
@@ -92,23 +134,14 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const nameOf = (id: number | null | undefined): string => customerName.get(id ?? -1) ?? '';
 
   /* accounts and movements */
-  const official = (line: BankStatementLine, source: 'ODOO' | 'MANUAL'): boolean => source !== 'ODOO' || line.source === 'ODOO';
   const linkedReceipts = new Set(statements.map((line) => line.salesPaymentId).filter((id): id is number => id !== null && id !== undefined));
   const accounts: ForecastAccount[] = [];
   const movements: ForecastMovement[] = [];
   const sourceOf = new Map<string, 'ODOO' | 'MANUAL'>();
   for (const account of ledger.accounts) {
     sourceOf.set(account.account, account.source);
-    const registry = sources.bankAccounts.find((row) => bankAccountKey(row.key) === account.account);
-    const checkpoints = sources.balances.filter((row) => keyOf(row.account) === account.account).map(bankCheckpoint).filter(Number.isFinite);
-    const lines = statements.filter((line) => keyOf(line.account) === account.account && official(line, account.source));
-    const readingAt = account.reading ? bankCheckpoint(account.reading) : Number.NaN;
-    const latestReading = account.reading && Number.isFinite(readingAt) ? { atMs: readingAt, balanceEur: finite(account.reading.balanceEur) } : null;
-    accounts.push({
-      key: account.account, label: account.label, source: account.source, archived: account.archived,
-      countsInCash: registry?.countsInCash !== false && !account.archived, currentEur: account.currentEur, checkedAt: account.checkedAt,
-      firstReadingAtMs: checkpoints.length ? Math.min(...checkpoints) : null, latestReading, labelOnly: !latestReading && !lines.length,
-    });
+    const { forecast, lines } = forecastAccountOf(account, sources, statements);
+    accounts.push(forecast);
     for (const line of lines) {
       const day = paymentLocalDay({ receivedAt: line.bookedAt, timeZone: line.timeZone });
       if (!day || (sources.statementsFrom && day < sources.statementsFrom)) continue;
@@ -147,7 +180,7 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const bankLines: ForecastBankLine[] = [];
   for (const line of statements) {
     const key = keyOf(line.account);
-    if (!official(line, sourceOf.get(key) ?? 'MANUAL')) continue;
+    if (!officialLine(line, sourceOf.get(key) ?? 'MANUAL')) continue;
     const amount = cents(line.amountEur);
     const parts: { kind: BankLineKind; cents: number }[] = [];
     if (line.classification) {

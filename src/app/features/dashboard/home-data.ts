@@ -22,7 +22,7 @@ import { DEFAULT_CASH_LOCATION } from '../analyses/cash-url';
 import { readDismissed } from '../finance/cash-dismissed';
 import { buildCashForecast } from '../finance/cash-forecast';
 import type { CashForecast, ForecastVatQuarter } from '../finance/cash-forecast';
-import { cashForecastInput, vooruitblikOf } from '../finance/cash-forecast-input';
+import { cashForecastInput, forecastStartEur, vooruitblikOf } from '../finance/cash-forecast-input';
 import { weekdayDayMonth } from '../finance/cash-format';
 import { receivableTotals } from '../finance/incoming-money';
 import { agendaModel } from './agenda-entries';
@@ -227,13 +227,27 @@ export class HomeData {
       ...FORECAST_SOURCES.filter((source) => states[source] === 'failed')])];
   });
 
+  /**
+   * The bank shown while the forecast is being built: the forecast's own start (forecastStartEur - the accounts that
+   * count in cash), never the Vooruitblik's bankEur, which also holds the accounts that do not. So "Op de bank" keeps
+   * one figure from the first paint on, also while the build waits for the advance schedules (B1).
+   */
+  private readonly provisionalStart = computed(() => {
+    const sources = this.forecastSources();
+    return sources ? forecastStartEur(sources) : null;
+  });
+
   /** The Kas headline (state, bank, lowest point, first krap period). */
-  readonly cash = computed(() => cashHeadline(this.forecast(), {
-    bankMissing: this.cashData.state() === 'ready' && this.cashData.bankMissing(),
-    warnings: this.cashWarnings(),
-    computing: this.computing() || (!!this.forecastSources() && !this.forecast()),
-    startEur: this.outlook()?.bankEur ?? null,
-  }));
+  readonly cash = computed(() => {
+    const forecast = this.forecast();
+    const computing = this.computing() || (!!this.forecastSources() && !forecast);
+    return cashHeadline(forecast, {
+      bankMissing: this.cashData.state() === 'ready' && this.cashData.bankMissing(),
+      warnings: this.cashWarnings(),
+      computing,
+      startEur: computing && !forecast ? this.provisionalStart() : null,
+    });
+  });
 
   /** What the home reads of CashData for its own counts. */
   private readonly homeCash = computed<HomeCashSources>(() => {

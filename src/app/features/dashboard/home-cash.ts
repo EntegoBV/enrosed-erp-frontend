@@ -37,7 +37,7 @@ export interface CashHeadlineContext {
   warnings: readonly string[];
   /** The forecast is being built (the bank is in, the idle callback has not run yet). */
   computing: boolean;
-  /** The bank balance known before the forecast (the Vooruitblik's bankEur), shown while computing. */
+  /** The bank balance known before the forecast (forecastStartEur: the forecast's own start), shown while computing. */
   startEur?: number | null;
 }
 

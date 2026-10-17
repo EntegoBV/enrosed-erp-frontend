@@ -970,7 +970,10 @@ cijfers'.
     the schedules the undated advances are missing and the lowest point is
     wrong for half a second. Known limit: when Analyses already claimed the
     round, `loadSchedules` returns at once and the gate opens early;
-    `cash-sources.ts` stays untouched.
+    `cash-sources.ts` stays untouched. While it computes, the Kas shows
+    `forecastStartEur` (cash-forecast-input: the forecast's own start, the
+    accounts counting in cash), never the Vooruitblik's `bankEur` (all
+    accounts), so "Op de bank" never jumps when the forecast lands.
   - *Agenda money.* The open-credit row and the advances without a due day
     (EXPECTED, not overdue) leave the calendar - the forecast parks them on
     today; their sum is `agendaModel.undated` ({count, eur}, incl. btw, per
