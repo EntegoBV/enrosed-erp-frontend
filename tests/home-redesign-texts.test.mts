@@ -54,6 +54,12 @@ test('H4: the two "te ontvangen" say why, the Kas names the next krap periods, I
   assert.match(await widget('home-markt'), /t\.o\.v\. een maand geleden <span aria-hidden="true">›<\/span>/);
 });
 
+test('fix round 1: Meer cijfers rows stretch, so the cards of a row end on one line', async () => {
+  const css = await read('styles/home-desk.scss');
+  assert.match(css, /\.home-desk__more \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 16px; \}/);
+  assert.doesNotMatch(css, /\.home-desk__more \{[^}]*align-items: start/);
+});
+
 test('H2: the desk home sits under the foundation toolbar "Dashboard" with one Nieuw button; the greeting starts the brief', async () => {
   const desk = await read('app/features/dashboard/home-desk.ts');
   assert.match(desk, /<app-page-header title="Dashboard" \[subtitle\]="over\(\)" \[parent\]="null">/);

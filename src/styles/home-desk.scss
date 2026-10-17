@@ -64,8 +64,9 @@ app-home-desk-agenda { display: block; }
     margin-top: auto; }
 }
 
-/* ---- Meer cijfers: rows that do not stretch; Search Console over two columns, Markt one strip (home-widgets) */
-.home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
+/* ---- Meer cijfers: the cards of a row end on one line (as in the mock: no beige hole under a short card); the content
+   stays at the top of each card. Search Console over two columns, Markt one strip (home-widgets). */
+.home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-desk__more > app-dashboard-search-console { grid-column: 1 / -1; }
 .home-desk__more .search-summary { border-radius: 16px; }
 .home-desk__placeholder { min-height: 180px; }
