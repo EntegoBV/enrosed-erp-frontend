@@ -217,8 +217,17 @@
   .fin-band__pills { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0;
     button { border: 0; font-family: inherit; cursor: pointer; } .wk-link { padding: 0; color: var(--muted); font-size: 12px; font-weight: 600; &:hover { color: var(--rose-dark); } } }
   .fin-band__more { grid-area: more; justify-self: end; align-self: start; }
+  /*
+   * Two rows. Every column keeps its min-content: the balance its figure (the age wraps under it), the status its
+   * widest pill (the source line and the pills wrap around it; a pill cannot wrap, so this column's floor is that
+   * pill, not 0), the spark 64 px (the old card's was 87). The room above that goes to the balance and the status
+   * first, then to the spark. 1280 with a docked line (pane 608): balance 170 ("gecontroleerd 7 dagen geleden" on one
+   * line), spark 64, status 124; with a 6-digit balance, a 30-character label and "· controleren" nothing sticks out,
+   * down to a 600 px pane.
+   */
   @container wk-pane (min-width: 600px) {
-    .fin-band { grid-template-columns: auto minmax(0, 1fr) minmax(0, max-content) auto; grid-template-areas: 'id id status more' 'balance spark moves moves'; gap: 12px 28px; }
+    .fin-band { grid-template-columns: auto minmax(64px, 1fr) minmax(min-content, max-content) auto; grid-template-areas: 'id id status more' 'balance spark moves moves'; gap: 12px 28px; }
+    .fin-band__balance, .fin-band__pills { min-width: min-content; }
     .fin-band__spark { display: block; }
   }
   @container wk-pane (min-width: 1150px) {
