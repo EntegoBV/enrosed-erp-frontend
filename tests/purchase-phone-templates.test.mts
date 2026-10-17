@@ -179,6 +179,20 @@ test('the kit gains the stacked segments and the nav its [hero] slot', async () 
   assert.equal(parseTemplate(navTemplate, 'ios-nav.html').errors, null);
 });
 
+test('the supplier\'s address in the phone editor wraps instead of ending in an ellipsis (cut at 360 px)', async () => {
+  const editor = templateOf(await read('app/features/purchasing/purchase-editor.ts'));
+  assert.equal(count(editor, '<span class="ios-cell__sub mpo-address"><app-supplier-address [supplier]="supplier()" [inline]="true" [showEmpty]="true" /></span>'), 1);
+  // Three classes on the address and its span: the component's own encapsulated nowrap rules carry an attribute each.
+  assert.match(await read('styles/purchase-phone.scss'), /app-purchase-editor \.mpo-address \.supplier-address\.supplier-address--inline span\{[^}]*white-space:normal\}/);
+});
+
+test('the partner panel\'s document line wraps on the phone, as on the desk (cut without a title at 390 and 360)', async () => {
+  const phone = await read('styles/purchase-phone.scss');
+  assert.match(phone, /:is\(app-purchase-view,app-purchase-editor\) \.po-partner__doc small\{overflow:visible;text-overflow:clip;white-space:normal\}/);
+  // The global rule it overrides (0,1,1) stays for every other place the panel is used.
+  assert.match(await read('styles.scss'), /\.po-partner__doc small \{ overflow: hidden;[^}]*white-space: nowrap; \}/);
+});
+
 test('the phone styles load once and every rule stays scoped to the purchase hosts', async () => {
   const styles = await read('styles.scss');
   assert.equal(count(styles, "@include meta.load-css('styles/purchase-phone');"), 1);

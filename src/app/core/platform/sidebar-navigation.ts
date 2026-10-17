@@ -22,6 +22,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
   if (
     path.startsWith('/purchasing')
     || path.startsWith('/suppliers')
+    || path.startsWith('/douane')
     || section === 'duties'
   ) return 'inkoop';
 

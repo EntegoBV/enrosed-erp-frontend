@@ -15,6 +15,7 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
+import { purchaseSheetSummary } from './purchase-payment-summary';
 import { DUE_MOMENT, FREIGHT_TERM_LABEL, PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, type Due, type LedgerPart } from './purchase-payment-ledger';
 import { formatEur } from './purchase-payment-menus';
 import { PurchasePaymentScope } from './purchase-payment-scope';
@@ -116,7 +117,7 @@ export interface PurchasePaymentDraft {
   /** Corrections of unlinked transfers of a payment paid in parts, by their id. */
   partEdits?: Record<number, { amountInput: string; amount: number | null; amountEurInput?: string; amountEur?: number | null }>;
   /**
-   * "Deze transactie dekt ook andere containers" (a new EUR supplier payment on a picked transaction): open, and the other containers' parts.
+   * 'Verdelen over containers' on a new EUR supplier payment on a picked transaction (the switch): open, and the other containers' parts.
    * 'Verdelen over containers' of a saved payment keeps its other rows here too.
    */
   alsoOpen?: boolean;
@@ -171,7 +172,7 @@ let nextSheetId = 0;
           @if (alsoOffered()) {
             <!-- One transfer for several containers: each part becomes a payment on its own container, all on this transaction (one atomic save). -->
             <div class="pay-sheet__tobank pay-sheet__also">
-              <label class="pay-sheet__switch"><span>Deze transactie dekt ook andere containers<small>Bijvoorbeeld 30% van drie containers in één overschrijving</small></span>
+              <label class="pay-sheet__switch"><span>Verdelen over containers<small>Eén overschrijving voor meerdere containers, bijvoorbeeld 30% van drie containers</small></span>
                 <input [class]="desk() ? 'pay-sheet__check' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!pay.alsoOpen" [disabled]="busy() || !!pay.bankLinkPending"
                        (change)="toggleAlso($any($event.target).checked)" /></label>
               @if (pay.alsoOpen) {
@@ -685,6 +686,7 @@ let nextSheetId = 0;
         </ng-template>
       </div>
       <div foot style="display:contents">
+        @if (summaryLine(); as summary) { <p class="pay-sheet__summary" role="status">{{ summary }}</p> }
         <button class="btn" type="button" (click)="cancel.emit()">Annuleren</button>
         <button class="btn btn--primary" type="button" [disabled]="busy() || !((pay.amount ?? 0) > 0) || pay.files.length > proofSlots() || !pay.paidOn || partsInvalid() || saveBlocked()"
                 (click)="confirm.emit()">{{ busy() ? 'Bezig…' : retrying() ? 'Koppeling opnieuw proberen' : pay.addTransfer && shownPending().length ? 'Transactie toevoegen'
@@ -744,7 +746,7 @@ export class PurchasePaymentSheet {
   readonly bankLines = input<readonly BankStatementLine[]>([]);
   /** Where the payment's term (or payee) stands against the Afspraak, this payment counted: what more paid does to it. */
   readonly termStanding = input<TermStanding | null>(null);
-  /** "Deze transactie dekt ook andere containers": the containers that may share the transfer, as the host loaded them. */
+  /** 'Verdelen over containers' (the switch of a new payment): the containers that may share the transfer, as the host loaded them. */
   readonly alsoState = input<{ loading: boolean; supported: boolean; options: readonly AlsoContainerOption[]; failed?: boolean }>({ loading: false, supported: true, options: [] });
   /** The container's supplier: others are allowed, with a warning. */
   readonly supplierId = input<number | null>(null);
@@ -1200,6 +1202,23 @@ export class PurchasePaymentSheet {
   readonly lineEur = computed(() => Math.abs(this.draft().bankTransaction?.amountEur ?? 0));
   /** This payment's transfer and the other containers' parts together, against the transaction. */
   readonly alsoTotal = computed(() => Math.round((this.transferEur() + alsoTotalEur(this.draft().alsoParts)) * 100) / 100);
+  /**
+   * The read-only line above the buttons (Inkoop redesign §2.5): what the save
+   * records, e.g. '€ 11.421,38 aan Leverancier · 1/3 bij bestelling · banktransactie 16/10/2026'.
+   */
+  readonly summaryLine = computed(() => {
+    const pay = this.draft();
+    const others = (pay.alsoParts ?? []).length;
+    const sharing = others > 0 && ((!pay.id && this.alsoOffered() && !!pay.alsoOpen) || pay.surplus === 'SHARE');
+    const picked = pay.id ? this.pendingLine() : pay.bankTransaction ?? null;
+    return purchaseSheetSummary(pay, {
+      payeeLabel: PAYEE_LABEL[pay.payee],
+      termLabel: pay.instalmentDue ? this.instalmentOptions().find(option => option.due === pay.instalmentDue)?.label ?? null : null,
+      amountEur: pay.currency === 'EUR' ? null : pay.amountEur ?? (this.transferEur() > 0 ? this.transferEur() : null),
+      share: sharing ? { totalEur: pay.id ? this.pendingLineEur() : this.alsoTotal(), containers: others + 1 } : null,
+      bank: picked ? { day: picked.bookedAt } : pay.id && this.bankLinked() ? 'linked' : null,
+    });
+  });
   readonly alsoMatches = computed(() => bankAmountsMatch(this.alsoTotal(), this.lineEur()));
   /** What the picked transaction is held against: this transfer, with the other containers' parts when they share it. */
   readonly pickerEur = computed(() => (this.alsoOffered() && this.draft().alsoOpen ? this.alsoTotal() : this.transferEur()));

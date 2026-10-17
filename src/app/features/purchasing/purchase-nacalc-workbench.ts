@@ -12,7 +12,7 @@ import { CurPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  nacalcAgreedSub, nacalcPartnerLine, nacalcPartnerShortage, nacalcProductCount, nacalcProductUnit, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
+  nacalcAgreedSub, nacalcPartnerLine, nacalcPartnerShortage, pctLabel, nacalcProductCount, nacalcProductUnit, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
   type NacalcHeadline, type NacalcPartner, type NacalcPayeeRow, type NacalcProductRow, type NacalcReason, type NacalcSetBasis, type NacalcTone,
   type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
@@ -386,8 +386,8 @@ type MenuState = { kind: 'more'; point: MenuPoint } | { kind: 'payee'; point: Me
                 <header class="wk-card__head"><h3 class="wk-card__title">Partner</h3><button class="wk-link wk-card__trail" type="button" (click)="openPartner.emit()">Partner ›</button></header>
                 <div class="wk-card__body">
                   <dl class="wk-equation">
-                    <div><dt>Partner financiert {{ partner.costPct }} %<span class="wk-td__sub">@if (partner.advanceEur !== null) { voorschot op {{ partner.basisEur | eur }} incl. Enrosed kost en aparte kosten }@if (partner.financing) { @if (partner.advanceEur !== null) { · } afgesproken {{ partner.financing.committedAdvanceEur | eur }} }</span></dt><dd>@if (partner.advanceEur !== null) { {{ partner.advanceEur | eur }} }</dd></div>
-                    <div><dt>Resultaat voor ENROSED</dt><dd>{{ partner.sharePct }} %</dd></div>
+                    <div><dt>Partner financiert {{ pctLabel(partner.costPct) }}<span class="wk-td__sub">@if (partner.advanceEur !== null) { voorschot op {{ partner.basisEur | eur }} incl. Enrosed kost en aparte kosten }@if (partner.financing) { @if (partner.advanceEur !== null) { · } afgesproken {{ partner.financing.committedAdvanceEur | eur }} }</span></dt><dd>@if (partner.advanceEur !== null) { {{ partner.advanceEur | eur }} }</dd></div>
+                    <div><dt>Resultaat voor ENROSED</dt><dd>{{ pctLabel(partner.sharePct) }}</dd></div>
                     @if (partnerState() === 'loading') {
                       <div><dt><app-skeleton kind="lines" [rows]="3" /></dt><dd></dd></div>
                     } @else if (partnerState() === 'error') {
@@ -522,6 +522,7 @@ export class PurchaseNacalcWorkbench {
   }
   readonly partnerLine = (partner: NacalcPartner, head: NacalcHeadline) => nacalcPartnerLine(partner, head);
   readonly partnerShortage = nacalcPartnerShortage;
+  readonly pctLabel = pctLabel;
   readonly productCount = nacalcProductCount;
   productUnit(row: NacalcProductRow, basis: NacalcSetBasis) { return nacalcProductUnit(row, basis); }
   productPricing(row: NacalcProductRow, basis: NacalcSetBasis) {

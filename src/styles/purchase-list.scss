@@ -1,0 +1,99 @@
+/* ==========================================================================
+   Inkoop · the list (/purchasing), Inkoop redesign of 2026-10-17 (I1).
+   Desk: the foundation's list recipe, one kit table with a group per
+   supplier, a search and status chips in the toolbar and the subbar.
+   Phone: inset groups per supplier, five rows on the first screen (B5).
+   Every rule hangs on app-purchase-list; kit classes are never restyled bare.
+   The rows keep today's swipe, long-press and wheel gestures.
+   ========================================================================== */
+
+app-purchase-list{display:block;min-width:0}
+app-purchase-list .pl-nw{white-space:nowrap}
+app-purchase-list .pl-warn{color:var(--warn);font-weight:700}
+app-purchase-list .pl-ok{color:var(--ok);font-weight:650}
+app-purchase-list .pl-muted{color:var(--muted)}
+app-purchase-list .pl-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10.5px;font-weight:700;line-height:17px;vertical-align:1px;white-space:nowrap}
+app-purchase-list .pl-fill--ok{color:var(--ok);font-weight:650}
+app-purchase-list .pl-fill--warn{color:var(--warn);font-weight:650}
+app-purchase-list .pl-fill--bad{color:var(--danger);font-weight:650}
+
+/* ---- desk toolbar: the search gives way before the toolbar wraps (N10) */
+app-purchase-list .pl-search{flex:none;width:300px;min-width:0}
+/* Narrower windows: the placeholder still fits (264px), the title stays whole, the subtitle may truncate (N10). */
+@media (max-width:1180px){app-purchase-list .pl-search{width:266px}}
+@media (max-width:1100px){app-purchase-list .pl-search{width:236px}}
+app-purchase-list .pl-subbar{flex-wrap:wrap;row-gap:6px}
+app-purchase-list .pl-subbar__end b{font-weight:700}
+
+/* ---- desk table: the container name wraps and is never cut (B4); rows grow with it */
+app-purchase-list .pl-card{container:wk-pane/inline-size}
+app-purchase-list .pl-table{--wk-cols:minmax(260px,2.3fr) minmax(0,1.15fr) minmax(0,1.05fr) minmax(0,1.35fr) 112px 32px}
+/* The folded Lading part is hidden by default, BEFORE the container query: the same specificity later in the file would always win. */
+app-purchase-list .pl-lading-inline{display:none}
+@container wk-pane (max-width:859.98px){
+  app-purchase-list .pl-table{--wk-cols:minmax(220px,2.4fr) minmax(0,1.1fr) minmax(0,1.35fr) 104px 32px}
+  app-purchase-list .pl-lading-inline{display:inline}
+}
+app-purchase-list .pl-group__name{color:var(--ink);font-weight:700}
+app-purchase-list .pl-group .wk-group__label{white-space:normal}
+app-purchase-list .pl-row{min-height:58px;align-items:center;row-gap:2px;color:var(--ink);text-decoration:none}
+app-purchase-list .pl-cell{display:grid;align-content:center;gap:2px;padding-block:9px}
+app-purchase-list .pl-name{font-size:14px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+app-purchase-list .pl-main{font-size:13px;font-weight:600}
+app-purchase-list .pl-sub{color:var(--muted);font-size:12px;line-height:1.35}
+app-purchase-list .pl-cell .wk-pill{justify-self:start}
+app-purchase-list .pl-total{font-size:14px;font-weight:720}
+/* What waits on us: a second line across the columns, only when the server names something. */
+app-purchase-list .pl-attn{display:flex;grid-column:1/-1;align-items:baseline;gap:6px;min-width:0;margin:-4px 0 9px;color:var(--warn);font-size:12px;font-weight:650}
+app-purchase-list .pl-attn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
+app-purchase-list .pl-attn span{min-width:0}
+/* ⋯ sits over the row's last column, outside the link (no button inside a link); it follows a swipe. */
+app-purchase-list .pl-swipe{position:relative}
+app-purchase-list .pl-more{position:absolute;top:13px;right:var(--wk-pad-x,16px);z-index:2;opacity:0;transition:opacity var(--dur-1,120ms) var(--ease-out,ease-out),transform .25s cubic-bezier(.16,1,.3,1)}
+app-purchase-list .pl-swipe:hover .pl-more,app-purchase-list .pl-swipe:focus-within .pl-more,app-purchase-list .pl-more[aria-expanded=true]{opacity:1}
+@media (pointer:coarse){app-purchase-list .pl-more{opacity:1}}
+app-purchase-list .swipe--open .pl-more{transform:translateX(-76px)}
+app-purchase-list .swipe--open-start .pl-more{transform:translateX(76px)}
+app-purchase-list .swipe--dragging .pl-more{transform:translateX(var(--swipe-offset,0px));transition:none}
+/* The row menu: its head is the container name, which is never cut (B4). The kit's popover head and the iOS sheet title are
+   one line with an ellipsis and no title; under the menu's own class they wrap instead (the end, "40FTHQ", tells two apart). */
+app-purchase-list .pl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
+@media (max-width:679.98px){app-purchase-list .pl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
+
+/* Swipe: the buttons under a row show only while it is open, dragged or the button has focus; no 1px sliver (B17). */
+app-purchase-list .pl-swipe>.swipe__archive,app-purchase-list .pl-swipe>.swipe__delete{opacity:0}
+app-purchase-list .swipe--open>.swipe__delete,app-purchase-list .swipe--open-start>.swipe__archive,app-purchase-list .swipe--dragging>.swipe__archive,app-purchase-list .swipe--dragging>.swipe__delete,app-purchase-list .pl-swipe>.swipe__archive:focus-visible,app-purchase-list .pl-swipe>.swipe__delete:focus-visible{opacity:1}
+
+/* ---- phone: segmented, then one search row with the filter circle, then a group per supplier */
+app-purchase-list .pl--phone{--ios-inset:4px}
+app-purchase-list .pl--phone>.pl-tabs{margin:0 var(--ios-inset) 10px}
+app-purchase-list .pl-isearch{margin:0 var(--ios-inset) 14px}
+app-purchase-list .pl-filter{position:relative;display:grid;flex:none;place-items:center;width:44px;height:44px;border-radius:50%;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-2)}
+app-purchase-list .pl-filter--on{background:var(--rose-soft);color:var(--rose-dark)}
+app-purchase-list .pl-filter__badge{position:absolute;top:2px;right:0;display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--rose);box-shadow:0 0 0 2px var(--surface);color:#fff;font-size:10.5px;font-weight:800}
+app-purchase-list .pl-filter__native{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer}
+app-purchase-list .pl-section{margin-bottom:18px}
+/* The supplier as the section head: its own element (the kit's h2 is uppercase), sentence case, up to two lines (N13). */
+app-purchase-list .pl-supplier{display:-webkit-box;min-width:0;overflow:hidden;color:var(--ink-2);font-size:14px;font-weight:700;line-height:1.3;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+app-purchase-list .pl-prow{align-items:flex-start;gap:10px;padding-block:8px;color:var(--ink);text-decoration:none}
+app-purchase-list .pl-ptitle{font-size:16px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+app-purchase-list .pl-psub{color:var(--muted);font-size:13px;line-height:1.35}
+app-purchase-list .pl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
+app-purchase-list .pl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
+/* The trail gives way before the name (fix round 2): the body sizes from its content and both shrink, so a long container name
+   keeps its two lines and the status line breaks before its day ('verwacht' / '20/11/2026'). At 360 a one-line 'verwacht
+   20/11/2026' (~127 px) had squeezed 'ORDER (3e) OOSTENRIJKER / STOLP FRANS- 40FTHQ' to four lines. */
+app-purchase-list .pl-prow>.ios-cell__body{flex:1 1 auto}
+app-purchase-list .pl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}
+app-purchase-list .pl-ptrail .wk-pill{height:18px}
+app-purchase-list .pl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+app-purchase-list .pl-pline{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap}
+app-purchase-list .pl-pline.pl-warn{font-weight:700}
+app-purchase-list .pl-pline--day{white-space:normal}
+/* Phones under 375 px: 45-character names need 216 px for two lines at 16 px, the row leaves 208; at 15 px they need 204. */
+@media (max-width:374px){app-purchase-list .pl-ptitle{font-size:15px}}
+app-purchase-list .pl-loading{margin:0 var(--ios-inset)}
+
+/* ---- the new-calculation sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),
+   so the plain fields, the supplier card and the container cards keep the 16 px gutter here; the desk sheet is unchanged. */
+@media (max-width:679.98px){app-purchase-list .sheet--ios .pl-new{padding:0 var(--ios-inset,16px)}}

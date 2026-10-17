@@ -1,0 +1,67 @@
+/* ==========================================================================
+   Douane (/douane), Inkoop redesign of 2026-10-17 (I8): the HS codes and
+   their import duty on their own screen under Inkoop. One row is edited at a
+   time, with its strip under it; the two checks sit at the card's foot.
+   Every rule hangs on app-douane-page; kit classes are never restyled bare.
+   ========================================================================== */
+
+app-douane-page{display:block;min-width:0}
+app-douane-page .content.dt{max-width:1040px}
+app-douane-page .dt-search{flex:none;width:260px}
+app-douane-page .dt-code{font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap}
+app-douane-page .dt-codecell{display:grid;align-content:center;gap:1px;min-width:0}
+app-douane-page .dt-sub{display:block;color:var(--muted);font-size:11.5px}
+app-douane-page .dt-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
+app-douane-page .dt-error{display:block;margin-top:3px;color:var(--danger);font-size:12px;font-weight:600}
+
+/* ---- desk: the table and its one open row */
+/* The code column holds the new row's placeholder 'bijv. 0603 90 00 00' whole (149 px of mono text in a 30 px padded field):
+   at 150 px it read 'bijv. 0603 90 0'. */
+app-douane-page .dt-table{--wk-cols:184px minmax(0,1.6fr) 110px 110px 44px}
+/* The saved flash: the transition sits on the row, so the rose fades back over --dur-2 when the class goes (design §4). */
+app-douane-page .dt-row{min-height:46px;transition:background var(--dur-2,200ms) var(--ease-out,ease-out)}
+app-douane-page .dt-row--saved{background:var(--rose-soft)}
+app-douane-page .dt-actions{display:flex;justify-content:flex-end;overflow:visible}
+app-douane-page .dt-edit{border-bottom:1px solid var(--line);background:var(--surface-2);box-shadow:inset 3px 0 0 var(--rose)}
+app-douane-page .dt-edit__cells{display:grid;grid-template-columns:var(--wk-cols);align-items:start;column-gap:var(--wk-gap,12px);padding:10px var(--wk-pad-x,16px) 6px}
+app-douane-page .dt-edit__cell{display:grid;align-content:start;min-width:0;padding-top:4px}
+app-douane-page .dt-edit__cell:has(input){padding-top:0}
+app-douane-page .dt-edit__cell--num{justify-items:end;text-align:right}
+app-douane-page .dt-input{width:100%;min-width:0;height:34px;font-size:13px}
+app-douane-page .dt-input--code{font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace)}
+app-douane-page .dt-pct{display:inline-flex;align-items:center;gap:4px}
+app-douane-page .dt-pct i{color:var(--muted);font-style:normal}
+app-douane-page .dt-input--pct{width:72px;text-align:right}
+/* The strip under the open row: what changed and how to finish; warn when another row was asked for first (N17). */
+app-douane-page .dt-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px var(--wk-pad-x,16px) 10px;color:var(--muted);font-size:12.5px}
+app-douane-page .dt-strip__text{flex:1 1 240px;min-width:0}
+app-douane-page .dt-edit--warn .dt-strip__text{color:var(--warn);font-weight:700}
+app-douane-page .dt-none{padding-block:24px}
+
+/* ---- the two checks at the card's foot, and the footnote */
+app-douane-page .dt-notes{border-top:1px solid var(--line)}
+app-douane-page .dt-note{padding:10px var(--wk-pad-x,16px);font-size:13px;line-height:1.45}
+app-douane-page .dt-note+.dt-note{border-top:1px solid var(--line)}
+app-douane-page .dt-note p{margin:0}
+app-douane-page .dt-note--warn{background:var(--warn-soft);color:#7c450b}
+app-douane-page .dt-products{display:grid;gap:2px;margin:6px 0 0;padding:0 0 0 18px}
+app-douane-page .dt-foot{margin:10px 4px 0;color:var(--muted);font-size:12.5px;line-height:1.45}
+
+/* ---- phone */
+app-douane-page .dt--phone{--ios-inset:4px}
+app-douane-page .dt-ibanner{margin:0 var(--ios-inset) 12px}
+app-douane-page .dt-isearch{margin:0 var(--ios-inset) 14px}
+app-douane-page .dt-loading{margin:0 var(--ios-inset)}
+app-douane-page .dt-notes--phone{margin:8px var(--ios-inset) 0;overflow:hidden;border:0;border-radius:var(--ios-radius,22px);background:var(--surface)}
+app-douane-page .dt-sheet{display:grid;gap:12px;min-width:0}
+app-douane-page .dt-field{gap:10px}
+app-douane-page .dt-field>.ios-cell__body{flex:1 1 auto}
+app-douane-page .dt-field>.dt-input,app-douane-page .dt-field>.dt-pct{flex:none}
+app-douane-page .dt-sheet .dt-input{width:170px;height:36px;padding:0 10px;border:0;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink);font:inherit;font-size:16px}
+app-douane-page .dt-sheet .dt-input--pct{width:80px}
+/* Omschrijving on the phone stacks under its label across the cell, as a text area: 'Glaswerk voor tafel, keuken en versiering
+   (stolpen, schalen)' reads whole while editing (beside the label the field was 170 px and showed 'Rozen, vers afgesne…'). */
+app-douane-page .dt-field--stack{flex-wrap:wrap;row-gap:6px;padding-block:10px}
+app-douane-page .dt-field--stack>.ios-cell__body{flex:1 1 100%}
+app-douane-page .dt-sheet .dt-field--stack>.dt-input--text{flex:1 1 100%;width:100%;height:auto;min-height:60px;padding:8px 10px;line-height:1.35;resize:none;field-sizing:content}
+

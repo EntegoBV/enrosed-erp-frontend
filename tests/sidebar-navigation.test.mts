@@ -22,6 +22,7 @@ test('the current ERP page opens the matching desktop menu section', () => {
 test('settings pages stay with the workflow they configure', () => {
   assert.equal(sidebarGroupForUrl('/settings?sectie=discounts'), 'verkoop');
   assert.equal(sidebarGroupForUrl('/settings?sectie=duties'), 'inkoop');
+  assert.equal(sidebarGroupForUrl('/douane'), 'inkoop', 'Douane has its own screen under Inkoop (2026-10-17)');
   assert.equal(sidebarGroupForUrl('/settings?sectie=categories'), 'producten');
   assert.equal(sidebarGroupForUrl('/settings?sectie=catalog-data'), 'producten');
   assert.equal(sidebarGroupForUrl('/settings?sectie=company'), 'bedrijf');

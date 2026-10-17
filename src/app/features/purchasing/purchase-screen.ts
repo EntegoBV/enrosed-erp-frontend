@@ -112,9 +112,8 @@ export class PurchaseScreen {
           // The nacalculatie is the desk's third main view; the rail stays as it was.
           desk.mainView.set('nacalc');
         } else if (section === 'payments' && desk.hasPartnerTab()) {
-          // Every financing link means the partner's money coming in.
-          desk.mainView.set('products');
-          desk.railTab.set('partner');
+          // Every financing link means the partner's money coming in: the Partner panel, a drawer below a 1140px host (B3).
+          desk.showRail('partner', false);
         } else {
           desk.mainView.set('payments');
         }

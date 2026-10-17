@@ -1,13 +1,40 @@
-import { ActivatedRoute } from '@angular/router';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, inject, signal, viewChild } from '@angular/core';
 import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { Supplier } from '../../core/api/models';
+import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { SupplierAddress } from '../../shared/supplier-address';
+import { Icon } from '../../shared/icon';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
+import { keyContext } from '../../shared/key-context';
+import { DateNlPipe, EurPipe } from '../../shared/pipes';
+import { messageOf } from '../../core/api/errors';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { containerPayables } from '../finance/payables';
+import { statusLabel, statusTone } from '../purchasing/purchase-phone-model';
+import { containerCellSub, containerCounts, supplierOverview, type SupplierContainer } from './supplier-overview';
+
+/**
+ * Leveranciers' area stylesheet (Inkoop redesign, 2026-10-17): styles/suppliers.scss
+ * stays global CSS with every rule under app-supplier-list, loaded with this
+ * screen's lazy chunk instead of styles.scss (the initial bundle's 1 MB error
+ * budget). Encapsulation None keeps the selectors as written; renders nothing.
+ */
+@Component({
+  selector: 'app-supplier-list-styles',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  encapsulation: ViewEncapsulation.None,
+  host: { hidden: '' },
+  template: '',
+  styleUrl: '../../../styles/suppliers.scss',
+})
+export class SupplierListStyles {}
 
 function blank(): Supplier {
   return {
@@ -17,128 +44,324 @@ function blank(): Supplier {
   };
 }
 
+/**
+ * Leveranciers (Inkoop redesign I7, 2026-10-17). Desk: one table of every
+ * supplier with its containers and what they ask now and later, the chosen
+ * supplier in full below it (critique B7). Phone: a list, and a sheet per
+ * supplier with its containers and open amounts. The containers come from the
+ * same list request the Inkoop screen makes (supplierOverview).
+ */
 @Component({
   selector: 'app-supplier-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, PageHeader, Sheet, SupplierAddress],
+  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, DateNlPipe],
   template: `
+    <app-supplier-list-styles />
     <app-page-header [showBack]="true" backTo="/more" title="Leveranciers" [subtitle]="suppliers().length + ' leveranciers'">
-      <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
-        + Nieuw
-      </button>
+      @if (desktop.active()) {
+        <div class="wk-search sup-search">
+          <app-icon name="search" [size]="16" />
+          <input #searchField type="search" data-page-search placeholder="Zoek op naam, stad of haven" aria-label="Leveranciers zoeken"
+                 autocomplete="off" [value]="query()" (input)="setQuery($any($event.target).value)" (keydown.escape)="escapeSearch($event)" />
+          <kbd class="wk-kbd" aria-hidden="true">/</kbd>
+          <button class="wk-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="setQuery('')"><app-icon name="close" [size]="14" /></button>
+        </div>
+        <button class="btn btn--primary btn--sm" type="button" (click)="open(null)"><app-icon name="plus" [size]="16" />Nieuw</button>
+      }
     </app-page-header>
 
-    <div class="content">
-      <div class="search-bar">
-        <input class="input" type="search"
-               placeholder="Zoek op naam, adres, stad, regio of haven…"
-               aria-label="Leveranciers zoeken"
-               [ngModel]="query()" (ngModelChange)="query.set($event)" />
-      </div>
-      <div class="card"><div class="list">
-        @for (supplier of filtered(); track supplier.id) {
-          <!-- Same gesture as the purchase list: swipe left reveals delete,
-               a committed swipe asks the question straight away. -->
-          <div class="swipe" [class.swipe--open]="swiped() === supplier.id">
-          <button class="list-item swipe__row" type="button"
-                  style="text-align:left;width:100%;border-width:0 0 1px"
-                  (touchstart)="swipeStart($event, supplier.id!)"
-                  (touchmove)="swipeMove($event, supplier.id!)"
-                  (click)="openUnlessSwiped($event, supplier)">
-            <div class="list-item__body">
-              <div class="list-item__title">{{ supplier.name }}</div>
-              <div class="list-item__meta">
-                {{ supplierLocation(supplier) || 'Adres nog niet ingevuld' }}
-                @if (supplier.contact) { · {{ supplier.contact }} }
+    @if (desktop.active()) {
+      <!-- Desk: every supplier with what it asks in one table, the chosen one in full below it (critique B7: no short column beside a long detail). -->
+      <div class="content sup">
+        @if (loadError(); as error) {
+          <div class="wk-card"><app-load-error [message]="error" [busy]="loading()" (retry)="reload()" /></div>
+        } @else if (loading() && !suppliers().length) {
+          <!-- Only the first load: after Opslaan or Verwijderen the table and the detail stay while the list refreshes. -->
+          <div class="wk-card" role="status" aria-label="Leveranciers laden"><app-skeleton kind="table" [rows]="4" /></div>
+        } @else if (!suppliers().length) {
+          <div class="wk-card"><div class="wk-empty">
+            <h2 class="wk-empty__title">Nog geen leveranciers</h2>
+            <p class="wk-empty__text">Voeg je eerste leverancier toe; daarna kies je hem bij een nieuwe calculatie.</p>
+            <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" (click)="open(null)">Nieuwe leverancier</button></div>
+          </div></div>
+        } @else if (!filtered().length) {
+          <div class="wk-card"><div class="wk-empty">
+            <h2 class="wk-empty__title">Geen leverancier gevonden</h2>
+            <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="setQuery('')">Zoekopdracht wissen</button></div>
+          </div></div>
+        } @else {
+          <div class="wk-card sup-card">
+            <div class="wk-table sup-table">
+              <div class="wk-thead" aria-hidden="true">
+                <span class="wk-th">Leverancier</span>
+                <span class="wk-th">Munt</span>
+                <span class="wk-th">Containers</span>
+                <span class="wk-th wk-th--num">Nu te betalen</span>
+                <span class="wk-th wk-th--num">Later</span>
+                <span class="wk-th wk-th--num">Laatste order</span>
               </div>
-              <div class="list-item__meta">
-                Levertijd {{ supplier.leadTimeDays }} dagen
-                @if (supplier.portOfLoading) { · {{ supplier.portOfLoading }} }
+              <div class="sup-rows" role="listbox" aria-label="Leveranciers" (keydown)="listKey($event)">
+                @for (supplier of filtered(); track supplier.id) {
+                  @let row = overviewOf(supplier.id);
+                  <div class="wk-tr wk-tr--link sup-row" role="option" [id]="'sup-' + supplier.id" [attr.aria-selected]="selectedId() === supplier.id"
+                       [attr.tabindex]="selectedId() === supplier.id ? 0 : -1" (click)="select(supplier)">
+                    <span class="wk-td wk-td--wrap sup-cell"><b class="sup-name">{{ supplier.name }}</b><span class="sup-sub">{{ supplierLocation(supplier) || 'Adres nog niet ingevuld' }}</span></span>
+                    <span class="wk-td"><span class="wk-pill">{{ supplier.currency }}</span></span>
+                    @if (containersState() === 'ready') {
+                      <span class="wk-td wk-td--wrap sup-cell"><b>{{ row?.containers?.length ?? 0 }}</b><span class="sup-sub">{{ containerCounts(row) }}</span></span>
+                      <span class="wk-td wk-td--num" [class.sup-warn]="(row?.nowEur ?? 0) > 0">{{ (row?.nowEur ?? 0) | eur: 0 }}</span>
+                      <span class="wk-td wk-td--num">{{ (row?.laterEur ?? 0) | eur: 0 }}</span>
+                      <span class="wk-td wk-td--num">{{ row?.lastOrderDate ? (row!.lastOrderDate | dateNl) : '—' }}</span>
+                    } @else {
+                      <span class="wk-td sup-muted">{{ containersState() === 'error' ? '—' : '…' }}</span>
+                      <span class="wk-td wk-td--num sup-muted">{{ containersState() === 'error' ? '—' : '…' }}</span>
+                      <span class="wk-td wk-td--num sup-muted">{{ containersState() === 'error' ? '—' : '…' }}</span>
+                      <span class="wk-td wk-td--num sup-muted">{{ containersState() === 'error' ? '—' : '…' }}</span>
+                    }
+                  </div>
+                }
               </div>
             </div>
-            <div class="list-item__end">
-              <span class="badge badge--blue">{{ supplier.currency }}</span>
-              <div class="tiny muted mt-8">{{ supplier.incoterm }}</div>
-            </div>
-            <span class="list-item__chev">›</span>
-          </button>
-          <button class="swipe__delete" type="button" (click)="removeFromList(supplier)"
-                  aria-label="Leverancier verwijderen">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-              <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-            </svg>
-          </button>
           </div>
-        } @empty {
-          <div class="empty"><div class="empty__title">
-            @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen leveranciers gevonden }</div></div>
-        }
-      </div></div>
-    </div>
 
-    <button class="fab" type="button" (click)="open(null)">+ Leverancier</button>
+          @if (selectedSupplier(); as supplier) {
+            @let row = overviewOf(supplier.id);
+            <section class="wk-card sup-detail" aria-labelledby="sup-detail-name">
+              <header class="sup-detail__head">
+                <span class="sup-mark" aria-hidden="true">{{ supplier.name.charAt(0) || '?' }}</span>
+                <div class="sup-detail__who">
+                  <h2 id="sup-detail-name">{{ supplier.name }}</h2>
+                  <p>{{ supplierLocation(supplier) || 'Adres nog niet ingevuld' }} · factureert in {{ supplier.currency }}@if (supplier.incoterm) { · {{ supplier.incoterm }} }</p>
+                </div>
+                <div class="sup-detail__actions">
+                  <button class="wk-btn wk-btn--primary" type="button" (click)="newCalculation(supplier)"><app-icon name="plus" [size]="16" />Nieuwe calculatie</button>
+                  <button class="wk-btn" type="button" (click)="open(supplier)"><app-icon name="pencil" [size]="16" />Bewerken</button>
+                  <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" aria-haspopup="menu" [attr.aria-label]="'Meer acties voor ' + supplier.name"
+                          (click)="openMenu($event, supplier)"><app-icon name="more" [size]="16" /></button>
+                </div>
+              </header>
+              <div class="wk-strip sup-strip" aria-label="Wat deze leverancier nog vraagt">
+                <div class="wk-strip__item"><span class="wk-strip__label">Nu te betalen</span><span class="wk-strip__value" [class.sup-warn]="(row?.nowEur ?? 0) > 0">{{ containersState() === 'ready' ? ((row?.nowEur ?? 0) | eur: 0) : '—' }}</span></div>
+                <div class="wk-strip__item"><span class="wk-strip__label">Later</span><span class="wk-strip__value">{{ containersState() === 'ready' ? ((row?.laterEur ?? 0) | eur: 0) : '—' }}</span></div>
+                <div class="wk-strip__item"><span class="wk-strip__label">Tegoed open</span><span class="wk-strip__value">{{ containersState() === 'ready' ? ((row?.creditOpenEur ?? 0) | eur: 0) : '—' }}</span></div>
+              </div>
+              <section class="sup-sec" aria-labelledby="sup-containers-title">
+                <h3 class="sup-sec__title" id="sup-containers-title">Containers</h3>
+                @if (containersState() === 'loading') {
+                  <app-skeleton kind="table" [rows]="3" />
+                } @else if (containersState() === 'error') {
+                  <p class="sup-muted" role="alert">Containers konden niet laden · <button class="wk-link" type="button" (click)="loadContainers()">Opnieuw</button></p>
+                } @else if (!row?.containers?.length) {
+                  <p class="sup-muted">Nog geen containers bij deze leverancier.</p>
+                } @else {
+                  <div class="wk-table sup-ctable" role="table" aria-label="Containers">
+                    <div class="wk-thead" role="row">
+                      <span class="wk-th" role="columnheader">Container</span>
+                      <span class="wk-th" role="columnheader">Status</span>
+                      <span class="wk-th wk-th--num" role="columnheader">Totaal geland</span>
+                      <span class="wk-th" role="columnheader">Betaling</span>
+                    </div>
+                    @for (container of row!.containers; track container.id) {
+                      <a class="wk-tr wk-tr--link sup-crow" role="row" [routerLink]="['/purchasing', container.id]">
+                        <span class="wk-td wk-td--wrap sup-cell" role="cell"><b class="sup-name">{{ container.name }}</b>
+                          <span class="sup-sub">{{ containerSub(container) }}@if (container.partner) { <span class="sup-tag">Partner</span> }@if (container.archived) { <span class="sup-tag sup-tag--muted">Gearchiveerd</span> }</span></span>
+                        <span class="wk-td wk-td--wrap sup-cell" role="cell"><span class="wk-pill" [class]="statusTone(container.status)">{{ statusText(container.status) }}</span>
+                          <span class="sup-sub">{{ container.status === 'ONTVANGEN' && container.receivedOn ? 'ontvangen ' + (container.receivedOn | dateNl) : (container.orderDate | dateNl) }}</span></span>
+                        <span class="wk-td wk-td--num sup-total" role="cell">{{ container.totalEur | eur: 0 }}</span>
+                        <span class="wk-td wk-td--wrap sup-cell" role="cell">
+                          @switch (container.payment?.state) {
+                            @case ('due') { <span class="sup-warn sup-nw">{{ container.payment!.nowEur | eur: 0 }} nu</span>@if (container.payment!.laterEur > 0) { <span class="sup-sub sup-nw">{{ container.payment!.laterEur | eur: 0 }} later</span> } }
+                            @case ('later') { <span class="sup-nw">{{ container.payment!.laterEur | eur: 0 }} later</span> }
+                            @case ('paid') { <span class="sup-ok">Alles betaald</span> }
+                            @case ('concept') { <span class="sup-muted">nog niet besteld</span> }
+                            @default { <span class="sup-muted">—</span> }
+                          }
+                        </span>
+                      </a>
+                    }
+                  </div>
+                }
+              </section>
+              <div class="sup-pair">
+                <section class="sup-sec" aria-labelledby="sup-terms-title">
+                  <h3 class="sup-sec__title" id="sup-terms-title">Inkoopafspraken</h3>
+                  <dl class="wk-kv">
+                    <div><dt>Factureert in</dt><dd>{{ supplier.currency }}</dd></div>
+                    <div><dt>Incoterm</dt><dd>{{ supplier.incoterm || '—' }}</dd></div>
+                    <div><dt>Laadhaven</dt><dd>{{ supplier.portOfLoading || '—' }}</dd></div>
+                    <div><dt>Levertijd</dt><dd>{{ supplier.leadTimeDays }} dagen</dd></div>
+                  </dl>
+                </section>
+                <section class="sup-sec" aria-labelledby="sup-contact-title">
+                  <h3 class="sup-sec__title" id="sup-contact-title">Adres en contact</h3>
+                  <app-supplier-address [supplier]="supplier" />
+                  <div class="sup-contact">
+                    @if (supplier.contact) { <b>{{ supplier.contact }}</b> }
+                    @if (supplier.email) { <a class="wk-link" [href]="'mailto:' + supplier.email">{{ supplier.email }}</a> }
+                    @if (supplier.phone) { <a class="wk-link" [href]="'tel:' + supplier.phone">{{ supplier.phone }}</a> }
+                    @if (!supplier.contact && !supplier.email && !supplier.phone) { <span class="sup-muted">Contactgegevens nog niet ingevuld</span> }
+                  </div>
+                </section>
+              </div>
+              @if (supplier.notes) {
+                <section class="sup-sec" aria-labelledby="sup-notes-title">
+                  <h3 class="sup-sec__title" id="sup-notes-title">Interne notitie</h3>
+                  <p class="sup-notes">{{ supplier.notes }}</p>
+                </section>
+              }
+            </section>
+          }
+        }
+      </div>
+    } @else {
+      <div class="content sup sup--phone">
+        <div class="ios-search sup-isearch">
+          <div class="ios-search__field">
+            <app-icon name="search" [size]="17" />
+            <input type="search" data-page-search placeholder="Zoek op naam, stad of haven" aria-label="Leveranciers zoeken" autocomplete="off"
+                   enterkeyhint="search" [value]="query()" (input)="setQuery($any($event.target).value)" />
+            @if (query()) { <button class="ios-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="setQuery('')"><app-icon name="close" [size]="16" /></button> }
+          </div>
+        </div>
+        @if (loadError(); as error) {
+          <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+        } @else if (loading() && !suppliers().length) {
+          <div class="sup-loading" role="status" aria-label="Leveranciers laden"><app-skeleton kind="group" [rows]="4" /></div>
+        } @else if (!suppliers().length) {
+          <div class="ios-empty">
+            <h2 class="ios-empty__title">Nog geen leveranciers</h2>
+            <p class="ios-empty__text">Voeg je eerste leverancier toe; daarna kies je hem bij een nieuwe calculatie.</p>
+            <button class="ios-capsule ios-capsule--tinted" type="button" (click)="open(null)">Nieuwe leverancier</button>
+          </div>
+        } @else if (!filtered().length) {
+          <div class="ios-empty">
+            <h2 class="ios-empty__title">Geen leverancier gevonden</h2>
+            <button class="ios-capsule ios-capsule--tinted" type="button" (click)="setQuery('')">Zoekopdracht wissen</button>
+          </div>
+        } @else {
+          <div class="ios-group">
+            @for (supplier of filtered(); track supplier.id) {
+              <!-- Same gesture as before: swipe left reveals delete, a committed swipe asks straight away. -->
+              <div class="swipe sup-swipe" [class.swipe--open]="swiped() === supplier.id">
+                <button class="ios-cell swipe__row" type="button"
+                        (touchstart)="swipeStart($event, supplier.id!)"
+                        (touchmove)="swipeMove($event, supplier.id!)"
+                        (click)="openUnlessSwiped($event, supplier)">
+                  <span class="ios-cell__body">
+                    <span class="ios-cell__title sup-wrap">{{ supplier.name }}</span>
+                    <span class="ios-cell__sub sup-wrap">{{ supplierLocation(supplier) || 'Adres nog niet ingevuld' }}</span>
+                  </span>
+                  <span class="ios-cell__trail"><span class="wk-pill">{{ supplier.currency }}</span></span>
+                  <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                </button>
+                <button class="swipe__delete" type="button" (click)="removeFromList(supplier)" [attr.aria-label]="'Leverancier ' + supplier.name + ' verwijderen'">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                       stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                    <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                  </svg>
+                </button>
+              </div>
+            }
+          </div>
+        }
+      </div>
+      <button class="fab" type="button" (click)="open(null)">+ Leverancier</button>
+    }
+
+    @if (menu(); as open) {
+      <app-context-menu class="sup-menu" [title]="open.supplier.name" [items]="menuItems" [anchor]="open.anchor" variant="ios" cancelLabel="Annuleren"
+                        (pick)="menu.set(null); removeFromList(open.supplier)" (closed)="menu.set(null)" />
+    }
 
     @if (editing()) {
       <app-sheet [title]="editMode()
                    ? (draft().id ? 'Leverancier bewerken' : 'Nieuwe leverancier')
                    : draft().name"
-                 (closed)="close()">
+                 variant="ios" (closed)="close()">
         <div body>
           @if (!editMode()) {
-            <article class="supplier-detail">
-              <header class="supplier-hero">
-                <span class="supplier-hero__mark" aria-hidden="true">
-                  {{ draft().name.charAt(0) || '?' }}
-                </span>
-                <span class="supplier-hero__copy">
-                  <span>Leverancier</span>
-                  <strong>{{ draft().name }}</strong>
-                  <small>{{ supplierLocation(draft()) || 'Locatie nog niet ingevuld' }}</small>
-                </span>
-                <span class="badge badge--blue">{{ draft().currency }}</span>
-              </header>
-
-              <section class="detail-section" aria-labelledby="supplier-address-title">
-                <span class="detail-section__icon" aria-hidden="true">⌖</span>
-                <div>
-                  <h3 id="supplier-address-title">Vestigings- en ophaaladres</h3>
-                  <app-supplier-address [supplier]="draft()" />
+            @let row = overviewOf(draft().id);
+            <!-- Phone: the supplier in full, with its containers and what they still ask. -->
+            <div class="sup-sheet">
+              <div class="sup-hero">
+                <span class="sup-mark" aria-hidden="true">{{ draft().name.charAt(0) || '?' }}</span>
+                <span class="sup-hero__copy"><b>{{ draft().name }}</b><span>{{ supplierLocation(draft()) || 'Locatie nog niet ingevuld' }}</span></span>
+                <span class="wk-pill">{{ draft().currency }}</span>
+              </div>
+              <div class="sup-capsules">
+                <!-- Bewerken is the sheet's primary at its foot (the iOS sheet pattern), not a second button here. -->
+                <button class="ios-capsule ios-capsule--tinted" type="button" (click)="newCalculation(draft())"><app-icon name="plus" [size]="16" />Nieuwe calculatie</button>
+              </div>
+              <div class="ios-figures sup-figures">
+                <div><small>Nu te betalen</small><strong [class.sup-warn]="(row?.nowEur ?? 0) > 0">{{ containersState() === 'ready' ? ((row?.nowEur ?? 0) | eur: 0) : '—' }}</strong></div>
+                <div><small>Later</small><strong>{{ containersState() === 'ready' ? ((row?.laterEur ?? 0) | eur: 0) : '—' }}</strong></div>
+                <div class="sup-figures__wide"><small>Tegoed open bij deze leverancier</small><strong>{{ containersState() === 'ready' ? ((row?.creditOpenEur ?? 0) | eur: 0) : '—' }}</strong></div>
+              </div>
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Containers</h2><span class="ios-section__trail">{{ row?.containers?.length ?? 0 }}</span></div>
+                @if (containersState() === 'loading') {
+                  <app-skeleton kind="group" [rows]="2" />
+                } @else if (containersState() === 'error') {
+                  <p class="ios-section__foot" role="alert">Containers konden niet laden · <button class="wk-link" type="button" (click)="loadContainers()">Opnieuw</button></p>
+                } @else if (!row?.containers?.length) {
+                  <p class="ios-section__foot">Nog geen containers bij deze leverancier.</p>
+                } @else {
+                  <div class="ios-group">
+                    @for (container of row!.containers; track container.id) {
+                      <a class="ios-cell" [routerLink]="['/purchasing', container.id]" (click)="close()">
+                        <span class="ios-cell__body">
+                          <span class="ios-cell__title sup-wrap">{{ container.name }}</span>
+                          <span class="ios-cell__sub sup-wrap">{{ containerCellSub(container, statusText(container.status)) }}</span>
+                        </span>
+                        <span class="ios-cell__trail">
+                          <span class="ios-cell__value ios-cell__value--strong">{{ container.totalEur | eur: 0 }}</span>
+                          @switch (container.payment?.state) {
+                            @case ('due') { <span class="ios-cell__meta sup-warn">{{ container.payment!.nowEur | eur: 0 }} nu</span> }
+                            @case ('later') { <span class="ios-cell__meta">{{ container.payment!.laterEur | eur: 0 }} later</span> }
+                            @case ('paid') { <span class="ios-cell__meta sup-ok">betaald</span> }
+                            @case ('concept') { <span class="ios-cell__meta">nog niet besteld</span> }
+                          }
+                        </span>
+                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                      </a>
+                    }
+                  </div>
+                }
+              </section>
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Inkoopafspraken</h2></div>
+                <div class="ios-group">
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Factureert in</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ draft().currency }}</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Incoterm</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ draft().incoterm || '—' }}</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Laadhaven</span></span><span class="ios-cell__trail"><span class="ios-cell__value sup-wrap">{{ draft().portOfLoading || '—' }}</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Levertijd</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ draft().leadTimeDays }} dagen</span></span></div>
                 </div>
               </section>
-
-              <section class="detail-section" aria-labelledby="supplier-contact-title">
-                <span class="detail-section__icon" aria-hidden="true">@</span>
-                <div>
-                  <h3 id="supplier-contact-title">Contact</h3>
-                  @if (draft().contact) { <strong>{{ draft().contact }}</strong> }
-                  @if (draft().email) {
-                    <a [href]="'mailto:' + draft().email">{{ draft().email }}</a>
-                  }
-                  @if (draft().phone) {
-                    <a [href]="'tel:' + draft().phone">{{ draft().phone }}</a>
-                  }
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Adres</h2></div>
+                <div class="ios-group sup-address"><app-supplier-address [supplier]="draft()" [showEmpty]="true" /></div>
+              </section>
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Contact</h2></div>
+                <div class="ios-group">
+                  @if (draft().contact) { <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title sup-wrap">{{ draft().contact }}</span></span></div> }
+                  @if (draft().email) { <a class="ios-cell" [href]="'mailto:' + draft().email"><span class="ios-cell__body"><span class="ios-cell__title sup-link sup-wrap">{{ draft().email }}</span></span></a> }
+                  @if (draft().phone) { <a class="ios-cell" [href]="'tel:' + draft().phone"><span class="ios-cell__body"><span class="ios-cell__title sup-link">{{ draft().phone }}</span></span></a> }
                   @if (!draft().contact && !draft().email && !draft().phone) {
-                    <span class="muted">Contactgegevens nog niet ingevuld</span>
+                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title sup-muted">Contactgegevens nog niet ingevuld</span></span></div>
                   }
                 </div>
               </section>
-
-              <dl class="supplier-facts">
-                <div><dt>Incoterm</dt><dd>{{ draft().incoterm || '—' }}</dd></div>
-                <div><dt>Factureert in</dt><dd>{{ draft().currency }}</dd></div>
-                <div><dt>Laadhaven</dt><dd>{{ draft().portOfLoading || '—' }}</dd></div>
-                <div><dt>Levertijd</dt><dd>{{ draft().leadTimeDays }} dagen</dd></div>
-              </dl>
               @if (draft().notes) {
-                <section class="supplier-notes" aria-labelledby="supplier-notes-title">
-                  <h3 id="supplier-notes-title">Interne notitie</h3>
-                  <p>{{ draft().notes }}</p>
+                <section class="ios-section">
+                  <div class="ios-section__head"><h2>Interne notitie</h2></div>
+                  <div class="ios-group"><p class="sup-notes sup-notes--cell">{{ draft().notes }}</p></div>
                 </section>
               }
-            </article>
+            </div>
           } @else {
+            <div class="sup-form">
             <p class="legend"><b>*</b> verplicht · adresvelden mogen leeg blijven.</p>
 
             <section class="form-section" aria-labelledby="supplier-company-form-title">
@@ -250,6 +473,11 @@ function blank(): Supplier {
                             (ngModelChange)="patch({ notes: $event })"></textarea></div>
               </div>
             </section>
+            </div>
+            @if (draft().id && !desktop.active()) {
+              <!-- Phone: Verwijderen as its own cell under the form (the iOS sheet pattern, as on Douane); three capsules did not fit a 360 px foot. -->
+              <div class="ios-group sup-delete"><button class="ios-cell ios-cell--danger" type="button" [disabled]="saving()" (click)="remove()">Verwijderen</button></div>
+            }
           }
         </div>
         <div foot style="display:contents">
@@ -260,7 +488,7 @@ function blank(): Supplier {
               Bewerken
             </button>
           } @else {
-            @if (draft().id) {
+            @if (draft().id && desktop.active()) {
               <button class="btn btn--danger" type="button" [disabled]="saving()"
                       (click)="remove()">Verwijderen</button>
             }
@@ -278,20 +506,23 @@ function blank(): Supplier {
     }
   `,
   styles: [`
-    :host{display:block}.supplier-detail{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0}.supplier-detail>*{min-width:0}.supplier-hero>*{min-width:0}
-    .supplier-hero{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--rose-line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--rose-soft))}
-    .supplier-hero__mark{display:grid;width:42px;height:42px;flex:none;place-items:center;border-radius:13px;background:var(--rose);color:#fff;font-size:17px;font-weight:760;text-transform:uppercase}
-    .supplier-hero__copy{display:flex;min-width:0;flex:1;flex-direction:column}.supplier-hero__copy>span{color:var(--rose);font-size:9px;font-weight:740;letter-spacing:.08em;text-transform:uppercase}.supplier-hero__copy strong,.supplier-hero__copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.supplier-hero__copy small{color:var(--muted);font-size:10.5px}
-    .detail-section{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.detail-section__icon{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:var(--surface-2);color:var(--rose-dark);font-weight:760}.detail-section h3,.supplier-notes h3{margin-bottom:3px;font-size:11px}.detail-section div{display:flex;min-width:0;flex-direction:column}.detail-section strong,.detail-section a,.detail-section .muted{font-size:11.5px;overflow-wrap:anywhere}.detail-section a{color:var(--rose-dark)}
-    .supplier-facts{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:14px;background:var(--line);overflow:hidden}.supplier-facts div{min-width:0;padding:10px;background:var(--surface)}.supplier-facts dt{color:var(--muted);font-size:9px;text-transform:uppercase}.supplier-facts dd{margin:2px 0 0;overflow:hidden;font-size:11.5px;font-weight:680;text-overflow:ellipsis;white-space:nowrap}.supplier-notes{padding:12px;border-radius:14px;background:var(--surface-2)}.supplier-notes p{font-size:11.5px;white-space:pre-wrap}
+    :host{display:block}
     .form-section{margin:0 0 12px;padding:12px 12px 0;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.form-section__head{display:flex;align-items:flex-start;gap:9px;margin-bottom:12px}.form-section__head>span{display:grid;width:30px;height:30px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760}.form-section__head h3{font-size:13px}.form-section__head p{color:var(--muted);font-size:10.5px}.field-error{color:var(--danger);font-size:11px}.input[aria-invalid="true"]{border-color:var(--danger)}
-    @media(min-width: 680px){.supplier-detail{gap:14px}.supplier-hero{padding:15px}.detail-section{padding:14px}.form-section{padding:15px 15px 1px}}
+    @media(min-width: 680px){.form-section{padding:15px 15px 1px}}
   `],
 })
 export class SupplierList {
   readonly isoCountries = ISO_COUNTRIES;
+  readonly desktop = inject(DesktopViewport);
+  readonly containerCounts = containerCounts;
+  readonly containerCellSub = containerCellSub;
+  readonly statusTone = statusTone;
+  readonly statusText = statusLabel;
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  private readonly router = inject(Router);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
 
   readonly suppliers = signal<Supplier[]>([]);
   readonly query = signal('');
@@ -300,20 +531,53 @@ export class SupplierList {
   readonly selected = signal<Supplier | null>(null);
   readonly draft = signal<Supplier>(blank());
   readonly loading = signal(true);
+  /** The suppliers could not load (B2): app-load-error with 'Opnieuw proberen'. */
+  readonly loadError = signal<string | null>(null);
   readonly saving = signal(false);
   readonly saveAttempted = signal(false);
+  /** The desk's chosen supplier (the detail below the table). */
+  readonly selectedId = signal<number | null>(null);
+
+  /* ---- the containers: one list request, grouped per supplier (F20) */
+  readonly orders = signal<PurchaseOrderView[]>([]);
+  readonly containersState = signal<'loading' | 'ready' | 'error'>('loading');
+  private readonly overview = computed(() => {
+    const rows = this.orders();
+    return supplierOverview(rows, containerPayables(rows));
+  });
+  overviewOf(id: number | null | undefined) { return id == null ? undefined : this.overview().get(id); }
 
   constructor() {
-    /* Deep links (the product hero) filter the list straight to one supplier. */
+    /* Deep links (the product hero) filter the list straight to one supplier and choose it. */
     const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
     if (q) this.query.set(q);
     void this.load();
+    void this.loadContainers();
   }
 
+  reload(): void { void this.load(); }
+
   private async load(): Promise<void> {
-    this.suppliers.set((await this.sourcing.suppliers())
-      .map((supplier) => this.withAddressDefaults(supplier)));
-    this.loading.set(false);
+    this.loading.set(true);
+    this.loadError.set(null);
+    try {
+      this.suppliers.set((await this.sourcing.suppliers()).map((supplier) => this.withAddressDefaults(supplier)));
+      this.keepSelection();
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  async loadContainers(): Promise<void> {
+    this.containersState.set('loading');
+    try {
+      this.orders.set(await this.sourcing.purchaseOrders());
+      this.containersState.set('ready');
+    } catch {
+      this.containersState.set('error');
+    }
   }
 
   readonly filtered = computed(() => {
@@ -325,12 +589,86 @@ export class SupplierList {
       countryName(supplier.country), supplier.portOfLoading, supplier.email,
     ].join(' ').toLowerCase().includes(needle));
   });
+  readonly selectedSupplier = computed(() => this.filtered().find((supplier) => supplier.id === this.selectedId()) ?? null);
 
+  setQuery(value: string): void {
+    this.query.set(value);
+    this.keepSelection();
+  }
+
+  /** The first supplier (or the first hit of the search) stays chosen; a chosen one that still shows stays. */
+  private keepSelection(): void {
+    const shown = this.filtered();
+    if (!shown.some((supplier) => supplier.id === this.selectedId())) this.selectedId.set(shown[0]?.id ?? null);
+  }
+
+  select(supplier: Supplier): void {
+    this.selectedId.set(supplier.id);
+  }
+
+  /** '{PO} · {orderdatum}': the number only when the title is a name. */
+  containerSub(container: SupplierContainer): string {
+    const parts = [container.name !== container.number ? container.number : '', new DateNlPipe().transform(container.orderDate)];
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  /** 'Nieuwe calculatie': the Inkoop list opens its sheet with this supplier chosen (F19). */
+  newCalculation(supplier: Supplier): void {
+    if (supplier.id == null) return;
+    this.editing.set(false);
+    void this.router.navigate(['/purchasing'], { queryParams: { nieuw: 1, leverancier: supplier.id } });
+  }
+
+  /* ---- the desk's ⋯ menu */
+  readonly menu = signal<{ supplier: Supplier; anchor: MenuPoint | null } | null>(null);
+  readonly menuItems: ContextMenuItem[] = [{ id: 'delete', label: 'Verwijderen…', iconName: 'trash', hint: 'Na bevestiging', danger: true }];
+  openMenu(event: MouseEvent, supplier: Supplier): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menu.set({ supplier, anchor: { x: rect.left, y: rect.bottom + 4 } });
+  }
+
+  /* ---- keyboard (desk): / search, Esc clears then leaves, ↑/↓ the chosen supplier, Enter Bewerken, N a new supplier */
+  escapeSearch(event: Event): void {
+    event.preventDefault();
+    if (this.query()) this.setQuery('');
+    else (event.target as HTMLInputElement).blur();
+  }
+
+  listKey(event: KeyboardEvent): void {
+    const shown = this.filtered();
+    const index = shown.findIndex((supplier) => supplier.id === this.selectedId());
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const next = shown[Math.min(shown.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)))];
+      if (!next) return;
+      this.selectedId.set(next.id);
+      requestAnimationFrame(() => document.getElementById('sup-' + next.id)?.focus());
+    } else if (event.key === 'Enter' && index >= 0) {
+      event.preventDefault();
+      this.open(shown[index]);
+    }
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onKey(event: KeyboardEvent): void {
+    if (!this.desktop.active() || event.metaKey || event.ctrlKey || event.altKey) return;
+    const context = keyContext(event, this.host.nativeElement);
+    if (context.typing || context.overlayOpen || !context.inScope) return;
+    if (event.key === '/') {
+      event.preventDefault();
+      this.searchField()?.nativeElement.focus();
+    } else if ((event.key === 'n' || event.key === 'N') && !event.shiftKey) {
+      event.preventDefault();
+      this.open(null);
+    }
+  }
+
+  /** A row on the phone opens its sheet; on the desk Bewerken opens the form (the detail is already on the page). */
   open(supplier: Supplier | null): void {
     const normalized = supplier ? this.withAddressDefaults(supplier) : null;
     this.selected.set(normalized);
     this.draft.set(normalized ? { ...normalized } : blank());
-    this.editMode.set(!supplier);
+    this.editMode.set(!supplier || this.desktop.active());
     this.saveAttempted.set(false);
     this.editing.set(true);
   }
@@ -344,7 +682,7 @@ export class SupplierList {
 
   cancelEdit(): void {
     const supplier = this.selected();
-    if (!supplier) { this.close(); return; }
+    if (!supplier || this.desktop.active()) { this.close(); return; }
     this.draft.set({ ...supplier });
     this.editMode.set(false);
     this.saveAttempted.set(false);
@@ -370,13 +708,13 @@ export class SupplierList {
     if (!supplier.name.trim()) return;
     this.saving.set(true);
     try {
-      if (supplier.id === null) await this.sourcing.createSupplier(supplier);
-      else await this.sourcing.updateSupplier(supplier.id, supplier);
+      const saved = supplier.id === null ? await this.sourcing.createSupplier(supplier) : await this.sourcing.updateSupplier(supplier.id, supplier);
       this.editing.set(false);
+      if (saved?.id != null) this.selectedId.set(saved.id);
       await this.load();
       this.ui.toast('Leverancier opgeslagen');
     } catch (failure: unknown) {
-      this.ui.toast(message(failure, 'Opslaan mislukt'), 'err');
+      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
     } finally {
       this.saving.set(false);
     }
@@ -421,7 +759,7 @@ export class SupplierList {
 
   removeFromList(supplier: Supplier): void {
     this.ui.confirm(
-      { title: 'Leverancier verwijderen', message: `<b>${supplier.name}</b> verwijderen?`,
+      { title: 'Leverancier verwijderen', message: `<b>${escapeHtml(supplier.name)}</b> verwijderen?`,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         try {
@@ -430,7 +768,7 @@ export class SupplierList {
           await this.load();
           this.ui.toast('Leverancier verwijderd');
         } catch (failure: unknown) {
-          this.ui.toast(message(failure, 'Verwijderen mislukt'), 'err');
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
         }
       });
   }
@@ -438,7 +776,7 @@ export class SupplierList {
   remove(): void {
     const supplier = this.draft();
     this.ui.confirm(
-      { title: 'Leverancier verwijderen', message: `<b>${supplier.name}</b> verwijderen?`,
+      { title: 'Leverancier verwijderen', message: `<b>${escapeHtml(supplier.name)}</b> verwijderen?`,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         try {
@@ -447,7 +785,7 @@ export class SupplierList {
           await this.load();
           this.ui.toast('Leverancier verwijderd');
         } catch (failure: unknown) {
-          this.ui.toast(message(failure, 'Verwijderen mislukt'), 'err');
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
         }
       });
   }
@@ -461,8 +799,4 @@ export class SupplierList {
       region: supplier.region ?? null,
     };
   }
-}
-
-function message(failure: unknown, fallback: string): string {
-  return (failure as { error?: { message?: string } }).error?.message ?? fallback;
 }

@@ -11,6 +11,12 @@ export function formatEur(value: number): string {
   return EURO.format(Number.isFinite(value) ? value : 0);
 }
 
+/** An amount with its sign in front of the euro: '− € 0,01', never '€ -0,01' (bridge rows, F25). */
+export function signedEur(value: number): string {
+  const cents = Math.round((Number.isFinite(value) ? value : 0) * 100) || 0;
+  return cents < 0 ? '− ' + formatEur(Math.abs(cents) / 100) : formatEur(cents / 100);
+}
+
 /**
  * One 'Te doen' item in words: the title, the detail line and the verb of its
  * button. The Betalingen overview, the workbench and the Nacalculatie's action

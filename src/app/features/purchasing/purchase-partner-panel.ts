@@ -5,10 +5,11 @@ import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder, PurchaseOrderView, SalesOrderView } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { partnerDocumentKind } from '../sales/partner-settlement';
 import { STATUS_LABEL } from '../sales/quote-status';
+import { pctLabel } from './purchase-nacalc-metrics';
 
 /**
  * The partner question, asked where the container is described: off by
@@ -20,7 +21,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
 @Component({
   selector: 'app-purchase-partner-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, EurPipe, NumPipe, DateNlPipe],
+  imports: [FormsModule, RouterLink, EurPipe, DateNlPipe],
   template: `
     <section class="po-partner" [class.po-partner--on]="on()" aria-labelledby="po-partner-title">
       <header class="po-partner__head">
@@ -71,8 +72,8 @@ import { STATUS_LABEL } from '../sales/quote-status';
       } @else {
           <dl class="po-partner__facts">
             <div><dt>Partner</dt><dd>{{ partnerName() || '—' }}</dd></div>
-            <div><dt>Bijdrage volgens actueel inkooptotaal</dt><dd>{{ order().partnerCostPct ?? 100 | num }} % van het inkooptotaal incl. aparte kosten{{ (advanceBasisEur() ?? 0) ? ' · ' + ((advanceBasisEur() ?? 0) * (order().partnerCostPct ?? 100) / 100 | eur) : '' }}</dd></div>
-            <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ order().partnerSharePct ?? 50 | num }} %</dd></div>
+            <div><dt>Bijdrage volgens actueel inkooptotaal</dt><dd>{{ pctLabel(order().partnerCostPct ?? 100) }} van het inkooptotaal incl. aparte kosten{{ (advanceBasisEur() ?? 0) ? ' · ' + ((advanceBasisEur() ?? 0) * (order().partnerCostPct ?? 100) / 100 | eur) : '' }}</dd></div>
+            <div><dt>Ons deel van het veilingresultaat</dt><dd>{{ pctLabel(order().partnerSharePct ?? 50) }}</dd></div>
           </dl>
           <p class="po-partner__lead">Maak direct conceptvoorschotfacturen, bijvoorbeeld 30% bij productiestart en 70% na productie. Elke termijn krijgt een eigen factuur; er wordt nog niets uitgegeven of verstuurd. De slotfactuur verrekent de voorschotten, de werkelijke kosten en ons aandeel in het resultaat.</p>
 
@@ -82,7 +83,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
               <li>
                 <a class="po-partner__doc" [routerLink]="['/sales', deal.order.id]">
                   <b>{{ deal.order.number }}</b>
-                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ deal.order.docType === 'FACTUUR' ? (deal.order.status === 'CONCEPT' ? '' : deal.order.paidAt ? ' · betaald' : ' · nog niet betaald') : '' }}</small>
+                  <small>{{ kind(deal.order, deal.settlement?.finalSettlement) }} · {{ statusLabel[deal.order.status] }} · {{ deal.order.orderDate | dateNl }}{{ paidSuffix(deal) }}</small>
                 </a>
                 <span class="po-partner__amount">@if (deal.advanceAgreement) { Betaalafspraken } @else { {{ deal.priced.totals.total | eur }} }</span>
                 <button class="po-partner__unlink" type="button" [attr.aria-label]="'Koppeling van ' + deal.order.number + ' verwijderen'" title="Koppeling verwijderen" (click)="unlink.emit(deal)">×</button>
@@ -124,6 +125,14 @@ export class PurchasePartnerPanel {
   readonly unlink = output<SalesOrderView>();
 
   readonly statusLabel = STATUS_LABEL;
+  readonly pctLabel = pctLabel;
+  /** ' · betaald' / ' · nog niet betaald' on an invoice, never after a status that already says Betaald (F24). */
+  paidSuffix(deal: SalesOrderView): string {
+    const order = deal.order;
+    if (order.docType !== 'FACTUUR' || order.status === 'CONCEPT') return '';
+    if (order.paidAt) return /^betaald$/i.test(this.statusLabel[order.status] ?? '') ? '' : ' · betaald';
+    return ' · nog niet betaald';
+  }
   readonly kind = partnerDocumentKind;
   readonly customers = signal<Customer[]>([]);
   readonly busy = signal(false);

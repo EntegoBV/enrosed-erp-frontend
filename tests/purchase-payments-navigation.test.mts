@@ -25,6 +25,7 @@ function harness(kind: 'desk' | 'editor' | 'viewer', loaded = true, partner = fa
   const child = {
     view: signal(loaded ? { order: { id: 50 } } : null), railTab: signal('order'), workspaceSection: signal('purchase-overview'),
     mainView: signal('products'), hasPartnerTab: signal(partner),
+    showRail: (tab: string) => { child.mainView.set('products'); child.railTab.set(tab); },
     jumpToSection: (...args: unknown[]) => calls.push(['step', ...args]),
   };
   const dom = { activeElement: null as any, termsReady: true };

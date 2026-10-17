@@ -221,7 +221,7 @@ function setup(start = view()) {
     view: signal(start),
     /* What load() touches besides the order: the route id and the side panels, all quiet here. */
     id: () => String(routeId),
-    documents: signal(null), paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null),
+    documents: signal(null), paymentStateError: signal(null), paymentStateLoading: signal(false), payments: signal(null), loadError: signal(null),
     families: signal([]), categories: signal([]), freightRates: signal([]), stockLocations: signal([]), supplier: signal(null),
     loadPayments: async () => {}, loadDocuments: async () => {}, loadBankLines: async () => {}, loadPartnerDocs: async () => {},
     negativeExtra: () => false,

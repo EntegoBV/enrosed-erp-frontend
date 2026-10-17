@@ -222,7 +222,10 @@ export interface NacalcPartner {
   sharePct: number;
   basisEur: number | null;
   advanceEur: number | null;
+  /** The container figure per unit; null when the container holds more than one product (no average then, F15). */
   unitEur: number | null;
+  /** More than one product: the partner settles per product, so no container average is printed. */
+  perProduct?: boolean;
   shortPieces: number;
   ordered: number;
   financing: {
@@ -741,12 +744,14 @@ function partnerBlock(
   const basis = view.costing.totals.totalWithSeparateCostsEur ?? view.costing.totals.totalEur ?? null;
   const shortPieces = receipt ? receipt.missing + receipt.damaged : 0;
   const invoiced = cents(financing?.invoicedAdvanceEur);
+  const perProduct = new Set((view.reconciliation?.lines ?? []).map(line => line.productId ?? line.productName)).size > 1;
   return {
     costPct,
     sharePct: order.partnerSharePct ?? 50,
     basisEur: basis === null ? null : euro(cents(basis)),
     advanceEur: basis === null ? null : euro(Math.round(cents(basis) * costPct / 100)),
-    unitEur: totals.forecastExternalUnitEur ?? null,
+    unitEur: perProduct ? null : totals.forecastExternalUnitEur ?? null,
+    perProduct,
     shortPieces,
     ordered: totals.orderedQuantity ?? 0,
     financing: financing ? {
@@ -771,7 +776,7 @@ const APPLY_ON_DESK = 'Kostprijzen toepassen (Afronden)';
 function clientNotes(
   view: PurchaseOrderView, receipt: NacalcReceipt | null, financing: PartnerFinancing | null, server: readonly string[], creditCents = 0,
 ): string[] {
-  const notes = [...server];
+  const notes = server.filter(note => !/wijzigt geen productkostprijzen/.test(note)).map(ownerWords);
   if (creditCents > 0 && !server.some(note => /[Tt]egoed/.test(note))) {
     notes.push('Een tegoed van de leverancier verlaagt de eindkost van de leverancier, ook zolang het nog open staat; Betaald en Open blijven zoals ze zijn.');
   }
@@ -788,6 +793,22 @@ function clientNotes(
     notes.push('Uitgereikte afrekeningen zijn bevroren; latere kostwijzigingen wijzigen ze niet.');
   }
   return notes;
+}
+
+/** The owner's words in a server note: an agreed amount is the Afspraak, never a budget (F16, until backend BE-2). */
+export function ownerWords(note: string): string {
+  return note
+    .replace(/\bBudget op bestelde aantallen/g, 'Afspraak op bestelde aantallen')
+    .replace(/\bals budgetbasis\b/g, 'als basis voor de afspraak');
+}
+
+/**
+ * A percentage the Belgian way with up to two decimals: '51,02 %', '50 %'
+ * (partner financing and result shares, F14).
+ */
+export function pctLabel(value: number | null | undefined): string {
+  const number = Number.isFinite(value as number) ? Math.round((value as number) * 100) / 100 : 0;
+  return number.toLocaleString('nl-BE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' %';
 }
 
 /**
@@ -860,15 +881,17 @@ export function nacalcReceiptUnitLine(receipt: NacalcReceipt, head: NacalcHeadli
 
 /** What the partner pays at the auction settlement; a mixed container has no one average (the settlement is per product line). */
 export function nacalcPartnerLine(partner: NacalcPartner, head: Pick<NacalcHeadline, 'setBasis'>, phone = false): string {
-  if (head.setBasis === 'MIXED') {
-    return phone ? `eindkost van de verkochte displays en stuks, per product + ${partner.sharePct} % resultaat; voorschot verrekend`
-      : `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte displays en stuks, per product, plus ${partner.sharePct} % van het resultaat; het voorschot wordt dan verrekend.`;
+  const share = pctLabel(partner.sharePct);
+  if (head.setBasis === 'MIXED' || partner.perProduct) {
+    const what = head.setBasis === 'MIXED' ? 'displays en stuks' : head.setBasis === 'DISPLAY' ? 'displays' : 'stuks';
+    return phone ? `eindkost van de verkochte ${what}, per product + ${share} resultaat; voorschot verrekend`
+      : `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte ${what}, per product, plus ${share} van het resultaat; het voorschot wordt dan verrekend.`;
   }
   const set = head.setBasis === 'DISPLAY';
   const unit = partner.unitEur !== null ? eur4(partner.unitEur) : null;
-  if (phone) return `eindkost per ${set ? 'bruikbare display' : 'bruikbaar stuk'}${unit ? ` (${unit})` : ''} × verkochte ${set ? 'displays' : 'stuks'} + ${partner.sharePct} % resultaat; voorschot verrekend`;
+  if (phone) return `eindkost per ${set ? 'bruikbare display' : 'bruikbaar stuk'}${unit ? ` (${unit})` : ''} × verkochte ${set ? 'displays' : 'stuks'} + ${share} resultaat; voorschot verrekend`;
   return `Bij de veilingafrekening betaalt de partner de eindkost van de verkochte ${set ? 'displays' : 'stuks'}${unit ? ` (${unit} per ${set ? 'bruikbare display' : 'bruikbaar stuk'})` : ''}`
-    + ` plus ${partner.sharePct} % van het resultaat; het voorschot wordt dan verrekend.`;
+    + ` plus ${share} van het resultaat; het voorschot wordt dan verrekend.`;
 }
 
 /** Pieces that did not arrive, in the container's counting word. */
