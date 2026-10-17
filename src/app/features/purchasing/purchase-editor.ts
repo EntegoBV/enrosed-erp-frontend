@@ -2528,14 +2528,21 @@ export class PurchaseEditor {
     return amount;
   }
 
-  private async loadPayments(orderId: number): Promise<void> {
+  /**
+   * The order's payments, started beside the order (F23). A failure is handed
+   * back, not toasted here: load() says it only once the order itself stands
+   * (a failed order has its own load-error card), and never for an order left.
+   */
+  private async loadPayments(orderId: number): Promise<string | null> {
     const version = this.paymentRefreshVersion;
+    const current = () => Number(this.id()) === orderId && version === this.paymentRefreshVersion;
     try {
       const payments = await this.sourcing.payments(orderId);
-      if (Number(this.id()) === orderId && version === this.paymentRefreshVersion) this.payments.set(payments);
+      if (current()) this.payments.set(payments);
+      return null;
     }
     catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Betalingen laden mislukt; vernieuw de order'), 'err');
+      return current() ? messageOf(failure, 'Betalingen laden mislukt; vernieuw de order') : null;
     }
   }
 
@@ -4293,7 +4300,7 @@ export class PurchaseEditor {
   }
 
   protected async load(orderId: number): Promise<void> {
-    ++this.paymentRefreshVersion;
+    const paymentVersion = ++this.paymentRefreshVersion;
     ++this.previewVersion;
     ++this.documentLoadVersion;
     this.documents.set(null);
@@ -4309,7 +4316,7 @@ export class PurchaseEditor {
     this.families.set([]);
     /* F23: what needs only the id starts at once, beside the order (each guards by id/version),
        instead of waiting behind the order and the families. */
-    void this.loadPayments(orderId);
+    const paymentsLoad = this.loadPayments(orderId);
     void this.loadDocuments(orderId);
     void this.loadBankLines();
     void this.loadPartnerDocs(orderId);
@@ -4350,6 +4357,9 @@ export class PurchaseEditor {
        app bar first paints a placeholder supplier and visibly jumps when the
        supplier request finishes. */
     this.view.set(view);
+    void paymentsLoad.then((failure) => {
+      if (failure && Number(this.id()) === orderId && paymentVersion === this.paymentRefreshVersion) this.ui.toast(failure, 'err');
+    });
   }
 
   supplierName(): string { return this.supplier()?.name ?? 'Onbekend'; }
