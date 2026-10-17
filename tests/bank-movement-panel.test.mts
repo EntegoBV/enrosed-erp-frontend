@@ -417,6 +417,16 @@ test('an Odoo transaction cannot be withdrawn directly or with the Delete shortc
   assert.equal(state.bankStatements().length, 1);
 });
 
+test('the phone\'s "betalingen zonder transactie" shows under every chip; In and Uit count their own direction', () => {
+  // Review 2026-10-17: the cell was hidden under In although its count holds the customer receipts no transaction carries.
+  const { panel, state } = harness();
+  Object.assign(state, { unbanked: () => [{ amountEur: 120 }, { amountEur: 35 }, { amountEur: -40 }], pendingReceipts: () => [{ amountEur: 900 }, { amountEur: -60 }] });
+  assert.equal(panel.unbankedShown(), 5, 'Alles: every one');
+  panel.setChip('INCOMING'); assert.equal(panel.unbankedShown(), 2, 'In: a cost refund and a customer receipt');
+  panel.setChip('OUTGOING'); assert.equal(panel.unbankedShown(), 3, 'Uit: two cost payments and a refund to a customer');
+  panel.setChip('UNLINKED_IN'); assert.equal(panel.unbankedShown(), 5, 'Te koppelen: every one, as the banner was');
+});
+
 test('Odoo dates never display the synthetic midnight as an actual bank booking time', () => {
   const { panel } = harness();
   const row: BankStatementLine = { ...movement(91, -125), source: 'ODOO', bookedAt: '2026-09-07T22:00:00Z' };

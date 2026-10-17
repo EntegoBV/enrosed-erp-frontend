@@ -177,11 +177,12 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
       }
       @if (invalidPeriod()) { <p class="fin-error" role="alert">De einddatum moet op of na de begindatum liggen.</p> }
       <p class="fin-tx-caption">{{ captionText() }}@if (hasFilters()) { · <button class="wk-link fin-tx-caption__clear" type="button" (click)="clearFilters()">Wis filters</button> }</p>
-      @if (unbankedCount() && directionFilter() !== 'INCOMING' && linkFilter() !== 'UNLINKED_IN') {
+      <!-- Under every chip, as the banner was; In and Uit count their own direction (customer receipts are incoming). -->
+      @if (unbankedShown(); as count) {
         <div class="ios-group ios-group--icons fin-unbanked-group">
           <button class="ios-cell ios-cell--tall fin-unbanked-cell" type="button" (click)="state.unbankedOpen.set(true)">
             <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-warn"><app-icon name="alert" [size]="18" /></span></span>
-            <span class="ios-cell__body"><span class="ios-cell__title fin-wrap">{{ unbankedCount() }} {{ unbankedCount() === 1 ? 'betaling' : 'betalingen' }} zonder transactie</span>
+            <span class="ios-cell__body"><span class="ios-cell__title fin-wrap">{{ count }} {{ count === 1 ? 'betaling' : 'betalingen' }} zonder transactie</span>
               <span class="ios-cell__sub fin-wrap">Betaald gezet, maar niet op de bank gevonden</span></span>
             <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
           </button>
@@ -1321,6 +1322,13 @@ export class BankMovementPanel {
   readonly accountChips = computed(() => this.state.accountOptions());
   /** Payments marked paid without a transaction, and receipts on an Odoo account no line carries. */
   readonly unbankedCount = computed(() => this.state.unbanked().length + this.state.pendingReceipts().length);
+  /** The phone cell's count under the chips: all of them, or under In and Uit the ones in that direction (a cost refund and a customer receipt come in). */
+  readonly unbankedShown = computed(() => {
+    const direction = this.directionFilter();
+    if (direction === 'ALL') return this.unbankedCount();
+    const incoming = this.state.unbanked().filter(item => item.amountEur < 0).length + this.state.pendingReceipts().filter(payment => payment.amountEur > 0).length;
+    return direction === 'INCOMING' ? incoming : this.unbankedCount() - incoming;
+  });
   emptyTitle(): string {
     if (!this.state.bankStatements().length) return 'Nog geen banktransacties';
     const amount = this.search().trim().split(/\s+/).length === 1 ? this.search().trim() : '';
