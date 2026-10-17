@@ -1897,9 +1897,39 @@ contract `redesign/products/design.md` + `critique.md`).
   tegen kostprijs uses every location. They differ by the sales points'
   stock; the Zaltbommel cell of the Voorraad summary equals the Analyses
   figure. The Analyses area should switch to all-location levels.
-- **Not done in this round** (left for later): the editor refinements
-  (P7: toolbar crumb, one-row hero with Kostprijs and Marge, the rail from
-  1400), the Catalogusdata link to Catalogusteksten in settings.
+- **Product bewerken** (`product-editor.ts`): its CSS lives in the global
+  `styles/product-editor-workspace.scss`; the first block there holds the
+  hero, canvas and rail base rules moved out of the component (P7a, no
+  visual change), so the id-scoped rules after it win by order. The
+  component's styles may only shrink (now under 16 kB). Every global byte
+  counts: the initial bundle is at 989 kB of its 1 MB error budget.
+  - Desk toolbar (from 1024, `.editor-toolbar`, 52 px): crumb
+    "{productnaam} ›" to the product (max 240 px, full name in its title;
+    "Producten" for a new product), h1 "Bewerken" with the save status
+    stacked under it at every width; stepper "Kleur i/n" ("Product" for a
+    single product); no Bekijken button.
+  - Hero: photo, identity (eyebrow "{categorie} · {SKU}", chips status,
+    "● kleur · maat", "Niet opgeslagen") and `.pe-strip` with five
+    `.pe-fig` buttons: Voorraad, Kostprijs (opens the Kostprijshistoriek),
+    Verkoopprijs ("bewaard € x" on its own line while `savedPriceDiffers()`),
+    Marge (live from the draft), Publicatie. One row from 1400; below that
+    the strip is a second row.
+  - Grid: compact tab rail 192 px from 1024 (no descriptions), the summary
+    rail (`.editor-rail`: Kostprijs & marge, Omdoos, Nog in te vullen) from
+    1400, today's 206 | 1fr | 270 with descriptions from 1800;
+    Basisgegevens two-column only from 1800.
+  - `sectionSaveHint()` is null for Basisgegevens, Omdoos, Inkoop and
+    Verkoopprijs (no note); Voorraad shows the chip "Bewaart meteen" on the
+    desk (the sentence is its title; the phone keeps the sentence).
+  - Phone: glass bar with the kit's capsules ("‹ Product", folding to a
+    circle for names over 16 characters: `phoneBackCompact`), the name
+    over "Bewerken", Acties; one compact identity row (photo, kleur ·
+    maat, SKU with the colour arrows, "per {unit}" and "voorraad"
+    figures); the four tabs in the stacked segmented look. The dock is
+    unchanged.
+- **Catalogusteksten links**: the Catalogus PDF studio (under
+  Documenttaal) and Instellingen › Catalogusdata both open
+  `/catalog/texts` with a `returnTo`.
 
 ## Gotchas learned the hard way
 
