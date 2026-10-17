@@ -938,7 +938,7 @@ export class ProductPhotosPanel {
       }
       wasBusy = busy;
     });
-    /* A link from the product page or the Catalogusstudio asks for a picker; it waits for the overview. */
+    /* A link from the product page or the Catalogus PDF asks for a picker; it waits for the overview. */
     let handledPick: string | null = null;
     effect(() => {
       const pick = this.pick();

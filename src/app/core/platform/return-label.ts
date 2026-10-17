@@ -87,7 +87,7 @@ export function screenLabel(url: string): string {
   if (under(path, '/barcodes')) return 'EAN-codes';
   if (under(path, '/categories')) return 'Categorieën';
   if (under(path, '/catalog-export')) return 'Catalogus PDF';
-  if (under(path, '/catalog')) return 'Cataloguslabels';
+  if (under(path, '/catalog')) return 'Catalogusteksten';
   if (under(path, '/settings/deleted-items')) return 'Verwijderde items';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';

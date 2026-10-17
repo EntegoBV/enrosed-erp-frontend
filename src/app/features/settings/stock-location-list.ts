@@ -5,6 +5,8 @@ import { StockLocation } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
 import { PageHeader } from '../../shared/page-header';
 import { Sheet, Ui } from '../../shared/ui';
+import { Skeleton } from '../../shared/skeleton';
+import { locationStock } from '../products/product-figures';
 
 /**
  * Where stock can lie: the warehouse and every sales point.
@@ -15,7 +17,7 @@ import { Sheet, Ui } from '../../shared/ui';
 @Component({
   selector: 'app-stock-location-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet],
+  imports: [FormsModule, PageHeader, Sheet, Skeleton],
   template: `
     <app-page-header [showBack]="true" backTo="/more" title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -23,13 +25,13 @@ import { Sheet, Ui } from '../../shared/ui';
       </button>
     </app-page-header>
 
-    <div class="content">
+    <div class="content content--narrow">
       <details class="explainer">
         <summary>Welke voorraad telt waar?</summary>
         <div class="explainer__body">
           <p>Website, portaal en offertes tellen alleen de voorraad van locaties die <b>ter beschikking staan voor alle verkoopkanalen</b> - normaal het magazijn.</p>
           <p>Een <b>verkooppunt</b> zoals TICA heeft eigen voorraad die daar ter plaatse verkocht wordt; die telt niet mee voor de website. Verplaatsen tussen locaties doe je onder Voorraad.</p>
-          <p>Een locatie kan daarnaast een <b>publiek afhaalpunt</b> zijn. Afhalen is gratis; klanten zien alleen de publieke naam, het publieke adres en de instructies die u hieronder invult.</p>
+          <p>Een locatie kan daarnaast een <b>publiek afhaalpunt</b> zijn. Afhalen is gratis; klanten zien alleen de publieke naam, het publieke adres en de instructies die je hieronder invult.</p>
         </div>
       </details>
 
@@ -43,6 +45,8 @@ import { Sheet, Ui } from '../../shared/ui';
                 {{ location.kindLabel }}
                 @if (location.address) { · {{ location.address }} }
               </div>
+              <!-- What lies there, from the stock levels and the landed costs; "—" until they arrive. -->
+              <div class="list-item__meta location-stock">{{ stockLine(location.id) }}</div>
             </div>
             <div class="list-item__end location-flags">
               @if (location.countsForWebsite) { <span class="badge badge--ok">alle kanalen</span> }
@@ -53,7 +57,8 @@ import { Sheet, Ui } from '../../shared/ui';
             <span class="list-item__chev">›</span>
           </button>
         } @empty {
-          <div class="empty"><div class="empty__title">{{ loading() ? 'Laden…' : 'Nog geen locaties' }}</div></div>
+          @if (loading()) { <app-skeleton kind="list" [rows]="2" /> }
+          @else { <div class="empty"><div class="empty__title">Nog geen locaties</div></div> }
         }
       </div></div>
     </div>
@@ -132,7 +137,7 @@ import { Sheet, Ui } from '../../shared/ui';
                 </div>
                 @if (!draft().active) {
                   <div class="public-pickup__warning span-2" role="note">
-                    Deze locatie is inactief en verschijnt pas als afhaalpunt wanneer u ze opnieuw activeert.
+                    Deze locatie is inactief en verschijnt pas als afhaalpunt wanneer je ze opnieuw activeert.
                   </div>
                 }
               </div>
@@ -202,12 +207,34 @@ export class StockLocationList {
     void this.load();
   }
 
+  /** Per location: products with stock and their value at landed cost, asked after the list shows. */
+  private readonly stockByLocation = signal<Map<number, { products: number; value: number }> | null>(null);
+
+  stockLine(locationId: number | null): string {
+    const all = this.stockByLocation();
+    if (!all || locationId === null) return '—';
+    const own = all.get(locationId) ?? { products: 0, value: 0 };
+    const value = own.value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    return `${own.products} product${own.products === 1 ? '' : 'en'} op voorraad · ${value} tegen kostprijs`;
+  }
+
+  private async loadStock(): Promise<void> {
+    try {
+      const [levels, products] = await Promise.all([this.catalog.stockLevels(), this.catalog.products()]);
+      /* The same basis as Voorraad: active products only, valued per level to the cent. */
+      this.stockByLocation.set(locationStock(levels, products));
+    } catch {
+      /* The stock line is a bonus: it stays "—". */
+    }
+  }
+
   private async load(): Promise<void> {
     try {
       this.locations.set((await this.catalog.stockLocations()).map(normalizePickupFields));
     } finally {
       this.loading.set(false);
     }
+    if (this.stockByLocation() === null) void this.loadStock();
   }
 
   open(location: StockLocation | null): void {

@@ -58,7 +58,7 @@ export interface CatalogBrochureDraft {
               <input type="checkbox" [ngModel]="settings().includeCategoryIntros" [disabled]="disabled()"
                      (ngModelChange)="patch({ includeCategoryIntros: $event })" />
             </label>
-            <label><span><b>Private label &amp; maatwerk</b><small>Laat uw personalisatiemogelijkheden zien</small></span>
+            <label><span><b>Private label &amp; maatwerk</b><small>Laat je personalisatiemogelijkheden zien</small></span>
               <input type="checkbox" [ngModel]="settings().includeCustomisation" [disabled]="disabled()"
                      (ngModelChange)="patch({ includeCustomisation: $event })" />
             </label>
@@ -69,12 +69,12 @@ export interface CatalogBrochureDraft {
           </div>
         </div>
       </details>
-      <div class="page-plan" aria-label="Opbouw van uw PDF">
+      <div class="page-plan" aria-label="Opbouw van je PDF">
         <div class="page-plan__label">UW CATALOGUS, VAN VOOR TOT ACHTER</div>
         <ol>
           @for (page of pagePlan(); track page) { <li><span aria-hidden="true">{{ $index + 1 }}</span>{{ page }}</li> }
         </ol>
-        <p>Het aantal pagina’s volgt uit uw selectie, foto’s en teksten.</p>
+        <p>Het aantal pagina’s volgt uit je selectie, foto’s en teksten.</p>
       </div>
     </section>
   `,

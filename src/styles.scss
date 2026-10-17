@@ -3480,3 +3480,4 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/cash-forecast');
 /* The home's partials (home-widgets, home-desk, home-phone, home-agenda) load with the home routes, not here:
    features/dashboard/home-styles.ts (the 1 MB initial budget, AI-CONTEXT "Initial bundle budget"). */
+@include meta.load-css('styles/products');

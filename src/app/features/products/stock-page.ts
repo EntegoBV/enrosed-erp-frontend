@@ -1,23 +1,36 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, ViewEncapsulation, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Location, NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, ExpectedStock, Product, ProductFamily, StockLevel, StockLocation, StockMovement } from '../../core/api/models';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { DateNlPipe, DateTimeNlPipe, NumPipe } from '../../shared/pipes';
+import { Icon } from '../../shared/icon';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { keyContext } from '../../shared/key-context';
+import { rovingRow } from './product-list-query';
+import { DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { salesPhotoUrl } from '../../shared/sales-photo';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
+import { productSalesUnit, unitCount } from './product-sales-unit';
+import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from './stock-booking';
+import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
+import { distinctOrderCount, knownValueSum, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
 
 interface StockRow {
   product: Product;
   byLocation: Map<number, number>;
   total: number;
+  /** Euros at landed cost; null without a cost (or without stock). */
+  value: number | null;
 }
 
 /** A series and its variants, or a lone product on its own. */
@@ -29,360 +42,431 @@ interface StockGroup {
   rows: StockRow[];
   byLocation: Map<number, number>;
   total: number;
-  expected: number;
+  value: number | null;
+  onway: Onderweg | null;
+  /** The unit word for the series' sums, only when every variant shares it. */
+  unit: { singular: string; plural: string } | null;
+  demo: boolean;
+}
+
+/** value: null when nothing in the section has a cost (it reads "—", never "€ 0"). */
+interface StockSection { key: string; name: string | null; groups: StockGroup[]; count: number; value: number | null }
+
+type StockSort = 'STOCK_SMART' | 'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED' | 'VALUE_DESC' | 'VALUE_ASC';
+
+/** A media query as a signal (removes its listener on destroy). */
+function mediaSignal(query: string) {
+  const matches = signal(false);
+  const list = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(query) : null;
+  if (list) {
+    matches.set(list.matches);
+    const change = (event: MediaQueryListEvent) => matches.set(event.matches);
+    list.addEventListener('change', change);
+    inject(DestroyRef).onDestroy(() => list.removeEventListener('change', change));
+  }
+  return matches.asReadonly();
 }
 
 /**
- * Stock across locations: what lies where, correcting it, moving it,
- * and noting what broke or left as demo. Everything lands in the stock
- * book with a reference.
+ * Voorraad: what lies where, in each product's own unit, and what it is
+ * worth at landed cost. The desk is one kit table (category group rows with
+ * their value, the series fold, a column per location, Totaal, Onderweg,
+ * Waarde); the phone is inset groups with a location segment. Every booking
+ * goes through Voorraad boeken; the "Aantallen bewerken" mode books a typed
+ * count on leaving the field, guarded and with undo. Styles:
+ * styles/products/_stock.scss (styleUrl, scoped under app-stock-page).
  */
 @Component({
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, RouterLink, AuthImage, PageHeader, Skeleton, NumPipe, DateNlPipe, DateTimeNlPipe, Sheet],
+  host: { '(document:keydown)': 'onDocumentKey($event)' },
+  imports: [NgTemplateOutlet, RouterLink, AuthImage, PageHeader, Skeleton, Icon, Segmented, ContextMenu, NumPipe, EurPipe, DateNlPipe, DateTimeNlPipe,
+    Sheet, LoadError, StockBookingSheet],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Voorraad" [subtitle]="subtitle()">
+    <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : (desktop.active() ? subtitle() : phoneCaption())">
+      @if (desktop.active()) {
+        <label class="wk-search sk-search">
+          <app-icon name="search" [size]="15" />
+          <input type="search" data-page-search placeholder="Zoek naam, SKU of kleur" aria-label="Voorraad zoeken"
+                 [value]="query()" (input)="setQuery($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
+          <button class="wk-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="13" /></button>
+          <span class="wk-kbd" aria-hidden="true">/</span>
+        </label>
+        <a class="btn btn--sm" routerLink="/stock/inventaris" title="Jaarinventaris"><app-icon name="list" [size]="16" /><span class="sk-tool__label">Jaarinventaris</span></a>
+      }
       @if (editing()) {
         <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
       } @else {
-        <button class="btn btn--sm" type="button" [disabled]="loading()" (click)="editing.set(true)">Bewerken</button>
+        <button class="btn btn--sm" type="button" [disabled]="loading() || !!loadError()" (click)="editing.set(true)">{{ desktop.active() ? 'Aantallen bewerken' : 'Bewerken' }}</button>
       }
     </app-page-header>
 
-    <div class="content">
-      <section class="catalog-tools" aria-label="Voorraad zoeken en filteren">
-        <div class="catalog-search">
-          <label class="sr-only" for="stock-search-input">Zoeken</label>
-          <svg class="catalog-search__icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="6.5" />
-            <path d="m16 16 4 4" />
-          </svg>
-          <input class="input catalog-search__input" id="stock-search-input" type="search"
-                 placeholder="Zoek naam, SKU of kleur…"
-                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
-          @if (query()) {
-            <button class="catalog-search__clear" type="button" aria-label="Zoekopdracht wissen"
-                    (click)="query.set('')">×</button>
-          }
-        </div>
-
-        <button class="filter-toggle" type="button"
-                [class.filter-toggle--active]="activeFilterCount() > 0"
-                [attr.aria-expanded]="filtersOpen()"
-                (click)="filtersOpen.set(!filtersOpen())">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 6h16M7 12h10M10 18h4" />
-          </svg>
-          <span class="hide-mobile">Filters</span>
-          @if (activeFilterCount(); as n) {
-            <b class="filter-toggle__count">{{ n }}</b>
-          }
-          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
-        </button>
-
-        @if (filtersOpen()) {
-        <div class="filter-grid">
-          <!-- Which location you are looking at; "Alle" shows the figures side by side. -->
-          <label class="filter-field">
-            <span class="filter-field__label">Locatie</span>
-            <select class="select filter-field__select" aria-label="Locatie"
-                    [ngModel]="view()" (ngModelChange)="view.set($event)">
-              <option [ngValue]="null">Alle locaties</option>
-              @for (location of activeLocations(); track location.id) {
-                <option [ngValue]="location.id">{{ location.name }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="filter-field">
-            <span class="filter-field__label">Categorie</span>
-            <select class="select filter-field__select" aria-label="Filter op categorie"
-                    [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
-              <option [ngValue]="null">Alle categorieën</option>
-              @for (category of categories(); track category.id) {
-                <option [ngValue]="category.id">{{ category.name }}</option>
-              }
-            </select>
-          </label>
-
-          <div class="filter-field filter-sort">
-            <span class="filter-field__label" aria-hidden="true">Sorteren</span>
-            <div class="filter-sort__box">
-              <svg class="filter-sort__icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7h12M4 12h8M4 17h5" /><path d="M17 10v10m0 0-3-3m3 3 3-3" />
-              </svg>
-              <span class="filter-sort__text hide-mobile">{{ sortLabel() }}</span>
-              <select class="filter-sort__native" aria-label="Sorteren"
-                      [title]="'Sorteren: ' + sortLabel()"
-                      [ngModel]="sortKey()" (ngModelChange)="sortKey.set($event)">
-                @for (option of sortOptions; track option.key) {
-                  <option [value]="option.key">{{ option.label }}</option>
-                }
-              </select>
+    @if (desktop.active()) {
+      <div class="content sk-content">
+        @if (!loading() && !loadError()) {
+          <!-- What the stock is worth: the total at landed cost, per location, what is on the way and what has no cost. -->
+          <div class="sk-sum" role="group" aria-label="Voorraadwaarde">
+            <div [title]="'Voorraad op alle locaties × de gelande kostprijs van vandaag. De jaarinventaris waardeert per container (FIFO).'">
+              <small>Waarde tegen kostprijs</small><strong>{{ totalValue().value | eur: 0 }}</strong><span>alle locaties × gelande kostprijs</span>
             </div>
-          </div>
-        </div>
-        }
-
-        @if (filtersOpen() || hasFilters()) {
-          <div class="filter-summary" aria-live="polite">
-            <span><strong>{{ filtered().length }}</strong> van {{ rows().length }} producten</span>
-            @if (hasFilters()) {
-              <button class="filter-reset" type="button" (click)="resetFilters()">Filters wissen</button>
-            } @else {
-              <a class="filter-manage" routerLink="/stock-locations">Locaties beheren ›</a>
+            @for (location of summaryLocations(); track location.id) {
+              <div><small>{{ location.name }}</small><strong>{{ (valueByLocation().get(location.id!) ?? 0) | eur: 0 }}</strong>
+                <span>{{ location.kindLabel || (location.kind === 'WAREHOUSE' ? 'Magazijn' : 'Verkooppunt') }} · {{ location.countsForWebsite ? 'alle verkoopkanalen' : 'enkel ter plaatse' }}</span></div>
+            }
+            @if (moreLocations(); as more) {
+              <div><small>Andere locaties</small><strong>+{{ more }} locaties</strong><span>kies ze in de keuzebalk</span></div>
+            }
+            <div><small>Onderweg</small><strong>{{ onwayProducts() }} product{{ onwayProducts() === 1 ? '' : 'en' }}</strong><span>op {{ onwayOrders() }} inkooporder{{ onwayOrders() === 1 ? '' : 's' }}</span></div>
+            @if (totalValue().withoutCost; as missing) {
+              <div class="sk-sum__warn"><small>Zonder kostprijs</small><strong>{{ missing }} product{{ missing === 1 ? '' : 'en' }}</strong><span>met voorraad, niet in de waarde</span></div>
             }
           </div>
         }
-      </section>
 
-      @if (editing()) {
-        <div class="count-bar edit-bar" role="status">
-          <div>
-            <b>Bewerken</b>
-            <small>Tik een getal aan om het te corrigeren, of meld stuk/demo met de knop op de rij.</small>
-          </div>
-          <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
-        </div>
-      }
-
-      @for (section of sections(); track section.key) {
-        <!-- One card per category, its name above the white - the same
-             shape as the catalogue, so the eye already knows the way. -->
-        <section class="section" [style.animation-delay.ms]="$index * 40">
-          @if (section.name !== null) {
-            <h2 class="section-head">
-              <span>{{ section.name }}</span>
-              <small>{{ section.count }}</small>
-              <small class="section-head__total num">{{ section.total | num }} st.</small>
-            </h2>
+        <div class="wk-subbar sk-subbar">
+          @if (activeLocations().length > 1) {
+            <app-segmented label="Locatie" [options]="locationOptions()" [value]="view() === null ? 'all' : '' + view()" (changed)="setView($event)" />
           }
-          <div class="card">
-            <div class="list">
-            @for (group of section.groups; track group.key) {
-              @if (group.rows.length === 1) {
-                <ng-container *ngTemplateOutlet="stockRow; context: { $implicit: group.rows[0], nested: false }" />
-              } @else {
-                <!-- The series head: the figures of the whole range, the
-                     colours fold out below - the catalogue's shape. -->
-                <button class="list-item group-head" type="button"
-                        [class.group-head--open]="isOpen(group)"
-                        [attr.aria-expanded]="isOpen(group)"
-                        (click)="toggle(group)">
-                  @if (group.photo) {
-                    <img class="thumb" [appAuthSrc]="group.photo" alt="" draggable="false" />
-                  } @else {
-                    <span class="thumb thumb--placeholder">◈</span>
-                  }
-                  <span class="stock-row__body">
-                    <span class="product-row__title"><strong>{{ group.name }}</strong></span>
-                    <span class="group-head__meta">
-                      <span class="group-head__count">
-                        {{ group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten' }}
-                        <svg class="group-head__chev" viewBox="0 0 12 12" aria-hidden="true">
-                          <path d="M2.5 4.5 6 8l3.5-3.5" />
-                        </svg>
-                      </span>
-                      @if (group.colours.length) {
-                        <span class="group-head__dots" aria-hidden="true">
-                          @for (colour of group.colours.slice(0, 8); track colour.name) {
-                            <i [style.background]="colour.hex || 'var(--surface-2)'"
-                               [class.dot--empty]="!colour.hex" [title]="colour.name"></i>
-                          }
-                          @if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }
-                        </span>
-                      }
-                    </span>
-                    @if (group.expected) {
-                      <span class="stock-expected">+{{ group.expected | num }} verwacht</span>
-                    }
-                  </span>
-                  <span class="list-item__end stock-row__end">
-                    @if (view() === null) {
-                      @for (location of activeLocations(); track location.id) {
-                        <span class="stock-row__figure stock-row__figure--location">
-                          <span>{{ location.name }}</span>
-                          <strong class="num" [class.muted]="!group.byLocation.get(location.id!)">{{ (group.byLocation.get(location.id!) ?? 0) | num }}</strong>
-                        </span>
-                      }
-                      <span class="stock-row__figure stock-row__figure--total">
-                        <span>Totaal</span>
-                        <strong class="num">{{ group.total | num }}</strong>
-                      </span>
-                    } @else {
-                      <span class="stock-row__figure">
-                        <span>{{ locationName(view()!) }}</span>
-                        <strong class="num">{{ (group.byLocation.get(view()!) ?? 0) | num }}</strong>
-                      </span>
-                    }
-                    <span class="stock-row__move stock-row__move--blank"></span>
-                  </span>
-                </button>
-                @if (isOpen(group)) {
-                  <div class="group-body">
-                    @for (row of group.rows; track row.product.id) {
-                      <ng-container *ngTemplateOutlet="stockRow; context: { $implicit: row, nested: true }" />
-                    }
+          <button class="wk-chip" type="button" aria-haspopup="menu" [attr.aria-pressed]="categoryFilter() !== null" (click)="openMenu($event, null)">
+            {{ categoryLabel() }} <app-icon name="chevron-down" [size]="13" /></button>
+          <button class="wk-chip" type="button" [attr.aria-pressed]="hideEmpty()" (click)="hideEmpty.set(!hideEmpty())">Leeg verbergen</button>
+          <div class="wk-subbar__end sk-subbar__end">
+            @if (hasFilters()) { <button class="wk-link" type="button" (click)="resetFilters()">Filters wissen</button> }
+            <a class="wk-link" routerLink="/stock-locations">Locaties beheren ›</a>
+          </div>
+        </div>
+
+        @if (editing()) {
+          <div class="sk-editbar" role="status">
+            <!-- Below 1360 with three or more locations the columns fold into the segment: there is a location to choose first (B4). -->
+            <span>{{ shownLocations().length
+              ? 'Typ het getelde aantal en verlaat het veld: het boekt meteen als correctie. Leeg of ongeldig zet het oude aantal terug.'
+              : 'Kies een locatie in de keuzebalk om te tellen. Typ dan het getelde aantal en verlaat het veld: het boekt meteen als correctie.' }}</span>
+            <button class="btn btn--primary btn--sm" type="button" (click)="editing.set(false)">Klaar</button>
+          </div>
+        }
+
+        <div class="wk-card sk-card">
+          @if (loadError(); as error) {
+            <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+          } @else if (loading()) {
+            <app-skeleton kind="table" [rows]="8" />
+          } @else if (!sections().length && !demoGroups().length) {
+            <div class="wk-empty">
+              <div class="wk-empty__icon"><app-icon name="search" [size]="22" /></div>
+              <h2 class="wk-empty__title">Geen producten gevonden</h2>
+              <p class="wk-empty__text">Pas je zoekopdracht of filters aan.</p>
+              <div class="wk-empty__actions"><button class="wk-btn" type="button" (click)="resetFilters()">Filters wissen</button></div>
+            </div>
+          } @else {
+            <div class="wk-table sk-table mo-fade" role="table" aria-label="Voorraad" [style.--wk-cols]="columns()" (keydown)="onTableKey($event)" (focusin)="onTableFocus($event)">
+              <div class="wk-thead" role="row">
+                <span class="wk-th" role="columnheader"><span class="sr-only">Foto</span></span>
+                <span class="wk-th" role="columnheader" [attr.aria-sort]="ariaSort('NAME_ASC', 'NAME_DESC')"><button class="wk-th__btn" type="button" (click)="sortBy('NAME_ASC', 'NAME_DESC')">Product</button></span>
+                @for (location of shownLocations(); track location.id) {
+                  <span class="wk-th wk-th--num" role="columnheader"><span class="sk-th-wrap">{{ location.name }}</span></span>
+                }
+                <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('STOCK_DESC', 'STOCK_ASC')"><button class="wk-th__btn" type="button" (click)="sortBy('STOCK_DESC', 'STOCK_ASC')">Totaal</button></span>
+                @if (!narrow()) {
+                  <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="sortKey() === 'EXPECTED' ? 'descending' : null">
+                    <button class="wk-th__btn" type="button" title="Te verwachten eerst" (click)="sortBy('EXPECTED', null)">Onderweg</button></span>
+                }
+                <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('VALUE_DESC', 'VALUE_ASC')"><button class="wk-th__btn" type="button" (click)="sortBy('VALUE_DESC', 'VALUE_ASC')">Waarde</button></span>
+                <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
+              </div>
+              @for (section of sections(); track section.key) {
+                @if (section.name !== null) {
+                  <div class="wk-group sk-group" role="row">
+                    <span class="wk-group__label sk-group__label" role="cell">{{ section.name }} <span class="wk-group__count">{{ section.count }} product{{ section.count === 1 ? '' : 'en' }}</span></span>
+                    <span class="sk-gvalue" role="cell" [class.none]="section.value === null">{{ section.value === null ? '—' : (section.value | eur: 0) }}</span>
                   </div>
                 }
-              }
-            }
-            </div>
-          </div>
-        </section>
-      } @empty {
-        @if (loading()) { <app-skeleton kind="list" [rows]="6" /> }
-        @else { <div class="empty"><div class="empty__title">Geen producten gevonden</div></div> }
-      }
-    </div>
-
-    <ng-template #stockRow let-row let-nested="nested">
-      <div class="list-item stock-row" [class.list-item--nested]="nested">
-        <!-- The name opens the product's stock sheet: figures, moving, the book. -->
-        <button class="stock-row__product" type="button" (click)="openBook(row)">
-          @if (salesPhotoUrl(row.product); as photo) {
-            <img class="thumb" [class.thumb--sm]="nested" [appAuthSrc]="photo" alt="" />
-          } @else {
-            <span class="thumb thumb--placeholder" [class.thumb--sm]="nested">◈</span>
-          }
-          <span class="stock-row__body">
-            <span class="product-row__title">
-              <strong>{{ nested ? (row.product.colour || row.product.variantSize || row.product.name) : row.product.name }}</strong>
-              @if (nested) {
-                @if (colourHex(row.product); as hex) { <i class="colour-dot" [style.background]="hex" [title]="row.product.colour"></i> }
-                @if (row.product.colour && row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
-              } @else {
-                @if (row.product.colour) { <span>{{ row.product.colour }}</span> }
-                @if (row.product.variantSize) { <span>{{ row.product.variantSize }}</span> }
-              }
-            </span>
-            <span class="product-row__sku mono">{{ row.product.sku || 'Geen SKU' }}</span>
-            @if (expectedFor(row.product.id!); as exp) {
-              <span class="stock-expected">+{{ exp.quantity | num }} verwacht{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }}</span>
-            }
-          </span>
-        </button>
-        <!-- Every figure is a field: type the real count and leave it,
-             and it is booked at that location as a manual correction. -->
-        <div class="list-item__end stock-row__end">
-          @if (view() === null) {
-            @for (location of activeLocations(); track location.id) {
-              <div class="stock-row__figure stock-row__figure--location">
-                <span>{{ location.name }}</span>
-                @if (editing()) {
-                  <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
-                         inputmode="numeric" [class.muted]="!row.byLocation.get(location.id!)"
-                         [attr.aria-label]="row.product.name + ' op ' + location.name"
-                         [value]="row.byLocation.get(location.id!) ?? 0"
-                         (keydown.enter)="$any($event.target).blur()"
-                         (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id!) ?? 0; $any($event.target).blur()"
-                         (change)="setQuantity(row, location.id!, $any($event.target))" />
-                } @else {
-                  <strong class="num stock-row__qty-static" [class.muted]="!row.byLocation.get(location.id!)">{{ (row.byLocation.get(location.id!) ?? 0) | num }}</strong>
+                @for (group of section.groups; track group.key) {
+                  <ng-container *ngTemplateOutlet="deskGroup; context: { $implicit: group }" />
                 }
-              </div>
-            }
-            <div class="stock-row__figure stock-row__figure--total">
-              <span>Totaal</span>
-              <strong class="num">{{ row.total | num }}</strong>
-            </div>
-          } @else {
-            <div class="stock-row__figure">
-              <span>{{ locationName(view()!) }}</span>
-              @if (editing()) {
-                <input class="stock-row__qty stock-row__qty--live num" type="number" min="0" step="1"
-                       inputmode="numeric" [class.muted]="!row.byLocation.get(view()!)"
-                       [attr.aria-label]="row.product.name + ' op ' + locationName(view()!)"
-                       [value]="row.byLocation.get(view()!) ?? 0"
-                       (keydown.enter)="$any($event.target).blur()"
-                       (keydown.escape)="$any($event.target).value = row.byLocation.get(view()!) ?? 0; $any($event.target).blur()"
-                       (change)="setQuantity(row, view()!, $any($event.target))" />
-              } @else {
-                <strong class="num stock-row__qty-static" [class.muted]="!row.byLocation.get(view()!)">{{ (row.byLocation.get(view()!) ?? 0) | num }}</strong>
+              }
+              @if (demoGroups().length) {
+                <div class="wk-group sk-group" role="row">
+                  <span class="wk-group__label sk-group__label" role="cell">
+                    <button class="wk-group__toggle" type="button" [attr.aria-expanded]="showDemo()" aria-label="Demoproducten tonen of verbergen" (click)="demoOpen.set(!showDemo())"><app-icon name="chevron-down" [size]="14" /></button>
+                    Demoproducten <span class="wk-group__count">{{ demoCount() }}</span></span>
+                  <span class="sk-gvalue" role="cell" [class.none]="demoValue() === null">{{ demoValue() === null ? '—' : (demoValue() | eur: 0) }}</span>
+                </div>
+                @if (showDemo()) {
+                  @for (group of demoGroups(); track group.key) {
+                    <ng-container *ngTemplateOutlet="deskGroup; context: { $implicit: group }" />
+                  }
+                }
               }
             </div>
-          }
-          @if (editing()) {
-            <!-- Broken on the shelf, or handed out as demo: one round mark. -->
-            <button class="stock-row__move stock-row__issue" type="button" title="Stuk of demo melden"
-                    [attr.aria-label]="'Stuk of demo melden voor ' + row.product.name"
-                    (click)="openTakeout(row)">!</button>
-          } @else {
-            <button class="stock-row__move" type="button" title="Verplaatsen" aria-label="Verplaatsen"
-                    (click)="openBook(row, true)">⇄</button>
           }
         </div>
       </div>
-    </ng-template>
-
-    <!-- Broken or given away as demo: the piece leaves the shelf with a
-         note that says why, iOS-style in one small sheet. -->
-    @if (takeout(); as out) {
-      <app-sheet [title]="'Stuk of demo · ' + out.row.product.name" (closed)="takeout.set(null)">
-        <div body>
-          <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
-            <button type="button" [class.on]="out.kind === 'DAMAGED'"
-                    (click)="takeout.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
-            <button type="button" [class.on]="out.kind === 'DEMO'"
-                    (click)="takeout.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
-          </div>
-          <div class="form-grid mt-12">
-            @if (activeLocations().length > 1) {
-              <div class="field">
-                <label for="to-loc">Locatie</label>
-                <select class="select" id="to-loc" [ngModel]="out.locationId"
-                        (ngModelChange)="takeout.set({ ...out, locationId: +$event })">
-                  @for (location of activeLocations(); track location.id) {
-                    <option [value]="location.id">{{ location.name }} ({{ (out.row.byLocation.get(location.id!) ?? 0) | num }})</option>
-                  }
-                </select>
+    } @else {
+      <div class="content skp">
+        @if (activeLocations().length > 1 && activeLocations().length <= 3) {
+          <div class="skp-seg"><app-segmented variant="ios" label="Locatie" [options]="phoneLocationOptions()" [value]="view() === null ? 'all' : '' + view()" (changed)="setView($event)" /></div>
+        } @else if (activeLocations().length > 3) {
+          <div class="skp-seg"><button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="openMenu($event, 'location')">{{ view() === null ? 'Alle locaties' : locationName(view()!) }} ▾</button></div>
+        }
+        <div class="ios-search skp-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
+          <input type="search" placeholder="Zoek naam, SKU of kleur" aria-label="Voorraad zoeken" [value]="query()" (input)="setQuery($any($event.target).value)" />
+          <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="14" /></button></label></div>
+        <div class="ios-chips" role="group" aria-label="Categorie">
+          <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="categoryFilter.set(null)">Alle</button>
+          @for (category of usedCategories(); track category.key) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === category.id" (click)="categoryFilter.set(category.id)">{{ category.name }}</button>
+          }
+        </div>
+        @if (editing()) {
+          <div class="ios-banner skp-editbar" role="status">{{ editLocation() === null
+            ? 'Kies hierboven een locatie en typ het getelde aantal; het boekt meteen als correctie.'
+            : 'Typ het getelde aantal en verlaat het veld: het boekt meteen als correctie. Leeg of ongeldig zet het oude aantal terug.' }}</div>
+        }
+        @if (loadError(); as error) {
+          <app-load-error [message]="error" [busy]="loading()" (retry)="reload()" />
+        } @else if (loading()) {
+          <app-skeleton kind="group" [rows]="6" />
+        } @else {
+          @for (section of sections(); track section.key) {
+            <section class="ios-section">
+              @if (section.name !== null) {
+                <div class="ios-section__head"><h2>{{ section.name }}</h2><span class="ios-section__trail">{{ section.value === null ? '—' : (section.value | eur: 0) }}</span></div>
+              }
+              <div class="ios-group ios-group--thumbs">
+                @for (group of section.groups; track group.key) {
+                  <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
+                }
+              </div>
+            </section>
+          } @empty {
+            @if (!demoGroups().length) {
+              <div class="ios-empty">
+                <span class="ios-empty__icon"><app-icon name="search" [size]="26" /></span>
+                <p class="ios-empty__title">Geen producten gevonden</p>
+                <p class="ios-empty__text">Pas je zoekopdracht of filters aan.</p>
+                <button class="ios-capsule ios-capsule--tinted" type="button" (click)="resetFilters()">Filters wissen</button>
               </div>
             }
-            <div class="field">
-              <label class="req" for="to-qty">Aantal</label>
-              <input class="input num right" id="to-qty" type="number" min="1" step="1" inputmode="numeric"
-                     [ngModel]="out.quantity || null" (ngModelChange)="takeout.set({ ...out, quantity: +$event })" />
-            </div>
-            <div class="field span-2">
-              <label for="to-note">Notitie <span class="opt"></span></label>
-              <input class="input" id="to-note" [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens'"
-                     [ngModel]="out.note" (ngModelChange)="takeout.set({ ...out, note: $event })" />
-            </div>
-          </div>
-          <p class="hint mt-8">Op {{ locationName(out.locationId) }} liggen {{ (out.row.byLocation.get(out.locationId) ?? 0) | num }} stuks.
-            {{ out.quantity > 0 ? 'Er gaan er ' + out.quantity + ' uit de voorraad, geteld als ' + (out.kind === 'DAMAGED' ? 'beschadigd' : 'demo') + '.' : '' }}</p>
-        </div>
-        <div foot style="display:contents">
-          <span class="spacer"></span>
-          <button class="btn" type="button" (click)="takeout.set(null)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="saving() || !(out.quantity > 0)"
-                  (click)="confirmTakeout()">{{ saving() ? 'Bezig…' : 'Melden' }}</button>
-        </div>
-      </app-sheet>
+          }
+          @if (demoGroups().length) {
+            <section class="ios-section">
+              <button class="ios-section__head skp-demo__head" type="button" [attr.aria-expanded]="showDemo()" (click)="demoOpen.set(!showDemo())">
+                <h2>Demoproducten</h2><span class="ios-section__trail">{{ demoValue() === null ? '—' : (demoValue() | eur: 0) }}</span></button>
+              @if (showDemo()) {
+                <div class="ios-group ios-group--thumbs">
+                  @for (group of demoGroups(); track group.key) {
+                    <ng-container *ngTemplateOutlet="phoneGroup; context: { $implicit: group }" />
+                  }
+                </div>
+              }
+            </section>
+          }
+        }
+      </div>
     }
 
-    <!-- One sheet per product: the figures (typed straight in), moving
-         between locations, and the book underneath. Nothing opens on top
-         of it. -->
+    <!-- ===== desk rows ===== -->
+    <ng-template #deskGroup let-group>
+      @if (group.rows.length === 1) {
+        <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: group.rows[0], nested: false }" />
+      } @else {
+        @let open = isOpen(group);
+        <div class="wk-tr wk-tr--link sk-tr sk-tr--head" role="row" [attr.tabindex]="rowTab('h:' + group.key)" [attr.aria-expanded]="open" [attr.data-row]="'h:' + group.key" (click)="toggle(group)">
+          <span class="wk-td" role="cell">
+            @if (group.photo) { <img class="sk-thumb" [appAuthSrc]="group.photo" alt="" draggable="false" /> } @else { <span class="sk-thumb sk-thumb--empty" aria-hidden="true">◈</span> }
+          </span>
+          <span class="wk-td sk-cell sk-cell--name" role="cell">
+            <b class="sk-name">{{ group.name }}</b>
+            <span class="sk-sub"><span class="sk-fold" [class.sk-fold--open]="open">{{ group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten' }} <app-icon name="chevron-right" [size]="13" /></span>
+              @if (group.colours.length) {
+                <span class="sk-dots" aria-hidden="true">@for (colour of group.colours.slice(0, 8); track colour.name) { <i [style.background]="colour.hex || 'var(--surface-2)'" [title]="colour.name"></i> }</span>
+              }</span>
+          </span>
+          @for (location of shownLocations(); track location.id) {
+            <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-loc" [class.zero]="!group.byLocation.get(location.id)">{{ (group.byLocation.get(location.id) ?? 0) | num }}</span></span>
+          }
+          <span class="wk-td wk-td--num sk-cell" role="cell">
+            <span class="sk-total">{{ group.total | num }}</span>
+            @if (group.unit) { <span class="sk-unit">{{ group.total === 1 ? group.unit.singular : group.unit.plural }}</span> }
+            @if (splitLine(group.byLocation); as split) { <span class="sk-unit">{{ split }}</span> }
+            @if (narrow() && group.onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: group.onway }" /> }
+          </span>
+          @if (!narrow()) {
+            <span class="wk-td wk-td--num sk-cell" role="cell"><ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: group.onway }" /></span>
+          }
+          <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-value" [class.none]="group.value === null">{{ group.value === null ? '—' : (group.value | eur: 0) }}</span></span>
+          <span class="wk-td" role="cell"></span>
+        </div>
+        @if (open) {
+          @for (row of group.rows; track row.product.id) {
+            <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: row, nested: true }" />
+          }
+        }
+      }
+    </ng-template>
+
+    <ng-template #deskRow let-row let-nested="nested">
+      @let exp = expectedFor(row.product.id);
+      @let onway = exp ? { quantity: exp.quantity, earliest: exp.expectedArrival, orderNumbers: exp.orderNumbers, orderIds: exp.orderIds } : null;
+      <div class="wk-tr wk-tr--link sk-tr" role="row" [attr.tabindex]="rowTab('p:' + row.product.id)" [class.wk-tr--sub]="nested" [class.sk-tr--variant]="nested"
+           [attr.data-row]="'p:' + row.product.id" (click)="rowClick($event, row)"
+           [animate.enter]="nested ? 'mo-enter' : ''">
+        <span class="wk-td" role="cell">
+          @if (salesPhotoUrl(row.product); as photo) { <img class="sk-thumb" [class.sk-thumb--sm]="nested" [appAuthSrc]="photo" alt="" draggable="false" /> }
+          @else { <span class="sk-thumb sk-thumb--empty" [class.sk-thumb--sm]="nested" aria-hidden="true">◈</span> }
+        </span>
+        <span class="wk-td sk-cell sk-cell--name" role="cell">
+          @if (nested) {
+            <b class="sk-name">@if (colourHex(row.product); as hex) { <i class="sk-cdot" [style.background]="hex" aria-hidden="true"></i> }{{ variantLabel(row.product) || row.product.name }}</b>
+            <span class="sk-sub mono">{{ row.product.sku || 'Geen SKU' }}</span>
+          } @else {
+            <b class="sk-name">{{ row.product.name }}</b>
+            <span class="sk-sub">{{ productMeta(row.product) }}</span>
+          }
+        </span>
+        @for (location of shownLocations(); track location.id) {
+          <span class="wk-td wk-td--num sk-cell" role="cell">
+            @if (editing()) {
+              <input class="sk-qty" type="text" inputmode="numeric" autocomplete="off" [attr.aria-label]="row.product.name + ' op ' + location.name"
+                     [value]="row.byLocation.get(location.id) ?? 0" (click)="$event.stopPropagation()"
+                     (keydown.enter)="$any($event.target).blur()"
+                     (keydown.escape)="$any($event.target).value = row.byLocation.get(location.id) ?? 0; $any($event.target).blur()"
+                     (change)="setQuantity(row, location.id, $any($event.target))" />
+            } @else {
+              <span class="sk-loc" [class.zero]="!row.byLocation.get(location.id)">{{ (row.byLocation.get(location.id) ?? 0) | num }}</span>
+            }
+          </span>
+        }
+        <span class="wk-td wk-td--num sk-cell" role="cell">
+          <span class="sk-total">{{ row.total | num }}</span>
+          <span class="sk-unit">{{ row.total === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</span>
+          @if (splitLine(row.byLocation); as split) { <span class="sk-unit">{{ split }}</span> }
+          @if (narrow() && onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: onway }" /> }
+        </span>
+        @if (!narrow()) {
+          <span class="wk-td wk-td--num sk-cell" role="cell"><ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: onway }" /></span>
+        }
+        <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-value" [class.none]="row.value === null">{{ row.value === null ? '—' : (row.value | eur: 0) }}</span></span>
+        <span class="wk-td wk-td--actions sk-act" role="cell">
+          @if (editing()) {
+            <button class="wk-btn wk-btn--sm wk-btn--icon sk-issue" type="button" title="Beschadigd, tekort of demo boeken"
+                    [attr.aria-label]="'Beschadigd, tekort of demo boeken voor ' + row.product.name" (click)="$event.stopPropagation(); openBooking(row, 'DAMAGED', view())">!</button>
+          } @else {
+            @if (activeLocations().length > 1) {
+              <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon" type="button" title="Verplaatsen" aria-label="Verplaatsen" tabindex="-1"
+                      (click)="$event.stopPropagation(); openBooking(row, 'TRANSFER', view())"><app-icon name="exchange" [size]="15" /></button>
+            }
+            <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon" type="button" [attr.aria-label]="'Acties voor ' + row.product.name" tabindex="-1"
+                    (click)="$event.stopPropagation(); openMenu($event, row)"><app-icon name="more" [size]="15" /></button>
+          }
+        </span>
+      </div>
+    </ng-template>
+
+    <!-- Below 1360 Onderweg folds under Totaal (B4), the date on its own line. -->
+    <ng-template #under let-onway>
+      <span class="sk-under" [attr.title]="'Op ' + onway.orderNumbers.join(', ')"><span class="sk-exp">+{{ onway.quantity | num }} verwacht</span>
+        @if (onway.earliest) { <span>{{ onway.earliest | dateNl }}</span> }</span>
+    </ng-template>
+    <ng-template #onwayCell let-onway>
+      @if (onway) {
+        <span class="sk-exp" [attr.title]="'Op ' + onway.orderNumbers.join(', ')">+{{ onway.quantity | num }}</span>
+        <span class="sk-unit">{{ onway.earliest ? (onway.earliest | dateNl) : ordersLabel(onway.orderNumbers) }}</span>
+      } @else { <span class="sk-loc zero">—</span> }
+    </ng-template>
+
+    <!-- ===== phone rows ===== -->
+    <ng-template #phoneGroup let-group>
+      @if (group.rows.length === 1) {
+        <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: group.rows[0], nested: false }" />
+      } @else {
+        @let open = isOpen(group);
+        <button class="skp-row" type="button" [class.skp-row--open]="open" [attr.aria-expanded]="open" (click)="toggle(group)">
+          @if (group.photo) { <img class="ios-thumb" [appAuthSrc]="group.photo" alt="" draggable="false" /> } @else { <span class="ios-thumb skp-thumb--empty" aria-hidden="true">◈</span> }
+          <span class="skp-body">
+            <span class="skp-name">{{ group.name }}</span>
+            <span class="skp-meta skp-meta--fold">
+              <span>{{ group.colours.length > 1 ? group.colours.length + ' kleuren' : group.rows.length + ' varianten' }}</span>
+              @if (group.colours.length) {
+                <span class="skp-dots" aria-hidden="true">@for (colour of group.colours.slice(0, 8); track colour.name) { <i [style.background]="colour.hex || 'var(--surface-2)'"></i> }@if (group.colours.length > 8) { <small>+{{ group.colours.length - 8 }}</small> }</span>
+              }
+              <app-icon class="skp-chev" name="chevron-down" [size]="14" />
+            </span>
+            @if (phoneFigures(group.byLocation, group.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
+          </span>
+          <span class="skp-end">
+            <strong [class.zero]="!figureOf(group.byLocation, group.total)">{{ figureOf(group.byLocation, group.total) | num }}</strong>
+            @if (group.unit) { <small>{{ figureOf(group.byLocation, group.total) === 1 ? group.unit.singular : group.unit.plural }}</small> }
+            @if (group.onway) { <span class="exp">+{{ group.onway.quantity | num }}</span> }
+          </span>
+        </button>
+        @if (open) {
+          @for (row of group.rows; track row.product.id) {
+            <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: row, nested: true }" />
+          }
+        }
+      }
+    </ng-template>
+
+    <ng-template #phoneRow let-row let-nested="nested">
+      @let exp = expectedFor(row.product.id);
+      <div class="skp-row skp-row--product" [class.skp-row--nested]="nested" role="button" tabindex="0"
+           (click)="rowClick($event, row)" (keydown.enter)="openBook(row)" [animate.enter]="nested ? 'mo-enter' : ''">
+        @if (salesPhotoUrl(row.product); as photo) { <img class="ios-thumb" [class.ios-thumb--sm]="nested" [appAuthSrc]="photo" alt="" draggable="false" /> }
+        @else { <span class="ios-thumb skp-thumb--empty" [class.ios-thumb--sm]="nested" aria-hidden="true">◈</span> }
+        <span class="skp-body">
+          @if (nested) {
+            <span class="skp-name skp-name--variant">@if (colourHex(row.product); as hex) { <i class="skp-cdot" [style.background]="hex" aria-hidden="true"></i> }{{ variantLabel(row.product) || row.product.name }}</span>
+          } @else {
+            <span class="skp-name">{{ row.product.name }}</span>
+          }
+          <span class="skp-meta">{{ nested ? (row.product.sku || 'Geen SKU') : productMeta(row.product) }}</span>
+          @if (phoneFigures(row.byLocation, row.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
+        </span>
+        <span class="skp-end">
+          @if (editing() && editLocation() !== null) {
+            <input class="skp-qty" type="text" inputmode="numeric" autocomplete="off" [attr.aria-label]="row.product.name + ' op ' + locationName(editLocation()!)"
+                   [value]="row.byLocation.get(editLocation()!) ?? 0" (click)="$event.stopPropagation()"
+                   (keydown.enter)="$event.stopPropagation(); $any($event.target).blur()" (change)="setQuantity(row, editLocation()!, $any($event.target))" />
+          } @else {
+            <strong [class.zero]="!figureOf(row.byLocation, row.total)">{{ figureOf(row.byLocation, row.total) | num }}</strong>
+          }
+          <small>{{ figureOf(row.byLocation, row.total) === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</small>
+          @if (exp) { <span class="exp">+{{ exp.quantity | num }}</span> }
+        </span>
+        <!-- One tap to move between locations, as before the redesign. -->
+        @if (!editing() && activeLocations().length > 1) {
+          <button class="skp-move" type="button" title="Verplaatsen" [attr.aria-label]="'Verplaatsen: ' + row.product.name"
+                  (click)="$event.stopPropagation(); openBooking(row, 'TRANSFER', view())" (keydown.enter)="$event.stopPropagation()">
+            <app-icon name="exchange" [size]="16" /></button>
+        }
+      </div>
+    </ng-template>
+
+    <!-- The second meta line: each location with its figure (and the value) kept on one line. -->
+    <ng-template #figureLine let-parts>
+      <span class="skp-meta skp-meta--figs">@for (part of parts; track $index) {@if (!$first) { · }<span class="skp-nw">{{ part }}</span>}</span>
+    </ng-template>
+
+    <!-- One sheet per product: the figures per location, the actions and
+         the book. Voorraad boeken opens on top of it (the sheet stack). -->
     @if (book(); as book) {
-      <app-sheet [title]="book.row.product.name" (closed)="closeBook()">
-        <div body>
-          <p class="book-sub">{{ book.row.product.sku }}@if (book.row.product.colour) { · {{ book.row.product.colour }}}
-            <b>{{ book.row.total | num }} stuks</b></p>
+      <app-sheet [title]="book.row.product.name" [variant]="desktop.active() ? 'default' : 'ios'" (closed)="closeBook()">
+        <div body class="sk-book">
+          <p class="book-sub">{{ book.row.product.sku || 'Geen SKU' }}@if (book.row.product.colour) { · {{ book.row.product.colour }}}
+            · <b>{{ book.row.total | num }} {{ book.row.total === 1 ? unitOf(book.row.product).singular : unitOf(book.row.product).plural }}</b></p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
-              <label class="history-levels__tile">
+              <!-- Read-only: a tap opens Hertelling for that location, with the effect shown first. -->
+              <button class="history-levels__tile history-levels__tile--button" type="button"
+                      [attr.aria-label]="'Hertelling op ' + location.name"
+                      (click)="openBooking(book.row, 'RECOUNT', location.id)">
                 <small>{{ location.name }}</small>
-                <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
-                       [attr.aria-label]="book.row.product.name + ' op ' + location.name"
-                       [value]="book.row.byLocation.get(location.id!) ?? 0"
-                       (keydown.enter)="$any($event.target).blur()"
-                       (change)="setQuantity(book.row, location.id!, $any($event.target))" />
-              </label>
+                <b class="history-levels__qty num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b>
+              </button>
             }
             @if (expectedFor(book.row.product.id!); as exp) {
-              <!-- On the water: the tile is the way to the order it sits on. -->
               <a class="history-levels__link" [routerLink]="['/purchasing', exp.orderIds[0]]" (click)="closeBook()"
                  [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
                 <small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b>
@@ -390,54 +474,24 @@ interface StockGroup {
               </a>
             }
           </div>
-          <p class="hint">Tik een getal aan en het wordt meteen als correctie geboekt.</p>
+          <p class="hint">{{ desktop.active() ? 'Klik' : 'Tik' }} een locatie aan voor een hertelling.</p>
 
-          <!-- The three things you come here to do, side by side like an
-               iOS action row: move it, write off breakage or demo, open it. -->
           <div class="book-actions" role="group" aria-label="Acties">
-            <button class="book-action" type="button" [class.book-action--on]="!!transfer()" (click)="transfer() ? transfer.set(null) : openTransfer()">
-              <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+            <button class="book-action" type="button" (click)="openBooking(book.row, 'RECOUNT', view())">
+              <i aria-hidden="true">=</i><span>Hertelling</span>
             </button>
-            <button class="book-action" type="button" (click)="takeoutFromBook()">
-              <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
+            @if (activeLocations().length > 1) {
+              <button class="book-action" type="button" (click)="openBooking(book.row, 'TRANSFER', view())">
+                <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
+              </button>
+            }
+            <button class="book-action" type="button" (click)="openBooking(book.row, 'DAMAGED', view())">
+              <i aria-hidden="true" class="book-action__warn">!</i><span>Beschadigd / Demo</span>
             </button>
             <a class="book-action" [routerLink]="['/products', book.row.product.id]" (click)="closeBook()">
               <i aria-hidden="true">›</i><span>Product</span>
             </a>
           </div>
-
-          @if (transfer(); as move) {
-            <div class="transfer-box">
-              <h3 class="history-title">Verplaatsen</h3>
-              <div class="form-grid">
-                <div class="field"><label for="t-from">Van</label>
-                  <select class="select" id="t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-                    @for (location of activeLocations(); track location.id) {
-                      <option [value]="location.id">{{ location.name }} ({{ (book.row.byLocation.get(location.id!) ?? 0) | num }})</option>
-                    }
-                  </select></div>
-                <div class="field"><label for="t-to">Naar</label>
-                  <select class="select" id="t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-                    @for (location of activeLocations(); track location.id) {
-                      <option [value]="location.id">{{ location.name }}</option>
-                    }
-                  </select></div>
-                <div class="field"><label class="req" for="t-qty">Aantal</label>
-                  <input class="input num right" id="t-qty" type="number" min="1" step="1" inputmode="numeric"
-                         [ngModel]="move.quantity" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
-                <div class="field"><label for="t-note">Notitie <span class="opt"></span></label>
-                  <input class="input" id="t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                         (ngModelChange)="patchTransfer({ note: $event })" /></div>
-              </div>
-              <div class="transfer-box__actions">
-                <span class="hint">Op {{ locationName(move.fromId) }} liggen {{ (book.row.byLocation.get(move.fromId) ?? 0) | num }} stuks.</span>
-                <button class="btn btn--sm" type="button" (click)="transfer.set(null)">Annuleren</button>
-                <button class="btn btn--primary btn--sm" type="button" [disabled]="saving()" (click)="confirmTransfer()">
-                  {{ saving() ? 'Bezig…' : 'Verplaatsen' }}
-                </button>
-              </div>
-            </div>
-          }
 
           <h3 class="history-title">Geschiedenis</h3>
           @if (book.moves; as moves) {
@@ -455,14 +509,12 @@ interface StockGroup {
                 }
               </ol>
               @if (moves.length > 2) {
-                <button class="history-more" type="button" [attr.aria-expanded]="historyOpen()"
-                        (click)="historyOpen.set(!historyOpen())">
+                <button class="history-more" type="button" [attr.aria-expanded]="historyOpen()" (click)="historyOpen.set(!historyOpen())">
                   {{ historyOpen() ? 'Minder tonen' : 'Alles tonen (' + moves.length + ')' }}
-                  <i class="history-more__chev" [class.history-more__chev--open]="historyOpen()" aria-hidden="true"></i>
                 </button>
               }
             } @else { <p class="hint">Nog geen bewegingen geboekt.</p> }
-          } @else { <p class="hint">Geschiedenis laden…</p> }
+          } @else { <app-skeleton kind="lines" [rows]="2" /> }
         </div>
         <div foot style="display:contents">
           <span class="spacer"></span>
@@ -470,251 +522,140 @@ interface StockGroup {
         </div>
       </app-sheet>
     }
-  `,
-  styles: `
-    .catalog-tools {
-      width: 100%; min-width: 0; margin-bottom: 14px; padding: 12px;
-      border: 1px solid var(--line); border-radius: var(--r);
-      background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
-      box-shadow: 0 5px 18px rgb(31 25 22 / 4%);
-    }
-    .sr-only {
-      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-    }
-    .catalog-search { position: relative; display: block; min-width: 0; flex: 1; }
-    .catalog-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
-    .filter-toggle {
-      display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px;
-      border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface);
-      color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
-    }
-    .filter-toggle:hover { background: var(--surface-2); }
-    .filter-toggle--active { border-color: var(--rose-line); color: var(--rose-dark); background: var(--rose-soft); }
-    .filter-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; }
-    .filter-toggle__count {
-      min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--rose); color: #fff;
-      font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
-    }
-    .filter-toggle__chev {
-      width: 7px; height: 7px; margin-left: 2px; border-right: 1.6px solid currentColor;
-      border-bottom: 1.6px solid currentColor; transform: translateY(-2px) rotate(45deg);
-      transition: transform .15s ease; opacity: .7;
-    }
-    .filter-toggle__chev--open { transform: translateY(2px) rotate(-135deg); }
-    .filter-grid, .filter-summary, .family-load-warning { flex: 1 0 100%; }
-    .catalog-search__icon {
-      position: absolute; z-index: 1; left: 13px; top: 50%; transform: translateY(-52%);
-      width: 18px; height: 18px; color: var(--muted); fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; pointer-events: none;
-    }
-    .catalog-search__input { padding-left: 42px; padding-right: 42px; }
-    .catalog-search__clear {
-      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
-      background: transparent; color: var(--muted); font-size: 24px; line-height: 1;
-      cursor: pointer;
-    }
-    .catalog-search__clear:hover { background: var(--surface-2); color: var(--ink); }
-    .filter-grid {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-      gap: 9px; min-width: 0; margin-top: 2px;
-    }
-    .filter-sort__box {
-      position: relative; display: flex; align-items: center; gap: 7px; min-height: 42px;
-      padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-      background: var(--surface); color: var(--ink-2);
-    }
-    .filter-sort__box:hover { background: var(--surface-2); }
-    .filter-sort__icon { width: 18px; height: 18px; fill: none; stroke: currentColor;
-      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .filter-sort__text { font-size: 13px; font-weight: 650; white-space: nowrap; }
-    /* The real select lies invisibly over the box: the native picker opens
-       on tap, the box is just how it looks. */
-    .filter-sort__native { position: absolute; inset: 0; width: 100%; height: 100%;
-      opacity: 0; cursor: pointer; font-size: 16px; }
-    .filter-field { display: block; min-width: 0; }
-    .filter-field__label {
-      display: block; margin: 0 0 5px 2px; color: var(--muted);
-      font-size: 10px; font-weight: 750; letter-spacing: .055em; text-transform: uppercase;
-    }
-    .filter-sort .filter-field__label { visibility: hidden; }
-    .filter-field__select {
-      display: block; min-width: 0; max-width: 100%; min-height: 42px;
-      padding: 9px 30px 9px 10px; font-size: 13px; font-weight: 650;
-      text-overflow: ellipsis;
-    }
-    .filter-summary {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      min-width: 0; margin-top: 0; color: var(--muted); font-size: 12px;
-    }
-    .filter-summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-    .filter-reset {
-      flex: 0 0 auto; padding: 4px 0; border: 0; background: transparent;
-      color: var(--rose-dark); font-size: 12px; font-weight: 700; cursor: pointer;
-    }
-    .filter-manage { color: var(--muted); font-size: 12px; text-decoration: none; }
-    @media (min-width: 680px) {
-      .filter-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
-    }
-    .count-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 12px;
-      border: 1px solid var(--rose-line); border-radius: var(--r-sm); background: var(--rose-soft); }
-    .count-bar > div { flex: 1 1 200px; min-width: 0; }
-    .count-bar small { display: block; color: var(--muted); font-size: 11.5px; }
 
-    .section { animation: section-in .28s ease both; }
-    .section + .section { margin-top: 18px; }
-    @keyframes section-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: none; }
+    <!-- Voorraad boeken, a sibling at page level (stacked over the product sheet when that is open). -->
+    @if (booking(); as open) {
+      <app-stock-booking-sheet [product]="open.row.product" [levels]="open.levels" [kind]="open.kind" [locationId]="open.locationId"
+                               (booked)="onBooked($event)" (closed)="bookingFor.set(null)" />
     }
-    @media (prefers-reduced-motion: reduce) { .section { animation: none; } }
-    .section-head {
-      display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px 4px;
-      color: var(--ink-2); font-size: 11.5px; font-weight: 800; letter-spacing: .08em;
-      text-transform: uppercase;
+    @if (menu(); as open) {
+      <app-context-menu [title]="open.title" [anchor]="open.at" [items]="open.items" [variant]="desktop.active() ? 'default' : 'ios'"
+                        cancelLabel="Annuleren" (pick)="pickMenu($event)" (closed)="menu.set(null)" />
     }
-    .section-head small { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: 0; }
-    .section-head__total { margin-left: auto; margin-right: 4px; text-transform: none; }
-
-    .stock-row { gap: 8px; }
-    .group-head { width: 100%; gap: 8px; border: 0; border-bottom: 1px solid var(--line); font: inherit;
-      text-align: left; cursor: pointer; }
-    .group-head .stock-row__body { flex: 1; }
-    .group-head:hover { background: var(--surface-2); }
-    .group-head--open { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); }
-    .group-head__meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
-    .group-head__count { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .group-head__chev { width: 18px; height: 18px; padding: 3px; box-sizing: border-box;
-      border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface);
-      fill: none; stroke: var(--ink-2); stroke-width: 1.8; stroke-linecap: round;
-      stroke-linejoin: round; transition: transform .15s ease, background .15s ease; }
-    .group-head--open .group-head__chev { transform: rotate(180deg); background: var(--surface-2); }
-    .group-head__dots { display: inline-flex; align-items: center; gap: 3px; }
-    .group-head__dots i { width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 14%); display: inline-block; }
-    .group-head__dots .dot--empty { border-style: dashed; }
-    .group-head__dots small { color: var(--muted); font-size: 10px; margin-left: 2px; }
-    .group-body { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong, var(--muted)); border-bottom: 1px solid var(--line); }
-    .group-body .stock-row:last-child { border-bottom: 0; }
-    .list-item--nested { padding-left: 30px; min-height: 50px; background: var(--surface-2); }
-    .thumb--sm { width: 36px; height: 36px; }
-    .colour-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgb(0 0 0 / 14%); }
-    .stock-row__move--blank { visibility: hidden; }
-    .stock-row__qty-static { padding: 4px 6px; font-size: 13px; font-weight: 650; }
-    .edit-bar { border-color: var(--rose-line); background: var(--rose-soft); }
-    .stock-row__issue { border-color: #eddcb9; background: var(--warn-soft); color: var(--warn); font-weight: 800; }
-    .stock-row__issue:hover { background: #f7e8cd; color: var(--warn); }
-    .takeout-kind { margin-top: 2px; }
-    .stock-row--changed { background: var(--warn-soft); }
-    .stock-row__product { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0;
-      background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-    .stock-row__body { display: grid; min-width: 0; }
-    .product-row__title { display: flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: 2px 4px; }
-    .product-row__title strong { flex: 0 1 auto; overflow: hidden; min-width: 0; font-size: 13.5px;
-      text-overflow: ellipsis; white-space: nowrap; }
-    .product-row__title span { flex: 0 0 auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .product-row__sku { margin-top: 4px; color: var(--muted); font-size: 10.5px; }
-    .stock-expected { display: block; margin-top: 2px; color: var(--warn); font-size: 10px; font-weight: 700; white-space: nowrap; }
-    .expected { color: var(--warn); font-style: normal; font-weight: 650; }
-    .stock-row__end { display: flex; align-items: center; gap: 6px; }
-    /* Label over figure, like the catalogue's Voorraad / Kostprijs columns;
-       fixed widths so the figures line up from row to row. */
-    .stock-row__figure { display: grid; justify-items: end; gap: 3px; width: 72px; }
-    .stock-row__figure span { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .055em;
-      line-height: 1.15; text-transform: uppercase; white-space: nowrap; overflow: hidden; max-width: 100%; text-overflow: ellipsis; }
-    .stock-row__figure strong { font-size: 13px; font-weight: 800; line-height: 1.3; padding: 4px 6px; }
-    .stock-row__figure--total { padding-left: 8px; border-left: 1px solid var(--line); }
-    .stock-row__figure--count { width: 84px; }
-    .stock-row__figure--count .input { width: 100%; min-height: 34px; padding: 4px 8px; }
-    /* Reads as a plain figure; shows it is a field only under the pointer or when focused. */
-    .stock-row__qty { width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid transparent;
-      border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 650;
-      text-align: right; -moz-appearance: textfield; }
-    .stock-row__qty::-webkit-outer-spin-button, .stock-row__qty::-webkit-inner-spin-button { display: none; }
-    .stock-row__qty:hover { border-color: var(--line); background: var(--surface-2); }
-    .stock-row__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
-    .stock-row__move { width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
-      color: var(--muted); font-size: 15px; cursor: pointer; }
-    .stock-row__move:hover { color: var(--ink); background: var(--surface-2); }
-    @media (min-width: 680px) {
-      .stock-row__end { gap: 10px; }
-      .stock-row__figure { width: 84px; }
-    }
-    /* A phone has room for one figure next to the name: the total. The
-       split per location is one tap away in the stock book, and editing
-       a location happens with that location chosen under Filters. */
-    @media (max-width: 600px) {
-      .stock-row__figure { width: 64px; }
-      .stock-row__figure--location { display: none; }
-      .stock-row__figure--total { padding-left: 0; border-left: 0; }
-    }
-    .history-levels { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
-    .history-levels__tile { display: grid; gap: 2px; flex: 1 1 96px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-    .history-levels__link { flex: 1 1 120px; }
-    .history-levels__qty { width: 100%; min-width: 0; padding: 2px 4px; margin: 0 -4px; border: 1px solid transparent; border-radius: 6px;
-      background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 700; -moz-appearance: textfield; }
-    .history-levels__qty::-webkit-outer-spin-button, .history-levels__qty::-webkit-inner-spin-button { display: none; }
-    .history-levels__qty:hover { border-color: var(--line); background: var(--surface); }
-    .history-levels__qty:focus { outline: none; border-color: var(--rose); background: var(--surface); }
-    .book-sub { margin: -6px 0 10px; color: var(--muted); font-size: 12.5px; }
-    .book-sub b { color: var(--ink); font-weight: 700; margin-left: 6px; }
-    .book-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 14px; }
-    .book-action { display: grid; justify-items: center; gap: 4px; padding: 10px 6px 8px;
-      border: 1px solid var(--line); border-radius: 13px; background: var(--surface-2); color: var(--ink-2);
-      font: inherit; font-size: 11.5px; font-weight: 650; text-decoration: none; cursor: pointer;
-      transition: transform .12s ease, background .15s ease; }
-    .book-action:active { transform: scale(.96); }
-    .book-action:hover { background: var(--surface); border-color: var(--line-strong); }
-    .book-action--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
-    .book-action i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
-      background: var(--surface); border: 1px solid var(--line-strong); font-style: normal; font-size: 15px; font-weight: 700; }
-    .book-action--on i { border-color: var(--rose); color: var(--rose-dark); }
-    .book-action__warn { background: var(--warn-soft) !important; border-color: #eddcb9 !important; color: var(--warn); }
-    .history-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center;
-      padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark);
-      font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
-    .history-more__chev { width: 7px; height: 7px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
-      transform: rotate(45deg); transition: transform .15s ease; }
-    .history-more__chev--open { transform: rotate(-135deg); }
-    .transfer-box { margin-top: 4px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
-    .transfer-box .history-title { margin-top: 0; }
-    .transfer-box__actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-    .transfer-box__actions .hint { flex: 1; }
-    .history-levels span, .history-levels__link { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-    .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-    .history-levels b { font-size: 16px; }
-    .history-levels__link { color: inherit; text-decoration: none; border-color: var(--warn-line, #eddcb9); }
-    .history-levels__link em { color: var(--warn); font-size: 11px; font-style: normal; font-weight: 650; }
-    .history-title { margin: 14px 0 4px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
-    .history-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-    .history-list li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
-    .history-delta { font-weight: 750; color: var(--ok, #2e7d4f); }
-    .history-delta--minus { color: var(--danger); }
-    .history-what { display: grid; min-width: 0; }
-    .history-what b { font-weight: 650; font-size: 12.5px; }
-    .history-what small { color: var(--muted); font-size: 11px; }
-    .history-after { color: var(--muted); font-size: 12px; white-space: nowrap; }
   `,
+  /* The area partial arrives with this screen's lazy chunk; its rules are scoped under app-stock-page. */
+  styleUrl: '../../../styles/products/_stock.scss',
+  encapsulation: ViewEncapsulation.None,
 })
 export class StockPage {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly location = inject(Location);
+  private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
+  readonly desktop = inject(DesktopViewport);
+  /** Below 1360 Onderweg folds under Totaal and three or more locations fold into the segment (B4). */
+  readonly narrow = mediaSignal('(max-width: 1359.98px)');
+  private readonly cramped = mediaSignal('(max-width: 1099.98px)');
   /** Thumbnails follow the Hoofdfoto rule, the same photo quotes and invoices print. */
   readonly salesPhotoUrl = salesPhotoUrl;
+  /** "bowl" / "bowls": every figure here is in the product's own unit, never "stuks" for all. */
+  readonly unitOf = productSalesUnit;
+  readonly ordersLabel = onderwegOrdersLabel;
 
   readonly loading = signal(true);
-  readonly saving = signal(false);
+  /** The page could not load: it says so, with a retry, instead of "Geen producten gevonden". */
+  readonly loadError = signal<string | null>(null);
   readonly products = signal<Product[]>([]);
   readonly locations = signal<StockLocation[]>([]);
   readonly levels = signal<StockLevel[]>([]);
+  readonly categories = signal<Category[]>([]);
+  readonly expected = signal<Map<number, ExpectedStock>>(new Map());
+  readonly families = signal<ProductFamily[]>([]);
+  private readonly familyNames = computed(() => new Map(this.families().map((family) => [family.id, family.name])));
+
   readonly query = signal('');
   /** null = every location side by side. */
   readonly view = signal<number | null>(null);
+  readonly categoryFilter = signal<number | 'none' | null>(null);
+  readonly hideEmpty = signal(false);
+  readonly sortKey = signal<StockSort>('STOCK_SMART');
+  readonly demoOpen = signal(false);
+  readonly editing = signal(false);
+  readonly menu = signal<{ title: string; at: MenuPoint; items: ContextMenuItem[]; row: StockRow | null; kind: 'row' | 'category' | 'location' } | null>(null);
 
-  readonly activeLocations = computed(() => this.locations().filter((location) => location.active));
+  readonly activeLocations = computed(() => this.locations().filter((location) => location.active && location.id !== null)
+    .sort((a, b) => a.position - b.position));
 
+  constructor() {
+    /* Names each product's unit ("bowls", "displays"); "stuks" until the list arrives. */
+    void this.catalog.unitNames().catch(() => undefined);
+    /* ?locatie=&q=&categorie= read once, written back with replaceState (no history entry). */
+    const params = this.route.snapshot.queryParamMap;
+    this.query.set(params.get('q') ?? '');
+    const location = Number(params.get('locatie'));
+    if (Number.isSafeInteger(location) && location > 0) this.view.set(location);
+    const category = params.get('categorie');
+    this.categoryFilter.set(category === 'geen' ? 'none' : category && /^\d+$/.test(category) ? Number(category) : null);
+    effect(() => {
+      const parts: string[] = [];
+      if (this.query().trim()) parts.push(`q=${encodeURIComponent(this.query().trim())}`);
+      if (this.view() !== null) parts.push(`locatie=${this.view()}`);
+      const cat = this.categoryFilter();
+      if (cat !== null) parts.push(`categorie=${cat === 'none' ? 'geen' : cat}`);
+      const search = parts.join('&');
+      untracked(() => {
+        const [path, current = ''] = this.location.path().split('?');
+        if (path === '/stock' && current !== search) this.location.replaceState('/stock', search);
+      });
+    });
+    void this.load();
+  }
+
+  reload(): void {
+    if (!this.loading()) void this.load();
+  }
+
+  private async load(): Promise<void> {
+    this.loading.set(true);
+    this.loadError.set(null);
+    try {
+      const [products, locations, levels, categories, expected, families] = await Promise.all([
+        this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
+        this.catalog.categories().catch(() => [] as Category[]),
+        this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
+        this.catalog.productFamilies({ maxAgeMs: 20_000 }).catch(() => [] as ProductFamily[]),
+      ]);
+      this.families.set(families);
+      this.products.set(products);
+      this.locations.set(locations);
+      this.levels.set(levels);
+      this.categories.set(categories);
+      this.expected.set(new Map(expected.map((item) => [item.productId, item])));
+      if (this.view() !== null && !this.activeLocations().some((location) => location.id === this.view())) this.view.set(null);
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  locationName(id: number | null): string {
+    return this.locations().find((location) => location.id === id)?.name ?? '';
+  }
+
+  expectedFor(productId: number | null): ExpectedStock | null {
+    return productId === null ? null : this.expected().get(productId) ?? null;
+  }
+
+  colourHex(product: Product): string | null {
+    const colour = product.colour?.trim();
+    if (!colour) return null;
+    return product.colourHex || COLOUR_SWATCHES[colour] || null;
+  }
+
+  variantLabel(product: Product): string | null {
+    const parts = [product.colour, product.variantSize].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
+    return parts.length ? parts.join(' · ') : null;
+  }
+
+  productMeta(product: Product): string {
+    return [this.variantLabel(product), product.sku || 'Geen SKU'].filter(Boolean).join(' · ');
+  }
+
+  /* ---- the rows, their value and their groups ---- */
   readonly rows = computed<StockRow[]>(() => {
     const byProduct = new Map<number, Map<number, number>>();
     for (const level of this.levels()) {
@@ -728,68 +669,105 @@ export class StockPage {
         const byLocation = byProduct.get(product.id!) ?? new Map<number, number>();
         let total = 0;
         for (const quantity of byLocation.values()) total += quantity;
-        return { product, byLocation, total };
-      })
-      .sort((a, b) => a.product.name.localeCompare(b.product.name, 'nl', { numeric: true, sensitivity: 'base' }));
+        const cost = product.landedCostEur;
+        const value = total > 0 && cost !== null && cost > 0 ? Math.round(total * cost * 100) / 100 : null;
+        return { product, byLocation, total, value };
+      });
   });
 
-  readonly sortKey = signal<'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED'>('NAME_ASC');
-  readonly categories = signal<Category[]>([]);
-  readonly expected = signal<Map<number, ExpectedStock>>(new Map());
-  readonly filtersOpen = signal(false);
-  readonly categoryFilter = signal<number | null>(null);
-  readonly sortOptions: { key: 'NAME_ASC' | 'NAME_DESC' | 'STOCK_DESC' | 'STOCK_ASC' | 'EXPECTED'; label: string }[] = [
-    { key: 'NAME_ASC', label: 'Naam A–Z' },
-    { key: 'NAME_DESC', label: 'Naam Z–A' },
-    { key: 'STOCK_DESC', label: 'Voorraad hoog → laag' },
-    { key: 'STOCK_ASC', label: 'Voorraad laag → hoog' },
-    { key: 'EXPECTED', label: 'Te verwachten eerst' },
-  ];
-  readonly sortLabel = computed(() => this.sortOptions.find((option) => option.key === this.sortKey())?.label ?? '');
-  readonly activeFilterCount = computed(() =>
-    (this.view() !== null ? 1 : 0) + (this.categoryFilter() !== null ? 1 : 0)
-    + (this.sortKey() !== 'NAME_ASC' ? 1 : 0));
-  readonly hasFilters = computed(() => this.activeFilterCount() > 0);
+  /** Waarde tegen kostprijs over every location (demo pieces with a cost included, N15). */
+  readonly totalValue = computed(() => stockValue(this.rows().map((row) => ({ quantity: row.total, cost: row.product.landedCostEur }))));
+  readonly valueByLocation = computed(() => locationValues(this.levels().filter((level) => this.rows().some((row) => row.product.id === level.productId)),
+    new Map(this.rows().map((row) => [row.product.id!, row.product.landedCostEur]))));
+  readonly summaryLocations = computed(() => this.activeLocations().slice(0, 3));
+  readonly moreLocations = computed(() => Math.max(0, this.activeLocations().length - 3));
+  readonly onwayProducts = computed(() => this.rows().filter((row) => (this.expectedFor(row.product.id)?.quantity ?? 0) > 0).length);
+  readonly onwayOrders = computed(() => distinctOrderCount([...this.expected().values()]));
 
-  resetFilters(): void {
-    this.view.set(null);
-    this.categoryFilter.set(null);
-    this.sortKey.set('NAME_ASC');
+  readonly subtitle = computed(() => {
+    const families = new Map<number, number>();
+    for (const row of this.rows()) if (row.product.familyId != null) families.set(row.product.familyId, (families.get(row.product.familyId) ?? 0) + 1);
+    const series = [...families.values()].filter((count) => count >= 2).length;
+    const locations = this.activeLocations().length;
+    return `${series ? `${series} reeks${series === 1 ? '' : 'en'} · ` : ''}${locations} locatie${locations === 1 ? '' : 's'}`;
+  });
+  readonly phoneCaption = computed(() => {
+    const locations = this.activeLocations().length;
+    return `${this.totalValue().value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })} tegen kostprijs · ${locations} locatie${locations === 1 ? '' : 's'}`;
+  });
+
+  readonly locationOptions = computed<SegmentOption[]>(() => [
+    { id: 'all', label: 'Alle locaties' },
+    ...this.activeLocations().map((location) => ({ id: String(location.id), label: location.name })),
+  ]);
+  readonly phoneLocationOptions = computed<SegmentOption[]>(() => [
+    { id: 'all', label: 'Alle' },
+    ...this.activeLocations().map((location) => ({ id: String(location.id), label: location.name })),
+  ]);
+
+  setView(id: string): void {
+    this.view.set(id === 'all' ? null : Number(id));
   }
 
-  expectedFor(productId: number): ExpectedStock | null {
-    return this.expected().get(productId) ?? null;
+  /** The location columns: the chosen one, all of them, or none below 1360 with three or more (B4). */
+  readonly shownLocations = computed(() => {
+    const active = this.activeLocations();
+    const view = this.view();
+    if (view !== null) return active.filter((location) => location.id === view) as (StockLocation & { id: number })[];
+    if (this.narrow() && active.length >= 3) return [];
+    return active as (StockLocation & { id: number })[];
+  });
+  /** The phone edit mode books on the chosen location, or the only one. */
+  readonly editLocation = computed(() => this.view() ?? (this.activeLocations().length === 1 ? this.activeLocations()[0].id : null));
+
+  readonly columns = computed(() => {
+    const count = this.shownLocations().length;
+    if (!this.narrow()) return `40px minmax(0,1fr) ${'100px '.repeat(count)}112px 132px 104px 64px`;
+    /* Below 1100 (and with the rail) the columns tighten so the table fits the card. */
+    if (this.cramped()) return `40px minmax(150px,1fr) ${'88px '.repeat(count)}96px 88px 56px`;
+    return `40px minmax(220px,1fr) ${'88px '.repeat(count)}104px 96px 56px`;
+  });
+
+  /** "Zaltbommel 1.960 · Tica Brussel 8": only when the location columns are folded away and two locations hold stock. */
+  splitLine(byLocation: Map<number, number>): string | null {
+    if (this.shownLocations().length || this.view() !== null) return null;
+    const entries = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }));
+    return entries.filter((entry) => entry.quantity).length >= 2 ? locationSplit(entries) : null;
+  }
+
+  /** Phone: the figure of the chosen segment, else the total. */
+  figureOf(byLocation: Map<number, number>, total: number): number {
+    const view = this.view();
+    return view === null ? total : byLocation.get(view) ?? 0;
+  }
+
+  /**
+   * Phone, the second meta line under "4 kleuren" or the SKU: where the
+   * stock lies (two or more locations hold it and the segment is Alle) and
+   * what it is worth; null when there is neither.
+   */
+  phoneFigures(byLocation: Map<number, number>, value: number | null): string[] | null {
+    const parts: string[] = [];
+    if (this.view() === null) {
+      /* One part per location that holds stock ("Zaltbommel 1.960"), so a name never parts from its figure. */
+      const held = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }))
+        .filter((entry) => entry.quantity !== 0);
+      if (held.length >= 2) parts.push(...held.map((entry) => locationSplit([entry])));
+    }
+    if (value !== null) parts.push(value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }));
+    return parts.length ? parts : null;
   }
 
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
     const category = this.categoryFilter();
-    const rows = this.rows().filter(({ product }) =>
-      (category === null || product.categoryId === category)
+    return this.rows().filter(({ product, total }) =>
+      (category === null || (category === 'none' ? product.categoryId == null : product.categoryId === category))
+      && (!this.hideEmpty() || total !== 0 || (this.expectedFor(product.id)?.quantity ?? 0) > 0)
       && (!needle || [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle)));
-    const byName = (a: StockRow, b: StockRow) =>
-      a.product.name.localeCompare(b.product.name, 'nl', { numeric: true, sensitivity: 'base' });
-    switch (this.sortKey()) {
-      case 'NAME_DESC': return [...rows].sort((a, b) => byName(b, a));
-      case 'STOCK_DESC': return [...rows].sort((a, b) => b.total - a.total || byName(a, b));
-      case 'STOCK_ASC': return [...rows].sort((a, b) => a.total - b.total || byName(a, b));
-      case 'EXPECTED': return [...rows].sort((a, b) =>
-        (this.expectedFor(b.product.id!)?.quantity ?? 0) - (this.expectedFor(a.product.id!)?.quantity ?? 0) || byName(a, b));
-      default: return [...rows].sort(byName);
-    }
   });
 
-  readonly families = signal<ProductFamily[]>([]);
-  private readonly familyNames = computed(() => new Map(this.families().map((family) => [family.id, family.name])));
-
-  colourHex(product: Product): string | null {
-    const colour = product.colour?.trim();
-    if (!colour) return null;
-    return product.colourHex || COLOUR_SWATCHES[colour] || null;
-  }
-
-  /** Variants of one series under one head; a lone product is a group of one. */
-  readonly groups = computed<StockGroup[]>(() => {
+  private readonly groups = computed<StockGroup[]>(() => {
     const byKey = new Map<string, StockGroup>();
     for (const row of this.filtered()) {
       const product = row.product;
@@ -797,7 +775,7 @@ export class StockPage {
       let group = byKey.get(key);
       if (!group) {
         group = { key, name: (product.familyId != null && this.familyNames().get(product.familyId)) || product.name,
-          photo: null, colours: [], rows: [], byLocation: new Map(), total: 0, expected: 0 };
+          photo: null, colours: [], rows: [], byLocation: new Map(), total: 0, value: null, onway: null, unit: null, demo: true };
         byKey.set(key, group);
       }
       group.rows.push(row);
@@ -806,9 +784,92 @@ export class StockPage {
       if (colour && !group.colours.some((item) => item.name === colour)) group.colours.push({ name: colour, hex: this.colourHex(product) });
       for (const [locationId, quantity] of row.byLocation) group.byLocation.set(locationId, (group.byLocation.get(locationId) ?? 0) + quantity);
       group.total += row.total;
-      group.expected += this.expectedFor(product.id!)?.quantity ?? 0;
+      if (row.value !== null) group.value = Math.round(((group.value ?? 0) + row.value) * 100) / 100;
+      group.demo = group.demo && !!product.demo;
     }
-    return [...byKey.values()];
+    const groups = [...byKey.values()];
+    for (const group of groups) {
+      group.onway = onderwegSummary(group.rows.map((row) => this.expectedFor(row.product.id)));
+      const units = new Set(group.rows.map((row) => productSalesUnit(row.product).plural));
+      group.unit = units.size === 1 ? productSalesUnit(group.rows[0].product) : null;
+      group.rows.sort((a, b) => this.compareRows(a, b));
+    }
+    return groups.sort((a, b) => this.compareGroups(a, b));
+  });
+
+  private byName(a: string, b: string): number {
+    return a.localeCompare(b, 'nl', { numeric: true, sensitivity: 'base' });
+  }
+
+  private compareRows(a: StockRow, b: StockRow): number {
+    const tier = (row: StockRow) => row.product.demo ? 3 : row.total > 0 ? 0 : this.expectedFor(row.product.id) ? 1 : 2;
+    switch (this.sortKey()) {
+      case 'NAME_ASC': return this.byName(a.product.name, b.product.name);
+      case 'NAME_DESC': return this.byName(b.product.name, a.product.name);
+      case 'STOCK_DESC': return b.total - a.total || this.byName(a.product.name, b.product.name);
+      case 'STOCK_ASC': return a.total - b.total || this.byName(a.product.name, b.product.name);
+      case 'VALUE_DESC': return (b.value ?? -1) - (a.value ?? -1) || this.byName(a.product.name, b.product.name);
+      case 'VALUE_ASC': return (a.value ?? Infinity) - (b.value ?? Infinity) || this.byName(a.product.name, b.product.name);
+      case 'EXPECTED': return (this.expectedFor(b.product.id)?.quantity ?? 0) - (this.expectedFor(a.product.id)?.quantity ?? 0) || this.byName(a.product.name, b.product.name);
+      default: return tier(a) - tier(b) || b.total - a.total || this.byName(a.product.name, b.product.name);
+    }
+  }
+
+  /** The list's default order (Standaardvolgorde): stock first, then on the way, then empty, demo last. */
+  private compareGroups(a: StockGroup, b: StockGroup): number {
+    const tier = (group: StockGroup) => group.demo ? 3 : group.total > 0 ? 0 : group.onway ? 1 : 2;
+    switch (this.sortKey()) {
+      case 'NAME_ASC': return this.byName(a.name, b.name);
+      case 'NAME_DESC': return this.byName(b.name, a.name);
+      case 'STOCK_DESC': return b.total - a.total || this.byName(a.name, b.name);
+      case 'STOCK_ASC': return a.total - b.total || this.byName(a.name, b.name);
+      case 'VALUE_DESC': return (b.value ?? -1) - (a.value ?? -1) || this.byName(a.name, b.name);
+      case 'VALUE_ASC': return (a.value ?? Infinity) - (b.value ?? Infinity) || this.byName(a.name, b.name);
+      case 'EXPECTED': return (b.onway?.quantity ?? 0) - (a.onway?.quantity ?? 0) || this.byName(a.name, b.name);
+      default: return tier(a) - tier(b) || b.total - a.total || this.byName(a.name, b.name);
+    }
+  }
+
+  /** Fully-demo series and loose demo pieces (also "Zonder categorie" ones) live in the fold at the end. */
+  readonly demoGroups = computed(() => this.groups().filter((group) => group.demo));
+  readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0);
+  readonly demoCount = computed(() => this.demoGroups().reduce((sum, group) => sum + group.rows.length, 0));
+  readonly demoValue = computed(() => knownValueSum(this.demoGroups().map((group) => group.value)));
+
+  /** The groups cut into category sections with their value, in the categories' own order; a search shows one list. */
+  readonly sections = computed<StockSection[]>(() => {
+    const groups = this.groups().filter((group) => !group.demo);
+    if (!groups.length) return [];
+    const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
+    const value = (list: StockGroup[]) => knownValueSum(list.map((group) => group.value));
+    if (this.query().trim() || this.categoryFilter() !== null) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
+    const order = new Map(this.categories().map((category, index) => [category.id, index]));
+    const byCategory = new Map<number | null, StockGroup[]>();
+    for (const group of groups) {
+      const id = group.rows[0].product.categoryId ?? null;
+      byCategory.set(id, [...(byCategory.get(id) ?? []), group]);
+    }
+    return [...byCategory.entries()]
+      .sort(([a], [b]) => (a === null ? Infinity : order.get(a) ?? Infinity) - (b === null ? Infinity : order.get(b) ?? Infinity))
+      .map(([id, list]) => ({
+        key: id === null ? 'none' : `c${id}`,
+        name: this.categories().find((category) => category.id === id)?.name ?? 'Zonder categorie',
+        groups: list, count: count(list), value: value(list),
+      }));
+  });
+
+  /** The categories that hold products, for the chips and the menu. */
+  readonly usedCategories = computed(() => {
+    const used = new Set(this.rows().filter((row) => !row.product.demo).map((row) => row.product.categoryId ?? null));
+    const list: { key: string; id: number | 'none'; name: string }[] = this.categories()
+      .filter((category) => category.id !== null && used.has(category.id))
+      .map((category) => ({ key: `c${category.id}`, id: category.id!, name: category.name }));
+    if (used.has(null)) list.push({ key: 'none', id: 'none', name: 'Zonder categorie' });
+    return list;
+  });
+  readonly categoryLabel = computed(() => {
+    const category = this.categoryFilter();
+    return category === null ? 'Categorie' : this.usedCategories().find((item) => item.id === category)?.name ?? 'Categorie';
   });
 
   /** Which series are folded open; a search opens everything that matches. */
@@ -821,33 +882,80 @@ export class StockPage {
     this.openOverrides.update((map) => new Map(map).set(group.key, !open));
   }
 
-  /** The groups cut into category sections, in the categories' own order; a search shows one flat list. */
-  readonly sections = computed<{ key: string; name: string | null; groups: StockGroup[]; count: number; total: number }[]>(() => {
-    const groups = this.groups();
-    if (!groups.length) return [];
-    const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
-    const total = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.total, 0);
-    if (this.query().trim()) return [{ key: 'all', name: null, groups, count: count(groups), total: total(groups) }];
-    const order = new Map(this.categories().map((category, index) => [category.id, index]));
-    const byCategory = new Map<number | null, StockGroup[]>();
-    for (const group of groups) {
-      const id = group.rows[0].product.categoryId ?? null;
-      byCategory.set(id, [...(byCategory.get(id) ?? []), group]);
+  readonly hasFilters = computed(() => this.query().trim().length > 0 || this.categoryFilter() !== null || this.view() !== null || this.hideEmpty());
+
+  resetFilters(): void {
+    this.query.set('');
+    this.categoryFilter.set(null);
+    this.view.set(null);
+    this.hideEmpty.set(false);
+    this.sortKey.set('STOCK_SMART');
+  }
+
+  setQuery(value: string): void {
+    this.query.set(value);
+  }
+
+  clearSearch(event: Event): void {
+    if (!this.query()) { (event.target as HTMLElement).blur(); return; }
+    event.preventDefault();
+    this.query.set('');
+  }
+
+  /** A header click: its order, the reverse, then back to the standard order (Onderweg: "Te verwachten eerst" or standard). */
+  sortBy(first: StockSort, second: StockSort | null): void {
+    const current = this.sortKey();
+    this.sortKey.set(current === first ? (second ?? 'STOCK_SMART') : current === second ? 'STOCK_SMART' : first);
+  }
+
+  ariaSort(first: StockSort, second: StockSort): 'ascending' | 'descending' | null {
+    const current = this.sortKey();
+    if (current !== first && current !== second) return null;
+    return current.endsWith('ASC') ? 'ascending' : 'descending';
+  }
+
+  /* ---- menus ---- */
+  openMenu(event: MouseEvent, row: StockRow | null | 'location'): void {
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const at = { x: row === null ? box.left : box.right, y: box.bottom + 6 };
+    if (row === 'location') {
+      this.menu.set({ title: 'Locatie', at, row: null, kind: 'location', items: [
+        { id: 'all', label: 'Alle locaties', checked: this.view() === null },
+        ...this.activeLocations().map((location) => ({ id: String(location.id), label: location.name, checked: this.view() === location.id })),
+      ] });
+    } else if (row === null) {
+      this.menu.set({ title: 'Categorie', at, row: null, kind: 'category', items: [
+        { id: 'all', label: 'Alle categorieën', checked: this.categoryFilter() === null },
+        ...this.usedCategories().map((category) => ({ id: String(category.id), label: category.name, checked: this.categoryFilter() === category.id })),
+      ] });
+    } else {
+      this.menu.set({ title: row.product.name, at, row, kind: 'row', items: [
+        { id: 'book', label: 'Voorraad boeken…', iconName: 'stock' },
+        { id: 'history', label: 'Geschiedenis', iconName: 'recent' },
+        { id: 'open', label: 'Product openen', iconName: 'chevron-right' },
+      ] });
     }
-    return [...byCategory.entries()]
-      .sort(([a], [b]) => (a === null ? Infinity : order.get(a) ?? Infinity) - (b === null ? Infinity : order.get(b) ?? Infinity))
-      .map(([id, list]) => ({
-        key: id === null ? 'none' : `c${id}`,
-        name: this.categories().find((category) => category.id === id)?.name ?? 'Zonder categorie',
-        groups: list, count: count(list), total: total(list),
-      }));
-  });
+  }
+
+  pickMenu(item: ContextMenuItem): void {
+    const open = this.menu();
+    this.menu.set(null);
+    if (!open) return;
+    if (open.kind === 'category') this.categoryFilter.set(item.id === 'all' ? null : item.id === 'none' ? 'none' : Number(item.id));
+    else if (open.kind === 'location') this.setView(item.id);
+    else if (open.row) {
+      if (item.id === 'book') this.openBooking(open.row, 'RECOUNT', this.view());
+      else if (item.id === 'history') this.openBook(open.row);
+      else void this.router.navigate(['/products', open.row.product.id]);
+    }
+  }
 
   /* ---- the stock sheet of one product ---- */
   private readonly bookProductId = signal<number | null>(null);
   private readonly bookMoves = signal<StockMovement[] | null>(null);
+  readonly historyOpen = signal(false);
 
-  /** The sheet follows the live row, so a figure typed into it shows at once. */
+  /** The sheet follows the live row, so a booked figure shows at once. */
   readonly book = computed(() => {
     const id = this.bookProductId();
     if (id === null) return null;
@@ -855,27 +963,19 @@ export class StockPage {
     return row ? { row, moves: this.bookMoves() } : null;
   });
 
-  readonly historyOpen = signal(false);
-
-  openBook(row: StockRow, moving = false): void {
-    this.bookProductId.set(row.product.id!);
-    this.transfer.set(null);
-    this.historyOpen.set(false);
-    void this.loadMoves(row.product.id!);
-    if (moving) this.openTransfer();
+  rowClick(event: MouseEvent, row: StockRow): void {
+    if ((event.target as Element).closest('a, button, input')) return;
+    this.openBook(row);
   }
 
-  /** Stuk/demo from inside the book: the small sheet takes over. */
-  takeoutFromBook(): void {
-    const row = this.book()?.row;
-    if (!row) return;
-    this.closeBook();
-    this.openTakeout(row);
+  openBook(row: StockRow): void {
+    this.bookProductId.set(row.product.id!);
+    this.historyOpen.set(false);
+    void this.loadMoves(row.product.id!);
   }
 
   closeBook(): void {
     this.bookProductId.set(null);
-    this.transfer.set(null);
   }
 
   private async loadMoves(productId: number): Promise<void> {
@@ -888,129 +988,163 @@ export class StockPage {
     }
   }
 
-  readonly subtitle = computed(() => {
-    const total = this.rows().reduce((sum, row) => sum + row.total, 0);
-    return `${total.toLocaleString('nl-BE')} stuks op ${this.activeLocations().length} locatie${this.activeLocations().length === 1 ? '' : 's'}`;
+  /* ---- Voorraad boeken ---- */
+  readonly bookingFor = signal<{ productId: number; kind: BookingKind; locationId: number | null } | null>(null);
+  /** The sheet follows the live row, so its levels are always today's. */
+  readonly booking = computed(() => {
+    const open = this.bookingFor();
+    if (!open) return null;
+    const row = this.rows().find((item) => item.product.id === open.productId);
+    if (!row) return null;
+    const levels: BookingLevel[] = this.activeLocations().map((location) => ({
+      locationId: location.id!, name: location.name, quantity: row.byLocation.get(location.id!) ?? 0,
+    }));
+    return { row, levels, kind: open.kind, locationId: open.locationId };
   });
 
-  constructor() {
-    void this.load();
-  }
-
-  private async load(): Promise<void> {
-    try {
-      const [products, locations, levels, categories, expected, families] = await Promise.all([
-        this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
-        this.catalog.categories().catch(() => [] as Category[]),
-        this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
-        this.catalog.productFamilies().catch(() => [] as ProductFamily[]),
-      ]);
-      this.families.set(families);
-      this.products.set(products);
-      this.locations.set(locations);
-      this.levels.set(levels);
-      this.categories.set(categories);
-      this.expected.set(new Map(expected.map((item) => [item.productId, item])));
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Voorraad laden mislukt'), 'err');
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  locationName(id: number): string {
-    return this.locations().find((location) => location.id === id)?.name ?? '';
-  }
-
-  /* ---- edit mode: figures typed straight in, stuk/demo per row ---- */
-  readonly editing = signal(false);
-  readonly takeout = signal<{ row: StockRow; kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
-
-  openTakeout(row: StockRow): void {
-    const locations = this.activeLocations();
-    const withStock = locations.find((location) => (row.byLocation.get(location.id!) ?? 0) > 0);
-    this.takeout.set({ row, kind: 'DAMAGED',
-      locationId: this.view() ?? withStock?.id ?? locations[0]?.id ?? 0, quantity: 0, note: '' });
-  }
-
-  async confirmTakeout(): Promise<void> {
-    const out = this.takeout();
-    if (!out || !(out.quantity > 0)) return;
-    const at = out.row.byLocation.get(out.locationId) ?? 0;
-    if (out.quantity > at) { this.ui.toast(`Op ${this.locationName(out.locationId)} liggen maar ${at} stuks`, 'err'); return; }
-    this.saving.set(true);
-    try {
-      await this.catalog.takeOutStock(out.row.product.id!, {
-        locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
-      this.levels.set(await this.catalog.stockLevels());
-      this.takeout.set(null);
-      this.ui.toast(out.kind === 'DAMAGED'
-        ? `${out.quantity} stuks als beschadigd afgeboekt`
-        : `${out.quantity} stuks als demo afgeboekt`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  /* ---- transfer, inside the sheet ---- */
-  readonly transfer = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
-
-  openTransfer(): void {
-    const locations = this.activeLocations();
-    if (locations.length < 2) {
+  openBooking(row: StockRow, kind: BookingKind, locationId: number | null | undefined): void {
+    if (kind === 'TRANSFER' && this.activeLocations().length < 2) {
       this.ui.toast('Maak eerst een tweede locatie aan onder Voorraadlocaties', 'err');
       return;
     }
-    const fromId = this.view() ?? locations[0].id!;
-    const toId = locations.find((location) => location.id !== fromId)!.id!;
-    this.transfer.set({ fromId, toId, quantity: 0, note: '' });
+    this.bookingFor.set({ productId: row.product.id!, kind, locationId: locationId ?? null });
   }
 
-  patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
-    this.transfer.update((move) => move ? { ...move, ...changes } : move);
-  }
-
-  async confirmTransfer(): Promise<void> {
-    const move = this.transfer();
-    const row = this.book()?.row;
-    if (!move || !row) return;
-    if (move.quantity <= 0) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
-    this.saving.set(true);
+  /** After a booking the table and the open product sheet's history tell the new truth. */
+  async onBooked(event: StockBooked): Promise<void> {
+    const productId = this.bookingFor()?.productId ?? null;
+    this.bookingFor.set(null);
+    void event;
     try {
-      await this.catalog.transferStock(row.product.id!, move.fromId, move.toId, move.quantity, move.note || null);
       this.levels.set(await this.catalog.stockLevels());
-      this.transfer.set(null);
-      void this.loadMoves(row.product.id!);
-      this.ui.toast(`${move.quantity} × ${row.product.name} naar ${this.locationName(move.toId)}`, 'ok');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
+    } catch { /* the toast already said it was booked; the figures catch up on the next load */ }
+    if (productId !== null && this.bookProductId() === productId) void this.loadMoves(productId);
+  }
+
+  /* ---- keyboard ---- */
+  /** '/' focuses the search (until the shell listens everywhere). */
+  onDocumentKey(event: KeyboardEvent): void {
+    if (event.key !== '/' || !this.desktop.active()) return;
+    const context = keyContext(event, null);
+    if (context.typing || context.overlayOpen || context.mod) return;
+    const field = document.querySelector<HTMLInputElement>('app-stock-page [data-page-search]');
+    if (!field) return;
+    event.preventDefault();
+    field.focus();
+  }
+
+  /** The row that takes Tab (roving tabindex): the last focused one while it is on screen, else the first. */
+  private readonly focusedRow = signal<string | null>(null);
+  private rowKeyOf(group: StockGroup): string {
+    return group.rows.length === 1 ? `p:${group.rows[0].product.id}` : `h:${group.key}`;
+  }
+  private readonly shownRows = computed(() => {
+    const keys = new Set<string>();
+    const add = (group: StockGroup) => {
+      keys.add(this.rowKeyOf(group));
+      if (group.rows.length > 1 && this.isOpen(group)) for (const row of group.rows) keys.add(`p:${row.product.id}`);
+    };
+    for (const section of this.sections()) section.groups.forEach(add);
+    if (this.showDemo()) this.demoGroups().forEach(add);
+    return keys;
+  });
+  private readonly firstRow = computed(() => {
+    const group = this.sections()[0]?.groups[0] ?? (this.showDemo() ? this.demoGroups()[0] : undefined);
+    return group ? this.rowKeyOf(group) : null;
+  });
+
+  rowTab(key: string): number {
+    return rovingRow(this.focusedRow(), this.shownRows(), this.firstRow()) === key ? 0 : -1;
+  }
+
+  onTableFocus(event: FocusEvent): void {
+    const key = (event.target as Element).closest<HTMLElement>('[data-row]')?.dataset['row'];
+    if (key && key !== this.focusedRow()) this.focusedRow.set(key);
+  }
+
+  /** ↑ ↓ through the rows, Enter opens the product sheet (a head folds), B opens Voorraad boeken. */
+  onTableKey(event: KeyboardEvent): void {
+    const context = keyContext(event, this.element.nativeElement);
+    if (context.typing || context.overlayOpen || context.mod || event.altKey) return;
+    const row = (event.target as Element).closest<HTMLElement>('[data-row]');
+    const key = row?.dataset['row'];
+    if (!row || !key) return;
+    const rows = [...this.element.nativeElement.querySelectorAll<HTMLElement>('.sk-table [data-row]')];
+    const index = rows.indexOf(row);
+    const product = key.startsWith('p:') ? this.rows().find((item) => item.product.id === Number(key.slice(2))) ?? null : null;
+    if (event.key === 'ArrowDown') { event.preventDefault(); rows[index + 1]?.focus(); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); rows[index - 1]?.focus(); }
+    else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (product) this.openBook(product);
+      else { const group = this.groups().find((item) => `h:${item.key}` === key); if (group) this.toggle(group); }
+    } else if ((event.key === 'b' || event.key === 'B') && product) {
+      event.preventDefault();
+      this.openBooking(product, 'RECOUNT', this.view());
     }
   }
 
   /* ---- typing a count straight into the table ---- */
 
-  /** A figure typed in a cell is booked at once as a manual correction. */
+  /**
+   * A figure typed in a cell is booked at once as a manual correction, with
+   * an undo on the toast. Empty, letters, a minus or a decimal is no count:
+   * the old figure comes back and nothing is booked.
+   */
   async setQuantity(row: StockRow, locationId: number, field: HTMLInputElement): Promise<void> {
     const before = row.byLocation.get(locationId) ?? 0;
-    const quantity = Math.max(0, Math.round(Number(field.value) || 0));
-    if (quantity === before) { field.value = String(before); return; }
+    const edit = stockCellEdit(field.value, before);
+    if (edit.action !== 'book') {
+      field.value = String(before);
+      if (edit.action === 'revert') this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
+      return;
+    }
+    const productId = row.product.id!;
+    const quantity = edit.quantity;
     try {
-      await this.catalog.setStock(row.product.id!, quantity, locationId, 'Voorraadoverzicht');
-      this.levels.update((levels) => {
-        const rest = levels.filter((level) => !(level.productId === row.product.id && level.locationId === locationId));
-        return [...rest, { productId: row.product.id!, locationId, quantity }];
-      });
-      if (this.bookProductId() === row.product.id) void this.loadMoves(row.product.id!);
-      this.ui.toast(`${row.product.name}: ${quantity.toLocaleString('nl-BE')} op ${this.locationName(locationId)}`, 'ok');
+      await this.catalog.setStock(productId, quantity, locationId, 'Voorraadoverzicht');
+      this.storeLevel(productId, locationId, quantity);
+      const unit = productSalesUnit(row.product);
+      this.ui.toast(`${row.product.name}: ${unitCount(unit, quantity)} op ${this.locationName(locationId)}`, 'ok',
+        { label: 'Ongedaan maken', run: () => void this.undoQuantity(productId, locationId, before, quantity) });
     } catch (failure: unknown) {
       field.value = String(before);
       this.ui.toast(messageOf(failure, 'Voorraad zetten mislukt'), 'err');
     }
   }
 
+  /**
+   * Puts the old figure back, only while the booked figure still stands on
+   * the server: a sale, a receipt or a booking from another screen or device
+   * since then is never erased by the absolute write.
+   */
+  private async undoQuantity(productId: number, locationId: number, before: number, booked: number): Promise<void> {
+    let current: number;
+    try {
+      current = (await this.catalog.productStock(productId)).find((level) => level.locationId === locationId)?.quantity ?? 0;
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err');
+      return;
+    }
+    if (!undoAllowed(current, booked)) {
+      this.storeLevel(productId, locationId, current);
+      this.ui.toast('Niet teruggezet: het aantal is intussen gewijzigd', 'err');
+      return;
+    }
+    try {
+      await this.catalog.setStock(productId, before, locationId, 'Ongedaan gemaakt');
+      this.storeLevel(productId, locationId, before);
+      this.ui.toast(`Teruggezet naar ${before.toLocaleString('nl-BE')}`, 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err');
+    }
+  }
+
+  private storeLevel(productId: number, locationId: number, quantity: number): void {
+    this.levels.update((levels) => {
+      const rest = levels.filter((level) => !(level.productId === productId && level.locationId === locationId));
+      return [...rest, { productId, locationId, quantity }];
+    });
+    if (this.bookProductId() === productId) void this.loadMoves(productId);
+  }
 }

@@ -1,0 +1,172 @@
+/* Producten & voorraad: the product page on the desk (app-product-desk).
+   The styleUrl of ProductDesk (ViewEncapsulation.None): every rule is
+   scoped under the host. A light hero card with the six figures, then two
+   self-stacking columns from 1200 px. Names, labels and figure lines wrap;
+   only movement references ellipsize (with a title). */
+
+app-product-desk { display: block; min-width: 0; }
+app-product-desk .pdk { display: grid; gap: 14px; align-content: start; }
+app-product-desk .appbar .btn app-icon { margin-right: 5px; }
+
+/* ---- hero card ---- */
+app-product-desk .pdk-hero { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
+app-product-desk .pdk-hero__top { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; align-items: start; padding: 18px 20px 16px; }
+app-product-desk .pdk-hero__top--series { grid-template-columns: 96px minmax(0, 1fr) minmax(0, auto); }
+app-product-desk .pdk-hero__photo {
+  display: grid; place-items: center; width: 96px; height: 96px; padding: 0; overflow: hidden; border: 0; border-radius: 14px;
+  background: var(--surface-2); box-shadow: inset 0 0 0 .5px rgb(0 0 0 / 8%); color: var(--muted-2); font-size: 22px; cursor: zoom-in;
+}
+app-product-desk .pdk-hero__photo img { width: 100%; height: 100%; object-fit: cover; }
+app-product-desk .pdk-hero__photo--empty { cursor: default; }
+app-product-desk .pdk-id { min-width: 0; }
+app-product-desk .pdk-eyebrow { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+app-product-desk .pdk-title { margin: 2px 0 3px; font-size: 24px; font-weight: 750; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+app-product-desk .pdk-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0; color: var(--ink-2); font-size: 13px; }
+app-product-desk .pdk-line a { color: var(--rose-dark); font-weight: 600; text-decoration: none; }
+app-product-desk .pdk-line a:hover { text-decoration: underline; }
+app-product-desk .pdk-line .sep { color: var(--muted-2); }
+app-product-desk .pdk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+app-product-desk .pdk-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-2); font-size: 12px; font-weight: 650; white-space: nowrap;
+}
+app-product-desk .pdk-chip i { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%); }
+app-product-desk .pdk-chip.mono { font-family: var(--mono); font-size: 11.5px; }
+app-product-desk .pdk-chip.tone-ok { border-color: color-mix(in srgb, var(--ok) 30%, var(--surface)); background: color-mix(in srgb, var(--ok) 9%, var(--surface)); color: var(--ok); }
+app-product-desk .pdk-chip.tone-warn { border-color: color-mix(in srgb, var(--warn) 30%, var(--surface)); background: var(--warn-soft); color: var(--warn); }
+app-product-desk .pdk-series { display: grid; justify-items: end; gap: 6px; max-width: 360px; }
+app-product-desk .pdk-series small { color: var(--muted); font-size: 11.5px; font-weight: 650; }
+app-product-desk .pdk-series__chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+app-product-desk .pdk-series__chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--ink-2); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+app-product-desk a.pdk-series__chip[href]:hover { border-color: var(--rose); color: var(--rose-dark); }
+app-product-desk .pdk-series__chip i { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 15%); }
+app-product-desk .pdk-series__chip b { color: var(--muted); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+app-product-desk .pdk-series__chip.now { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
+app-product-desk .pdk-series__chip.off { opacity: .6; }
+
+/* the six figures: every cell a button; labels and sub-lines wrap (B5) */
+app-product-desk .pdk-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--line); background: var(--surface-2); }
+app-product-desk .pdk-kpi {
+  display: grid; align-content: start; gap: 1px; min-width: 0; padding: 12px 18px 13px; border: 0; border-left: 1px solid var(--line);
+  background: transparent; color: var(--ink); font: inherit; text-align: left; text-decoration: none; cursor: pointer;
+  transition: background var(--dur-1, .12s);
+}
+app-product-desk .pdk-kpi:first-child { border-left: 0; }
+app-product-desk .pdk-kpi:hover { background: var(--surface); }
+app-product-desk .pdk-kpi--static { cursor: default; }
+app-product-desk .pdk-kpi--static:hover { background: transparent; }
+app-product-desk .pdk-kpi small { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+app-product-desk .pdk-kpi strong { font-size: 21px; font-weight: 720; letter-spacing: -.02em; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+app-product-desk .pdk-kpi strong em { margin-left: 5px; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 600; letter-spacing: 0; }
+app-product-desk .pdk-kpi strong.is-bad { color: var(--danger); }
+app-product-desk .pdk-kpi .pdk-kpi__word { font-size: 17px; letter-spacing: -.01em; }
+app-product-desk .pdk-kpi span { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+app-product-desk .pdk-kpi--accent strong { color: var(--rose-dark); }
+app-product-desk .pdk-kpi--ok strong { color: var(--ok); }
+app-product-desk .pdk-kpi--bad strong { color: var(--danger); }
+app-product-desk .pdk-kpi--warn strong { color: var(--warn); }
+
+/* ---- the columns ---- */
+app-product-desk .pdk-cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: 14px; align-items: start; }
+app-product-desk .pdk-col { display: grid; gap: 14px; min-width: 0; align-content: start; }
+app-product-desk .pdk-duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+/* A location stays with its figure and an order number stays whole: sub-lines break only between the parts. */
+app-product-desk .pdk-nw { display: inline-block; }
+app-product-desk .pdk-card { display: block; min-width: 0; padding: 14px 18px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 4%); }
+app-product-desk .pdk-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+app-product-desk .pdk-card__head h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+app-product-desk .pdk-card__head p { margin: 1px 0 0; color: var(--muted); font-size: 12px; }
+app-product-desk .pdk-card__head .linklike { flex: none; white-space: nowrap; }
+app-product-desk .pdk-card__trail { display: flex; flex: none; align-items: baseline; gap: 10px; }
+app-product-desk .pdk-card__trail small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+app-product-desk .pdk-total { flex: none; font-size: 20px; font-weight: 720; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+app-product-desk .pdk-total em { margin-left: 4px; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 600; letter-spacing: 0; }
+app-product-desk .pdk-total.is-bad { color: var(--danger); }
+app-product-desk .pdk-more { margin-top: 6px; font-size: 12.5px; }
+
+/* price flow: EXW → Kostprijs → Prijsregel → Catalogusprijs = Marge; 3 + 2 below 1360 (B5) */
+app-product-desk .pdk-flow { display: flex; align-items: stretch; gap: 5px; }
+app-product-desk .pdk-flow__step {
+  display: grid; flex: 1 1 0; align-content: start; gap: 2px; min-width: 96px; padding: 9px 11px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+}
+app-product-desk .pdk-flow__step small { color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .07em; line-height: 1.25; text-transform: uppercase; }
+app-product-desk .pdk-flow__step b { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; overflow-wrap: anywhere; }
+app-product-desk .pdk-flow__step span { color: var(--muted); font-size: 11px; line-height: 1.35; }
+app-product-desk .pdk-flow__link { justify-self: start; margin-top: 3px; padding: 0; font-size: 11.5px; text-align: left; }
+app-product-desk .pdk-flow__op { align-self: center; flex: none; color: var(--muted-2); font-size: 14px; font-style: normal; font-weight: 700; }
+app-product-desk .pdk-flow__step--price b { color: var(--rose-dark); }
+app-product-desk .pdk-flow__step--margin { border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+app-product-desk .pdk-flow__step--margin b { color: var(--ok); }
+app-product-desk .pdk-flow__step--margin.is-bad { border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: var(--danger-soft); }
+app-product-desk .pdk-flow__step--margin.is-bad b { color: var(--danger); }
+app-product-desk .pdk-flow-note { margin: 8px 2px 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 1359.98px) {
+  app-product-desk .pdk-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); row-gap: 8px; }
+  app-product-desk .pdk-flow__op--break { display: none; }
+  app-product-desk .pdk-flow__step--price { grid-column: 1; }
+}
+
+/* product: gallery beside the facts */
+app-product-desk .pdk-product { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 18px; align-items: start; }
+app-product-desk .pdk-desc { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+app-product-desk .pdk-desc--open { display: block; -webkit-line-clamp: unset; }
+
+/* stock card */
+app-product-desk .pdk-levels { display: grid; gap: 6px; }
+app-product-desk .pdk-level {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+app-product-desk .pdk-level:hover, app-product-desk .pdk-level.on { border-color: var(--rose-line); background: var(--rose-soft); }
+app-product-desk .pdk-level span { display: grid; flex: 1; min-width: 0; }
+app-product-desk .pdk-level b { font-size: 13.5px; font-weight: 650; }
+app-product-desk .pdk-level small { color: var(--muted); font-size: 11.5px; }
+app-product-desk .pdk-level strong { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+app-product-desk .pdk-level strong.zero { color: var(--muted-2); font-weight: 550; }
+app-product-desk .pdk-book { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+app-product-desk .pdk-onway {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 10px; padding: 9px 12px;
+  border-radius: 12px; background: var(--rose-soft); color: var(--rose-dark); font-size: 13px; text-decoration: none;
+}
+app-product-desk .pdk-onway b { font-weight: 700; }
+app-product-desk .pdk-onway small { font-size: 12px; font-weight: 600; }
+app-product-desk .pdk-moves { display: grid; }
+app-product-desk .pdk-move { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+app-product-desk .pdk-move:last-child { border-bottom: 0; }
+app-product-desk .pdk-move span { display: grid; flex: 1; min-width: 0; }
+/* A movement reference may be cut (today's behaviour); the date line wraps. */
+app-product-desk .pdk-move b { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+app-product-desk .pdk-move small { color: var(--muted); font-size: 11.5px; }
+app-product-desk .pdk-move strong { color: var(--ok); font-weight: 700; font-variant-numeric: tabular-nums; }
+app-product-desk .pdk-move strong.minus { color: var(--danger); }
+
+/* agreements: folded to 136 px with a fade */
+app-product-desk .pdk-note--folded { position: relative; max-height: 136px; overflow: hidden; }
+app-product-desk .pdk-note--folded::after { content: ''; position: absolute; right: 0; bottom: 0; left: 0; height: 44px; background: linear-gradient(transparent, var(--warn-soft)); }
+
+/* ---- loading ---- */
+app-product-desk .pdk-skel__top { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; padding: 18px 20px 16px; }
+app-product-desk .pdk-skel__photo { display: block; width: 96px; height: 96px; border-radius: 14px; }
+app-product-desk .pdk-skel__lines { display: grid; gap: 10px; align-content: start; }
+app-product-desk .pdk-skel__kpi { display: grid; gap: 8px; cursor: default; }
+
+/* ---- below 1200: one column, Voorraad | Website side by side from 900 (N11); strip 3 × 2 ---- */
+@media (max-width: 1199.98px) {
+  app-product-desk .pdk-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  app-product-desk .pdk-strip .pdk-kpi:nth-child(4) { border-left: 0; }
+  app-product-desk .pdk-strip .pdk-kpi:nth-child(n + 4) { border-top: 1px solid var(--line); }
+  app-product-desk .pdk-hero__top--series { grid-template-columns: 96px minmax(0, 1fr); }
+  app-product-desk .pdk-series { grid-column: 1 / -1; justify-items: start; max-width: none; }
+  app-product-desk .pdk-series__chips { justify-content: flex-start; }
+  app-product-desk .pd-price__detail { grid-template-columns: minmax(0, 1fr); }
+  app-product-desk .pdk-cols--skel { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 899.98px) {
+  app-product-desk .pdk-duo { grid-template-columns: minmax(0, 1fr); }
+  app-product-desk .pdk-product { grid-template-columns: minmax(0, 1fr); }
+  app-product-desk .pdk-product .pd-gallery { max-width: 260px; }
+}

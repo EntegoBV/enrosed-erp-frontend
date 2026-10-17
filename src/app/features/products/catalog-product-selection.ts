@@ -72,7 +72,7 @@ function storeStudioView(view: CatalogueStudioView): void {
     <section class="card product-selector" aria-labelledby="catalog-products-title">
       <div class="product-selector__head">
         <span class="selection-step" aria-hidden="true">03</span>
-        <div><h2 id="catalog-products-title">Uw collectie, compleet.</h2><p>{{ selectedFamilyCount() }} productgroepen · {{ selectedProductCount() }} varianten geselecteerd</p></div>
+        <div><h2 id="catalog-products-title">Je collectie, compleet.</h2><p>{{ selectedFamilyCount() }} productgroepen · {{ selectedProductCount() }} varianten geselecteerd</p></div>
       </div>
       <div class="collection-scope">
         <button class="collection-all" type="button" [class.collection-all--selected]="allSelected()"

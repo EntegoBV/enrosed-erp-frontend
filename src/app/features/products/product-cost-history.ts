@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Skeleton } from '../../shared/skeleton';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
@@ -18,10 +19,10 @@ import { costHistoryView, emptyCostHistory, excludedNote, replacedNote, type Cos
 @Component({
   selector: 'app-product-cost-history',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, NumPipe, DateNlPipe, CurPipe, TrendChart],
+  imports: [RouterLink, EurPipe, NumPipe, DateNlPipe, CurPipe, TrendChart, Skeleton],
   template: `
     @if (loading()) {
-      <p class="pch__state">Historiek laden…</p>
+      <div class="pch__state" role="status" aria-label="Historiek laden"><app-skeleton kind="lines" [rows]="3" /></div>
     } @else if (error()) {
       <p class="pch__state pch__state--err">{{ error() }}</p>
     } @else if (!view().rows.length) {

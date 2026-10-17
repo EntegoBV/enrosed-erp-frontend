@@ -17,7 +17,7 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
   ],
   template: `
     <app-page-header
-      [title]="catalogMode ? 'Cataloguslabels' : (seoMode ? 'SEO beheren' : 'Websiteteksten & vertalingen')"
+      [title]="catalogMode ? 'Catalogusteksten' : (seoMode ? 'SEO beheren' : 'Websiteteksten & vertalingen')"
       [subtitle]="catalogMode
         ? 'Algemene labels voor de PDF-catalogus, los van de website.'
         : (seoMode
@@ -56,7 +56,7 @@ import { WebsiteProductSeoAudit } from './website-product-seo-audit';
 
       <app-content-translation-workspace
         [visible]="true"
-        [title]="catalogMode ? 'Cataloguslabels' : (seoMode ? 'Algemene pagina-SEO' : 'Websiteteksten')"
+        [title]="catalogMode ? 'Catalogusteksten' : (seoMode ? 'Algemene pagina-SEO' : 'Websiteteksten')"
         [description]="catalogMode
           ? 'Labels voor de PDF-catalogus in acht talen. Productspecifieke inhoud blijft bij het product.'
           : (seoMode

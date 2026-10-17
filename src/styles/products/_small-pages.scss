@@ -1,0 +1,50 @@
+/* Producten & voorraad: the small pages (EAN-codes, Voorraadlocaties,
+   Categorieën, Catalogus PDF, Productvertalingen). */
+
+/* Catalogus PDF: the way to the catalogue texts in the chosen language. */
+app-catalog-export .studio-texts-link { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 650; }
+
+/* Productvertalingen: the retry waits with a turning icon, never "Laden…". */
+app-product-translations-page .translation-retry--busy { animation: wk-spin .8s linear infinite; }
+app-product-translations-page .btn app-icon { margin-right: 6px; }
+
+/* EAN-codes (app-barcode-pool-page): free codes as a grid of chips on the desk, cells on the phone;
+   In gebruik as a kit table. */
+app-barcode-pool-page .ean-add { margin-bottom: 14px; }
+app-barcode-pool-page .ean-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+app-barcode-pool-page .ean-chip { position: relative; display: flex; }
+app-barcode-pool-page .ean-chip__copy {
+  display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 0 34px 0 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
+}
+app-barcode-pool-page .ean-chip__copy .mono { font-family: var(--mono); font-size: 13.5px; letter-spacing: .03em; }
+app-barcode-pool-page .ean-chip__copy app-icon { color: var(--muted); }
+app-barcode-pool-page .ean-chip__copy:hover { border-color: var(--line-strong); background: var(--surface-2); }
+app-barcode-pool-page .ean-chip__x {
+  position: absolute; top: 50%; right: 6px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0;
+  border-radius: 6px; background: none; color: var(--muted); cursor: pointer; opacity: 0; transform: translateY(-50%); transition: opacity var(--dur-1, .12s);
+}
+app-barcode-pool-page .ean-chip:hover .ean-chip__x, app-barcode-pool-page .ean-chip:focus-within .ean-chip__x { opacity: 1; }
+app-barcode-pool-page .ean-chip__x:hover { background: var(--danger-soft); color: var(--danger); }
+@media (hover: none) { app-barcode-pool-page .ean-chip__x { opacity: 1; } }
+app-barcode-pool-page .ean-tools { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+app-barcode-pool-page .ean-table { --wk-cols: 170px 140px minmax(0, 1fr) 100px; }
+app-barcode-pool-page .ean-table .wk-td.mono { font-family: var(--mono); font-size: 12.5px; }
+app-barcode-pool-page .ean-product { display: grid; white-space: normal; overflow: visible; }
+app-barcode-pool-page .ean-product a { color: var(--ink); font-weight: 600; text-decoration: none; }
+app-barcode-pool-page .ean-product small { color: var(--muted); font-size: 11.5px; }
+app-barcode-pool-page .ean-wrap { white-space: normal; }
+app-barcode-pool-page .pool-item.swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; }
+app-barcode-pool-page .pool-row .mono { font-family: var(--mono); letter-spacing: .03em; }
+@media (max-width: 679.98px) {
+  app-barcode-pool-page .content.ean--phone { padding-left: 0; padding-right: 0; }
+  app-barcode-pool-page .ean-seg, app-barcode-pool-page .ean-search { padding: 0 var(--ios-inset) 10px; }
+  app-barcode-pool-page .ean-add { margin: 0 var(--ios-inset) 16px; }
+}
+
+/* Voorraadlocaties: what lies at each location. */
+app-stock-location-list .location-stock { margin-top: 2px; overflow: visible; color: var(--ink-2); font-variant-numeric: tabular-nums; text-overflow: clip; white-space: normal; }
+
+/* Categorieën: the product count opens Producten on that category. */
+app-categories-page .cat-card__count { color: var(--rose-dark); font-weight: 650; text-decoration: none; }
+app-categories-page .cat-card__count:hover { text-decoration: underline; }

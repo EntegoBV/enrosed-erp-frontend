@@ -18,13 +18,17 @@ test('the four work tabs light on their own screens', () => {
     ['/products/new', 'products'],
     ['/catalog-export', 'products'],
     ['/catalog/texts', 'products'],
+    /* Voorraad sits on the Producten tab; its sub-screens stay under Meer. */
+    ['/stock', 'products'],
+    ['/stock?locatie=2', 'products'],
+    ['/stock?q=bowl&categorie=1', 'products'],
   ];
   for (const [url, tab] of table) assert.equal(phoneTabForUrl(url), tab, url);
 });
 
 test('screens reached from Meer light Meer, so the tab agrees with "‹ Meer"', () => {
   for (const url of [
-    '/more', '/revisions', '/stock', '/stock?locatie=2', '/stock/inventaris', '/stock/inventaris/telling/3',
+    '/more', '/revisions', '/stock/inventaris', '/stock/inventaris/telling/3', '/stock/inventaris/afsluiting/2026',
     '/stock-locations', '/barcodes', '/categories', '/prospects', '/prospects/4', '/customers', '/klantlogins',
     '/contactaanvragen', '/suppliers', '/countries', '/costs', '/files', '/voorwaarden', '/settings',
     '/settings?sectie=company', '/settings/deleted-items', '/activity', '/analyses/cash', '/website', '/nope',

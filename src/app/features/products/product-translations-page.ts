@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
+import { Icon } from '../../shared/icon';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { LANGUAGES, LanguageCode, Product, ProductFamily } from '../../core/api/models';
@@ -32,7 +33,7 @@ const PRODUCT_TRANSLATION_FOCUS = new Set([
 @Component({
   selector: 'app-product-translations-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, Skeleton, ProductTranslationEditor],
+  imports: [RouterLink, PageHeader, Skeleton, ProductTranslationEditor, Icon],
   template: `
     @if (loadError()) {
       <app-page-header title="Productvertalingen" subtitle="Product niet beschikbaar"
@@ -47,16 +48,14 @@ const PRODUCT_TRANSLATION_FOCUS = new Set([
           <div class="translation-load-error__actions">
             <a class="btn" routerLink="/products">Terug naar producten</a>
             @if (validProductId) {
-              <button class="btn btn--primary" type="button" [disabled]="loading()"
-                      (click)="retry()">
-                {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
-              </button>
+              <button class="btn btn--primary" type="button" [disabled]="loading()" [attr.aria-busy]="loading()"
+                      (click)="retry()"><app-icon name="refresh" [size]="16" [class.translation-retry--busy]="loading()" />Opnieuw proberen</button>
             }
           </div>
         </section>
       </main>
     } @else if (loading()) {
-      <app-page-header title="Productvertalingen" subtitle="Product laden…"
+      <app-page-header title="Productvertalingen"
                        [showBack]="true" [backTo]="returnTo" [showBell]="false" />
       <main class="content translations-page" aria-live="polite">
         <app-skeleton kind="card" [rows]="2" />
@@ -77,15 +76,15 @@ const PRODUCT_TRANSLATION_FOCUS = new Set([
             <span>
               <b>Productvertalingen</b>
               <small>Publieke product- en familienaam, variantkleur, beschrijving, SEO en foto-alt.</small>
-              <strong>U werkt aan {{ product.name }}</strong>
+              <strong>Je werkt aan {{ product.name }}</strong>
             </span>
           </div>
           <a class="translation-route" routerLink="/website/texts">
             <span class="translation-route__letter" aria-hidden="true">B</span>
             <span>
-              <b>Website Content</b>
+              <b>Websiteteksten</b>
               <small>Homepage en onderdelen, navigatie, footer, juridische pagina’s en algemene SEO-paginacopy.</small>
-              <strong>Open Website Content <i aria-hidden="true">→</i></strong>
+              <strong>Websiteteksten openen <i aria-hidden="true">→</i></strong>
             </span>
           </a>
         </nav>

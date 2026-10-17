@@ -25,6 +25,8 @@ export interface PageShortcutSet {
    * the path itself and anything below it.
    */
   routes: readonly string[];
+  /** Paths the routes match that are another screen ('/products/new' under '/products/:id'). */
+  except?: readonly string[];
   rows: readonly ShortcutRow[];
 }
 
@@ -78,6 +80,33 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
       { keys: ['N'], text: 'Nieuwe leverancier' },
     ],
   },
+  /* Producten & voorraad (2026-10-17) */
+  {
+    routes: ['/products'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Door de lijst' },
+      { keys: ['→', '←'], text: 'Reeks openen of sluiten' },
+      { keys: ['↵'], text: 'Product openen' },
+      { keys: ['E'], text: 'Bewerken' },
+    ],
+  },
+  {
+    routes: ['/products/:id'],
+    except: ['/products/new'],
+    rows: [
+      { keys: ['E'], text: 'Bewerken' },
+      { keys: ['B'], text: 'Voorraad boeken' },
+      { keys: ['⌥', '←'], alt: ['⌥', '→'], text: 'Vorige of volgende kleur' },
+    ],
+  },
+  {
+    routes: ['/stock'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Door de lijst' },
+      { keys: ['↵'], text: 'Voorraad van het product' },
+      { keys: ['B'], text: 'Voorraad boeken' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */
@@ -107,7 +136,8 @@ export function routeMatches(pattern: string, url: string): boolean {
 
 /** The "Op deze pagina" rows for a URL; empty when nothing matches (the section hides). */
 export function pageShortcutsFor(url: string, sets: readonly PageShortcutSet[] = PAGE_SHORTCUTS): ShortcutRow[] {
-  return sets.filter((set) => set.routes.some((route) => routeMatches(route, url))).flatMap((set) => set.rows);
+  return sets.filter((set) => set.routes.some((route) => routeMatches(route, url))
+    && !set.except?.some((route) => routeMatches(route, url))).flatMap((set) => set.rows);
 }
 
 /** Kosten & bank and Documenten & media handle '/' and '?' themselves. */

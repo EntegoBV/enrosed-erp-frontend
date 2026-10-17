@@ -156,7 +156,7 @@ interface FamilyFeaturedOption {
               <div class="readiness" role="status">
                 <div class="readiness__head">
                   <b>Nog {{ readableIssues().length }} punt(en) voordat dit live kan</b>
-                  <small>U kunt productgegevens en gedeeltelijke vertalingen wel gewoon opslaan; alleen publicatie wacht.</small>
+                  <small>Je kunt productgegevens en gedeeltelijke vertalingen wel gewoon opslaan; alleen publicatie wacht.</small>
                 </div>
                 <ul>
                   @for (issue of readableIssues(); track issue) {
@@ -280,7 +280,7 @@ interface FamilyFeaturedOption {
                   />
                 </span>
                 <small class="field__hint">{{ identityFinalizationPending()
-                  ? 'Wordt samen met de reeks- en variantcodes definitief zodra u opslaat.'
+                  ? 'Wordt samen met de reeks- en variantcodes definitief zodra je opslaat.'
                   : family.id !== null
                     ? 'Permanent na aanmaak. Gebruik een gecontroleerde redirect buiten dit formulier voor een URL-migratie.'
                   : 'Kies deze permanente URL één keer voor de nieuwe reeks; een titelwijziging past hem later niet automatisch aan.' }}</small>

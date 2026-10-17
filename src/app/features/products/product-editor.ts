@@ -20,6 +20,9 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
+import { Skeleton } from '../../shared/skeleton';
+import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
+import { stockCellEdit, type BookingKind } from './stock-booking';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -86,16 +89,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
+    Skeleton, StockBookingSheet,
   ],
   template: `
     @if (!desktop.active()) {
       <header class="product-mobile-header">
-        <a class="product-mobile-back" [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']" aria-label="Terug naar product">‹</a>
-        <div><span>{{ isNew() ? 'Nieuw product' : 'Product bewerken' }}</span><h1>{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1></div>
+        <!-- A long name gets the room: the back capsule folds to the kit's circle (foundation rule B10). -->
+        <a class="product-mobile-back" [class.ios-capsule]="!phoneBackCompact()" [class.ios-circle]="phoneBackCompact()"
+           [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']"
+           [attr.aria-label]="!isNew() && editorReady() ? 'Terug naar product' : 'Terug naar Producten'"><app-icon name="chevron-left" [size]="18" />@if (!phoneBackCompact()) {<span>{{ !isNew() && editorReady() ? 'Product' : 'Producten' }}</span>}</a>
+        <div class="product-mobile-title"><h1 [title]="draft().name">{{ editorReady() ? (draft().name || 'Nieuw product') : 'Product laden…' }}</h1>@if (!isNew() || draft().name) {<span>{{ isNew() ? 'Nieuw product' : 'Bewerken' }}</span>}</div>
         @if (editorReady() && !isNew()) {
-          <button class="product-mobile-actions" type="button" aria-haspopup="dialog"
+          <button class="product-mobile-actions ios-capsule" type="button" aria-haspopup="dialog"
                   [attr.aria-expanded]="!!toolbarMenu()" [disabled]="toolbarBusy()"
-                  (click)="openToolbarMenu($event)">Acties <span aria-hidden="true">⌄</span></button>
+                  (click)="openToolbarMenu($event)">Acties</button>
+        } @else {
+          <span class="product-mobile-actions" aria-hidden="true"></span>
         }
       </header>
     }
@@ -131,15 +140,21 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     <header class="editor-toolbar">
       <div class="editor-toolbar__title">
-        <a routerLink="/products">Producten</a><span aria-hidden="true">/</span>
-        <h1>{{ id() && id() !== 'new' ? 'Product bewerken' : 'Nieuw product' }}</h1>
+        @if (editorReady() && !isNew()) {
+          <a class="editor-toolbar__crumb" [routerLink]="['/products', draft().id]" [title]="savedDraft()?.name || draft().name">{{ savedDraft()?.name || draft().name || 'Product' }}</a>
+        } @else {
+          <a class="editor-toolbar__crumb" routerLink="/products">Producten</a>
+        }
+        <app-icon class="editor-toolbar__sep" name="chevron-right" [size]="14" aria-hidden="true" />
+        <div class="editor-toolbar__titles">
+          <h1>{{ id() && id() !== 'new' ? 'Bewerken' : 'Nieuw product' }}</h1>
+          <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
+            {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
+          </span>
+        </div>
       </div>
       <div class="editor-toolbar__actions">
-        <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
-          {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
-        </span>
         @if (editorReady() && !isNew()) {
-          <a class="btn btn--sm" [routerLink]="['/products', draft().id]">Bekijken</a>
           @if (catalogueNeighbours(); as around) {
             <span class="editor-toolbar__nav" role="group" aria-label="Door producten bladeren">
               <a class="editor-toolbar__step" data-product-step="previous"
@@ -149,7 +164,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                  [attr.tabindex]="!around.previous || toolbarBusy() ? -1 : 0"
                  [attr.aria-label]="catalogueStepLabel('previous')" [title]="catalogueStepLabel('previous')">‹</a>
               <small class="editor-toolbar__position" [attr.aria-label]="'Kleur ' + (around.index + 1) + ' van ' + around.total"
-                     [title]="around.current.groupName + ' · ' + around.current.optionLabel">{{ around.index + 1 }}/{{ around.total }}</small>
+                     [title]="around.current.groupName + ' · ' + around.current.optionLabel">{{ around.total > 1 ? 'Kleur ' + (around.index + 1) + '/' + around.total : 'Product' }}</small>
               <a class="editor-toolbar__step" data-product-step="next"
                  [routerLink]="around.next && !toolbarBusy() ? ['/products', around.next.productId, 'edit'] : null"
                  [queryParams]="{ tab: activeTab() }"
@@ -164,7 +179,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             Acties <span aria-hidden="true">⌄</span>
           </button>
         }
-        <button class="btn btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
+        <button class="btn btn--sm btn--primary" type="button" [disabled]="saveBusy()" (click)="save()">{{ saveActionLabel() }}</button>
       </div>
     </header>
 
@@ -189,21 +204,22 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <span><app-icon name="media" [size]="12" /></span>
         </button>
         <div class="product-mobile-variant">
-          <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { <small>· {{ draft().variantSize }}</small> }</strong>
-          <span>{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
+          <strong>@if (draft().colourHex) { <i [style.background]="draft().colourHex"></i> }{{ draft().colour || 'Kleur nog kiezen' }}@if (draft().variantSize) { · {{ draft().variantSize }} }</strong>
+          <span><span [class.mono]="!!draft().sku">{{ draft().sku || selectedCategoryName() || 'Nieuwe variant' }}</span>
+            @if (!isNew() && variantNeighbours(); as around) {
+              @if (around.total > 1) {
+                <span class="product-mobile-colours" role="group" aria-label="Kleurvariant kiezen">
+                  <a [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null" [attr.aria-disabled]="!around.previous" [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'"><app-icon name="chevron-left" [size]="15" /></a>
+                  <small class="mono">{{ around.index + 1 }}/{{ around.total }}</small>
+                  <a [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null" [attr.aria-disabled]="!around.next" [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'"><app-icon name="chevron-right" [size]="15" /></a>
+                </span>
+              }
+            }
+          </span>
         </div>
-        @if (!isNew() && variantNeighbours(); as around) {
-          @if (around.total > 1) {
-            <div class="product-mobile-colours" role="group" aria-label="Kleurvariant kiezen">
-              <a [routerLink]="around.previous ? ['/products', around.previous.productId, 'edit'] : null" [attr.aria-disabled]="!around.previous" [attr.aria-label]="around.previous ? 'Vorige kleur: ' + variantOptionLabel(around.previous) : 'Geen vorige kleur'">‹</a>
-              <small>{{ around.index + 1 }}/{{ around.total }}</small>
-              <a [routerLink]="around.next ? ['/products', around.next.productId, 'edit'] : null" [attr.aria-disabled]="!around.next" [attr.aria-label]="around.next ? 'Volgende kleur: ' + variantOptionLabel(around.next) : 'Geen volgende kleur'">›</a>
-            </div>
-          }
-        }
         <div class="product-mobile-metrics">
-          <button type="button" (click)="showTab('sales')"><app-icon name="sales" [size]="17" /><span><small>Verkoopprijs per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></span><span aria-hidden="true">›</span></button>
-          <button type="button" (click)="showTab('stock')"><app-icon name="stock" [size]="17" /><span><small>Voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></span><span aria-hidden="true">›</span></button>
+          <button type="button" (click)="showTab('sales')" [attr.aria-label]="'Verkoopprijs per ' + salesUnit(draft()).singular + ': ' + (salesPrice() > 0 ? (salesPrice() | eur: 2) : 'instellen')"><small>per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></button>
+          <button type="button" (click)="showTab('stock')" [attr.aria-label]="'Voorraad: ' + workspaceStockLabel() + ' ' + salesUnit(draft()).plural"><small>voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></button>
         </div>
       </section>
     }
@@ -225,25 +241,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
           <div class="erp-workspace__identity product-editor-hero__identity">
             <span class="erp-workspace__eyebrow">
-              {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}
+              {{ selectedCategoryName() || (isNew() ? 'Nieuw catalogusproduct' : 'Productdossier') }}@if (draft().sku) {<span class="product-editor-hero__sku"> · {{ draft().sku }}</span>}
             </span>
             <h2 class="erp-workspace__title">{{ draft().name || 'Geef dit product een naam' }}</h2>
-            <p class="erp-workspace__meta">
-              @if (draft().colour) { <span>{{ draft().colour }}</span> }
-              @if (draft().variantSize) { <span>{{ draft().variantSize }}</span> }
-              @if (draft().sku) { <span class="mono">{{ draft().sku }}</span> }
-            </p>
             <div class="erp-workspace__badges" aria-label="Productstatus">
               <span class="erp-workspace__badge"
+                    [class.erp-workspace__badge--ok]="draft().active && !draft().demo"
                     [class.erp-workspace__badge--warn]="!draft().active || draft().demo">
                 {{ draft().active ? (draft().demo ? 'Demo' : 'Actief') : 'Inactief' }}
               </span>
-              @if (desktop.active()) {
-                <span class="erp-workspace__badge"
-                      [class.erp-workspace__badge--ok]="workspacePublicationLive()"
-                      [class.erp-workspace__badge--warn]="workspacePublicationNeedsAttention()">
-                  {{ workspacePublicationLabel() }}
-                </span>
+              @if (draft().colour || draft().variantSize) {
+                <span class="erp-workspace__badge product-editor-hero__variant">@if (draft().colourHex) {<i [style.background]="draft().colourHex"></i>}{{ draft().colour }}@if (draft().colour && draft().variantSize) { · }{{ draft().variantSize }}</span>
               }
               @if (workspaceDirty()) {
                 <span class="erp-workspace__badge erp-workspace__badge--dirty">Niet opgeslagen</span>
@@ -264,33 +272,52 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
           </div>
 
-          <div class="erp-workspace__facts product-editor-hero__facts">
-            <button class="erp-workspace__fact" type="button" (click)="showTab('stock')">
-              <span class="erp-workspace__fact-label">Voorraad</span>
-              <strong class="erp-workspace__fact-value num">{{ workspaceStockLabel() }}</strong>
-              <small class="erp-workspace__fact-note">{{ isNew() ? 'na aanmaken' : 'over alle locaties' }}</small>
+          <!-- The five figures the form drives, live from the draft: a typed price moves Verkoopprijs and Marge at once. -->
+          <div class="pe-strip" aria-label="Kerncijfers">
+            <button class="pe-fig" type="button" (click)="showTab('stock')">
+              <small>Voorraad</small>
+              <strong>{{ workspaceStockLabel() }}@if (workspaceStockLabel() !== 'Onbekend') {<em>{{ salesUnit(draft()).plural }}</em>}</strong>
+              <span>{{ isNew() ? 'na aanmaken' : 'alle locaties' }}</span>
             </button>
-            <button class="erp-workspace__fact" type="button" (click)="showTab('sales')">
-              <span class="erp-workspace__fact-label">Verkoopprijs per {{ salesUnit(draft()).singular }}</span>
-              <strong class="erp-workspace__fact-value num">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</strong>
-              <small class="erp-workspace__fact-note">{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : 'kost + opslag' }}</small>
+            <button class="pe-fig" type="button" (click)="draft().id !== null ? costHistoryOpen.set(true) : showTab('purchasing')"
+                    [title]="draft().id !== null ? 'Kostprijshistoriek' : 'Inkoop & kostprijs'">
+              <small>Kostprijs <app-icon name="chevron-right" [size]="12" /></small>
+              @if (draft().landedCostEur; as landed) {
+                <strong>{{ landed | eur: 2 }}</strong>
+                <span>geland@if (draft().landedCostSource) { · <span class="pe-nowrap">{{ draft().landedCostSource }}</span>}</span>
+              } @else {
+                <strong>—</strong>
+                <span>nog geen kostprijs</span>
+              }
             </button>
-            @if (desktop.active()) {
-              <button class="erp-workspace__fact product-editor-hero__fact--publication" type="button"
-                      (click)="openPublicationWorkspace()">
-                <span class="erp-workspace__fact-label">Publicatie</span>
-                <strong class="erp-workspace__fact-value">{{ workspacePublicationShortLabel() }}</strong>
-                <small class="erp-workspace__fact-note">Website &amp; orderapp</small>
-              </button>
-            }
+            <button class="pe-fig" type="button" (click)="showTab('sales')">
+              <small>Verkoopprijs</small>
+              <strong [class.is-dirty]="savedPriceDiffers()">{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}@if (salesPrice() > 0) {<em>per {{ salesUnit(draft()).singular }}</em>}</strong>
+              <span>{{ priceStrategy() === 'FIXED' ? 'vaste prijs' : '+ ' + (draft().markupPct ?? 0) + ' % op de kostprijs' }}</span>
+              @if (savedPriceDiffers()) {
+                <span class="pe-fig__saved">bewaard {{ savedDraft()!.computedSalesPriceEur | eur: 2 }}</span>
+              }
+            </button>
+            <button class="pe-fig" type="button" (click)="showTab('sales')"
+                    [class.pe-fig--ok]="draft().landedCostEur && salesPrice() > 0 && unitMargin() >= 0"
+                    [class.pe-fig--bad]="draft().landedCostEur && salesPrice() > 0 && unitMargin() < 0">
+              <small>Marge</small>
+              @if (draft().landedCostEur && salesPrice() > 0) {
+                <strong>{{ unitMargin() | eur: 2 }}<em>per {{ salesUnit(draft()).singular }}</em></strong>
+                <span>{{ marginPercent() | num: 0 }} % van de prijs</span>
+              } @else {
+                <strong>—</strong>
+                <span>{{ draft().landedCostEur ? 'nog geen prijs' : 'nog geen kostprijs' }}</span>
+              }
+            </button>
+            <button class="pe-fig" type="button" (click)="openPublicationWorkspace()"
+                    [class.pe-fig--ok]="workspacePublicationLive()"
+                    [class.pe-fig--warn]="workspacePublicationNeedsAttention()">
+              <small>Publicatie</small>
+              <strong class="pe-fig__word">{{ workspacePublicationShortLabel() }}</strong>
+              <span>website &amp; orderapp</span>
+            </button>
           </div>
-
-          <!-- Saving lives in the page header alone; the hero only offers the way back to the view. -->
-          @if (!isNew()) {
-            <div class="product-editor-hero__actions">
-              <a class="btn erp-workspace__secondary" [routerLink]="['/products', draft().id]">Bekijken</a>
-            </div>
-          }
         </section>
       </div>
     </div>
@@ -331,7 +358,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       <fieldset class="editor-canvas erp-workspace__main" [disabled]="formWriteBusy()" [attr.aria-busy]="formWriteBusy()" [attr.data-tab]="activeTab()"
            [class.editor-canvas--last]="isLastPhoneTab()">
       @if (activeTab() !== 'media') {
-        <div class="editor-section-note"><app-icon [name]="activeTab() === 'stock' ? 'activity' : 'settings'" [size]="17" /><p>{{ sectionSaveHint(activeTab()) }}</p></div>
+        @if (sectionSaveHint(activeTab()); as hint) {
+          @if (activeTab() === 'stock') {
+            <!-- Desk: a chip with the sentence as its title; phone: the sentence, as before. -->
+            <div class="editor-section-note editor-section-note--stock"><span class="editor-save-chip" [title]="hint"><app-icon name="check" [size]="14" />Bewaart meteen</span><app-icon name="activity" [size]="17" /><p>{{ hint }}</p></div>
+          } @else {
+            <div class="editor-section-note"><app-icon name="settings" [size]="17" /><p>{{ hint }}</p></div>
+          }
+        }
       }
       @if (saveError(); as error) {
         <div class="editor-feedback editor-feedback--error" role="alert"><b>Opslaan niet voltooid</b><p>{{ error }}</p></div>
@@ -478,7 +512,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 </div>
               }
             } @else if (familyLoading()) {
-              <div class="variant-editor-card span-2" role="status">Varianten laden…</div>
+              <div class="variant-editor-card span-2" role="status" aria-label="Varianten laden"><app-skeleton kind="lines" [rows]="2" /></div>
             } @else if (familyLoadError()) {
               <div class="variant-editor-card variant-editor-card--error span-2" role="alert">
                 <div><b>Varianten niet geladen</b><small>De andere productvelden blijven bewerkbaar.</small></div>
@@ -911,7 +945,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 @if (draft().fixedSalesPriceEur; as fixed) {
                   <span class="hint"
                         [class.warn-text]="fixed < landed">
-                    Kostprijs incl. rechten {{ landed | eur: 2 }} —
+                    Kostprijs {{ landed | eur: 2 }} —
                     @if (fixed < landed) {
                       deze prijs ligt <b>onder kostprijs</b>
                     } @else {
@@ -919,7 +953,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     }
                   </span>
                 } @else {
-                  <span class="hint">Kostprijs incl. rechten {{ landed | eur: 2 }}</span>
+                  <span class="hint">Kostprijs {{ landed | eur: 2 }}</span>
                 }
               } @else {
                 <span class="hint">Dit bedrag blijft gelijk als je kostprijs later verandert.</span>
@@ -936,9 +970,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
               <dt>Voorraad</dt>
-              <dd class="num">
-                @if (draft().inventoryKnown) { {{ draft().stockQuantity | num }} } @else { onbekend }
-              </dd>
+              <dd class="num">{{ workspaceStockLabel() }}</dd>
               <dt>Marge per {{ salesUnit(draft()).singular }}</dt>
               <dd class="num">{{ unitMargin() | eur }}</dd>
             </dl>
@@ -975,7 +1007,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 @for (level of levels; track level.locationId) {
                   <label class="history-levels__tile">
                     <small>{{ level.name }}{{ level.countsForWebsite ? ' · alle kanalen' : '' }}</small>
-                    <input class="history-levels__qty num" type="number" min="0" step="1" inputmode="numeric"
+                    <input class="history-levels__qty num" type="text" inputmode="numeric" autocomplete="off"
                            [attr.aria-label]="'Voorraad op ' + level.name"
                            [value]="level.quantity"
                            (keydown.enter)="$any($event.target).blur()"
@@ -989,7 +1021,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                    pattern as the stock page. -->
               <div class="book-actions book-actions--two" role="group" aria-label="Voorraadacties">
                 @if (levels.length > 1) {
-                  <button class="book-action" type="button" (click)="startTransfer(levels)">
+                  <button class="book-action" type="button" (click)="openBooking('TRANSFER')">
                     <i aria-hidden="true">⇄</i><span>Verplaatsen</span>
                   </button>
                 } @else {
@@ -997,7 +1029,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                     <i aria-hidden="true">+</i><span>Locatie</span>
                   </a>
                 }
-                <button class="book-action" type="button" (click)="startTakeOut(levels, 'DAMAGED')">
+                <button class="book-action" type="button" (click)="openBooking('DAMAGED')">
                   <i aria-hidden="true" class="book-action__warn">!</i><span>Stuk / demo</span>
                 </button>
               </div>
@@ -1010,15 +1042,14 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 }
               }
             } @else {
-              <p class="hint">Voorraad laden…</p>
+              <app-skeleton kind="lines" [rows]="2" />
             }
 
             <h3 class="stock-history__title">Geschiedenis</h3>
             @if (stockHistory(); as history) {
               @if (history.length) {
-                <!-- Swipe a line left to strike it: a short swipe shows the
-                     bin, a long one deletes at once - no question asked, the
-                     count itself never changes. -->
+                <!-- Swipe a line left to show its bin; deleting always asks
+                     first (there is no undo), and the count itself never changes. -->
                 <ol class="stock-history">
                   @for (move of editorHistoryOpen() ? history : history.slice(0, 2); track move.id) {
                     <li class="swipe stock-history__item" [class.swipe--open]="moveSwiped() === move.id"
@@ -1069,7 +1100,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 <p class="hint">Nog geen bewegingen geboekt. Alles wat vanaf nu binnenkomt of geteld wordt, staat hier.</p>
               }
             } @else {
-              <p class="hint">Geschiedenis laden…</p>
+              <app-skeleton kind="lines" [rows]="2" />
             }
           }
         </div>
@@ -1328,8 +1359,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <h3>Kostprijs &amp; marge</h3>
           <div class="desk-chain">
             <div class="desk-chain__row"><i></i><span>Fabrieksprijs <small>{{ draft().exwCurrency || 'USD' }}@if (draft().extraUnitCost) { · + {{ draft().extraUnitCost | num: 2 }} extra per {{ salesUnit(draft()).singular }} }</small></span><b>{{ draft().exwPrice !== null && draft().exwPrice !== undefined ? (draft().exwPrice | num: 2) : '—' }}</b></div>
-            <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Gelande kost <small>{{ draft().landedCostSource ? 'uit ' + draft().landedCostSource : 'nog geen calculatie' }}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
-            <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de gelande kost' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
+            <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Kostprijs <small>@if (draft().landedCostSource) {geland · uit <span class="pe-nowrap">{{ draft().landedCostSource }}</span>} @else {nog geen calculatie}</small></span><b>{{ draft().landedCostEur !== null && draft().landedCostEur !== undefined ? (draft().landedCostEur | eur: 2) : '—' }}</b></div>
+            <div class="desk-chain__row"><i>+</i><span>{{ priceStrategy() === 'FIXED' ? 'Vaste verkoopprijs' : 'Opslag' }} <small>{{ priceStrategy() === 'FIXED' ? 'los van de kost' : (draft().markupPct ?? 0) + ' % op de kostprijs' }}</small></span><b>{{ priceStrategy() === 'FIXED' ? '' : (salesPrice() - (draft().landedCostEur ?? 0) | eur: 2) }}</b></div>
             <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Verkoopprijs per {{ salesUnit(draft()).singular }} <small>marge {{ unitMargin() | eur: 2 }} · {{ marginPercent() | num: 0 }} %</small></span><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : '—' }}</b></div>
           </div>
           <button class="linklike editor-rail__link" type="button" (click)="showTab('sales')">Prijs aanpassen ›</button>
@@ -1398,84 +1429,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       }
     }
 
-    @if (takeOutDraft(); as out) {
-      @if (stockLevels(); as levels) {
-        <app-sheet [title]="'Stuk of demo · ' + (draft().name || 'product')" (closed)="takeOutDraft.set(null)">
-          <div body>
-            <div class="per-toggle takeout-kind" role="group" aria-label="Wat is er gebeurd?">
-              <button type="button" [class.on]="out.kind === 'DAMAGED'"
-                      (click)="takeOutDraft.set({ ...out, kind: 'DAMAGED' })">Stuk / beschadigd</button>
-              <button type="button" [class.on]="out.kind === 'DEMO'"
-                      (click)="takeOutDraft.set({ ...out, kind: 'DEMO' })">Demo weggegeven</button>
-            </div>
-            <div class="form-grid mt-12">
-              @if (levels.length > 1) {
-                <div class="field">
-                  <label for="po-out-loc">{{ out.kind === 'DAMAGED' ? 'Beschadigd op' : 'Demo uit' }}</label>
-                  <select class="select" id="po-out-loc" [ngModel]="out.locationId"
-                          (ngModelChange)="patchTakeOut({ locationId: +$event })">
-                    @for (level of levels; track level.locationId) {
-                      <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                    }
-                  </select>
-                </div>
-              }
-              <div class="field">
-                <label class="req" for="po-out-qty">Aantal</label>
-                <input class="input num right" id="po-out-qty" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="out.quantity || null" (ngModelChange)="patchTakeOut({ quantity: +$event })" />
-              </div>
-              <div class="field span-2">
-                <label for="po-out-note">{{ out.kind === 'DAMAGED' ? 'Wat is er gebeurd' : 'Aan wie' }} <span class="opt"></span></label>
-                <input class="input" id="po-out-note"
-                       [placeholder]="out.kind === 'DAMAGED' ? 'bijv. gevallen bij het laden' : 'bijv. klant Janssens, beurs Gent'"
-                       [ngModel]="out.note" (ngModelChange)="patchTakeOut({ note: $event })" />
-              </div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="takeOutDraft.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="stockSaving() || !(out.quantity > 0)"
-                    (click)="confirmTakeOut()">{{ stockSaving() ? 'Bezig…' : 'Melden' }}</button>
-          </div>
-        </app-sheet>
-      }
-    }
-
-    @if (transferDraft(); as move) {
-      @if (stockLevels(); as levels) {
-        <app-sheet [title]="'Verplaatsen · ' + (draft().name || 'product')" (closed)="transferDraft.set(null)">
-          <div body>
-            <div class="form-grid">
-              <div class="field"><label for="po-t-from">Van</label>
-                <select class="select" id="po-t-from" [ngModel]="move.fromId" (ngModelChange)="patchTransfer({ fromId: +$event })">
-                  @for (level of levels; track level.locationId) {
-                    <option [value]="level.locationId">{{ level.name }} ({{ level.quantity | num }})</option>
-                  }
-                </select></div>
-              <div class="field"><label for="po-t-to">Naar</label>
-                <select class="select" id="po-t-to" [ngModel]="move.toId" (ngModelChange)="patchTransfer({ toId: +$event })">
-                  @for (level of levels; track level.locationId) {
-                    <option [value]="level.locationId">{{ level.name }}</option>
-                  }
-                </select></div>
-              <div class="field"><label class="req" for="po-t-qty">Aantal</label>
-                <input class="input num right" id="po-t-qty" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="move.quantity || null" (ngModelChange)="patchTransfer({ quantity: +$event })" /></div>
-              <div class="field"><label for="po-t-note">Notitie <span class="opt"></span></label>
-                <input class="input" id="po-t-note" placeholder="bijv. bus van maandag" [ngModel]="move.note"
-                       (ngModelChange)="patchTransfer({ note: $event })" /></div>
-            </div>
-          </div>
-          <div foot style="display:contents">
-            <span class="spacer"></span>
-            <button class="btn" type="button" (click)="transferDraft.set(null)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="stockSaving()"
-                    (click)="confirmTransfer()">{{ stockSaving() ? 'Bezig…' : 'Verplaatsen' }}</button>
-          </div>
-        </app-sheet>
-      }
+    <!-- Voorraad boeken: the one sheet for every booking (the tiles keep their guarded on-blur recount). -->
+    @if (bookingSheet(); as booking) {
+      <app-stock-booking-sheet [product]="draft()" [levels]="stockLevels() ?? []" [kind]="booking.kind" [locationId]="booking.locationId"
+                               (booked)="afterBooking($event)" (closed)="bookingSheet.set(null)" />
     }
     } @else if (!productLoadError()) {
       <div class="editor-loading content" role="status"><span class="editor-loading__shape"></span><h2>Product laden…</h2><p>De gegevens en varianten worden opgehaald.</p></div>
@@ -1504,27 +1461,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     :host#product-editor-workspace .product-section-arrow { position: absolute; right: 15px; top: 22px; color: var(--section-tone); }
     :host#product-editor-workspace .product-section-translation { min-height: 48px; margin-top: 14px; border-radius: 16px; }
     @media (max-width: 679px) {
-      :host#product-editor-workspace .product-mobile-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
-      :host#product-editor-workspace .product-mobile-back { min-width: 44px; }
-      :host#product-editor-workspace .product-mobile-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto;
-        gap: 12px; padding: 14px 16px 16px; }
-      :host#product-editor-workspace .product-mobile-photo { width: 64px; height: 74px; border-radius: 19px; }
-      :host#product-editor-workspace .product-mobile-variant { grid-column: 2; }
-      :host#product-editor-workspace .product-mobile-variant > strong { font-size: 15px; }
-      :host#product-editor-workspace .product-mobile-colours { grid-column: 3; grid-template-columns: 44px minmax(28px, auto) 44px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
-      :host#product-editor-workspace .product-mobile-colours > a { width: 44px; height: 44px; }
-      :host#product-editor-workspace .product-mobile-colours > a:last-child { grid-column: 3; }
-      :host#product-editor-workspace .product-mobile-colours > small { grid-column: 2; grid-row: 1; padding: 0; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      :host#product-editor-workspace .product-mobile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
-      :host#product-editor-workspace .product-mobile-metrics > button { display: flex; align-items: center; gap: 9px; min-width: 0;
-        min-height: 54px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--rose-dark); text-align: left; }
-      :host#product-editor-workspace .product-mobile-metrics > button > span:first-of-type { flex: 1; min-width: 0; display: grid; gap: 3px; }
-      :host#product-editor-workspace .product-mobile-metrics small { color: var(--muted); font-size: 10px; font-weight: 500; }
-      :host#product-editor-workspace .product-mobile-metrics b { color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
-      :host#product-editor-workspace .product-mobile-tabs button { min-height: 52px; color: var(--ink-2); }
-      :host#product-editor-workspace .product-mobile-tabs button > app-icon { color: var(--section-tone, var(--muted)); }
-      :host#product-editor-workspace .product-mobile-tabs button.is-active { background: var(--surface); color: var(--ink);
-        box-shadow: 0 1px 6px rgb(24 30 28 / 8%), inset 0 0 0 1px var(--line); }
       :host#product-editor-workspace .section-head { align-items: center; }
       :host#product-editor-workspace .product-editor-dock { border-radius: 22px 22px 0 0; }
       :host#product-editor-workspace .product-editor-dock__save { min-height: 48px; border-radius: 16px; }
@@ -1532,78 +1468,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     @media (prefers-reduced-motion: reduce) {
       :host#product-editor-workspace .product-section-choices > button { transition: none; }
     }
-    .product-editor-page { background: transparent; }
-    .product-editor-lead { background: transparent; }
-    .product-editor-lead__content { padding-bottom: 10px; }
-    .product-editor-hero { display: grid; grid-template-columns: 76px minmax(0, 1fr);
-      grid-template-areas: 'media identity' 'facts facts'; gap: 10px 12px; align-items: center;
-      padding: 12px; border: 1px solid rgb(255 255 255 / 74%); border-radius: 19px;
-      background: var(--surface); box-shadow: var(--sh-1); }
-    .product-editor-hero__media { grid-area: media; position: relative; display: grid; width: 76px; height: 76px;
-      place-items: center; align-content: center; gap: 3px; overflow: hidden; border: 1px solid var(--line);
-      border-radius: 16px; background: var(--surface-2); }
-    .product-editor-hero__media img { width: 100%; height: 100%; object-fit: cover; }
-    .product-editor-hero__placeholder { color: var(--rose); font-size: 25px; line-height: 1; }
-    .product-editor-hero__media > small { color: var(--muted); font-size: 10px; font-weight: 700; }
-    .product-editor-hero__photo-count { position: absolute; right: 6px; bottom: 6px; padding: 3px 7px;
-      border-radius: 999px; background: rgb(26 22 20 / 74%); color: #fff; font-size: 9px; font-weight: 750; }
-    .product-editor-hero__identity { grid-area: identity; min-width: 0; }
-    .product-editor-hero__identity .erp-workspace__title { font-size: clamp(17px, 2.2vw, 24px); }
-    .product-editor-hero__facts { grid-area: facts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1px; border: 1px solid var(--line); border-radius: 14px; background: var(--line); }
-    .product-editor-hero__facts .erp-workspace__fact { min-width: 0; display: grid; gap: 2px; padding: 9px 10px;
-      border: 0; border-radius: 0; background: var(--surface); color: inherit;
-      font: inherit; text-align: left; cursor: pointer; }
-    .product-editor-hero__facts button.erp-workspace__fact:hover { background: var(--rose-soft); }
-    .product-editor-hero__facts .erp-workspace__fact-value { overflow: hidden; font-size: 14px;
-      text-overflow: ellipsis; white-space: nowrap; }
-    .product-editor-hero__facts .erp-workspace__fact-label { color: var(--muted); font-size: 8.5px;
-      font-weight: 760; letter-spacing: .07em; text-transform: uppercase; }
-    .product-editor-hero__facts .erp-workspace__fact-note { overflow: hidden; color: var(--muted);
-      font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
-    .product-editor-hero__actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-    .section-head > div { min-width: 0; }
-    .product-load-error {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding-block: 10px; color: var(--danger);
-    }
-    .product-load-error > span { display: grid; gap: 2px; }
-    .product-load-error small { font-size: 10px; }
-    .editor-canvas { display: block; width: 100%; max-width: 920px; margin: 0 auto; }
-    /* Desktop: the sections stand as a list on the left, the form takes the
-       middle, and on a wide desk a summary rail on the right keeps the cost
-       chain, the carton and what is still missing in view. */
-    .editor-rail { display: none; }
-    @media (min-width: 1024px) {
-      .product-editor-lead__content { padding-bottom: 0; }
-      /* Desk: the steps run as one bar across the top, the form below takes the
-         width a desk has; on a wide desk the summary rail stands to the right. */
-      .product-editor-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 16px; align-items: start; }
-      .product-editor-page > .subnav.erp-workspace__nav { position: sticky; top: calc(var(--appbar-h) + 8px); z-index: 30; grid-column: 1 / -1; grid-row: 1; width: 100%; max-width: none; margin: 0;
-        padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--sh-1); }
-      .product-editor-page > .editor-canvas { grid-column: 1; grid-row: 2; max-width: none; margin: 0; }
-      .product-editor-page > :not(.subnav):not(.editor-canvas):not(.editor-rail) { grid-column: 1 / -1; }
-      .editor-section, .editor-desktop-only { scroll-margin-top: calc(var(--appbar-h) + 82px); }
-    }
-    @media (min-width: 1360px) {
-      .product-editor-page { grid-template-columns: minmax(0, 1fr) 292px; }
-      .editor-rail { position: sticky; top: calc(var(--appbar-h) + 80px); display: grid; grid-column: 2; grid-row: 2; gap: 10px; max-height: calc(100dvh - var(--appbar-h) - 94px); overflow-y: auto; }
-    }
-    .editor-rail__card { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-1); }
-    .editor-rail__card--warn { border-color: #eddcb9; background: var(--warn-soft); }
-    .editor-rail__card h3 { margin: 0 0 8px; color: var(--rose); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
-    .editor-rail__link { display: inline-block; margin-top: 8px; font-size: 12px; }
-    .editor-rail__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-    .editor-rail__list button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-    .editor-rail__list button:hover { border-color: var(--rose-line); background: var(--rose-soft); }
-    .editor-rail__list i { display: grid; width: 18px; height: 18px; flex: none; place-items: center; border-radius: 50%; background: var(--warn); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; }
-    .editor-rail__list span { flex: 1; min-width: 0; }
-    .editor-rail__list b { color: var(--muted); }
-    .editor-rail__ok { display: flex; gap: 8px; margin: 0; color: var(--ok); font-size: 12px; }
-    .editor-rail__note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; }
-    .editor-rail .desk-chain__row b { font-variant-numeric: tabular-nums; }
-    .editor-rail .desk-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
-    .editor-section, .editor-desktop-only { scroll-margin-top: 112px; }
     .colour-control { display: flex; align-items: center; gap: 8px; }
     .colour-control .select { flex: 1; }
     .colour-dot { display: inline-flex; cursor: pointer; }
@@ -1676,23 +1540,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       border: 1px solid var(--line-strong); border-left: 0; border-radius: 0 10px 10px 0;
       background: var(--surface); color: var(--muted); font-size: 10px; font-weight: 650; }
 
-    .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-      min-height: 62px; padding: 2px; cursor: pointer; }
-    .switch-row span { display: flex; flex-direction: column; }
-    .switch-row small { margin-top: 2px; color: var(--muted); font-size: 12px; }
-    .switch-row input { flex: 0 0 auto; width: 24px; height: 24px; accent-color: var(--rose); }
-    .channel-grid { display: grid; gap: 8px; }
-    .channel-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px;
-      padding: 13px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
-    .channel-card .select { width: 100%; }
-    .readiness { padding: 13px 14px; border: 1px solid #eddcb9; border-radius: var(--r-sm);
-      background: var(--warn-soft); }
-    .readiness__head { display: flex; align-items: center; gap: 10px; }
-    .readiness__head > span { display: grid; width: 24px; height: 24px; place-items: center;
-      border-radius: 50%; background: var(--warn); color: white; font-weight: 800; }
-    .readiness ul { margin: 10px 0 0; padding-left: 22px; color: var(--ink-2); font-size: 13px; }
-    .readiness li + li { margin-top: 4px; }
-
     /* Desktop idiom only (the rail breakpoint); a phone has no room next
        to Opslaan and goes back to the list anyway. */
     .product-nav { display: none; }
@@ -1722,12 +1569,9 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       transition: transform .12s ease, background .15s ease; }
     .book-action:active { transform: scale(.96); }
     .book-action:hover { background: var(--surface); border-color: var(--line-strong); }
-    .book-action--on { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); }
     .book-action i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
       background: var(--surface); border: 1px solid var(--line-strong); font-style: normal; font-size: 15px; font-weight: 700; }
-    .book-action--on i { border-color: var(--rose); color: var(--rose-dark); }
     .book-action__warn { background: var(--warn-soft) !important; border-color: #eddcb9 !important; color: var(--warn); }
-    .takeout-kind { margin: 10px 0 8px; }
     .history-more { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center;
       padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark);
       font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
@@ -1736,23 +1580,6 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .history-more__chev--open { transform: rotate(-135deg); }
     .stock-loss { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
     .stock-loss b { color: var(--ink); }
-    .stock-levels { list-style: none; margin: 0 0 12px; padding: 0; border-top: 1px solid var(--line); }
-    .stock-levels li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 0;
-      border-bottom: 1px solid var(--line); }
-    .stock-levels__where { flex: 1 1 160px; display: grid; min-width: 0; }
-    .stock-levels__where b { font-size: 13.5px; }
-    .stock-levels__where small { color: var(--muted); font-size: 11px; }
-    .stock-levels__qty { min-width: 64px; font-size: 16px; text-align: right; }
-    .stock-levels__edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .stock-levels__edit .input { width: 110px; }
-    .stock-transfer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding: 12px;
-      border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
-    .stock-transfer .field > span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
-    .stock-transfer__note { grid-column: 1 / -1; }
-    .stock-transfer__actions { grid-column: 1 / -1; display: flex; gap: 8px; }
-    @media (min-width: 680px) { .stock-transfer { grid-template-columns: 1fr 1fr 120px; } .stock-transfer__note { grid-column: auto; } }
-    .stock-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    .stock-edit .input { width: 120px; }
     .stock-history__title { margin: 18px 0 6px; color: var(--muted); font-size: 11px; font-weight: 750;
       letter-spacing: .06em; text-transform: uppercase; }
     .stock-history { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
@@ -1831,27 +1658,16 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .variant-chip { gap: 5px; }
     .variant-chip small { color: var(--muted); font-size: 9.5px; }
     .variant-copy__field { margin: 0; }
-    .variant-copy__family-note p { color: var(--muted); font-size: 11px; line-height: 1.45; }
-    .variant-copy__family-note b { color: var(--ink-2); }
 
     @media (min-width: 680px) {
       .section-head { padding-inline: 18px; }
       .editor-section .card__body { padding: 18px; }
       .measure-grid { gap: 10px; }
-      .channel-grid { grid-template-columns: 1fr 1fr; }
-      .channel-card { flex-direction: row; align-items: center; justify-content: space-between; }
-      .channel-card .select { width: auto; min-width: 142px; }
       .variant-copy__source { padding: 16px; }
     }
     @media (max-width: 520px) {
       .variant-editor-card { align-items: stretch; flex-direction: column; }
       .variant-editor-card .btn { align-self: flex-start; }
-    }
-    @media (min-width: 680px) {
-      .product-editor-hero { grid-template-columns: 104px minmax(0, 1fr) auto;
-        grid-template-areas: 'media identity actions' 'media facts facts'; padding: 14px 16px; }
-      .product-editor-hero__media { width: 104px; height: 104px; border-radius: 18px; }
-      .product-editor-hero__facts { max-width: 620px; }
     }
   `,
 })
@@ -2062,14 +1878,15 @@ export class ProductEditor implements OnDestroy {
     return ({ identity: 'Artikel, kleur en afmetingen', media: 'Productfoto’s en galerij', packaging: 'Inhoud en transportmaten', purchasing: 'Leverancier en kosten', sales: 'Hoe je verkoopt, prijs en marge', stock: 'Aantallen per locatie', agreements: 'Notities en bijlagen', publication: 'Publicatie en teksten' } as Record<string, string>)[id] ?? '';
   }
 
-  sectionSaveHint(id: string): string {
+  /** Null for the tabs that save with Opslaan like any form (Basisgegevens, Omdoos, Inkoop, Verkoopprijs): no note there. */
+  sectionSaveHint(id: string): string | null {
     if (id === 'media') return this.isNew()
       ? 'Foto’s worden samen met het nieuwe product opgeslagen.'
       : 'Foto’s, fotokeuzes en de volgorde worden meteen bewaard; Opslaan is daarvoor niet nodig.';
     if (id === 'stock') return 'Een aangepast voorraadaantal wordt direct geboekt zodra je het veld verlaat. Verplaatsen en stuk/demo bevestig je apart.';
     if (id === 'agreements') return 'Sla je notitie op met Opslaan. Fotoacties worden apart verwerkt; controleer ook de opslagstatus bij de bijlagen.';
     if (id === 'publication') return 'Publicatie-instellingen sla je bovenaan op. Vertalingen hebben een eigen opslagknop. Reeksteksten gelden voor alle varianten.';
-    return 'Je bewerkt deze variant. Wisselen van onderdeel behoudt je wijzigingen; bevestig ze met Opslaan.';
+    return null;
   }
 
   showTab(id: string): void {
@@ -2315,24 +2132,34 @@ export class ProductEditor implements OnDestroy {
     }
   }
 
-  /* ---- move pieces between two locations ---- */
-  readonly transferDraft = signal<{ fromId: number; toId: number; quantity: number; note: string } | null>(null);
+  /* ---- every other booking: the Voorraad boeken sheet ---- */
+  readonly bookingSheet = signal<{ kind: BookingKind; locationId: number | null } | null>(null);
 
-  startTransfer(levels: ProductStock[]): void {
-    this.takeOutDraft.set(null);
+  openBooking(kind: BookingKind): void {
     this.stockEditing.set(null);
-    const from = levels.find((level) => level.quantity > 0) ?? levels[0];
-    const to = levels.find((level) => level.locationId !== from.locationId) ?? levels[0];
-    this.transferDraft.set({ fromId: from.locationId, toId: to.locationId, quantity: 0, note: '' });
+    this.bookingSheet.set({ kind, locationId: null });
   }
 
-  patchTransfer(changes: Partial<{ fromId: number; toId: number; quantity: number; note: string }>): void {
-    this.transferDraft.update((move) => move ? { ...move, ...changes } : move);
+  /** The figure the sheet booked lands in the draft and its baseline, so the editor never reads dirty from it. */
+  afterBooking(event: StockBooked): void {
+    this.bookingSheet.set(null);
+    const id = this.draft().id;
+    if (id === null) return;
+    const apply = (saved: Product) => {
+      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      const baseline = this.baseline();
+      if (baseline) {
+        const parsed = JSON.parse(baseline) as Product;
+        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
+      }
+    };
+    if (event.product) apply(event.product);
+    else void this.catalog.product(id).then(apply).catch(() => undefined);
+    void this.loadStockHistory(id);
+    void this.loadStockLevels(id);
   }
 
-  /* ---- broken or given away: out of stock under its own kind ---- */
-  readonly takeOutDraft = signal<{ kind: 'DAMAGED' | 'DEMO'; locationId: number; quantity: number; note: string } | null>(null);
-
+  /* ---- broken or given away: the counters from the stock book ---- */
   /** Lifetime counts from the stock book: how much broke, how much went out as demo. */
   readonly lossCounters = computed(() => {
     const moves = this.stockHistory();
@@ -2344,68 +2171,6 @@ export class ProductEditor implements OnDestroy {
     }
     return { damaged, demo };
   });
-
-  startTakeOut(levels: ProductStock[], kind: 'DAMAGED' | 'DEMO'): void {
-    this.transferDraft.set(null);
-    const first = levels.find((level) => level.quantity > 0) ?? levels[0];
-    this.takeOutDraft.set({ kind, locationId: first?.locationId ?? 0, quantity: 1, note: '' });
-  }
-
-  patchTakeOut(changes: Partial<{ locationId: number; quantity: number; note: string }>): void {
-    this.takeOutDraft.update((draft) => draft && { ...draft, ...changes });
-  }
-
-  async confirmTakeOut(): Promise<void> {
-    const id = this.draft().id;
-    const out = this.takeOutDraft();
-    if (id === null || !out || this.stockSaving()) return;
-    if (!(out.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    this.stockSaving.set(true);
-    try {
-      const saved = await this.catalog.takeOutStock(id, { locationId: out.locationId, quantity: out.quantity, kind: out.kind, note: out.note || null });
-      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      const baseline = this.baseline();
-      if (baseline) {
-        const parsed = JSON.parse(baseline) as Product;
-        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      }
-      this.takeOutDraft.set(null);
-      const taken = unitCount(productSalesUnit(this.draft()), out.quantity);
-      this.ui.toast(out.kind === 'DAMAGED' ? `${taken} als beschadigd afgeboekt` : `${taken} als demo afgeboekt`, 'ok');
-      void this.loadStockHistory(id);
-      void this.loadStockLevels(id);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Afboeken mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
-  }
-
-  async confirmTransfer(): Promise<void> {
-    const id = this.draft().id;
-    const move = this.transferDraft();
-    if (id === null || !move || this.stockSaving()) return;
-    if (!(move.quantity > 0)) { this.ui.toast('Geef een aantal op', 'err'); return; }
-    if (move.fromId === move.toId) { this.ui.toast('Kies twee verschillende locaties', 'err'); return; }
-    this.stockSaving.set(true);
-    try {
-      const saved = await this.catalog.transferStock(id, move.fromId, move.toId, move.quantity, move.note || null);
-      this.draft.update((p) => ({ ...p, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      const baseline = this.baseline();
-      if (baseline) {
-        const parsed = JSON.parse(baseline) as Product;
-        this.baseline.set(JSON.stringify({ ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
-      }
-      this.transferDraft.set(null);
-      this.ui.toast(`${unitCount(productSalesUnit(this.draft()), move.quantity)} verplaatst`, 'ok');
-      void this.loadStockHistory(id);
-      void this.loadStockLevels(id);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Verplaatsen mislukt'), 'err');
-    } finally {
-      this.stockSaving.set(false);
-    }
-  }
 
   /* ---- strike a line from the stock book: swipe left, no question ---- */
   readonly moveSwiped = signal<number | null>(null);
@@ -2445,16 +2210,22 @@ export class ProductEditor implements OnDestroy {
     const offset = this.moveOffset();
     this.moveDragging.set(null);
     this.moveOffset.set(0);
-    if (offset < -140) {
-      this.moveSwipeHandled = true;
-      void this.deleteMove(move);
-      return;
-    }
     this.moveSwipeHandled = true;
     this.moveSwiped.set(offset < -40 ? move.id : null);
   }
 
-  async deleteMove(move: StockMovement): Promise<void> {
+  /** A history line goes only after a question: the API cannot bring it back. */
+  deleteMove(move: StockMovement): void {
+    if (this.draft().id === null || this.moveDeleting() !== null) return;
+    this.ui.confirm({
+      title: 'Regel verwijderen',
+      message: 'Deze regel verdwijnt uit de geschiedenis. Het voorraadaantal verandert niet.',
+      confirmLabel: 'Verwijderen',
+      danger: true,
+    }, () => void this.removeMove(move), undefined, () => this.moveSwiped.set(null));
+  }
+
+  private async removeMove(move: StockMovement): Promise<void> {
     const productId = this.draft().id;
     if (productId === null || this.moveDeleting() !== null) return;
     this.moveDeleting.set(move.id);
@@ -2462,7 +2233,7 @@ export class ProductEditor implements OnDestroy {
     try {
       await this.catalog.deleteStockMovement(productId, move.id);
       this.stockHistory.update((history) => history?.filter((item) => item.id !== move.id) ?? null);
-      this.ui.toast(`Regel verwijderd · voorraad blijft ${this.draft().stockQuantity}`);
+      this.ui.toast(`Regel verwijderd · voorraad blijft ${this.workspaceStockLabel()}`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Regel verwijderen mislukt'), 'err');
     } finally {
@@ -2489,18 +2260,21 @@ export class ProductEditor implements OnDestroy {
 
   readonly editorHistoryOpen = signal(false);
 
-  /** A figure typed straight into a tile: booked at once as a correction. */
+  /**
+   * A figure typed straight into a tile: booked at once as a correction,
+   * read as on /stock ("1.000" is a thousand). Empty, letters, a minus, a
+   * decimal or "1e3" is no count: the old figure comes back, nothing books.
+   */
   async quickSetStock(level: ProductStock, field: HTMLInputElement): Promise<void> {
     const before = level.quantity;
-    if (field.value.trim() === '' || this.stockSaving() || this.saveBusy()) { field.value = String(before); return; }
-    const quantity = Number(field.value);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
+    if (this.stockSaving() || this.saveBusy()) { field.value = String(before); return; }
+    const edit = stockCellEdit(field.value, before);
+    if (edit.action !== 'book') {
       field.value = String(before);
-      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      if (edit.action === 'revert') this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
       return;
     }
-    if (quantity === before) { field.value = String(before); return; }
-    this.stockDraft.set(quantity);
+    this.stockDraft.set(edit.quantity);
     try {
       await this.saveStock(level.locationId);
     } finally {
@@ -2511,7 +2285,6 @@ export class ProductEditor implements OnDestroy {
   }
 
   startStockEdit(level: ProductStock): void {
-    this.transferDraft.set(null);
     this.stockDraft.set(level.quantity);
     this.stockEditing.set(level.locationId);
     setTimeout(() => document.getElementById('p-stock-' + level.locationId)?.focus());
@@ -2522,7 +2295,7 @@ export class ProductEditor implements OnDestroy {
     const quantity = this.stockDraft();
     if (id === null || this.stockSaving()) return;
     if (quantity === null || !Number.isInteger(Number(quantity)) || Number(quantity) < 0) {
-      this.ui.toast('Geef een heel aantal stuks op (0 of meer).', 'err');
+      this.ui.toast('Niet geboekt: geen geldig aantal', 'err');
       return;
     }
     this.stockSaving.set(true);
@@ -2541,7 +2314,7 @@ export class ProductEditor implements OnDestroy {
           { ...parsed, stockQuantity: saved.stockQuantity, inventoryKnown: saved.inventoryKnown }));
       }
       this.stockEditing.set(null);
-      this.ui.toast(`Voorraad gezet op ${quantity}`, 'ok');
+      this.ui.toast(`Voorraad gezet op ${unitCount(productSalesUnit(this.draft()), Number(quantity))}`, 'ok');
       void this.loadStockHistory(id);
       void this.loadStockLevels(id);
     } catch (failure: unknown) {
@@ -2647,7 +2420,7 @@ export class ProductEditor implements OnDestroy {
   readonly workspacePublicationNeedsAttention = computed(() =>
     this.familyLoadError() || (!!this.family() && this.readinessIssues().length > 0));
   readonly workspacePublicationShortLabel = computed(() => {
-    if (this.familyLoading()) return 'Laden…';
+    if (this.familyLoading()) return '—';
     if (this.familyLoadError()) return 'Onbekend';
     const baseline = this.baseline();
     const activeChanged = !!baseline && JSON.parse(baseline).active !== this.draft().active;
@@ -2794,7 +2567,7 @@ export class ProductEditor implements OnDestroy {
       if (action === 'damaged' || action === 'demo') {
         const levels = await stockLevelsRequest.then(() => this.stockLevels() ?? []);
         if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
-        if (levels.length) this.startTakeOut(levels, action === 'damaged' ? 'DAMAGED' : 'DEMO');
+        if (levels.length) this.bookingSheet.set({ kind: action === 'damaged' ? 'DAMAGED' : 'DEMO', locationId: null });
       }
       this.syncPriceStrategy(product);
       this.markClean();
@@ -2908,6 +2681,16 @@ export class ProductEditor implements OnDestroy {
     if (this.priceStrategy() === 'FIXED') return product.fixedSalesPriceEur ?? 0;
     const cost = product.landedCostEur ?? 0;
     return Math.round(cost * (1 + (product.markupPct ?? 0) / 100) * 100) / 100;
+  });
+
+  /** Phone bar: a name longer than the room beside "‹ Product" folds the back capsule to a circle. */
+  readonly phoneBackCompact = computed(() => (this.draft().name || '').trim().length > 16);
+
+  /** A typed price that differs from the saved one: the hero shows "bewaard € x" on its own line. */
+  readonly savedPriceDiffers = computed(() => {
+    const saved = this.savedDraft();
+    if (!saved || !this.priceTouched()) return false;
+    return Math.round((saved.computedSalesPriceEur ?? 0) * 100) !== Math.round(this.salesPrice() * 100);
   });
 
   readonly unitMargin = computed(() =>

@@ -459,7 +459,7 @@ test('4.2 Catalogus, colour inactive but not demo: the pdf still prints it; only
   const item = card(withOwn, 'catalogue', K, INACTIVE);
   assert.deepEqual([item.photo?.key, item.chip, labels(item.actions)], ['P5501', 'Automatisch gekozen', ['Wijzig']]);
   assert.equal(item.caption, 'Bij Kersenroze in de pdf-catalogus. Geldt vanaf de volgende pdf. '
-    + 'Kersenroze is niet actief, maar staat wel in de Catalogusstudio; haal de kleur daar weg als ze niet in de pdf hoort.');
+    + 'Kersenroze is niet actief, maar staat wel in de Catalogus PDF; haal de kleur daar weg als ze niet in de pdf hoort.');
   assert.deepEqual(keys(placeCandidates(withOwn, 'catalogue', INACTIVE)), ['P5501'], 'A series photo of an inactive colour cannot be switched on');
   const picker = pickerModel(withOwn, 'catalogue', K, INACTIVE)!;
   assert.deepEqual([picker.upload, picker.texts.upload, picker.texts.noUpload], [false, null, 'Nieuwe foto? Voeg hem eerst toe bij ‘Alle foto’s’.']);
@@ -762,7 +762,7 @@ test('4.4 the line under the strip names the assumed pdf, and inactive colours w
     'Catalogus = een Handelscatalogus met alle kleuren van deze reeks. Een pdf, offerte of factuur die al verstuurd is, verandert niet meer.');
   assert.equal(catalogueAssumptionLine(data, [active[0], { productId: 101, active: false }, active[2]]),
     'Catalogus = een Handelscatalogus met alle kleuren van deze reeks. '
-    + 'Ook niet-actieve kleuren tellen mee; haal ze weg in de Catalogusstudio als ze niet in de pdf horen. '
+    + 'Ook niet-actieve kleuren tellen mee; haal ze weg in de Catalogus PDF als ze niet in de pdf horen. '
     + 'Een pdf, offerte of factuur die al verstuurd is, verandert niet meer.');
   assert.equal(catalogueAssumptionLine(data, [...active, { productId: 300, active: false }]), catalogueAssumptionLine(data, active),
     'An inactive demo colour is not in the assumed pdf');

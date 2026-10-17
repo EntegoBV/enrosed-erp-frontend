@@ -46,3 +46,13 @@ test("the list uses the app's own verb", () => {
   assert.match(all, /Opslaan/);
   assert.doesNotMatch(all, /Bewaren/);
 });
+
+test('a new product lists no product-page keys: E, B and ⌥←/→ only work on a saved product', () => {
+  const page = pageShortcutsFor('/products/101').map((row) => row.text);
+  assert.ok(page.includes('Voorraad boeken'));
+  assert.ok(page.includes('Vorige of volgende kleur'));
+  const fresh = pageShortcutsFor('/products/new').map((row) => row.text);
+  assert.ok(!fresh.includes('Voorraad boeken'), fresh.join(', '));
+  assert.ok(!fresh.includes('Vorige of volgende kleur'), fresh.join(', '));
+  assert.ok(pageShortcutsFor('/products/101/edit').map((row) => row.text).includes('Opslaan'));
+});
