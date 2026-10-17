@@ -47,6 +47,36 @@ test('forward moves up to the restored entry again', () => {
   assert.equal(navEntryBelow(stack)?.url, '/sales');
 });
 
+test('going back to the same screen twice keeps the stack: the restored entry takes the pop\'s id', () => {
+  /* Angular rewrites the browser entry it returns to with the pop's navigationId, so the
+     second return to the PO restores id 4, not 2. */
+  const stack = play([
+    go(1, '/purchasing?status=open'), go(2, '/purchasing/62'), go(3, '/products/5'),
+    back(4, '/purchasing/62', 2), go(5, '/products/6'), back(6, '/purchasing/62', 4),
+  ]);
+  assert.deepEqual(stack.entries.map((e) => [e.id, e.url]), [[1, '/purchasing?status=open'], [6, '/purchasing/62'], [5, '/products/6']]);
+  assert.equal(currentNavEntry(stack)?.url, '/purchasing/62');
+  assert.equal(navEntryBelow(stack)?.url, '/purchasing?status=open');
+  assert.deepEqual(upTarget(stack, '/purchasing'), { back: true });
+  /* and forward again, then back to the list, all by the rewritten ids */
+  const forward = recordNavigation(stack, { id: 7, url: '/products/6', trigger: 'popstate', restoredId: 5 });
+  assert.equal(navEntryBelow(forward)?.url, '/purchasing/62');
+  const list = recordNavigation(recordNavigation(forward, back(8, '/purchasing/62', 6)), back(9, '/purchasing?status=open', 1));
+  assert.equal(currentNavEntry(list)?.url, '/purchasing?status=open');
+  assert.deepEqual(list.entries.map((e) => e.id), [9, 8, 7]);
+});
+
+test('after a reload an older entry with a known id but another screen restarts the stack', () => {
+  /* The reloaded session numbers from 1 again; the entry before the reload carried id 2 in the old session. */
+  const stack = play([go(1, '/sales/79'), go(2, '/customers'), back(3, '/sales/79', 1), back(4, '/settings', 2)]);
+  assert.deepEqual(stack.entries.map((e) => e.url), ['/settings']);
+  assert.equal(navEntryBelow(stack), null);
+  /* a page that changed its own query in place is still the same entry */
+  const query = play([go(1, '/purchasing/62'), go(2, '/products/5'), back(3, '/purchasing/62?section=ledger', 1)]);
+  assert.equal(query.index, 0);
+  assert.equal(query.entries.length, 2);
+});
+
 test('a popstate to an entry we never saw (before a reload) restarts the stack there', () => {
   const stack = play([go(1, '/sales/79'), back(2, '/sales', 7)]);
   assert.equal(stack.entries.length, 1);

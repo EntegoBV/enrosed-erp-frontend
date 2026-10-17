@@ -10,9 +10,14 @@
  * Entries are keyed by the router's navigation id:
  * - an imperative navigation pushes (dropping any forward entries);
  * - replaceUrl (or skipLocationChange) replaces the top;
- * - popstate moves to the entry whose id the browser restored. An id we do
- *   not know (history from before a reload) restarts the stack there,
- *   because we cannot know what lies below it.
+ * - popstate moves to the entry whose id the browser restored, and that
+ *   entry takes the pop's own id: Angular rewrites the restored browser
+ *   entry with the new navigationId (HistoryStateManager.setBrowserUrl
+ *   replaces the state when the location already equals the target), so
+ *   the next return to it reports the new id. An id we do not know, or one
+ *   whose entry shows another screen (history from before a reload, where
+ *   the ids started at 1 again), restarts the stack there, because we
+ *   cannot know what lies below it.
  *
  * lastUrlFor(path) keeps the last full URL seen per path, so "way up" can
  * return to the list with its filters (/sales?tab=facturen&scope=PARTNER)
@@ -60,10 +65,12 @@ export function recordNavigation(stack: NavStack, nav: NavRecord): NavStack {
 
   if (nav.trigger === 'popstate' || nav.trigger === 'hashchange') {
     const at = nav.restoredId == null ? -1 : stack.entries.findIndex((e) => e.id === nav.restoredId);
-    if (at >= 0) {
+    /* After a reload the ids start at 1 again: an older browser entry can carry the id of
+       another screen's entry. The path must agree (a page may change its own query in place). */
+    if (at >= 0 && navPath(stack.entries[at].url) === navPath(nav.url)) {
       const entries = stack.entries.slice();
-      /* The restored entry keeps its id; its URL is what the router settled on now. */
-      entries[at] = { id: entries[at].id, url: nav.url };
+      /* The restored entry now carries the pop's id (Angular rewrote its state) and the URL the router settled on. */
+      entries[at] = entry;
       return { entries, index: at, lastUrls };
     }
     return { entries: [entry], index: 0, lastUrls };
