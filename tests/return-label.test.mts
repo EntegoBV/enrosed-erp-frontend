@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isWorkspaceUrl, returnLabel } from '../src/app/core/platform/return-label.ts';
+import { capsuleLabel, isWorkspaceUrl, returnLabel, screenLabel } from '../src/app/core/platform/return-label.ts';
 
 test('every ERP screen has a name to return to', () => {
   const table: Array<[string, string]> = [
@@ -57,4 +57,43 @@ test('workspaces, redirects and screens outside the ERP are never a place to ret
   for (const url of ['/purchasing/46', '/filesystem', '/dashboard', '/sales?view=costs', '/costsheet']) {
     assert.equal(isWorkspaceUrl(url), false, url);
   }
+});
+
+test('a phone back control names the screen it returns to', () => {
+  const table: Array<[string, string]> = [
+    ['/dashboard', 'Vandaag'],
+    ['/dashboard/agenda', 'Agenda'],
+    ['/sales', 'Verkoop'],
+    ['/sales?tab=facturen', 'Verkoop'],
+    ['/sales/79', 'Order'],
+    ['/sales/79/edit', 'Order'],
+    ['/revisions', 'Wijzigingen'],
+    ['/purchasing', 'Inkoop'],
+    ['/purchasing/62', 'Inkooporder'],
+    ['/products', 'Producten'],
+    ['/products/57/edit', 'Product'],
+    ['/customers', 'Klanten'],
+    ['/suppliers', 'Leveranciers'],
+    ['/stock', 'Voorraad'],
+    ['/stock/inventaris', 'Jaarinventaris'],
+    ['/stock-locations', 'Voorraadlocaties'],
+    ['/prospects/4', 'Prospects'],
+    ['/settings?sectie=company', 'Instellingen'],
+    ['/settings/deleted-items', 'Verwijderde items'],
+    ['/activity', 'Logboek'],
+    ['/analyses/cash', 'Analyses'],
+    ['/more', 'Meer'],
+    ['/costs', 'Kosten & bank'],
+    ['/nope', ''],
+  ];
+  for (const [url, label] of table) assert.equal(screenLabel(url), label, url);
+});
+
+test('a back capsule holds at most ten characters, else it is a chevron circle', () => {
+  assert.equal(capsuleLabel('Verkoop'), 'Verkoop');
+  assert.equal(capsuleLabel('Inkooporder'), '');
+  assert.equal(capsuleLabel('Instellingen'), '');
+  assert.equal(capsuleLabel('Meer'), 'Meer');
+  assert.equal(capsuleLabel(''), '');
+  assert.equal(capsuleLabel(null), '');
 });

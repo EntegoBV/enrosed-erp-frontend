@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { Icon } from './icon';
+import { observeLargeTitle } from './large-title';
 
 /**
  * The iOS 26 navigation bar of a workspace phone screen: a transparent bar
@@ -90,19 +91,13 @@ export class IosNav {
 
   constructor() {
     const destroyRef = inject(DestroyRef);
-    let observer: IntersectionObserver | null = null;
+    let stop: (() => void) | null = null;
     afterNextRender(() => {
       const sentinel = this.sentinel()?.nativeElement;
-      if (!sentinel || typeof IntersectionObserver === 'undefined') return;
-      /* The sentinel sits right under the large title: once it passes under
-         the bar, the title is gone and the bar takes it over. */
-      const height = Math.round(this.bar().nativeElement.getBoundingClientRect().height);
-      observer = new IntersectionObserver(([entry]) => {
-        this.condensedState.set(!entry.isIntersecting && entry.boundingClientRect.top < height);
-      }, { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 });
-      observer.observe(sentinel);
+      if (!sentinel) return;
+      stop = observeLargeTitle(this.bar().nativeElement, sentinel, (condensed) => this.condensedState.set(condensed));
     });
-    destroyRef.onDestroy(() => observer?.disconnect());
+    destroyRef.onDestroy(() => stop?.());
   }
 
   /** largeTitle() at the first render, kept from then on. */
@@ -119,7 +114,8 @@ export class IosNav {
 
   goBack(): void {
     const url = this.backUrl();
-    if (url) void this.router.navigateByUrl(url);
+    /* info: the phone motion slides this back like a pop (nav-motion.ts). */
+    if (url) void this.router.navigateByUrl(url, { info: { nav: 'pop' } });
     else this.back.emit();
   }
 }

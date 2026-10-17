@@ -33,7 +33,8 @@ app-product-editor :is(.product-editor-dock__save, .product-editor-dock__view) {
 :root {
   --ink: #1a1614;
   --ink-2: #4a423e;
-  --muted: #8a807a;
+  /* 5.3:1 on white, 4.8:1 on --bg, 4.6:1 on the phone's #f2efeb: AA for the 11-13 px meta lines. */
+  --muted: #736a64;
   --muted-2: #a9a099;
   --line: #e9e3de;
   --line-strong: #d8d0c9;
@@ -145,8 +146,9 @@ input, select, textarea { font: inherit; color: inherit; }
 .theme-plum {
   --rose: #6f3c8f; --rose-dark: #532a6d; --rose-mid: #9a6cb7; --rose-soft: #f3ebf8; --rose-line: #ddcbe8;
 }
+/* Terracotta at AA: 5.0:1 as link text on --bg, 5.5:1 under white button text. */
 .theme-terracotta {
-  --rose: #b8552e; --rose-dark: #8f3f20; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
+  --rose: #a8502b; --rose-dark: #8a3d1f; --rose-mid: #d07a57; --rose-soft: #fbeee8; --rose-line: #f0d3c6;
 }
 .theme-brown {
   --rose: #5d4037; --rose-dark: #3e2b25; --rose-mid: #8d6e63; --rose-soft: #f3edea; --rose-line: #e0d3ce;
@@ -213,66 +215,7 @@ a { color: var(--rose); }
    the tab bar's own stacking context can cover the sheet footer. */
 .main:has(.overlay) { position: relative; z-index: 80; }
 
-/* --- bovenbalk --- */
-.appbar {
-  position: sticky;
-  top: 0;
-  /* Above the tab bar and the FAB: the notification sheet renders inside
-     this bar, and a lower bar would trap that sheet underneath them. */
-  z-index: 60;
-  height: var(--appbar-h);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: var(--safe-t) 12px 0;
-  /* Translucent so the pseudo-element blur below shows through. */
-  background: rgb(255 255 255 / 80%);
-  border-bottom: 1px solid rgb(26 22 20 / 6%);
-}
-
-/* Blur behind the bar, not on it: a backdrop-filter on the bar itself makes
-   it the containing block for position:fixed, which pinned the notification
-   sheet to the bar instead of the screen. */
-.appbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-}
-
-.appbar__back {
-  border: 0;
-  background: transparent;
-  font-size: 22px;
-  line-height: 1;
-  padding: 8px 6px;
-  margin-left: -6px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  color: var(--ink-2);
-  min-width: 40px;
-}
-.appbar__back:active { background: var(--surface-2); }
-
-.appbar__titles { min-width: 0; flex: 1; }
-.appbar__title {
-  font-size: 17px;
-  font-weight: 680;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.appbar__sub {
-  font-size: 12.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.appbar__actions { display: flex; gap: 6px; align-items: center; }
+/* --- bovenbalk: app-page-header, styled in styles/shell.scss --- */
 
 /* --- inhoud --- */
 .content {
@@ -283,62 +226,9 @@ a { color: var(--rose); }
   margin: 0 auto;
 }
 
-/* --- onderbalk (mobiel) --- */
-/* Floating pill, the way iOS 26 docks its tab bars: it hovers over the
-   content instead of fencing it off, and the blur keeps context visible. */
-.tabbar {
-  position: fixed;
-  left: calc(var(--safe-l) + 10px);
-  right: calc(var(--safe-r) + 10px);
-  bottom: calc(var(--safe-b) + 10px);
-  z-index: 40;
-  height: var(--tabbar-h);
-  display: flex;
-  background: rgb(255 255 255 / 78%);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  border: 1px solid rgb(255 255 255 / 60%);
-  border-radius: 20px;
-  box-shadow: 0 8px 30px rgb(26 22 20 / 14%);
-}
+/* --- onderbalk (mobiel): .tabbar and the '+' (.fab), styled in styles/shell-tabbar.scss --- */
 
-.tabbar__item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  padding: 6px 2px;
-  -webkit-tap-highlight-color: transparent;
-}
-.tabbar__icon { line-height: 0; }
-.tabbar__item.active { color: var(--rose); }
-.tabbar__item.active .tabbar__icon { transform: translateY(-1px); }
-.tabbar__item .tabbar__icon { transition: transform 0.15s ease; }
-/* The active tab sits on a soft pill of its own colour, the way the iOS 26
-   tab bar marks where you are without a hard underline. */
-.tabbar__item { position: relative; }
-.tabbar__item::before { content: ''; position: absolute; inset: 6px 4px; border-radius: 14px;
-  background: color-mix(in srgb, var(--rose) 12%, transparent); opacity: 0; transform: scale(.85);
-  transition: opacity .18s ease, transform .18s ease; }
-.tabbar__item.active::before { opacity: 1; transform: none; }
-.tabbar__item > * { position: relative; }
-
-/* --- zijbalk (desktop) --- */
-.sidebar { display: none; }
-.sidebar__brand {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
-.sidebar__text--rail { display: none; }
-.sidebar__expand { display: none; }
+/* --- zijbalk (desktop): .sidebar*, styled in styles/shell.scss --- */
 
 /* From 680px the phone chrome goes: an unfolded Galaxy Fold (about 690px
    wide) or a tablet wants the desktop idiom, not a thumb bar. Up to 1023px
@@ -346,295 +236,20 @@ a { color: var(--rose); }
    keeps its room; from 1024px it is the full sidebar below. */
 @media (min-width: 680px) {
   .shell { flex-direction: row; }
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    color: var(--ink);
-    border-right: 1px solid var(--line);
-    position: sticky;
-    top: 0;
-    height: 100dvh;
-    padding-top: var(--safe-t);
-  }
   .tabbar { display: none; }
-  .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
   .hide-desktop.hide-desktop { display: none !important; }
 }
 
-/* The narrow rail: icon over a short label, no group headers, the long
-   tail behind Meer. Tablets get it by width; a desktop gets it on request
-   (see .sidebar--rail) when a workspace wants the room. */
-@mixin sidebar-rail {
-  width: 84px;
-  flex: 0 0 84px;
-  overflow-x: clip;
-  .sidebar__brand {
-    display: flex;
-    justify-content: center;
-    padding: 14px 8px 10px;
-    border-bottom: 1px solid var(--line);
-  }
-  .sidebar__brand .brand-mark { padding: 4px; margin: 0; }
-  .sidebar__brand .brand-mark__logo { height: 18px; max-width: 64px; }
-  .sidebar__brand .brand-mark__sub { display: none; }
-  .sidebar__nav { padding: 6px 6px; flex: 1; overflow-y: auto; }
-  .sidebar__label { display: none; }
-  .sidebar__group { display: none; }
-  .sidebar__sub { display: contents; }
-  .sidebar__link.sidebar__link--wide { display: none; }
-  .sidebar__theme { display: none; }
-  .sidebar__link {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 9px 2px 8px;
-    margin: 0 0 2px;
-    border-radius: 10px;
-    color: var(--ink-2);
-    text-decoration: none;
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 1.1;
-    text-align: center;
-  }
-  .sidebar__text { min-width: 0; max-width: 100%; }
-  .sidebar__text--full { display: none; }
-  .sidebar__text--rail { display: inline; }
-  .sidebar__link--workspace { margin-top: 2px; border-color: transparent; }
-  .sidebar__link--workspace i { display: none; }
-  .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
-  .sidebar__link.active { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
-  .sidebar__link.sidebar__link--rail { display: flex; }
-  .sidebar__icon { width: 20px; display: inline-flex; justify-content: center; }
-  .sidebar__count { position: absolute; top: 4px; right: 8px; margin: 0; }
-  .sidebar__foot { padding: 8px 6px 12px; border-top: 1px solid var(--line); text-align: center; }
-  .sidebar__account { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .sidebar__user {
-    overflow: hidden;
-    margin-bottom: 6px;
-    color: var(--muted);
-    font-size: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sidebar__logout {
-    width: 100%;
-    padding: 5px 0;
-    border: 1px solid var(--line-strong);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--ink-2);
-    font-size: 11px;
-    cursor: pointer;
-  }
-}
-
 @media (min-width: 680px) and (max-width: 1023.98px) {
-  .sidebar { @include sidebar-rail; }
   .content { padding: 18px 20px 60px; }
-  .appbar { padding: var(--safe-t) 20px 0; }
-}
-
-/* A Fold shows only the four doors in its rail: home, sales, purchasing and products;
-   everything else waits under Meer, as on a phone. */
-@media (min-width: 680px) and (max-width: 899.98px) {
-  .sidebar .sidebar__link:not([data-rail-main]):not(.sidebar__link--rail) { display: none; }
-  .sidebar .sidebar__link--rail { margin-top: 6px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
 }
 
 @media (min-width: 1024px) {
-  :root { --appbar-h: calc(62px + var(--safe-t)); }
   .shell { flex-direction: row; }
-
-  /* Light sidebar in the tab bar's idiom: white surface, hairline edge,
-     the real wordmark, and a soft rose highlight instead of a red pill. */
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    width: 228px;
-    flex: 0 0 228px;
-    background: var(--surface);
-    color: var(--ink);
-    border-right: 1px solid var(--line);
-    position: sticky;
-    top: 0;
-    height: 100dvh;
-  }
-
-  .sidebar__brand {
-    padding: 18px 18px 14px;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .sidebar__nav { padding: 10px; flex: 1; overflow-y: auto; }
-  .sidebar__label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 14px 10px 5px;
-  }
-  .sidebar__link {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    margin-bottom: 1px;
-    border-radius: 10px;
-    color: var(--ink-2);
-    text-decoration: none;
-    font-size: 13.5px;
-    font-weight: 500;
-    transition: background 0.16s ease, color 0.16s ease;
-  }
-  .sidebar__link:hover { background: var(--surface-2); color: var(--ink); }
-  .sidebar__link.active {
-    background: var(--rose-soft);
-    color: var(--rose-dark);
-    font-weight: 650;
-  }
-  .sidebar__link.active .sidebar__icon { opacity: 1; }
-  .sidebar__icon { width: 18px; display: inline-flex; justify-content: center; opacity: 0.85; }
-
-  .sidebar__group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-height: 36px;
-    margin: 5px 0 2px;
-    padding: 8px 9px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 720;
-    letter-spacing: 0.035em;
-    color: var(--muted);
-    text-align: left;
-    transition: background .16s ease, border-color .16s ease, color .16s ease;
-  }
-  .sidebar__group:hover { background: var(--surface-2); color: var(--ink-2); }
-  .sidebar__group--open {
-    border-color: var(--line);
-    background: var(--surface-2);
-    color: var(--ink);
-  }
-  .sidebar__group--current {
-    border-color: var(--rose-line);
-    background: var(--rose-soft);
-    color: var(--rose-dark);
-  }
-  .sidebar__group-icon { display: inline-flex; width: 18px; flex: 0 0 18px; opacity: .8; }
-  .sidebar__group-label { min-width: 0; flex: 1; line-height: 1.2; }
-  .sidebar__group-count {
-    display: inline-grid;
-    place-items: center;
-    min-width: 15px;
-    height: 15px;
-    padding: 0 4px;
-    border-radius: 999px;
-    background: var(--rose);
-    color: #fff;
-    font-size: 9px;
-    letter-spacing: 0;
-  }
-  .sidebar__group-chev {
-    display: grid;
-    width: 20px;
-    height: 20px;
-    flex: 0 0 20px;
-    place-items: center;
-    border-radius: 999px;
-    font-size: 16px;
-    line-height: 1;
-    transition: transform 0.15s ease;
-  }
-  .sidebar__group-chev--open { transform: rotate(90deg); }
-  .sidebar__sub {
-    display: block;
-    margin: 1px 0 7px 16px;
-    padding-left: 7px;
-    border-left: 1px solid var(--line);
-  }
-  .sidebar__sub--closed { display: none; }
-  .sidebar__sub .sidebar__link { padding: 7px 8px; }
-  .sidebar__link.sidebar__link--rail { display: none; }
-  .sidebar__theme { display: flex; justify-content: center; gap: 6px; padding: 10px 8px 6px; }
-  .sidebar__theme button {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: 50%;
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
-    cursor: pointer;
-  }
-  .sidebar__theme button.active { border-color: var(--ink); }
-
-  /* Documenten & media asks for the room: the sidebar folds to the rail until
-     the next click in it. The double chevron is the way back without leaving. */
-  .sidebar { transition: width .2s ease, flex-basis .2s ease; }
-  .sidebar.sidebar--rail {
-    @include sidebar-rail;
-    /* On a desk the rail shows the five sections as icons, not every page
-       of every section: one click on a section unfolds the sidebar there. */
-    .sidebar__group {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      width: 100%;
-      min-height: 0;
-      margin: 0 0 2px;
-      padding: 9px 2px 8px;
-      border: 0;
-      border-radius: 10px;
-      background: transparent;
-      color: var(--ink-2);
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0;
-      line-height: 1.1;
-      text-align: center;
-    }
-    .sidebar__group:hover { background: var(--surface-2); color: var(--ink); }
-    .sidebar__group--current { background: var(--rose-soft); color: var(--rose-dark); font-weight: 700; }
-    .sidebar__group-icon { width: 20px; flex: none; opacity: 1; }
-    .sidebar__group-label { flex: none; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .sidebar__group-chev { display: none; }
-    .sidebar__group-count { position: absolute; top: 4px; right: 8px; }
-    .sidebar__sub { display: none; }
-    .sidebar__link.sidebar__link--rail { display: none; }
-  }
-  .sidebar--rail .sidebar__expand {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin: 2px 0 6px;
-    padding: 7px 0;
-    border: 1px dashed var(--line-strong);
-    border-radius: 10px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-  }
-  .sidebar--rail .sidebar__expand:hover { background: var(--surface-2); color: var(--ink); }
-
   .tabbar { display: none; }
   .content { padding: 22px 26px 60px; }
-  .appbar { padding: var(--safe-t) 26px 0; height: var(--appbar-h); }
-  .appbar__back { display: none; }
   .hide-mobile.hide-mobile { display: revert; }
   /* !important: a component's own display rule (inline-flex on a pill) must not resurrect it. */
   .hide-desktop.hide-desktop { display: none !important; }
@@ -684,15 +299,6 @@ a { color: var(--rose); }
    left rail on a regular desktop, while smaller screens keep a work strip. */
 .shell.shell--website { flex-direction: column; background: #f4f1ed; }
 .shell--website .main { background: #f7f5f2; }
-.sidebar__link--workspace {
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink-2);
-}
-.sidebar__link--workspace:hover { border-color: var(--line-strong); background: var(--surface-2); }
-.sidebar__link--workspace.active { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
-.sidebar__link--workspace i { margin-left: auto; font-style: normal; opacity: .55; }
 @media (min-width: 960px) {
   .shell.shell--website { flex-direction: row; }
 }
@@ -820,7 +426,6 @@ a { color: var(--rose); }
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
-.btn:active { transform: translateY(0.5px); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn--primary {
@@ -833,32 +438,6 @@ a { color: var(--rose); }
 .btn--danger:active { background: var(--danger-soft); }
 .btn--sm { min-height: 34px; padding: 5px 11px; font-size: 13px; }
 .btn--block { width: 100%; }
-
-/* Floating action button on mobile */
-.fab {
-  position: fixed;
-  right: 16px;
-  bottom: calc(var(--tabbar-h) + var(--safe-b) + 28px);
-  z-index: 35;
-  min-height: 52px;
-  padding: 0 20px;
-  border-radius: 26px;
-  background: var(--rose);
-  color: #fff;
-  border: 0;
-  font-size: 15px;
-  font-weight: 650;
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--rose) 38%, transparent);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-/* The home's '+': an icon-only circle instead of a labelled pill. */
-.fab--round { width: 56px; min-height: 56px; padding: 0; border-radius: 50%; justify-content: center; }
-@media (min-width: 680px) {
-  .fab { display: none; }
-}
 
 /* ================================================================= badges */
 
@@ -1153,28 +732,10 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  animation: fade 0.15s ease;
+  animation: mo-fade-in var(--dur-2) var(--ease-out);
 }
-@keyframes fade { from { opacity: 0; } }
-
-/* Pages ease in rather than pop: a 4px rise over 180ms is enough to feel
-   deliberate without ever making anyone wait for it. */
-.content { animation: page-enter 0.18s ease; }
-@keyframes page-enter {
-  from { opacity: 0; transform: translateY(4px); }
-}
-
-/* Pressed feedback on every button; transform is GPU-cheap. */
-.btn { transition: transform 0.08s ease, background 0.15s ease; }
-.btn:active { transform: scale(0.98); }
-
-/* Anyone who asked their OS for less motion gets exactly that. */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* The page fade, button press feedback and reduced motion live in
+   styles/motion.scss. */
 
 .sheet {
   background: var(--surface);
@@ -1183,10 +744,9 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   display: flex;
   flex-direction: column;
-  animation: slide-up 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: mo-sheet-in var(--dur-3) var(--ease-spring);
   padding-bottom: var(--safe-b);
 }
-@keyframes slide-up { from { transform: translateY(100%); } }
 
 .sheet__grab {
   width: 38px;
@@ -1233,12 +793,11 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
     max-width: 620px;
     border-radius: var(--r-lg);
     max-height: 88dvh;
-    animation: pop 0.16s ease;
+    animation: mo-lift-in var(--dur-2) var(--ease-out);
     padding-bottom: 0;
   }
   .sheet--wide { max-width: 940px; }
   .sheet__grab { display: none; }
-  @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
   .sheet__foot { justify-content: flex-end; }
   .sheet__foot .btn { flex: none; }
   .sheet__foot .spacer { flex: 1; }
@@ -1353,7 +912,7 @@ table.data tfoot td {
   display: flex;
   gap: 10px;
   align-items: center;
-  animation: slide-up 0.18s ease;
+  animation: mo-lift-in var(--dur-2) var(--ease-out);
 }
 .toast__dot { width: 7px; height: 7px; border-radius: 50%; background: #57c089; flex: none; }
 .toast--err .toast__dot { background: #e0796c; }
@@ -1375,41 +934,6 @@ table.data tfoot td {
   .sheet__body { padding: 0; overflow: visible; }
 }
 
-/* ------------------------------------------------------- zijbalk-voettekst */
-@media (min-width: 1024px) {
-  .sidebar__foot {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px 14px 14px;
-    border-top: 1px solid var(--line);
-  }
-  .sidebar__theme { padding: 0; }
-  .sidebar__account {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .sidebar__user {
-    overflow: hidden;
-    font-size: 12px;
-    color: var(--muted);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sidebar__logout {
-    flex: none;
-    background: transparent;
-    border: 1px solid var(--line-strong);
-    color: var(--ink-2);
-    border-radius: 10px;
-    padding: 6px 12px;
-    font-size: 12.5px;
-    cursor: pointer;
-  }
-  .sidebar__logout:hover { background: var(--surface-2); color: var(--ink); }
-}
 
 /* Login page and customer portal: no navigation, so no room reserved for it. */
 .shell--bare .content { padding-bottom: 40px; }
@@ -1465,18 +989,6 @@ table.data tfoot td {
   margin-bottom: 4px;
 }
 
-/* Wordmark in the mobile top bar: dark on light. */
-.appbar__brand {
-  --brand-ink: #1a1614;
-  --brand-sub: #8a807a;
-  /* Light bar: the black logo stays as it is. */
-  --brand-logo-filter: none;
-  --brand-logo-filter-inverted: invert(1);
-  margin-right: 4px;
-}
-/* No background plate behind the logo anymore: the theme's green already
-   says the purchase figures are visible, and a dark plate actually made
-   the logo harder to read. */
 
 /* Stock dot, outside the product picker too. */
 .stock-dot {
@@ -1603,22 +1115,6 @@ table.data tfoot td {
   font-size: 9.5px;
   font-weight: 700;
   line-height: 15px;
-  text-align: center;
-}
-/* A link label that shares its row with a count stays on one line. The count
-   moves closer so that the bold label of the open page still fits beside it. */
-.sidebar__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar__text:not(:last-child) { margin-right: -8px; }
-.sidebar__text + .sidebar__count { padding-inline: 4px; }
-.sidebar__count {
-  margin-left: auto;
-  min-width: 19px;
-  padding: 1px 6px;
-  border-radius: 9px;
-  background: var(--rose);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
   text-align: center;
 }
 
@@ -1761,6 +1257,26 @@ table.data tfoot td {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+/* kind="table": rows of a desk kit table; kind="group": cells of a phone inset group. */
+.skel-table__row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--wk-row-h, 40px);
+  padding: 0 var(--wk-pad-x, 16px);
+  border-bottom: 1px solid var(--line);
+}
+.skel-table__row:last-child { border-bottom: 0; }
+.skel-table__end { margin-left: auto; }
+.skel-group__cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--ios-row, 52px);
+  padding: 8px 16px;
+}
+.skel-group__tile { width: 30px; height: 30px; flex: none; border-radius: 8px; }
+.skel-group__body { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   .skel::after { animation: none; }
 }
@@ -1845,17 +1361,16 @@ table.data tfoot td {
 }
 
 /* ------------------------------------------------------ motion language */
-/* One entrance curve for the whole app: content rises softly into place.
-   Route changes recreate .content, so every page gets it for free. */
+/* The rise for opt-in blocks (.anim-rise, .anim-stagger, inline editors).
+   Page changes fade instead (styles/motion.scss). */
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   /* Ends on transform:none - a kept translate(0) is still a containing
      block, which pinned fixed sheets inside the animated child. */
   to { opacity: 1; transform: none; }
 }
-.content { animation: rise 0.3s ease backwards; }
-.anim-rise { animation: rise 0.35s ease backwards; }
-.anim-stagger > * { animation: rise 0.4s ease backwards; }
+.anim-rise { animation: rise var(--dur-3) var(--ease-out) backwards; }
+.anim-stagger > * { animation: rise var(--dur-3) var(--ease-out) backwards; }
 .anim-stagger > *:nth-child(1) { animation-delay: 0.03s; }
 .anim-stagger > *:nth-child(2) { animation-delay: 0.08s; }
 .anim-stagger > *:nth-child(3) { animation-delay: 0.13s; }
@@ -1863,9 +1378,7 @@ table.data tfoot td {
 .anim-stagger > *:nth-child(5) { animation-delay: 0.23s; }
 .anim-stagger > *:nth-child(6) { animation-delay: 0.28s; }
 
-.btn { transition: transform 0.12s ease, filter 0.12s ease; }
-.btn:active { transform: scale(0.96); }
-.kpi { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.kpi { transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out); }
 .kpi:active { transform: scale(0.97); }
 @media (hover: hover) {
   .kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgb(26 22 20 / 8%); }
@@ -1873,8 +1386,8 @@ table.data tfoot td {
   .list-item:hover { background: var(--surface-2); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .content, .anim-rise, .anim-stagger > * { animation: none; }
-  .btn, .kpi { transition: none; }
+  .anim-rise, .anim-stagger > * { animation: none; }
+  .kpi { transition: none; }
 }
 
 /* Decorative rose watermark on the hero tile: drawn, not loaded. */
@@ -3949,8 +3462,12 @@ a.desk-kpi{text-decoration:none}
    Loaded last so they win ties with the legacy rules above. Each area
    partial scopes every rule under its own host. */
 @include meta.load-css('styles/workspace-kit');
+@include meta.load-css('styles/motion');
+@include meta.load-css('styles/shell');
+@include meta.load-css('styles/shell-sidebar');
 @include meta.load-css('styles/finance-phone');
 @include meta.load-css('styles/files-phone');
+@include meta.load-css('styles/shell-tabbar');
 @include meta.load-css('styles/purchase-payments');
 @include meta.load-css('styles/purchase-nacalc');
 @include meta.load-css('styles/purchase-phone');

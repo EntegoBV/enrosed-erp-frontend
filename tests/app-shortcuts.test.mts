@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  GLOBAL_SHORTCUTS, PAGE_SHORTCUTS, appShortcutsActive, pageShortcutsFor, routeMatches, shortcutCommand,
+} from '../src/app/core/platform/app-shortcuts.ts';
+
+const key = (k: string, extra: Partial<Parameters<typeof shortcutCommand>[0]> = {}) => ({ key: k, typing: false, overlay: false, ...extra });
+
+test("'/' searches and '?' lists the keys, only when nobody else wants the key", () => {
+  assert.equal(shortcutCommand(key('/'), '/sales'), 'search');
+  assert.equal(shortcutCommand(key('?'), '/purchasing/62'), 'help');
+  assert.equal(shortcutCommand(key('/', { typing: true }), '/sales'), null);
+  assert.equal(shortcutCommand(key('?', { overlay: true }), '/sales'), null);
+  assert.equal(shortcutCommand(key('/', { metaKey: true }), '/sales'), null);
+  assert.equal(shortcutCommand(key('/', { defaultPrevented: true }), '/sales'), null);
+  assert.equal(shortcutCommand(key('k'), '/sales'), null);
+});
+
+test('Kosten & bank and Documenten & media keep their own keys', () => {
+  for (const url of ['/costs', '/costs?view=bank', '/files', '/files/photos']) {
+    assert.equal(appShortcutsActive(url), false, url);
+    assert.equal(shortcutCommand(key('/'), url), null, url);
+  }
+  assert.equal(appShortcutsActive('/costsheet'), true);
+});
+
+test('route patterns match one segment per parameter and a whole subtree with /*', () => {
+  assert.equal(routeMatches('/purchasing/:id', '/purchasing/62'), true);
+  assert.equal(routeMatches('/purchasing/:id', '/purchasing/62?sectie=betalingen'), true);
+  assert.equal(routeMatches('/purchasing/:id', '/purchasing/62/edit'), false);
+  assert.equal(routeMatches('/purchasing/:id', '/purchasing'), false);
+  assert.equal(routeMatches('/website/*', '/website'), true);
+  assert.equal(routeMatches('/website/*', '/website/texts'), true);
+  assert.equal(routeMatches('/website/*', '/websites'), false);
+});
+
+test('the page section lists the screen keys and hides elsewhere', () => {
+  assert.deepEqual(pageShortcutsFor('/purchasing/62').map((row) => row.keys.join(' ')), ['⌥ 1', '⌥ 2', '⌥ 3']);
+  assert.deepEqual(pageShortcutsFor('/sales/79/edit').map((row) => row.text), ['Opslaan']);
+  assert.deepEqual(pageShortcutsFor('/website/layout').map((row) => row.text), ['Opslaan']);
+  assert.deepEqual(pageShortcutsFor('/customers'), []);
+});
+
+test("the list uses the app's own verb", () => {
+  const all = [...GLOBAL_SHORTCUTS, ...PAGE_SHORTCUTS.flatMap((set) => set.rows)].map((row) => row.text).join(' ');
+  assert.match(all, /Opslaan/);
+  assert.doesNotMatch(all, /Bewaren/);
+});

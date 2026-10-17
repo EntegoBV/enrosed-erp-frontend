@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   sidebarGroupForUrl,
-  sidebarRailForUrl,
   toggleSidebarGroup,
 } from '../src/app/core/platform/sidebar-navigation.ts';
 
@@ -40,11 +39,21 @@ test('opening another section closes the previous section', () => {
   assert.equal(toggleSidebarGroup(null, 'producten'), 'producten');
 });
 
-test('the document library stands outside every group and folds the desktop sidebar', () => {
+test('the document library stands outside every group (and no longer folds the sidebar)', () => {
   assert.equal(sidebarGroupForUrl('/files'), null);
   assert.equal(sidebarGroupForUrl('/files/photos?map=3'), null);
-  assert.equal(sidebarRailForUrl('/files'), true);
-  assert.equal(sidebarRailForUrl('/files/photos?map=3#top'), true);
-  assert.equal(sidebarRailForUrl('/filesystem'), false);
-  assert.equal(sidebarRailForUrl('/products'), false);
+  assert.equal(sidebarGroupForUrl('/costs'), null);
+});
+
+test('the company group holds Logboek, the settings overview, the terms and Verwijderde items', () => {
+  assert.equal(sidebarGroupForUrl('/settings/deleted-items'), 'bedrijf');
+  assert.equal(sidebarGroupForUrl('/settings'), 'bedrijf');
+  assert.equal(sidebarGroupForUrl('/voorwaarden'), 'bedrijf');
+  assert.equal(sidebarGroupForUrl('/activity?wie=emre'), 'bedrijf');
+});
+
+test('Categorieën opens Producten & voorraad, and the device settings open no group', () => {
+  assert.equal(sidebarGroupForUrl('/categories'), 'producten');
+  assert.equal(sidebarGroupForUrl('/settings?sectie=notifications'), null);
+  assert.equal(sidebarGroupForUrl('/settings?sectie=appearance'), null);
 });

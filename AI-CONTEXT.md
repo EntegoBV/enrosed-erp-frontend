@@ -41,20 +41,26 @@ digital signing, change proposals) served by the same app.
   prices, margins and purchase figures are always visible to staff; only
   PDF choices (internal vs supplier/customer) differ. Rebuilding a
   customer-safe mode is an owner decision.
-- Floating pill chrome: tabbar and action bars share 20 px radius; the
-  appbar blurs through `.appbar::before` (blur on the bar itself creates
-  a containing block that breaks `position:fixed` children - learned the
-  hard way with the notification sheet).
+- One shell, the workspaces' look everywhere (redesign 2026-10-16, see
+  "Shell and motion"): a dark source-list sidebar on the desk (the wk-side
+  colours), the 52 px toolbar with a crumb, and on the phone the iOS 26
+  large title condensing into a glass bar, the kit's floating 60 px tab bar
+  and the round '+' beside it. The page bar's glass sits on
+  `.appbar::before` (blur on the bar itself creates a containing block that
+  breaks `position:fixed` children - learned the hard way with the
+  notification sheet).
 - Hand-drawn SVG icon set in `shared/icon.ts` (24-grid, round caps).
-- Skeleton loaders (`shared/skeleton.ts`: list/card/lines/stats) instead
-  of "Laden…" - the layout never jumps.
+- Skeleton loaders (`shared/skeleton.ts`: list/card/lines/stats, and
+  table/group since 2026-10-16) instead of "Laden…" - the layout never
+  jumps. A failed load shows `app-load-error`.
 - Cost breakdowns read as "the journey of the goods": `.cost-section`
   micro-headers + `.cost-hero` framed total (shared by sales totals,
   purchase totals and purchase view).
 - Product view uses bento `spec`-tiles for identity facts; money stays in
   stat rows (tiles everywhere proved less scannable).
-- Entrance animation `.anim-rise`, reveal-on-scroll patterns, subtle
-  transitions; respect `prefers-reduced-motion`.
+- Motion: the tokens and mo-* utilities of styles/motion.scss (see "Shell
+  and motion"); `.anim-rise` stays for opt-in blocks. Everything is
+  instant under `prefers-reduced-motion`. `--muted` is #736a64 (AA).
 
 ## Workspace kit (2026-09)
 
@@ -104,6 +110,226 @@ the workspaces. All CSS lives in one global partial,
   `--ios-sep-inset`). Area partials: finance-workspace / finance-phone /
   finance-legacy, files-workspace / files-phone, purchase-payments,
   purchase-phone.
+
+## Shell and motion (redesign foundation, 2026-10-16)
+
+The foundation of the 2026-10-16 redesign (contract:
+scratchpad redesign/foundation/design.md + critique.md; the critique wins).
+Areas build on these pieces and never restyle `.sidebar*`, `.appbar*`,
+`.tabbar*`, `.fab` or bare kit classes; they use the inputs, tokens and kit
+pieces below. Every package is its own commit and reverts alone (F0
+helpers, F1 load, F1b deferred workspace sides, F2a motion and kit pieces,
+F2b sheet/toast leave, F5a desk chrome, F5b dark skin, F4a phone header,
+F4b tab bar and '+', F6 Meer, F7a 404/titles/badges/contrast, F3 phone
+push/pop, F7b login/Sneltoetsen/progress/preload). The review's fix round
+(2026-10-17, "Foundation fix: …") added one commit per finding on top;
+F3 now reverts together with its fix 69131f3 (`git revert 69131f3
+19e1238`), the other packages still alone. Files: styles/shell.scss
+(page header, sidebar functions, key cap), styles/shell-sidebar.scss (the
+dark skin, after shell), styles/shell-tabbar.scss (tab bar and '+', after
+the workspaces' phone partials), styles/motion.scss (tokens, sheets,
+confirm).
+
+**Initial bundle budget.** angular.json fails the production build above
+1 MB initial (styles.css, main and the shared chunks). The base was at
+972.9 kB; the foundation leaves it at about 936 kB because the workspace
+sides (Documenten & media, Kosten & bank, Website beheren and what they
+import, 66 kB) are `@defer` blocks in the shell now, and the shell's extras
+load lazily: the phone motion, the '/' and '?' keys and the route progress
+with preloading are install functions imported from their own effects in
+App, and Sneltoetsen is an `@defer` block. Keep new shell code out of the
+first screen the same way; area CSS in global partials counts against it.
+
+**Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
+- Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
+  drawers, accordions, list insert/remove), `--dur-3` 320 ms (phone push,
+  sheets), `--dur-out` 220 ms, `--ease-out/-in/-spring/-snap`, `--mo-shift`
+  28 px, `--mo-lift` 8 px. Use them with a fallback in area partials:
+  `var(--dur-2, 200ms)`.
+- Keyframes (enter ones end on `transform:none`, trap rule): `mo-fade-in`,
+  `mo-fade-out`, `mo-push-in`, `mo-pop-in`, `mo-lift-in`, `mo-sheet-in`,
+  `mo-sheet-out`, `mo-dialog-out`, `mo-toast-out`, `mo-row-in`,
+  `mo-row-out`, `mo-hold`.
+- Utilities: `.mo-enter` / `.mo-leave` for rows the user adds or removes
+  (`animate.enter="mo-enter"`, `animate.leave="mo-leave"`; never on data
+  loads), `.mo-fade`. Page changes fade `.content` over `--dur-1`.
+- Sheets (F2b): app-sheet leaves through Angular's `animate.leave` (host
+  class `mo-leaving`; the host runs `mo-hold` so Angular waits): the
+  backdrop fades, the phone sheet slides down, the desk dialog fades and
+  shrinks, 220 / 120 ms. The component is destroyed at once (closing stays
+  synchronous) and the leaving overlay takes no taps. Toasts leave with
+  `mo-toast-out` (`animate.leave="mo-toast-leaving"`). Phone drag to
+  dismiss on the grab and the head (`shared/sheet-drag.ts`): starts after
+  8 px and never on a control (the × keeps its click), closes beyond
+  120 px or on a 0.6 px/ms flick, else springs back; no transform stays.
+  `Ui.confirm` renders `<app-sheet variant="ios">` with `.confirm-message`
+  and `.confirm-actions` (phone: stacked, the main choice on top).
+- Phone push, pop and tab (F3, `installNavMotion` in `core/platform/nav-motion.ts`, lazy): the
+  direction from `navDirection()`; right after the arriving page's first
+  render its blocks (`nav-motion-targets.ts`: `.content`, the large title,
+  the children of `.ios-page` / `.mpo-phone`, never a fixed bar, overlay or
+  anything holding one) slide 28 px in over `--dur-3` / `--ease-spring`, or
+  fade over `--dur-1` for a tab. It runs on the Web Animations API, not a
+  CSS class, so an element's own CSS animation never restarts, content
+  arriving later never slides, and nothing remains; `.main[data-nav]` is
+  set while it runs. Off on a desk, under reduced motion, and when a sheet
+  is open on arrival. Back navigations by URL pass `info: { nav: 'pop' }`
+  (NavHistory, IosNav). A fixed bar inside a page's `.content` must be in
+  `NAV_FIXED_SELECTOR` (`.builder-actions`, the phone save bars) or carry
+  `data-fixed-bar`, so the block holding it never slides.
+- Press: `scale(.97)` on touch only; desk buttons never shrink.
+- Reduced motion: tokens 0, one 0.01 ms cycle for anything left (loops
+  stop), `scroll-behavior:auto`; `installReducedMotionScroll` (App) turns
+  `behavior:'smooth'` from code into `'auto'`. New code may use
+  `scrollBehavior()` / `prefersReducedMotion()`.
+
+**Page header** (`shared/page-header.ts`, styles in `styles/shell.scss`; the
+host stays inline):
+- Inputs: `title`, `subtitle`, `showBell`, `titleEditable` /
+  `(titleChange)`, `backTo`, and new `[parent]` (`{label, url,
+  phoneLabel?}`; undefined = `parentOf(url)`, null = no crumb) and
+  `[large]` (undefined = a phone large title on root screens, i.e.
+  `parentOf(url) === null`). `showBack` no longer changes what renders.
+- Desk: 52 px toolbar (`--appbar-h: calc(52px + safe-t)` from 680), title
+  18/720, crumb "Inkoop ›" on detail screens (a real link; a click goes up
+  through NavHistory), the subtitle stacked under the title when a crumb
+  shows, inline otherwise; projected `.btn` (direct children) at 32 px, a
+  divider and the 32 px bell. No crumb when it would repeat the title (the
+  desks' loading and error bars). A title that would be cut folds the crumb to
+  a chevron, then away.
+- Phone: 44 px bar (`--appbar-h: calc(44px + safe-t)`), large title 34/800
+  with the subtitle as caption on root screens (condenses into the glass
+  bar, `observeLargeTitle` in `shared/large-title.ts`, shared with
+  app-ios-nav), the glass bar with title over subtitle on detail screens.
+  Back control: none on the five tab roots, else the screen below in the
+  history ("‹ Verkoop", history back), without history the parent's label,
+  backTo's screen label, or "Meer"; over ten characters, or when the title
+  would be cut, a chevron circle; still cut, an editable title's pencil goes
+  (`.appbar--tight`, the button keeps "Titel wijzigen"). "Cut" is measured
+  unrounded (`textCut`: a Range over the text against its box; scrollWidth
+  hides a sub-pixel overflow the browser still ellipsizes). A header that
+  goes away without a navigation (a loading state) gives the tab its route
+  title back. Projected `.btn` become glass capsules
+  (primary: accent), `.btn--icon-mobile` glass circles, the bell a glass
+  circle with the red badge. `.content` right after a large title gets
+  padding-top 4 px.
+
+**Desk sidebar** (`app.ts`, rendered from `NAV_GROUPS`; its functions in
+styles/shell.scss, its dark skin in styles/shell-sidebar.scss):
+- Dark skin (F5b): 248 px `--wk-side-bg`, logo inverted, Dashboard, five
+  accordion groups (one open, following the route; only a user toggle
+  animates, `sidebar--animate`; a closed list is `visibility:hidden`), a
+  hairline, the three workspace doors, then the foot: "Meldingen op dit
+  toestel" (`NAV_DEVICE`), six 18 px swatches, the user, the '?' key cap
+  (Sneltoetsen) and Afmelden. Counts are light accent chips
+  (`--side-count-bg` / `--side-count-ink`).
+- 680-1023: the 88 px rail (the E tile, icon over the short label; counts as
+  16 px chips capped at 9+, the login requests also on Meer below 900, where
+  Login-aanvragen is not in the rail; every link has its label as title, as
+  the rail cuts long ones); 680-899 shows
+  Home, Verkoop, Inkoop, Producten and Meer only.
+- A skip link "Naar de inhoud" is the first Tab stop (focuses
+  `.main#inhoud`, which has no tabindex of its own: the skip lends it one
+  until the next blur or press, or a click on text would take the focus off
+  <body> and stop the workspace shortcuts). The workspace sides render only
+  for a signed-in user (a logged-out hard load keeps the placeholder, so no
+  401 drops the login's returnTo). The shell's url signal starts from the address bar (no
+  sidebar flash on a hard load of a workspace). `/voorwaarden` is bare
+  only for customers. At 1024-1279 `.content` pads 16 px (the desks 14)
+  and the fixed `.action-bar` starts at 264 px (100 px in the rail).
+
+**Phone tab bar and '+'** (F4b, styles/shell-tabbar.scss): `.tabbar` has the kit
+geometry (60 px floating glass, `--tabbar-h` = `--ios-tabbar-h`), labels in
+`.tabbar__label`, an accent pill under the open tab, red badges (9+). Every
+list `.fab` is the round accent accessory on the bar's baseline (its text
+stays the accessible name) and the bar narrows beside it (9.5 px labels).
+`.fab--text` keeps an action's words ("Container kiezen", Partner scope) as
+a labelled pill above the bar. Staff screens use `--bg` #f2efeb on the
+phone, as the status-bar theme-color and the manifest do.
+
+**Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
+"Aangemeld als …", the bell) over the kit's inset groups rendered from
+`NAV_WORKSPACES` (Snel naar), `NAV_GROUPS` via `meerItems` (Werkruimtes, one
+exclusive `ios-disclosure` per group, sidebar order, counts as `ios-count`)
+and `NAV_DEVICE` plus Weergave (App op dit toestel), then Afmelden. A new
+navigation item belongs in nav-items.ts: the sidebar and Meer both show it.
+
+**App fixes** (F7a): an unknown address shows `features/not-found`
+("Pagina niet gevonden", behind authGuard, inside the shell) instead of
+redirecting; Dutch aliases (verkoop, inkoop, producten, voorraad, klanten,
+leveranciers, instellingen, kosten, bank, documenten, media, analyse, home,
+verkoop/:id, inkoop/:id, producten/:id); every route has a `title` (a sales
+document is "Verkooporder", as Inkooporder)
+(`EnrosedTitleStrategy`, "X — Enrosed", skipped when only the query
+changes; a page header's own title wins); `WorkQueue.startAutoRefresh()`
+(App, while logged in) refreshes the counts on focus/visibility after a
+minute and every five minutes while visible.
+
+**Login and keys** (F7b): the login page preselects the last account
+(`enrosed.login.last`, the name only), focuses the password when it can,
+has an eye toggle and fits 375x667. On the desk '/' focuses the page's
+search (`PAGE_SEARCH_SELECTOR`; mark yours with `data-page-search`) and '?'
+opens Sneltoetsen (`shared/shortcuts-sheet.ts`; areas append their screen
+keys to `PAGE_SHORTCUTS`); never while typing, behind a sheet or in Kosten
+& bank / Documenten & media. A slow navigation shows the route progress
+line (200 ms after its guards); the five tab roots and the three workspace
+sides preload when idle (not on saveData or 2G), once, and only for a
+signed-in user on a staff screen (`preloadWanted`: never on /offerte, not
+on /login). Signing in replaces the login entry (`replaceUrl`), so back
+never shows the form again.
+
+**Navigation helpers** (core/platform, pure and node-tested unless noted):
+- `nav-items.ts`: `NAV_HOME`, `NAV_GROUPS` (five groups, items with label,
+  short, meerLabel, icon, link, query, exact, countKey, groupCount, hint,
+  railMain, wide, newUntil, tabRoot, tone), `NAV_WORKSPACES`,
+  `NAV_DEVICE`, `NAV_MORE`, `navItemActive`, `navItemUrl`, `navItemIsNew`,
+  `groupCountKeys`, `meerItems`. The desk sidebar and Meer render from it.
+  `NavCountKey` names WorkQueue signals; extend it with the signal. Icons
+  are unique within a group and never two look-alikes ('suppliers' and
+  'truck' are the same lorry; Douane has 'customs', a stamp).
+- `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
+  `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
+- `page-parent.ts`: `parentOf(url)` → `{label, url, phoneLabel}` or null.
+- `nav-history.ts` (stack keyed by navigation id) and the injectable
+  `NavHistory` (`nav-history-service.ts`, created by App): `below()`,
+  `belowLabel()`, `lastUrlFor(path)`, `upHref(parentUrl)`, `up(parentUrl)`
+  (history back when the parent is below, else its last URL), `back(fallback)`.
+  On a pop the restored entry takes the pop's id (Angular rewrites the
+  browser entry's navigationId) and must show the same path (after a
+  reload ids restart at 1). "Below" is the first entry that shows another
+  screen: the sections of `/analyses/:section` count as one
+  (`navScreen`, `screenBelow`; back goes there with `historyGo(-n)`);
+  `/settings?sectie=…` and other query views stay entries of their own.
+- `nav-direction.ts`: `navDirection(prev, next, trigger, info, PHONE_TABS)`
+  → push / pop / tab / none; a navigation may name itself with
+  `info: { nav: 'push' }` (the phone motion reads it).
+- `app-shortcuts.ts`: `GLOBAL_SHORTCUTS`, `PAGE_SHORTCUTS` (areas append
+  rows for their routes), `pageShortcutsFor`, `shortcutCommand` ('/' and
+  '?'), `PAGE_SEARCH_SELECTOR` (`[data-page-search]` marks a page's main
+  search).
+- `return-label.ts`: `screenLabel(url)` ("Verkoop", "Order", "Inkooporder",
+  "Vandaag", "Meer"…) and `capsuleLabel(label)` (≤ 10 characters, else '').
+- `sidebarGroupForUrl`: `/settings`, `/settings/deleted-items`,
+  `/voorwaarden`, `/activity` and sectie=company → Bedrijf; `/categories` →
+  Producten & voorraad. No automatic sidebar rail any more.
+
+**Kit pieces** (workspace-kit.scss unless noted): `.wk-subbar` (+
+`__end`; sticky under the toolbar, tables after it stick under it),
+`.wk-search > .wk-kbd` ('/' hint), `.ios-count`, `.ios-cell__sub--2`,
+`.ios-tile--sm`, `.ios-disclosure__body` (indented child cells; a
+disclosure with this body, and only such a one, animates open where
+`::details-content` exists), `.content--narrow` (shell.scss,
+960 px), `app-skeleton kind="table" | "group"`, `app-load-error`
+(`[message]`, `[title]`, `[busy]`, `(retry)`; "Dit scherm kon niet worden
+geladen" / "Opnieuw proberen"), `confirmLeave(ui, save?, {message?})` in
+shared/ui.ts ("Niet-opgeslagen wijzigingen", Opslaan / Niet opslaan /
+Annuleren) for `canDeactivate(): boolean | Promise<boolean>`.
+
+**Load speed**: production builds no longer inline critical CSS (one
+render-blocking stylesheet, no unstyled first frame); vercel.json marks the
+hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
+(check the first Vercel deployment of that change once: if it fails on
+vercel.json, drop only the headers block).
 
 ## Workspaces
 

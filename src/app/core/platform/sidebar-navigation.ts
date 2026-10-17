@@ -30,6 +30,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
     || path.startsWith('/stock')
     || path.startsWith('/stock-locations')
     || path.startsWith('/barcodes')
+    || path.startsWith('/categories')
     || path.startsWith('/catalog-export')
     || path.startsWith('/catalog/texts')
     || section === 'categories'
@@ -38,18 +39,18 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (path.startsWith('/analyses')) return 'analyses';
 
-  if (path.startsWith('/activity') || section === 'company') return 'bedrijf';
+  /* The company group: Logboek, Bedrijfsgegevens, Voorwaarden & privacy,
+     Verwijderde items, and the settings overview itself. The settings of
+     this device (notifications, appearance) belong to no group. */
+  if (
+    path.startsWith('/activity')
+    || path.startsWith('/voorwaarden')
+    || path === '/settings/deleted-items'
+    || (path === '/settings' && !section)
+    || section === 'company'
+  ) return 'bedrijf';
 
   return null;
-}
-
-/**
- * The document library and the Kosten & bank workspace ask the desktop
- * sidebar to fold to its rail: they are wide and bring their own navigation.
- */
-export function sidebarRailForUrl(url: string): boolean {
-  const path = url.split('?', 1)[0].split('#', 1)[0];
-  return path === '/files' || path.startsWith('/files/') || path === '/costs' || path.startsWith('/costs/');
 }
 
 /** A real accordion: opening one section closes the previous one. */

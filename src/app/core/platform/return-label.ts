@@ -56,3 +56,55 @@ export function returnLabel(url: string): string {
 export function returnPath(url: string): string {
   return pathOf(url);
 }
+
+/**
+ * The name of the screen behind a URL as a phone back control shows it
+ * ("‹ Verkoop", "‹ Order"): capitalised, the screen's own word. Empty when
+ * the screen has no name worth showing; the back control is then a plain
+ * chevron circle.
+ */
+export function screenLabel(url: string): string {
+  const path = pathOf(url).replace(/(.)\/+$/, '$1');
+  if (path === '/dashboard') return 'Vandaag';
+  if (path === '/dashboard/agenda') return 'Agenda';
+  if (path === '/dashboard/open') return 'Open punten';
+  if (/^\/sales\/[^/]+(?:[/]|$)/.test(path)) return 'Order';
+  if (under(path, '/sales')) return 'Verkoop';
+  if (under(path, '/revisions')) return 'Wijzigingen';
+  if (/^\/purchasing\/[^/]+(?:[/]|$)/.test(path)) return 'Inkooporder';
+  if (under(path, '/purchasing')) return 'Inkoop';
+  if (/^\/products\/[^/]+(?:[/]|$)/.test(path)) return 'Product';
+  if (under(path, '/products')) return 'Producten';
+  if (under(path, '/customers')) return 'Klanten';
+  if (under(path, '/klantlogins')) return 'Login-aanvragen';
+  if (under(path, '/contactaanvragen')) return 'Contactaanvragen';
+  if (under(path, '/prospects')) return 'Prospects';
+  if (under(path, '/suppliers')) return 'Leveranciers';
+  if (under(path, '/countries')) return 'Landen & vracht';
+  if (under(path, '/stock/inventaris')) return 'Jaarinventaris';
+  if (under(path, '/stock')) return 'Voorraad';
+  if (under(path, '/stock-locations')) return 'Voorraadlocaties';
+  if (under(path, '/barcodes')) return 'EAN-codes';
+  if (under(path, '/categories')) return 'Categorieën';
+  if (under(path, '/catalog-export')) return 'Catalogus PDF';
+  if (under(path, '/catalog')) return 'Cataloguslabels';
+  if (under(path, '/settings/deleted-items')) return 'Verwijderde items';
+  if (under(path, '/settings')) return 'Instellingen';
+  if (under(path, '/activity')) return 'Logboek';
+  if (under(path, '/analyses')) return 'Analyses';
+  if (under(path, '/more')) return 'Meer';
+  if (under(path, '/costs')) return 'Kosten & bank';
+  if (under(path, '/files')) return 'Documenten & media';
+  if (under(path, '/website')) return 'Website';
+  if (under(path, '/voorwaarden')) return 'Voorwaarden';
+  return '';
+}
+
+/** The longest label a phone back capsule shows; longer ones become a chevron circle. */
+export const BACK_CAPSULE_MAX = 10;
+
+/** The text of a phone back capsule: the label when it fits, '' (chevron circle) otherwise. */
+export function capsuleLabel(label: string | null | undefined): string {
+  const text = (label ?? '').trim();
+  return text.length > 0 && text.length <= BACK_CAPSULE_MAX ? text : '';
+}

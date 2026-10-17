@@ -29,11 +29,14 @@ test('the three screens of the Jaarinventaris are routed, behind the login', () 
 });
 
 test('the sidebar leads to the Jaarinventaris, and Voorraad no longer lights up with it', () => {
-  const link = shell.indexOf('routerLink="/stock/inventaris"');
-  assert.notEqual(link, -1, 'the sidebar link to /stock/inventaris is missing');
-  assert.ok(shell.slice(link, shell.indexOf('</a>', link)).includes('Jaarinventaris'));
+  /* The sidebar renders from NAV_GROUPS (nav-items.ts); app.ts loops over it. */
+  const nav = read('core/platform/nav-items.ts');
+  const link = nav.indexOf("link: '/stock/inventaris'");
+  assert.notEqual(link, -1, 'the navigation entry for /stock/inventaris is missing');
+  assert.ok(nav.slice(nav.lastIndexOf('{', link), link).includes("label: 'Jaarinventaris'"));
   /* /stock is a prefix of /stock/inventaris: without an exact match both links would be active together. */
-  const stock = shell.indexOf('routerLink="/stock" routerLinkActive="active"');
-  assert.notEqual(stock, -1, 'the sidebar link to /stock is missing');
-  assert.match(shell.slice(stock, shell.indexOf('</a>', stock)), /\[routerLinkActiveOptions\]="\{ paths: 'exact'/);
+  const stock = nav.indexOf("link: '/stock',");
+  assert.notEqual(stock, -1, 'the navigation entry for /stock is missing');
+  assert.match(nav.slice(stock, nav.indexOf('}', stock)), /exact: true/);
+  assert.match(shell, /@for \(group of navGroups; track group\.id\)/);
 });

@@ -68,6 +68,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <circle cx="6.5" cy="17.5" r="1.8" />
           <circle cx="16.5" cy="17.5" r="1.8" />
         }
+        @case ('customs') {
+          <!-- A rubber stamp: Douane (HS-codes and duties), next to the lorry of Leveranciers. -->
+          <circle cx="12" cy="6" r="2.5" />
+          <path d="M10.6 8.3 10 12.5M13.4 8.3l.6 4.2" />
+          <path d="M5 12.5h14v3.5H5z" />
+          <path d="M6.5 19.5h11" />
+        }
         @case ('barcode') {
           <path d="M4 6v12M7 6v12M10 6v12M13 6v12M16 6v12M19 6v12" />
         }

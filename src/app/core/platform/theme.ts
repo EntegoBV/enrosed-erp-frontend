@@ -16,7 +16,7 @@ export const THEMES: readonly ThemeOption[] = [
   { key: 'brown', label: 'Bruin', swatch: '#5d4037' },
   { key: 'blue', label: 'Blauw', swatch: '#1f5e9e' },
   { key: 'plum', label: 'Paars', swatch: '#6f3c8f' },
-  { key: 'terracotta', label: 'Terracotta', swatch: '#b8552e' },
+  { key: 'terracotta', label: 'Terracotta', swatch: '#a8502b' },
   { key: 'rose', label: 'Rozerood', swatch: '#b01f3f' },
 ];
 

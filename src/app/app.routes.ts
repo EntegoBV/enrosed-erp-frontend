@@ -9,30 +9,36 @@ export const routes: Routes = [
      the customer has no account, only a token in the link. */
   {
     path: 'login',
+    title: 'Aanmelden',
     loadComponent: () => import('./features/login/login-page').then((m) => m.LoginPage),
   },
   {
     path: 'voorwaarden',
+    title: 'Voorwaarden & privacy',
     loadComponent: () => import('./features/terms/terms-page').then((m) => m.TermsPage),
   },
   {
     path: 'offerte/:token',
+    title: 'Offerte',
     loadComponent: () => import('./features/portal/portal-page').then((m) => m.PortalPage),
   },
 
   /* Everything below requires a login. */
   {
     path: 'dashboard',
+    title: 'Dashboard',
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/dashboard-home').then((m) => m.DashboardHome),
   },
   {
     path: 'dashboard/agenda',
+    title: 'Agenda',
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/agenda-page').then((m) => m.AgendaPage),
   },
   {
     path: 'dashboard/open',
+    title: 'Open punten',
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/open-page').then((m) => m.OpenPage),
   },
@@ -43,17 +49,20 @@ export const routes: Routes = [
   },
   {
     path: 'analyses/:section',
+    title: 'Analyses',
     canActivate: [authGuard],
     loadComponent: () => import('./features/analyses/analyses-page').then((m) => m.AnalysesPage),
   },
   {
     path: 'sales',
+    title: 'Verkoop',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () => import('./features/sales/sales-list').then((m) => m.SalesList),
   },
   {
     path: 'sales/:id/edit',
+    title: 'Verkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'edit' },
@@ -61,6 +70,7 @@ export const routes: Routes = [
   },
   {
     path: 'sales/:id',
+    title: 'Verkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'view' },
@@ -68,47 +78,55 @@ export const routes: Routes = [
   },
   {
     path: 'revisions',
+    title: 'Wijzigingen',
     canActivate: [authGuard],
     loadComponent: () => import('./features/sales/revision-list').then((m) => m.RevisionList),
   },
   {
     path: 'prospects',
+    title: 'Prospects',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () => import('./features/prospects/prospects-page').then((m) => m.ProspectsPage),
   },
   {
     path: 'prospects/:id',
+    title: 'Prospects',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () => import('./features/prospects/prospects-page').then((m) => m.ProspectsPage),
   },
   {
     path: 'customers',
+    title: 'Klanten',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/customers/customer-list').then((m) => m.CustomerList),
   },
   {
     path: 'klantlogins',
+    title: 'Login-aanvragen',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/login-requests/login-requests-page').then((m) => m.LoginRequestsPage),
   },
   {
     path: 'contactaanvragen',
+    title: 'Contactaanvragen',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/contact-inquiries/contact-inquiries-page').then((m) => m.ContactInquiriesPage),
   },
   {
     path: 'purchasing',
+    title: 'Inkoop',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/purchasing/purchase-list').then((m) => m.PurchaseList),
   },
   {
     path: 'purchasing/:id/edit',
+    title: 'Inkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'edit' },
@@ -117,6 +135,7 @@ export const routes: Routes = [
   },
   {
     path: 'purchasing/:id',
+    title: 'Inkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'view' },
@@ -125,23 +144,27 @@ export const routes: Routes = [
   },
   {
     path: 'suppliers',
+    title: 'Leveranciers',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/suppliers/supplier-list').then((m) => m.SupplierList),
   },
   {
     path: 'products',
+    title: 'Catalogus',
     canActivate: [authGuard],
     loadComponent: () => import('./features/products/product-list').then((m) => m.ProductList),
   },
   {
     path: 'categories',
+    title: 'Categorieën',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/categories-page').then((m) => m.CategoriesPage),
   },
   {
     path: 'catalog-export',
+    title: 'Catalogus PDF',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/catalog-export').then((m) => m.CatalogExport),
@@ -149,6 +172,7 @@ export const routes: Routes = [
   {
     /* Vóór :id, anders zou "new" als productnummer gelezen worden. */
     path: 'products/new',
+    title: 'Nieuw product',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -156,12 +180,14 @@ export const routes: Routes = [
   },
   {
     path: 'products/:id',
+    title: 'Product',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/product-screen').then((m) => m.ProductScreen),
   },
   {
     path: 'products/:id/edit',
+    title: 'Product',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -169,6 +195,7 @@ export const routes: Routes = [
   },
   {
     path: 'products/:id/translations',
+    title: 'Product',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/products/product-translations-page').then((m) => m.ProductTranslationsPage),
@@ -176,6 +203,7 @@ export const routes: Routes = [
   },
   {
     path: 'website',
+    title: 'Website beheren',
     pathMatch: 'full',
     canActivate: [authGuard],
     loadComponent: () =>
@@ -184,6 +212,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/layout',
+    title: 'Website beheren',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -192,6 +221,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/texts',
+    title: 'Website beheren',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -200,6 +230,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/products',
+    title: 'Website beheren',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-products-page')
@@ -207,6 +238,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/categories',
+    title: 'Website beheren',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { websiteCategoryMode: true },
@@ -215,6 +247,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/seo',
+    title: 'Website beheren',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { seoMode: true },
@@ -224,6 +257,7 @@ export const routes: Routes = [
   },
   {
     path: 'website/publication',
+    title: 'Website beheren',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/website-builder/website-publication-page')
@@ -231,6 +265,7 @@ export const routes: Routes = [
   },
   {
     path: 'catalog/texts',
+    title: 'Catalogus PDF',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { catalogMode: true },
@@ -248,58 +283,69 @@ export const routes: Routes = [
   { path: 'website-builder', pathMatch: 'full', redirectTo: 'website/layout' },
   {
     path: 'countries',
+    title: 'Landen & vracht',
     canActivate: [authGuard],
     loadComponent: () => import('./features/settings/country-list').then((m) => m.CountryList),
   },
   {
     path: 'costs',
+    title: 'Kosten & bank',
     canActivate: [authGuard],
     loadComponent: () => import('./features/finance/costs-page').then((m) => m.CostsPage),
   },
   {
     path: 'stock/inventaris/telling/:id',
+    title: 'Jaarinventaris',
     canActivate: [authGuard],
     loadComponent: () => import('./features/inventory/stock-count-page').then((m) => m.StockCountPage),
   },
   {
     path: 'stock/inventaris/afsluiting/:id',
+    title: 'Jaarinventaris',
     canActivate: [authGuard],
     loadComponent: () => import('./features/inventory/stock-closing-page').then((m) => m.StockClosingPage),
   },
   {
     path: 'stock/inventaris',
+    title: 'Jaarinventaris',
     canActivate: [authGuard],
     loadComponent: () => import('./features/inventory/inventory-page').then((m) => m.InventoryPage),
   },
   {
     path: 'stock',
+    title: 'Voorraad',
     canActivate: [authGuard],
     loadComponent: () => import('./features/products/stock-page').then((m) => m.StockPage),
   },
   {
     path: 'barcodes',
+    title: 'EAN-codes',
     canActivate: [authGuard],
     loadComponent: () => import('./features/settings/barcode-pool-page').then((m) => m.BarcodePoolPage),
   },
   {
     path: 'stock-locations',
+    title: 'Voorraadlocaties',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/settings/stock-location-list').then((m) => m.StockLocationList),
   },
   {
     path: 'files',
+    title: 'Documenten & media',
     canActivate: [authGuard],
     loadComponent: () => import('./features/files/files-page').then((m) => m.FilesPage),
   },
   { path: 'settings/documents-media', pathMatch: 'full', redirectTo: 'files' },
   {
     path: 'settings/deleted-items',
+    title: 'Verwijderde items',
     canActivate: [authGuard],
     loadComponent: () => import('./features/settings/deleted-items-page').then((m) => m.DeletedItemsPage),
   },
   {
     path: 'settings',
+    title: 'Instellingen',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     loadComponent: () =>
@@ -307,15 +353,42 @@ export const routes: Routes = [
   },
   {
     path: 'activity',
+    title: 'Logboek',
     canActivate: [authGuard],
     loadComponent: () =>
       import('./features/activity/activity-page').then((m) => m.ActivityPage),
   },
   {
     path: 'more',
+    title: 'Meer',
     canActivate: [authGuard],
     loadComponent: () => import('./features/more/more-page').then((m) => m.MorePage),
   },
 
-  { path: '**', redirectTo: 'dashboard' },
+  /* Dutch addresses people type, and their detail forms (N26). */
+  { path: 'verkoop', pathMatch: 'full', redirectTo: 'sales' },
+  { path: 'verkoop/:id', pathMatch: 'full', redirectTo: 'sales/:id' },
+  { path: 'inkoop', pathMatch: 'full', redirectTo: 'purchasing' },
+  { path: 'inkoop/:id', pathMatch: 'full', redirectTo: 'purchasing/:id' },
+  { path: 'producten', pathMatch: 'full', redirectTo: 'products' },
+  { path: 'producten/:id', pathMatch: 'full', redirectTo: 'products/:id' },
+  { path: 'voorraad', pathMatch: 'full', redirectTo: 'stock' },
+  { path: 'klanten', pathMatch: 'full', redirectTo: 'customers' },
+  { path: 'leveranciers', pathMatch: 'full', redirectTo: 'suppliers' },
+  { path: 'instellingen', pathMatch: 'full', redirectTo: 'settings' },
+  { path: 'kosten', pathMatch: 'full', redirectTo: 'costs' },
+  { path: 'bank', pathMatch: 'full', redirectTo: 'costs' },
+  { path: 'documenten', pathMatch: 'full', redirectTo: 'files' },
+  { path: 'media', pathMatch: 'full', redirectTo: 'files' },
+  /* one redirect per level: straight to the section 'analyses' itself redirects to */
+  { path: 'analyse', pathMatch: 'full', redirectTo: 'analyses/cash' },
+  { path: 'home', pathMatch: 'full', redirectTo: 'dashboard' },
+
+  /* An address without a screen: a page that says so, inside the shell, behind the login. */
+  {
+    path: '**',
+    title: 'Pagina niet gevonden',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/not-found/not-found-page').then((m) => m.NotFoundPage),
+  },
 ];

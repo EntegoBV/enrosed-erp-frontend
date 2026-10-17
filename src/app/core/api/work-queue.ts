@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { SalesApi } from './sales-api';
 import { AppNotification } from './models';
 import { messageOf } from './errors';
+import { QUEUE_INTERVAL_MS, shouldRefreshQueue } from './work-queue-refresh';
 
 const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 
@@ -32,6 +33,8 @@ export class WorkQueue {
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;
+  /** When the last fetch started (ms), for the automatic refresh's throttle. */
+  private lastRefreshAt: number | null = null;
 
   /** Everything not dismissed. */
   readonly visible = computed(() =>
@@ -50,6 +53,7 @@ export class WorkQueue {
 
   refresh(force = false): Promise<void> {
     if (!force && this.refreshPromise) return this.refreshPromise;
+    this.lastRefreshAt = Date.now();
     const request = this.fetch();
     this.refreshPromise = request;
     void request.finally(() => {
@@ -86,6 +90,29 @@ export class WorkQueue {
         this.loginIntakeFullSources.set(Array.isArray(summary.intakeFullSources) ? summary.intakeFullSources : []);
       }
     } catch { /* older backend, missing stub method or network: keep the last values */ }
+  }
+
+  /**
+   * Keeps the counts current without anyone opening the bell: a refresh
+   * when the app comes back into view or gets the focus (unless the last one
+   * is under a minute old) and every five minutes while it is visible.
+   * The App shell starts it while someone is logged in; the returned
+   * function stops it.
+   */
+  startAutoRefresh(win: Window = window): () => void {
+    const doc = win.document;
+    const maybeRefresh = () => {
+      if (shouldRefreshQueue(this.lastRefreshAt, Date.now(), doc.visibilityState === 'visible')) void this.refresh();
+    };
+    win.addEventListener('focus', maybeRefresh);
+    doc.addEventListener('visibilitychange', maybeRefresh);
+    const timer = win.setInterval(maybeRefresh, QUEUE_INTERVAL_MS);
+    maybeRefresh();
+    return () => {
+      win.removeEventListener('focus', maybeRefresh);
+      doc.removeEventListener('visibilitychange', maybeRefresh);
+      win.clearInterval(timer);
+    };
   }
 
   dismiss(item: AppNotification): void {

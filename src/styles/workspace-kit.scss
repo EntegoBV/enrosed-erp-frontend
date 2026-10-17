@@ -27,7 +27,8 @@
 
    Kit components and directives have no styles array: their host rules live
    here. Phone inputs are 16px and phone hit targets at least 44px;
-   prefers-reduced-motion is handled globally in styles.scss and
+   durations use the motion tokens of styles/motion.scss (with the old
+   value as fallback), prefers-reduced-motion is handled there globally, and
    prefers-reduced-transparency swaps glass for solid through the tokens.
    There is no dark mode.
    ========================================================================== */
@@ -86,7 +87,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .wk-crumbs__current{min-width:0;padding:4px 6px;overflow:hidden;color:var(--ink);font-size:15px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
 /* compact buttons */
 .wk-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--wk-radius);background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.wk-btn:hover:not(:disabled){border-color:var(--muted-2);background:var(--surface-2)}.wk-btn:active:not(:disabled){transform:translateY(.5px)}.wk-btn:disabled{opacity:.45;cursor:not-allowed}
+.wk-btn:hover:not(:disabled){border-color:var(--muted-2);background:var(--surface-2)}.wk-btn:disabled{opacity:.45;cursor:not-allowed}
 .wk-btn--primary{border-color:var(--rose);background:var(--rose);color:#fff}.wk-btn--primary:hover:not(:disabled){border-color:var(--rose-dark);background:var(--rose-dark)}
 .wk-btn--danger{color:var(--danger)}.wk-btn--danger:hover:not(:disabled){border-color:#efcdc9;background:var(--danger-soft)}
 .wk-btn--ghost{border-color:transparent;background:transparent}
@@ -99,7 +100,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .wk-kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;background:var(--surface);color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:650;line-height:1}
 /* segmented (host = app-segmented, variant desk) */
 .wk-seg{position:relative;isolation:isolate;display:inline-grid;flex:none;grid-auto-columns:1fr;grid-auto-flow:column;height:32px;padding:2px;border-radius:var(--wk-radius);background:color-mix(in srgb,var(--ink) 6%,var(--surface))}
-.wk-seg::before{content:'';position:absolute;top:2px;bottom:2px;left:2px;z-index:-1;width:calc((100% - 4px)/var(--seg-n,1));border-radius:7px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/12%),0 0 0 .5px rgb(26 22 20/6%);transform:translateX(calc(var(--seg-i,0)*100%));transition:transform .2s cubic-bezier(.3,.7,0,1)}
+.wk-seg::before{content:'';position:absolute;top:2px;bottom:2px;left:2px;z-index:-1;width:calc((100% - 4px)/var(--seg-n,1));border-radius:7px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/12%),0 0 0 .5px rgb(26 22 20/6%);transform:translateX(calc(var(--seg-i,0)*100%));transition:transform var(--dur-2,.2s) var(--ease-snap,cubic-bezier(.3,.7,0,1))}
 .wk-seg__opt{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:0 12px;border:0;border-radius:7px;background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;font-weight:650;white-space:nowrap;cursor:pointer}
 .wk-seg__opt[aria-checked=true],.wk-seg__opt[aria-selected=true]{color:var(--ink)}.wk-seg__opt:disabled{opacity:.4;cursor:default}
 .wk-seg__count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
@@ -109,7 +110,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 /* search */
 .wk-search{position:relative;display:flex;flex:none;align-items:center;width:240px}
 .wk-search>app-icon{position:absolute;left:9px;color:var(--muted);pointer-events:none}
-.wk-search input{width:100%;height:32px;padding:0 28px 0 30px;border:1px solid var(--line);border-radius:var(--wk-radius);background:var(--surface-2);color:var(--ink);font:inherit;font-size:13px;outline:none;transition:width .18s ease,border-color .12s,box-shadow .12s}
+.wk-search input{width:100%;height:32px;padding:0 28px 0 30px;border:1px solid var(--line);border-radius:var(--wk-radius);background:var(--surface-2);color:var(--ink);font:inherit;font-size:13px;outline:none;transition:width var(--dur-2,.18s) var(--ease-out,ease),border-color var(--dur-1,.12s),box-shadow var(--dur-1,.12s)}
 .wk-search input:focus{border-color:var(--rose);background:var(--surface);box-shadow:var(--wk-focus)}
 .wk-search__clear{position:absolute;right:4px;display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
 .wk-search input:placeholder-shown~.wk-search__clear{display:none}
@@ -142,13 +143,13 @@ body:has(.ios-page){background:var(--ios-bg)}
 .wk-td{min-width:0;padding:6px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wk-td--num{font-variant-numeric:tabular-nums;text-align:right}.wk-td--wrap{white-space:normal;overflow-wrap:anywhere}
 .wk-td__sub{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
-.wk-td--actions{display:flex;justify-content:flex-end;gap:4px;overflow:visible;opacity:0;transition:opacity .12s}
+.wk-td--actions{display:flex;justify-content:flex-end;gap:4px;overflow:visible;opacity:0;transition:opacity var(--dur-1,.12s)}
 .wk-tr:hover .wk-td--actions,.wk-tr:focus-within .wk-td--actions,.wk-tr[aria-selected=true] .wk-td--actions{opacity:1}
 .wk-group{position:sticky;top:calc(var(--wk-sticky-top,0px) + var(--wk-head-h));z-index:2;min-height:30px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 70%,var(--bg));color:var(--ink-2);font-size:12px;font-weight:700}
 .wk-group__label{display:flex;grid-column:1 / var(--wk-group-span,-1);align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap}
 .wk-group__count{color:var(--muted);font-weight:600}
 .wk-group__toggle{display:grid;place-items:center;width:20px;height:20px;margin-left:-4px;padding:0;border:0;border-radius:5px;background:none;color:var(--muted);cursor:pointer}.wk-group__toggle[aria-expanded=false] app-icon{transform:rotate(-90deg)}
-.wk-check{display:block;width:16px;height:16px;margin:0;border:1.5px solid var(--line-strong);border-radius:5px;background:var(--surface) center/12px no-repeat;appearance:none;-webkit-appearance:none;cursor:pointer;opacity:0;transition:opacity .12s}
+.wk-check{display:block;width:16px;height:16px;margin:0;border:1.5px solid var(--line-strong);border-radius:5px;background:var(--surface) center/12px no-repeat;appearance:none;-webkit-appearance:none;cursor:pointer;opacity:0;transition:opacity var(--dur-1,.12s)}
 .wk-check:checked,.wk-check:indeterminate{border-color:var(--rose);background-color:var(--rose)}
 .wk-check:checked{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 8.5 2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
 .wk-check:indeterminate{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8h7' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")}
@@ -161,7 +162,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .wk-body--split [data-hide~=inspecting]{display:none!important}
 /* inspector: docked column or drawer without scrim */
 .wk-inspector{display:flex;flex-direction:column;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;border-left:1px solid var(--line);background:var(--surface)}
-.wk-inspector--drawer{position:fixed;top:calc(var(--safe-t) + var(--wk-bar-h));right:0;bottom:var(--wk-status-h);z-index:50;width:min(400px,calc(100vw - 120px));box-shadow:-16px 0 40px rgb(26 22 20/16%);animation:wk-drawer .18s cubic-bezier(.3,.7,0,1)}
+.wk-inspector--drawer{position:fixed;top:calc(var(--safe-t) + var(--wk-bar-h));right:0;bottom:var(--wk-status-h);z-index:50;width:min(400px,calc(100vw - 120px));box-shadow:-16px 0 40px rgb(26 22 20/16%);animation:wk-drawer var(--dur-2,.18s) var(--ease-snap,cubic-bezier(.3,.7,0,1))}
 @keyframes wk-drawer{from{opacity:0;transform:translateX(24px)}}
 .wk-inspector__head{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;gap:10px;padding:16px 18px 12px;border-bottom:1px solid var(--line);background:var(--surface)}
 .wk-inspector__title{flex:1;min-width:0;margin:0;font-size:17px;font-weight:650;letter-spacing:-.01em;overflow-wrap:anywhere}
@@ -188,7 +189,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .wk-card__head{display:flex;align-items:center;gap:10px;min-height:48px;padding:12px 16px 8px}.wk-card__title{margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em}
 .wk-card__head>.wk-link,.wk-card__trail{margin-left:auto}.wk-card__body{padding:4px 16px 16px}.wk-card__body--flush{padding:0}
 .wk-popover-anchor{position:relative;display:inline-flex}
-.wk-popover{position:absolute;top:calc(100% + 6px);right:0;z-index:40;display:grid;gap:12px;min-width:260px;max-width:360px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 12px 32px rgb(0 0 0/14%),0 2px 6px rgb(0 0 0/8%)}
+.wk-popover{position:absolute;top:calc(100% + 6px);right:0;z-index:40;display:grid;gap:12px;min-width:260px;max-width:360px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 12px 32px rgb(0 0 0/14%),0 2px 6px rgb(0 0 0/8%);animation:mo-lift-in var(--dur-1,.12s) var(--ease-out,ease-out)}
 .wk-popover__foot{display:flex;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
 .wk-drop{position:absolute;inset:8px;z-index:20;display:grid;place-items:center;padding:24px;border:2px dashed var(--rose);border-radius:16px;background:color-mix(in srgb,var(--rose-soft) 88%,transparent);color:var(--rose-dark);font-size:15px;font-weight:650;text-align:center;pointer-events:none}   /* render as a direct child of .wk-body */
 .wk-empty{display:grid;justify-items:center;gap:6px;padding:48px 24px;color:var(--muted);text-align:center}
@@ -247,10 +248,10 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
 /* nav bar with large title (IosNav renders these) */
 .ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px)}
-.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;border-bottom:.5px solid var(--ios-sep);background:var(--glass-bg-strong);opacity:0;backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter);transition:opacity .18s ease}
+.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;border-bottom:.5px solid var(--ios-sep);background:var(--glass-bg-strong);opacity:0;backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter);transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed::before{opacity:1}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
-.ios-nav__title{max-width:52vw;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity .18s ease,transform .18s ease}
+.ios-nav__title{max-width:52vw;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed .ios-nav__title{opacity:1;transform:none}
 .ios-large{padding:2px calc(var(--safe-r) + 20px) 10px calc(var(--safe-l) + 20px)}
 .ios-large__title{margin:0;color:var(--ink);font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.12;overflow-wrap:anywhere}
@@ -274,7 +275,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-glass-group>.ios-circle::before,.ios-glass-group>.ios-capsule::before{display:none}
 /* segmented (host = app-segmented, variant ios) */
 .ios-seg{position:relative;isolation:isolate;display:grid;grid-auto-columns:minmax(0,1fr);grid-auto-flow:column;height:36px;padding:3px;border-radius:999px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
-.ios-seg::before{content:'';position:absolute;top:3px;bottom:3px;left:3px;z-index:-1;width:calc((100% - 6px)/var(--seg-n,1));border-radius:999px;background:var(--surface);box-shadow:0 2px 6px rgb(26 22 20/14%),0 0 0 .5px rgb(26 22 20/5%);transform:translateX(calc(var(--seg-i,0)*100%));transition:transform .24s cubic-bezier(.3,.7,0,1)}
+.ios-seg::before{content:'';position:absolute;top:3px;bottom:3px;left:3px;z-index:-1;width:calc((100% - 6px)/var(--seg-n,1));border-radius:999px;background:var(--surface);box-shadow:0 2px 6px rgb(26 22 20/14%),0 0 0 .5px rgb(26 22 20/5%);transform:translateX(calc(var(--seg-i,0)*100%));transition:transform var(--dur-2,.24s) var(--ease-snap,cubic-bezier(.3,.7,0,1))}
 .ios-seg__opt{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;padding:0 8px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;font-weight:650;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-seg__opt>span{overflow:hidden;text-overflow:ellipsis}.ios-seg__opt[aria-checked=true],.ios-seg__opt[aria-selected=true]{color:var(--ink)}
 .ios-seg__count{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}.ios-seg__dot{width:6px;height:6px;border-radius:50%;background:var(--warn)}.ios-seg__dot.is-danger{background:var(--danger)}.ios-seg__short{display:none}
@@ -321,11 +322,11 @@ div.ios-cell{cursor:default}:is(a,button).ios-cell:active,.ios-cell--tap:active{
 .ios-thumb{display:block;flex:none;width:44px;height:44px;border-radius:10px;background:var(--surface-2);object-fit:cover}.ios-thumb--sm{width:34px;height:34px;border-radius:8px}
 .ios-check{display:grid;flex:none;place-items:center;width:24px;height:24px;border:1.5px solid var(--muted-2);border-radius:50%;color:transparent}
 .ios-check.is-on,[aria-selected=true]>.ios-check,[aria-checked=true]>.ios-check{border-color:var(--rose);background:var(--rose);color:#fff}
-.ios-switch{position:relative;flex:none;width:51px;height:31px;margin:0;border-radius:999px;background:color-mix(in srgb,var(--ink) 16%,transparent);appearance:none;-webkit-appearance:none;cursor:pointer;transition:background .2s ease}
-.ios-switch::after{content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgb(0 0 0/15%),0 1px 1px rgb(0 0 0/16%);transition:transform .2s ease}
+.ios-switch{position:relative;flex:none;width:51px;height:31px;margin:0;border-radius:999px;background:color-mix(in srgb,var(--ink) 16%,transparent);appearance:none;-webkit-appearance:none;cursor:pointer;transition:background var(--dur-2,.2s) var(--ease-out,ease)}
+.ios-switch::after{content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgb(0 0 0/15%),0 1px 1px rgb(0 0 0/16%);transition:transform var(--dur-2,.2s) var(--ease-out,ease)}
 .ios-switch:checked{background:var(--rose)}.ios-switch:checked::after{transform:translateX(20px)}.ios-switch:disabled{opacity:.45}
 .ios-disclosure>summary{display:flex;align-items:center;gap:12px;min-height:var(--ios-row);padding:8px 16px;list-style:none;font-size:16px;cursor:pointer}.ios-disclosure>summary::-webkit-details-marker{display:none}
-.ios-disclosure>summary .ios-cell__chev{margin-left:auto;transition:transform .18s ease}.ios-disclosure[open]>summary .ios-cell__chev{transform:rotate(90deg)}
+.ios-disclosure>summary .ios-cell__chev{margin-left:auto;transition:transform var(--dur-1,.18s) var(--ease-out,ease)}.ios-disclosure[open]>summary .ios-cell__chev{transform:rotate(90deg)}
 /* cards, hero, figures, widgets */
 .ios-card{margin:0 var(--ios-inset) 16px;padding:18px;border-radius:var(--ios-radius);background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}
 .ios-hero{position:relative;display:block;margin:0 var(--ios-inset) 16px;padding:18px 44px 16px 18px;overflow:hidden;border:0;border-radius:var(--ios-radius);color:#fff;font:inherit;text-align:left;text-decoration:none;background:radial-gradient(circle at 92% 0%,color-mix(in srgb,var(--rose-mid) 42%,transparent),transparent 42%),linear-gradient(145deg,#1c1f1d,color-mix(in srgb,var(--rose-dark) 30%,#1c1f1d) 62%,color-mix(in srgb,var(--rose-dark) 62%,#1c1f1d));box-shadow:0 12px 28px rgb(20 24 22/18%)}
@@ -365,7 +366,7 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-toolbar__btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0;border:0;border-radius:calc(var(--ios-tabbar-h) / 2 - 4px);background:transparent;color:var(--rose);font:inherit;font-size:10.5px;font-weight:650;cursor:pointer}
 .ios-toolbar__btn:active:not(:disabled){background:color-mix(in srgb,var(--rose) 12%,transparent)}.ios-toolbar__btn:disabled{opacity:.35;cursor:default}.ios-toolbar__btn--danger{color:var(--danger)}
 .ios-float{position:fixed;bottom:calc(var(--tabbar-h) + var(--safe-b) + 18px);left:calc(var(--safe-l) + 10px);z-index:39;display:flex;align-items:center;gap:10px;max-width:calc(100% - 96px - var(--safe-l) - var(--safe-r));min-height:44px;padding:6px 14px 6px 6px;overflow:hidden;border:1px solid var(--glass-edge);border-radius:999px;background:var(--glass-bg-strong);box-shadow:var(--glass-shadow),var(--glass-highlight);color:var(--ink);font:inherit;font-size:13px;font-weight:600;backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
-.ios-float__bar{position:absolute;bottom:0;left:0;width:var(--progress,0%);height:3px;background:var(--rose);transition:width .2s ease}
+.ios-float__bar{position:absolute;bottom:0;left:0;width:var(--progress,0%);height:3px;background:var(--rose);transition:width var(--dur-2,.2s) var(--ease-out,ease)}
 /* swipe rows (SwipeActions sits on .ios-swipe) */
 .ios-swipe{position:relative;overflow:hidden;background:var(--surface)}
 .ios-swipe__row{position:relative;z-index:1;background:var(--surface);transform:translate3d(var(--swipe-x,0px),0,0);transition:transform .25s cubic-bezier(.16,1,.3,1);touch-action:pan-y}
@@ -395,3 +396,41 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-seg--stacked::before{border-radius:15px}
 .ios-seg--stacked .ios-seg__opt{position:relative;flex-direction:column;gap:3px;padding:0 2px;border-radius:15px;font-size:11px;letter-spacing:-.01em}
 .ios-seg--stacked .ios-seg__dot{position:absolute;top:7px;left:calc(50% + 8px)}
+
+/* ==========================================================================
+   Foundation additions (redesign 2026-10-16). Additive: no existing class
+   changes its geometry.
+   ========================================================================== */
+:root{--wk-subbar-h:48px}
+/* desk sticky filter row under the page toolbar (.appbar): chips, filters, a count on the right.
+   Blur on ::before only (trap rule). Tables after it stick their head under it. */
+.wk-subbar{position:sticky;top:var(--appbar-h,0px);z-index:20;display:flex;flex-wrap:nowrap;align-items:center;gap:10px;min-width:0;min-height:var(--wk-subbar-h);margin:-6px 0 10px}
+.wk-subbar::before{content:'';position:absolute;inset:0 calc(-1 * var(--wk-subbar-bleed,26px));z-index:-1;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5)}
+.wk-subbar__end{flex:none;margin-left:auto;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wk-subbar~*{--wk-sticky-top:calc(var(--appbar-h,0px) + var(--wk-subbar-h))}
+@media (max-width:1023.98px){.wk-subbar{--wk-subbar-bleed:20px}}
+/* the '/' hint inside a kit search; hidden once the field is focused or filled */
+.wk-search>.wk-kbd{position:absolute;right:7px;pointer-events:none}
+.wk-search:focus-within>.wk-kbd,.wk-search input:not(:placeholder-shown)~.wk-kbd{display:none}
+.wk-search:has(>.wk-kbd) input{padding-right:30px}
+/* error state of a load (app-load-error): the empty look with a danger tile */
+.wk-empty__icon--danger,.ios-empty__icon--danger{background:var(--danger-soft);color:var(--danger)}
+app-load-error{display:block}
+/* phone count bubble in a cell or a disclosure summary */
+.ios-count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:var(--rose);color:#fff;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1}
+/* a two-line sub (group summaries), a small soft tile for nested rows */
+.ios-cell__sub--2{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
+.ios-tile--sm{width:26px;height:26px;border-radius:7px}
+/* the open body of an ios-disclosure: child cells indented under the summary's tile */
+.ios-disclosure__body{padding:0 0 4px}
+.ios-disclosure__body>.ios-cell{min-height:56px;padding-left:58px}
+.ios-disclosure__body>.ios-cell>.ios-tile{position:absolute;left:24px}
+.ios-disclosure__body .ios-cell__title{font-size:15px}
+.ios-disclosure__body .ios-cell__sub{font-size:12.5px;line-height:1.3;white-space:normal}
+.ios-disclosure__body>.ios-cell+.ios-cell::before{content:'';position:absolute;top:0;right:0;left:58px;height:.5px;background:var(--ios-sep)}
+/* only a disclosure with one .ios-disclosure__body animates open (Meer); the approved disclosures elsewhere stay instant and unclipped */
+@supports selector(::details-content){
+ .ios-disclosure:has(>.ios-disclosure__body)::details-content{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-2,.2s) var(--ease-out,ease),content-visibility var(--dur-2,.2s) allow-discrete}
+ .ios-disclosure:has(>.ios-disclosure__body)[open]::details-content{grid-template-rows:1fr}
+ .ios-disclosure>.ios-disclosure__body{min-height:0;overflow:hidden}
+}

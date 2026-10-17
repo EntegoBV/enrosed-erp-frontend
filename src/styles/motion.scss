@@ -1,0 +1,118 @@
+/* ==========================================================================
+   Motion: one token set, a few keyframes and utilities, and reduced motion.
+   Foundation-owned (redesign 2026-10-16). Loaded from styles.scss right
+   after the workspace kit.
+
+   Rules
+   - Subtle and fast: phone pushes and sheets 320 ms, everything else 200 ms
+     or less, nothing loops for decoration.
+   - Trap rule: every enter keyframe ends on transform:none, because a kept
+     transform makes an element the containing block of position:fixed
+     descendants (sheets). Nothing here animates .appbar or a sheet's
+     ancestor with a filter.
+   - Under prefers-reduced-motion everything is instant: the tokens go to 0
+     and the global reset below shortens whatever still animates to one
+     0.01 ms cycle (the decorative loops stop after it).
+   - Areas use the tokens (with a fallback, e.g. var(--dur-2, 200ms)) and
+     the mo-* utilities; they add no page-level animations of their own.
+   ========================================================================== */
+
+:root {
+  --dur-1: 120ms;    /* press, hover, tab fade, toast and popover exit */
+  --dur-2: 200ms;    /* popover and menu enter, drawer, accordion, list insert/remove, desk dialog, large-title condense */
+  --dur-3: 320ms;    /* phone push and pop, sheet present */
+  --dur-out: 220ms;  /* sheet dismiss */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);     /* enter */
+  --ease-in: cubic-bezier(.4, 0, 1, 1);        /* exit */
+  --ease-spring: cubic-bezier(.32, .72, 0, 1); /* iOS sheet and push */
+  --ease-snap: cubic-bezier(.3, .7, 0, 1);     /* kit segmented, drawer */
+  --mo-shift: 28px;  /* push / pop travel */
+  --mo-lift: 8px;    /* dialog, popover and toast rise */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; --dur-out: 0ms;
+    --mo-shift: 0px; --mo-lift: 0px;
+  }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- keyframes (every enter ends on transform:none) */
+@keyframes mo-fade-in { from { opacity: 0; } }
+@keyframes mo-fade-out { to { opacity: 0; } }
+@keyframes mo-push-in { from { opacity: 0; transform: translateX(var(--mo-shift)); } to { opacity: 1; transform: none; } }
+@keyframes mo-pop-in { from { opacity: 0; transform: translateX(calc(var(--mo-shift) * -1)); } to { opacity: 1; transform: none; } }
+@keyframes mo-lift-in { from { opacity: 0; transform: translateY(var(--mo-lift)) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes mo-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes mo-sheet-out { from { transform: translateY(var(--drag-y, 0px)); } to { transform: translateY(100%); } }
+@keyframes mo-dialog-out { to { opacity: 0; transform: scale(.98); } }
+@keyframes mo-toast-out { to { opacity: 0; transform: translateY(8px); } }
+@keyframes mo-row-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes mo-row-out { from { max-height: var(--mo-row-h, 88px); } to { opacity: 0; max-height: 0; padding-block: 0; margin-block: 0; } }
+/* The no-op a leaving host runs so Angular's animate.leave waits for its children. */
+@keyframes mo-hold { to { opacity: 1; } }
+
+/* ---- utilities for areas
+   mo-enter / mo-leave: on rows the user adds or removes (animate.enter="mo-enter",
+   animate.leave="mo-leave"), never on data loads. mo-fade: a quiet fade-in. */
+.mo-enter { animation: mo-row-in var(--dur-2) var(--ease-out) backwards; }
+.mo-leave { overflow: hidden; animation: mo-row-out var(--dur-2) var(--ease-in) forwards; }
+.mo-fade { animation: mo-fade-in var(--dur-1) var(--ease-out) backwards; }
+
+/* ---- page change: a fade, no rise (a rise kept a transform on .content) */
+.content { animation: mo-fade-in var(--dur-1) var(--ease-out) backwards; }
+
+/* ---- press feedback
+   Touch: a small scale on press. Desk: no transform (Mac buttons do not
+   shrink); the background and border change over --dur-1. The glass
+   capsules and circles keep their own ::before scale. */
+.btn {
+  transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+@media (pointer: coarse) {
+  :is(.btn, .wk-btn, .fab, .ios-accessory):active:not(:disabled) { transform: scale(.97); }
+}
+
+/* ---- sheets and toasts leave (F2b)
+   Angular's animate.leave puts mo-leaving on a closing app-sheet host and
+   keeps its DOM until the host's own animation (mo-hold, the longest one)
+   ends; the component is already destroyed, so the leaving overlay takes no
+   taps. Phone: the backdrop fades, the sheet slides down from where a drag
+   let go (--drag-y). Desk: the dialog fades and shrinks a little. */
+app-sheet.mo-leaving { animation: mo-hold var(--dur-out) linear; }
+app-sheet.mo-leaving .overlay { pointer-events: none; animation: mo-fade-out var(--dur-out) var(--ease-in) forwards; }
+app-sheet.mo-leaving .sheet { animation: mo-sheet-out var(--dur-out) var(--ease-in) forwards; }
+@media (min-width: 680px) {
+  app-sheet.mo-leaving { animation-duration: var(--dur-1); }
+  app-sheet.mo-leaving .overlay { animation-duration: var(--dur-1); }
+  app-sheet.mo-leaving .sheet { animation: mo-dialog-out var(--dur-1) var(--ease-in) forwards; }
+}
+.toast.mo-toast-leaving { pointer-events: none; animation: mo-toast-out var(--dur-1) var(--ease-in) forwards; }
+
+/* Drag to dismiss (phone): the grab and the head take the finger; the grab's
+   hit area is 24 px tall. The body keeps its native scrolling. */
+@media (max-width: 679.98px) and (pointer: coarse) {
+  .sheet__grab, .sheet__head { touch-action: none; }
+  .sheet__grab { position: relative; cursor: grab; }
+  .sheet__grab::before { content: ''; position: absolute; inset: -10px -60px; }
+}
+
+/* ---- the confirm sheet (Ui.confirm, confirmLeave): <app-sheet variant="ios">
+   Desk: Annuleren · second choice · main choice, right-aligned (as before).
+   Phone: stacked 50 px buttons, the main (or danger) choice on top, then the
+   second choice, Annuleren last. */
+.confirm-message { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.confirm-actions { display: flex; flex: 1; justify-content: flex-end; gap: 8px; }
+.confirm-actions > .btn { flex: none; }
+@media (max-width: 679.98px) {
+  .sheet--ios .confirm-message { padding: 4px 20px 0; }
+  .confirm-actions { flex-direction: column-reverse; }
+  .confirm-actions > .btn { width: 100%; min-height: 50px; }
+}

@@ -91,9 +91,8 @@ export interface ContextMenuItem {
       position: fixed; z-index: 61; min-width: 220px; max-width: min(320px, calc(100vw - 16px));
       padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
       box-shadow: 0 12px 32px rgb(0 0 0 / 14%), 0 2px 6px rgb(0 0 0 / 8%);
-      animation: cm-in .12s ease-out;
+      animation: mo-lift-in var(--dur-1, .12s) var(--ease-out, ease-out);
     }
-    @keyframes cm-in { from { opacity: 0; transform: translateY(-3px) scale(.98); } }
     .cm__head {
       padding: 6px 10px 7px; color: var(--muted); font-size: 11px; font-weight: 750;
       letter-spacing: .05em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

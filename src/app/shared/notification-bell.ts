@@ -101,34 +101,70 @@ import { Icon } from './icon';
     }
   `,
   styles: `
+    /* One badge rule for every icon badge (bell, tab bar): red with a ring
+       of the surface, 9+ capped. The number counts tasks, not events; inline
+       counts in lists are accent chips instead. */
+    /* Phone: a glass circle in the bar (44 px hit, 36 px visual), like app-ios-nav's buttons. */
     .bell {
       position: relative;
-      width: 36px;
-      height: 36px;
+      isolation: isolate;
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      flex: none;
+      padding: 0;
       border: 0;
       border-radius: 50%;
       background: transparent;
       color: var(--ink);
       font-size: 15px;
       cursor: pointer;
-      flex: none;
+      -webkit-tap-highlight-color: transparent;
     }
-    .bell:active { background: var(--surface-2); }
-    /* The number counts tasks, not events; hence the accent colour. */
+    .bell::before {
+      content: '';
+      position: absolute;
+      inset: 4px;
+      z-index: -1;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      box-shadow: var(--glass-highlight), 0 1px 3px rgb(26 22 20 / 12%);
+      backdrop-filter: var(--glass-filter);
+      -webkit-backdrop-filter: var(--glass-filter);
+      transition: transform var(--dur-1, .12s) var(--ease-out, ease);
+    }
+    .bell:active::before { transform: scale(.96); }
     .bell__badge {
       position: absolute;
       top: 1px;
       right: 0;
-      min-width: 17px;
-      height: 17px;
+      display: grid;
+      place-items: center;
+      min-width: 18px;
+      height: 18px;
       padding: 0 4px;
+      border: 2px solid var(--surface);
       border-radius: 9px;
-      background: var(--rose);
+      background: var(--danger);
       color: #fff;
-      font-size: 10.5px;
-      font-weight: 700;
-      line-height: 17px;
-      text-align: center;
+      font-size: 10px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    /* Desk: a 32 px ghost square at the end of the toolbar. */
+    @media (min-width: 680px) {
+      .bell::before { content: none; }
+      .bell {
+        width: 32px;
+        height: 32px;
+        border-radius: var(--wk-radius, 9px);
+        color: var(--ink-2);
+        transition: background-color var(--dur-1, .12s) var(--ease-out, ease), color var(--dur-1, .12s) var(--ease-out, ease);
+      }
+      .bell:hover { background: var(--surface-2); color: var(--ink); }
+      .bell__badge { top: -3px; right: -4px; min-width: 16px; height: 16px; font-size: 9.5px; }
     }
 
     /* Plain full-width rows. The old negative-margin trick made rows wider
