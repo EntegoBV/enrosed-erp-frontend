@@ -1482,8 +1482,9 @@ export class AnalysesPage {
   readonly funnelTrail = computed(() => {
     const funnel = this.salesMetrics().funnel;
     const other = funnel.created - funnel.open - funnel.closed - funnel.cancelled;
-    return [`${funnel.created} aangemaakt`, `${funnel.open} open`, `${funnel.closed} gesloten`, `${funnel.cancelled} geannuleerd`,
-      other > 0 ? `${other} overige` : ''].filter(Boolean).join(' · ');
+    /* A no-break space keeps each number with its word when the trail wraps on the phone. */
+    return [`${funnel.created}\u00a0aangemaakt`, `${funnel.open}\u00a0open`, `${funnel.closed}\u00a0gesloten`, `${funnel.cancelled}\u00a0geannuleerd`,
+      other > 0 ? `${other}\u00a0overige` : ''].filter(Boolean).join(' · ');
   });
 
   /* Lists: 8 rows on the desk, 5 on the phone, the rest behind "Alle n tonen" (design §2.1, §2.3). */
