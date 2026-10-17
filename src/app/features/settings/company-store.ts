@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { SalesApi } from '../../core/api/sales-api';
 import { CompanyProfile } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
+import { ReadAfterWrite } from './read-after-write';
 
 /**
  * The company profile as every view of /settings sees it (provided by the
@@ -22,6 +23,8 @@ export class CompanyStore {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   private pending: Promise<CompanyProfile | null> | null = null;
+  /** A re-read that raced a save never puts the old profile back (ReadAfterWrite). */
+  private readonly order = new ReadAfterWrite();
 
   /** Loads once; force re-reads (the overview's refresh, a retry). Keeps the shown value while it runs. */
   load(force = false): Promise<CompanyProfile | null> {
@@ -29,14 +32,16 @@ export class CompanyStore {
     if (this.saved() && !force) return Promise.resolve(this.saved());
     this.loading.set(true);
     this.error.set(null);
+    const ticket = this.order.readStarted();
     this.pending = this.sales.company()
       .then((profile) => {
+        if (!this.order.readCurrent(ticket)) return this.saved();
         this.saved.set(profile);
         return profile;
       })
       .catch((failure: unknown) => {
-        this.error.set(messageOf(failure, 'De bedrijfsgegevens konden niet worden geladen.'));
-        return null;
+        if (this.order.readCurrent(ticket)) this.error.set(messageOf(failure, 'De bedrijfsgegevens konden niet worden geladen.'));
+        return this.order.readCurrent(ticket) ? null : this.saved();
       })
       .finally(() => {
         this.loading.set(false);
@@ -47,9 +52,15 @@ export class CompanyStore {
 
   /** Saves only these fields on top of the last saved profile; the answer becomes saved(). Throws on failure. */
   async save(patch: Partial<CompanyProfile>): Promise<CompanyProfile> {
-    const base = this.saved() ?? await this.sales.company();
-    const result = await this.sales.saveCompany({ ...base, ...patch });
-    this.saved.set(result);
-    return result;
+    this.order.writeStarted();
+    try {
+      const base = this.saved() ?? await this.sales.company();
+      const result = await this.sales.saveCompany({ ...base, ...patch });
+      this.saved.set(result);
+      this.error.set(null);
+      return result;
+    } finally {
+      this.order.writeEnded();
+    }
   }
 }

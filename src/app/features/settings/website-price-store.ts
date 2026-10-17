@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { SalesApi, WebsiteQuoteSettings as QuoteSettings } from '../../core/api/sales-api';
 import { messageOf } from '../../core/api/errors';
+import { ReadAfterWrite } from './read-after-write';
 
 /**
  * Whether the website shows prices, as one fact for the whole app. The
@@ -16,16 +17,20 @@ export class WebsitePriceStore {
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+  /** A read that raced a save (the overview's refresh during an undo) never shows the old state (ReadAfterWrite). */
+  private readonly order = new ReadAfterWrite();
 
   /** Reads the switch from the server; the shown value stays while it runs. */
   async load(): Promise<void> {
     if (this.loading() || this.saving()) return;
     this.loading.set(true);
     this.error.set(null);
+    const ticket = this.order.readStarted();
     try {
-      this.settings.set(checked(await this.sales.websiteQuoteSettings()));
+      const settings = checked(await this.sales.websiteQuoteSettings());
+      if (this.order.readCurrent(ticket)) this.settings.set(settings);
     } catch (failure) {
-      this.error.set(messageOf(failure, 'De prijsinstelling kon niet worden geladen. Probeer opnieuw.'));
+      if (this.order.readCurrent(ticket)) this.error.set(messageOf(failure, 'De prijsinstelling kon niet worden geladen. Probeer opnieuw.'));
     } finally {
       this.loading.set(false);
     }
@@ -33,6 +38,7 @@ export class WebsitePriceStore {
 
   /** Saves the switch; returns the saved state, or throws with the message to show. */
   async save(pricesVisible: boolean): Promise<QuoteSettings> {
+    this.order.writeStarted();
     this.saving.set(true);
     this.error.set(null);
     try {
@@ -45,6 +51,7 @@ export class WebsitePriceStore {
       throw new Error(message);
     } finally {
       this.saving.set(false);
+      this.order.writeEnded();
     }
   }
 }
