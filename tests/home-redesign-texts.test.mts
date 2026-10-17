@@ -96,8 +96,17 @@ test('H5: agenda rows open like Agenda › Dag, say no repeated "dag", and the p
   const strip = await read('app/features/dashboard/agenda-strip.ts');
   assert.doesNotMatch(strip, /\[interactive\]="false"/);
   assert.equal((strip.match(/class="home-strip__raise" \[variant\]="variant\(\)"/g) ?? []).length, 2);
+  /* Komend is dated: no tick there, so a task's day stays in the date column with the others (fix round 1). */
+  assert.match(strip, /\[entries\]="komend\(\)" \[dated\]="true"[^>]*\[ticks\]="false"/);
+  assert.doesNotMatch(strip, /\[entries\]="today\(\)"[^>]*\[ticks\]/);
   const rows = await read('app/features/dashboard/agenda-month.ts');
   assert.match(rows, /if \(entry\.type !== 'afspraak'\) return '';/);
+  assert.match(rows, /return this\.interactive\(\) && this\.ticks\(\) && entry\.type === 'taak' && entry\.plannerId !== null;/);
+  assert.match(rows, /@if \(hasCheck\(entry\)\) \{/);
+  /* The tick's inset follows the tick, not the task: a task without one lines up with the other rows. */
+  const css = await read('styles/home-agenda.scss');
+  assert.match(css, /\.home-arow\.has-check \.home-arow__main \{ padding-left: 8px; \}/);
+  assert.doesNotMatch(css, /\.home-arow\.is-task \.home-arow__main/);
   assert.match(rows, /return \[entry\.term, entry\.sub\]\.filter\(Boolean\)\.join\(' · '\) \|\| null;/);
   const page = await read('app/features/dashboard/agenda-page.ts');
   assert.match(page, /@if \(selected\(\) !== data\.today\(\)\) \{[\s\S]*>Naar vandaag<\/button>/);

@@ -79,8 +79,9 @@ const TODAY_ROWS = 4;
         }
         <h3 class="home-strip__label">Komend</h3>
         @if (komend().length) {
+          <!-- Komend is dated: no ticks there, so every row's day stays in one column (the rows still open the task). -->
           <app-agenda-rows class="home-strip__raise" [variant]="variant()" [entries]="komend()" [dated]="true" [month]="data.today().slice(0, 7)"
-                           [interactive]="true" [cards]="cards()" [flat]="true" />
+                           [interactive]="true" [ticks]="false" [cards]="cards()" [flat]="true" />
         } @else {
           <p class="home-strip__empty">Niets gepland de komende 30 dagen</p>
         }
