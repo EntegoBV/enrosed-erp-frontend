@@ -242,7 +242,9 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   "Tarief toevoegen"). Bodies are one `ng-template #body` shared by desk and
   phone. Every sheet (period, receipt period, partner, value, how, menu) and
   the real `app-notification-bell` sit at page level, never in the nav, the
-  tool row or the faded body (critique B7, N5).
+  tool row or the faded body (critique B7, N5). Its own button is hidden by
+  `app-notification-bell.an-bell-host .bell`: the bell's component rule
+  (`.bell`, display grid) is inserted later and wins a two-class tie.
 - Origin (critique B8): `NavHistory.below()` mapped by the pure
   `analyses-origin.ts` `originOf(url, screenLabel, isWorkspaceUrl)`: none,
   another Analyses tab or a workspace → "‹ Meer" (/more); else that screen
@@ -317,6 +319,10 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   a changed non-empty value (empty means unknown, never the cost price).
   Containerkost (`container-cost-analysis.ts`) has no component styles left;
   on the phone each container opens a sheet with every figure (critique B1).
+  Its table scrolls inside `.cc-table` (position: relative, so the
+  visually hidden header text cannot widen the page). On the phone row 2
+  wraps: the supplier picker fills the line beside the period capsule and
+  the order chip gets a line of its own.
 - Resultaat: five figures (3 + 2 below 1280), `app-an-month-bars`
   (result-month-bars.ts), channels as rows, categories as share rows, Per
   maand with "mrt 2026" and every month up to today (`resultAnalysis`
@@ -334,7 +340,7 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   ("Pagina's per sessie" nl-BE), a value axis on the visits chart.
 - Kasprognose titles name containers by containerName() (critique N15, see
   `cash-forecast.ts` below).
-- Revert units: W2c, W5, W5b, W5c, N24, W6c and W6d each revert alone; W6
+- Revert units: W2c, W2d, W4b, W5, W5b, W5c, N24, W6c and W6d each revert alone; W6
   (Markt + Bezoekers) is W6a…W6d together (W6c/W6d rework W6a/W6b's tool
   rows); W1–W4 revert with the area merge. Style budget: analyses.scss
   compiles to about 15 850 bytes and analyses-tabs.scss to about 15 400, of
