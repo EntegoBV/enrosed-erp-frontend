@@ -155,7 +155,8 @@ type Link = { path: string; query: Record<string, string> | null };
           @for (event of newest(); track event.id) {
             <a class="set-mini mo-fade" routerLink="/activity">
               <time [attr.datetime]="event.at">{{ timeOf(event.at) }}</time>
-              <span [attr.title]="miniText(event)">{{ miniText(event) }}</span>
+              <span class="set-mini__text"><span class="set-mini__sum">{{ miniSummary(event) }}</span>
+                @if (miniName(event); as name) { <span class="set-mini__name" [attr.title]="name">{{ name }}</span> }</span>
               <small>{{ event.actor?.displayName || 'Systeem' }}</small>
             </a>
           }
@@ -207,19 +208,19 @@ type Link = { path: string; query: Record<string, string> | null };
             <a class="ios-cell" [routerLink]="legalLink().path" [queryParams]="legalLink().query" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-plum" aria-hidden="true"><app-icon name="book" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Voorwaarden &amp; privacy</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ legalShort() }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (legalShort()) { <span class="mo-fade">{{ legalShort() }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: companyStore.error(), retry: 'company' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
             <a class="ios-cell" routerLink="/settings/deleted-items" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-grey" aria-hidden="true"><app-icon name="trash" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Verwijderde items</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ trash.value()?.items?.length ?? '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (trash.value(); as bin) { <span class="mo-fade">{{ bin.items.length }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: trash.error(), retry: 'trash' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
             <a class="ios-cell" routerLink="/activity" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-blue" aria-hidden="true"><app-icon name="activity" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Logboek</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ activity.value() ? todayText() : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (activity.value()) { <span class="mo-fade">{{ todayText() }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: activity.error(), retry: 'activity' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
           </div>
@@ -231,13 +232,13 @@ type Link = { path: string; query: Record<string, string> | null };
             <a class="ios-cell" routerLink="/settings" [queryParams]="{ sectie: 'discounts' }" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-amber" aria-hidden="true"><app-icon name="tag" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Kortingen</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ orderTiers.value() ? countText(orderTiers.value()!.length, 'staffel', 'staffels') : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (orderTiers.value(); as tiers) { <span class="mo-fade">{{ countText(tiers.length, 'staffel', 'staffels') }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: orderTiers.error(), retry: 'tiers' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
             <a class="ios-cell" [routerLink]="dutiesLink().path" [queryParams]="dutiesLink().query" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-amber" aria-hidden="true"><app-icon name="truck" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Douane</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ duties.value() ? countText(duties.value()!.length, 'tarief', 'tarieven') : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (duties.value(); as codes) { <span class="mo-fade">{{ countText(codes.length, 'tarief', 'tarieven') }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: duties.error(), retry: 'duties' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
           </div>
@@ -249,13 +250,13 @@ type Link = { path: string; query: Record<string, string> | null };
             <a class="ios-cell" routerLink="/settings" [queryParams]="{ sectie: 'website' }" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-blue" aria-hidden="true"><app-icon name="globe" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Prijzen op de website</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value" [class.set-warn]="prices.settings()?.pricesVisible">{{ prices.settings() ? (prices.settings()!.pricesVisible ? 'Zichtbaar' : 'Verborgen') : '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value" [class.set-warn]="prices.settings()?.pricesVisible">@if (prices.settings(); as current) { <span class="mo-fade">{{ current.pricesVisible ? 'Zichtbaar' : 'Verborgen' }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: prices.error(), retry: 'prices' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
             <a class="ios-cell" routerLink="/categories" [info]="push">
               <span class="ios-cell__lead"><span class="ios-tile tone-green" aria-hidden="true"><app-icon name="grid" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Categorieën</span></span>
-              <span class="ios-cell__trail"><span class="ios-cell__value">{{ categories.value()?.length ?? '' }}</span></span>
+              <span class="ios-cell__trail"><span class="ios-cell__value">@if (categories.value(); as list) { <span class="mo-fade">{{ list.length }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: categories.error(), retry: 'categories' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
             <a class="ios-cell" routerLink="/settings" [queryParams]="{ sectie: 'catalog-data' }" [info]="push">
@@ -333,7 +334,9 @@ type Link = { path: string; query: Record<string, string> | null };
       border-top: 1px dashed var(--line); color: var(--ink-2); font-size: 12.5px; text-decoration: none; }
     .set-mini:hover { background: var(--surface-2); }
     .set-mini time { color: var(--muted); font: 500 12px var(--mono, ui-monospace, monospace); }
-    .set-mini span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .set-mini__text { display: grid; min-width: 0; }
+    .set-mini__sum { overflow-wrap: anywhere; }
+    .set-mini__name { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
     .set-mini small { color: var(--muted); font-size: 12px; }
     .set-device { display: grid; gap: 1px; padding: 7px 16px 7px 28px; border-top: 1px dashed var(--line); font-size: 12.5px; }
     .set-device b { color: var(--ink-2); font-weight: 600; overflow-wrap: anywhere; }
@@ -473,8 +476,13 @@ export class SettingsOverview {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   }
 
-  /** "Inkooporder bijgewerkt · 12-Set-Roseamor-Jerry": the Logboek's own words and names. */
-  miniText(event: ActivityEvent): string {
-    return [activitySummaryText(event.summary), activityEntityText(event, this.names.context())].filter(Boolean).join(' · ');
+  /** A mini row: the change itself ("Status gewijzigd van Concept naar Besteld") in full, the Logboek's own words. */
+  miniSummary(event: ActivityEvent): string {
+    return activitySummaryText(event.summary);
+  }
+
+  /** Its record by name ("12-Set-Roseamor-Jerry"), the only part that may ellipsize (with a title). */
+  miniName(event: ActivityEvent): string {
+    return activityEntityText(event, this.names.context());
   }
 }
