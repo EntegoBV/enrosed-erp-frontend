@@ -93,6 +93,20 @@ export function settingsCategoryRedirect(
   return { path: '/website/categories', queryParams };
 }
 
+/**
+ * Whether a router URL shows the settings overview: /settings with no (or an
+ * unknown) sectie. The phone's "Alle instellingen" goes back to it when it
+ * is the screen below instead of stacking a second overview.
+ */
+export function isSettingsOverviewUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const cut = url.search(/[?#]/);
+  const path = (cut < 0 ? url : url.slice(0, cut)).replace(/(.)\/+$/, '$1');
+  if (path !== '/settings') return false;
+  const query = url.indexOf('?') < 0 ? '' : url.slice(url.indexOf('?') + 1).split('#')[0];
+  return settingsView(new URLSearchParams(query).get('sectie')) === 'overview';
+}
+
 /** Which card of "Dit toestel" a deep link points at, if any. */
 export function deviceFocus(sectie: string | null | undefined): 'notifications' | 'appearance' | null {
   return sectie === 'notifications' || sectie === 'appearance' ? sectie : null;

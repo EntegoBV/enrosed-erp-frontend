@@ -58,6 +58,31 @@ export function returnPath(url: string): string {
 }
 
 /**
+ * The views of /settings by their ?sectie=, named as each view titles its
+ * screen (settings-sections.ts SETTINGS_VIEWS; a test keeps the two equal).
+ * Unknown or no sectie is the overview, "Instellingen".
+ */
+const SETTINGS_VIEW_LABELS: Readonly<Record<string, string>> = {
+  company: 'Bedrijfsgegevens',
+  legal: 'Voorwaarden & privacy',
+  website: 'Prijzen op de website',
+  duties: 'Douane',
+  discounts: 'Kortingen',
+  'order-discounts': 'Kortingen',
+  'catalog-data': 'Catalogusdata',
+  device: 'Dit toestel',
+  appearance: 'Dit toestel',
+  notifications: 'Dit toestel',
+};
+
+function settingsViewLabel(url: string): string | null {
+  const cut = url.indexOf('?');
+  if (cut < 0) return null;
+  const sectie = new URLSearchParams(url.slice(cut + 1).split('#')[0]).get('sectie')?.trim() ?? '';
+  return Object.hasOwn(SETTINGS_VIEW_LABELS, sectie) ? SETTINGS_VIEW_LABELS[sectie] : null;
+}
+
+/**
  * The name of the screen behind a URL as a phone back control shows it
  * ("‹ Verkoop", "‹ Order"): capitalised, the screen's own word. Empty when
  * the screen has no name worth showing; the back control is then a plain
@@ -89,6 +114,8 @@ export function screenLabel(url: string): string {
   if (under(path, '/catalog-export')) return 'Catalogus PDF';
   if (under(path, '/catalog')) return 'Cataloguslabels';
   if (under(path, '/settings/deleted-items')) return 'Verwijderde items';
+  /* A settings view is a screen of its own ("‹ Kortingen"), not the overview. */
+  if (path === '/settings') return settingsViewLabel(url) ?? 'Instellingen';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';
   if (under(path, '/analyses')) return 'Analyses';

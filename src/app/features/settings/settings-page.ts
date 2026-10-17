@@ -1,4 +1,4 @@
-import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PushSetup, playSoundFor } from '../../core/platform/push';
@@ -28,6 +28,7 @@ import { Ui, confirmLeave } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { NavHistory } from '../../core/platform/nav-history-service';
 import { THEMES, Theme } from '../../core/platform/theme';
 import {
   FeaturedProductEligibility,
@@ -52,7 +53,7 @@ import { SettingsEditor, dirtyStatusText } from './settings-editor';
 import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
 import {
-  SettingsView, deviceFocus, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
+  SettingsView, deviceFocus, isSettingsOverviewUrl, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
 } from './settings-sections';
 
 /**
@@ -655,7 +656,7 @@ const normalizeCategoryCode = (value: string): string => value
         <!-- Phone: Meer has no row for the overview yet (N15 waits for the foundation's NAV_GROUPS); every view leads there. -->
         <section class="ios-section set-all">
           <div class="ios-group ios-group--icons">
-            <a class="ios-cell" [routerLink]="overviewUrl" [info]="pushNav">
+            <a class="ios-cell" [attr.href]="overviewUrl" (click)="toOverview($event)">
               <span class="ios-cell__lead"><span class="ios-tile tone-grey" aria-hidden="true"><app-icon name="list" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title">Alle instellingen</span>
                 <span class="ios-cell__sub set-ios__text">Elke instelling met haar huidige waarde</span></span>
@@ -1366,9 +1367,23 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     ? null
     : this.desktop.active() ? { label: 'Instellingen', url: OVERVIEW_URL } : undefined);
   readonly headerBackTo = computed(() => this.view() === 'overview' ? this.settingsBackTo : OVERVIEW_URL);
-  /** Phone: the "Alle instellingen" row under every view, a push to the overview. */
+  /** Phone: the "Alle instellingen" row under every view. */
   readonly overviewUrl = OVERVIEW_URL;
-  readonly pushNav = { nav: 'push' };
+  private readonly navHistory = inject(NavHistory);
+  private readonly location = inject(Location);
+
+  /**
+   * "Alle instellingen": back when the overview is the screen below (no
+   * second overview on the stack), else up: the overview takes this view's
+   * place (settingsOverviewUp), so its back leads where the view's did.
+   * A modified click keeps the link (a new tab).
+   */
+  toOverview(event: MouseEvent): void {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (isSettingsOverviewUrl(this.navHistory.below())) { this.location.back(); return; }
+    void this.router.navigateByUrl(OVERVIEW_URL, { info: { nav: 'push' } });
+  }
   private readonly tabStrip = viewChild<ElementRef<HTMLElement>>('tabStrip');
   private readonly loadedViews = new Set<SettingsView>();
 

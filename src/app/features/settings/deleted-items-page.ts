@@ -28,7 +28,8 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, LoadError, PageHeader, RouterLink, Sheet, Skeleton, DateTimeNlPipe, EurPipe, NumPipe],
   template: `
-    <app-page-header title="Verwijderde items" [subtitle]="subtitle()" [showBell]="false">
+    <!-- Phone back without a screen below: up to the overview, which takes this screen's place (no back loop). -->
+    <app-page-header title="Verwijderde items" [subtitle]="subtitle()" [showBell]="false" backTo="/settings/overzicht">
       @if (desktop.active()) {
         <label class="wk-search">
           <app-icon name="search" [size]="16" />

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  SETTINGS_VIEWS, deviceFocus, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
+  SETTINGS_VIEWS, deviceFocus, isSettingsOverviewUrl, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
 } from '../src/app/features/settings/settings-sections.ts';
 
 test('every ?sectie= of the old scroll page opens its own view', () => {
@@ -61,4 +61,14 @@ test('device deep links name their card', () => {
   assert.equal(deviceFocus('notifications'), 'notifications');
   assert.equal(deviceFocus('appearance'), 'appearance');
   assert.equal(deviceFocus('device'), null);
+});
+
+test('the overview is /settings with no known view; "Alle instellingen" goes back to it when it lies below', () => {
+  for (const url of ['/settings', '/settings/', '/settings?sectie=', '/settings?sectie=unknown', '/settings?returnTo=%2Fmore', '/settings#top']) {
+    assert.equal(isSettingsOverviewUrl(url), true, url);
+  }
+  for (const url of [null, undefined, '', '/settings?sectie=company', '/settings?sectie=discounts&category=x',
+    '/settings/deleted-items', '/settings/overzicht', '/settingsx', '/more']) {
+    assert.equal(isSettingsOverviewUrl(url), false, String(url));
+  }
 });

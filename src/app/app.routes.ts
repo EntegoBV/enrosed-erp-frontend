@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/api/auth.guard';
 import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
+import { settingsOverviewUp } from './features/settings/settings-overview-up';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
@@ -294,8 +295,9 @@ export const routes: Routes = [
   },
   { path: 'settings/documents-media', pathMatch: 'full', redirectTo: 'files' },
   /* The way up from a settings view to the overview: a path of its own, so the
-     crumb and the phone back never resolve to the view itself (same path). */
-  { path: 'settings/overzicht', pathMatch: 'full', redirectTo: 'settings' },
+     crumb and the phone back never resolve to the view itself (same path).
+     It takes the view's place in the history (settingsOverviewUp). */
+  { path: 'settings/overzicht', pathMatch: 'full', canMatch: [settingsOverviewUp], children: [] },
   {
     path: 'settings/deleted-items',
     canActivate: [authGuard],

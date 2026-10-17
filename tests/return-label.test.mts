@@ -78,7 +78,8 @@ test('a phone back control names the screen it returns to', () => {
     ['/stock/inventaris', 'Jaarinventaris'],
     ['/stock-locations', 'Voorraadlocaties'],
     ['/prospects/4', 'Prospects'],
-    ['/settings?sectie=company', 'Instellingen'],
+    ['/settings?sectie=company', 'Bedrijfsgegevens'],
+    ['/settings', 'Instellingen'],
     ['/settings/deleted-items', 'Verwijderde items'],
     ['/activity', 'Logboek'],
     ['/analyses/cash', 'Analyses'],
@@ -96,4 +97,21 @@ test('a back capsule holds at most ten characters, else it is a chevron circle',
   assert.equal(capsuleLabel('Meer'), 'Meer');
   assert.equal(capsuleLabel(''), '');
   assert.equal(capsuleLabel(null), '');
+});
+
+test('a settings view is named as its own screen, the overview as Instellingen (B9)', async () => {
+  const { SETTINGS_VIEWS } = await import('../src/app/features/settings/settings-sections.ts');
+  for (const view of SETTINGS_VIEWS) {
+    const url = view.id === 'overview' ? '/settings' : `/settings?sectie=${view.id}`;
+    assert.equal(screenLabel(url), view.title, url);
+  }
+  assert.equal(screenLabel('/settings?sectie=order-discounts'), 'Kortingen');
+  assert.equal(screenLabel('/settings?sectie=notifications'), 'Dit toestel');
+  assert.equal(screenLabel('/settings?returnTo=%2Fmore&sectie=discounts#top'), 'Kortingen');
+  assert.equal(screenLabel('/settings?sectie=unknown'), 'Instellingen');
+  assert.equal(screenLabel('/settings?sectie=constructor'), 'Instellingen');
+  assert.equal(screenLabel('/settings/overzicht'), 'Instellingen');
+  assert.equal(screenLabel('/settings/deleted-items?sectie=company'), 'Verwijderde items');
+  assert.equal(capsuleLabel(screenLabel('/settings?sectie=discounts')), 'Kortingen');
+  assert.equal(capsuleLabel(screenLabel('/settings?sectie=company')), '');
 });
