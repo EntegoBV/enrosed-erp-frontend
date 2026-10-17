@@ -361,6 +361,7 @@ function blank(): Supplier {
               }
             </div>
           } @else {
+            <div class="sup-form">
             <p class="legend"><b>*</b> verplicht · adresvelden mogen leeg blijven.</p>
 
             <section class="form-section" aria-labelledby="supplier-company-form-title">
@@ -472,6 +473,11 @@ function blank(): Supplier {
                             (ngModelChange)="patch({ notes: $event })"></textarea></div>
               </div>
             </section>
+            </div>
+            @if (draft().id && !desktop.active()) {
+              <!-- Phone: Verwijderen as its own cell under the form (the iOS sheet pattern, as on Douane); three capsules did not fit a 360 px foot. -->
+              <div class="ios-group sup-delete"><button class="ios-cell ios-cell--danger" type="button" [disabled]="saving()" (click)="remove()">Verwijderen</button></div>
+            }
           }
         </div>
         <div foot style="display:contents">
@@ -482,7 +488,7 @@ function blank(): Supplier {
               Bewerken
             </button>
           } @else {
-            @if (draft().id) {
+            @if (draft().id && desktop.active()) {
               <button class="btn btn--danger" type="button" [disabled]="saving()"
                       (click)="remove()">Verwijderen</button>
             }

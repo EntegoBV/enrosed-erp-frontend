@@ -82,3 +82,7 @@ app-purchase-list .pl-ptotal{font-size:16px;font-weight:700;font-variant-numeric
 app-purchase-list .pl-pline{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap}
 app-purchase-list .pl-pline.pl-warn{font-weight:700}
 app-purchase-list .pl-loading{margin:0 var(--ios-inset)}
+
+/* ---- the new-calculation sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),
+   so the plain fields, the supplier card and the container cards keep the 16 px gutter here; the desk sheet is unchanged. */
+@media (max-width:679.98px){app-purchase-list .sheet--ios .pl-new{padding:0 var(--ios-inset,16px)}}

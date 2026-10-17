@@ -71,3 +71,8 @@ app-supplier-list .sup-figures__wide{grid-column:1/-1}
 app-supplier-list .sup-address{padding:12px 16px}
 app-supplier-list .sup-link{color:var(--rose-dark)}
 app-supplier-list .sup-notes--cell{padding:12px 16px}
+/* The edit form in its iOS sheet: the sheet body has no side padding of its own, so the legend and the numbered
+   sections keep the 16 px gutter here; Verwijderen sits as a cell under the form (the desk sheet is unchanged). */
+@media (max-width:679.98px){app-supplier-list .sheet--ios .sup-form{padding:0 var(--ios-inset,16px)}}
+app-supplier-list .sup-delete{margin-top:4px}
+

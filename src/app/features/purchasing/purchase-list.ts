@@ -334,7 +334,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
 
     @if (picking()) {
       <app-sheet title="Nieuwe inkoopcalculatie" variant="ios" (closed)="picking.set(false)">
-        <div body>
+        <div body class="pl-new">
           <div class="field">
             <label for="po-supplier">Leverancier</label>
             <select class="select" id="po-supplier" [ngModel]="chosen()"
