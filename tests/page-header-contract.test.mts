@@ -76,3 +76,10 @@ test('the desk crumb never repeats the title (the desks\' loading and error stat
   assert.match(header, /return a\.trim\(\)\.toLocaleLowerCase\('nl'\) === b\.trim\(\)\.toLocaleLowerCase\('nl'\);/);
   /* for the desks' loading and error headers (title="Verkoop" / "Inkoop" under a derived "Verkoop ›" / "Inkoop ›") */
 });
+
+test('a header that leaves without a navigation hands the tab title back to the route', () => {
+  assert.match(header, /this\.ownTitle = documentTitle\(this\.title\(\)\);/);
+  const leave = header.slice(header.indexOf('inject(DestroyRef).onDestroy(() => {\n      if (this.ownTitle'), header.indexOf('/* Re-fit whenever'));
+  assert.match(leave, /this\.documentTitle\.getTitle\(\) !== this\.ownTitle\) return;/);
+  assert.match(leave, /documentTitle\(this\.titleStrategy\.buildTitle\(this\.router\.routerState\.snapshot\)\)/);
+});

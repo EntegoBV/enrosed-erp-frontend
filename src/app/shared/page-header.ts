@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Location } from '@angular/common';
-import { NavigationEnd, Router } from '@angular/router';
+import { NavigationEnd, Router, TitleStrategy } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
@@ -22,6 +22,7 @@ import { NotificationBell } from './notification-bell';
 import { observeLargeTitle } from './large-title';
 import { DesktopViewport } from '../core/platform/desktop-viewport';
 import { NavHistory } from '../core/platform/nav-history-service';
+import { documentTitle } from '../core/platform/document-title';
 import { parentOf } from '../core/platform/page-parent';
 import { isPhoneTabRoot } from '../core/platform/phone-tabs';
 import { capsuleLabel, screenLabel } from '../core/platform/return-label';
@@ -181,6 +182,9 @@ export class PageHeader {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly documentTitle = inject(Title);
+  private readonly titleStrategy = inject(TitleStrategy);
+  /** The tab title this header set, so it can hand the tab back when it leaves. */
+  private ownTitle: string | null = null;
 
   readonly title = input.required<string>();
   readonly subtitle = input('');
@@ -287,8 +291,15 @@ export class PageHeader {
 
   constructor() {
     effect(() => {
-      const pageTitle = this.title().trim();
-      this.documentTitle.setTitle(pageTitle ? `${pageTitle} — Enrosed` : 'Enrosed');
+      this.ownTitle = documentTitle(this.title());
+      this.documentTitle.setTitle(this.ownTitle);
+    });
+    /* A header that leaves without a navigation (a loading state giving way to a page without
+       one, as the phone sales view) hands the tab back to the route title ("Verkooporder"),
+       unless another header has set its own meanwhile. */
+    inject(DestroyRef).onDestroy(() => {
+      if (this.ownTitle === null || this.documentTitle.getTitle() !== this.ownTitle) return;
+      this.documentTitle.setTitle(documentTitle(this.titleStrategy.buildTitle(this.router.routerState.snapshot)));
     });
     effect(() => {
       if (!this.editingTitle()) return;
