@@ -79,7 +79,7 @@ type SortKey = 'date' | 'title' | 'amount';
                     <span class="wk-td fin-when" role="gridcell"><b>{{ whenDay(row) }}</b><small>{{ whenWord(row) }}</small></span>
                     <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-blue" name="truck" [size]="16" /><b>{{ row.title }}@if (row.container!.archived) { <span class="wk-pill wk-pill--outline">gearchiveerd</span> }</b>
                       <small>{{ whatSub(row) }}</small></span>
-                    <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + payeeTone(row)"></span> {{ payee(row) }}</span>
+                    <span class="wk-td wk-td--wrap" role="gridcell"><span [class]="'wk-dot tone-' + payeeTone(row)"></span> {{ payee(row) }}</span>
                     <span class="wk-td" role="gridcell" data-hide="md"></span>
                     <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.amountEur | eur }}</b><span class="wk-td__sub">verwacht</span></span>
                     <span class="wk-td wk-td--actions fin-td-chev" role="gridcell"><app-icon name="chevron-right" [size]="16" /></span>
@@ -92,8 +92,8 @@ type SortKey = 'date' | 'title' | 'amount';
                     <span class="wk-td" role="gridcell"></span>
                     <span class="wk-td" role="gridcell">{{ day(row.date) }}</span>
                     <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-plum" name="repeat" [size]="16" /><b>{{ row.title }}</b>@if (row.party) { <small>{{ row.party }}</small> }</span>
-                    <span class="wk-td" role="gridcell"><span [class]="'wk-dot tone-' + tone(row.upcoming!.definition.category)"></span> {{ category(row.upcoming!.definition.category) }}
-                      @if (row.autoPaid) { <span class="wk-pill wk-pill--outline" title="Domiciliëring: gaat vanzelf">domiciliëring · gaat vanzelf</span> }</span>
+                    <span class="wk-td wk-td--wrap" role="gridcell"><span [class]="'wk-dot tone-' + tone(row.upcoming!.definition.category)"></span> {{ category(row.upcoming!.definition.category) }}
+                      @if (row.autoPaid) { <span class="wk-pill wk-pill--outline fin-pill-wrap" title="Domiciliëring: gaat vanzelf">domiciliëring · gaat vanzelf</span> }</span>
                     <span class="wk-td" role="gridcell" data-hide="md"></span>
                     <span class="wk-td wk-td--num" role="gridcell"><b>{{ row.amountEur | eur }}</b></span>
                     <span class="wk-td wk-td--actions" role="gridcell"><button class="wk-btn wk-btn--sm" type="button" tabindex="-1" (click)="$event.stopPropagation(); state.openRecurring(row.upcoming!.definition)">Bewerken</button></span>
@@ -130,8 +130,9 @@ type SortKey = 'date' | 'title' | 'amount';
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--lg ios-tile--soft tone-blue"><app-icon name="truck" [size]="18" /></span></span>
                     <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ row.title }}</span>
                       <span class="ios-cell__sub fin-wrapall">@if (row.bucket !== 'now' && row.date) { <b class="fin-due">{{ whenDay(row) }}</b> · }{{ phoneSub(row) }}</span></span>
+                    <!-- A container amount is an estimate in every bucket: "verwacht" stays under the Nu pill too (as Bedrag on the desk). -->
                     <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.amountEur | eur }}</span>
-                      @if (row.bucket === 'now') { <span class="wk-pill tone-warn">Nu</span> } @else { <span class="ios-cell__meta">verwacht</span> }</span>
+                      @if (row.bucket === 'now') { <span class="wk-pill tone-warn">Nu</span> }<span class="ios-cell__meta">verwacht</span></span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                 }

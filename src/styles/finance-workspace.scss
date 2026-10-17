@@ -215,11 +215,14 @@
   .fin-regime-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: 2px; }
   .fin-td-chev { color: var(--muted-2); }
   .fin-table--payables .wk-th { white-space: normal; line-height: 1.2; }
+  /* the payee and category cells wrap (1100: "Inspectie & andere kosten"); the domiciliëring pill takes a second line with them */
+  .fin-pill-wrap { height: auto; min-height: 20px; padding-block: 2px; line-height: 1.2; white-space: normal; }
   /* Bedrijfskosten: Referentie and Kanaal go first, below a 1320px pane (.fin-hide-lg) or beside the inspector. */
   .fin-table--costs { --wk-cols: 28px 84px minmax(180px, 1fr) minmax(0, 150px) minmax(0, 110px) minmax(0, 104px) 40px 100px 88px 108px 112px; --wk-group-span: 8;
     .fin-sum--excl { grid-column: 8; } .fin-sum--vat { grid-column: 9; } .fin-sum--incl { grid-column: 10; } }
   .wk-body--split .fin-table--costs { @include costs-without-reference; }
-  .fin-table--receivables { --wk-cols: 120px minmax(160px, 1fr) 140px 132px 108px 108px 116px 24px;
+  /* Factuurdatum · vervalt holds "vervalt 20 mei · 150 d te laat" on one line (160 px): two lines a row, not three; Klant gives the width. */
+  .fin-table--receivables { --wk-cols: 120px minmax(140px, 1fr) 132px 160px 108px 108px 116px 24px;
     /* "Factuurdatum · vervalt" and "vervalt 11 okt · 6 d te laat" take a second line in their column (no new track, B5) */
     .wk-th, .wk-td__sub { white-space: normal; overflow: visible; text-overflow: clip; } .wk-th { line-height: 1.25; } .wk-td__sub b { white-space: nowrap; } }
   /* "KBC-zichtrekening · 09/10 ›" takes a second line in its column rather than an ellipsis. */
@@ -338,7 +341,7 @@
     .fin-table--payables { --wk-cols: 28px 96px minmax(150px, 1fr) minmax(0, 140px) 112px 100px; --wk-group-span: 5; .fin-group__sum { grid-column: 5; } }
     .fin-table--costs, .wk-body--split .fin-table--costs { --wk-cols: 28px 80px minmax(140px, 1fr) minmax(0, 124px) 96px 104px 108px; --wk-group-span: 5;
       .fin-sum--excl { grid-column: 5; } .fin-sum--incl { grid-column: 6; } }
-    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 116px 112px 24px; }
+    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) minmax(0, 130px) 160px 112px 24px; }
     .fin-table--receipts { --wk-cols: 140px minmax(160px, 1fr) 130px minmax(0, 150px) 116px 36px; }
     .fin-table--receipts.fin-table--one { --wk-cols: 140px minmax(160px, 1fr) 130px 116px 36px; .fin-narrow-only { display: block; } }
     .fin-table--containers { --wk-cols: minmax(170px, 1fr) 104px 108px 108px 108px minmax(0, 150px) 36px; }
@@ -346,7 +349,7 @@
     .fin-expand { grid-template-columns: minmax(0, 1fr); }
   }
   @container wk-pane (max-width: 859.98px) {
-    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) 116px 112px 24px; }
+    .fin-table--receivables { --wk-cols: 104px minmax(140px, 1fr) 160px 112px 24px; }
     .fin-table--receipts { --wk-cols: 124px minmax(140px, 1fr) 120px 112px 36px; }
     .fin-table--receipts.fin-table--one { --wk-cols: 140px minmax(160px, 1fr) 130px 116px 36px; }
     .fin-table--containers { --wk-cols: minmax(160px, 1fr) 104px 108px 108px minmax(0, 150px) 36px; }
