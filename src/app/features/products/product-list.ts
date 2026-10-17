@@ -1100,8 +1100,11 @@ export class ProductList implements ProductListTableHost {
       || (!this.familyLoadError() && this.statusFilter() !== 'ALL'),
   );
 
+  /** Clears the search at once, the address bar too: a typing timer still running cannot bring it back. */
   resetFilters(): void {
+    if (this.queryTimer !== null) { clearTimeout(this.queryTimer); this.queryTimer = null; }
     this.query.set('');
+    this.urlQuery.set('');
     this.categoryFilter.set(null);
     this.statusFilter.set('ALL');
     this.sortKey.set('STOCK_SMART');
