@@ -201,8 +201,7 @@ const normalizeCategoryCode = (value: string): string => value
         @if (desktop.active()) {
         <div class="set-pair">
           <!-- The sync status shows once: inside the price card (B5). -->
-          <div class="wk-card set-pane" id="website">
-            <h2 class="set-pane__title">Prijzen op de website</h2>
+          <div class="wk-card set-pane set-pane--bare" id="website">
             <app-website-quote-settings [refreshKey]="websiteSyncRefresh()" (saved)="refreshWebsiteSync()" />
           </div>
           <nav class="wk-card set-pane set-links" aria-label="Website en catalogus">
@@ -1009,6 +1008,8 @@ const normalizeCategoryCode = (value: string): string => value
     @media (min-width: 1024px) { .set-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .set-pair--side { grid-template-columns: minmax(0, 1fr) 340px; } }
     .set-pane { padding: 4px 16px 16px; }
     .set-pane__title { margin: 0; padding: 12px 0 10px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    /* The price card: the toolbar already says "Prijzen op de website", its switch row names itself. */
+    .set-pane--bare { padding-top: 16px; }
     .set-links { padding-bottom: 6px; }
     .set-links > a { display: flex; align-items: center; gap: 12px; min-height: 52px; margin: 0 -16px; padding: 8px 16px; border-top: 1px solid var(--line);
       color: var(--ink); text-decoration: none; }

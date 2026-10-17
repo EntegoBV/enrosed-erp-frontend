@@ -45,7 +45,8 @@ import { WebsitePriceStore } from './website-price-store';
           </div>
         }
       </div>
-      <div class="ios-section__foot">Geldt voor alle websitetalen. Wijzigingen worden meteen opgeslagen. {{ rebuildHint() }} Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</div>
+      <!-- The page caption already says it holds for every website language. -->
+      <div class="ios-section__foot">Staat dit uit, dan ziet een bezoeker nergens op de website een prijs. Wijzigingen worden meteen opgeslagen. {{ rebuildHint() }} Prijzen blijven beschikbaar in het dashboard en op jullie offertes en facturen.</div>
     </section>
     <section class="ios-section q-ios__sync">
       <app-website-sync-status compact [refreshKey]="syncRefreshKey()" />
