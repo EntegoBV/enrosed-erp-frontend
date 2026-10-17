@@ -24,7 +24,8 @@ export class FinanceCreateMenu {
     const { view, tab } = this.state.location();
     const lists = view === 'costs' && tab === 'lists';
     const bankDetail = view === 'bank' && tab === 'movements' && !!this.state.location().account;
-    const canNoteMovement = !bankDetail || this.state.manualAccountAllowed(this.state.location().account);
+    /* As on the desk: only with an account that takes manual transactions (an Odoo-only company never notes one by hand). */
+    const canNoteMovement = this.state.manualAccountOptions().length > 0 && (!bankDetail || this.state.manualAccountAllowed(this.state.location().account));
     const items: ContextMenuItem[] = [
       /* On Aan wie & beurzen the list's own kinds lead. */
       ...(lists ? [{ id: 'party', label: 'Aan wie toevoegen', iconName: 'customers' }, { id: 'fair', label: 'Beurs toevoegen', iconName: 'tag' }] : []),

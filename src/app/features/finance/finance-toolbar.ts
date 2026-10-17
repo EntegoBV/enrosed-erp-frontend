@@ -72,7 +72,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
           }
           @if (syncShown()) {
             <button class="wk-btn fin-toolbar__sync" type="button" [class.is-busy]="sync.syncing()" [disabled]="sync.busy() || !sync.ready()" aria-label="Transacties ophalen"
-                    [attr.title]="sync.ready() ? 'Transacties ophalen' : 'De Odoo-verbinding is nog niet klaar'" (click)="sync.syncBank()"><app-icon name="refresh" [size]="16" />@if (!compact()) { <span class="fin-toolbar__label">{{ sync.syncing() ? 'Ophalen…' : 'Transacties ophalen' }}</span> }</button>
+                    [attr.title]="sync.ready() ? 'Transacties ophalen' : 'De Odoo-verbinding is nog niet klaar'" (click)="sync.syncBank()"><app-icon name="download" [size]="16" /><span class="fin-toolbar__label">{{ sync.syncing() ? 'Ophalen…' : compact() ? 'Ophalen' : 'Transacties ophalen' }}</span></button>
           }
           @if (state.location().view === 'bank') {
             <button class="wk-btn wk-btn--ghost wk-btn--icon" type="button" aria-label="Hoe werkt je banksaldo?" title="Hoe werkt je banksaldo?" (click)="state.helpOpen.set(true)"><app-icon name="info" [size]="18" /></button>
@@ -83,7 +83,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
           <span class="wk-split">
             <button class="wk-btn wk-btn--primary" type="button" [attr.aria-label]="compact() ? primary().label : null" [attr.title]="noteBlocked() || (compact() ? primary().label : null)"
                     [disabled]="!!noteBlocked() || (primary().kind === 'sync' && (sync.busy() || !sync.ready()))"
-                    (click)="create(primary().kind)"><app-icon [name]="primary().kind === 'sync' ? 'refresh' : 'plus'" [size]="16" />@if (!compact()) { {{ primary().kind === 'sync' && sync.syncing() ? 'Ophalen…' : primary().label }} }</button>
+                    (click)="create(primary().kind)"><app-icon [name]="primary().kind === 'sync' ? 'download' : 'plus'" [size]="16" />@if (!compact()) { {{ primary().kind === 'sync' && sync.syncing() ? 'Ophalen…' : primary().label }} }</button>
             <button class="wk-btn wk-btn--primary" type="button" aria-label="Iets anders toevoegen" title="Nieuw" (click)="newMenu($event)"><app-icon name="chevron-down" [size]="16" /></button>
           </span>
           <input #picker class="fin-hidden" type="file" multiple accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" tabindex="-1" aria-hidden="true"
@@ -101,7 +101,8 @@ export class FinanceToolbar {
   private readonly bar = viewChild<ElementRef<HTMLElement>>('bar');
   private readonly width = elementWidth(() => this.bar()?.nativeElement);
   readonly compact = computed(() => this.width() > 0 && this.width() < 980);
-  readonly tight = computed(() => this.width() > 0 && this.width() < 900);
+  /** The title steps aside only below a 760 px bar (1100 keeps "Bank"); the sync words give way first. */
+  readonly tight = computed(() => this.width() > 0 && this.width() < 760);
 
   /** Bank's cockpit and Transacties (with or without an account): a place of FINANCE_NAV each. */
   readonly cockpit = computed(() => this.state.location().view === 'bank' && this.state.location().tab !== 'movements');

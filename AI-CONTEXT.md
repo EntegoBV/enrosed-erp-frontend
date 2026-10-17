@@ -2263,3 +2263,75 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   buffer is disabled.
 - `?from=` on an older server returns every line; the payments round's own
   guard (`paymentRoundOnServer`) is unchanged.
+
+### Kosten & bank refinements (2026-10-17)
+Design `redesign/finance/design.md` amended by its critique; one commit per
+package (K0 pure helpers and additive state, K1 text, K3 cockpit, K4
+Transacties, K6 chrome, K2 payables and attention, K5 ledger lists).
+- **`bank-text.ts` `bankTextOf(line)`** → `{ title, sub }`: a card payment
+  reads the merchant (postal token cut, CCV*/SUMUP */SQ */ZETTLE_/PAYPAL */
+  MOLLIE * and " * code" stripped) over "{Correctie · }{wallet} · {d mmm}{
+  hh.mm} · {Town}"; any other line the counterparty ("Gmb H" → "GmbH") over
+  the reference without its leading copy, transfer words, IBAN, BIC, clock
+  and "KBC Mobile/Touch". Rows, the cockpit and the detail's h2 read it; the
+  raw reference stays in the detail's `<code>`. `BankMovementPanel.textOf /
+  titleOf` cache it per line.
+- **Container names**: everything rendered goes through `containerName()`
+  (alias, else number) with `containerNumberHint()` as small print
+  (`.fin-hint-number`). Search still finds containers by PO number
+  (`payableSearchTexts`, `LinkedDocument.number`). **`CostLedgerRow.reference`
+  keeps "PO-… · alias"**: the CSV export and the Boekhouderspakket match on
+  PO numbers.
+- **`financeAttention` inputs stay optional** (the home calls it): `vatDue?`
+  adds kind `'vat-deadline'` (30 days before the closed quarter's deadline,
+  info until its last 7 days, then warn; gone once `paidVatPeriods` has the
+  quarter); `receivables[].dueDate? / number? / customer?` switch the late
+  invoices to their due date and "{n} vervallen facturen" (without them:
+  today's words); every unlinked item carries `split { inEur, outEur }` while
+  `amountEur` stays the gross sum for sorting and the home. Sort: tone, then
+  `dueInDays`, then amount.
+- **`containerDueDates(input)`** (cash-forecast.ts) gives every open container
+  row the Kaslijn's own day; `payablesFor({ …, containerDates })` dates
+  container terms (`date`, `dateCertainty`, `dueWord`, `plannedDate`) and
+  fills Binnenkort (`containerSoonEur`). `vooruitblikOf` passes no map, so the
+  Vooruitblik equation is unchanged. `containerPayables()` is unchanged
+  (Inkoop imports it).
+- `recurringCandidates(costs, parties, today)`: ≥ 3 bookings in ≥ 3 months
+  (≥ 2 for BOEKHOUDER/SOFTWARE/HUUR/VERZEKERING), interval from the median gap,
+  `nextDate` = newest + one interval, never today or earlier.
+  `meerBetaaldOf(reconciliation)` = open − (afspraak − betaald), split into
+  `moreEur` and `otherEur` (Bijkomende kosten). `reverseChargeOf(row)` = the
+  "verlegd" VAT.
+- **The band** (one active account): one row from a 1150 px pane, two rows
+  600–1149, stacked below 600 (beside a docked line at 1100). Several
+  accounts keep the cards beside a light total tile.
+- **Cockpit grid**: DOM order Vraagt aandacht → Kaslijn + Transacties →
+  Vooruitblik + Laatst geboekt (= tab order). ≥ 1024 pane: two columns, the
+  attention on top of the rail. < 1024 without a docked detail: one page,
+  attention first in two columns, main/rail `display: contents`. Beside a
+  docked detail: one column, the list before the rail, and a clicked compact
+  row is scrolled back to where it was clicked (`keepInPlace`).
+- **Transacties track states** (bank-cockpit.scss): full list, one account —
+  ≥ 1024 `party · status · koppeling(+action) · bedrag · saldo · ⋯`;
+  720–1023 status as a dot; docked ≥ 720 no Koppeling; docked < 720 party ·
+  bedrag · ⋯; < 720 party · koppeling · bedrag · ⋯. Several accounts add the
+  10 px account dot first. The compact list keeps its action cell (auto
+  track). Head, rows and empty cells always match the tracks.
+- A transaction docks beside the list from an 840 px host (`LINE_DOCK_MIN_PX`,
+  costs-page); other inspector kinds keep the kit's 1000.
+- `FinanceState.flash(lineId)` / `flashLine`: set after link, undo, unlink,
+  unclassify, book-as and cost-from-bank; the row flashes 900 ms (none under
+  reduced motion). `FinanceState.showHistorical / historicalCount`: the
+  "Eerdere registraties" switch of the toolbar ⋯, the phone ⋯ and the chip.
+  `FinanceState.accountMenu(account, anchor)`: the account ⋯ of the band and
+  the phone hero.
+- Phone: one account lives in Bank's hero (the Transacties tab then starts
+  with its search); rows are two-line `fin-txrow`s without saldo or ⋯; the
+  transaction sheet has its own ⋯ (Intrekken).
+- **Styles budget**: the initial bundle has a 1 MB error budget and Kosten &
+  bank's partials are global (load-css). Unused finance rules were removed in
+  K0; check `npx ng build`'s "Initial total" when adding rules.
+- Copy: "Afspraak", never "begroot"; "Verschil − € 0,01" (signed); moments
+  "8 okt · 23:21" (`paymentMomentLabel(payment, today)`), dates "11 sep 2026";
+  texts wrap, only a cleaned reference, a link and its why line end in "…"
+  (with a title).

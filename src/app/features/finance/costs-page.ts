@@ -12,6 +12,7 @@ import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { WK_DOCK_MIN_PX, elementWidth } from '../../shared/workspace-layout';
+import { capsuleLabel } from '../../core/platform/return-label';
 import { AccountCheckSheet } from './account-check-sheet';
 import { AccountHistorySheet } from './account-history-sheet';
 import { AccountantPackageSheet } from './accountant-package-sheet';
@@ -130,8 +131,8 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
       }
     } @else {
       <div class="ios-page fin-ios">
-        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : 'App'" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + ret.label()" (back)="backFromSection()">
+        <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : backCapsule()" [backUrl]="subScreen() ? null : ret.phoneUrl()"
+                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + backText()" (back)="backFromSection()">
           <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
           <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <div below class="ios-subbar" [hidden]="!phoneSegments().length">
@@ -164,7 +165,14 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
 
     <ng-template #content>
       @if (!state.loadedAt()) {
-        <div class="fin-loading" aria-busy="true"><app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="list" [rows]="8" /></div>
+        <!-- A skeleton per place: Bank its figures and list, Rapportage its figures and lines, the lists only rows. -->
+        <div class="fin-loading" aria-busy="true">
+          @switch (skeletonPlace()) {
+            @case ('bank') { <app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="list" [rows]="8" /> }
+            @case ('analysis') { <app-skeleton kind="stats" [rows]="4" /><app-skeleton kind="lines" [rows]="6" /> }
+            @default { @if (state.desk()) { <app-skeleton kind="table" [rows]="10" /> } @else { <app-skeleton kind="group" [rows]="6" /> } }
+          }
+        </div>
       } @else {
         @switch (state.location().view) {
           @case ('open') { <app-payables-panel /> }
@@ -277,6 +285,14 @@ export class CostsPage {
     && !this.state.recurringDraft() && !this.state.menu() ? this.state.inspect() : null);
   /** A transaction opens in its own sheet on a phone (it keeps the linking state, so body and foot are one component). */
   readonly phoneLine = computed(() => { const target = this.phoneInspector(); return target?.kind === 'line' ? target : null; });
+  /** The phone's way out: "‹ Dashboard" (capitalised); a label over 10 characters becomes the chevron circle, its words in the aria-label. */
+  readonly backText = computed(() => { const label = this.ret.label(); return label.charAt(0).toLocaleUpperCase('nl-BE') + label.slice(1); });
+  readonly backCapsule = computed(() => capsuleLabel(this.backText()));
+  /** Which skeleton fits the place while it loads. */
+  readonly skeletonPlace = computed(() => {
+    const { view, tab } = this.state.location();
+    return view === 'bank' && tab !== 'movements' ? 'bank' : view === 'analysis' ? 'analysis' : 'list';
+  });
   /** Transacties is a tab on the phone, no sub-screen; Rapportage still is one. */
   readonly subScreen = computed(() => this.state.location().view === 'analysis');
   backFromSection(): void {
