@@ -217,7 +217,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
         @defer (on viewport) {
           <app-dashboard-search-console />
         } @placeholder {
-          <div class="wk-card home-desk__placeholder" aria-hidden="true"></div>
+          <div class="wk-card home-desk__placeholder home-desk__placeholder--wide" aria-hidden="true"></div>
         }
         @defer (on viewport) {
           <app-home-markt variant="desk" />

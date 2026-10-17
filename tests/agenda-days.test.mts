@@ -73,3 +73,26 @@ test('ISO weeks, month shifts and day steps', () => {
   const brussels = inBrussels(`return [days.addDaysIso('2026-10-24', 1), days.addDaysIso('2026-10-25', 1), days.isoWeek('2026-10-26')];`);
   assert.deepEqual(brussels, ['2026-10-25', '2026-10-26', 44]);
 });
+
+test('dayRuns: empty days merge into one row, busy days and today stand alone (desk 7 dagen below 1280)', async () => {
+  const { dayRuns } = await import('../src/app/features/dashboard/agenda-days.ts');
+  const week = (from: string, busy: string[]) => Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+    return { date, empty: !busy.includes(date) };
+  });
+  /* Fri 16 Oct (today, busy), Sat-Sun empty, Mon busy, Tue-Thu empty */
+  const rows = dayRuns(week('2026-10-16', ['2026-10-16', '2026-10-19']), '2026-10-16');
+  assert.deepEqual(rows.map((row) => row.kind === 'day' ? row.date : `${row.number} ${row.weekday} ${row.weekendOnly ? 'Vrij' : 'Niets gepland'}`), [
+    '2026-10-16', '17–18 za–zo Vrij', '2026-10-19', '20–22 di–do Niets gepland',
+  ]);
+  /* Today stays its own row even when empty, and splits a run. */
+  const quiet = dayRuns(week('2026-10-14', []), '2026-10-16');
+  assert.deepEqual(quiet.map((row) => row.kind === 'day' ? row.date : `${row.number} ${row.weekday}`), ['14–15 wo–do', '2026-10-16', '17–20 za–di']);
+  assert.equal((quiet[2] as { weekendOnly: boolean }).weekendOnly, false);
+  /* Across a month. */
+  const turn = dayRuns(week('2026-10-30', ['2026-10-30']), '2026-10-30');
+  assert.deepEqual(turn.map((row) => row.kind === 'day' ? row.date : `${row.number} ${row.weekday}`), ['2026-10-30', '31 okt – 5 nov za–do']);
+  /* A single empty day is a day row. */
+  const single = dayRuns(week('2026-10-16', ['2026-10-16', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22']), '2026-10-16');
+  assert.deepEqual(single.map((row) => row.kind), ['day', 'day', 'day', 'day', 'day', 'day', 'day']);
+});

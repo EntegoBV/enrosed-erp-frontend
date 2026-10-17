@@ -143,7 +143,6 @@ button.home-arow__main:is(:hover, :active) { background: color-mix(in srgb, var(
 .home-agenda__empty { margin: 0; padding: 15px 16px; color: var(--muted); font-size: 15px; }
 .home-agenda__skel { padding: 6px 16px; }
 .home-agenda__more { margin-bottom: 22px; }
-.home-agenda__undated { margin-top: -6px; }
 .home-agenda app-planner-cards { display: block; margin: 0 var(--ios-inset); }
 @media (prefers-reduced-motion: reduce) {
   .home-agenda__fold { transition: none !important; }

@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,10 +7,11 @@ import { Icon } from '../../shared/icon';
 import { Segmented } from '../../shared/segmented';
 import type { SegmentOption } from '../../shared/segmented';
 import { eurWhole, weekdayDayMonth } from '../finance/cash-format';
-import { addDaysIso, daysInMonth, shiftMonthIso, weekdayMon0 } from './agenda-days';
-import type { AgendaEntry } from './agenda-entries';
+import { addDaysIso, dayRuns, daysInMonth, shiftMonthIso, weekdayMon0 } from './agenda-days';
+import type { AgendaEntry, AgendaUndated } from './agenda-entries';
 import { AgendaMonth } from './agenda-month';
 import { HomeData } from './home-data';
+import { HomeWide } from './home-wide';
 import { PlannerCards } from './planner-cards';
 
 /** The card's three views; the address keeps them as ?agenda=maand|taken (7 dagen is the default). */
@@ -33,10 +35,13 @@ function inDaysText(days: number): string {
 }
 
 /**
- * The desk Agenda card (spec-home §3 D6): full width under row 1, with
- * three views - 7 dagen (day columns from today with at most six chips
- * each, the rest one tap away in the month; the pinned line and the
- * "Daarna" moments after the window), Maand (the month grid of
+ * The desk Agenda card (spec-home §3 D6, redesign home §2.3): full width
+ * under row 1, with three views - 7 dagen (from 1280 px day columns from
+ * today, a busy day or today twice as wide as an empty one, at most six chips
+ * each, the rest one tap away in the month; below 1280 px one row per busy
+ * day and one per run of empty days, "20–22 di–do · Niets gepland"; the
+ * pinned line and the "Daarna" moments after the window, then the advances
+ * without a due day), Maand (the month grid of
  * app-agenda-month with the selected day's list) and Taken (the planner's
  * own Taken card). The one app-planner-cards instance is always rendered:
  * it hosts the view and edit sheets for the whole desk page, which opens
@@ -49,7 +54,7 @@ function inDaysText(days: number): string {
 @Component({
   selector: 'app-home-desk-agenda',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Segmented, PlannerCards, AgendaMonth],
+  imports: [NgTemplateOutlet, Icon, Segmented, PlannerCards, AgendaMonth],
   template: `
     @let model = data.agenda();
     <section class="wk-card home-ag" aria-labelledby="home-ag-title">
@@ -66,13 +71,12 @@ function inDaysText(days: number): string {
                     [attr.aria-label]="view() === 'maand' ? 'Volgende maand' : 'Volgende 7 dagen'"><app-icon name="chevron-right" [size]="14" /></button>
           </span>
         }
-        @if (view() === 'week') {
-          <span class="home-ag__legend" aria-hidden="true">
-            <span><i class="home-ag__key is-afspraak"></i>Afspraak</span><span><i class="home-ag__key is-container"></i>Container</span>
-            <span><i class="home-ag__key is-geld"></i>Geld</span><span><i class="home-ag__key is-taak"></i>Taak</span>
-          </span>
+        <!-- From 1280 px the legend sits in the head; below it, it opens the foot line, so "+ Afspraak" stays on line one (N1). -->
+        @if (view() === 'week' && wide()) { <ng-container [ngTemplateOutlet]="legend" /> }
+        <!-- Taken has its own add (D8). -->
+        @if (view() !== 'taken') {
+          <button class="wk-btn wk-btn--sm home-ag__add" type="button" (click)="addEvent()"><app-icon name="plus" [size]="14" /> Afspraak</button>
         }
-        <button class="wk-btn wk-btn--sm home-ag__add" type="button" (click)="addEvent()"><app-icon name="plus" [size]="14" /> Afspraak</button>
       </header>
 
       @if (data.planner.error()) {
@@ -96,52 +100,52 @@ function inDaysText(days: number): string {
 
         @switch (view()) {
           @case ('week') {
-            <div class="home-ag__week" [style.--ag-cols]="columns()">
-              @for (day of days(); track day.date) {
-                <section class="home-ag__day" [class.is-today]="day.today" [class.is-weekend]="day.weekend"
-                         [attr.aria-label]="day.label">
-                  <h3 class="home-ag__dh"><b>{{ day.number }}</b> {{ day.weekday }}
-                    @if (day.today) { <em>Vandaag</em> } @else if (day.tomorrow) { <em>Morgen</em> }</h3>
-                  @if (day.entries.length) {
-                    <ul class="home-ag__entries">
-                      @for (entry of day.shown; track entry.key) {
-                        <li>
-                          <button class="home-ag__chip" type="button" [class]="'is-' + entry.type" [class.is-past]="entry.past"
-                                  [class.is-done]="entry.done" [class.is-late]="entry.late" [title]="chipTitle(entry)"
-                                  [attr.aria-label]="chipTitle(entry)" (click)="openEntry(entry)">
-                            <b>{{ entry.title }}</b>
-                            @let line = chipLine(entry);
-                            @if (line.amount || line.text) {
-                              <small>@if (line.amount) {<span class="home-ag__amt">{{ line.amount }}</span>}@if (line.text) {<span>{{ line.amount ? '· ' : '' }}{{ line.text }}</span>}</small>
-                            }
-                          </button>
-                        </li>
-                      }
-                      @if (day.more) {
-                        <li><button class="home-ag__more" type="button" [title]="'Alles van ' + day.long + ' in de maand'" (click)="showDay(day.date)">
-                          +{{ day.more }} meer</button></li>
-                      }
-                    </ul>
-                  } @else if (!data.planner.loaded() && !data.planner.error()) {
-                    <p class="home-ag__empty">Laden…</p>
+            <!-- The view fades in on a switch (N16: the view roots only, never the planner host below). -->
+            <div class="home-ag__view mo-fade">
+              @if (wide()) {
+                <div class="home-ag__week" [style.--ag-cols]="columns()">
+                  @for (day of days(); track day.date) { <ng-container [ngTemplateOutlet]="dayTpl" [ngTemplateOutletContext]="{ $implicit: day }" /> }
+                </div>
+              } @else {
+                <div class="home-ag__week home-ag__week--rows">
+                  <!-- Runs are merged only once the planner answered (N18). -->
+                  @if (plannerLoading()) {
+                    <p class="home-ag__loading">Agenda laden…</p>
                   } @else {
-                    <p class="home-ag__empty">{{ day.weekend ? 'Vrij' : 'Niets gepland' }}</p>
+                    @for (row of rows(); track row.key) {
+                      @if (row.day; as day) {
+                        <ng-container [ngTemplateOutlet]="dayTpl" [ngTemplateOutletContext]="{ $implicit: day }" />
+                      } @else if (row.run; as run) {
+                        <section class="home-ag__day is-empty is-run" [class.is-weekend]="run.weekendOnly" [attr.aria-label]="run.aria">
+                          <h3 class="home-ag__dh"><b>{{ run.number }}</b> {{ run.weekday }}</h3>
+                          <p class="home-ag__empty">{{ run.weekendOnly ? 'Vrij' : 'Niets gepland' }}</p>
+                        </section>
+                      }
+                    }
                   }
-                </section>
+                </div>
+              }
+              @if (!wide() || after().length || model.undated) {
+                <div class="home-ag__after">
+                  @if (!wide()) { <ng-container [ngTemplateOutlet]="legend" /> }
+                  @if (after().length || model.undated) {
+                    <b>Daarna</b>
+                    @for (entry of after(); track entry.key) {
+                      <button type="button" [title]="'In de maand tonen: ' + afterText(entry)" (click)="showDay(entry.date)">
+                        <i class="home-ag__key" [class]="'is-' + entry.type" aria-hidden="true"></i>{{ afterText(entry) }}</button>
+                    }
+                    <!-- The advances without a due day: not on any day, one moment of their own (B4). -->
+                    @if (model.undated; as undated) {
+                      <button type="button" [title]="'In de Kasprognose: ' + undatedText(undated)" (click)="toCash()">
+                        <i class="home-ag__key is-geld" aria-hidden="true"></i>{{ undatedText(undated) }}</button>
+                    }
+                  }
+                </div>
               }
             </div>
-            @if (after().length) {
-              <div class="home-ag__after">
-                <b>Daarna</b>
-                @for (entry of after(); track entry.key) {
-                  <button type="button" [title]="'In de maand tonen: ' + afterText(entry)" (click)="showDay(entry.date)">
-                    <i class="home-ag__key" [class]="'is-' + entry.type" aria-hidden="true"></i>{{ afterText(entry) }}</button>
-                }
-              </div>
-            }
           }
           @case ('maand') {
-            <div class="home-ag__month">
+            <div class="home-ag__month mo-fade">
               <app-agenda-month variant="desk" [selected]="selected()" (selectedChange)="select($event)" [cards]="sheets" />
             </div>
           }
@@ -150,6 +154,48 @@ function inDaysText(days: number): string {
         <app-planner-cards #sheets [section]="view() === 'taken' ? 'tasks' : 'none'" />
       </div>
     </section>
+
+    <ng-template #legend>
+      <span class="home-ag__legend" aria-hidden="true">
+        <span><i class="home-ag__key is-afspraak"></i>Afspraak</span><span><i class="home-ag__key is-container"></i>Container</span>
+        <span><i class="home-ag__key is-geld"></i>Geld</span><span><i class="home-ag__key is-taak"></i>Taak</span>
+      </span>
+    </ng-template>
+
+    <!-- One day: a column from 1280 px, a row below it. A money chip: the name, then the amount with its term, then the party. -->
+    <ng-template #dayTpl let-day>
+      <section class="home-ag__day" [class.is-today]="day.today" [class.is-weekend]="day.weekend" [class.is-empty]="!day.entries.length"
+               [attr.aria-label]="day.label">
+        <h3 class="home-ag__dh"><b>{{ day.number }}</b> {{ day.weekday }}
+          @if (day.today) { <em>Vandaag</em> } @else if (day.tomorrow) { <em>Morgen</em> }</h3>
+        @if (day.entries.length) {
+          <ul class="home-ag__entries">
+            @for (entry of day.shown; track entry.key) {
+              <li>
+                <button class="home-ag__chip" type="button" [class]="'is-' + entry.type" [class.is-past]="entry.past"
+                        [class.is-done]="entry.done" [class.is-late]="entry.late" [title]="chipTitle(entry)"
+                        [attr.aria-label]="chipTitle(entry)" (click)="openEntry(entry)">
+                  <b>{{ entry.title }}</b>
+                  @let line = chipLine(entry);
+                  @if (line.amount || line.text) {
+                    <small>@if (line.amount) {<span class="home-ag__amt">{{ line.amount }}</span>}@if (line.text) {<span>{{ line.amount ? '· ' : '' }}{{ line.text }}</span>}</small>
+                  }
+                  @if (line.party) { <span class="home-ag__party">{{ line.party }}</span> }
+                </button>
+              </li>
+            }
+            @if (day.more) {
+              <li><button class="home-ag__more" type="button" [title]="'Alles van ' + day.long + ' in de maand'" (click)="showDay(day.date)">
+                +{{ day.more }} meer</button></li>
+            }
+          </ul>
+        } @else if (plannerLoading()) {
+          <p class="home-ag__empty">Laden…</p>
+        } @else {
+          <p class="home-ag__empty">{{ day.weekend ? 'Vrij' : 'Niets gepland' }}</p>
+        }
+      </section>
+    </ng-template>
   `,
 })
 export class HomeDeskAgenda {
@@ -160,6 +206,9 @@ export class HomeDeskAgenda {
 
   /** The page's one planner host: its sheets serve the task rows, the "+ Nieuw" menu and this card. */
   readonly cards = viewChild.required(PlannerCards);
+  /** From 1280 px: day columns; below it rows with the empty runs merged (the page's HomeWide). */
+  readonly wide = inject(HomeWide).active;
+  readonly plannerLoading = computed(() => !this.data.planner.loaded() && !this.data.planner.error());
 
   readonly view = computed<DeskAgendaView>(() => {
     const value = this.params().get('agenda');
@@ -197,8 +246,17 @@ export class HomeDeskAgenda {
       };
     });
   });
-  /** Weekend columns are narrower (0.6fr); the page uses this from 1000 px, below it the days stack. */
-  readonly columns = computed(() => this.days().map((day) => (day.weekend ? 'minmax(0, .6fr)' : 'minmax(0, 1fr)')).join(' '));
+  /** From 1280 px: today and every day with entries 1fr, an empty day .55fr - the busy days get the width. */
+  readonly columns = computed(() => this.days().map((day) => (day.today || day.entries.length ? 'minmax(0, 1fr)' : 'minmax(0, .55fr)')).join(' '));
+  /** Below 1280 px: a row per busy day (and today), one per run of empty days. */
+  readonly rows = computed(() => {
+    const days = this.days();
+    const byDate = new Map(days.map((day) => [day.date, day]));
+    return dayRuns(days.map((day) => ({ date: day.date, empty: !day.entries.length })), this.data.today()).map((row) => row.kind === 'day'
+      ? { key: row.date, day: byDate.get(row.date)!, run: null }
+      : { key: `${row.from}/${row.to}`, day: null, run: { ...row,
+        aria: `${weekdayDayMonth(row.from)} tot ${weekdayDayMonth(row.to)}, ${row.weekendOnly ? 'vrij' : 'niets gepland'}` } });
+  });
   /** "Daarna": up to five moments after the seven days (pins, deadlines, arrivals, big money, the krap start). */
   readonly after = computed(() => this.data.agenda().after(addDaysIso(this.windowStart(), 6), 5));
 
@@ -258,20 +316,35 @@ export class HomeDeskAgenda {
     return `${pin.title} — ${weekdayDayMonth(pin.date)}${at}${pin.sub ? ` · ${pin.sub}` : ''}`;
   }
 
-  /** The chip's second line: the signed amount (never cut) and the rest (time, note, supplier, "uiterste dag"). */
-  chipLine(entry: AgendaEntry): { amount: string | null; text: string | null } {
+  /**
+   * The chip under its title: the signed amount (never cut) with the term ("1/3 bij bestelling") or the rest (time,
+   * note, supplier, "uiterste dag"); a money moment's party on a line of its own, short.
+   */
+  chipLine(entry: AgendaEntry): { amount: string | null; text: string | null; party: string | null } {
     switch (entry.type) {
-      case 'afspraak': return { amount: null, text: [entry.atTime ? entry.atTime.slice(0, 5) : 'dag', entry.sub].filter(Boolean).join(' · ') };
-      case 'taak': return { amount: null, text: entry.sub ?? (entry.late ? 'taak · te laat' : entry.done ? 'taak · afgevinkt' : 'taak') };
-      case 'container': return { amount: null, text: entry.sub };
-      default: return { amount: entry.eur === null ? null : signed(entry.eur), text: [entry.term, entry.sub].filter(Boolean).join(' · ') || null };
+      case 'afspraak': return { amount: null, text: [entry.atTime ? entry.atTime.slice(0, 5) : 'dag', entry.sub].filter(Boolean).join(' · '), party: null };
+      case 'taak': return { amount: null, text: entry.sub ?? (entry.late ? 'taak · te laat' : entry.done ? 'taak · afgevinkt' : 'taak'), party: null };
+      case 'container': return { amount: null, text: entry.sub, party: null };
+      default: return entry.deadline
+        ? { amount: entry.eur === null ? null : signed(entry.eur), text: entry.sub, party: null }
+        : { amount: entry.eur === null ? null : signed(entry.eur), text: entry.term, party: entry.sub };
     }
   }
 
   /** The full text of a chip (its title and aria-label: the chip may cut it at 1100 px). */
   chipTitle(entry: AgendaEntry): string {
     const line = this.chipLine(entry);
-    return [entry.title, line.amount, line.text].filter(Boolean).join(' · ');
+    return [entry.title, line.amount, line.text, line.party].filter(Boolean).join(' · ');
+  }
+
+  /** "zonder datum · 3 voorschotten · + € 61.935". */
+  undatedText(undated: AgendaUndated): string {
+    return `zonder datum · ${undated.count} ${undated.count === 1 ? 'voorschot' : 'voorschotten'} · ${signed(undated.eur)}`;
+  }
+
+  /** The advances without a due day live in the Kasprognose. */
+  toCash(): void {
+    void this.router.navigate(['/analyses/cash']);
   }
 
   /** "za 24 okt · Beurs Side Arendonk", "zo 25 okt · Btw-aangifte Q3 uiterste dag · − € 3.918", "± 5 nov · PO-2026-044 verwachte aankomst". */

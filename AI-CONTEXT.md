@@ -914,6 +914,16 @@ cijfers'.
     supplier short (phone: name, then supplier and "aankomst (verwacht) …").
     The phone hero names the reading age. Figures that land with the
     forecast fade in once (`.mo-fade`).
+  - *Desk agenda.* From 1280 px (`HomeWide`) day columns: today and every
+    busy day 1fr, an empty day .55fr, min-height 132 px. Below it rows: a
+    busy day (and today) each, consecutive empty days merged (`dayRuns`,
+    agenda-days.ts: "20–22 di–do · Niets gepland", weekend-only "Vrij",
+    "31 okt – 5 nov" across a month), "Agenda laden…" until the planner
+    answered; the legend opens the foot line there so "+ Afspraak" stays on
+    line one. A money chip: name / amount · term (two lines at most) /
+    party. Daarna ends with "zonder datum · n voorschotten · + €" (→
+    Kasprognose). Taken hides "+ Afspraak" and the card's own "Taken"
+    heading. The view roots fade in (`.mo-fade`), never the planner host.
   - *Phone.* Task titles take two lines (`ios-cell__title--2`), the context
     one; the footer cell says "n andere open punten" with "{m} voor vandaag"
     (`othersOf`, as on the desk). The Agenda card's rows open like Agenda ›

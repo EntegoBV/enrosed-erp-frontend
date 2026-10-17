@@ -107,3 +107,20 @@ test('H5: agenda rows open like Agenda › Dag, say no repeated "dag", and the p
   assert.match(page, /'voorschot' : 'voorschotten'/);
   assert.match(page, /link: \{ path: \['\/analyses\/cash'\] \}/);
 });
+
+test('H3: the desk agenda gives busy days the width, merges empty runs below 1280 and keeps the legend off line one', async () => {
+  const agenda = await read('app/features/dashboard/home-desk-agenda.ts');
+  assert.match(agenda, /day\.today \|\| day\.entries\.length \? 'minmax\(0, 1fr\)' : 'minmax\(0, \.55fr\)'/);
+  assert.match(agenda, /dayRuns\(/);
+  assert.match(agenda, /run\.weekendOnly \? 'Vrij' : 'Niets gepland'/);
+  assert.match(agenda, /Agenda laden…/);
+  assert.match(agenda, /@if \(view\(\) === 'week' && wide\(\)\) \{ <ng-container \[ngTemplateOutlet\]="legend" \/> \}/);
+  assert.match(agenda, /@if \(view\(\) !== 'taken'\) \{\s*<button class="wk-btn wk-btn--sm home-ag__add"/);
+  /* B4: the advances without a due day after the Daarna moments. */
+  assert.match(agenda, /`zonder datum · \$\{undated\.count\} \$\{undated\.count === 1 \? 'voorschot' : 'voorschotten'\} · \$\{signed\(undated\.eur\)\}`/);
+  /* N16: the fade on the view roots only, never on the planner host. */
+  assert.match(agenda, /<div class="home-ag__view mo-fade">/);
+  assert.match(agenda, /<div class="home-ag__month mo-fade">/);
+  assert.doesNotMatch(agenda, /<app-planner-cards[^>]*mo-fade/);
+  assert.match(await read('styles/home-desk.scss'), /\.home-ag__week:not\(\.home-ag__week--rows\) > \.home-ag__day \{ min-height: 132px;/);
+});

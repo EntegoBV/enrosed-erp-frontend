@@ -57,7 +57,6 @@ app-home-website, app-home-markt { display: contents; }
 .home-w--phone .home-w__value { font-size: 22px; }
 .home-w__value--none { color: var(--muted-2); }
 .home-w__line { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
-.home-w__line.is-warn { color: var(--warn); font-weight: 600; }
 .home-w__delta { color: var(--muted); font-size: 12px; font-weight: 600; }
 .home-w__delta.is-up { color: var(--ok); }
 .home-w__delta.is-down { color: var(--warn); }
@@ -102,7 +101,6 @@ app-home-website, app-home-markt { display: contents; }
   .home-w__split--kv { grid-template-columns: minmax(0, 1fr); }
   .home-w--desk .home-w__split--kv .home-w__kv { max-width: none; }
 }
-.home-w--phone .home-w__kv { gap: 3px; }
 .home-w--phone .home-w__kv dt { font-size: 12px; }
 .home-w--phone .home-w__kv dd { font-size: 12.5px; }
 

@@ -35,7 +35,6 @@ app-home-desk-agenda { display: block; }
 .home-desk-status__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .home-desk-status > :not(.home-desk-status__text) { flex: none; }
 .home-desk-status button { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 750; text-decoration: underline; cursor: pointer; }
-.btn.home-desk__new { gap: 5px; }
 
 /* ---- layout: 680-899 one column in the fixed order */
 .home-desk__top { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'todo' 'kas' 'verkoop' 'resultaat' 'inkoop';
@@ -69,14 +68,14 @@ app-home-desk-agenda { display: block; }
 .home-desk__more > app-dashboard-search-console { grid-column: 1 / -1; }
 .home-desk__more .search-summary { border-radius: 16px; }
 .home-desk__placeholder { min-height: 180px; }
-.home-desk__more > .home-desk__placeholder:not(.home-desk__placeholder--strip):nth-last-child(2) { grid-column: 1 / -1; }
-.home-desk__placeholder--strip { grid-column: 1 / -1; min-height: 58px; }
+.home-desk__placeholder--wide, .home-desk__placeholder--strip { grid-column: 1 / -1; }
+.home-desk__placeholder--strip { min-height: 58px; }
 /* Meer cijfers: a plain line over the second grid; the link is the way to every analysis (the old home's "Alle analyses ›"). */
 .home-desk__more-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 2px -6px; }
 .home-desk__more-head .wk-link { font-size: 13px; white-space: nowrap; }
 @media (min-width: 1280px) {
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .home-desk__more > app-dashboard-search-console, .home-desk__more > .home-desk__placeholder:not(.home-desk__placeholder--strip):nth-last-child(2) { grid-column: span 2; }
+  .home-desk__more > app-dashboard-search-console, .home-desk__placeholder--wide { grid-column: span 2; }
 }
 
 /* ---- Vandaag te doen and its rows (the card and the Alle sheet). Scoped to the desk page: the phone's task
@@ -123,7 +122,7 @@ app-home-desk-agenda { display: block; }
   .home-task__go:focus-visible::after { outline: 2px solid var(--rose); outline-offset: -2px; }
   .home-task__sub { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12.5px; }
   .home-task__sub > .wk-pill { flex: none; }
-  .home-task__go, .home-task__context, .home-todo__titles, .home-ag__pin-text, .home-ag__chip small > span:not(.home-ag__amt) {
+  .home-task__go, .home-task__context, .home-todo__titles, .home-ag__pin-text, .home-ag__chip:not(.is-geld) small > span:not(.home-ag__amt) {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-task__value { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .home-task__value.is-none { color: var(--muted-2); font-weight: 500; }
@@ -159,6 +158,7 @@ app-home-desk-agenda { display: block; }
 .home-ag__day:first-child { border: 0; }
 .home-ag__day.is-today { background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); }
 .home-ag__day.is-weekend { background: var(--surface-2); }
+.home-ag__day.is-empty .home-ag__empty { color: var(--muted-2); }
 .home-ag__dh { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .home-ag__dh b { color: var(--ink); font-size: 18px; font-weight: 750; }
 .is-today .home-ag__dh b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--rose); color: #fff; font-size: 15px; }
@@ -176,19 +176,30 @@ app-home-desk-agenda { display: block; }
 .home-ag__chip b { display: -webkit-box; overflow: hidden; font-weight: 650; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .home-ag__chip small { display: flex; gap: 4px; min-width: 0; color: var(--muted); font-size: 11.5px; }
 .home-ag__amt { flex: none; color: var(--ink-2); font-weight: 650; white-space: nowrap; }
+/* A money chip: the amount (never cut) and its term over two lines at most, then the party on one (design §2.3). */
+.home-ag__chip.is-geld small { display: -webkit-box; overflow: hidden; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.home-ag__chip.is-geld .home-ag__amt { display: inline; margin-right: 4px; }
+.home-ag__party { display: block; min-width: 0; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .home-ag__empty { margin: 0; color: var(--muted-2); font-size: 12px; }
 .home-ag__after { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 11px 18px; border-top: 1px solid var(--line); font-size: 12.5px; }
 .home-ag__after > b { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .home-ag__more { padding: 2px 0; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .home-ag__after > button { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none; color: var(--ink-2); font: inherit; cursor: pointer; }
 .home-ag__after > button:hover { color: var(--rose-dark); }
+/* Below 1280 the legend opens the foot line (N1). */
+.home-ag__after > .home-ag__legend { margin: 0 8px 0 0; }
+.home-ag__loading { margin: 0; padding: 14px 18px; color: var(--muted); font-size: 12.5px; }
+/* The home's Taken view: the card's own "Taken" heading is the segment's already (D8); its "n open" stays. */
+.home-ag .tasks-card > .card__head > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .home-ag__month { padding: 0 18px 16px; }
 .home-ag .tasks-card { border: 0; border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; box-shadow: none; }
-@media (min-width: 1000px) {
-  .home-ag__week { grid-template-columns: var(--ag-cols); }
-  .home-ag__day { min-height: 190px; border: 0; border-left: 1px solid var(--line); }
-}
-@media (max-width: 999.98px) {
-  .home-ag__day { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: start; gap: 10px; }
-  .home-ag__entries { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-}
+/* From 1280 (HomeWide): day columns, a busy day twice as wide as an empty one. */
+.home-ag__week:not(.home-ag__week--rows) { grid-template-columns: var(--ag-cols); }
+.home-ag__week:not(.home-ag__week--rows) > .home-ag__day { min-height: 132px; border: 0; border-left: 1px solid var(--line); }
+.home-ag__week:not(.home-ag__week--rows) > .home-ag__day:first-child { border-left: 0; }
+/* Below 1280: one row per busy day and one per run of empty days ("20–22 di–do · Niets gepland"). */
+.home-ag__week--rows > .home-ag__day { display: grid; grid-template-columns: 118px minmax(0, 1fr); align-items: start; gap: 12px; }
+.home-ag__week--rows .home-ag__dh { margin: 0; padding-top: 2px; }
+.home-ag__week--rows .home-ag__entries { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.home-ag__week--rows > .home-ag__day.is-empty { align-items: center; padding-block: 8px; }
+.home-ag__week--rows .is-run .home-ag__dh b { font-size: 15px; }
