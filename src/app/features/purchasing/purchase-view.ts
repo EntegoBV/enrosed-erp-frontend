@@ -60,7 +60,7 @@ import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
 import {
-  STEP_BUTTON, costsAppliedFor, costsSupersededFor, landedTile, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
+  STEP_BUTTON, costsAppliedFor, costsSupersededFor, countWords, landedTile, lineCount, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -157,7 +157,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               } @else if (isDdp()) {
                 <div class="mpo-fillrow"><small>Prijsbasis</small><span class="mpo-fillrow__line"><strong>DDP</strong><small>transport en rechten in de prijs</small></span></div>
               } @else {
-                <div class="mpo-fillrow"><small>Productregels</small><span class="mpo-fillrow__line"><strong>{{ data.costing.lines.length }} regels</strong></span></div>
+                <div class="mpo-fillrow"><small>Productregels</small><span class="mpo-fillrow__line"><strong>{{ lineCount(data.costing.lines.length) }}</strong></span></div>
               }
             </div>
 
@@ -277,7 +277,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               <div class="mpo-head">
                 <span class="ios-tile ios-tile--lg ios-tile--soft tone-accent" aria-hidden="true"><app-icon name="products" [size]="19" /></span>
                 <div class="mpo-head__copy"><h2 id="mpo-products-title">Producten</h2>
-                  <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</p></div>
+                  <p>{{ lineCount(data.costing.lines.length) }} · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }} · {{ data.costing.totals.cartons | num }} dozen</p></div>
               </div>
 
               @if (isDdp()) {
@@ -286,7 +286,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <div class="mpo-fill__top">
                     <div class="mpo-fill__copy"><h3 class="mpo-fill__title">Geleverd DDP</h3>
                       <p class="mpo-fill__sub">{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen · transport en rechten in de prijs</p></div>
-                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} st</strong>
+                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }}</strong>
                   </div>
                 </section>
               } @else if (data.costing.containerFill; as fill) {
@@ -1385,10 +1385,9 @@ export class PurchaseView {
 
   readonly amountModes: SegmentOption[] = [{ id: 'total', label: 'Totaal' }, { id: 'piece', label: 'Per stuk' }];
   /** Lading in the container's own word (F18): stuks, displays, or both. */
-  readonly ladingWord = computed(() => {
-    const basis = this.view()?.reconciliation?.totals?.setBasis;
-    return basis === 'DISPLAY' ? 'displays' : basis === 'MIXED' ? 'stuks en displays' : 'stuks';
-  });
+  readonly ladingWord = computed(() => countWords(this.view()?.reconciliation?.totals?.setBasis).plural);
+  readonly countWords = countWords;
+  readonly lineCount = lineCount;
   /** Schade of tekort: what happened, as the kit's segmented (Inkoop redesign I5). */
   readonly issueKinds: SegmentOption[] = [{ id: 'DAMAGED', label: 'Beschadigd' }, { id: 'SHORT', label: 'Minder aangekomen' }];
   readonly lineModes: SegmentOption[] = [{ id: 'piece', label: 'Per stuk' }, { id: 'line', label: 'Hele regel' }];

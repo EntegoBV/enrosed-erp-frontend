@@ -8,7 +8,7 @@ import type { NacalcHeadline } from '../src/app/features/purchasing/purchase-nac
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import {
   HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance, parseTab,
-  countWords, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  countWords, lineCount, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
   type ActionsMenuState, type AskedStep, type PhoneTab, type StepHandoff,
 } from '../src/app/features/purchasing/purchase-phone-model.ts';
@@ -423,8 +423,21 @@ test('nothing the module can say uses "begroot"', async () => {
 });
 
 test('the count word follows what the container holds: Stuks, Displays or Eenheden (Inkoop redesign F18)', () => {
-  assert.deepEqual(countWords('DISPLAY'), { label: 'Displays', plural: 'displays' });
-  assert.deepEqual(countWords('MIXED'), { label: 'Eenheden', plural: 'stuks en displays' });
-  assert.deepEqual(countWords('PIECE'), { label: 'Stuks', plural: 'stuks' });
-  assert.deepEqual(countWords(undefined), { label: 'Stuks', plural: 'stuks' }, 'an older server without setBasis counts pieces');
+  assert.deepEqual(countWords('DISPLAY'), { label: 'Displays', plural: 'displays', short: 'displays' });
+  assert.deepEqual(countWords('MIXED'), { label: 'Eenheden', plural: 'stuks en displays', short: 'eenheden' });
+  assert.deepEqual(countWords('PIECE'), { label: 'Stuks', plural: 'stuks', short: 'st' });
+  assert.deepEqual(countWords(undefined), { label: 'Stuks', plural: 'stuks', short: 'st' }, 'an older server without setBasis counts pieces');
+  assert.equal(lineCount(1), '1 regel');
+  assert.equal(lineCount(0), '0 regels');
+  assert.equal(lineCount(12), '12 regels');
+});
+
+test('one counting word per container: no container total says stuks, st or regels on its own (F18)', async () => {
+  const read = (name: string) => readFile(new URL(`../src/app/features/purchasing/${name}`, import.meta.url), 'utf8');
+  for (const name of ['purchase-desk.ts', 'purchase-view.ts', 'purchase-editor.ts']) {
+    const source = await read(name);
+    assert.doesNotMatch(source, /data\.costing\.totals\.pieces \| num \}\} (st|stuks)\b/, `${name}: the container's pieces in countWords`);
+    assert.doesNotMatch(source, /data\.costing\.totals\.pieces \| num\) \+ ' st'/, `${name}: the phone Lading tile too`);
+    assert.doesNotMatch(source, /lines\.length \}\} regels/, `${name}: lineCount, so one line reads '1 regel'`);
+  }
 });

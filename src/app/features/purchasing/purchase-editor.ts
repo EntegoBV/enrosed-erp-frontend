@@ -109,7 +109,7 @@ import { landedRangeText, purchaseLineSections } from './purchase-product-line-g
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
-  STEP_BUTTON, actionsMenu, editNextStep, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  STEP_BUTTON, actionsMenu, countWords, editNextStep, lineCount, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -182,7 +182,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             <div class="mpo-tiles">
               <!-- The fill as the value, the pieces below it: an overfull container's '103% · 12.400 st' never runs past the tile. -->
               @let ladingFill = isDdp() ? null : data.costing.containerFill;
-              @let ladingPieces = (data.costing.totals.pieces | num) + ' st';
+              @let ladingPieces = (data.costing.totals.pieces | num) + ' ' + countWords(data.reconciliation?.totals?.setBasis).short;
               @let lading = ladingFill ? (ladingFill.fillPercent | num: 0) + '%' : ladingPieces;
               <button class="mpo-tile mpo-tile--neutral" type="button" [attr.aria-label]="'Lading ' + lading + (ladingFill ? ', ' + ladingPieces : '') + ', naar Producten'"
                       (click)="jumpToSection('purchase-products-section')">
@@ -375,7 +375,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
               <div class="mpo-head">
                 <span class="ios-tile ios-tile--lg ios-tile--soft tone-accent" aria-hidden="true"><app-icon name="products" [size]="19" /></span>
                 <div class="mpo-head__copy"><h2 id="mpo-edit-products-title">Producten</h2>
-                  <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.cartons | num }} dozen</p></div>
+                  <p>{{ lineCount(data.costing.lines.length) }} · {{ data.costing.totals.cartons | num }} dozen</p></div>
                 <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="isReceived()" (click)="openPicker()">＋ Product</button>
               </div>
 
@@ -384,7 +384,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   <div class="mpo-fill__top">
                     <div class="mpo-fill__copy"><h3 class="mpo-fill__title">Geleverd DDP</h3>
                       <p class="mpo-fill__sub">{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen · transport en rechten in de prijs</p></div>
-                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} st</strong>
+                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }}</strong>
                   </div>
                 </section>
               } @else if (data.costing.containerFill; as fill) {
@@ -620,14 +620,14 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
             <section class="ios-section" id="purchase-summary-section" tabindex="-1" aria-labelledby="mpo-summary-title">
               <div class="ios-section__head"><h2 id="mpo-summary-title">Totale kostprijs</h2>
-                <span class="ios-section__trail">{{ data.costing.totals.pieces | num }} st · {{ data.costing.totals.cartons | num }} dozen</span></div>
+                <span class="ios-section__trail">{{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }} · {{ data.costing.totals.cartons | num }} dozen</span></div>
               @if (isDdp()) {
                 <!-- DDP: the supplier's container, not ours - what we get is the volume and the count. -->
                 <div class="ios-card mpo-fill">
                   <div class="mpo-fill__top">
                     <div class="mpo-fill__copy"><h3 class="mpo-fill__title">Geleverd DDP</h3>
                       <p class="mpo-fill__sub">{{ data.costing.totals.cbm | cbm }} · {{ data.costing.totals.cartons | num }} dozen</p></div>
-                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} st</strong>
+                    <strong class="mpo-fill__pct">{{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }}</strong>
                   </div>
                 </div>
               } @else if (data.costing.containerFill; as fill) {
@@ -1450,6 +1450,9 @@ export class PurchaseEditor {
 
   readonly statusTone = statusTone;
   readonly statusText = statusLabel;
+  /** The container's counting word (F18) and '1 regel' / 'n regels', on the phone and the desk alike. */
+  readonly countWords = countWords;
+  readonly lineCount = lineCount;
   /** Schade of tekort: what happened, as the kit's segmented (the iOS sheets of Inkoop redesign I5). */
   readonly issueKinds: SegmentOption[] = [{ id: 'DAMAGED', label: 'Beschadigd' }, { id: 'SHORT', label: 'Minder aangekomen' }];
   readonly STEP_BUTTON = STEP_BUTTON;

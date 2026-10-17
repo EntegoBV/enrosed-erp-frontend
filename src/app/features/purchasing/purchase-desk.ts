@@ -50,7 +50,7 @@ import { Icon } from '../../shared/icon';
 import { elementWidth } from '../../shared/workspace-layout';
 import { containerNumberHint } from './container-name';
 import { PAYEE_LABEL } from './purchase-payment-ledger';
-import { costsSupersededFor, countWords, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
+import { costsSupersededFor, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
@@ -165,7 +165,7 @@ export class PurchaseDeskStyles {}
             <div class="pdk-tile">
               <span class="pdk-tile__label">{{ countWords(data.reconciliation?.totals?.setBasis).label }}</span>
               <span class="pdk-tile__value">{{ data.costing.totals.pieces | num }}</span>
-              <span class="pdk-tile__sub"><span class="pdk-nw">{{ data.costing.totals.cartons | num }} dozen</span> · <span class="pdk-nw">{{ data.costing.lines.length }} regels</span></span>
+              <span class="pdk-tile__sub"><span class="pdk-nw">{{ data.costing.totals.cartons | num }} dozen</span> · <span class="pdk-nw">{{ lineCount(data.costing.lines.length) }}</span></span>
             </div>
             <div class="pdk-tile">
               <span class="pdk-tile__label">Goederen</span>
@@ -281,7 +281,7 @@ export class PurchaseDeskStyles {}
             <div class="desk-table-bar">
               <div>
                 <h2>Producten</h2>
-                <p>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).plural }} · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
+                <p>{{ lineCount(data.costing.lines.length) }} · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).plural }} · {{ data.costing.totals.cartons | num }} dozen · {{ data.costing.totals.cbm | cbm }}</p>
               </div>
               <span class="per-toggle" role="group" aria-label="Bedragen tonen als">
                 <button type="button" [class.on]="perPiece()" [attr.aria-pressed]="perPiece()" (click)="perPiece.set(true)">Per stuk</button>
@@ -1024,7 +1024,7 @@ export class PurchaseDeskStyles {}
         <app-sheet [title]="prompt.to === 'ONDERWEG' ? 'Container vertrokken' : 'Bestelling vastleggen'" (closed)="stepPrompt.set(null)">
           <div body>
             @if (prompt.to === 'ONDERWEG') {
-              <p>De container van <b>{{ supplierName() }}</b> gaat op <b>onderweg</b>: {{ data.costing.totals.pieces | num }} stuks in {{ data.costing.totals.cartons | num }} dozen,
+              <p>De container van <b>{{ supplierName() }}</b> gaat op <b>onderweg</b>: {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).plural }} in {{ data.costing.totals.cartons | num }} dozen,
                 verwacht {{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : 'op een nog onbekende datum' }}.</p>
               <div class="field mt-12">
                 <label for="step-tracking">Track &amp; trace <span class="opt"></span></label>
@@ -1048,7 +1048,7 @@ export class PurchaseDeskStyles {}
             } @else {
               <p>Hiermee leg je de bestelling bij <b>{{ supplierName() }}</b> vast: de aantallen en prijzen van dit moment gelden als besteld.</p>
               <dl class="desk-facts mt-12">
-                <div><dt>Producten</dt><dd>{{ data.costing.lines.length }} regels · {{ data.costing.totals.pieces | num }} stuks · {{ data.costing.totals.cartons | num }} dozen</dd></div>
+                <div><dt>Producten</dt><dd>{{ lineCount(data.costing.lines.length) }} · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).plural }} · {{ data.costing.totals.cartons | num }} dozen</dd></div>
                 <div><dt>Goederen</dt><dd>{{ data.costing.totals.goodsEur | eur }} <small>{{ data.costing.totals.goodsUsd | cur: 'USD' }}</small></dd></div>
                 <div><dt>Totaal geland</dt><dd>{{ data.costing.totals.totalEur | eur }} <small>{{ landedUnitText() }}</small></dd></div>
                 <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }}</dd></div>
@@ -1444,7 +1444,6 @@ export class PurchaseDesk extends PurchaseEditor {
 
   readonly statusLabel$ = STATUS_LABEL;
   readonly containerNumberHint = containerNumberHint;
-  readonly countWords = countWords;
 
   /* ---- the summary card (Inkoop redesign I2): the phone's helpers, so desk and phone never disagree */
   /** Concept, Besteld, Vertrokken, Ontvangen with the day each was reached (Ontvangen 'verwacht …' until it happened). */
