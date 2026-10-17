@@ -449,9 +449,13 @@ export class ActivityPage {
       if (this.selectedKey() !== null) { this.selectedKey.set(null); event.preventDefault(); }
       return;
     }
+    /* On a row, the keys act from that row (focus can move with Tab without selecting). */
+    const focusedRow = target?.classList.contains('log-row') ? Number(target.dataset['row']) : null;
     if (event.key === 'Enter') {
-      /* A focused button (a row, a chip, Openen) does its own job. */
-      if (target && target !== this.document.body && !target.classList.contains('log-row')) return;
+      /* A focused button (a chip, Openen) does its own job. */
+      if (target && target !== this.document.body && focusedRow === null) return;
+      /* A focused row that is not the selected one: its own click selects it first. */
+      if (focusedRow !== null && focusedRow !== this.selectedKey()) return;
       const row = this.selectedRow();
       const route = row ? activityRoute(row.events[0]) : null;
       if (row && route) {
@@ -460,7 +464,7 @@ export class ActivityPage {
       }
       return;
     }
-    this.step(event.key === 'ArrowDown' ? 1 : -1);
+    this.step(event.key === 'ArrowDown' ? 1 : -1, focusedRow ?? this.selectedKey());
     event.preventDefault();
   }
 
@@ -471,10 +475,10 @@ export class ActivityPage {
     }
   }
 
-  private step(direction: 1 | -1): void {
+  private step(direction: 1 | -1, from: number | null): void {
     const rows = this.rows();
     if (!rows.length) return;
-    const index = rows.findIndex((row) => row.key === this.selectedKey());
+    const index = rows.findIndex((row) => row.key === from);
     const next = rows[index < 0 ? (direction > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + direction))];
     this.selectedKey.set(next.key);
     requestAnimationFrame(() => {
