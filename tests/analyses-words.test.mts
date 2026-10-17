@@ -44,3 +44,33 @@ test('whole euros carry the minus before the sign', () => {
   assert.equal(eurShort(0), '€ 0');
   assert.equal(eurShort(-0.4), '€ 0');
 });
+
+test('Overzicht: the Inkoop digest in whole euros with the card\'s names (critique N6)', async () => {
+  const { paymentResultLine, openContainersLine } = await import('../src/app/features/analyses/analyses-words.ts');
+  assert.equal(paymentResultLine(-3620.53, 3), 'betaalresultaat − € 3.621');
+  assert.equal(paymentResultLine(412.2, 3), 'netto extra opbrengst € 412');
+  assert.equal(paymentResultLine(-10, 0), null, 'no eligible container: no line');
+  assert.equal(openContainersLine(10), 'Nog te betalen op 10 containers');
+  assert.equal(openContainersLine(1), 'Nog te betalen op 1 container');
+});
+
+test('Overzicht: Markt, Bezoekers and the Aandacht rows (critique N7, N17)', async () => {
+  const { marketLines, dollarValue, deltaMeta, varianceAttention, advanceTermsSub, overdueSub } = await import('../src/app/features/analyses/analyses-words.ts');
+  assert.deepEqual(marketLines(7.4993, -4.93, 6), ['€ 1 = ¥ 7,4993', 'euro 4,9 % zwakker tegenover de dollar (6 mnd)']);
+  assert.deepEqual(marketLines(7.4993, 2.04, 3), ['€ 1 = ¥ 7,4993', 'euro 2,0 % sterker tegenover de dollar (3 mnd)']);
+  assert.deepEqual(marketLines(7.5, null, 6), ['€ 1 = ¥ 7,5000', null]);
+  assert.equal(dollarValue(1.12081), '$ 1,1208');
+  assert.deepEqual(deltaMeta(1877, 561), { text: '▲ 235 %', tone: 'ok' });
+  assert.deepEqual(deltaMeta(80, 100), { text: '▼ 20 %', tone: 'warn' });
+  assert.equal(deltaMeta(10, 0), null);
+  assert.deepEqual(varianceAttention([{ name: 'Half Heart Mix Container', missingPieces: 108, damagedPieces: 0 }]),
+    { title: 'Order met ontvangstafwijkingen', sub: 'Half Heart Mix Container · 108 st ontbreken' });
+  assert.deepEqual(varianceAttention([{ name: 'A', missingPieces: 100, damagedPieces: 3 }, { name: 'B', missingPieces: 8, damagedPieces: 0 }]),
+    { title: 'Orders met ontvangstafwijkingen', sub: '2 orders · 108 st ontbreken · 3 st beschadigd' });
+  assert.equal(advanceTermsSub([{ name: 'PO-2026-013', terms: 1, nextDue: '2026-10-30' }, { name: 'PO-2026-011', terms: 2, nextDue: '2026-11-15' }], '2026-10-16'),
+    '3 termijnen · volgende 30 okt', 'two long aliases do not fit a row');
+  assert.equal(advanceTermsSub([{ name: 'Half Heart Mix Container', terms: 2, nextDue: '2027-01-15' }, { name: 'X', terms: 0, nextDue: null }], '2026-10-16'),
+    'Half Heart Mix Container · volgende 15 jan 2027');
+  assert.equal(overdueSub(0), 'Niets na de vervaldatum');
+  assert.equal(overdueSub(1), '1 factuur na de vervaldatum');
+});

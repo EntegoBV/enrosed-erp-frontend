@@ -98,3 +98,79 @@ export function rangeLabelShort(from: string | null | undefined, to: string | nu
 export function daysLabel(days: number): string {
   return plural(days, 'dag', 'dagen');
 }
+
+/* ---------- Overzicht (design §3.2, critique B2, B5, N6, N7, N17): the digest and Aandacht rows */
+
+/** "betaalresultaat − € 3.621" / "netto extra opbrengst € 412" (the Containerkost card's names), none without eligible containers. */
+export function paymentResultLine(netResultEur: number, eligibleCount: number): string | null {
+  if (eligibleCount <= 0) return null;
+  return netResultEur < 0 ? `betaalresultaat ${eurShort(netResultEur)}` : `netto extra opbrengst ${eurShort(netResultEur)}`;
+}
+
+/** "Nog te betalen op 10 containers". */
+export function openContainersLine(containerCount: number): string {
+  return `Nog te betalen op ${plural(containerCount, 'container', 'containers')}`;
+}
+
+/** The euro against the yuan and the dollar: line 1 "€ 1 = ¥ 7,4993", line 2 "euro 4,9 % zwakker tegenover de dollar (6 mnd)". */
+export function marketLines(latestCny: number, usdChangePct: number | null, months: number): [string, string | null] {
+  const yuan = `€ 1 = ¥ ${latestCny.toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  if (usdChangePct === null || !Number.isFinite(usdChangePct)) return [yuan, null];
+  const pct = Math.abs(usdChangePct).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const word = usdChangePct > 0 ? 'sterker' : usdChangePct < 0 ? 'zwakker' : 'even sterk';
+  return [yuan, usdChangePct === 0 ? `euro even sterk tegenover de dollar (${months} mnd)` : `euro ${pct} % ${word} tegenover de dollar (${months} mnd)`];
+}
+
+/** "$ 1,1208". */
+export function dollarValue(latestUsd: number): string {
+  return `$ ${latestUsd.toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
+/** "▲ 234 %", "▼ 12 %", "= 0 %"; null without a period to compare with. */
+export function deltaMeta(current: number, previous: number): { text: string; tone: 'ok' | 'warn' | null } | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) return null;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct > 0) return { text: `▲ ${wholeNumber(pct)} %`, tone: 'ok' };
+  if (pct < 0) return { text: `▼ ${wholeNumber(Math.abs(pct))} %`, tone: 'warn' };
+  return { text: '= 0 %', tone: null };
+}
+
+export interface VarianceOrderDigest {
+  name: string;
+  missingPieces: number;
+  damagedPieces: number;
+}
+
+/** The Aandacht row of receipt variances: title by count, the one order by name, or the count with the pieces. */
+export function varianceAttention(orders: readonly VarianceOrderDigest[]): { title: string; sub: string } {
+  const missing = orders.reduce((sum, order) => sum + order.missingPieces, 0);
+  const damaged = orders.reduce((sum, order) => sum + order.damagedPieces, 0);
+  const pieces = [missing ? `${wholeNumber(missing)} st ontbreken` : '', damaged ? `${wholeNumber(damaged)} st beschadigd` : ''].filter(Boolean).join(' · ');
+  if (orders.length === 0) return { title: 'Orders met ontvangstafwijkingen', sub: 'Geen tekorten of schade dit jaar' };
+  if (orders.length === 1) return { title: 'Order met ontvangstafwijkingen', sub: [orders[0].name, pieces].filter(Boolean).join(' · ') };
+  return { title: 'Orders met ontvangstafwijkingen', sub: [plural(orders.length, 'order', 'orders'), pieces].filter(Boolean).join(' · ') };
+}
+
+export interface AdvanceTermDigest {
+  name: string;
+  terms: number;
+  nextDue: string | null;
+}
+
+/**
+ * "Voorschottermijnen te factureren" (critique N7): "3 termijnen · volgende 30 okt";
+ * with one container its name instead: "Half Heart Mix Container · volgende 30 okt".
+ */
+export function advanceTermsSub(containers: readonly AdvanceTermDigest[], today: string): string {
+  const open = containers.filter((container) => container.terms > 0);
+  if (!open.length) return 'Geen geplande termijnen open';
+  const next = open.map((container) => container.nextDue).filter((day): day is string => !!day).sort()[0] ?? null;
+  const nextText = next ? ` · volgende ${dayMonth(next, today.slice(0, 4))}` : '';
+  if (open.length === 1) return `${open[0].name}${nextText}`;
+  return `${plural(open.reduce((sum, container) => sum + container.terms, 0), 'termijn', 'termijnen')}${nextText}`;
+}
+
+/** "Niets na de vervaldatum" / "1 factuur na de vervaldatum" / "3 facturen na de vervaldatum". */
+export function overdueSub(count: number): string {
+  return count === 0 ? 'Niets na de vervaldatum' : `${plural(count, 'factuur', 'facturen')} na de vervaldatum`;
+}
