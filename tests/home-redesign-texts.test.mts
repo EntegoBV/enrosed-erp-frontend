@@ -90,6 +90,28 @@ test('H2: the Ook nog preview and the footer that says how many are for today (B
   assert.doesNotMatch(await read('styles/home-desk.scss'), /home-task--peek/);
 });
 
+test('fix round 2: a calm day without containers leaves no hole; Te doen shares the rest and Inkoop centres its empty state', async () => {
+  const inkoop = await widget('home-inkoop');
+  /* The one line stays (phone, 900-1279); the icon, the second line and the link only show where the wide desk gives room. */
+  assert.match(inkoop, /<div class="home-w__none">\s*<span class="home-w__none-icon" aria-hidden="true"><app-icon name="purchase" \[size\]="18" \/><\/span>\s*<p class="home-w__empty">Geen containers besteld of onderweg<\/p>/);
+  assert.match(inkoop, /<p class="home-w__none-text">Een bestelde container verschijnt hier met zijn verwachte aankomst\.<\/p>/);
+  assert.match(inkoop, /<a class="wk-link home-w__none-link home-w__raise" routerLink="\/purchasing">Inkooporders <span aria-hidden="true">›<\/span><\/a>/);
+  const widgets = await read('styles/home-widgets.scss');
+  assert.match(widgets, /\.home-w__none > :is\(\.home-w__none-icon, \.home-w__none-text, \.home-w__none-link\) \{ display: none; \}/);
+  const css = await read('styles/home-desk.scss');
+  const start = css.indexOf('@media (min-width: 1280px) {\n  .home-desk__top {');
+  const wide = css.slice(start, css.indexOf('\n}\n', start));
+  assert.ok(start > 0, 'the 1280 block of the top grid');
+  assert.match(wide, /\.home-desk__main \.home-todo \{ display: flex; flex: 2 1 auto; flex-direction: column; \}/);
+  assert.match(wide, /\.home-desk__main \.home-todo > \.home-todo__foot \{ margin-top: auto; \}/);
+  assert.match(wide, /\.home-desk__main \.home-w--inkoop \{ flex-grow: 3; \}/);
+  assert.match(wide, /\.home-desk__main \.home-w--inkoop > \.home-w__none \{ justify-items: center; gap: 6px; margin-block: auto; text-align: center; \}/);
+  assert.match(wide, /\.home-desk__main \.home-w--inkoop > \.home-w__none \+ \.home-w__figs \{ margin-top: 0; \}/);
+  for (const part of ['icon', 'text', 'link']) assert.match(wide, new RegExp(`\\.home-w__none > \\.home-w__none-${part} \\{ display: `));
+  /* Nothing of it below 1280: the 900-1279 and phone layouts keep the one line. */
+  assert.equal(css.slice(0, start).match(/home-w__none|home-todo__foot \{ margin-top/g), null);
+});
+
 test('H5: the phone rows read whole and the footer says what the desk says', async () => {
   const cells = await read('app/features/dashboard/home-task-cells.ts');
   assert.match(cells, /class="ios-cell__title ios-cell__title--strong ios-cell__title--2"/);

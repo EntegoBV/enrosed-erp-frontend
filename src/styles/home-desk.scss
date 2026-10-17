@@ -7,9 +7,9 @@
    the bell or a menu (the kit's trap rule). From 1280 px the top is two
    columns that each stack their own cards - Te doen with Inkoop under it,
    and a 432 px column of Kas, Verkoop and Resultaat - and both end on one
-   line: the last card of each takes the rest, its figures pinned to its
-   foot, and on a short day the first Ook nog rows fill Te doen (the
-   preview). 900-1279 px: Te doen full width, Kas over two rows beside
+   line: the cards share the rest, their figures (Te doen's foot) pinned
+   to their foot, and on a short day the first Ook nog rows fill Te doen
+   (the preview). 900-1279 px: Te doen full width, Kas over two rows beside
    Verkoop and Resultaat, Inkoop full width. 680-899 px: one column.
    Titles and contexts of the task rows and the agenda chips may cut by
    design (their full text is in title); amounts, counts and chips never
@@ -52,8 +52,8 @@ app-home-desk-agenda { display: block; }
   .home-desk__top :is(.home-w--kas, .home-w--resultaat) { display: flex; flex-direction: column; align-self: stretch; }
   .home-desk__top .home-w--kas > .home-kas__figs, .home-desk__top .home-w--resultaat > .home-w__split { margin-top: auto; }
 }
-/* From 1280: two columns that end on one line. Left, Inkoop takes the rest; right, Kas, Verkoop and Resultaat share
-   it - each keeps its figure row at its foot - so a long Te doen (seven rows, no preview) leaves three small bands
+/* From 1280: two columns that end on one line. Left, Te doen and Inkoop share the rest (below); right, Kas, Verkoop and
+   Resultaat share it - each keeps its figure row at its foot - so a long Te doen (seven rows, no preview) leaves three small bands
    instead of one hole (critique B5: no band over 70 px at 0, 1, 3, 5 or 7 rows). */
 @media (min-width: 1280px) {
   .home-desk__top { grid-template-columns: minmax(0, 1fr) 432px; grid-template-areas: none; align-items: stretch; }
@@ -62,6 +62,20 @@ app-home-desk-agenda { display: block; }
   .home-desk__main .home-w--inkoop, .home-desk__figs :is(.home-w--kas, .home-w--verkoop, .home-w--resultaat) { display: flex; flex: 1 1 auto; flex-direction: column; }
   .home-desk__main .home-w--inkoop > .home-w__figs, .home-desk__figs :is(.home-w--kas > .home-kas__figs, .home-w--verkoop > .home-w__figs, .home-w--resultaat > .home-w__split) {
     margin-top: auto; }
+  /* Left, Te doen takes two parts of the rest and Inkoop three, Te doen's foot at its bottom (fix round 2): a calm day
+     without containers (one task, two Ook nog rows) then leaves bands of about 65 px instead of one of 277 px inside
+     Inkoop. An Inkoop without containers centres its line as the kit's empty state (wk-empty's sizes): an icon, a
+     second line and the way to the orders. */
+  .home-desk__main .home-todo { display: flex; flex: 2 1 auto; flex-direction: column; }
+  .home-desk__main .home-todo > .home-todo__foot { margin-top: auto; }
+  .home-desk__main .home-w--inkoop { flex-grow: 3; }
+  .home-desk__main .home-w--inkoop > .home-w__none { justify-items: center; gap: 6px; margin-block: auto; text-align: center; }
+  .home-desk__main .home-w--inkoop > .home-w__none + .home-w__figs { margin-top: 0; }
+  .home-desk__main .home-w--inkoop > .home-w__none > .home-w__empty { color: var(--ink-2); font-size: 15px; font-weight: 650; }
+  .home-desk__main .home-w--inkoop > .home-w__none > .home-w__none-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 4px;
+    border-radius: 14px; background: var(--surface-2); color: var(--muted); }
+  .home-desk__main .home-w--inkoop > .home-w__none > .home-w__none-text { display: block; max-width: 360px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .home-desk__main .home-w--inkoop > .home-w__none > .home-w__none-link { display: inline-flex; margin-top: 2px; }
 }
 
 /* ---- Meer cijfers: the cards of a row end on one line (as in the mock: no beige hole under a short card); the content

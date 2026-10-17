@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Icon } from '../../../shared/icon';
 import type { PurchaseOrderView } from '../../../core/api/models';
 import { containerName } from '../../purchasing/container-name';
 import { HomeData } from '../home-data';
@@ -27,7 +28,7 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
 @Component({
   selector: 'app-home-inkoop',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, HomeWidget],
+  imports: [RouterLink, HomeWidget, Icon],
   template: `
     <app-home-w [variant]="variant()" kind="inkoop" title="Inkoop & containers" sub="besteld en onderweg" icon="purchase" tone="amber"
                 link="/analyses/purchasing" [wide]="true" [state]="state()">
@@ -57,7 +58,14 @@ const groupOf = (rows: readonly PurchaseOrderView[]): Group => ({
             </ul>
           }
         } @else {
-          <p class="home-w__empty">Geen containers besteld of onderweg</p>
+          <!-- One muted line; where the wide desk gives the card room (home-desk.scss, from 1280 px) the line centres
+               with its icon, a second line and the way to the orders, so a calm day leaves no hole. -->
+          <div class="home-w__none">
+            <span class="home-w__none-icon" aria-hidden="true"><app-icon name="purchase" [size]="18" /></span>
+            <p class="home-w__empty">Geen containers besteld of onderweg</p>
+            <p class="home-w__none-text">Een bestelde container verschijnt hier met zijn verwachte aankomst.</p>
+            <a class="wk-link home-w__none-link home-w__raise" routerLink="/purchasing">Inkooporders <span aria-hidden="true">›</span></a>
+          </div>
         }
         <div class="home-w__figs home-w__figs--3">
           <div class="home-w__fig"><span class="home-w__fig-label">Besteld</span><strong class="home-w__fig-value">{{ whole(ordered().eur) }}</strong>
