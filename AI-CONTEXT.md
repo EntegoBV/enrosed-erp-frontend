@@ -41,12 +41,14 @@ digital signing, change proposals) served by the same app.
   prices, margins and purchase figures are always visible to staff; only
   PDF choices (internal vs supplier/customer) differ. Rebuilding a
   customer-safe mode is an owner decision.
-- Floating pill chrome: tabbar and action bars share 20 px radius. The
-  page bar (`app-page-header`, styles/shell.scss) is the 52 px desk toolbar
-  and the iOS 26 phone bar; on the phone its glass sits on
-  `.appbar::before` (blur on the bar itself creates a containing block
-  that breaks `position:fixed` children - learned the hard way with the
-  notification sheet). See "Shell and motion".
+- One shell, the workspaces' look everywhere (redesign 2026-10-16, see
+  "Shell and motion"): a dark source-list sidebar on the desk (the wk-side
+  colours), the 52 px toolbar with a crumb, and on the phone the iOS 26
+  large title condensing into a glass bar, the kit's floating 60 px tab bar
+  and the round '+' beside it. The page bar's glass sits on
+  `.appbar::before` (blur on the bar itself creates a containing block that
+  breaks `position:fixed` children - learned the hard way with the
+  notification sheet).
 - Hand-drawn SVG icon set in `shared/icon.ts` (24-grid, round caps).
 - Skeleton loaders (`shared/skeleton.ts`: list/card/lines/stats, and
   table/group since 2026-10-16) instead of "Laden…" - the layout never
@@ -114,14 +116,26 @@ the workspaces. All CSS lives in one global partial,
 The foundation of the 2026-10-16 redesign (contract:
 scratchpad redesign/foundation/design.md + critique.md; the critique wins).
 Areas build on these pieces and never restyle `.sidebar*`, `.appbar*`,
-`.tabbar*`, `.fab` or bare kit classes. Built so far: F0, F1, F2a, the desk
-toolbar (F5a-1), the phone header (F4a), the sidebar from NAV_GROUPS
-(F5a-2, light skin) and the AA contrast colours. Still to come from the
-foundation: sheet/toast leave and drag to dismiss (F2b), the dark sidebar
-skin, rail count chips, Meldingen foot item and skip link (F5a rest, F5b),
-the tab bar geometry and the '+' accessory (F4b), Meer on the kit (F6),
-phone push/pop (F3), 404 + aliases + route titles + badge refresh (F7a),
-login extras, Sneltoetsen, route progress, preloading (F7b).
+`.tabbar*`, `.fab` or bare kit classes; they use the inputs, tokens and kit
+pieces below. Every package is its own commit and reverts alone (F0
+helpers, F1 load, F1b deferred workspace sides, F2a motion and kit pieces,
+F2b sheet/toast leave, F5a desk chrome, F5b dark skin, F4a phone header,
+F4b tab bar and '+', F6 Meer, F7a 404/titles/badges/contrast, F3 phone
+push/pop, F7b login/Sneltoetsen/progress/preload). Files: styles/shell.scss
+(page header, sidebar functions, key cap), styles/shell-sidebar.scss (the
+dark skin, after shell), styles/shell-tabbar.scss (tab bar and '+', after
+the workspaces' phone partials), styles/motion.scss (tokens, sheets,
+confirm).
+
+**Initial bundle budget.** angular.json fails the production build above
+1 MB initial (styles.css, main and the shared chunks). The base was at
+972.9 kB; the foundation leaves it at about 934 kB because the workspace
+sides (Documenten & media, Kosten & bank, Website beheren and what they
+import, 66 kB) are `@defer` blocks in the shell now, and the shell's extras
+load lazily: the phone motion, the '/' and '?' keys and the route progress
+with preloading are install functions imported from their own effects in
+App, and Sneltoetsen is an `@defer` block. Keep new shell code out of the
+first screen the same way; area CSS in global partials counts against it.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -136,6 +150,28 @@ login extras, Sneltoetsen, route progress, preloading (F7b).
 - Utilities: `.mo-enter` / `.mo-leave` for rows the user adds or removes
   (`animate.enter="mo-enter"`, `animate.leave="mo-leave"`; never on data
   loads), `.mo-fade`. Page changes fade `.content` over `--dur-1`.
+- Sheets (F2b): app-sheet leaves through Angular's `animate.leave` (host
+  class `mo-leaving`; the host runs `mo-hold` so Angular waits): the
+  backdrop fades, the phone sheet slides down, the desk dialog fades and
+  shrinks, 220 / 120 ms. The component is destroyed at once (closing stays
+  synchronous) and the leaving overlay takes no taps. Toasts leave with
+  `mo-toast-out` (`animate.leave="mo-toast-leaving"`). Phone drag to
+  dismiss on the grab and the head (`shared/sheet-drag.ts`): starts after
+  8 px and never on a control (the × keeps its click), closes beyond
+  120 px or on a 0.6 px/ms flick, else springs back; no transform stays.
+  `Ui.confirm` renders `<app-sheet variant="ios">` with `.confirm-message`
+  and `.confirm-actions` (phone: stacked, the main choice on top).
+- Phone push, pop and tab (F3, `installNavMotion` in `core/platform/nav-motion.ts`, lazy): the
+  direction from `navDirection()`; right after the arriving page's first
+  render its blocks (`nav-motion-targets.ts`: `.content`, the large title,
+  the children of `.ios-page` / `.mpo-phone`, never a fixed bar, overlay or
+  anything holding one) slide 28 px in over `--dur-3` / `--ease-spring`, or
+  fade over `--dur-1` for a tab. It runs on the Web Animations API, not a
+  CSS class, so an element's own CSS animation never restarts, content
+  arriving later never slides, and nothing remains; `.main[data-nav]` is
+  set while it runs. Off on a desk, under reduced motion, and when a sheet
+  is open on arrival. Back navigations by URL pass `info: { nav: 'pop' }`
+  (NavHistory, IosNav).
 - Press: `scale(.97)` on touch only; desk buttons never shrink.
 - Reduced motion: tokens 0, one 0.01 ms cycle for anything left (loops
   stop), `scroll-behavior:auto`; `installReducedMotionScroll` (App) turns
@@ -167,13 +203,67 @@ host stays inline):
   circle with the red badge. `.content` right after a large title gets
   padding-top 4 px.
 
+**Desk sidebar** (`app.ts`, rendered from `NAV_GROUPS`; its functions in
+styles/shell.scss, its dark skin in styles/shell-sidebar.scss):
+- Dark skin (F5b): 248 px `--wk-side-bg`, logo inverted, Dashboard, five
+  accordion groups (one open, following the route; only a user toggle
+  animates, `sidebar--animate`; a closed list is `visibility:hidden`), a
+  hairline, the three workspace doors, then the foot: "Meldingen op dit
+  toestel" (`NAV_DEVICE`), six 18 px swatches, the user, the '?' key cap
+  (Sneltoetsen) and Afmelden. Counts are light accent chips
+  (`--side-count-bg` / `--side-count-ink`).
+- 680-1023: the 88 px rail (the E tile, icon over the short label; counts as
+  16 px chips capped at 9+, the login requests also on Meer); 680-899 shows
+  Home, Verkoop, Inkoop, Producten and Meer only.
+- A skip link "Naar de inhoud" is the first Tab stop (focuses
+  `.main#inhoud`). The shell's url signal starts from the address bar (no
+  sidebar flash on a hard load of a workspace). `/voorwaarden` is bare
+  only for customers. At 1024-1279 `.content` pads 16 px (the desks 14)
+  and the fixed `.action-bar` starts at 264 px (100 px in the rail).
+
+**Phone tab bar and '+'** (F4b, styles/shell-tabbar.scss): `.tabbar` has the kit
+geometry (60 px floating glass, `--tabbar-h` = `--ios-tabbar-h`), labels in
+`.tabbar__label`, an accent pill under the open tab, red badges (9+). Every
+list `.fab` is the round accent accessory on the bar's baseline (its text
+stays the accessible name) and the bar narrows beside it (9.5 px labels).
+`.fab--text` keeps an action's words ("Container kiezen", Partner scope) as
+a labelled pill above the bar. Staff screens use `--bg` #f2efeb on the
+phone, as the status-bar theme-color and the manifest do.
+
+**Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
+"Aangemeld als …", the bell) over the kit's inset groups rendered from
+`NAV_WORKSPACES` (Snel naar), `NAV_GROUPS` via `meerItems` (Werkruimtes, one
+exclusive `ios-disclosure` per group, sidebar order, counts as `ios-count`)
+and `NAV_DEVICE` plus Weergave (App op dit toestel), then Afmelden. A new
+navigation item belongs in nav-items.ts: the sidebar and Meer both show it.
+
+**App fixes** (F7a): an unknown address shows `features/not-found`
+("Pagina niet gevonden", behind authGuard, inside the shell) instead of
+redirecting; Dutch aliases (verkoop, inkoop, producten, voorraad, klanten,
+leveranciers, instellingen, kosten, bank, documenten, media, analyse, home,
+verkoop/:id, inkoop/:id, producten/:id); every route has a `title`
+(`EnrosedTitleStrategy`, "X — Enrosed", skipped when only the query
+changes; a page header's own title wins); `WorkQueue.startAutoRefresh()`
+(App, while logged in) refreshes the counts on focus/visibility after a
+minute and every five minutes while visible.
+
+**Login and keys** (F7b): the login page preselects the last account
+(`enrosed.login.last`, the name only), focuses the password when it can,
+has an eye toggle and fits 375x667. On the desk '/' focuses the page's
+search (`PAGE_SEARCH_SELECTOR`; mark yours with `data-page-search`) and '?'
+opens Sneltoetsen (`shared/shortcuts-sheet.ts`; areas append their screen
+keys to `PAGE_SHORTCUTS`); never while typing, behind a sheet or in Kosten
+& bank / Documenten & media. A slow navigation shows the route progress
+line (200 ms after its guards); the five tab roots and the three workspace
+sides preload when idle (not on saveData or 2G).
+
 **Navigation helpers** (core/platform, pure and node-tested unless noted):
 - `nav-items.ts`: `NAV_HOME`, `NAV_GROUPS` (five groups, items with label,
   short, meerLabel, icon, link, query, exact, countKey, groupCount, hint,
   railMain, wide, newUntil, tabRoot, tone), `NAV_WORKSPACES`,
   `NAV_DEVICE`, `NAV_MORE`, `navItemActive`, `navItemUrl`, `navItemIsNew`,
-  `groupCountKeys`, `meerItems`. The desk sidebar renders from it (Meer will
-  too). `NavCountKey` names WorkQueue signals; extend it with the signal.
+  `groupCountKeys`, `meerItems`. The desk sidebar and Meer render from it.
+  `NavCountKey` names WorkQueue signals; extend it with the signal.
 - `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
   `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
 - `page-parent.ts`: `parentOf(url)` → `{label, url, phoneLabel}` or null.
@@ -183,7 +273,7 @@ host stays inline):
   (history back when the parent is below, else its last URL), `back(fallback)`.
 - `nav-direction.ts`: `navDirection(prev, next, trigger, info, PHONE_TABS)`
   → push / pop / tab / none; a navigation may name itself with
-  `info: { nav: 'push' }` (used by the coming phone push/pop).
+  `info: { nav: 'push' }` (the phone motion reads it).
 - `app-shortcuts.ts`: `GLOBAL_SHORTCUTS`, `PAGE_SHORTCUTS` (areas append
   rows for their routes), `pageShortcutsFor`, `shortcutCommand` ('/' and
   '?'), `PAGE_SEARCH_SELECTOR` (`[data-page-search]` marks a page's main
@@ -207,7 +297,9 @@ Annuleren) for `canDeactivate(): boolean | Promise<boolean>`.
 
 **Load speed**: production builds no longer inline critical CSS (one
 render-blocking stylesheet, no unstyled first frame); vercel.json marks the
-hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache.
+hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
+(check the first Vercel deployment of that change once: if it fails on
+vercel.json, drop only the headers block).
 
 ## Workspaces
 
