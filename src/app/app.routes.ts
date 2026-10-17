@@ -62,7 +62,7 @@ export const routes: Routes = [
   },
   {
     path: 'sales/:id/edit',
-    title: 'Offerte',
+    title: 'Verkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'edit' },
@@ -70,7 +70,7 @@ export const routes: Routes = [
   },
   {
     path: 'sales/:id',
-    title: 'Offerte',
+    title: 'Verkooporder',
     canActivate: [authGuard],
     canDeactivate: [unsavedChangesGuard],
     data: { mode: 'view' },

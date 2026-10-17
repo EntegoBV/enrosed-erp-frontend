@@ -57,6 +57,16 @@ test('every screen has a route title for the browser tab', () => {
   }
 });
 
+test('one name per screen: a sales document is a Verkooporder, as the sidebar and Inkooporder say', () => {
+  const blocks = routeBlocks();
+  const titleOf = (path: string) => blocks.find((b) => b.includes(`path: '${path}',`) && b.includes('loadComponent'))?.match(/title: '([^']+)'/)?.[1];
+  assert.equal(titleOf('sales/:id'), 'Verkooporder');
+  assert.equal(titleOf('sales/:id/edit'), 'Verkooporder');
+  assert.equal(titleOf('purchasing/:id'), 'Inkooporder');
+  /* the customer portal is the customer's quote */
+  assert.equal(titleOf('offerte/:token'), 'Offerte');
+});
+
 test('the tab title: "X — Enrosed", and query-only navigations keep the page\'s own', () => {
   assert.equal(documentTitle('Inkooporder'), 'Inkooporder — Enrosed');
   assert.equal(documentTitle('  '), 'Enrosed');
