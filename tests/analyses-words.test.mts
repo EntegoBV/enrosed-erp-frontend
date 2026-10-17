@@ -59,6 +59,7 @@ test('Overzicht: Markt, Bezoekers and the Aandacht rows (critique N7, N17)', asy
   assert.deepEqual(marketLines(7.4993, -4.93, 6), ['€ 1 = ¥ 7,4993', 'euro 4,9 % zwakker tegenover de dollar (6 mnd)']);
   assert.deepEqual(marketLines(7.4993, 2.04, 3), ['€ 1 = ¥ 7,4993', 'euro 2,0 % sterker tegenover de dollar (3 mnd)']);
   assert.deepEqual(marketLines(7.5, null, 6), ['€ 1 = ¥ 7,5000', null]);
+  assert.deepEqual(marketLines(7.4993, -4.93, 6, true), ['€ 1 = ¥ 7,4993', 'euro 4,9 % zwakker t.o.v. de dollar (6 mnd)'], 'the phone row says t.o.v.');
   assert.equal(dollarValue(1.12081), '$ 1,1208');
   assert.deepEqual(deltaMeta(1877, 561), { text: '▲ 235 %', tone: 'ok' });
   assert.deepEqual(deltaMeta(80, 100), { text: '▼ 20 %', tone: 'warn' });

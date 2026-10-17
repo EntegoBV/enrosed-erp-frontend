@@ -458,8 +458,9 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/sales">
                     <span class="an-tile tone-accent"><app-icon name="sales" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Verkoop</span>
-                      <span class="an-row__sub">Omzet excl. btw · {{ plural(ys.invoices.issued, 'factuur', 'facturen') }}</span>
-                      <span class="an-row__sub">{{ whole(ys.invoices.issuedValueEur) }} gefactureerd incl. btw</span></span>
+                      <!-- The phone words are shorter so each sub keeps to two lines at 360 (critique B2.1); every number stays. -->
+                      <span class="an-row__sub">{{ desk.active() ? 'Omzet excl. btw' : 'excl. btw' }} · {{ plural(ys.invoices.issued, 'factuur', 'facturen') }}</span>
+                      <span class="an-row__sub">{{ whole(ys.invoices.issuedValueEur) }} {{ desk.active() ? 'gefactureerd incl. btw' : 'incl. btw' }}</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('verkoop') ? '—' : whole(ys.invoices.revenueExclEur) }}</span>
                       <span class="an-row__meta" [attr.data-tone]="ys.invoices.marginEur < 0 ? 'warn' : null">marge {{ ys.invoices.missingCostLines ? '—' : whole(ys.invoices.marginEur) }}</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
@@ -1617,7 +1618,7 @@ export class AnalysesPage {
     const series = this.fx.series();
     if (!series) return null;
     const change = changeOverMonths({ dates: series.dates, values: series.usd }, this.marketMonths);
-    return { lines: marketLines(series.latestCny, change?.pct ?? null, this.marketMonths), dollar: dollarValue(series.latestUsd) };
+    return { lines: marketLines(series.latestCny, change?.pct ?? null, this.marketMonths, !this.desk.active()), dollar: dollarValue(series.latestUsd) };
   });
   readonly attention = computed<AttentionRow[]>(() => {
     const missing = this.pipelineMissingCostLines();
