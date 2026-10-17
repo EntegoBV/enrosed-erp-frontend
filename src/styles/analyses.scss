@@ -38,3 +38,25 @@ app-analyses-page { display: block; }
 .an-how__pop p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
 .an .wk-banner--inset { margin-bottom: var(--an-gap); }
 
+
+/* ---------- phone frame (< 680) */
+/* The bell lives at page-host level; the nav shows a proxy circle (critique B7, the home's pattern). */
+.an-bell-host .bell { display: none; }
+.an-badge { position: absolute; top: 3px; right: 1px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+  border: 2px solid var(--surface); border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 750;
+  font-variant-numeric: tabular-nums; line-height: 1; pointer-events: none; }
+.an-chips .ios-chip { text-decoration: none; }
+.an-sheet-text { display: grid; gap: 10px; padding: 4px 20px 16px; }
+.an-sheet-text p { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.an-date-cell .an-date { min-width: 0; max-width: 60%; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; text-align: right; }
+.an-sheet-dates { margin-top: 22px; }
+@media (max-width: 679.98px) {
+  .an-phone { --an-gap: 22px; }
+  .an-phone .an-bar { flex-wrap: nowrap; gap: 8px; min-height: 0; margin: 0 var(--ios-inset, 16px) 14px; overflow-x: auto; scrollbar-width: none; }
+  .an-phone .an-bar__text { font-size: 13px; white-space: nowrap; }
+  .an-pick-phone { flex: none; gap: 5px; }
+  /* Today's bodies (until each body package replaces them) keep the page inset. */
+  .an-body--legacy { padding: 0 var(--ios-inset, 16px); }
+  .an-body--legacy > .an-bar { margin-inline: 0; }
+  .an-phone .ios-banner { margin-bottom: 14px; }
+}

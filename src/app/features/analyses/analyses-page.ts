@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, ViewEncapsulation, computed, effect
 import { Title } from '@angular/platform-browser';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -41,12 +42,19 @@ import { CashOverviewCard } from './cash-overview-card';
 import { CashPhone } from './cash-phone';
 import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
+import { IosNav } from '../../shared/ios-nav';
+import { NotificationBell } from '../../shared/notification-bell';
+import { Sheet } from '../../shared/ui';
+import { WorkQueue } from '../../core/api/work-queue';
+import { NavHistory } from '../../core/platform/nav-history-service';
+import { capsuleLabel, isWorkspaceUrl, screenLabel } from '../../core/platform/return-label';
+import { originOf } from './analyses-origin';
 import { LoadError } from '../../shared/load-error';
 import { AnHow, HOW_TEXTS } from './analyses-how';
-import { AnPeriodPicker } from './analyses-period-picker';
-import { DEFAULT_PERIOD, SALES_PERIOD_KEYS, parsePeriod, periodParams, periodRange, samePeriod, yearStart } from './analyses-period';
+import { AnPeriodPicker, AnPeriodSheet } from './analyses-period-picker';
+import { DEFAULT_PERIOD, SALES_PERIOD_KEYS, parsePeriod, periodLabel, periodParams, periodRange, samePeriod, yearStart } from './analyses-period';
 import type { PeriodChoice } from './analyses-period';
-import { rangeLabel, weekdayDayMonth } from './analyses-words';
+import { rangeLabel, rangeLabelShort, weekdayDayMonth } from './analyses-words';
 
 type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -108,6 +116,16 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
   website: { title: 'Bezoekers', subtitle: 'Wie de website bezoekt en wat ze doen' },
 };
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
+/** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
+const LEGACY_BODIES = new Set<AnalysisSection>(['overview', 'sales', 'inventory', 'purchasing', 'result', 'market', 'website']);
+/** The phone ⋯ sheet: the links the desk shows in the tool row. */
+const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
+  sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
+  inventory: [{ label: 'Jaarinventaris', url: '/stock/inventaris', icon: 'stock' }],
+  purchasing: [{ label: 'Kosten & bank', url: '/costs', icon: 'bank' }],
+  result: [{ label: 'Alle kosten', url: '/costs', icon: 'receipt' }],
+};
+type PageSheet = 'period' | 'how' | 'menu' | null;
 const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op hun documentdatum, ontvangsten op hun betaaldatum.';
 
 /** Company-wide analysis with durable receipt losses as its operational drill-down. */
@@ -119,7 +137,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-legacy.scss'],
   host: { '(document:visibilitychange)': 'visible()' },
-  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, LoadError,
+  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Sheet,
     FormsModule,
     RouterLink,
     PageHeader,
@@ -131,9 +149,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
     MarketAnalysis, WebsiteAnalytics, ContainerCostAnalysis,
   ],
   template: `
-    @if (section() === 'cash' && !desk.active()) {
-      <app-cash-phone [tabs]="analysisTabs" [pageWarnings]="dataWarnings()" (refreshed)="refresh()" />
-    } @else {
+    @if (desk.active()) {
     <app-page-header [title]="head().title" [subtitle]="head().subtitle" [parent]="parent()">
       <button class="btn" type="button" [disabled]="busy()" (click)="refresh()"><app-icon name="refresh" [size]="15" />{{ busy() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
     </app-page-header>
@@ -150,7 +166,66 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       </nav>
 
       @for (tab of [section()]; track tab) {
-      <div class="an-body mo-fade">
+        <div class="an-body mo-fade"><ng-container *ngTemplateOutlet="body; context: { $implicit: tab }" /></div>
+      }
+    </main>
+    } @else if (section() === 'cash') {
+      <app-cash-phone [tabs]="analysisTabs" [pageWarnings]="dataWarnings()" [backLabel]="backLabel()" [backAriaLabel]="backAria()"
+                      [bellCount]="bellCount()" [bellLabel]="bellLabel()" (back)="goBack()" (bell)="openBell()" (refreshed)="refresh()" />
+    } @else {
+      <div class="ios-page an an-phone" [attr.aria-busy]="busy() || filtering()">
+        <app-ios-nav [title]="head().title" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()">
+          <span trail class="ios-glass-group">
+            <button class="ios-circle an-bell" type="button" [attr.aria-label]="bellLabel()" (click)="openBell()">
+              <app-icon name="bell" [size]="20" />
+              @if (bellCount()) { <span class="an-badge" aria-hidden="true">{{ bellCount() > 9 ? '9+' : bellCount() }}</span> }
+            </button>
+            <button class="ios-circle" type="button" aria-label="Vernieuwen" [disabled]="busy()" (click)="refresh()"><app-icon name="refresh" [size]="19" /></button>
+            <button class="ios-circle" type="button" aria-label="Meer acties" (click)="sheet.set('menu')"><app-icon name="more" [size]="20" /></button>
+          </span>
+        </app-ios-nav>
+        <nav #phoneChips class="ios-chips an-chips" aria-label="Analyseonderdelen">
+          @for (item of analysisTabs; track item.id) {
+            <a class="ios-chip" [routerLink]="['/analyses', item.id]" [replaceUrl]="true" [attr.aria-pressed]="section() === item.id"
+               [attr.aria-current]="section() === item.id ? 'page' : null">{{ item.label }}</a>
+          }
+        </nav>
+        @for (tab of [section()]; track tab) {
+          <div class="an-body mo-fade" [class.an-body--legacy]="legacyTab(tab)"><ng-container *ngTemplateOutlet="body; context: { $implicit: tab }" /></div>
+        }
+      </div>
+    }
+
+    <!-- Page level: the bell and the sheets never sit in the sticky nav, the tool row or the faded body (critique B7, N5). -->
+    @if (!desk.active()) { <app-notification-bell class="an-bell-host" /> }
+    @switch (sheet()) {
+      @case ('period') {
+        <app-sheet title="Periode" variant="ios" (closed)="sheet.set(null)">
+          <app-an-period-sheet body [value]="salesPeriod()" [today]="today()" [note]="salesNote"
+                               (picked)="setSalesPeriod($event); sheet.set(null)" (changed)="setSalesPeriod($event)" />
+        </app-sheet>
+      }
+      @case ('how') {
+        <app-sheet title="Hoe gerekend" variant="ios" (closed)="sheet.set(null)">
+          <div body class="an-sheet-text">@for (line of howLines(); track $index) { <p>{{ line }}</p> }</div>
+        </app-sheet>
+      }
+      @case ('menu') {
+        <app-sheet [title]="head().title" variant="ios" (closed)="sheet.set(null)">
+          <div body class="ios-group">
+            <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" />
+              <span class="ios-cell__body"><span class="ios-cell__title">Hoe gerekend</span></span></button>
+            @for (link of menuLinks(); track link.url) {
+              <a class="ios-cell" [routerLink]="link.url" (click)="sheet.set(null)"><app-icon [name]="link.icon" [size]="18" />
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ link.label }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+            }
+          </div>
+        </app-sheet>
+      }
+    }
+
+    <ng-template #body let-tab>
+      @if (desk.active()) {
       @switch (tab) {
         @case ('overview') {
           <div class="an-bar"><span class="an-bar__text">Dit jaar, {{ yearRangeText() }}@if (loadedAt()) { · bijgewerkt {{ loadedAt() }} }</span>
@@ -178,11 +253,25 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           </div>
         }
       }
+      } @else {
+      @switch (tab) {
+        @case ('sales') { <ng-container *ngTemplateOutlet="phonePeriod; context: { $implicit: ' · op documentdatum' }" /> }
+        @case ('result') { <ng-container *ngTemplateOutlet="phonePeriod; context: { $implicit: ' · alles excl. btw' }" /> }
+        @case ('inventory') {
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo over 90 dagen</span></div>
+        }
+      }
+      }
       @if (tab !== 'cash' && dataTab(tab) && dataWarnings().length && !loadFailed()) {
-        <div class="wk-banner wk-banner--warn wk-banner--inset" role="status"><app-icon name="alert" [size]="16" />
-          <span class="wk-banner__text">Niet alle actuele cijfers konden laden: {{ dataWarnings().join(', ') }}.</span>
-          <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="refresh()">Opnieuw</button></span>
-        </div>
+        @if (desk.active()) {
+          <div class="wk-banner wk-banner--warn wk-banner--inset" role="status"><app-icon name="alert" [size]="16" />
+            <span class="wk-banner__text">Niet alle actuele cijfers konden laden: {{ dataWarnings().join(', ') }}.</span>
+            <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="busy()" (click)="refresh()">Opnieuw</button></span>
+          </div>
+        } @else {
+          <div class="ios-banner" role="status"><span>Niet alle actuele cijfers konden laden: {{ dataWarnings().join(', ') }}.</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="busy()" (click)="refresh()">Opnieuw</button></div>
+        }
       }
       @if (tab !== 'cash' && dataTab(tab) && loadFailed()) {
         <app-load-error [busy]="busy()" (retry)="refresh()" />
@@ -844,10 +933,15 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       </section>
       }
       }
+    </ng-template>
+
+    <ng-template #phonePeriod let-basis>
+      <div class="an-bar">
+        <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog" (click)="sheet.set('period')">
+          <app-icon name="calendar" [size]="15" />{{ salesPeriodLabel() }}<app-icon name="chevron-down" [size]="14" /></button>
+        <span class="an-bar__text">{{ salesRangeShort() }}{{ basis }}</span>
       </div>
-      }
-    </main>
-    }
+    </ng-template>
   `,
 })
 export class AnalysesPage {
@@ -865,6 +959,11 @@ export class AnalysesPage {
 
   private readonly analysisNavigation = viewChild<ElementRef<HTMLElement>>('analysisNavigation');
   private readonly market = viewChild(MarketAnalysis);
+  private readonly bell = viewChild(NotificationBell);
+  private readonly phoneChips = viewChild<ElementRef<HTMLElement>>('phoneChips');
+  private readonly navHistory = inject(NavHistory);
+  private readonly location = inject(Location);
+  private readonly work = inject(WorkQueue);
   private readonly website = viewChild(WebsiteAnalytics);
   readonly analysisTabs = ANALYSIS_TABS;
   readonly section = toSignal(this.route.paramMap.pipe(map((params) =>
@@ -876,6 +975,31 @@ export class AnalysesPage {
   readonly how = HOW_TEXTS;
   readonly purchasingHow = [...HOW_TEXTS['purchasing-kosten'], ...HOW_TEXTS['purchasing-kwaliteit'], ...HOW_TEXTS['purchasing-partners'], ...HOW_TEXTS['purchasing-afwijkingen']];
   readonly salesNote = SALES_PERIOD_NOTE;
+  readonly sheet = signal<PageSheet>(null);
+  /** Phone caption under the large title: the subtitle, or the year so far on Overzicht. */
+  readonly phoneCaption = computed(() => this.section() === 'overview' ? `Dit jaar · t/m ${weekdayDayMonth(this.today())}` : this.head().subtitle);
+  readonly howLines = computed<readonly string[]>(() => {
+    const section = this.section();
+    if (section === 'purchasing') return this.purchasingHow;
+    return section === 'market' || section === 'website' ? [] : HOW_TEXTS[section];
+  });
+  readonly menuLinks = computed(() => MENU_LINKS[this.section()] ?? []);
+
+  /*
+   * Phone back (critique B8): the screen below this one in the in-app history. The chips replace the URL,
+   * so it stays the origin across tab switches; another Analyses tab, a workspace or none read "‹ Meer".
+   */
+  readonly origin = computed(() => originOf(this.navHistory.below(), screenLabel, isWorkspaceUrl));
+  /** The capsule text; '' (a chevron circle) when the name is longer than ten characters. */
+  readonly backLabel = computed(() => capsuleLabel(this.origin().label));
+  readonly backAria = computed(() => this.origin().label ? `Terug naar ${this.origin().label}` : 'Terug');
+
+  /* The bell as a proxy circle in the phone trail (critique B7, the home's pattern). */
+  readonly bellCount = this.work.actionCount;
+  readonly bellLabel = computed(() => {
+    const count = this.work.actionCount();
+    return count === 0 ? 'Meldingen' : count === 1 ? '1 klant wacht' : `${count} klanten wachten`;
+  });
 
   /** Today, kept fresh: refreshed when the page becomes visible again and on Vernieuwen (design §2.8). */
   readonly today = signal(localIsoDay());
@@ -927,6 +1051,8 @@ export class AnalysesPage {
   readonly salesFromDate = computed(() => this.salesRange().from);
   readonly salesToDate = computed(() => this.salesRange().to);
   readonly salesRangeText = computed(() => rangeLabel(this.salesFromDate(), this.salesToDate()));
+  readonly salesRangeShort = computed(() => rangeLabelShort(this.salesFromDate(), this.salesToDate(), this.today()));
+  readonly salesPeriodLabel = computed(() => periodLabel(this.salesPeriod(), this.today()));
   readonly supplierId = signal<number | null>(null);
   private readonly appliedFromDate = signal(yearStart(this.today()));
   private readonly appliedToDate = signal(this.today());
@@ -1125,6 +1251,13 @@ export class AnalysesPage {
       const financings = this.partnerSummaries();
       untracked(() => void this.cashSources.loadSchedules(financings, round));
     });
+    /* The current chip in view on the phone, centred, without animation. */
+    afterRenderEffect(() => {
+      this.section();
+      const chips = this.phoneChips()?.nativeElement;
+      const current = chips?.querySelector<HTMLElement>('[aria-current="page"]');
+      if (chips && current) chips.scrollTo({ left: current.offsetLeft - chips.clientWidth / 2 + current.offsetWidth / 2, behavior: 'instant' });
+    });
     afterRenderEffect(() => {
       this.section();
       const navigation = this.analysisNavigation()?.nativeElement;
@@ -1168,6 +1301,16 @@ export class AnalysesPage {
   }
 
   dataTab(section: AnalysisSection): boolean { return DATA_TABS.has(section); }
+  legacyTab(section: AnalysisSection): boolean { return LEGACY_BODIES.has(section); }
+
+  openBell(): void { this.bell()?.open(); }
+
+  /** History back when the origin is the screen below; else to the origin with the pop motion. */
+  goBack(): void {
+    const origin = this.origin();
+    if (origin.url === this.navHistory.below()) this.location.back();
+    else void this.router.navigateByUrl(origin.url, { info: { nav: 'pop' } });
+  }
 
   setSalesPeriod(choice: PeriodChoice): void {
     this.salesPeriod.set(choice);
