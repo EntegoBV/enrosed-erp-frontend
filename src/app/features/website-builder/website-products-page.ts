@@ -3,7 +3,9 @@ import {
   Component,
   ElementRef,
   HostListener,
+  Injector,
   ViewEncapsulation,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -21,6 +23,7 @@ import type { ProductFamily } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
+import { keyContext } from '../../shared/key-context';
 import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
@@ -83,7 +86,7 @@ interface ProductRow extends ProductViewRow {
   imports: [AuthImage, Icon, IosNav, LoadError, NgTemplateOutlet, RouterLink, Sheet, Skeleton, WebsiteStatusBar, WebsiteSyncStatus],
   template: `
     <ng-template #switchCell let-row>
-      <span class="ws-status" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+      <span class="ws-status" [class.is-changed]="changed() === row.id" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
         <input class="ws-switch" type="checkbox" role="switch" [checked]="row.status === 'PUBLISHED'"
                [disabled]="!canToggle(row) || saving() !== null" [class.is-busy]="saving() === row.id"
                [attr.aria-label]="'Op de website: ' + row.name" (change)="switched(row, $event)" />
@@ -369,10 +372,11 @@ interface ProductRow extends ProductViewRow {
               <div class="ios-section__foot"><ng-container *ngTemplateOutlet="hint; context: { $implicit: row }" /></div>
             </section>
             <div class="ios-figures ios-figures--3">
-              <div [attr.title]="textHint"><small>Familietekst</small><strong>{{ row.text }}/{{ languageCount }}</strong></div>
+              <div><small>Familietekst</small><strong>{{ row.text }}/{{ languageCount }}</strong></div>
               <div><small>SEO</small><strong>{{ row.seo }}/{{ languageCount }}</strong></div>
               <div><small>Punten</small><strong>{{ row.points }}</strong></div>
             </div>
+            <p class="ios-section__foot ws-figs-foot">{{ textHint }}</p>
             <section class="ios-section">
               <div class="ios-group">
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Webadres</span>
@@ -405,6 +409,7 @@ export class WebsiteProductsPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('search');
 
   readonly filters = PRODUCT_FILTERS;
@@ -420,6 +425,9 @@ export class WebsiteProductsPage {
   private readonly selectedId = signal<string | null>(this.route.snapshot.queryParamMap.get('reeks'));
   readonly focused = signal<string | null>(null);
   readonly saving = signal<number | null>(null);
+  /** The reeks whose website status just changed: its pill fades in once (nothing else moves on a load). */
+  readonly changed = signal<number | null>(null);
+  private changedTimer: ReturnType<typeof setTimeout> | null = null;
   readonly actionError = signal<string | null>(null);
   readonly actionNotice = signal<string | null>(null);
 
@@ -458,7 +466,12 @@ export class WebsiteProductsPage {
     const id = this.selectedId();
     return id ? this.rows().find((row) => row.key === id) ?? null : null;
   });
-  readonly tabStop = computed(() => this.focused() ?? this.selected()?.key ?? this.orderedKeys()[0] ?? null);
+  /** One tab stop in the table: the focused or selected row while it shows, else the first row (a filter can hide it). */
+  readonly tabStop = computed(() => {
+    const keys = this.orderedKeys();
+    const want = this.focused() ?? this.selected()?.key ?? null;
+    return want && keys.includes(want) ? want : keys[0] ?? null;
+  });
 
   readonly subtitle = computed(() => {
     if (!this.store.families()) return '';
@@ -484,15 +497,16 @@ export class WebsiteProductsPage {
     });
   }
 
+  /** / to the search and Esc to close the inspector, also from its switch (a checkbox is not a text field). */
   @HostListener('document:keydown', ['$event'])
   onKey(event: KeyboardEvent): void {
-    if (!this.desk.active() || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-    const target = event.target as HTMLElement | null;
-    const typing = !!target?.closest('input, textarea, select, [contenteditable="true"]');
-    if (event.key === '/' && !typing && !document.querySelector('.overlay')) {
+    if (!this.desk.active() || event.defaultPrevented || event.altKey) return;
+    const context = keyContext(event, null);
+    if (context.mod || context.typing || context.overlayOpen) return;
+    if (event.key === '/') {
       event.preventDefault();
       this.searchInput()?.nativeElement.focus();
-    } else if (event.key === 'Escape' && !typing && this.selected() && !document.querySelector('.overlay')) {
+    } else if (event.key === 'Escape' && this.selected()) {
       event.preventDefault();
       this.close();
     }
@@ -509,7 +523,15 @@ export class WebsiteProductsPage {
     if (event.key === 'Enter') {
       const item = this.rows().find((candidate) => candidate.key === row.dataset['key']);
       if (item) this.select(item);
-      queueMicrotask(() => this.host.nativeElement.querySelector<HTMLElement>('.ws-inspector .ws-switch, .ws-inspector .wk-btn')?.focus());
+      /*
+       * Enter goes to the inspector's switch (the close button comes first in
+       * the markup), or its first link when the switch is off limits; after
+       * the render, since the inspector body is re-created for another reeks.
+       */
+      afterNextRender({ read: () => {
+        const inspector = this.host.nativeElement.querySelector<HTMLElement>('.ws-inspector');
+        (inspector?.querySelector<HTMLElement>('.ws-switch:not(:disabled)') ?? inspector?.querySelector<HTMLElement>('.ws-insp-foot .wk-btn'))?.focus();
+      } }, { injector: this.injector });
       return;
     }
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1
@@ -623,6 +645,7 @@ export class WebsiteProductsPage {
     try {
       const result = await this.catalog.setProductFamilyWebsiteVisibility(id, visible);
       this.store.patchFamily(result.family);
+      this.markChanged(id);
       void this.sync.load();
       const name = publicFamilyName(result.family);
       if (!result.rebuildQueued && result.notice) {
@@ -639,7 +662,10 @@ export class WebsiteProductsPage {
             if (current) void this.setVisible(current, true);
           } });
         } else {
-          this.ui.toast(`${name} is van de website gehaald · activeer de reeks in het ERP om ze terug te zetten`);
+          /* Undo needs an active reeks without publication points (backend); say which of the two is missing. */
+          this.ui.toast(family.active
+            ? `${name} is van de website gehaald · werk eerst de publicatiepunten af om ze terug te zetten`
+            : `${name} is van de website gehaald · activeer de reeks in het ERP om ze terug te zetten`);
         }
       }
     } catch (failure: unknown) {
@@ -650,6 +676,12 @@ export class WebsiteProductsPage {
     } finally {
       this.saving.set(null);
     }
+  }
+
+  private markChanged(id: number): void {
+    if (this.changedTimer) clearTimeout(this.changedTimer);
+    this.changed.set(id);
+    this.changedTimer = setTimeout(() => this.changed.set(null), 400);
   }
 
   private thumbnail(family: ProductFamily): string | null {
