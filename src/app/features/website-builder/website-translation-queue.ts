@@ -87,7 +87,8 @@ interface TodoSectionView {
                     <span class="ws-lang" [class.ws-lang--wide]="index >= 3" aria-hidden="true">{{ code }}</span>
                   }
                   @if (row.missingLanguages.length > 3) {
-                    <span class="ws-lang ws-lang--more" aria-hidden="true">
+                    <!-- 4 or 5 codes all show at 1440: the "+n" chip is only for the narrow form then (never an empty pill) -->
+                    <span class="ws-lang ws-lang--more" [class.ws-lang--narrow]="row.missingLanguages.length <= 5" aria-hidden="true">
                       @if (row.missingLanguages.length > 5) { <span class="ws-long">+{{ row.missingLanguages.length - 5 }}</span> }
                       <span class="ws-short">+{{ row.missingLanguages.length - 3 }}</span>
                     </span>

@@ -37,6 +37,7 @@ test('every state has one label, a moment and at most one action', () => {
     ['danger', 'Actie nodig', 'laatste poging 09:03', 'Opnieuw proberen', 'Hook 500', 'volgende automatische poging 09:13']);
   const off = copy(status('NOT_CONFIGURED'));
   assert.deepEqual([off.tone, off.label, off.moment], ['muted', 'Niet automatisch', 'de website wordt niet vanzelf bijgewerkt']);
+  assert.equal(off.shortLabel, 'Niet automatisch', 'one word per thing: the tile never says "Handmatig"');
   assert.doesNotMatch(off.detail, /Vercel|Railway|Deploy Hook/, 'the set-up text lives only in Publicatie');
 });
 

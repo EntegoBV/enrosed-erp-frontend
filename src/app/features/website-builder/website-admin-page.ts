@@ -9,6 +9,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -19,6 +20,7 @@ import { websiteSyncCopy } from '../settings/website-sync-copy';
 import { WebsiteSyncStatus } from '../settings/website-sync-status';
 import { WebsiteSyncStore } from '../settings/website-sync-store';
 import { TODO_SECTION_ORDER, WEBSITE_LANGUAGE_ORDER, plural } from './website-attention';
+import { langsColumn, todoCardHeight } from './website-overview-balance';
 import { WebsitePhoneBack } from './website-phone-back';
 import { WebsiteRecent } from './website-recent';
 import { WebsiteStatusBar } from './website-status-bar';
@@ -41,7 +43,7 @@ const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
   styleUrls: ['../../../styles/website-workspace.scss', '../../../styles/website-overview.scss'],
-  imports: [Icon, IosNav, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus, WebsiteTranslationQueue],
+  imports: [Icon, IosNav, NgTemplateOutlet, RouterLink, Skeleton, WebsiteRecent, WebsiteStatusBar, WebsiteSyncStatus, WebsiteTranslationQueue],
   template: `
     @if (desk.active()) {
       <div class="wk-page ws-page">
@@ -117,7 +119,7 @@ const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
               <div class="ws-cols">
                 <div class="ws-col">
                   <app-website-translation-queue layout="card" />
-                  @if (!recentRight()) { <app-website-recent layout="card" [limit]="recentLimit()" [fetchLimit]="12" /> }
+                  @if (langsPlace() === 'left') { <ng-container *ngTemplateOutlet="langsCard" /> }
                 </div>
                 <div class="ws-col">
                   <section class="ws-card ws-c-live" aria-labelledby="ws-live-title">
@@ -155,25 +157,8 @@ const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
                       </div>
                     </dl>
                   </section>
-                  @if (recentRight()) { <app-website-recent layout="card" [limit]="recentLimit()" [fetchLimit]="12" /> }
-                  <section class="ws-card ws-c-langs" aria-labelledby="ws-langs-title">
-                    <header class="ws-card-head">
-                      <h2 id="ws-langs-title">Websiteteksten per taal</h2>
-                      @if (store.content()) { <span class="ws-count">{{ counts().textGroups }} groepen</span> }
-                    </header>
-                    @if (store.content()) {
-                      <div class="ws-langgrid">
-                        @for (row of perLanguage(); track row.code) {
-                          <div [class.is-short]="row.complete < row.total">
-                            <b>{{ row.code }}@if (row.complete === row.total) {<em aria-label="compleet">✓</em>}</b>
-                            <small>{{ row.complete }} van {{ row.total }}</small>
-                          </div>
-                        }
-                      </div>
-                    } @else {
-                      <div class="ws-scroll"><app-skeleton kind="lines" [rows]="3" /></div>
-                    }
-                  </section>
+                  <app-website-recent layout="card" [limit]="8" [fetchLimit]="8" />
+                  @if (langsPlace() === 'right') { <ng-container *ngTemplateOutlet="langsCard" /> }
                 </div>
               </div>
             </div>
@@ -182,6 +167,27 @@ const SITE_NAME = environment.environmentLabel === 'TEST' ? 'testsite'
 
         <app-website-status-bar [text]="statusLine()" />
       </div>
+
+      <ng-template #langsCard>
+        <section class="ws-card ws-c-langs" aria-labelledby="ws-langs-title">
+          <header class="ws-card-head">
+            <h2 id="ws-langs-title">Websiteteksten per taal</h2>
+            @if (store.content()) { <span class="ws-count">{{ counts().textGroups }} groepen</span> }
+          </header>
+          @if (store.content()) {
+            <div class="ws-langgrid">
+              @for (row of perLanguage(); track row.code) {
+                <div [class.is-short]="row.complete < row.total">
+                  <b>{{ row.code }}@if (row.complete === row.total) {<em aria-label="compleet">✓</em>}</b>
+                  <small>{{ row.complete }} van {{ row.total }}</small>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="ws-scroll"><app-skeleton kind="lines" [rows]="3" /></div>
+          }
+        </section>
+      </ng-template>
     } @else {
       <div class="ios-page ws-ios">
         <app-ios-nav title="Website" [backLabel]="back.label()" [backUrl]="back.url()" [backAriaLabel]="back.aria()">
@@ -261,35 +267,29 @@ export class WebsiteAdminPage {
       complete: required.filter((group) => !group.missingLanguages.includes(code)).length }));
   });
 
-  /** 12 recent rows when Te doen is short (fewer than 3 rows), else 8. */
-  readonly recentLimit = computed(() => this.store.todos().length < 3 ? 12 : 8);
-
   /**
-   * Balance (critique N29): "Recent gewijzigd" goes under the right column when
-   * the left one would end more than 240 px lower. Decided once, from the Te
-   * doen count after loading; never reflowed afterwards.
+   * Balance (critique N29, review round 1): Recent gewijzigd stands on the
+   * right from the first frame; "Websiteteksten per taal" joins the column
+   * that leaves the smaller gap (website-overview-balance.ts). Decided once,
+   * when the data has answered (or failed); never reflowed afterwards.
    */
-  readonly recentRight = signal(false);
-  private balanced = false;
+  readonly langsPlace = signal<'left' | 'right' | null>(null);
 
   constructor() {
     this.store.ensure();
     effect(() => {
-      const ready = (['families', 'categories', 'content'] as const).every((part) => this.store.has(part));
-      if (!ready || this.balanced) return;
-      this.balanced = true;
+      const parts = ['families', 'categories', 'content'] as const;
+      const answered = parts.every((part) => this.store.has(part) || !!this.store.errors()[part]);
+      if (!answered || this.langsPlace()) return;
       const todos = this.store.todos();
       untracked(() => {
-        const rows = Math.min(todos.length, 12);
         const sections = TODO_SECTION_ORDER.filter((section) => todos.some((row) => row.section === section)).length;
-        const todoHeight = todos.length ? 48 + sections * 30 + rows * 52 + (todos.length > 12 ? 40 : 0) : 190;
-        const recentHeight = 48 + this.recentLimit() * 53;
-        const liveHeight = 48 + (this.showLiveState() ? 120 : 0) + 2 * 40;
-        const langsHeight = 48 + 3 * 52;
-        const left = todoHeight + 16 + recentHeight;
-        const right = liveHeight + 16 + langsHeight;
-        const moved = Math.abs(todoHeight - (right + 16 + recentHeight));
-        this.recentRight.set(left - right > 240 && moved < left - right);
+        this.langsPlace.set(langsColumn({
+          todo: todoCardHeight(todos.length, sections),
+          live: 48 + (this.showLiveState() ? 120 : 0) + 2 * 40,
+          recent: 48 + 8 * 53,
+          langs: 48 + 3 * 52,
+        }));
         if (this.route.snapshot.fragment === 'translation-work' && !this.desk.active()) {
           queueMicrotask(() => document.getElementById('translation-work')?.scrollIntoView({ block: 'start' }));
         }

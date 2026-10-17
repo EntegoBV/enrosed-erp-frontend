@@ -151,7 +151,9 @@ test('Te doen: one row per reeks with true details and links', () => {
   assert.equal(test1.link, '/website/products');
   assert.deepEqual(test1.query, { reeks: '1' });
   assert.equal(byTitle.get('Heart-Shaped Flowerbox')!.detail, '3 publicatiepunten · nog geen varianten gekoppeld');
-  assert.equal(byTitle.get('Oud maar live')!.detail, 'Live, maar niet actief in ERP');
+  const inactive = byTitle.get('Oud maar live')!;
+  assert.equal(inactive.section, 'inactive', 'its own heading: "Nog niet publicatieklaar" keeps the dashboard count');
+  assert.equal(inactive.detail, 'Niet actief in het ERP; je kunt ze nog van de website halen');
   const ready = byTitle.get('Foam Rose Bear 25 cm')!;
   assert.equal(ready.section, 'live');
   assert.equal(ready.detail, 'Alles compleet · staat nog op Concept');
@@ -248,4 +250,16 @@ test('counts for the side, the tab bar and the figures strip', () => {
   const empty = websiteCounts({ families: null, categories: null, groups: null });
   assert.equal(empty.attention, 0);
   assert.equal(empty.textsPercent, 100);
+});
+
+test('Te doen headings: one number per heading, inactive-but-live apart from Nog niet publicatieklaar', async () => {
+  const { TODO_SECTION_ORDER, todoSectionHeading } = await import('../src/app/features/website-builder/website-attention.ts');
+  assert.deepEqual([...TODO_SECTION_ORDER], ['inactive', 'publish', 'live', 'translate']);
+  assert.equal(todoSectionHeading('inactive'), 'Live, maar niet actief in ERP');
+  const todos = websiteTodos({ ...deps, categories: [], groups: [], families: [
+    family(1, { name: 'Uit ERP maar live', active: false }),
+    family(2, { name: 'Punten', websiteStatus: 'DRAFT', publicationIssues: ['x'] }),
+  ] });
+  const counts = websiteCounts({ families: [family(1, { active: false }), family(2, { websiteStatus: 'DRAFT', publicationIssues: ['x'] })], categories: [], groups: [] });
+  assert.equal(todos.filter((row) => row.section === 'publish').length, counts.notReady, 'the heading count equals the dashboard');
 });

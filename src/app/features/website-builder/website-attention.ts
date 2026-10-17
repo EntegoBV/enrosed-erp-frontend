@@ -167,10 +167,12 @@ export function categoryMissingLanguages(category: Category, codes: readonly Lan
 /* ---- Te doen */
 
 export type WebsiteTodoKind = 'reeks' | 'categorie' | 'tekst';
-export type WebsiteTodoSection = 'publish' | 'live' | 'translate';
+export type WebsiteTodoSection = 'inactive' | 'publish' | 'live' | 'translate';
 
-export const TODO_SECTION_ORDER: readonly WebsiteTodoSection[] = ['publish', 'live', 'translate'];
+/** Te doen in the order of Producten's Aandacht groups; "Nog niet publicatieklaar" counts what the dashboard counts. */
+export const TODO_SECTION_ORDER: readonly WebsiteTodoSection[] = ['inactive', 'publish', 'live', 'translate'];
 const TODO_SECTION_HEADINGS: Record<WebsiteTodoSection, string> = {
+  inactive: 'Live, maar niet actief in ERP',
   publish: 'Nog niet publicatieklaar',
   live: 'Klaar om live te zetten',
   translate: 'Vertalen',
@@ -227,7 +229,7 @@ function reeksLink(family: ProductFamily): { link: string; query?: Record<string
 
 /**
  * The Te doen rows: one per reeks, category or required text group (never
- * one per missing field), sorted publish → live → translate, then live
+ * one per missing field), sorted inactive → publish → live → translate, then live
  * reeksen first, most points, name.
  */
 export function websiteTodos(input: WebsiteTodoInput): WebsiteTodo[] {
@@ -246,7 +248,7 @@ export function websiteTodos(input: WebsiteTodoInput): WebsiteTodo[] {
     const missingLanguages = ordered(codes, [completeness.missingText, completeness.missingSeo, details]);
 
     if (reason === 'inactive-live') {
-      rows.push({ key, kind: 'reeks', section: 'publish', title, detail: 'Live, maar niet actief in ERP',
+      rows.push({ key, kind: 'reeks', section: 'inactive', title, detail: 'Niet actief in het ERP; je kunt ze nog van de website halen',
         missingLanguages: [], ...reeksLink(family), live, points });
     } else if (reason === 'issues') {
       const parts = [plural(points, 'publicatiepunt', 'publicatiepunten')];

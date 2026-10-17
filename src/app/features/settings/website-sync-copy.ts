@@ -69,7 +69,7 @@ function withMoment(prefix: string, value: string | null, now: Date): string | n
 
 const SHORT_LABELS: Record<string, string> = {
   'Status niet geladen': 'Onbekend', 'Status ophalen': '—', 'Wacht op vertalingen': 'Vertalingen',
-  'In wachtrij': 'In wachtrij', 'Wordt bijgewerkt': 'Bezig', 'Actie nodig': 'Actie nodig', 'Niet automatisch': 'Handmatig', Live: 'Live',
+  'In wachtrij': 'In wachtrij', 'Wordt bijgewerkt': 'Bezig', 'Actie nodig': 'Actie nodig', Live: 'Live',
 };
 
 export function websiteSyncCopy(input: WebsiteSyncInput): WebsiteSyncCopy {
