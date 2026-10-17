@@ -651,6 +651,20 @@ const normalizeCategoryCode = (value: string): string => value
       }
       </section>
       }
+
+      @if (!desktop.active() && view() !== 'overview') {
+        <!-- Phone: Meer has no row for the overview yet (N15 waits for the foundation's NAV_GROUPS); every view leads there. -->
+        <section class="ios-section set-all">
+          <div class="ios-group ios-group--icons">
+            <a class="ios-cell" [routerLink]="overviewUrl" [info]="pushNav">
+              <span class="ios-cell__lead"><span class="ios-tile tone-grey" aria-hidden="true"><app-icon name="list" [size]="17" /></span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Alle instellingen</span>
+                <span class="ios-cell__sub set-ios__text">Elke instelling met haar huidige waarde</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </a>
+          </div>
+        </section>
+      }
     </div>
     } @else {
     <div class="content settings-content settings-content--website">
@@ -1007,7 +1021,7 @@ const normalizeCategoryCode = (value: string): string => value
     .set-side > .photo-export-row { margin: 0; text-decoration: none; }
     .set-focus { box-shadow: 0 0 0 2px var(--rose); transition: box-shadow var(--dur-2, 200ms) var(--ease-out, ease); }
     /* Phone: Website, Catalogusdata and Dit toestel as inset groups (.content already holds the side padding). */
-    .set-ios { --ios-inset: 0px; }
+    .set-ios, .set-all { --ios-inset: 0px; }
     .set-ios .ios-banner { margin-inline: 0; }
     .set-ios__text { white-space: normal; overflow-wrap: anywhere; }
     .set-ios .ios-cell--action .ios-cell__title { color: inherit; }
@@ -1351,6 +1365,9 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     ? null
     : this.desktop.active() ? { label: 'Instellingen', url: OVERVIEW_URL } : undefined);
   readonly headerBackTo = computed(() => this.view() === 'overview' ? this.settingsBackTo : OVERVIEW_URL);
+  /** Phone: the "Alle instellingen" row under every view, a push to the overview. */
+  readonly overviewUrl = OVERVIEW_URL;
+  readonly pushNav = { nav: 'push' };
   private readonly tabStrip = viewChild<ElementRef<HTMLElement>>('tabStrip');
   private readonly loadedViews = new Set<SettingsView>();
 
