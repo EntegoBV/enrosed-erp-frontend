@@ -35,6 +35,8 @@ export function phoneTabForUrl(url: string): PhoneTab {
   if (under(path, '/sales')) return 'sales';
   if (under(path, '/purchasing')) return 'purchasing';
   if (under(path, '/products') || under(path, '/catalog-export') || under(path, '/catalog')) return 'products';
+  /* Voorraad is a button on the Producten tab (products critique B1); its sub-screens stay under Meer. */
+  if (path === '/stock' || path === '/stock/') return 'products';
   return 'more';
 }
 
