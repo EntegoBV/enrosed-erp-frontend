@@ -350,6 +350,16 @@ export class App {
   });
   readonly deskWorkspace = computed(() => this.filesWorkspace() || this.financeWorkspace());
   readonly phoneWorkspace = computed(() => this.workspaceRoute() !== null && !this.desktopViewport.active());
+
+  /* Phone push, pop and tab motion (nav-motion.ts), from a lazy chunk: the first screen does not need it. */
+  private readonly navMotion = effect((onCleanup) => {
+    let uninstall: (() => void) | null = null;
+    let cancelled = false;
+    void import('./core/platform/nav-motion').then((m) => {
+      if (!cancelled) uninstall = m.installNavMotion(this.router, this.document, this.desktopViewport);
+    });
+    onCleanup(() => { cancelled = true; uninstall?.(); });
+  });
   /**
    * The phone home keeps the ERP tab bar, narrowed so the home's '+' (the
    * kit's .ios-accessory) sits beside it (styles/home-phone.scss). Only
