@@ -29,3 +29,10 @@ test('the folded part carries the whole Lading cell: type, dozen, m³ and fill',
     assert.ok(inline.includes(part), part);
   }
 });
+
+test('the container type never splits: "40 ft HQ" is one nowrap span in the column and in the fold, like the amounts', () => {
+  const type = '<span class="pl-nw">{{ shortContainer(row.order.containerType) }}</span>';
+  assert.equal(list.split(type).length - 1, 2, 'Lading column and folded part');
+  assert.equal(list.split('{{ shortContainer(row.order.containerType) }}').length - 1, 2, 'no unwrapped type left');
+});
+

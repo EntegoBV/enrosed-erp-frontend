@@ -155,10 +155,10 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
                          (keydown)="rowKey($event, row)">
                         <span class="wk-td wk-td--wrap pl-cell" role="cell">
                           <b class="pl-name">{{ containerName(row.order) }}</b>
-                          <span class="pl-sub">{{ subLine(row) }}@if (row.order.partnerCustomerId != null) { <span class="pl-tag">Partner</span> }<span class="pl-lading-inline"> · {{ shortContainer(row.order.containerType) }} · <span class="pl-nw">{{ row.costing.totals.cartons | num }} dozen</span> · <span class="pl-nw">{{ row.costing.totals.cbm | cbm }}</span>@if (fillOf(row); as fill) { · <span [class]="'pl-fill pl-fill--' + fill.tone">{{ fill.pct | num: 0 }} %</span> }</span></span>
+                          <span class="pl-sub">{{ subLine(row) }}@if (row.order.partnerCustomerId != null) { <span class="pl-tag">Partner</span> }<span class="pl-lading-inline"> · <span class="pl-nw">{{ shortContainer(row.order.containerType) }}</span> · <span class="pl-nw">{{ row.costing.totals.cartons | num }} dozen</span> · <span class="pl-nw">{{ row.costing.totals.cbm | cbm }}</span>@if (fillOf(row); as fill) { · <span [class]="'pl-fill pl-fill--' + fill.tone">{{ fill.pct | num: 0 }} %</span> }</span></span>
                         </span>
                         <span class="wk-td wk-td--wrap pl-cell" role="cell" data-hide="sm">
-                          <span class="pl-main">{{ shortContainer(row.order.containerType) }} · <span class="pl-nw">{{ row.costing.totals.cartons | num }} dozen</span></span>
+                          <span class="pl-main"><span class="pl-nw">{{ shortContainer(row.order.containerType) }}</span> · <span class="pl-nw">{{ row.costing.totals.cartons | num }} dozen</span></span>
                           <span class="pl-sub"><span class="pl-nw">{{ row.costing.totals.cbm | cbm }}</span>@if (fillOf(row); as fill) { · <span [class]="'pl-fill pl-fill--' + fill.tone">{{ fill.pct | num: 0 }} %</span> }</span>
                         </span>
                         <span class="wk-td wk-td--wrap pl-cell" role="cell">
