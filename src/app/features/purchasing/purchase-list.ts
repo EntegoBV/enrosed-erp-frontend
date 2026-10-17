@@ -842,7 +842,8 @@ export class PurchaseList {
         ? await this.sourcing.archivePurchaseOrder(id) : await this.sourcing.unarchivePurchaseOrder(id);
       this.leavingId.set(id);
       this.orders.update((rows) => rows.map((candidate) => candidate.order.id === id ? updated : candidate));
-      this.ui.toast(toArchive ? `${row.order.number} gearchiveerd` : `${row.order.number} terug op de lijst`);
+      const name = containerName(row.order);
+      this.ui.toast(toArchive ? `${name} gearchiveerd` : `${name} terug op de lijst`);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, toArchive ? 'Archiveren mislukt' : 'Terugzetten mislukt'), 'err');
     } finally {
@@ -898,9 +899,12 @@ export class PurchaseList {
       this.ui.toast('Ontvangen inkooporders kunnen niet worden verwijderd', 'err');
       return;
     }
+    /* The row's own name (containerName), the PO number as small print when the name is not the number. */
+    const name = row ? containerName(row.order) : number;
+    const hint = containerNumberHint(name, number);
     this.ui.confirm(
       { title: 'Inkooporder verwijderen',
-        message: `Inkooporder <b>${escapeHtml(number)}</b> tijdelijk verwijderen?`
+        message: `Inkooporder <b>${escapeHtml(name)}</b>${hint ? ` (${escapeHtml(hint)})` : ''} tijdelijk verwijderen?`
           + '<br><br>' + TEMPORARY_DELETION_NOTICE,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
