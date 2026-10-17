@@ -420,7 +420,8 @@ const normalizeCategoryCode = (value: string): string => value
                   </span>
                   <span class="ios-cell__body">
                     <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ group.product?.name || 'Verwijderd product #' + group.productId }}</span>
-                    <span class="ios-cell__sub ios-cell__sub--2">{{ group.product?.sku || 'Onbekende SKU' }}@if (group.product && supplierName(group.product); as supplier) { · {{ supplier }} }</span>
+                    <span class="ios-cell__sub ios-cell__sub--2">@if (group.product?.colour) { {{ group.product!.colour }} · }@if (group.product?.variantSize) { {{ group.product!.variantSize }} · }{{ group.product?.sku || 'Onbekende SKU' }}</span>
+                    @if (group.product && supplierName(group.product); as supplier) { <span class="ios-cell__sub ios-cell__sub--2">{{ supplier }}</span> }
                   </span>
                   <button class="ios-circle disc-phone__remove" type="button" [attr.aria-label]="'Lijnkorting voor ' + (group.product?.name || group.productId) + ' verwijderen'"
                           (click)="removeLineDiscountProduct(group.productId, group.product?.name)"><app-icon name="close" [size]="16" /></button>
@@ -438,7 +439,7 @@ const normalizeCategoryCode = (value: string): string => value
             <div class="ios-group">
               <button class="ios-cell ios-cell--action" type="button" [disabled]="!discountPickerProducts().length" (click)="lineDiscountPicker.set(true)">+ Product kiezen</button>
             </div>
-            <p class="ios-section__foot">De drempel telt in de eenheid waarin het product verkocht wordt (display, diamant, stuk).</p>
+            <p class="ios-section__foot">Iedere productvariant krijgt zijn eigen staffel. De drempel telt in de eenheid waarin het product verkocht wordt (display, diamant, stuk).</p>
           </section>
         </div>
       }
