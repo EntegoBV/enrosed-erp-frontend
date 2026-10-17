@@ -21,14 +21,14 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import {
-  CatalogImportResult, Category, CompanyProfile, DiscountTier, HsCode, LANGUAGES, LanguageCode,
+  CatalogImportResult, Category, DiscountTier, HsCode, LANGUAGES, LanguageCode,
   Product, ProductFamily, Supplier,
 } from '../../core/api/models';
 import { AuthImage } from '../../core/api/auth-image';
 import { salesPhotoUrl } from '../../shared/sales-photo';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
-import { Ui } from '../../shared/ui';
+import { Ui, confirmLeave } from '../../shared/ui';
 import { saveBlob } from '../../core/api/download';
 import { isRevisionConflict, messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -43,12 +43,14 @@ import { CategoryTranslationEditor } from './category-translation-editor';
 import { PhotoExportSheet } from '../products/photo-export-sheet';
 import { WebsiteSyncStatus } from './website-sync-status';
 import { WebsiteQuoteSettings } from './website-quote-settings';
-import { StaffContactPhones } from '../../shared/staff-contact-phones';
 import { DateTimeNlPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { CompanyStore } from './company-store';
 import { SettingsOverview } from './settings-overview';
+import { SettingsCompany } from './settings-company';
+import { SettingsEditor, dirtyStatusText } from './settings-editor';
+import { keyContext } from '../../shared/key-context';
 import {
   SettingsView, settingsCategoryRedirect, settingsTabs, settingsView, settingsViewInfo, settingsViewQuery,
 } from './settings-sections';
@@ -103,6 +105,7 @@ const normalizeCategoryCode = (value: string): string => value
   providers: [CompanyStore],
   imports: [
     LoadError,
+    SettingsCompany,
     SettingsOverview,
     Skeleton,
     AuthImage,
@@ -114,7 +117,6 @@ const normalizeCategoryCode = (value: string): string => value
     RouterLink,
     WebsiteSyncStatus,
     WebsiteQuoteSettings,
-    StaffContactPhones,
     DateTimeNlPipe,
   ],
   template: `
@@ -130,7 +132,19 @@ const normalizeCategoryCode = (value: string): string => value
     />
     } @else {
     <app-page-header [title]="viewInfo().title" [subtitle]="viewInfo().subtitle"
-                     [parent]="headerParent()" [backTo]="headerBackTo()" />
+                     [parent]="headerParent()" [backTo]="headerBackTo()">
+      @if (activeEditor(); as editor) {
+        @if (editor.dirty()) {
+          @if (desktop.active()) {
+            <span class="set-dirty mo-fade" role="status" [attr.aria-label]="dirtyText(editor)">
+              <i class="set-dot" aria-hidden="true"></i><span class="set-dirty__n" aria-hidden="true">{{ editor.dirtyCount() }}</span><span class="set-dirty__text" aria-hidden="true">{{ dirtyWords(editor) }}</span>
+            </span>
+            <button class="btn set-ghost mo-fade" type="button" [disabled]="editor.saving()" (click)="editor.revert()">Wijzigingen wissen</button>
+          }
+          <button class="btn btn--primary mo-fade" type="button" [disabled]="editor.saving()" (click)="saveEditor(editor)">{{ editor.saving() ? 'Opslaan…' : 'Opslaan' }}</button>
+        }
+      }
+    </app-page-header>
     }
 
     @if (websiteCategoryMode) {
@@ -168,228 +182,7 @@ const normalizeCategoryCode = (value: string): string => value
       }
 
       @if (visited().has('company')) {
-      <section class="set-view mo-fade" [hidden]="view() !== 'company'" aria-label="Bedrijfsgegevens">
-      @if (company()) {
-      <!-- ======================================= bedrijfsgegevens -->
-      <div [class.settings-section--folded]="folded('company')" class="card settings-section" id="company">
-        <div (click)="toggleSection('company', $event)" class="card__head settings-head"><h2>Onze bedrijfsgegevens</h2></div>
-        <div class="card__body">
-          <p class="small muted" style="margin-bottom:12px">
-            Deze gegevens komen op elke offerte, factuur en catalogus. Het BTW-nummer hoort
-            er wettelijk op te staan, net als je adres.
-          </p>
-          <p class="legend"><b>*</b> verplicht op documenten.</p>
-
-          @if (company(); as profile) {
-            <div class="form-grid">
-              <div class="field">
-                <label class="req" for="co-name">Handelsnaam</label>
-                <input class="input" id="co-name" [ngModel]="profile.name"
-                       (ngModelChange)="patchCompany({ name: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-legal">Juridische naam <span class="opt"></span></label>
-                <input class="input" id="co-legal" [ngModel]="profile.legalName"
-                       (ngModelChange)="patchCompany({ legalName: $event })"
-                       placeholder="Enrosed BV" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-vat">BTW-nummer</label>
-                <input class="input mono" id="co-vat" [ngModel]="profile.vatNumber"
-                       (ngModelChange)="patchCompany({ vatNumber: $event })"
-                       placeholder="BE 0123.456.789" />
-              </div>
-              <div class="field">
-                <label for="co-reg">Ondernemingsnummer <span class="opt"></span></label>
-                <input class="input mono" id="co-reg" [ngModel]="profile.registrationNumber"
-                       (ngModelChange)="patchCompany({ registrationNumber: $event })" />
-              </div>
-              <div class="field span-2">
-                <label class="req" for="co-address">Adres</label>
-                <input class="input" id="co-address" [ngModel]="profile.addressLine"
-                       (ngModelChange)="patchCompany({ addressLine: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-zip">Postcode</label>
-                <input class="input" id="co-zip" [ngModel]="profile.postalCode"
-                       (ngModelChange)="patchCompany({ postalCode: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-city">Stad</label>
-                <input class="input" id="co-city" [ngModel]="profile.city"
-                       (ngModelChange)="patchCompany({ city: $event })" />
-              </div>
-              <div class="field">
-                <label class="req" for="co-country">Land (ISO)</label>
-                <input class="input" id="co-country" maxlength="2" [ngModel]="profile.countryCode"
-                       (ngModelChange)="patchCompany({ countryCode: $event.toUpperCase() })" />
-                <span class="hint">Bepaalt mee welk BTW-regime binnenland is.</span>
-              </div>
-              <div class="field">
-                <label for="co-email">E-mail <span class="opt"></span></label>
-                <input class="input" id="co-email" type="email" [ngModel]="profile.email"
-                       (ngModelChange)="patchCompany({ email: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-phone">Telefoon <span class="opt"></span></label>
-                <input class="input" id="co-phone" [ngModel]="profile.phone"
-                       (ngModelChange)="patchCompany({ phone: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-web">Website <span class="opt"></span></label>
-                <input class="input" id="co-web" [ngModel]="profile.website"
-                       (ngModelChange)="patchCompany({ website: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-iban">IBAN <span class="opt"></span></label>
-                <input class="input mono" id="co-iban" [ngModel]="profile.iban"
-                       (ngModelChange)="patchCompany({ iban: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-bic">BIC <span class="opt"></span></label>
-                <input class="input mono" id="co-bic" [ngModel]="profile.bic"
-                       (ngModelChange)="patchCompany({ bic: $event })" />
-              </div>
-              <div class="field">
-                <label for="co-rep">Beperkt fiscaal vertegenwoordiger (NL) <span class="opt"></span></label>
-                <input class="input" id="co-rep" [ngModel]="profile.fiscalRepresentativeName ?? ''"
-                       (ngModelChange)="patchCompany({ fiscalRepresentativeName: $event })" placeholder="24/7 Customs BV" />
-                <span class="hint">Komt op documenten van klanten die via deze vertegenwoordiger inklaren.</span>
-              </div>
-              <div class="field">
-                <label for="co-rep-vat">Btw-nummer vertegenwoordiger <span class="opt"></span></label>
-                <input class="input mono" id="co-rep-vat" [ngModel]="profile.fiscalRepresentativeVat ?? ''"
-                       (ngModelChange)="patchCompany({ fiscalRepresentativeVat: $event })" placeholder="NL858617262B02" />
-              </div>
-              <div class="field span-2">
-                <label class="switch-row" [class.switch-row--on]="!!profile.importVatDeferred">
-                  <span class="switch-row__copy">
-                    <b>Vergunning ET 14000 (invoer-btw verlegd)</b>
-                    <small>Aan: de invoer-btw van containers ingeklaard in België komt in rooster 87/57/59 in plaats van betaald aan de douane.</small>
-                  </span>
-                  <input class="switch-row__input" type="checkbox" role="switch" [attr.aria-checked]="!!profile.importVatDeferred"
-                         [ngModel]="!!profile.importVatDeferred" (ngModelChange)="patchCompany({ importVatDeferred: $event })" />
-                  <span class="switch-row__track" aria-hidden="true"><i></i></span>
-                </label>
-              </div>
-              <div class="field">
-                <label for="co-quote-prefix">Nummering offertes <span class="opt"></span></label>
-                <input class="input mono" id="co-quote-prefix" maxlength="12" [ngModel]="profile.quoteNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ quoteNumberPrefix: $event })" placeholder="ENR" />
-                <span class="hint">Letters vóór het nummer: ENR geeft ENR-{{ year }}-0001. Verander je ze, dan telt de reeks gewoon door.</span>
-              </div>
-              <div class="field">
-                <label for="co-invoice-prefix">Nummering facturen <span class="opt"></span></label>
-                <input class="input mono" id="co-invoice-prefix" maxlength="12" [ngModel]="profile.invoiceNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ invoiceNumberPrefix: $event })" placeholder="F" />
-                <span class="hint">F geeft F-{{ year }}-0001 voor gewone facturen.</span>
-              </div>
-              <div class="field">
-                <label for="co-credit-prefix">Nummering creditnota's <span class="opt"></span></label>
-                <input class="input mono" id="co-credit-prefix" maxlength="12" [ngModel]="profile.creditNoteNumberPrefix ?? ''"
-                       (ngModelChange)="patchCompany({ creditNoteNumberPrefix: $event })" placeholder="CN" />
-                <span class="hint">CN geeft CN-{{ year }}-0001. Eén reeks voor gewone en partnercreditnota's.</span>
-              </div>
-              <div class="field">
-                <label for="co-partner-invoice-pattern">Nummering partnerfacturen <span class="opt"></span></label>
-                <input class="input mono" id="co-partner-invoice-pattern" maxlength="60" [ngModel]="profile.partnerInvoiceNumberPattern ?? ''"
-                       (ngModelChange)="patchCompany({ partnerInvoiceNumberPattern: $event })" placeholder="partner/{jaar}/{nr:3}" />
-                <span class="hint">Eigen reeks voor voorschot- en slotfacturen: partner/{{ year }}/003. {{ '{jaar}' }} is het jaar, {{ '{nr:3}' }} het volgnummer met drie cijfers.</span>
-              </div>
-              <div class="field">
-                <label for="co-partner-invoice-next">Volgend nummer partnerfacturen <span class="opt"></span></label>
-                <input class="input num" id="co-partner-invoice-next" type="number" min="1" step="1" inputmode="numeric"
-                       [ngModel]="profile.partnerInvoiceNextNumber ?? ''" (ngModelChange)="patchCompany({ partnerInvoiceNextNumber: $event === '' || $event === null ? null : +$event })" placeholder="bv. 3" />
-                <span class="hint">Alleen als de boekhouding al verder telt: 3 geeft partner/{{ year }}/003 als eerstvolgende; daarna telt de reeks vanzelf door.</span>
-              </div>
-              <div class="field span-2">
-                <label for="co-foot">Voettekst op documenten (NL) <span class="opt"></span></label>
-                <textarea class="textarea" id="co-foot" [ngModel]="profile.documentFooter"
-                          (ngModelChange)="patchCompany({ documentFooter: $event })"
-                          placeholder="Op al onze offertes zijn onze algemene voorwaarden van toepassing."></textarea>
-              </div>
-              @if (desktop.active()) {
-                <div class="field span-2">
-                  <label for="co-foot-en">Voettekst op documenten (EN) <span class="opt"></span></label>
-                  <textarea class="textarea" id="co-foot-en" [ngModel]="profile.documentFooterEn"
-                            (ngModelChange)="patchCompany({ documentFooterEn: $event })"
-                            placeholder="All our quotations are subject to our general terms and conditions."></textarea>
-                  <span class="hint">
-                    Documenten in een andere taal dan Nederlands gebruiken deze; leeg = de
-                    Nederlandse tekst.
-                  </span>
-                </div>
-              }
-            </div>
-            <div class="span-2 mt-8">
-              <div class="section-title" style="margin-top:0">Juridische teksten</div>
-              <p class="small muted" style="margin-bottom:8px">
-                Voorwaarden en privacyverklaring staan klaar als voorstel voor Enrosed BV —
-                laat ze nakijken door je boekhouder of jurist. Klanten lezen ze op
-                <a href="/voorwaarden" target="_blank" rel="noopener">/voorwaarden</a>.
-                @if (desktop.active()) {
-                  Documenten in een andere taal dan Nederlands verwijzen naar de
-                  <b>Engelse</b> versie.
-                }
-                Leeg laten betekent: gebruik het ingebouwde voorstel.
-              </p>
-              <details style="margin-bottom:8px">
-                <summary class="small strong" style="cursor:pointer">
-                  Algemene voorwaarden (NL)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.termsAndConditions"
-                          (ngModelChange)="patchCompany({ termsAndConditions: $event })"
-                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
-              </details>
-              @if (desktop.active()) {
-                <details style="margin-bottom:8px">
-                  <summary class="small strong" style="cursor:pointer">
-                    Terms and conditions (EN)
-                  </summary>
-                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                            [ngModel]="profile.termsAndConditionsEn"
-                            (ngModelChange)="patchCompany({ termsAndConditionsEn: $event })"
-                            [placeholder]="'Empty = built-in draft'"></textarea>
-                </details>
-              }
-              <details style="margin-bottom:8px">
-                <summary class="small strong" style="cursor:pointer">
-                  Privacyverklaring (NL)
-                </summary>
-                <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                          [ngModel]="profile.privacyPolicy"
-                          (ngModelChange)="patchCompany({ privacyPolicy: $event })"
-                          [placeholder]="'Leeg = ingebouwd voorstel'"></textarea>
-              </details>
-              @if (desktop.active()) {
-                <details>
-                  <summary class="small strong" style="cursor:pointer">
-                    Privacy statement (EN)
-                  </summary>
-                  <textarea class="textarea mt-8" rows="12" style="min-height:220px"
-                            [ngModel]="profile.privacyPolicyEn"
-                            (ngModelChange)="patchCompany({ privacyPolicyEn: $event })"
-                            [placeholder]="'Empty = built-in draft'"></textarea>
-                </details>
-              }
-            </div>
-            <button class="btn btn--primary btn--block mt-8" type="button"
-                    [disabled]="savingCompany()" (click)="saveCompany()">
-              {{ savingCompany() ? 'Bezig…' : 'Bedrijfsgegevens opslaan' }}
-            </button>
-          }
-          @if (!websiteCategoryMode) {
-            <app-staff-contact-phones style="display:block; margin-top:20px" />
-          }
-        </div>
-      </div>
-      } @else if (companyStore.error(); as error) {
-        <app-load-error [message]="error" [busy]="companyStore.loading()" (retry)="companyStore.load(true)" />
-      } @else {
-        <div class="card"><div class="card__body"><app-skeleton kind="lines" [rows]="6" /></div></div>
-      }
-      </section>
+        <app-settings-company class="mo-fade" [hidden]="view() !== 'company'" />
       }
 
       @if (visited().has('website')) {
@@ -1142,6 +935,14 @@ const normalizeCategoryCode = (value: string): string => value
     .set-tabs::-webkit-scrollbar { display: none; }
     .set-tabs .wk-chip { height: 30px; padding: 0 12px; font-size: 12.5px; text-decoration: none; }
     .set-dot { display: inline-block; width: 6px; height: 6px; margin-left: 2px; border-radius: 50%; background: var(--warn); }
+    /* The toolbar save group: "● 2 wijzigingen niet opgeslagen · Wijzigingen wissen · Opslaan". */
+    .set-dirty { display: inline-flex; align-items: center; gap: 6px; margin-right: 2px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .set-dirty .set-dot { margin: 0; }
+    .set-dirty__n { font-variant-numeric: tabular-nums; }
+    .set-dirty__text { margin-left: -3px; }
+    @media (max-width: 1279.98px) { .set-dirty__text { display: none; } }
+    .btn.set-ghost { border-color: transparent; background: transparent; }
+    .btn.set-ghost:hover:not(:disabled) { background: var(--surface-2); }
     .theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
     .theme-picker__option { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px;
       border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2);
@@ -1290,8 +1091,6 @@ const normalizeCategoryCode = (value: string): string => value
   `,
 })
 export class SettingsPage implements AfterViewInit, OnDestroy {
-  /** This year, for the numbering examples. */
-  readonly year = new Date().getFullYear();
   readonly push = inject(PushSetup);
   readonly pushActionError = signal<string | null>(null);
   private lastPushAction: 'enable' | 'disable' | 'test' = 'enable';
@@ -1450,6 +1249,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly route = inject(ActivatedRoute);
   readonly websiteCategoryMode = this.route.snapshot.data['websiteCategoryMode'] === true;
   readonly categoryDeepLinkCode = this.route.snapshot.queryParamMap.get('category')?.trim() || null;
@@ -1486,9 +1286,64 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     return settingsViewQuery(view);
   }
 
+  /* ---------------------------------------------- one save model per view */
+
+  private readonly companyEditor = viewChild(SettingsCompany);
+
+  /** The editor of a view: its draft, dirty count and save (see SettingsEditor). */
+  editorFor(view: SettingsView): SettingsEditor | null {
+    switch (view) {
+      case 'company': return this.companyEditor() ?? null;
+      default: return null;
+    }
+  }
+
+  readonly activeEditor = computed(() => this.editorFor(this.view()));
+  /** Every mounted editor (keep-alive): the leave guard checks them all. */
+  private readonly editors = computed(() =>
+    this.views.map((view) => this.editorFor(view)).filter((editor): editor is SettingsEditor => !!editor));
+
   /** The warn dot on a tab whose view holds unsaved changes. */
-  viewDirty(_view: SettingsView): boolean {
-    return false;
+  viewDirty(view: SettingsView): boolean {
+    return !!this.editorFor(view)?.dirty();
+  }
+
+  dirtyText(editor: SettingsEditor): string {
+    return dirtyStatusText(editor.dirtyCount());
+  }
+
+  /** The words after the count; below 1280 px only the dot and the count show. */
+  dirtyWords(editor: SettingsEditor): string {
+    return dirtyStatusText(editor.dirtyCount()).replace(/^\d+/, '');
+  }
+
+  saveEditor(editor: SettingsEditor): void {
+    void editor.save();
+  }
+
+  /** ⌘S / Ctrl+S on the desk saves the open view, also while typing; not behind another component's overlay. */
+  @HostListener('document:keydown', ['$event'])
+  saveShortcut(event: KeyboardEvent): void {
+    if (this.websiteCategoryMode || event.key.toLowerCase() !== 's' || event.altKey || event.shiftKey) return;
+    if (!(event.metaKey || event.ctrlKey) || !this.desktop.active()) return;
+    const editor = this.activeEditor();
+    if (!editor) return;
+    if (keyContext(event, this.host.nativeElement).overlayOpen) return;
+    event.preventDefault();
+    if (editor.dirty() && !editor.saving()) void editor.save();
+  }
+
+  /** Leaving /settings with unsaved views: Opslaan saves them all, Niet opslaan drops them. */
+  private leaveEditors(): boolean | Promise<boolean> {
+    const dirty = this.editors().filter((editor) => editor.dirty());
+    if (dirty.some((editor) => editor.saving())) return false;
+    if (!dirty.length) return true;
+    return confirmLeave(this.ui, async () => {
+      for (const editor of dirty) {
+        if (!(await editor.save())) return false;
+      }
+      return true;
+    });
   }
 
   /** A saved price switch queues a website rebuild; refresh every status on the page. */
@@ -1508,8 +1363,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     this.openSection.set(this.openSection() === section ? '' : section);
   }
 
-  readonly company = signal<CompanyProfile | null>(null);
-  readonly savingCompany = signal(false);
   readonly categories = signal<Category[]>([]);
   readonly products = signal<Product[]>([]);
   readonly families = signal<ProductFamily[]>([]);
@@ -1591,11 +1444,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         this.ensureViewData(view);
         this.revealTab(view);
       });
-    });
-    /* Company values come from the page's one store; the form edits its own copy of them. */
-    effect(() => {
-      const saved = this.companyStore.saved();
-      untracked(() => { if (saved && !this.company()) this.company.set({ ...saved }); });
     });
   }
 
@@ -1725,7 +1573,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
         view === 'company' ? this.companyStore.load(true) : this.loadViewData(view)));
       return;
     }
-    if (this.loadingSettings() && this.company()) return;
     this.loadingSettings.set(true);
     this.settingsLoadError.set(null);
     this.categoryDependencyWarning.set(null);
@@ -1765,24 +1612,6 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       ));
     } finally {
       this.loadingSettings.set(false);
-    }
-  }
-
-  patchCompany(changes: Partial<CompanyProfile>): void {
-    this.company.update((profile) => (profile ? { ...profile, ...changes } : profile));
-  }
-
-  async saveCompany(): Promise<void> {
-    const profile = this.company();
-    if (!profile) return;
-    this.savingCompany.set(true);
-    try {
-      this.company.set({ ...await this.companyStore.save(profile) });
-      this.ui.toast('Bedrijfsgegevens opgeslagen');
-    } catch {
-      this.ui.toast('Opslaan mislukt', 'err');
-    } finally {
-      this.savingCompany.set(false);
     }
   }
 
@@ -2314,8 +2143,9 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
     });
   }
 
-  canDeactivate(): boolean {
+  canDeactivate(): boolean | Promise<boolean> {
     if (this.savingCategory()) return false;
+    if (!this.websiteCategoryMode) return this.leaveEditors();
     if (!this.categoryDirty()) return true;
     return window.confirm(
       'Je hebt categorie- of vertaalwijzigingen die nog niet zijn opgeslagen. Dit scherm toch verlaten?',
@@ -2324,7 +2154,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (!this.categoryDirty() && !this.savingCategory()) return;
+    const editing = this.editors().some((editor) => editor.dirty() || editor.saving());
+    if (!this.categoryDirty() && !this.savingCategory() && !editing) return;
     event.preventDefault();
     event.returnValue = '';
   }

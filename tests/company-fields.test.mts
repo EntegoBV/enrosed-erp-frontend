@@ -80,3 +80,54 @@ test('dates, devices, trash, Logboek and the website row', () => {
   assert.match(websiteSyncValue({ status: 'LIVE', liveAt: new Date(2026, 9, 16, 23, 40).toISOString() } as never), /^Live sinds 16\/10\/2026, 23:40$/);
   assert.equal(websiteSyncValue({ status: 'QUEUED' } as never), 'In wachtrij');
 });
+
+test('B2: a save sends only the changed fields; a rebase keeps own edits and refreshes the rest', async () => {
+  const { companyDirtyFields, companyPatch, rebaseCompanyDraft } = await import('../src/app/features/settings/company-fields.ts');
+  const saved = profile();
+  const draft = { ...saved, iban: 'BE00 1111 2222 3333', city: ' Mol ', legalName: 'Enrosed BV ' };
+  assert.deepEqual(companyDirtyFields(saved, draft), ['iban']);
+  const patch = companyPatch(draft, companyDirtyFields(saved, draft));
+  assert.deepEqual(Object.keys(patch), ['iban']);
+  assert.equal(patch.iban, 'BE00 1111 2222 3333');
+  /* the legal view saved the NL terms in the meantime */
+  const fresh = { ...saved, termsAndConditions: 'Eigen voorwaarden' };
+  const rebased = rebaseCompanyDraft(saved, draft, fresh);
+  assert.equal(rebased.termsAndConditions, 'Eigen voorwaarden');
+  assert.equal(rebased.iban, 'BE00 1111 2222 3333');
+  assert.deepEqual(companyDirtyFields(fresh, rebased), ['iban']);
+  /* null and empty are the same; optional fields go out as null, plain ones as '' */
+  assert.deepEqual(companyDirtyFields(profile({ documentFooterEn: null }), profile({ documentFooterEn: '  ' })), []);
+  assert.deepEqual(companyPatch(profile({ quoteNumberPrefix: '  ', email: '' }), ['quoteNumberPrefix', 'email']), { quoteNumberPrefix: null, email: '' });
+  assert.deepEqual(companyPatch(profile({ partnerInvoiceNextNumber: 3.2 }), ['partnerInvoiceNextNumber']), { partnerInvoiceNextNumber: 3 });
+});
+
+test('required fields, phone and website hints', async () => {
+  const { companyRequiredErrors, belgianPhoneHint, websiteDisplay } = await import('../src/app/features/settings/company-fields.ts');
+  assert.deepEqual(companyRequiredErrors(profile()), {});
+  assert.deepEqual(companyRequiredErrors(profile({ name: ' ', countryCode: 'BEL' })), { name: 'Verplicht op documenten', countryCode: 'Twee letters, bv. BE' });
+  assert.deepEqual(belgianPhoneHint('+32 470 02 42 07'), { display: null, hint: null });
+  assert.deepEqual(belgianPhoneHint('0470024207'), { display: '+32 470 02 42 07', hint: null });
+  assert.deepEqual(belgianPhoneHint('0032 470 02 42 07'), { display: '+32 470 02 42 07', hint: null });
+  assert.equal(belgianPhoneHint('+324 4 70 02 42 07').hint, 'Een Belgisch gsm-nummer heeft 9 cijfers na +32; dit nummer heeft er 10.');
+  assert.deepEqual(belgianPhoneHint('+31 6 1234 5678'), { display: null, hint: null });
+  assert.deepEqual(belgianPhoneHint('014 31 22 11'), { display: null, hint: null });
+  assert.equal(websiteDisplay('ENROSED.COM'), 'enrosed.com');
+  assert.equal(websiteDisplay('https://WWW.Enrosed.com/Shop/'), 'www.enrosed.com/Shop');
+  assert.equal(websiteDisplay(''), '');
+});
+
+test('numbering previews: {jaar}, {nr:3}, the next number and the fallback warning', async () => {
+  const { numberPreview, patternPreview, partnerPatternWarning } = await import('../src/app/features/settings/company-fields.ts');
+  assert.equal(patternPreview('container/{jaar}/{nr:3}', 2026, 3), 'container/2026/003');
+  assert.equal(patternPreview('pf-{nr}', 2026, 12), 'pf-12');
+  assert.deepEqual(numberPreview('quote', profile(), 2026), { text: 'ENR-2026-0001', isDefault: true });
+  assert.deepEqual(numberPreview('invoice', profile({ invoiceNumberPrefix: 'FV' }), 2026), { text: 'FV-2026-0001', isDefault: false });
+  assert.deepEqual(numberPreview('partnerInvoice', profile(), 2026), { text: 'container/2026/001', isDefault: true });
+  assert.deepEqual(numberPreview('partnerInvoice', profile({ partnerInvoiceNextNumber: 3 }), 2026), { text: 'eerstvolgende: container/2026/003', isDefault: true });
+  assert.deepEqual(numberPreview('partnerQuote', profile(), 2026), { text: 'offerte/container/2026/001', isDefault: true });
+  assert.deepEqual(numberPreview('partnerInvoice', profile({ partnerInvoiceNumberPattern: 'partner/{jaar}/{nr:3}' }), 2026), { text: 'container/2026/001', isDefault: true });
+  assert.equal(partnerPatternWarning('partner/{jaar}/{nr:3}', 'partnerInvoice'), 'Dit patroon gebruikt het systeem niet. Bij opslaan valt het terug op container/{jaar}/{nr:3}.');
+  assert.equal(partnerPatternWarning('offerte/{jaar}', 'partnerQuote'), 'Dit patroon gebruikt het systeem niet. Bij opslaan valt het terug op offerte/container/{jaar}/{nr:3}.');
+  assert.equal(partnerPatternWarning('', 'partnerQuote'), null);
+  assert.equal(partnerPatternWarning('pf/{jaar}/{nr:3}', 'partnerQuote'), null);
+});

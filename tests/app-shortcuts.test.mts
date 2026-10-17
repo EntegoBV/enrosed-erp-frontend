@@ -46,3 +46,8 @@ test("the list uses the app's own verb", () => {
   assert.match(all, /Opslaan/);
   assert.doesNotMatch(all, /Bewaren/);
 });
+
+test('Instellingen saves its open view with ⌘S (company area)', () => {
+  assert.deepEqual(pageShortcutsFor('/settings?sectie=company').map((row) => row.text), ['Opslaan']);
+  assert.deepEqual(pageShortcutsFor('/settings/deleted-items'), []);
+});

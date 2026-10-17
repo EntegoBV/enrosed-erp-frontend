@@ -52,6 +52,11 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/sales/:id/edit', '/purchasing/:id/edit', '/products/:id/edit', '/website/*'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
   },
+  /* Instellingen: the open view (Bedrijfsgegevens, Kortingen…) saves from the toolbar. */
+  {
+    routes: ['/settings'],
+    rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */
