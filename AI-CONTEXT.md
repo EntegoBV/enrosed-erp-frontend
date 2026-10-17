@@ -2301,6 +2301,14 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   whole profile, so every editor sends only its own changed fields and
   rebases its draft when `saved` changes (`rebaseCompanyDraft`). Two staff
   saving at the same moment still overwrite each other until backend B5.
+  A re-read that started before or during a save is dropped when it answers
+  (`read-after-write.ts`, also in `WebsitePriceStore`): the overview's
+  refresh must never put the pre-save profile or price state back.
+- Bedrijfsgegevens tidies the phone and website on blur only after typing
+  in that field (`tidiedOnBlur`); tabbing through never makes it dirty. The
+  embedded staff phones save through `saveAll()`, which trusts each row's
+  `save()` answer. ⌘S is always taken on /settings (never the browser's
+  "Save page as…"); in the legal edit sheet it saves that text.
 - `WebsitePriceStore` (root): the website price switch as one fact; the
   Website view writes it, the overview reads it. Turning prices on asks
   first; every switch toasts "Ongedaan maken", which works after leaving.
@@ -2335,7 +2343,9 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   visit); "Overig" drops them; a short filtered page fetches on (max 4).
   Cost and bank events are always Kosten & bank (`activity-copy.ts`).
 - `ActivityNames` (root): purchase orders by `containerName()`, suppliers by
-  name; loaded after the first page, shared with the settings overview.
+  name; loaded after the first page, shared with the settings overview, and
+  read again after a failed lookup, after 10 min, or when the rows name an
+  unknown purchase order (at most once a minute; `namesReloadDue`).
 - Detail (`activity-inspector.ts`): docked beside the list from 1000 px of
   page width (sticky column), else a drawer at page-host level; a sheet on
   the phone. With nothing selected the dock shows the Overzicht.
@@ -2359,4 +2369,6 @@ sales snapshots with the line's own sales unit (not a fixed "stuks").
 `settings-page.ts` there); `sales-receipts.ts:130` should link the missing
 IBAN to `/settings?sectie=company`; an "Alle instellingen" row in NAV_GROUPS
 (Meer and the sidebar) waits for the foundation (its active state needs a
-navItemActive rule for a bare `/settings`).
+navItemActive rule for a bare `/settings`). Until it lands, every phone
+settings view ends with its own "Alle instellingen ›" row (settings-page,
+`.set-all`); drop that row once Meer has one.
