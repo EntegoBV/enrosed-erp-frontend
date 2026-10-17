@@ -162,7 +162,9 @@ import { ShortcutsSheet } from './shared/shortcuts-sheet';
         </aside>
       }
 
-      <div class="main" id="inhoud" tabindex="-1">
+      <!-- No tabindex here: a focusable .main would take the focus on every click in the page
+           and switch off the workspace shortcuts. The skip link lends it one for that moment. -->
+      <div class="main" id="inhoud">
         <router-outlet />
       </div>
 
@@ -302,10 +304,20 @@ export class App {
     this.openGroup.update((open) => toggleSidebarGroup(open, group));
   }
 
-  /** The skip link moves the focus to the page without touching the URL (a #fragment would be a router navigation). */
+  /**
+   * The skip link moves the focus to the page without touching the URL (a
+   * #fragment would be a router navigation). The page is focusable only for
+   * that moment: with a permanent tabindex a click on any text would focus
+   * .main, and the workspace shortcuts (keyContext: body or inside the
+   * workspace) would stop until the next click on a control.
+   */
   skipToContent(event: Event): void {
     event.preventDefault();
-    this.document.getElementById('inhoud')?.focus();
+    const main = this.document.getElementById('inhoud');
+    if (!main) return;
+    main.setAttribute('tabindex', '-1');
+    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
+    main.focus();
   }
 
   /** The address bar's path and query, for the first frame. */

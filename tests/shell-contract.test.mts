@@ -10,7 +10,14 @@ test('the desk sidebar: a skip link first, Meldingen op dit toestel in the foot,
   const skip = shell.indexOf('class="skip-link"');
   assert.ok(skip > 0 && skip < shell.indexOf('<aside class="sidebar"'), 'the skip link comes before the sidebar');
   assert.match(shell, />Naar de inhoud</);
-  assert.match(shell, /class="main" id="inhoud" tabindex="-1"/);
+  /* .main is focusable only while the skip link has put the focus there: a permanent
+     tabindex takes the focus on every click and switches off the workspace shortcuts. */
+  assert.match(shell, /<div class="main" id="inhoud">/);
+  assert.doesNotMatch(shell, /class="main"[^>]*tabindex/);
+  const skipTo = shell.slice(shell.indexOf('skipToContent(event: Event): void {'), shell.indexOf('initialUrl(): string'));
+  assert.match(skipTo, /main\.setAttribute\('tabindex', '-1'\);/);
+  assert.match(skipTo, /addEventListener\('blur', \(\) => main\.removeAttribute\('tabindex'\), \{ once: true \}\)/);
+  assert.match(skipTo, /main\.focus\(\);/);
   assert.match(shell, /@for \(item of navDevice; track item\.id\)/);
   assert.match(shell, /sidebar__count-rail">\{\{ n > 9 \? '9\+' : n \}\}/);
   /* The rail Meer carries the login requests (Login-aanvragen is not in the 680-899 rail). */
