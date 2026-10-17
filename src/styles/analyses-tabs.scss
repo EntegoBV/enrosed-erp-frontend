@@ -15,13 +15,18 @@
 .an-capsule-select { flex: none; max-width: 70%; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none;
   background: color-mix(in srgb, var(--rose) 12%, var(--surface)); color: var(--rose-dark); font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; }
 .an-phone-search { margin: 0 var(--ios-inset, 16px) 14px; }
+/* Phone row 2 wraps instead of scrolling: the supplier fills the line beside the period, the order chip gets its own line, nothing past the edge. */
+@media (max-width: 679.98px) {
+  .an-phone .an-bar--sub { flex-wrap: wrap; overflow: visible; }
+  .an-phone .an-pick-phone + .an-capsule-select { flex: 1 1 0; min-width: 0; max-width: none; }
+}
 .an-kpis--6 { --an-cols: 6; }
 /* Figures with cents (Containerkost) stay whole in four columns below 1280 (critique B2). */
 @media (min-width: 680px) and (max-width: 1279.98px) { .an-kpis--cents .an-kpi__value { font-size: 19px; } }
 @media (max-width: 1279.98px) { .an-kpis--6 { --an-cols: 3; } }
 
 /* ---------- generic table (scorecard, partner containers) */
-.an-table-wrap { overflow-x: auto; }
+.an-table-wrap { position: relative; overflow-x: auto; }
 .an-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .an-table th { padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 700;
   letter-spacing: .06em; text-align: right; text-transform: uppercase; white-space: nowrap; }
@@ -62,7 +67,8 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .cc-pay__details[open] summary app-icon { rotate: 180deg; }
 .cc-pay__details p, .cc-pay__note { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .cc .cc-total .an-row__title { font-weight: 700; }
-.cc-table { overflow-x: auto; }
+/* position: the table's visually hidden header text stays inside the scroll region (it widened the page at 1100). */
+.cc-table { position: relative; overflow-x: auto; }
 .cc-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .cc-table th { padding: 8px; border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .05em;
   text-align: right; text-transform: uppercase; white-space: nowrap; }
