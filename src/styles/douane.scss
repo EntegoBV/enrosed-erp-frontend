@@ -9,6 +9,7 @@ app-douane-page{display:block;min-width:0}
 app-douane-page .content.dt{max-width:1040px}
 app-douane-page .dt-search{flex:none;width:260px}
 app-douane-page .dt-code{font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-variant-numeric:tabular-nums;letter-spacing:.01em;white-space:nowrap}
+app-douane-page .dt-codecell{display:grid;align-content:center;gap:1px;min-width:0}
 app-douane-page .dt-sub{display:block;color:var(--muted);font-size:11.5px}
 app-douane-page .dt-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
 app-douane-page .dt-error{display:block;margin-top:3px;color:var(--danger);font-size:12px;font-weight:600}

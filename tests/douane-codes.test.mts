@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  changedFields, countByCode, formatHs, matchesTariff, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
+  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
 } from '../src/app/features/purchasing/douane-codes.ts';
 
 // Douane (Inkoop redesign I8, F22): the codes as people read them, the products per code and the two checks.
@@ -30,7 +30,8 @@ test('products per tariff match exactly, as the server does; the ones without a 
 
 test('the edit row checks a new code in every spelling and the duty between 0 and 100 %', () => {
   assert.deepEqual(validateTariff({ code: '', dutyText: '10', isNew: true }, codes), { code: 'Vul een code in' });
-  assert.deepEqual(validateTariff({ code: '0603 90 00 00', dutyText: '10', isNew: true }, codes), { code: 'Deze code bestaat al als 0603 90 00 00' });
+  // The stored spelling literally: grouped, it would echo back what was typed.
+  assert.deepEqual(validateTariff({ code: '0603 90 00 00', dutyText: '10', isNew: true }, codes), { code: 'Deze code bestaat al als „0603900000”' });
   assert.deepEqual(validateTariff({ code: '0603 10', dutyText: '6,5', isNew: true }, codes), {});
   assert.deepEqual(validateTariff({ code: '0603900000', dutyText: '101', isNew: false }, codes), { duty: 'Invoerrecht tussen 0 en 100 %' });
   assert.deepEqual(validateTariff({ code: '0603900000', dutyText: 'tien', isNew: false }, codes), { duty: 'Invoerrecht tussen 0 en 100 %' });
@@ -49,4 +50,15 @@ test('the strip names what changed; the search finds a code in any spelling or a
   assert.ok(matchesTariff({ code: '0603900000', description: 'Kunstbloemen' }, 'bloemen'));
   assert.ok(!matchesTariff({ code: '0603900000', description: 'Kunstbloemen' }, 'glas'));
   assert.ok(matchesTariff({ code: '0603900000', description: null }, ' '));
+});
+
+test('the spelling note follows its count: one product vindt and rekent, several vinden and rekenen', () => {
+  assert.deepEqual(mismatchWords(1), { verb: 'heeft',
+    rest: 'Dat product vindt geen tarief en rekent met het invoerrecht van de inkooporder. Pas de code op het product aan.' });
+  assert.deepEqual(mismatchWords(3), { verb: 'hebben',
+    rest: 'Die producten vinden geen tarief en rekenen met het invoerrecht van de inkooporder. Pas de code op de producten aan.' });
+  // '06031100' stored, '0603 11 00' on the product: grouped, both read '0603 11 00', so the note names them as they are.
+  assert.equal(formatHs('06031100'), formatHs('0603 11 00'));
+  const [mismatch] = spellingMismatches([product(9, '0603 11 00')], [{ code: '06031100' }]);
+  assert.deepEqual([mismatch.spelled, mismatch.code], ['0603 11 00', '06031100']);
 });

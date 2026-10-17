@@ -16,7 +16,11 @@ test('the Douane screen parses, says Opslaan, saves per row and asks before dele
   assert.match(template, /Eerst opslaan of Esc/);
   assert.match(page, /this\.ui\.toast\('Tarief opgeslagen'\)/);
   assert.match(page, /messageOf\(failure, 'Opslaan mislukt'\)/);
-  assert.match(page, /title: 'Tariefcode verwijderen', message: `<b>\$\{escapeHtml\(formatHs\(code\.code\)\)\}<\/b> verwijderen\? \$\{who\} terug op het invoerrecht van hun inkooporder\.`/);
+  assert.match(page, /title: 'Tariefcode verwijderen', message: `<b>\$\{escapeHtml\(formatHs\(code\.code\)\)\}<\/b> verwijderen\? \$\{who\} terug op het invoerrecht van de inkooporder\.`/);
+  assert.doesNotMatch(template + page, /van hun inkooporder|percentage van de order/, 'words that hold for one product as for several');
+  // The spelling note and the row name the stored code literally; grouped, the two spellings read alike.
+  assert.match(template, /\{\{ words\.verb \}\} <b class="dt-code">„\{\{ mismatch\.spelled \}\}”<\/b>; het tarief staat als <b class="dt-code">„\{\{ mismatch\.code \}\}”<\/b>\. \{\{ words\.rest \}\}/);
+  assert.equal(template.split('opgeslagen als <span class="dt-code">„{{ code.code }}”</span>').length - 1, 2, 'desk row and phone cell');
   assert.match(page, /canDeactivate\(\): boolean \| Promise<boolean> \{\s*return this\.dirty\(\) \? confirmLeave\(this\.ui, \(\) => this\.save\(\)\) : true;/);
   assert.doesNotMatch(page, /location\.reload|this\.load\(\);\s*this\.ui\.toast\('Tarief/, 'a save updates its row, never the page');
 });

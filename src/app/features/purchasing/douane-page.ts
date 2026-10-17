@@ -15,7 +15,7 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, confirmLeave, escapeHtml } from '../../shared/ui';
 import {
-  changedFields, countByCode, formatHs, matchesTariff, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
+  changedFields, countByCode, formatHs, matchesTariff, mismatchWords, normalizeHs, parsePct, pctInput, pctLabel, spellingMismatches, validateTariff, withoutCode,
 } from './douane-codes';
 
 interface TariffDraft {
@@ -107,7 +107,10 @@ export class DouanePageStyles {}
                     <div class="wk-tr wk-tr--link dt-row" role="row" tabindex="0" [class.dt-row--saved]="savedKey() === code.code"
                          [animate.leave]="leavingCode() === code.code ? 'mo-leave' : ''"
                          (click)="startEdit(code)" (keydown.enter)="startEdit(code)">
-                      <span class="wk-td dt-code" role="cell">{{ formatHs(code.code) }}</span>
+                      <span class="wk-td wk-td--wrap dt-codecell" role="cell" [attr.title]="formatHs(code.code) !== code.code ? 'Opgeslagen als ' + code.code : null">
+                        <span class="dt-code">{{ formatHs(code.code) }}</span>
+                        @if (respelled().has(code.code)) { <span class="dt-sub">opgeslagen als <span class="dt-code">„{{ code.code }}”</span></span> }
+                      </span>
                       <span class="wk-td wk-td--wrap" role="cell">{{ code.description || '—' }}</span>
                       <span class="wk-td wk-td--num" role="cell">{{ pctLabel(code.dutyRatePct) }}</span>
                       <span class="wk-td wk-td--num" role="cell">{{ counts().get(code.code) ?? 0 }}</span>
@@ -158,6 +161,7 @@ export class DouanePageStyles {}
                 <button class="ios-cell" type="button" (click)="startEdit(code)">
                   <span class="ios-cell__body">
                     <span class="ios-cell__title dt-code">{{ formatHs(code.code) }}</span>
+                    @if (respelled().has(code.code)) { <span class="ios-cell__sub dt-wrap">opgeslagen als <span class="dt-code">„{{ code.code }}”</span></span> }
                     <span class="ios-cell__sub dt-wrap">{{ code.description || '—' }}</span>
                   </span>
                   <span class="ios-cell__trail">
@@ -223,7 +227,7 @@ export class DouanePageStyles {}
                        aria-label="HS-code" [value]="draft.code" (input)="patch({ code: $any($event.target).value })" />
                 @if (attempted() && errors().code) { <span class="dt-error" role="alert">{{ errors().code }}</span> }
               } @else {
-                <span class="dt-code">{{ formatHs(draft.original!.code) }}</span><span class="dt-sub">code vast</span>
+                <span class="dt-code">{{ formatHs(draft.original!.code) }}</span><span class="dt-sub">code vast@if (formatHs(draft.original!.code) !== draft.original!.code) { · „{{ draft.original!.code }}” }</span>
               }
             </span>
             <span class="dt-edit__cell">
@@ -251,14 +255,15 @@ export class DouanePageStyles {}
         <div [class]="desktop.active() ? 'dt-notes' : 'dt-notes dt-notes--phone'">
           @if (missing().length) {
             <div class="dt-note">
-              <p><b>{{ productCount(missing().length) }} zonder HS-code</b> {{ missing().length === 1 ? 'valt' : 'vallen' }} terug op het invoerrecht van hun inkooporder (meestal 10 %).
+              <p><b>{{ productCount(missing().length) }} zonder HS-code</b> {{ missing().length === 1 ? 'valt' : 'vallen' }} terug op het invoerrecht van de inkooporder (meestal 10 %).
                 <button class="wk-link" type="button" [attr.aria-expanded]="showMissing()" (click)="showMissing.set(!showMissing())">{{ showMissing() ? 'Verberg' : 'Toon ›' }}</button></p>
               @if (showMissing()) { <ng-container *ngTemplateOutlet="productList; context: { $implicit: missing() }" /> }
             </div>
           }
           @for (mismatch of mismatches(); track mismatch.code + mismatch.spelled) {
             <div class="dt-note dt-note--warn">
-              <p><b>{{ productCount(mismatch.products.length) }}</b> {{ mismatch.products.length === 1 ? 'heeft' : 'hebben' }} <b class="dt-code">{{ mismatch.spelled }}</b>: dezelfde code in een andere schrijfwijze. Die vinden geen tarief en rekenen met het percentage van de order.
+              @let words = mismatchWords(mismatch.products.length);
+              <p><b>{{ productCount(mismatch.products.length) }}</b> {{ words.verb }} <b class="dt-code">„{{ mismatch.spelled }}”</b>; het tarief staat als <b class="dt-code">„{{ mismatch.code }}”</b>. {{ words.rest }}
                 <button class="wk-link" type="button" [attr.aria-expanded]="openMismatch() === mismatch.spelled" (click)="openMismatch.set(openMismatch() === mismatch.spelled ? null : mismatch.spelled)">{{ openMismatch() === mismatch.spelled ? 'Verberg' : 'Toon ›' }}</button></p>
               @if (openMismatch() === mismatch.spelled) { <ng-container *ngTemplateOutlet="productList; context: { $implicit: mismatch.products }" /> }
             </div>
@@ -288,6 +293,7 @@ export class DouanePage implements HasUnsavedChanges {
   private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
   readonly formatHs = formatHs;
   readonly pctLabel = pctLabel;
+  readonly mismatchWords = mismatchWords;
 
   readonly codes = signal<HsCode[]>([]);
   readonly products = signal<Product[]>([]);
@@ -318,6 +324,8 @@ export class DouanePage implements HasUnsavedChanges {
   readonly counts = computed(() => countByCode(this.products(), this.codes()));
   readonly missing = computed(() => withoutCode(this.products()));
   readonly mismatches = computed(() => spellingMismatches(this.products(), this.codes()));
+  /** Tariffs that products spell another way: their row names the stored spelling, so the owner sees what differs. */
+  readonly respelled = computed(() => new Set(this.mismatches().map((mismatch) => mismatch.code)));
   readonly errors = computed(() => {
     const draft = this.editing();
     return draft ? validateTariff(draft, this.codes()) : {};
@@ -424,7 +432,7 @@ export class DouanePage implements HasUnsavedChanges {
     const count = this.counts().get(code.code) ?? 0;
     const who = count ? `<b>${this.productCount(count)}</b> ${count === 1 ? 'valt' : 'vallen'}` : 'Producten vallen';
     this.ui.confirm(
-      { title: 'Tariefcode verwijderen', message: `<b>${escapeHtml(formatHs(code.code))}</b> verwijderen? ${who} terug op het invoerrecht van hun inkooporder.`,
+      { title: 'Tariefcode verwijderen', message: `<b>${escapeHtml(formatHs(code.code))}</b> verwijderen? ${who} terug op het invoerrecht van de inkooporder.`,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
         try {

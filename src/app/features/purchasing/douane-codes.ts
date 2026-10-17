@@ -66,6 +66,16 @@ export function spellingMismatches<T extends ProductCode>(products: readonly T[]
   return [...groups.values()];
 }
 
+/**
+ * The spelling note's words for its count. The note names both spellings
+ * literally (formatHs would show them alike); the rest follows the count.
+ */
+export function mismatchWords(count: number): { verb: 'heeft' | 'hebben'; rest: string } {
+  return count === 1
+    ? { verb: 'heeft', rest: 'Dat product vindt geen tarief en rekent met het invoerrecht van de inkooporder. Pas de code op het product aan.' }
+    : { verb: 'hebben', rest: 'Die producten vinden geen tarief en rekenen met het invoerrecht van de inkooporder. Pas de code op de producten aan.' };
+}
+
 /** A percentage typed the Belgian way ('6,5' or '6.5'); null when it is no number. */
 export function parsePct(text: string | null | undefined): number | null {
   const raw = String(text ?? '').trim().replace(',', '.');
@@ -95,7 +105,7 @@ export function validateTariff(draft: { code: string; dutyText: string; isNew: b
     if (!code) errors.code = 'Vul een code in';
     else {
       const same = existing.find((candidate) => normalizeHs(candidate.code) === normalizeHs(code));
-      if (same) errors.code = `Deze code bestaat al als ${formatHs(same.code)}`;
+      if (same) errors.code = `Deze code bestaat al als „${same.code}”`;
     }
   }
   const duty = parsePct(draft.dutyText);
