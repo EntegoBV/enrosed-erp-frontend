@@ -14,7 +14,7 @@ import {
 import {
   bankProofSub, creditMenuItems, dayOf, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
 } from './purchase-payment-menus';
-import { invoiceCoverage, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import { invoiceCoverage, invoiceFileKind, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 
 /**
@@ -79,7 +79,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                     <!-- The name and its words get the whole width; 'Gegevens invullen' goes on its own line under them. -->
                     <div class="ios-cell payee-sheet__filecell">
                       <button class="ios-cell__body payee-sheet__file" type="button" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">
-                        <span class="ios-cell__title">{{ file.originalFilename }}</span><span class="ios-cell__sub">Factuurbestand zonder gegevens</span></button>
+                        <span class="ios-cell__title">{{ file.originalFilename }}</span><span class="ios-cell__sub">{{ fileKind(file) }}</span></button>
                       @if (mode() === 'edit') { <button class="ios-capsule ios-capsule--tinted payee-sheet__fill" type="button" [disabled]="busy()" (click)="fillIn(file)">Gegevens invullen</button> }
                     </div>
                   }
@@ -303,6 +303,8 @@ export class PurchasePayeeSheet {
     if (invoice.documentId != null) this.invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName });
   }
 
+  /** 'Proforma (PI)' or 'Factuurbestand zonder gegevens' under the file's name. */
+  fileKind(file: PurchaseInvoiceFile): string { return invoiceFileKind(file); }
   fillIn(file: PurchaseInvoiceFile): void {
     this.close(() => this.invoice.emit({ payee: this.payee().payee, file }));
   }

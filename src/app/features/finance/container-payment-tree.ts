@@ -1,7 +1,7 @@
 import type {
   Instalment, Payee, PurchaseInvoice, PurchaseOrderView, PurchasePaymentRow, PurchaseReconciliationStream,
 } from '../../core/api/models';
-import { invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
+import { invoiceComparison, invoiceCoverage, invoiceFileText, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
 
 /*
  * One container in Kosten & bank as invoices → terms → payments (round of
@@ -47,7 +47,7 @@ export interface PayeeBranch {
    * Leverancier (3)' on the supplier's primary invoice (R2-3); null elsewhere.
    */
   invoices: { id: number; text: string; comparison: string | null; documentId: number | null; name: string; primary: boolean; coverage: string | null }[];
-  /** view.invoiceFiles of this payee: '{originalFilename} · zonder gegevens'. */
+  /** view.invoiceFiles of this payee: '{originalFilename} · zonder gegevens', 'Proforma (PI) · {originalFilename}' (invoiceFileText). */
   invoiceFiles: { documentId: number; text: string; name: string }[];
   /** SEPARATE with 'Inspectie via leverancier' and no invoice of its own: 'Factuur via leverancier · CI-2026-140'. */
   viaSupplier: string | null;
@@ -157,7 +157,7 @@ export function containerPaymentTree(
         coverage: invoice.id === primary?.id && payee === 'SUPPLIER' && invoice.paymentIds !== undefined ? invoiceCoverage(invoice, coverageRows, PAYEE_TITLE[payee]).text : null,
       })),
       invoiceFiles: (view.invoiceFiles ?? []).filter(file => file.payee === payee)
-        .map(file => ({ documentId: file.documentId, text: `${file.originalFilename} · zonder gegevens`, name: file.originalFilename })),
+        .map(file => ({ documentId: file.documentId, text: invoiceFileText(file), name: file.originalFilename })),
       viaSupplier: payee === 'SEPARATE' && flag && !mine.length
         ? (supplierPrimary ? 'Factuur via leverancier · ' + supplierPrimary.number : 'Factuur van de leverancier nog niet ingevoerd') : null,
       terms: termed.map(term => ({ due: term.due, label: term.label, paidEur: term.paidEur, plannedEur: term.plannedEur,

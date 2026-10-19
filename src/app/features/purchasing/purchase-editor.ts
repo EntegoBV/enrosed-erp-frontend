@@ -3543,16 +3543,18 @@ export class PurchaseEditor {
   readonly uploadingDocument = signal(false);
   readonly documentKinds: { value: DocumentKind; label: string }[] = [
     { value: 'PAYMENT_PROOF', label: 'Betaalbewijs' }, { value: 'COMMERCIAL_INVOICE', label: 'Commercial invoice' },
-    { value: 'INVOICE', label: 'Factuur' }, { value: 'PACKING_LIST', label: 'Packing list' }, { value: 'BILL_OF_LADING', label: 'Bill of lading' },
+    { value: 'PROFORMA_INVOICE', label: 'Proforma (PI)' }, { value: 'INVOICE', label: 'Factuur' },
+    { value: 'PACKING_LIST', label: 'Packing list' }, { value: 'BILL_OF_LADING', label: 'Bill of lading' },
     { value: 'CUSTOMS', label: 'Douanedocument' }, { value: 'OTHER', label: 'Andere' },
   ];
   /**
    * The kinds the sheet offers: a server without invoices does not know the
-   * kind INVOICE yet. With it a betaalbewijs is added in the payment sheet
-   * only (one list there, Emre 2026-10-15), never as a loose dossier file.
+   * kinds INVOICE and PROFORMA_INVOICE yet. With it a betaalbewijs is added
+   * in the payment sheet only (one list there, Emre 2026-10-15), never as a
+   * loose dossier file.
    */
   readonly documentKindOptions = computed(() => this.roundOnServer() ? this.documentKinds.filter(kind => kind.value !== 'PAYMENT_PROOF')
-    : this.documentKinds.filter(kind => kind.value !== 'INVOICE'));
+    : this.documentKinds.filter(kind => kind.value !== 'INVOICE' && kind.value !== 'PROFORMA_INVOICE'));
 
   private documentLoadVersion = 0;
 

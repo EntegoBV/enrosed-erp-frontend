@@ -43,7 +43,7 @@ import { FilesController, UploadItem } from './files-controller';
             @if (tray.link?.targetType === 'PURCHASE_ORDER' && !tray.done) {
               <label class="files-tray__row files-tray__kind"><span class="files-tray__label">Soort document</span>
                 <select class="select" [value]="tray.link!.documentKind ?? 'OTHER'" [disabled]="tray.running" (change)="setKind($any($event.target).value)">
-                  <option value="COMMERCIAL_INVOICE">Commercial invoice</option><option value="PACKING_LIST">Packing list</option>
+                  <option value="COMMERCIAL_INVOICE">Commercial invoice</option><option value="PROFORMA_INVOICE">Proforma (PI)</option><option value="PACKING_LIST">Packing list</option>
                   <option value="BILL_OF_LADING">Bill of lading</option><option value="CUSTOMS">Douanedocument</option><option value="OTHER">Andere</option>
                 </select>
               </label>

@@ -1224,9 +1224,10 @@ export class FinanceState {
   /**
    * Starts from known cash facts only; the document must supply its VAT
    * treatment and invoice date. `prefill` starts from more: Bankkosten and
-   * Rente (Boeken als), or the latest cost of a cost pattern.
+   * Rente (Boeken als), or the latest cost of a cost pattern. `files` are
+   * queued on the sheet ("Zelf opladen…" picks them first).
    */
-  openCostFromBank(line: BankStatementLine, prefill: Partial<CompanyCost> = {}): void {
+  openCostFromBank(line: BankStatementLine, prefill: Partial<CompanyCost> = {}, files: readonly File[] = []): void {
     if (this.saving()) return;
     const current = this.bankStatements().find(row => row.id === line.id) ?? line;
     const registration = this.costBankCreatePending();
@@ -1254,7 +1255,7 @@ export class FinanceState {
     this.openCost({ ...blankCost(day), date: day, paidOn: day, description: party.slice(0, 300), party: party.slice(0, 200) || null,
       reference: (current.reference ?? '').slice(0, 100) || null, amountExclEur: gross, amountInclEur: gross,
       vatPct: null, vatRegime: null, vatRegimeConfirmed: false, supplierCountry: null,
-      costKind: null, expenseType: null, vatDeductiblePct: null, taxDeductiblePct: null, ...prefill }, [], { regime: !prefill.vatRegime });
+      costKind: null, expenseType: null, vatDeductiblePct: null, taxDeductiblePct: null, ...prefill }, files, { regime: !prefill.vatRegime });
     this.costBankTransaction.set(current);
   }
 

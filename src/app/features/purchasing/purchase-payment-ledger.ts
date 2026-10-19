@@ -1082,7 +1082,7 @@ function ledgerRow(
  */
 const LEGACY_INVOICE_LABELS = ['Factuur', 'Factuur inspectie', 'Factuur transport'];
 function invoiceFile(doc: PurchaseDocument, invoices: readonly PurchaseInvoice[]): boolean {
-  return doc.kind === 'COMMERCIAL_INVOICE' || doc.kind === 'INVOICE' || invoices.some(invoice => invoice.documentId === doc.id)
+  return doc.kind === 'COMMERCIAL_INVOICE' || doc.kind === 'PROFORMA_INVOICE' || doc.kind === 'INVOICE' || invoices.some(invoice => invoice.documentId === doc.id)
     || (doc.kind === 'OTHER' && LEGACY_INVOICE_LABELS.includes((doc.label ?? '').trim()));
 }
 function paidViaSupplier(payment: PurchasePayment, all: readonly PurchasePayment[], flag: boolean): boolean {

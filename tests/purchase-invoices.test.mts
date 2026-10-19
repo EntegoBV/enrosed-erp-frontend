@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PurchaseInvoice, PurchasePayment } from '../src/app/core/api/models.ts';
 import {
-  inspectionRestOffered, invoiceCandidates, invoiceComparison, invoiceCoverage, invoiceDocumentKind, invoiceLine, invoiceNumberKey, invoiceOption, invoiceSub,
-  invoiceTermsLine, isInvoiceFile, payeeInvoiceComparison, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
+  inspectionRestOffered, invoiceCandidates, invoiceComparison, invoiceCoverage, invoiceDocumentKind, invoiceFileKind, invoiceFileText, invoiceLine, invoiceNumberKey,
+  invoiceOption, invoiceSub, invoiceTermsLine, isInvoiceFile, payeeInvoiceComparison, payeeInvoices, paymentRoundOnServer, primaryInvoice, resolveInvoice, viaSupplier,
 } from '../src/app/features/purchasing/purchase-invoices.ts';
 import {
   carveForeignText, carveText, foreignLinkWarning, inspectionSplitBlocked, inspectionSplitEur, linkChange, linkNotice, pendingAlreadyLinked, pendingLinkPlan,
@@ -63,6 +63,44 @@ test('files: the invoice kinds, a file an invoice points to and the older labell
   assert.equal(isInvoiceFile({ id: 92, kind: 'PAYMENT_PROOF', label: null }, invoices), false);
   assert.equal(invoiceDocumentKind('SUPPLIER'), 'COMMERCIAL_INVOICE');
   assert.equal(invoiceDocumentKind('SEPARATE'), 'INVOICE');
+  assert.equal(isInvoiceFile({ id: 93, kind: 'PROFORMA_INVOICE', label: 'PI' }, invoices), true, 'a PI is an invoice file, never payment proof');
+});
+
+/* ---- PI and the Factuur of a transaction (Emre, 2026-10-19: "Is dit de PI niet?") */
+
+const piFile = { documentId: 1, kind: 'PROFORMA_INVOICE' as const, label: 'PI', originalFilename: 'PI CULINAN.xlsx', paymentId: null, payee: 'SUPPLIER' as const };
+const ciFile = { documentId: 4, kind: 'COMMERCIAL_INVOICE' as const, label: null, originalFilename: 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf', paymentId: null, payee: 'SUPPLIER' as const };
+
+test("an invoice file without data in words: 'Proforma (PI) · {file}', else '{file} · zonder gegevens'", () => {
+  assert.equal(invoiceFileText(piFile), 'Proforma (PI) · PI CULINAN.xlsx');
+  assert.equal(invoiceFileText(ciFile), 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf · zonder gegevens');
+  assert.equal(invoiceFileText({ originalFilename: 'scan.pdf' }), 'scan.pdf · zonder gegevens', 'an older server sends no kind');
+  assert.deepEqual([invoiceFileKind(piFile), invoiceFileKind(ciFile)], ['Proforma (PI)', 'Factuurbestand zonder gegevens']);
+});
+
+test("the Factuur of one payee: invoices and files (a PI too); 'Nog geen factuur' never for Bijkomende kosten; the inspection via the supplier takes the supplier's", () => {
+  const order = { inspectionViaSupplier: false };
+  // PO-2026-005 on test: the PI and the CI without data, no invoice: the container has its files, not "nothing".
+  const files = payeeInvoices({ order, invoices: [], invoiceFiles: [piFile, ciFile] }, 'SUPPLIER');
+  assert.deepEqual([files.invoices, files.files.map(file => file.documentId), files.missing, files.viaSupplier], [[], [1, 4], false, false]);
+  assert.equal(payeeInvoices({ order, invoices: [], invoiceFiles: [] }, 'SUPPLIER').missing, true);
+  assert.equal(payeeInvoices({ order, invoices: [], invoiceFiles: [] }, 'LOGISTICS').missing, true);
+  assert.equal(payeeInvoices({ order, invoices: [], invoiceFiles: [piFile] }, 'LOGISTICS').missing, true, "the supplier's PI is not transport's invoice");
+  assert.equal(payeeInvoices({ order, invoices: [], invoiceFiles: [] }, 'OTHER').missing, false, 'Transactiekosten, a courier: no invoice expected');
+  // Primary first, a second invoice after it.
+  const two = payeeInvoices({ order, invoices: [invoice(9, { number: 'CI-2026-131' }), invoice(7)], invoiceFiles: [] }, 'SUPPLIER');
+  assert.deepEqual(two.invoices.map(item => item.id), [7, 9]);
+  // An inspection with nothing of its own: the supplier's invoice with the flag or when it covers the inspection; its files without one.
+  const supplier = invoice(7, { coversInspection: true });
+  const via = payeeInvoices({ order: { inspectionViaSupplier: true }, invoices: [invoice(7)], invoiceFiles: [] }, 'SEPARATE');
+  assert.deepEqual([via.invoices.map(item => item.id), via.viaSupplier, via.missing], [[7], true, false]);
+  assert.equal(payeeInvoices({ order, invoices: [supplier], invoiceFiles: [] }, 'SEPARATE').viaSupplier, true, 'covers the inspection');
+  const viaFile = payeeInvoices({ order: { inspectionViaSupplier: true }, invoices: [], invoiceFiles: [piFile] }, 'SEPARATE');
+  assert.deepEqual([viaFile.files.map(file => file.documentId), viaFile.missing], [[1], false]);
+  const own = payeeInvoices({ order: { inspectionViaSupplier: true }, invoices: [invoice(7), invoice(8, { payee: 'SEPARATE', number: 'INS-1' })], invoiceFiles: [] }, 'SEPARATE');
+  assert.deepEqual([own.invoices.map(item => item.number), own.viaSupplier], [['INS-1'], false], 'its own invoice first');
+  const lab = payeeInvoices({ order, invoices: [invoice(7)], invoiceFiles: [] }, 'SEPARATE');
+  assert.deepEqual([lab.invoices, lab.viaSupplier, lab.missing], [[], false, true], 'a lab fee paid apart keeps its own invoice');
 });
 
 test('the inspection counts as paid via the supplier only with the flag, on the goods\' bank line or not on the bank yet', () => {

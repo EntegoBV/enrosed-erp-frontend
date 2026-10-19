@@ -652,6 +652,19 @@ native selects styled as capsules (critique B10).
   or, for USD/CNY, `feeEur`; 'Betaling houden' offers Transactiekosten of
   the container and Koersverschil (no Bankkosten: a fee never lands twice).
   The Inkoop payment sheet has a 'Transactiekosten' chip for Bijkomend.
+- Own invoices and the PI (Emre, 2026-10-19). An open outgoing line's first
+  tab has 'Zelf opladen…' (`uploadOwnInvoice`: the file dialog first, then
+  the cost sheet with the files queued); the third tab is 'Peppol / Odoo'
+  only. A linked line's 'Factuur' has one block per part (`invoiceBlocks`):
+  a container payee's invoices and files (`payeeInvoices`: an inspection
+  via the supplier takes the supplier's, 'Nog geen factuur' never for
+  Bijkomende kosten) with 'Bestand ↗', 'Gegevens invullen' and 'Factuur
+  toevoegen…' (purchase-invoice-sheet hosted in the detail, submitted as
+  purchase-editor does), or a cost's documents ('Factuur toevoegen…' =
+  `pickFiles` + `attach`). Kind `PROFORMA_INVOICE` 'Proforma (PI)'
+  (backend B1) is a supplier invoice file (`isInvoiceFile`,
+  `invoiceFileText`), an upload choice in the dossier and Documenten &
+  media; the desk's 'Nog geen factuur' hides while a file is there.
 
 ### Documenten & media
 - /files, `features/files`: FilesPage is a thin shell (desk or phone view,

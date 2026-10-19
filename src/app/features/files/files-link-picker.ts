@@ -20,6 +20,7 @@ const EFFECTS: Record<MediaTargetType, string> = {
 /** The dossier's own document kinds; payment proofs belong to a payment in the dossier. */
 const DOCUMENT_KINDS: readonly { value: DocumentKind; label: string }[] = [
   { value: 'COMMERCIAL_INVOICE', label: 'Commercial invoice' },
+  { value: 'PROFORMA_INVOICE', label: 'Proforma (PI)' },
   { value: 'PACKING_LIST', label: 'Packing list' },
   { value: 'BILL_OF_LADING', label: 'Bill of lading' },
   { value: 'CUSTOMS', label: 'Douanedocument' },

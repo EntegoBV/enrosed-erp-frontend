@@ -5,7 +5,7 @@ import { bankAllocationTargets, filterBankAllocationTargets } from '../src/app/f
 import { cashTotalOf, openOf } from '../src/app/features/finance/finance-metrics.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { amountInputText, parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
-import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { inspectionRestOffered, invoiceFileText, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
 import { feeFits, feePaymentPart, goodsAfterFee } from '../src/app/features/finance/transaction-fees.ts';
 import {
@@ -152,7 +152,7 @@ function harness() {
   const exports: { BankMovementPanel?: new () => BankMovementPanel } = {};
   vm.runInNewContext(componentCode, {
     exports, signal, computed, input: <T>(value: T) => () => value, bankSearchMatches, lineStatus, selectionTotals, legDistance, vatPeriodLabel, CLASSIFICATION_LABEL, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
-    invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
+    invoiceFileText, invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
     inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions, adjustConsequence, amountInputText,
     feeFits, feePaymentPart, goodsAfterFee,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
@@ -721,8 +721,12 @@ test('purchase EUR entry permits two cents but rejects three and local cost hand
   await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
   panel.purchaseAmountInput.set('99,98'); assert.equal(panel.canLinkLocal(), true); assert.equal(panel.localPreview()!.differenceEur, -0.02);
   panel.purchaseAmountInput.set('99,97'); assert.equal(panel.canLinkLocal(), false);
-  let handedOff: any = null; (state as any).openCostFromBank = (line: any) => { handedOff = line; };
-  panel.newCostFromBank(); assert.equal(handedOff, bank); assert.equal(panel.selected(), null);
+  // "Zelf opladen…" (2026-10-19): the file dialog first, then the own registration with the files queued; the detail stays open behind it.
+  const photo = { name: 'bon.jpg' };
+  let handedOff: any = null; (state as any).pickFiles = async () => [photo]; (state as any).openCostFromBank = (line: any, prefill: any, files: any) => { handedOff = { line, prefill, files }; };
+  await panel.uploadOwnInvoice(); assert.equal(handedOff.line, bank); assert.deepEqual([Object.keys(handedOff.prefill), handedOff.files], [[], [photo]]); assert.equal(panel.selected(), bank);
+  handedOff = null; (state as any).pickFiles = async () => { panel.closeAllocation(); return [photo]; };
+  await panel.uploadOwnInvoice(); assert.equal(handedOff, null, 'another transaction opened meanwhile: nothing is registered on this one');
 });
 
 

@@ -1412,7 +1412,8 @@ export interface PurchasePaymentRow {
   bankAdjustedFromOn?: string | null;
 }
 
-export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
+/** PROFORMA_INVOICE (2026-10-19, backend B1): the supplier's PI, an invoice file of the supplier until the commercial invoice arrives. */
+export type DocumentKind = 'PAYMENT_PROOF' | 'COMMERCIAL_INVOICE' | 'PROFORMA_INVOICE' | 'INVOICE' | 'PACKING_LIST' | 'BILL_OF_LADING' | 'CUSTOMS' | 'OTHER';
 
 /** An invoice of a container: number, date and amount; the terms and payments of its payee point to it. */
 export interface PurchaseInvoice {
@@ -1442,7 +1443,8 @@ export interface PurchaseInvoice {
 /** A legacy invoice file of the container without invoice data ('Gegevens invullen'). */
 export interface PurchaseInvoiceFile {
   documentId: number;
-  kind: DocumentKind;
+  /** The document's kind (B1): COMMERCIAL_INVOICE, PROFORMA_INVOICE, INVOICE or an older OTHER 'Factuur …'; absent from an older server. */
+  kind?: DocumentKind;
   label: string | null;
   originalFilename: string;
   paymentId: number | null;

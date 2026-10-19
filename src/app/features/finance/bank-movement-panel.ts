@@ -27,7 +27,7 @@ import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { eur as signedEur } from './cash-format';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { amountInputText, parsePurchasePaymentAmount } from '../purchasing/purchase-payment-amount';
-import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
+import { inspectionRestOffered, invoiceFileText, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
 import { feeFits, feePaymentPart, goodsAfterFee } from './transaction-fees';
 import {
@@ -252,7 +252,7 @@ export class BankMovementPanel {
   }
   private readonly api = inject(BankingApi);
   private readonly sourcing = inject(SourcingApi);
-  private readonly ui = inject(Ui);
+  protected readonly ui = inject(Ui);
   readonly busy = signal(false);
   readonly openingId = signal<number | null>(null);
   readonly phoneFiltersOpen = signal(false);
@@ -311,7 +311,7 @@ export class BankMovementPanel {
     if (!view || view.invoices === undefined) return null;
     return [
       ...[...view.invoices].sort((left, right) => left.id - right.id).map(invoice => ({ key: 'invoice:' + invoice.id, text: invoiceLine(invoice), documentId: invoice.documentId ?? null, name: invoice.documentName || invoice.number })),
-      ...(view.invoiceFiles ?? []).map(file => ({ key: 'file:' + file.documentId, text: `${file.originalFilename} · zonder gegevens`, documentId: file.documentId, name: file.originalFilename })),
+      ...(view.invoiceFiles ?? []).map(file => ({ key: 'file:' + file.documentId, text: invoiceFileText(file), documentId: file.documentId, name: file.originalFilename })),
     ];
   });
   /** 'dekt 30% bij bestelling + 70% bij vertrek' under the supplier's invoices. */
@@ -596,9 +596,16 @@ export class BankMovementPanel {
     this.outgoingSelected.set([payment.key]); this.allocationMode.set('expense'); this.allocationStep.set('payments');
   }
   reuseLocalSales(match: BankMatch): void { if (!this.busy()) { this.chooseMatch(match); this.allocationMode.set('sales'); this.allocationStep.set('payments'); } }
-  newCostFromBank(): void {
+  /**
+   * "Zelf opladen…" (Factuur of uitgave, outgoing only; outside Peppol): the
+   * file dialog at once, then the own registration of this transaction (the
+   * cost sheet with the files queued, the atomic cost-registration). The
+   * detail stays open behind it, so a cancelled sheet leaves it as it was.
+   */
+  async uploadOwnInvoice(): Promise<void> {
     const bank = this.selected(); if (!bank || bank.amountEur >= 0 || this.busy()) return;
-    this.closeAllocation(); this.state.openCostFromBank(bank);
+    const files = await this.state.pickFiles();
+    if (this.selected()?.id === bank.id) this.state.openCostFromBank(bank, {}, files);
   }
   async linkLocalDocument(): Promise<void> {
     const bank = this.selected(), target = this.localDocument(); if (!bank || !target || !this.canLinkLocal()) return;

@@ -10,8 +10,9 @@ import { dayMonthYear, signedEur } from './finance-format';
  * (spec-bank-forecast §3.5): "Factuur of uitgave" (documents and container
  * terms in ENROSED, with the full preview of the old allocation sheet), "Al
  * genoteerd" (payments noted in Inkoop or Kosten without a bank line; shown
- * only with something in it, 2026-10-19) and "Nog te registreren" (received
- * Odoo invoices). The state machine is the detail's own (it is a
+ * only with something in it, 2026-10-19) and "Peppol / Odoo" (received
+ * invoices). An own invoice or receipt outside Peppol is "Zelf opladen…" on
+ * the first tab (2026-10-19). The state machine is the detail's own (it is a
  * BankMovementPanel); `only="preview"` shows just the chosen document's
  * preview (the "Details" of a best match).
  */
@@ -29,7 +30,7 @@ import { dayMonthYear, signedEur } from './finance-format';
           <div class="bank-alloc-tabs" role="group" aria-label="Wat koppel je aan deze banktransactie?">
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'documents'" (click)="p.setAllocationStep('documents')">Factuur of uitgave</button>
             @if (p.existingCount(); as count) { <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Al genoteerd {{ count }}</button> }
-            <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Nog te registreren</button>
+            <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Peppol / Odoo</button>
           </div>
           }
           @if (p.allocationStep() !== 'new') {
@@ -38,6 +39,10 @@ import { dayMonthYear, signedEur } from './finance-format';
           }
           @if (p.allocationStep() === 'documents' || only() === 'preview') {
             @if (!p.localDocument() && only() !== 'preview') {
+            @if (row.amountEur < 0) {
+              <!-- Peppol is Belgian only: an own invoice or a receipt goes up here, as a new cost with this transaction (Emre, 2026-10-19). -->
+              <div class="bank-alloc-create"><div><b>Zelf opladen</b><p>Factuur of bon, buiten Peppol</p></div><button class="btn" type="button" [disabled]="p.busy()" (click)="p.uploadOwnInvoice()">Zelf opladen…</button></div>
+            }
             <p class="fin-hint">Kies een factuur, uitgave of inkooptermijn die al in ENROSED staat. De bankbetaling wordt daarop afgepunt.</p>
             <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Naam, factuur, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
             <div class="fin-choice" role="group" aria-label="Documentsoort">
@@ -52,7 +57,7 @@ import { dayMonthYear, signedEur } from './finance-format';
                   <span class="bank-alloc-document__identity"><small>{{ document.label }}{{ document.estimated ? ' · verwacht bedrag' : '' }}</small><b>{{ document.title }}</b><span>{{ document.party }}{{ document.reference && document.reference !== document.title ? ' · ' + document.reference : '' }}</span><small>{{ document.date ? day(document.date) : 'Volgens betaalafspraak' }}</small></span>
                   <span class="bank-alloc-document__amount"><b>{{ p.abs(document.openBankEur) | eur }}</b><small>{{ document.openBankEur ? 'nog open' : 'al betaald' }}</small><small>totaal {{ document.totalEur | eur }}</small></span>
                 </button>
-              } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Nog te registreren</button>.</p> } }
+              } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Peppol / Odoo</button>.</p> } }
             </div>
             @if (p.visibleLocalDocuments().length < p.localMatches().length) { <button class="btn btn--sm" type="button" (click)="p.localShown.set(p.localShown() + 60)">Meer tonen · nog {{ p.localMatches().length - p.visibleLocalDocuments().length }}</button> }
             }
@@ -140,11 +145,8 @@ import { dayMonthYear, signedEur } from './finance-format';
               }
             }
           } @else if (p.allocationStep() === 'new') {
-            @if (row.amountEur < 0) {
-              <div class="bank-alloc-create"><div><b>Factuur of bon zelf registreren</b><p>Boek een nieuwe uitgave met deze bankbetaling. Je kunt de factuur of een foto meteen toevoegen.</p></div><button class="btn" type="button" [disabled]="p.busy()" (click)="p.newCostFromBank()">Uitgave registreren</button></div>
-            }
-            <h3 class="fin-alloc__label">Zelf een ontvangen {{ row.amountEur < 0 ? 'factuur' : 'creditnota' }} kiezen</h3>
-            <p class="fin-hint">Kies een document uit Odoo. We controleren eerst de bedragen en bestaande registraties. Het document blijft bij de kost bewaard.</p>
+            <!-- Received documents only: an own upload is 'Zelf opladen…' on the first tab, never a second box here. -->
+            <p class="fin-hint">Kies een ontvangen {{ row.amountEur < 0 ? 'factuur' : 'creditnota' }}; het document blijft bij de kost.</p>
             <input class="input" type="search" placeholder="Factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
             @if (p.receivedError()) { <p class="fin-error" role="alert">{{ p.receivedError() }} <button class="fin-inline-btn" type="button" [disabled]="p.busy() || p.receivedLoading()" (click)="p.loadReceivedInvoices()">Opnieuw laden</button></p> }
             <div class="fin-alloc__cards fin-received-list" role="group" aria-label="Ontvangen documenten">

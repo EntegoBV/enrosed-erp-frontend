@@ -22,7 +22,7 @@ import {
   creditMenuItems, formatEur, signedEur, invoiceMenuItems, payeeMenuItems, payeeRowMenuItems, paymentMenuItems, settleWith, termHasMenu, termMenuItems,
   termPayment, todoCopy,
 } from './purchase-payment-menus';
-import { invoiceCoverage, invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import { invoiceCoverage, invoiceFileText, invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -304,7 +304,8 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                           </span>
                         </div>
                       } @empty {
-                        @if (item.payee === 'SUPPLIER' && roundOnServer()) {
+                        <!-- An invoice file (a PI too) is there: its line with 'Gegevens invullen' says enough. -->
+                        @if (item.payee === 'SUPPLIER' && roundOnServer() && !item.invoiceFiles.length) {
                           <div class="wk-tr wk-tr--sub pw-comp-row pw-comp-row--caption" role="row" aria-level="2">
                             <span class="wk-td" role="gridcell">Nog geen factuur <button class="wk-link" type="button" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee })">Factuur toevoegen…</button></span>
                           </div>
@@ -323,7 +324,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                       } @else {
                         @for (file of item.invoiceFiles; track file.documentId) {
                           <div class="wk-tr wk-tr--sub pw-invoice-row pw-invoice-row--file" role="row" aria-level="2">
-                            <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">Factuurbestand zonder gegevens · {{ file.originalFilename }}</span></span>
+                            <span class="wk-td pw-invoice__label" role="gridcell"><span class="pw-invoice__text">{{ fileText(file) }}</span></span>
                             <span class="wk-td wk-td--actions pw-invoice__actions" role="gridcell">
                               <button class="wk-link pw-invoice__file" type="button" data-pw-hide="narrow" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">Bestand openen</button>
                               <button class="wk-btn wk-btn--sm" type="button" data-pw-hide="narrow" [disabled]="!actionable()" (click)="$event.stopPropagation(); invoice.emit({ payee: item.payee, file })">Gegevens invullen</button>
@@ -676,6 +677,8 @@ export class PurchasePaymentWorkbench {
   }
 
   termsLine(item: PayeeLedger): string { return invoiceTermsLine(item.terms); }
+  /** 'Proforma (PI) · PI CULINAN.xlsx', 'invoice.pdf · zonder gegevens'. */
+  fileText(file: PurchaseInvoiceFile): string { return invoiceFileText(file); }
 
   openFiles(payee: Payee): void { this.filesOpen.update(open => new Set([...open, payee])); }
 

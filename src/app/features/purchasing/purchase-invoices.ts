@@ -1,5 +1,5 @@
 import type {
-  DocumentKind, Payee, PurchaseDocument, PurchaseInvoice, PurchaseOrderView, PurchasePayment,
+  DocumentKind, Payee, PurchaseDocument, PurchaseInvoice, PurchaseInvoiceFile, PurchaseOrder, PurchaseOrderView, PurchasePayment,
 } from '../../core/api/models';
 import type { LedgerTerm } from './purchase-payment-ledger';
 
@@ -177,11 +177,42 @@ export function resolveInvoice(
   return null;
 }
 
-/** An invoice file, never a payment proof: the invoice kinds, a file an invoice points to, or an older OTHER file the ERP labelled 'Factuur …'. */
+/** An invoice file, never a payment proof: the invoice kinds (the PI too), a file an invoice points to, or an older OTHER file the ERP labelled 'Factuur …'. */
 export function isInvoiceFile(doc: Pick<PurchaseDocument, 'id' | 'kind' | 'label'>, invoices: readonly Pick<PurchaseInvoice, 'documentId'>[]): boolean {
-  if (doc.kind === 'COMMERCIAL_INVOICE' || doc.kind === 'INVOICE') return true;
+  if (doc.kind === 'COMMERCIAL_INVOICE' || doc.kind === 'PROFORMA_INVOICE' || doc.kind === 'INVOICE') return true;
   if (invoices.some(invoice => invoice.documentId === doc.id)) return true;
   return doc.kind === 'OTHER' && LEGACY_INVOICE_LABELS.includes((doc.label ?? '').trim());
+}
+
+/** What an invoice file without data is, in one word: 'Proforma (PI)', else 'Factuurbestand zonder gegevens'. */
+export function invoiceFileKind(file: { kind?: DocumentKind | null }): string {
+  return file.kind === 'PROFORMA_INVOICE' ? 'Proforma (PI)' : 'Factuurbestand zonder gegevens';
+}
+
+/** One invoice file without data on one line: 'Proforma (PI) · PI CULINAN.xlsx', else 'invoice.pdf · zonder gegevens'. */
+export function invoiceFileText(file: { kind?: DocumentKind | null; originalFilename: string }): string {
+  return file.kind === 'PROFORMA_INVOICE' ? `Proforma (PI) · ${file.originalFilename}` : `${file.originalFilename} · zonder gegevens`;
+}
+
+/**
+ * What 'Factuur' shows for one payee of a container (the transaction
+ * detail, 2026-10-19): its invoices with data (the primary first) and its
+ * invoice files without data (a PI too). An inspection paid via the supplier
+ * with nothing of its own takes the supplier's (as Te betalen does);
+ * `viaSupplier` says so. `missing` is 'Nog geen factuur' where an invoice
+ * is expected: never for Bijkomende kosten (Transactiekosten, a courier).
+ */
+export function payeeInvoices(
+  view: Pick<PurchaseOrderView, 'invoices' | 'invoiceFiles'> & { order: Pick<PurchaseOrder, 'inspectionViaSupplier'> }, payee: Payee,
+): { invoices: PurchaseInvoice[]; files: PurchaseInvoiceFile[]; viaSupplier: boolean; missing: boolean } {
+  const all = view.invoices ?? [];
+  const filesOf = (who: Payee) => (view.invoiceFiles ?? []).filter(file => file.payee === who);
+  let invoices = invoicesOf(all, payee), files = filesOf(payee), via = false;
+  if (payee === 'SEPARATE' && !invoices.length && !files.length && (!!view.order.inspectionViaSupplier || !!primaryInvoice(all, 'SUPPLIER')?.coversInspection)) {
+    const supplier = primaryInvoice(all, 'SUPPLIER');
+    invoices = supplier ? [supplier] : []; files = supplier ? [] : filesOf('SUPPLIER'); via = true;
+  }
+  return { invoices, files, viaSupplier: via, missing: payee !== 'OTHER' && !invoices.length && !files.length };
 }
 
 /** The amount of an invoice: the euro, or the foreign amount with its euro. */

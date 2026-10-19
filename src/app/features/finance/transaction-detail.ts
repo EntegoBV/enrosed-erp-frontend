@@ -1,12 +1,15 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Injector, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import type { BankPurchasePaymentPart, BankStatementLine } from '../../core/api/banking-api';
-import type { PurchaseDocument } from '../../core/api/models';
+import { messageOf } from '../../core/api/errors';
+import type { MediaAssetSummary } from '../../core/api/media-models';
+import type { Currency, Payee, PurchaseDocument, PurchaseInvoiceFile } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { invoiceCoverage, invoiceLine, primaryInvoice } from '../purchasing/purchase-invoices';
+import { invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices } from '../purchasing/purchase-invoices';
+import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit } from '../purchasing/purchase-invoice-sheet';
 import { surplusQuestion } from '../purchasing/purchase-payment-links';
 import { BankAllocationSteps } from './bank-allocation-steps';
 import { KEEP_LABEL, changePreview } from './bank-change-preview';
@@ -31,6 +34,24 @@ type View = 'auto' | 'search' | 'containers';
 
 /** One part on a linked line, as "Gekoppeld aan" lists it. */
 interface LinkedPart { key: string; title: string; sub: string | null; amountEur: number; open: () => void; others: { text: string; lineId: number }[]; }
+/** One line under "Factuur": an invoice with data, an invoice file without (a PI too), or a cost's document. */
+interface InvoiceRow {
+  key: string; text: string; coverage: string | null;
+  /** "Bestand ↗": a container file, or a cost's document in the library. */
+  file: { orderId: number; documentId: number; name: string } | { asset: MediaAssetSummary } | null;
+  /** "Gegevens invullen" on a container's invoice file without data. */
+  fill: { orderId: number; file: PurchaseInvoiceFile } | null;
+}
+/**
+ * What "Factuur" shows for one linked part (Emre, 2026-10-19): a container
+ * payee's invoices and files, a cost's documents, or the sales invoice.
+ * `title` names the part when the line has several; `missing` is "Nog geen
+ * factuur" (never for Bijkomende kosten); `add` is "Factuur toevoegen…".
+ */
+interface InvoiceBlock {
+  key: string; title: string | null; rows: InvoiceRow[]; missing: string | null;
+  add: { orderId: number; payee: Payee } | { costId: number } | null;
+}
 
 /**
  * One bank transaction with its own address (line=): the desk inspector
@@ -44,7 +65,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
 @Component({
   selector: 'app-transaction-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, Icon, EurPipe, Sheet, BankAllocationSteps, ContainerSplit],
+  imports: [NgTemplateOutlet, Icon, EurPipe, Sheet, BankAllocationSteps, ContainerSplit, PurchaseInvoiceSheet],
   styleUrl: './bank-movement-panel.scss',
   host: { style: 'display: contents' },
   template: `
@@ -67,6 +88,14 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
         <div body class="fin-txd fin-txd--phone"><ng-container *ngTemplateOutlet="body" /></div>
         <div foot class="fin-txd__foot fin-txd__foot--phone"><ng-container *ngTemplateOutlet="foot" /></div>
       </app-sheet>
+    }
+    @if (invoicing(); as open) {
+      @if (invoicingView(); as view) {
+        <!-- Inkoop's invoice sheet on the transaction (as purchase-editor hosts it): the file goes up as the payee's invoice kind, then the invoice. -->
+        <app-purchase-invoice-sheet [action]="open.action" [invoices]="view.invoices ?? []" [agreed]="invoicingAgreed()" [inspectionAgreedEur]="view.order.inspectionCostEur ?? 0"
+          [eurOf]="invoiceEurOf" [busy]="invoiceBusy()" (submit)="submitInvoice($event)" (cancel)="closeInvoice()"
+          (openFile)="state.openPurchaseFile(view.order.id, $event, open.action.documentName || open.action.file?.originalFilename || '')" />
+      }
     }
 
     <ng-template #body>
@@ -107,11 +136,23 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
                 <p class="fin-txd__sum" [class.is-off]="!sumMatches()">{{ sumMatches() ? 'Samen gelijk aan de transactie ' + eur(abs(row.amountEur)) + ' ✓' : 'Verschil ' + signed(sumDifference()) }}</p>
               }
             </section>
-            @if (invoiceRows().length || linkedOrder()) {
+            @if (invoiceBlocks().length) {
+              <!-- Every linked part with its invoice: the container payee's invoices and files (a PI too), a cost's documents; own uploads go here, outside Peppol. -->
               <section class="wk-section">
                 <h3 class="wk-section__title">Factuur</h3>
-                @for (invoice of invoiceRows(); track invoice.text) { <p class="fin-txd__line">{{ invoice.text }}@if (invoice.coverage) { <small>{{ invoice.coverage }}</small> }</p> }
-                @empty { <p class="fin-txd__line">Nog geen factuur bij deze container</p> }
+                @for (block of invoiceBlocks(); track block.key) {
+                  @if (block.title) { <p class="fin-txd__inv-title">{{ block.title }}</p> }
+                  @for (invoice of block.rows; track invoice.key) {
+                    <p class="fin-txd__line fin-txd__invoice"><span>{{ invoice.text }}</span>
+                      @if (invoice.file) { <button class="wk-link" type="button" (click)="openInvoiceFile(invoice)">Bestand ↗</button> }
+                      @if (invoice.fill; as fill) { <button class="wk-link" type="button" [disabled]="invoiceBusy()" (click)="fillInvoice(fill)">Gegevens invullen</button> }
+                      @if (invoice.coverage) { <small>{{ invoice.coverage }}</small> }</p>
+                  }
+                  @if (block.missing || block.add) {
+                    <p class="fin-txd__line fin-txd__invoice">@if (block.missing) { <span>{{ block.missing }}</span> }
+                      @if (block.add) { <button class="wk-link" type="button" [disabled]="invoiceBusy()" (click)="addInvoice(block)">Factuur toevoegen…</button> }</p>
+                  }
+                }
               </section>
             }
             @if (linkedOrder(); as view) {
@@ -470,27 +511,111 @@ export class TransactionDetail extends BankMovementPanel {
     const orders = [...new Set(this.linkedPurchases().map((payment) => payment.orderId))];
     return orders.length === 1 ? this.state.purchaseViews().find((view) => view.order.id === orders[0]) ?? null : null;
   });
-  /** The primary invoice per payee of the linked container(s), with round 2's "Geldt voor alle betalingen van …"; a sales invoice. */
-  readonly invoiceRows = computed(() => {
+  /**
+   * "Factuur" of a linked line, one block per part: the sales invoice; per
+   * container and payee its invoices (the primary with round 2's "Geldt voor
+   * alle betalingen van …") and its files without data, a PI too
+   * (payeeInvoices: an inspection via the supplier falls back to the
+   * supplier's); per cost its documents. An inspection via the supplier on
+   * the same line as the goods has no block of its own: the goods' invoice is
+   * it, never shown twice.
+   */
+  readonly invoiceBlocks = computed<InvoiceBlock[]>(() => {
     const row = this.line();
-    const rows: { text: string; coverage: string | null }[] = [];
-    if (row?.salesOrderId) {
+    if (!row) return [];
+    const blocks: InvoiceBlock[] = [];
+    if (row.salesOrderId) {
       const view = this.state.salesOrders().find((item) => item.order.id === row.salesOrderId);
-      if (view) rows.push({ text: `Factuur ${view.order.number} · ${euro.format(view.paymentSummary?.invoiceTotalEur ?? view.priced?.totals?.totalInclVat ?? 0)}`, coverage: null });
+      if (view) blocks.push({ key: `s${row.salesOrderId}`, title: null, missing: null, add: null, rows: [{ key: 'sales', coverage: null, file: null, fill: null,
+        text: `Factuur ${view.order.number} · ${euro.format(view.paymentSummary?.invoiceTotalEur ?? view.priced?.totals?.totalInclVat ?? 0)}` }] });
     }
-    for (const orderId of new Set(this.linkedPurchases().map((payment) => payment.orderId))) {
+    const linked = this.linkedPurchases();
+    for (const orderId of new Set(linked.map((payment) => payment.orderId))) {
       const view = this.state.purchaseViews().find((item) => item.order.id === orderId);
-      for (const payee of [...new Set(this.linkedPurchases().filter((payment) => payment.orderId === orderId).map((payment) => payment.payee ?? 'SUPPLIER'))]) {
-        const invoice = primaryInvoice(view?.invoices ?? [], payee);
-        if (!invoice) continue;
-        const branch = view ? this.state.containerTree(view).find((item) => item.payee === payee) : undefined;
+      if (!view) continue;
+      const payees = [...new Set(linked.filter((payment) => payment.orderId === orderId).map((payment) => payment.payee ?? 'SUPPLIER'))];
+      for (const payee of payees) {
+        const found = payeeInvoices(view, payee);
+        if (found.viaSupplier && payees.includes('SUPPLIER')) continue;
+        const branch = this.state.containerTree(view).find((item) => item.payee === payee);
         const nodes = branch ? [...branch.terms.flatMap((term) => term.payments), ...branch.payments] : [];
-        rows.push({ text: invoiceLine(invoice), coverage: invoice.paymentIds !== undefined
-          ? invoiceCoverage(invoice, nodes.map((node) => ({ parts: node.parts.length ? node.parts : [{ id: node.id }] })), PAYEE_LABEL[payee]).text : null });
+        const rows: InvoiceRow[] = found.invoices.map((invoice, index) => ({ key: `i${invoice.id}`, text: invoiceLine(invoice), fill: null,
+          file: invoice.documentId != null ? { orderId, documentId: invoice.documentId, name: invoice.documentName || invoice.number } : null,
+          coverage: found.viaSupplier ? 'via de leverancier' : index > 0 ? 'extra factuur' : invoice.paymentIds !== undefined
+            ? invoiceCoverage(invoice, nodes.map((node) => ({ parts: node.parts.length ? node.parts : [{ id: node.id }] })), PAYEE_LABEL[payee]).text : null }));
+        for (const file of found.files) rows.push({ key: `f${file.documentId}`, text: invoiceFileText(file), coverage: null,
+          file: { orderId, documentId: file.documentId, name: file.originalFilename }, fill: { orderId, file } });
+        blocks.push({ key: `p${orderId}:${payee}`, title: `${containerName(view.order)} · ${PAYEE_LABEL[payee]}`, rows,
+          missing: found.missing ? 'Nog geen factuur' : null, add: { orderId, payee: found.viaSupplier ? 'SUPPLIER' : payee } });
       }
     }
-    return rows;
+    for (const cost of this.state.costs()) {
+      if (cost.id == null || (cost.bankStatementLineId !== row.id && !(cost.payments ?? []).some((payment) => payment.bankStatementLineId === row.id))) continue;
+      const files = this.state.attachmentsFor(cost.id);
+      blocks.push({ key: `c${cost.id}`, title: `Kost · ${cost.description}`, missing: files.length ? null : 'Nog geen factuur of bon', add: { costId: cost.id },
+        rows: files.map((asset) => ({ key: `a${asset.id}`, text: asset.name || asset.originalFilename, coverage: null, file: { asset }, fill: null })) });
+    }
+    return blocks.length > 1 ? blocks : blocks.map((block) => ({ ...block, title: null }));
   });
+
+  /* ---- "Factuur toevoegen…" / "Gegevens invullen" at the transaction (outside Peppol) */
+  /** The container payee whose invoice the hosted Inkoop sheet is adding (purchase-editor's `invoicing`). */
+  readonly invoicing = signal<{ orderId: number; action: InvoiceSheetAction } | null>(null);
+  readonly invoiceBusy = signal(false);
+  readonly invoicingView = computed(() => { const open = this.invoicing(); return open ? this.state.purchaseViews().find((view) => view.order.id === open.orderId) ?? null : null; });
+  /** The Afspraak per payee for the sheet's comparison; Bijkomende kosten have none. */
+  readonly invoicingAgreed = computed<Partial<Record<Payee, number | null>>>(() => Object.fromEntries((this.invoicingView()?.reconciliation?.streams ?? [])
+    .map((stream) => [stream.payee, stream.payee === 'OTHER' ? null : stream.plannedEur])));
+  /** An invoice's euro at the container rate (the transport rate for Douane & transport), as purchase-editor's invoiceEurOf. */
+  readonly invoiceEurOf = (amount: number, currency: Currency, payee: Payee): number => {
+    const order = this.invoicingView()?.order;
+    if (!order || currency === 'EUR') return amount;
+    const usdToEur = payee === 'LOGISTICS' && order.usdToEurTransport ? order.usdToEurTransport : order.usdToEurGoods ?? 1;
+    return currency === 'USD' ? amount * usdToEur : amount * (order.cnyToUsd ?? 1) * usdToEur;
+  };
+  /** "Factuur toevoegen…": the invoice sheet for a container payee, the file dialog for a cost (its documents in the library). */
+  addInvoice(block: InvoiceBlock): void {
+    const add = block.add;
+    if (!add || this.invoiceBusy()) return;
+    if ('costId' in add) void this.state.pickFiles().then((files) => this.state.attach(add.costId, files));
+    else this.invoicing.set({ orderId: add.orderId, action: { payee: add.payee } });
+  }
+  /** "Gegevens invullen" on an invoice file without data (a PI): it becomes the invoice with data, its file kept. */
+  fillInvoice(fill: { orderId: number; file: PurchaseInvoiceFile }): void {
+    if (!this.invoiceBusy()) this.invoicing.set({ orderId: fill.orderId, action: { payee: fill.file.payee, file: fill.file } });
+  }
+  openInvoiceFile(row: InvoiceRow): void {
+    const file = row.file;
+    if (!file) return;
+    if ('asset' in file) void this.state.openAttachment(file.asset);
+    else void this.state.openPurchaseFile(file.orderId, file.documentId, file.name);
+  }
+  closeInvoice(): void { if (!this.invoiceBusy()) this.invoicing.set(null); }
+  /** As purchase-editor's submitInvoice: a new file goes up once (a retry reuses it), then the invoice; the containers reload. */
+  async submitInvoice(submission: InvoiceSheetSubmit): Promise<void> {
+    const open = this.invoicing();
+    if (!open || this.invoiceBusy()) return;
+    const orderId = open.orderId;
+    this.invoiceBusy.set(true);
+    try {
+      let documentId = submission.body.documentId ?? null;
+      if (submission.file) {
+        const doc = await this.purchases.addDocument(orderId, submission.file, invoiceDocumentKind(submission.body.payee), null, null);
+        documentId = doc.id;
+        this.invoicing.update((current) => current ? { ...current, action: { ...current.action, documentId: doc.id, documentName: doc.originalFilename } } : current);
+      }
+      const body = { ...submission.body, documentId };
+      if (submission.invoiceId != null) await this.purchases.updateInvoice(orderId, submission.invoiceId, body);
+      else await this.purchases.addInvoice(orderId, body);
+      this.invoicing.set(null);
+      this.ui.toast('Factuur bewaard', 'ok');
+      await this.state.reload(['containers']);
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Factuur bewaren mislukt'), 'err');
+    } finally {
+      this.invoiceBusy.set(false);
+    }
+  }
 
   /* ---- position in the list it came from */
   readonly position = computed(() => {

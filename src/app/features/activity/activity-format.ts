@@ -89,7 +89,7 @@ const STATUS_WORDS: Record<string, string> = {
   WIJZIGING_GEVRAAGD: 'Wijziging gevraagd',
 };
 const ENUM_WORDS: Record<string, string> = {
-  PAYMENT_PROOF: 'Betaalbewijs', COMMERCIAL_INVOICE: 'Handelsfactuur', INVOICE: 'Factuur', PACKING_LIST: 'Paklijst',
+  PAYMENT_PROOF: 'Betaalbewijs', COMMERCIAL_INVOICE: 'Handelsfactuur', PROFORMA_INVOICE: 'Proforma (PI)', INVOICE: 'Factuur', PACKING_LIST: 'Paklijst',
   BILL_OF_LADING: 'Cognossement (B/L)', CUSTOMS: 'Douanedocument', OTHER: 'Overig',
 };
 /** Labels whose values are references, never numbers to format. */

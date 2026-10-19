@@ -24,6 +24,7 @@ test('production values read as elsewhere in the ERP', () => {
   assert.equal(activityValue({ field: 'status', label: 'Status' }, 'CONCEPT', ev(1)), 'Concept');
   assert.equal(activityValue({ field: 'status', label: 'Status' }, 'ONDERWEG', ev(1)), 'Vertrokken');
   assert.equal(activityValue({ field: 'kind', label: 'Soort' }, 'PAYMENT_PROOF', ev(1)), 'Betaalbewijs');
+  assert.equal(activityValue({ field: 'kind', label: 'Soort' }, 'PROFORMA_INVOICE', ev(1)), 'Proforma (PI)');
   assert.equal(activityValue({ field: 'supplierId', label: 'Leverancier' }, '7', ev(1), ctx), 'Yunnan Pubei');
   assert.equal(activityValue({ field: 'supplierId', label: 'Leverancier' }, '5', ev(1)), '5');
   assert.equal(activityValue({ field: 'x', label: 'Gearchiveerd' }, 'ja', ev(1)), 'Ja');

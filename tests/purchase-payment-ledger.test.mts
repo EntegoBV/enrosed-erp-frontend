@@ -722,12 +722,13 @@ test('an older line\'s marker proves a payment; a credit offset needs no proof; 
   const documents: PurchaseDocument[] = [
     { ...proof(10, 2), kind: 'COMMERCIAL_INVOICE', kindLabel: 'Commercial invoice', originalFilename: 'invoice.pdf' },
     { ...proof(11, 2), kind: 'OTHER', kindLabel: 'Andere', label: 'Factuur inspectie', originalFilename: 'inspectie.pdf' },
+    { ...proof(12, 2), kind: 'PROFORMA_INVOICE', kindLabel: 'Proforma (PI)', label: 'PI', originalFilename: 'PI CULINAN.xlsx' },
   ];
   const result = routed(view, payments, documents, new Set([1]));
   const row = (id: number) => result.rows.find(item => item.id === id)!;
   assert.deepEqual([row(1).onBank, row(1).proven], [true, true], 'marked by an older line only');
   assert.deepEqual([row(3).creditOffset?.creditId, row(3).proven], [1, true]);
-  assert.deepEqual([row(2).proven, row(2).hasProof, row(2).proofs?.length, row(2).invoiceFiles.map(file => file.id)], [false, false, 0, [10, 11]]);
+  assert.deepEqual([row(2).proven, row(2).hasProof, row(2).proofs?.length, row(2).invoiceFiles.map(file => file.id)], [false, false, 0, [10, 11, 12]], 'a PI is an invoice file too');
   assert.equal(result.summary.missingProofCount, 1);
   assert.deepEqual(of(result, 'SUPPLIER').proof, { withProof: 1, total: 1 }, 'the offset is neither counted nor missing');
 });

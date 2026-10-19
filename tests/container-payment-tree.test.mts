@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import type { PurchaseOrderView, PurchasePaymentRow } from '../src/app/core/api/models.ts';
-import { invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { invoiceComparison, invoiceCoverage, invoiceFileText, invoiceLine, primaryInvoice } from '../src/app/features/purchasing/purchase-invoices.ts';
 import type { PayeeBranch } from '../src/app/features/finance/container-payment-tree.ts';
 
 // Kosten & bank per container: invoices → terms → payments (round of 2026-10-15). The module words its invoices
@@ -14,7 +14,7 @@ const parsed = ts.createSourceFile('container-payment-tree.ts', source, ts.Scrip
 const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed,
   parsed.statements.filter(node => !ts.isImportDeclaration(node)))), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const exports: Record<string, any> = {};
-vm.runInNewContext(javascript, { exports, invoiceComparison, invoiceCoverage, invoiceLine, primaryInvoice, Intl });
+vm.runInNewContext(javascript, { exports, invoiceComparison, invoiceCoverage, invoiceFileText, invoiceLine, primaryInvoice, Intl });
 const tree = (view: PurchaseOrderView, rows: PurchasePaymentRow[], lines: Record<number, string>): PayeeBranch[] =>
   JSON.parse(JSON.stringify(exports['containerPaymentTree'](view, rows,
     (row: PurchasePaymentRow) => row.bankStatementLineId != null ? { accountLabel: lines[row.bankStatementLineId] ?? '', day: '' } : null,
@@ -88,6 +88,18 @@ test('every stream is headed with the ERP\'s own payee words, whatever label the
   const other = { ...stream('OTHER', 0, 120), label: 'Andere betaling' };
   const branches = tree(view({ reconciliation: { streams: [{ ...stream('SUPPLIER', 31048.04, 31048.04), label: 'Leverancier (goederen)' }, other], supplierInstalments: [] } }), [], {});
   assert.deepEqual(branches.map(branch => branch.label), ['Leverancier', 'Bijkomende kosten']);
+});
+
+test("a PI is the supplier's invoice file: 'Proforma (PI) · …', so the container no longer reads as without an invoice (Emre, 2026-10-19)", () => {
+  const pi = { documentId: 1, kind: 'PROFORMA_INVOICE', label: 'PI', originalFilename: 'PI CULINAN.xlsx', paymentId: null, payee: 'SUPPLIER' };
+  const ci = { documentId: 4, kind: 'COMMERCIAL_INVOICE', label: null, originalFilename: 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf', paymentId: null, payee: 'SUPPLIER' };
+  const [supplier] = tree(view({ invoices: [], invoiceFiles: [pi, ci] }), [], {});
+  assert.deepEqual(supplier.invoiceFiles, [
+    { documentId: 1, text: 'Proforma (PI) · PI CULINAN.xlsx', name: 'PI CULINAN.xlsx' },
+    { documentId: 4, text: 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf · zonder gegevens', name: 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf' },
+  ]);
+  const [older] = tree(view({ invoices: [], invoiceFiles: [{ ...ci, kind: undefined }] }), [], {});
+  assert.equal(older.invoiceFiles[0].text, 'COMMERCILA INVOICE YNPB-ENR-20260513.pdf · zonder gegevens', 'a server without the kind on its files');
 });
 
 test('a server with this round but no invoices yet, and an older server without the field', () => {
