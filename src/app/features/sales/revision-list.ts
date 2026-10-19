@@ -14,7 +14,7 @@ import { messageOf } from '../../core/api/errors';
   imports: [Skeleton, RouterLink, PageHeader, NumPipe, DateNlPipe],
   template: `
     <app-page-header title="Wijzigingen"
-                     [subtitle]="loading() ? 'Voorstellen laden…' : error() ? 'Niet vernieuwd' : revisions().length + ' voorstel(len) in behandeling'" />
+                     [subtitle]="loading() ? 'Voorstellen laden…' : error() ? 'Niet vernieuwd' : revisions().length + (revisions().length === 1 ? ' voorstel' : ' voorstellen') + ' in behandeling'" />
 
     <div class="content">
       <div class="alert alert--info">
@@ -46,19 +46,20 @@ import { messageOf } from '../../core/api/errors';
                 <div class="list-item__meta">{{ revision.message }}</div>
                 <div class="list-item__meta">
                   {{ revision.proposedAt | dateNl }} ·
-                  {{ revision.lines.length | num }} regel(s)
+                  {{ revision.lines.length | num }} {{ revision.lines.length === 1 ? 'regel' : 'regels' }}
                 </div>
               </div>
               <span class="badge badge--gold">wacht</span>
               <span class="list-item__chev">›</span>
             </a>
           } @empty {
-            @if (!error()) {
+            @if (loading()) {
+              <!-- Only the skeleton while loading: the empty text below it read as "there is nothing". -->
+              <app-skeleton kind="list" [rows]="3" />
+            } @else if (!error()) {
               <div class="empty">
                 <div class="empty__icon">⇄</div>
-                <div class="empty__title">
-                  @if (loading()) { <app-skeleton kind="lines" [rows]="3" /> } @else { Geen openstaande voorstellen }
-                </div>
+                <div class="empty__title">Geen openstaande voorstellen</div>
                 <div class="empty__text">
                   Zodra een klant een wijziging voorstelt verschijnt die hier.
                   Nieuwe websiteaanvragen staan bij <a routerLink="/sales">Verkooporders</a>.

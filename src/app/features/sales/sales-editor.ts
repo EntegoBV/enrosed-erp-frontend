@@ -1598,13 +1598,13 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
         </app-sheet>
       }
     } @else {
-      <app-page-header title="Offerte" subtitle="Verkoop" [showBack]="true"
+      <app-page-header [title]="loadError() ? 'Document niet beschikbaar' : 'Document laden'" subtitle="Verkoop" [showBack]="true"
                        [showBell]="false" />
       <main class="content sales-state" aria-live="polite">
         @if (loadError()) {
           <section class="card load-error" role="alert">
             <div class="load-error__icon" aria-hidden="true">!</div>
-            <h2>Offerte niet beschikbaar</h2>
+            <h2>Document niet beschikbaar</h2>
             <p>{{ loadError() }}</p>
             <div class="load-error__actions">
               <a class="btn" routerLink="/sales">Terug naar verkoop</a>
@@ -1619,7 +1619,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
           <div class="skel loading-hero" aria-hidden="true"></div>
           <div class="skel loading-card" aria-hidden="true"></div>
           <div class="skel loading-card" aria-hidden="true"></div>
-          <span class="sr-only">Offerte laden…</span>
+          <span class="sr-only">Document laden…</span>
         } @else {
           <section class="card load-error" role="status">
             <div class="load-error__icon" aria-hidden="true">?</div>
@@ -2156,8 +2156,13 @@ export class SalesEditor {
   /** Every send of a website order that is still a concept asks the customer to approve this version. */
   readonly sendForApproval = computed(() => webOrderSendsForApproval(this.view()));
   readonly sendCopy = computed(() => webOrderSendCopy(this.view()));
-  /** How the fixed-version notes name the document: a website order is never called an offerte there. */
-  readonly documentWord = computed(() => this.isWebOrder() ? 'bestelling' : 'offerte');
+  /** How the fixed-version notes name the document: one word per kind, and a website order is never called an offerte there. */
+  readonly documentWord = computed(() => {
+    const docType = this.view()?.order.docType ?? 'OFFERTE';
+    if (docType === 'FACTUUR') return 'factuur';
+    if (docType === 'CREDITNOTA') return 'creditnota';
+    return this.isWebOrder() ? 'bestelling' : 'offerte';
+  });
   /** Unchanged website order: the invoice is the primary action, sending the secondary one. */
   invoiceFirst(data: SalesOrderView): boolean { return webOrderInvoiceFirst(data); }
   readonly takeSheet = signal(false);
@@ -3072,7 +3077,7 @@ export class SalesEditor {
       this.revisions.set(revisions);
     } catch (failure: unknown) {
       this.view.set(null);
-      this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
+      this.loadError.set(messageOf(failure, 'Het document kon niet worden geladen'));
     } finally {
       this.loading.set(false);
     }

@@ -6,24 +6,17 @@ import { Country, Customer, LANGUAGES } from '../../core/api/models';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { Sheet, Ui } from '../../shared/ui';
+import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { countryName } from '../../core/api/geo';
+import { messageOf } from '../../core/api/errors';
+import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { CustomerLoginBlock } from './customer-login-block';
-
-function blank(countryCode: string): Customer {
-  return {
-    id: null, company: '', contact: '', email: '', phone: '', vatNumber: '',
-    countryCode, language: 'NL', address: '', postalCode: '', city: '',
-    incoterm: 'DAP', paymentTerms: 'Vooruitbetaling', notes: '',
-    partner: false, partnerSharePct: null, partnerCostPct: null,
-    fiscalRepresentative: false, invoiceNote: '',
-  };
-}
+import { blankCustomer as blank, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing } from './customer-form';
 
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock],
+  imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock, LoadError],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -37,6 +30,9 @@ function blank(countryCode: string): Customer {
                [ngModel]="query()" (ngModelChange)="query.set($event)" />
       </div>
 
+      @if (loadError(); as error) {
+        <app-load-error [message]="error" [busy]="loading()" (retry)="retryLoad()" />
+      } @else {
       <div class="card"><div class="list">
         @for (customer of filtered(); track customer.id) {
           <div class="list-item">
@@ -59,6 +55,7 @@ function blank(countryCode: string): Customer {
           }
         }
       </div></div>
+      }
     </div>
 
     <button class="fab" type="button" (click)="open(null)">+ Klant</button>
@@ -255,17 +252,32 @@ export class CustomerList {
     }
   }
 
+  /** Set when the list could not be fetched: the screen shows why and Opnieuw proberen instead of a skeleton forever. */
+  readonly loadError = signal<string | null>(null);
+
   private async load(): Promise<void> {
-    const [customers, countries] = await Promise.all([
-      this.sales.customers(), this.sales.countries()]);
-    this.customers.set(customers);
-    this.countries.set(countries);
-    /* The sheet can open before this list arrives: without repair the new
-       customer sat on "Ander land…" with an empty code. */
-    if (this.editing() && this.draft().id === null && !this.draft().countryCode) {
-      this.patch({ countryCode: this.defaultCountry() });
+    try {
+      const [customers, countries] = await Promise.all([
+        this.sales.customers(), this.sales.countries()]);
+      this.customers.set(customers);
+      this.countries.set(countries);
+      this.loadError.set(null);
+      /* The sheet can open before this list arrives: without repair the new
+         customer sat on "Ander land…" with an empty code. */
+      if (this.editing() && this.draft().id === null && !this.draft().countryCode) {
+        this.patch({ countryCode: this.defaultCountry() });
+      }
+    } catch (failure: unknown) {
+      this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
+    } finally {
+      this.loading.set(false);
     }
-    this.loading.set(false);
+  }
+
+  retryLoad(): void {
+    if (this.loading()) return;
+    this.loading.set(true);
+    void this.load();
   }
 
   readonly filtered = computed(() => {
@@ -302,8 +314,7 @@ export class CustomerList {
       never a hardcoded guess, which showed "Ander land…" on every new
       customer whenever the guess was not in Landen & vracht. */
   private defaultCountry(): string {
-    const codes = this.countries().map((country) => country.code);
-    return codes.includes('BE') ? 'BE' : codes[0] ?? '';
+    return defaultCustomerCountry(this.countries().map((country) => country.code));
   }
 
   patch(changes: Partial<Customer>): void {
@@ -313,14 +324,7 @@ export class CustomerList {
   readonly saving = signal(false);
 
   /** The two letters of the VAT number next to the customer's country, when they differ. */
-  readonly vatCountryMismatch = computed(() => {
-    const vat = (this.draft().vatNumber ?? '').replace(/[\s.\-]/g, '').toUpperCase();
-    const country = (this.draft().countryCode ?? '').trim().toUpperCase();
-    const prefix = /^[A-Z]{2}/.exec(vat)?.[0];
-    if (!prefix || !country) return null;
-    const same = prefix === country || (prefix === 'EL' && country === 'GR') || (prefix === 'XI' && country === 'GB');
-    return same ? null : { prefix, country };
-  });
+  readonly vatCountryMismatch = computed(() => vatCountryMismatch(this.draft().vatNumber, this.draft().countryCode));
 
   async save(): Promise<void> {
     /* A second tap while the first is under way made a second customer. */
@@ -330,8 +334,8 @@ export class CustomerList {
       this.ui.toast('Kies een land voor de klant', 'err');
       return;
     }
-    if (!(customer.vatNumber ?? '').trim()) {
-      this.ui.toast('Vul het BTW-nummer in; het mag niet leeg zijn', 'err');
+    if (vatNumberMissing(customer.vatNumber)) {
+      this.ui.toast(VAT_REQUIRED_MESSAGE, 'err');
       setTimeout(() => document.getElementById('c-vat')?.focus(), 100);
       return;
     }
@@ -343,7 +347,7 @@ export class CustomerList {
       await this.load();
       this.ui.toast('Klant opgeslagen');
     } catch (failure: unknown) {
-      this.ui.toast(message(failure, 'Opslaan mislukt'), 'err');
+      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
     } finally {
       this.saving.set(false);
     }
@@ -352,10 +356,16 @@ export class CustomerList {
   remove(): void {
     const customer = this.draft();
     this.ui.confirm(
-      { title: 'Klant verwijderen', message: `<b>${customer.company}</b> verwijderen?`,
+      { title: 'Klant verwijderen', message: `<b>${escapeHtml(customer.company)}</b> verwijderen?`,
         confirmLabel: 'Verwijderen', danger: true },
       async () => {
-        await this.sales.deleteCustomer(customer.id!);
+        try {
+          await this.sales.deleteCustomer(customer.id!);
+        } catch (failure: unknown) {
+          /* A 409 explains why (the customer has quotes or invoices): show it, keep the sheet. */
+          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
+          return;
+        }
         this.editing.set(false);
         await this.load();
         this.ui.toast('Klant verwijderd');
@@ -367,8 +377,4 @@ export class CustomerList {
       customer.id!, customer.countryCode, customer.incoterm);
     await this.router.navigate(['/sales', view.order.id, 'edit']);
   }
-}
-
-function message(failure: unknown, fallback: string): string {
-  return (failure as { error?: { message?: string } }).error?.message ?? fallback;
 }

@@ -31,6 +31,7 @@ import { messageOf } from '../../core/api/errors';
 import { isSwipeDeletableSalesDocument } from './sales-list-swipe';
 import { WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-credit-note';
+import { blankCustomer, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing } from '../customers/customer-form';
 import { salesDocumentKind } from './partner-settlement';
 import { billingKind, isAdvanceBillingInvoice } from './sales-advance-billing';
 import {
@@ -224,7 +225,8 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                 </div>
                 <div class="list-item__meta list-item__meta--wrap">
                   @if (creditNoteRow(row)) {
-                    {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }}@if ((row.order.extraLines ?? []).length) { · {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
+                    <!-- Only what the note holds: an amount-only note read "0 st · 0 regels · 1 bedrag". -->
+                    @if (row.priced.lines.length) { {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }} }@if (row.priced.lines.length && (row.order.extraLines ?? []).length) { · }@if ((row.order.extraLines ?? []).length) { {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
                   } @else if (partner(row.order)) {
                     {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
                   } @else {
@@ -254,6 +256,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                   <span class="so-source-mini">Websiteaanvraag</span>
                 }
                 <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
+                @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
                 @if (creditNoteRow(row) && row.order.status !== 'CONCEPT') {
                   <small class="so-credit-tegoed">{{ creditLine(row) }}</small>
                 } @else if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
@@ -515,6 +518,16 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
                     <option [value]="country.code">{{ country.name }}</option>
                   }
                 </select>
+              </div>
+              <div class="field">
+                <label class="req" for="nc-vat">BTW-nummer</label>
+                <input class="input" id="nc-vat" [ngModel]="newCustomer().vatNumber" placeholder="bijv. BE0123456789"
+                       (ngModelChange)="patchNew({ vatNumber: $event })" />
+                @if (newVatCountryMismatch(); as mismatch) {
+                  <span class="hint hint--warn">Landcode {{ mismatch.prefix }} in het BTW-nummer verschilt van het land ({{ mismatch.country }}). Opslaan mag; wij controleren het handmatig.</span>
+                } @else {
+                  <span class="hint">Verplicht. Klopt het niet met het land, dan controleren we het zelf na.</span>
+                }
               </div>
               <div class="field">
                 <label class="req" for="nc-language">Taal</label>
@@ -1123,9 +1136,13 @@ export class SalesList {
   }
 
   startAddCustomer(): void {
-    this.newCustomer.set(blankCustomer(this.countries()[0]?.code ?? 'BE'));
+    /* Klanten's defaults (Vooruitbetaling, BE first), so a customer made here matches one made there. */
+    this.newCustomer.set(blankCustomer(defaultCustomerCountry(this.countries().map((country) => country.code)) || 'BE'));
     this.addingCustomer.set(true);
   }
+
+  readonly newVatCountryMismatch = computed(() =>
+    vatCountryMismatch(this.newCustomer().vatNumber, this.newCustomer().countryCode));
 
   patchNew(changes: Partial<Customer>): void {
     this.newCustomer.update((customer) => ({ ...customer, ...changes }));
@@ -1136,6 +1153,12 @@ export class SalesList {
     if (this.busy()) return;
     if (!this.newCustomer().company.trim()) {
       this.ui.toast('Bedrijfsnaam is verplicht', 'err');
+      return;
+    }
+    /* The server refuses a customer without a VAT number: the same check as Klanten. */
+    if (vatNumberMissing(this.newCustomer().vatNumber)) {
+      this.ui.toast(VAT_REQUIRED_MESSAGE, 'err');
+      setTimeout(() => document.getElementById('nc-vat')?.focus(), 100);
       return;
     }
     this.busy.set(true);
@@ -1626,12 +1649,4 @@ export class SalesList {
     this.ui.toast(
       `Order ${view.order.number} is aangemaakt. Open hem vanuit het overzicht.`, 'err');
   }
-}
-
-function blankCustomer(countryCode: string): Customer {
-  return {
-    id: null, company: '', contact: '', email: '', phone: '', vatNumber: '',
-    countryCode, language: 'NL', address: '', postalCode: '', city: '',
-    incoterm: 'DAP', paymentTerms: '30 dagen', notes: '',
-  };
 }

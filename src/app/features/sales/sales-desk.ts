@@ -179,7 +179,7 @@ interface JourneyStep {
           <div class="desk-kpis" [class.desk-kpis--credit]="isCreditNoteDoc()" aria-label="Kerncijfers">
             @if (isCreditNoteDoc()) {
             <div class="desk-kpi"><small>Producten</small><strong>{{ data.priced.totals.pieces | num }}</strong><span>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}@if ((data.order.extraLines ?? []).length) { · {{ (data.order.extraLines ?? []).length }} {{ (data.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }</span></div>
-            <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" [class.desk-kpi--credit]="creditSettlement().openEur > 0" [class.desk-kpi--credit-done]="creditSettlement().openEur <= 0 && data.order.status !== 'CONCEPT' && !creditDead()" (click)="railTab.set('payments')">
+            <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" [class.desk-kpi--credit]="creditSettlement().openEur > 0" [class.desk-kpi--credit-done]="creditSettlement().openEur <= 0 && data.order.status !== 'CONCEPT' && !creditDead()" (click)="showRail('payments')">
               <small>Tegoed</small>
               <strong>{{ (data.order.status === 'CONCEPT' ? data.priced.totals.totalInclVat : creditSettlement().openEur) | eur }}</strong>
               <span>{{ data.order.status === 'CONCEPT' ? 'incl. btw · nog niet uitgereikt' : creditDead() ? 'geannuleerd · ' + (creditSettlement().tegoedEur | eur) + ' vervallen' : creditSettlement().openEur > 0 ? 'nog af te handelen · incl. btw' : 'afgehandeld · ' + (creditSettlement().tegoedEur | eur) + ' incl. btw' }}</span>
@@ -188,20 +188,20 @@ interface JourneyStep {
               <a class="desk-kpi desk-kpi--button" [routerLink]="['/sales', data.creditedInvoiceId]"><small>Factuur</small><strong>{{ data.creditedInvoiceNumber }}</strong><span>{{ creditOriginal() ? (creditOriginalOpenEur() > 0 ? (creditOriginalOpenEur() | eur) + ' nog open' : 'betaald') : 'openen ›' }}</span></a>
             }
             @if (creditStep(); as step) {
-              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy() || documentMutationBusy()" (click)="railTab.set(step.key === 'issue' ? 'status' : 'payments')">
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy() || documentMutationBusy()" (click)="showRail(step.key === 'issue' ? 'status' : 'payments')">
                 <small>Volgende stap</small><strong>{{ step.title }} ›</strong><span>{{ step.label && step.label !== step.title ? step.label : step.help }}</span>
               </button>
             }
             } @else {
             @if (isAdvanceInvoice(data)) {
             <div class="desk-kpi"><small>Producten</small><strong>{{ advanceSummary(data).pieces }}</strong><span>{{ advanceSummary(data).lines ?? '—' }} productregels van de container</span></div>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"><small>Lading container</small><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></button>
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')"><small>Lading container</small><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></button>
             } @else {<div class="desk-kpi">
               <small>Producten</small>
               <strong>{{ data.priced.totals.pieces | num }}</strong>
               <span>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }} · {{ data.priced.totals.cartons | num }} dozen</span>
             </div>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')">
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')">
               <small>Levering</small>
               @if (isLooseCartons(data)) {
                 <strong>{{ data.priced.totals.cbm | cbm }}</strong>
@@ -213,24 +213,28 @@ interface JourneyStep {
             </button>
             }
             @if (isAdvanceInvoice(data)) {
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"><small>Planning</small><strong>{{ advanceSummary(data).arrival ? (advanceSummary(data).arrival | dateNl) : advanceSummary(data).deliveryWeek || 'Nog te bevestigen' }}</strong><span>{{ advanceSummary(data).arrival ? 'verwachte aankomst container' : 'leverweek container' }}</span></button>
-            } @else {            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('delivery')"
-                    [class.is-warn]="data.order.freight === 'TE_BEPALEN'">
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')"><small>Planning</small><strong>{{ advanceSummary(data).arrival ? (advanceSummary(data).arrival | dateNl) : advanceSummary(data).deliveryWeek || 'Nog te bevestigen' }}</strong><span>{{ advanceSummary(data).arrival ? 'verwachte aankomst container' : 'leverweek container' }}</span></button>
+            } @else {            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')"
+                    [class.is-warn]="data.order.freight === 'TE_BEPALEN' || !!data.priced.validation.freightPricingIssue"
+                    [attr.title]="data.order.freight === 'TE_BEPALEN' ? null : data.priced.validation.freightPricingIssue || null">
               <small>Verzending</small>
               @if (data.order.freight === 'TE_BEPALEN') {
                 <strong>te bepalen</strong>
+              } @else if (data.priced.validation.freightPricingIssue) {
+                <!-- No fit: the server leaves the freight at 0, which is not a price to show. -->
+                <strong>Vracht nakijken</strong>
               } @else {
                 <strong>{{ data.priced.totals.freight + data.priced.totals.handling | eur: 0 }}</strong>
               }
               <span>{{ freightStrategyLabel(data) }}</span>
             </button>
             }
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="railTab.set('check')">
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('check')">
               <small>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</small>
               <strong>{{ displayedProfit(data) | eur: 0 }}</strong>
               <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Bij uitgegeven afrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
             </button>
-            <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="railTab.set('check')">
+            <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="showRail('check')">
               @if (advanceAgreement()) {
                 <small>Betaalplan</small><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
               } @else {
@@ -246,11 +250,11 @@ interface JourneyStep {
                 <span>de klant kan nog wijzigen</span>
               </button>
             } @else if (allProductsUnavailable()) {
-              <button class="desk-kpi desk-kpi--go" type="button" (click)="railTab.set('status')">
+              <button class="desk-kpi desk-kpi--go" type="button" (click)="showRail('status')">
                 <small>Beschikbaarheid</small><strong>Geen leverbare producten</strong><span>Herstel een product om verder te gaan</span>
               </button>
             } @else if (isInvoiceDoc()) {
-              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="railTab.set('status')">
+              <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="showRail('status')">
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
                 <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : skipsShipping(data) ? 'voorschot · geen levering' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
@@ -268,7 +272,7 @@ interface JourneyStep {
                 <span>getekend door {{ data.order.signedByName || 'de klant' }}</span>
               </button>
             } @else if (sendIssues().length) {
-              <button class="desk-kpi desk-kpi--go" type="button" (click)="railTab.set('status')">
+              <button class="desk-kpi desk-kpi--go" type="button" (click)="showRail('status')">
                 <small>Nog niet klaar</small>
                 <strong>{{ sendIssues().length }} open {{ sendIssues().length === 1 ? 'punt' : 'punten' }} ›</strong>
                 <span>{{ sendIssues()[0] }}</span>
@@ -304,7 +308,7 @@ interface JourneyStep {
             <span><span role="status"><strong>Websitebestelling</strong> · {{ notice.lead }}</span>
               @for (line of notice.lines; track line.text) { <small [class.desk-attention__gold]="line.gold">{{ line.text }}</small> }
             </span>
-            @if (websiteRequest(data.order) && !webOrderCancelled()) { <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button> }
+            @if (websiteRequest(data.order) && !webOrderCancelled()) { <button class="linklike" type="button" (click)="showRail('status')">Checklist ›</button> }
           </div>
         }
         <!-- The customer record lacks the address an invoice needs: said where staff work on the document, with the
@@ -330,13 +334,13 @@ interface JourneyStep {
           <div class="desk-attention" role="status">
             <b>⇄</b>
             <span><strong>De klant vraagt een wijziging</strong> · {{ revision.lines.length }} gewijzigde {{ revision.lines.length === 1 ? 'regel' : 'regels' }}@if (revision.proposedBy) { · {{ revision.proposedBy }} }</span>
-            <button class="linklike" type="button" (click)="railTab.set('status')">Beoordelen ›</button>
+            <button class="linklike" type="button" (click)="showRail('status')">Beoordelen ›</button>
           </div>
         } @else if (websiteRequest(data.order) && !isWebOrder()) {
           <div class="desk-attention" role="status">
             <b>↗</b>
             <span><strong>Websiteaanvraag</strong> · controleer producten en dozen, klant en btw ({{ vatLabel(data.priced.totals.vatTreatment) }}), levering en vracht vóór het versturen</span>
-            <button class="linklike" type="button" (click)="railTab.set('status')">Checklist ›</button>
+            <button class="linklike" type="button" (click)="showRail('status')">Checklist ›</button>
           </div>
         } @else if (data.awaitingResend) {
           <div class="desk-attention" role="status">
@@ -372,7 +376,7 @@ interface JourneyStep {
           <div class="desk-lock desk-lock--credit" role="status">
             <span aria-hidden="true">✓</span>
             <span><b>Deze creditnota staat vast.</b> Bedragen veranderen niet meer; het tegoed handel je af bij Afhandeling.</span>
-            <button class="btn btn--sm" type="button" (click)="railTab.set('payments')">Afhandeling ›</button>
+            <button class="btn btn--sm" type="button" (click)="showRail('payments')">Afhandeling ›</button>
           </div>
         } @else if (!canEdit() && !webOrderOpen()) {
           <div class="desk-lock" role="status">
@@ -707,7 +711,7 @@ interface JourneyStep {
               <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Klant</button>
               @if (!isCreditNoteDoc()) {
               <button type="button" role="tab" [class.on]="railTab() === 'delivery'" [attr.aria-selected]="railTab() === 'delivery'" (click)="railTab.set('delivery')">
-                Levering @if (data.order.freight === 'TE_BEPALEN' || (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                Levering @if (data.order.freight === 'TE_BEPALEN' || data.priced.validation.freightPricingIssue || (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
               }
               <button type="button" role="tab" [class.on]="railTab() === 'check'" [attr.aria-selected]="railTab() === 'check'" (click)="railTab.set('check')">
@@ -1339,6 +1343,10 @@ interface JourneyStep {
     .desk-hero__link{color:inherit;font-weight:650;text-decoration:underline;text-underline-offset:2px}.desk-hero__link:hover{opacity:.85}
     .status-reopen{min-height:44px;padding:6px 10px;border:1px solid currentColor;border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}.status-reopen:focus-visible{outline:2px solid currentColor;outline-offset:3px}
     :host{display:block;min-width:0}
+    /* showRail() scrolls the rail into view below 1440 px: clear of the sticky app bar. */
+    .desk-rail{scroll-margin-top:calc(var(--appbar-h,62px) + 14px)}
+    /* A KPI sub line wraps instead of ending in "…": it carries amounts ("excl. btw · € x incl. · € y gecrediteerd"). */
+    .desk-kpi span{white-space:normal}
     .desk-row--extra td{background:var(--surface-2)}.desk-extra{display:flex;align-items:center;gap:10px}.desk-extra__mark{display:grid;width:32px;height:32px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose);font-weight:800}.desk-extra__what{flex:1;min-width:0;text-align:left}.desk-empty .btn+.btn{margin-left:8px}
     .desk-status__step--stop{color:#f6a3a3}.desk-status__step--stop i{background:#e05a4a;box-shadow:0 0 0 2px rgb(224 90 74/.3)}
     .desk-status__step--wait{color:#f4cf9a}.desk-status__step--wait i{background:#f4cf9a;box-shadow:0 0 0 2px rgb(244 207 154/.3)}
@@ -1590,13 +1598,24 @@ export class SalesDesk extends SalesEditor {
     return 'Afgerond ✓';
   }
 
+  /** KPI tiles and banners open a rail tab. Below 1440 px the rail stands under the table, so it is
+      brought into view as well; beside the table (sticky) it already is. */
+  showRail(tab: RailTab): void {
+    this.railTab.set(tab);
+    const rail = document.querySelector<HTMLElement>('.desk-rail');
+    if (!rail || getComputedStyle(rail).position === 'sticky') return;
+    const top = rail.getBoundingClientRect().top;
+    /* Instant, not smooth: a smooth scroll does not run in a background tab, and the click must always show the rail. */
+    if (top < 0 || top > window.innerHeight * 0.6) rail.scrollIntoView({ block: 'start' });
+  }
+
   /** The checklist and the website review jump to a rail tab instead of scrolling a page. */
   override scrollToSection(id: string): void {
     const tab: RailTab | null = id === 'quote-setup' ? 'order'
       : id === 'quote-logistics' ? 'delivery'
       : id === 'quote-check' ? 'check'
       : id === 'quote-status' ? 'status' : null;
-    if (tab) this.railTab.set(tab);
+    if (tab) this.showRail(tab);
     if (id === 'order-lines') document.querySelector<HTMLElement>('.desk-main')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

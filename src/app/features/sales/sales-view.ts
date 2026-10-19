@@ -27,7 +27,9 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
-import { ChangeDetectionStrategy, Component, HostListener, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, afterRenderEffect, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Title } from '@angular/platform-browser';
+import { documentTitle } from '../../core/platform/document-title';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SalesApi } from '../../core/api/sales-api';
@@ -720,6 +722,19 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
                 <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
+                <!-- The same rows as the editor's Prijsopbouw: how the goods figure came about. -->
+                @if (data.priced.totals.lineDiscountTotal || data.priced.totals.orderDiscountAmount) {
+                  <div><dt>Bruto</dt><dd>{{ data.priced.totals.gross | eur: 2 }}</dd></div>
+                  @if (data.priced.totals.lineDiscountTotal) {
+                    <div><dt>Kortingen op regels</dt><dd>− {{ data.priced.totals.lineDiscountTotal | eur: 2 }}</dd></div>
+                  }
+                  @if (data.priced.totals.orderDiscountAmount) {
+                    <div><dt>Orderkorting <small>{{ data.priced.totals.orderDiscountPercent | pct: 0 }}</small></dt><dd>− {{ data.priced.totals.orderDiscountAmount | eur: 2 }}</dd></div>
+                  }
+                }
+                @if (data.priced.totals.extraDiscountAmount) {
+                  <div><dt>{{ data.order.extraDiscountLabel || 'Extra korting' }} <small>{{ data.order.extraDiscountPct | pct: 1 }}</small></dt><dd>− {{ data.priced.totals.extraDiscountAmount | eur: 2 }}</dd></div>
+                }
                 @if ((data.priced.extraLines ?? []).length) {
                   <div><dt>Andere regels</dt><dd>{{ data.priced.totals.extraLinesTotal | eur: 2 }}</dd></div>
                 }
@@ -1015,17 +1030,17 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
       <!-- Looking is looking: the phone shows no sticky action bar here; editing and sending live in the editor. -->
     } @else if (loading()) {
-      <app-page-header title="Offerte laden" [showBack]="true" [showBell]="false" />
+      <app-page-header title="Document laden" [showBack]="true" [showBell]="false" />
       <main class="content sales-view-page">
         <app-skeleton kind="card" />
         <div class="loading-grid"><app-skeleton kind="lines" [rows]="5" /><app-skeleton kind="lines" [rows]="4" /></div>
       </main>
     } @else {
-      <app-page-header title="Offerte niet beschikbaar" [showBack]="true" [showBell]="false" />
+      <app-page-header title="Document niet beschikbaar" [showBack]="true" [showBell]="false" />
       <main class="content sales-view-page">
         <section class="load-error">
           <span aria-hidden="true">!</span>
-          <h1>Deze offerte kon niet worden geopend</h1>
+          <h1>Dit document kon niet worden geopend</h1>
           <p>{{ loadError() }}</p>
           <div class="load-error__actions">
             <a class="btn" routerLink="/sales">Terug naar verkoop</a>
@@ -1899,6 +1914,13 @@ export class SalesView {
     });
     /* Every fresh view refetches the credited invoice: its open amount moves with each offset. */
     effect(() => { const view = this.view(); untracked(() => this.loadCreditOriginal(view)); });
+    /* The phone hero has no page header, so nothing named the tab: it kept "Document laden". After render,
+       so a leaving loading header (which hands the tab back to the route title) cannot overwrite it. */
+    const tabTitle = inject(Title);
+    afterRenderEffect(() => {
+      const number = this.view()?.order.number;
+      if (number && !this.desktop.active()) tabTitle.setTitle(documentTitle(number));
+    });
   }
 
   private async load(orderId: number): Promise<void> {
@@ -1930,7 +1952,7 @@ export class SalesView {
       this.categories.set(categories);
       this.families.set(families);
     } catch (failure: unknown) {
-      this.loadError.set(messageOf(failure, 'De offerte kon niet worden geladen'));
+      this.loadError.set(messageOf(failure, 'Het document kon niet worden geladen'));
     } finally {
       this.loading.set(false);
     }
