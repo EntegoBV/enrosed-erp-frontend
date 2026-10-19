@@ -11,7 +11,7 @@ import { Icon } from '../../shared/icon';
 import { Sheet, Ui, confirmLeave } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
 import { ticaDate, ticaMoment, ticaRangeError, ticaToday, validTicaDay } from './tica-format';
-import { SettlementAmounts, settlementDifference, ticaBankCandidates } from './tica-settlement-rules';
+import { SettlementAmounts, settlementDifference, ticaBankCandidates, ticaSettlementReady } from './tica-settlement-rules';
 
 type SettlementDraft = Omit<TicaSettlementWrite, keyof SettlementAmounts> & SettlementAmounts;
 const emptyDraft = (): SettlementDraft => ({ reference: '', location: 'TICA - Brussel', documentDate: ticaToday(), dueDate: null,
@@ -149,9 +149,7 @@ export class TicaSettlements {
       () => void this.perform(() => this.api.confirmSettlement(row.id), 'TICA-afrekening geboekt'));
   }
   canConfirm(row: TicaSettlement): boolean {
-    const difference = settlementDifference(row);
-    return row.status === 'DRAFT' && Number.isFinite(row.reconciliationDifference) && Math.abs(row.reconciliationDifference) <= .020001
-      && difference !== null && Math.abs(difference) <= .020001;
+    return ticaSettlementReady(row);
   }
   statusLabel(row: TicaSettlement): string {
     return row.status === 'DRAFT' ? row.sourceKey ? 'Te controleren' : 'Concept' : row.status === 'PAID' ? 'Ontvangen' : 'Te ontvangen';

@@ -19,3 +19,13 @@ export function ticaBankCandidates(lines: readonly BankStatementLine[], expected
     .filter(line => terms.every(term => `${line.counterparty} ${line.reference} ${line.account} ${line.bookedAt}`.toLocaleLowerCase('nl').includes(term)))
     .sort((a, b) => b.bookedAt.localeCompare(a.bookedAt) || b.id - a.id);
 }
+
+/** Confirmation needs its source document and both financial reconciliations. */
+export function ticaSettlementReady(row: SettlementAmounts & {
+  status: string; sourceDocumentUrl: string | null; reconciliationDifference: number;
+}): boolean {
+  const difference = settlementDifference(row);
+  return row.status === 'DRAFT' && !!row.sourceDocumentUrl?.trim()
+    && Number.isFinite(row.reconciliationDifference) && Math.abs(row.reconciliationDifference) <= .020001
+    && difference !== null && Math.abs(difference) <= .020001;
+}

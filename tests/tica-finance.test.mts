@@ -5,7 +5,7 @@ import type { CompanyCost } from '../src/app/core/api/models.ts';
 import type { TicaAnalyticsDay } from '../src/app/core/api/tica-api.ts';
 import { salesAnalysis, resultAnalysis } from '../src/app/features/analyses/analysis-metrics.ts';
 import { withTicaSales, withTicaResult } from '../src/app/features/analyses/tica-analysis.ts';
-import { settlementDifference, ticaBankCandidates } from '../src/app/features/tica/tica-settlement-rules.ts';
+import { settlementDifference, ticaBankCandidates, ticaSettlementReady } from '../src/app/features/tica/tica-settlement-rules.ts';
 
 const amounts = { salesExcl: 344.35, salesVat: 72.31, commissionExcl: 34.44, commissionVat: 7.23, netReceivable: 374.99 };
 const daily: TicaAnalyticsDay[] = [{ date: '2026-10-17', transactionCount: 5, quantity: 7, revenueExcl: 344.35, goodsCostEur: 100, missingCostLines: 0 }];
@@ -55,4 +55,15 @@ test('selected period, negative returns and unknown product costs remain visible
   assert.equal(result.ticaTransactions, 6);
   assert.equal(result.missingCostLines, 2);
   assert.equal(result.byChannel[0].ticaMissingCostLines, 2);
+});
+
+test('confirmation requires a source document even when both monetary reconciliations match', () => {
+  const row = { ...amounts, status: 'DRAFT', sourceDocumentUrl: null, reconciliationDifference: 0 };
+  assert.equal(ticaSettlementReady(row), false);
+  assert.equal(ticaSettlementReady({ ...row, sourceDocumentUrl: '  ' }), false);
+  const documented = { ...row, sourceDocumentUrl: '/api/tica/settlements/documents/verified-document' };
+  assert.equal(ticaSettlementReady(documented), true);
+  assert.equal(ticaSettlementReady({ ...documented, reconciliationDifference: .03 }), false);
+  assert.equal(ticaSettlementReady({ ...documented, netReceivable: 1 }), false);
+  assert.equal(ticaSettlementReady({ ...documented, status: 'OPEN' }), false);
 });

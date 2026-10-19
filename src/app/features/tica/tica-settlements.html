@@ -55,7 +55,8 @@
       <div class="settlement-check" [class.has-difference]="row.reconciliationDifference !== 0"><app-icon [name]="row.reconciliationDifference === 0 ? 'check' : 'alert'" [size]="20" /><div><strong>Controle met de TICA-verkopen</strong><span>{{ euro(row.importedRevenueExcl) }} geïmporteerde omzet excl. btw · verschil {{ euro(row.reconciliationDifference) }}</span></div></div>
       @if (row.status === 'DRAFT') {
         <p class="settlement-intro">Dit is een concept. Na boeken staat de commissie één keer bij de bedrijfskosten en is ze verrekend met de TICA-uitbetaling.</p>
-        @if (!canConfirm(row)) { <p class="settlement-warning">Boeken kan zodra de bedragen en de geïmporteerde omzet aansluiten, met maximaal € 0,02 verschil. Controleer de periode, vestiging en bedragen.</p> }
+        @if (!row.sourceDocumentUrl) { <p class="settlement-warning">Voor boeken is de TICA-broncreditnota verplicht. Voeg het document toe via “Creditnota toevoegen” voordat je de afrekening bevestigt.</p> }
+        @else if (!canConfirm(row)) { <p class="settlement-warning">Boeken kan zodra de bedragen en de geïmporteerde omzet aansluiten, met maximaal € 0,02 verschil. Controleer de periode, vestiging en bedragen.</p> }
       }
       @if (row.commissionCostId) { <a class="settlement-link" routerLink="/costs" [queryParams]="{ view: 'costs', tab: 'company', cost: row.commissionCostId }"><app-icon name="receipt" [size]="17" />Geboekte commissie bekijken<app-icon name="chevron-right" [size]="15" /></a> }
       @if (row.bankStatementLineId) { <a class="settlement-link" routerLink="/costs" [queryParams]="{ view: 'bank', tab: 'movements', line: row.bankStatementLineId }"><app-icon name="bank" [size]="17" />Gekoppelde bankontvangst<app-icon name="chevron-right" [size]="15" /></a>
