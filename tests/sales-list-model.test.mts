@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  countText, customerSections, documentSub, foldText, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, salesTone, statusParts,
+  countText, customerSections, documentSub, foldText, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, phoneLines, salesTone, statusParts,
   type ListReceivable, type StatusFacts,
 } from '../src/app/features/sales/sales-list-model.ts';
 import type { SalesOrderView } from '../src/app/core/api/models.ts';
@@ -93,6 +93,20 @@ test('the Betaling cell: nothing on an offer, the concept, open with what came i
   assert.equal(cell('FACTUUR', 'GEANNULEERD', 50).state, 'none');
   assert.deepEqual(cell('FACTUUR', 'VERZONDEN', 60.255, 20, true), { state: 'open', openEur: 60.26, receivedEur: 20, overdue: true });
   assert.deepEqual(cell('FACTUUR', 'BETAALD', 0, 121, true), { state: 'settled', openEur: 0, receivedEur: 121, overdue: false });
+});
+
+test('the phone row: the facts line keeps the web and delivery facts, the trail what is open, a tegoed or the day', () => {
+  const open = { state: 'open', overdue: true } as const, none = { state: 'none', overdue: false } as const;
+  const vervalt = { text: 'vervalt 01/10/2026', cls: 'danger' }, web = { text: 'Websitebestelling', cls: '' }, part = { text: 'Deel 2 · Wacht op voorraad', cls: 'gold' };
+  assert.deepEqual(phoneLines([vervalt, web, part], open, null),
+    { facts: [web, part], trail: { kind: 'open', text: '', overdue: true }, unshown: 'vervalt 01/10/2026' }, 'the due day goes to the menu hint');
+  assert.deepEqual(phoneLines([{ text: 'geldig tot 01/11/2026', cls: '' }], none, null),
+    { facts: [], trail: { kind: 'day', text: 'geldig tot 01/11/2026', overdue: false }, unshown: null });
+  assert.deepEqual(phoneLines([], { state: 'credit', overdue: false }, '€ 20,00 verrekend · € 100,00 tegoed').trail,
+    { kind: 'credit', text: '€ 20,00 verrekend · € 100,00 tegoed', overdue: false });
+  assert.deepEqual(phoneLines([{ text: 'Bestelling verzonden', cls: 'ok' }], { state: 'settled', overdue: false }, null),
+    { facts: [{ text: 'Bestelling verzonden', cls: 'ok' }], trail: { kind: 'none', text: '', overdue: false }, unshown: null });
+  assert.equal(phoneLines([], { state: 'concept', overdue: false }, null).trail.kind, 'none', 'a concept credit note has no tegoed line yet');
 });
 
 test('the Document sub names the linked documents as text', () => {

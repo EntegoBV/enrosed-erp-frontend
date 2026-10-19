@@ -39,7 +39,7 @@ test('the desk is the kit list: toolbar tabs and search, the subbar, one table w
     '<div class="wk-group sl-group" role="row">', '<app-skeleton kind="table" [rows]="8" />', '<app-load-error ', 'ngTemplateOutlet="emptyState"']) {
     assert.ok(desk.includes(piece), piece);
   }
-  assert.doesNotMatch(desk, /Klant wacht op ons|app-sales-document-navigation|sales-filterbar/, 'the old card and navigation stay off the desk');
+  assert.doesNotMatch(template, /Klant wacht op ons|app-sales-document-navigation|sales-filterbar/, 'the old card and navigation are gone from both branches');
   assert.match(template, /<app-context-menu class="sl-menu" \[title\]="rowMenuTitle\(menu\.row\)" \[items\]="rowMenuItems\(menu\.row\)" \[anchor\]="menu\.anchor"\s+variant="ios" cancelLabel="Annuleren"/);
 });
 
@@ -71,9 +71,9 @@ test('⋯ sits outside the row link and no link sits inside one (V-L3); the targ
   assert.doesNotMatch(link.slice(2), /<a\s|<button\s/, 'nothing interactive inside the desk row link');
   assert.match(deskRow, /<\/a>\s*<button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon sl-more" type="button" aria-haspopup="menu"/);
   assert.match(deskRow, /<app-icon name="more" \[size\]="16" \/>/);
-  const phoneRow = /<a class="list-item swipe__row"[\s\S]*?<\/a>/.exec(template)?.[0] ?? '';
+  const phoneRow = /<a class="ios-cell swipe__row sl-prow"[\s\S]*?<\/a>/.exec(template)?.[0] ?? '';
   assert.ok(phoneRow, 'the phone row link');
-  assert.doesNotMatch(phoneRow.slice(2), /<a\s|so-link/, 'no link inside the phone row link either');
+  assert.doesNotMatch(phoneRow.slice(2), /<a\s|<button\s|so-link/, 'nothing interactive inside the phone row link either');
   for (const id of ["'quote'", "'invoice'", "'credited'", "'split'", "'archive'", "'delete'"]) assert.ok(member('rowMenuItems').includes(`id: ${id}`), id);
 });
 

@@ -1343,7 +1343,7 @@ credit notes, `canDelete` is false while an invoice has live credit notes.
 'Annuleren'/'Beheren' only while concept, next-step card, Meer acties). The
 Verkoop list buckets `docType !== 'OFFERTE'` under Facturen with
 `docs=all|f|cn` (desk: the Facturen / Creditnota's chips in the subbar; phone:
-app-segmented in `sales-document-navigation`), credit rows
+the Facturen section of the Filters sheet), credit rows
 ('− € x', tegoed line, 'Tegoed af te handelen'), 'Alleen nog te ontvangen'
 keeps invoices with remainingEur > 0 and credit notes with creditEur > 0,
 `todo()` skips credit notes and fully credited invoices; `sales-list-groups`
@@ -1755,7 +1755,7 @@ and on copies. Without the blocks (older backend) every screen is as before.
   inline. `tests/sales-web-order-screens.test.mts` runs the guards, the
   revision on every call and the conflict handling of all four screens.
 
-### Verkoop list on the Inkoop recipe (2026-10-19)
+### Verkoop list (Inkoop recipe, 2026-10-19)
 Emre: "Maak verkoopscherm lijst hetzelfde als bij inkoop bij desktop en
 mobiel", grouped per customer as Inkoop groups per supplier.
 - Desk (`sales-list.ts`, desk branch on `desktop.active()`; area CSS
@@ -1786,17 +1786,42 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   (`app-context-menu`: Openen 'klant · status · totaal · inhoud', Naar …,
   Order splitsen, Archiveren, Verwijderen…). The amber line = `attention(row)`
   plus the bell's WEBSITE_AANVRAAG titles; the "Klant wacht op ons" card is
-  gone from the desk (bell, Actie vereist, amber line, tab dot). Keys: `/`,
+  gone from both branches (bell, Actie vereist, amber line, tab dot). Keys: `/`,
   N, ↑/↓, Shift+F10 (directive); the '/sales' set in app-shortcuts.
 - Pure `sales-list-model.ts` (node-tested): the tab/scope/docs types,
   `customerSections`, `listMoney`, `invoiceOverdue`, `salesTone`,
-  `statusParts`, `paymentCell`, `documentSub`, `listCaption`, `matchesWords`
-  (accents folded, every word). `pile` (the tab after the docs filter) is the
-  m of 'n van m'; `ready` holds every count and sum until the first load
-  answers (a reload keeps them).
-- Phone: still the 2026-09 card list in the phone branch (its own round
-  follows); it shares the ready-guarded caption, the row menu, the swipe
-  button rules and the plain-text links.
+  `statusParts`, `paymentCell`, `phoneLines`, `documentSub`, `listCaption`,
+  `matchesWords` (accents folded, every word). `pile` (the tab after the
+  docs filter) is the m of 'n van m'; `ready` holds every count and sum until
+  the first load answers (a reload keeps them).
+- Phone (below 680 px, `.content.sl--phone`): large title with the
+  ready-guarded `phoneCaption` ('n offertes', 'n facturen · € x te
+  ontvangen', 'n in het archief'; narrowed 'n van m · € x open'),
+  `app-segmented variant="ios"` tabs with counts, one `ios-search` row with a
+  round filter button (`sl-filter`, badge = `sheetFilterCount`: scope, status,
+  customer and on Facturen the two Facturen choices) that opens the
+  `app-sheet variant="ios"` Filters (Soort verkoop with its hint, Status with
+  counts, Facturen: Alleen nog te ontvangen + Alle / Facturen / Creditnota's,
+  Klant over a native picker; foot Filters wissen = `clearSheetFilters`, Klaar;
+  'n van m' at its top). An `ios-chips` row only when `phoneChips()` has
+  something: Actie vereist, Website and In verwerking te nemen (Offertes), Nog
+  te ontvangen once it is on (e.g. the home's `payment=open` link). Then an
+  `ios-section` per customer (head = name, trail = count) with an `ios-group`
+  of `#phoneRow` cells in the same `.swipe` wrapper: number, 'kind · date' +
+  channel / Partner tag, a muted facts line only for web and delivery facts,
+  the amber line; trail = total ('− ', decimals, `excl. vracht`), status pill,
+  third line `phoneLines` ('€ x open', warn when overdue; a credit note's
+  tegoed line; else 'geldig tot' split by `dayParts`). Inhoud, m³, marge (never
+  on credit notes or partner documents), the due day behind '€ x open',
+  ontvangen and gecrediteerd move into the menu's Openen hint
+  (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner containers and split
+  orders are `ios-cell sl-phead` disclosure cells inside their customer
+  (every figure of the desk head; hold or right-click a container for its
+  menu), members indented below when open. Same swipe, long press (the
+  directive), menu as an iOS sheet, fab '+ Order' / 'Container kiezen'; the
+  new-document sheet is `variant="ios"` with the `.sl-new` phone gutter. The
+  old `sales-document-navigation` component is deleted (its types live in the
+  model). Tests: `tests/sales-list-phone.test.mts`.
 
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete; the

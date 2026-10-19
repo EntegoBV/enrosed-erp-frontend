@@ -223,6 +223,30 @@ export function paymentCell(order: Pick<SalesOrder, 'docType' | 'status'>, money
   return openEur > 0 ? { state: 'open', openEur, receivedEur, overdue } : { state: 'settled', openEur: 0, receivedEur, overdue: false };
 }
 
+/** A status-line part that names a day: the phone shows it on the trail, not on the facts line. */
+const DAY_FACT = /^(geldig tot|vervalt) /;
+
+/**
+ * The phone row. facts: the website and delivery facts, the muted line under
+ * the number. trail: the third trailing line, what is open (the component
+ * prints pay.openEur; warn once overdue), else a credit note's tegoed line,
+ * else the day of 'geldig tot' / 'vervalt'. unshown: the day the trail gives
+ * up for the open amount, for the menu's Openen hint.
+ */
+export interface PhoneLines {
+  facts: LinePart[];
+  trail: { kind: 'open' | 'credit' | 'day' | 'none'; text: string; overdue: boolean };
+  unshown: string | null;
+}
+
+export function phoneLines(parts: readonly LinePart[], pay: Pick<PaymentCell, 'state' | 'overdue'>, creditLine: string | null): PhoneLines {
+  const facts = parts.filter((part) => !DAY_FACT.test(part.text));
+  const dated = parts.find((part) => DAY_FACT.test(part.text)) ?? null;
+  if (pay.state === 'open') return { facts, trail: { kind: 'open', text: '', overdue: pay.overdue }, unshown: dated?.text ?? null };
+  if (pay.state === 'credit' && creditLine) return { facts, trail: { kind: 'credit', text: creditLine, overdue: false }, unshown: dated?.text ?? null };
+  return { facts, trail: dated ? { kind: 'day', text: dated.text, overdue: dated.cls === 'danger' } : { kind: 'none', text: '', overdue: false }, unshown: null };
+}
+
 /**
  * The Document column's sub: 'Verkoopfactuur · 18/10/2026 · uit ENR-2026-0041'.
  * The linked documents are text here; the row menu opens them (no link inside the row link).

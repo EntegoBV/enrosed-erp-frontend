@@ -47,13 +47,11 @@ import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
 } from '../../shared/row-actions';
-import { keepEuro } from '../purchasing/purchase-list-model';
+import { dayParts, keepEuro } from '../purchasing/purchase-list-model';
 import {
-  countText, customerSections, documentSub, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, salesTone, statusParts,
-  type LinePart, type PaymentCell, type SalesDocsFilter, type SalesScope, type SalesTab,
+  countText, customerSections, documentSub, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, phoneLines, salesTone, statusParts,
+  type LinePart, type PaymentCell, type PhoneLines, type SalesDocsFilter, type SalesScope, type SalesTab,
 } from './sales-list-model';
-
-import { SalesDocumentNavigation } from './sales-document-navigation';
 
 /**
  * The list's area stylesheet (Verkoop on the Inkoop recipe, 2026-10-19):
@@ -82,7 +80,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet, Icon, Segmented, ContextMenu, LoadError, SalesListStyles,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
   template: `
     <app-sales-list-styles />
     <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
@@ -290,348 +288,125 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
       </div>
     } @else {
       <div class="content sl--phone">
-        @if (loadError()) {
-          <section class="sales-load-error" role="alert">
-            <span aria-hidden="true">!</span>
-            <div><b>Verkoopoverzicht kon niet worden vernieuwd</b><small>{{ loadError() }}</small></div>
-            <button class="btn" type="button" [disabled]="loading()" (click)="load()">
-              {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
-            </button>
-          </section>
-        }
-        <!-- What waits on us sits at the top, not tucked under Meer: this is
-             the list you keep up with, not something you go look up. -->
-        @if (attentionCount()) {
-          <!-- The card appears and disappears; without its own bottom margin it
-               lands right on top of the search bar. -->
-          <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
-            <div class="card__head">
-              <h2>Klant wacht op ons</h2>
-              <span class="spacer"></span>
-              <span class="badge badge--todo">{{ attentionCount() }}</span>
-            </div>
-            <div class="card__body card__body--flush">
-              <div class="list">
-                @for (item of openWork(); track $index) {
-                  <a class="list-item" [routerLink]="['/sales', item.orderId]">
-                    <span class="thumb thumb--placeholder">{{ workIcon(item.kind) }}</span>
-                    <div class="list-item__body">
-                      <div class="list-item__title">{{ item.title }}</div>
-                      <div class="list-item__meta">
-                        {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
-                      </div>
-                    </div>
-                    <span class="list-item__chev">›</span>
-                  </a>
-                }
-              </div>
-            </div>
-          </div>
-        }
-
-        <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
-          [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()" [docs]="docsFilter()" [docsCounts]="docsCounts()"
-          (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" (docsChange)="filterDocs($event)" />
-
-        <!-- One quiet row: search grows, two pills open native pickers,
-             the count sits at the end - no card, no grid of chips. -->
-        <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
-        <div class="sales-filterbar">
-          <div class="search-control search-control--bar">
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="6.5"></circle>
-              <path d="m16 16 4 4"></path>
-            </svg>
-            <input class="input" id="sales-search" type="search" inputmode="search"
-                   autocomplete="off" aria-label="Zoek klant, documentnummer of containerreferentie" placeholder="Zoek klant, factuur of container…"
-                   [ngModel]="query()" (ngModelChange)="query.set($event)" />
+        <app-segmented variant="ios" class="sl-tabs" label="Documenten" semantics="tabs" controls="sales-document-results" [options]="tabOptions()"
+                       [value]="docTab()" (changed)="switchTab($any($event))" />
+        <!-- The search and, on its right, the round filter button: Soort verkoop, Status, Klant and the Facturen choices
+             sit in one sheet, so no filter row pushes the documents down. -->
+        <div class="ios-search sl-isearch">
+          <div class="ios-search__field">
+            <app-icon name="search" [size]="17" />
+            <input id="sales-search" type="search" data-page-search [placeholder]="smallPhone() ? 'Zoek klant of nummer' : 'Zoek klant, factuur of container'"
+                   aria-label="Zoek klant, documentnummer of containerreferentie" autocomplete="off" enterkeyhint="search"
+                   [value]="query()" (input)="query.set($any($event.target).value)" />
             @if (query()) {
-              <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
-                      (click)="query.set('')">×</button>
+              <button class="ios-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="query.set('')"><app-icon name="close" [size]="16" /></button>
             }
           </div>
-          <button class="filter-toggle" type="button" aria-label="Filters tonen of verbergen"
-                  [class.filter-toggle--active]="activeFilterCount() > 0"
-                  [attr.aria-expanded]="filtersOpen()"
-                  (click)="filtersOpen.set(!filtersOpen())">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-            <span class="hide-mobile">Filters</span>
-            @if (activeFilterCount(); as n) { <b class="filter-toggle__count">{{ n }}</b> }
-            <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+          <button class="sl-filter" type="button" aria-haspopup="dialog" [class.sl-filter--on]="sheetFilterCount() > 0"
+                  [attr.aria-label]="sheetFilterCount() ? 'Filters, ' + sheetFilterCount() + ' actief' : 'Filters'" (click)="filtersOpen.set(true)">
+            <app-icon name="filter" [size]="20" />
+            @if (sheetFilterCount(); as active) { <span class="sl-filter__badge" aria-hidden="true">{{ active }}</span> }
           </button>
-          @if (docTab() === 'OFFERTE' && websiteRequests().length) {
-            <button class="website-filter" type="button"
-                    [class.website-filter--active]="websiteOnly()"
-                    [attr.aria-pressed]="websiteOnly()"
-                    (click)="websiteOnly.set(!websiteOnly())">
-              <span>Website</span>
-              <b>{{ websiteRequests().length }}</b>
-            </button>
-          }
-          @if (docTab() === 'OFFERTE' && ordersToTake().length) {
-            <button class="website-filter" type="button"
-                    [class.website-filter--active]="toTakeOnly()"
-                    [attr.aria-pressed]="toTakeOnly()"
-                    (click)="toTakeOnly.set(!toTakeOnly())">
-              <span>In verwerking te nemen</span>
-              <b>{{ ordersToTake().length }}</b>
-            </button>
-          }
-          @if (filtersOpen()) {
-            <div class="filter-grid">
-              <label class="filter-field">
-                <span class="filter-field__label">Status</span>
-                <select class="select filter-field__select" [ngModel]="filter()" (ngModelChange)="selectStatus($event)">
-                  @for (option of visibleFilters(); track option.value) {
-                    <option [ngValue]="option.value">{{ option.label }} ({{ statusCount(option.value) }})</option>
-                  }
-                </select>
-              </label>
-              <label class="filter-field">
-                <span class="filter-field__label">Klant</span>
-                <select class="select filter-field__select" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
-                  <option [ngValue]="''">Alle klanten</option>
-                  @for (customer of customersWithOrders(); track customer.id) {
-                    <option [ngValue]="customer.id">{{ customer.company }}</option>
-                  }
-                </select>
-              </label>
-            </div>
-            <div class="filter-summary">
-              <span><strong>{{ rows().length }}</strong> van {{ pile().length }} {{ pileWord() }}</span>
-              @if (activeFilterCount()) {
-                <button class="filter-reset" type="button" (click)="clearFilters()">Filters wissen</button>
-              }
-            </div>
-          }
         </div>
-
-        <ng-template #documentRow let-row let-grouped="grouped">
-              <!-- Drag left for the bin, drag right for the archive; hold the
-                   row (or right-click it) for the same choices as a menu. -->
-              <div class="swipe" [class.swipe--grouped]="grouped"
-                   [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
-                   [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
-                   [class.swipe--dragging]="draggingOrderId() === row.order.id"
-                   [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
-              @if (canArchive(row)) {
-              <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
-                      [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
-                      [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ')
-                        + documentLabelOf(row) + ' ' + row.order.number">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
-                </svg>
-                <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
-              </button>
-              }
-              <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
-                 appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
-                 (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
-                 (pointerdown)="startSwipe($event, row)"
-                 (pointermove)="moveSwipe($event, row)"
-                 (pointerup)="finishSwipe($event, row)"
-                 (pointercancel)="cancelSwipe($event)"
-                 (wheel)="wheelSwipe($event, row)"
-                 (dragstart)="$event.preventDefault()"
-                 (click)="blockWhenSwiped($event)">
-                <div class="list-item__body">
-                  <div class="list-item__title">{{ grouped ? row.order.number : customerName(row) }}</div>
-                  <!-- No country chip: it repeats what the customer name already
-                       implies and pushed the date into "18/0...". -->
-                  <div class="list-item__meta list-item__meta--wrap">
-                    {{ documentLabelOf(row) }} ·
-                    @if (!grouped) { {{ row.order.number }} · }{{ row.order.orderDate | dateNl }}
-                    @if (row.order.sourceQuoteId && row.sourceQuoteNumber) { · uit {{ row.sourceQuoteNumber }} }
-                    @if (row.invoicedAs && row.invoicedAsId) { · factuur {{ row.invoicedAs }} }
-                    @if (creditNoteRow(row) && row.creditedInvoiceNumber) { · op {{ row.creditedInvoiceNumber }} · {{ creditReason(row) }} }
-                    @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
-                    @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate && !creditNoteRow(row)) {
-                      · vervalt {{ row.order.invoiceDueDate | dateNl }}
-                    }
-                  </div>
-                  <div class="list-item__meta list-item__meta--wrap">
-                    @if (creditNoteRow(row)) {
-                      <!-- Only what the note holds: an amount-only note read "0 st · 0 regels · 1 bedrag". -->
-                      @if (row.priced.lines.length) { {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }} }@if (row.priced.lines.length && (row.order.extraLines ?? []).length) { · }@if ((row.order.extraLines ?? []).length) { {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
-                    } @else if (partner(row.order)) {
-                      {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
-                    } @else {
-                    {{ row.priced.totals.pieces | num }} st ·
-                    @if (row.order.loadMode === 'LOOSE_CARTONS') {
-                      {{ row.priced.totals.cartons | num }}
-                      {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
-                      {{ row.priced.totals.cbm | cbm }}
-                    } @else {
-                      {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
-                      {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
-                          ? 'pallet' : 'pallets' }}
-                    }
-                    @if (!partner(row.order) && row.priced.totals.marginPct) {
-                      · marge {{ row.priced.totals.marginPct | pct: 0 }}
-                    }
-                    }
-                  </div>
-                </div>
-                <div class="list-item__end list-item__end--stacked">
-                  @if (webOrder(row)) {
-                    <span class="so-source-mini">Websitebestelling</span>
-                    @if (webOrderPill(row); as pill) {
-                      <span [class]="'so-status-mini so-status-mini--' + pill.cls"><i aria-hidden="true"></i>{{ pill.label }}</span>
-                    }
-                  } @else if (websiteRequest(row.order)) {
-                    <span class="so-source-mini">Websiteaanvraag</span>
-                  }
-                  <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
-                  @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
-                  @if (creditNoteRow(row) && row.order.status !== 'CONCEPT') {
-                    <small class="so-credit-tegoed">{{ creditLine(row) }}</small>
-                  } @else if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
-                    <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
-                    @if (row.creditedEur) { <small class="so-credited">{{ row.creditedEur | eur }} gecrediteerd</small> }
-                  }
-                  <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
-                    <i aria-hidden="true"></i>{{ statusOf(row).label }}
-                  </span>
-                  @if (unavailableCount(row); as count) {
-                    <span class="so-status-mini so-status-mini--gold">{{ count }} {{ count === 1 ? 'product' : 'producten' }} niet beschikbaar</span>
-                  }
-                  @if (fulfillmentStatus(row); as delivery) {
-                    <span [class]="'so-status-mini so-status-mini--' + delivery.cls"><i aria-hidden="true"></i>Deel {{ row.fulfillment?.part }} · {{ delivery.label }}</span>
-                  }
-                  @if (row.order.goodsShippedAt && !row.fulfillment) {
-                    <span class="so-status-mini so-status-mini--ok">
-                      <i aria-hidden="true"></i>Bestelling verzonden
-                    </span>
-                  }
-                  @if (attention(row); as attn) {
-                    <span class="so-status-mini so-status-mini--warn" [attr.title]="attn.join(' · ')">
-                      <i aria-hidden="true"></i>{{ attn[0] }}{{ attn.length > 1 ? ' +' + (attn.length - 1) : '' }}
-                    </span>
-                  }
-                </div>
-                <span class="list-item__chev">›</span>
-              </a>
-              @if (canDelete(row)) {
-                <button class="swipe__delete" type="button"
-                        [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
-                        [attr.aria-busy]="deletingOrderId() === row.order.id"
-                        (click)="remove(row)"
-                        [attr.aria-label]="documentLabelOf(row) + ' ' + row.order.number + ' verwijderen'"
-                        [title]="documentLabelOf(row) + ' verwijderen'">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                       stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                       aria-hidden="true" focusable="false">
-                    <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-                    <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-                  </svg>
-                </button>
-              }
-              </div>
-        </ng-template>
-
-        <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
-          <div class="list">
-            @for (entry of groupedRows(); track entry.key) {
-              @if (entry.kind === 'PARTNER_CONTAINER') {
-                <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
-                  <div class="sales-container__header">
-                  <button class="sales-container__toggle" type="button"
-                          appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
-                          (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
-                          [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
-                          [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
-                    <span class="sales-container__identity">
-                      <span class="sales-container__eyebrow">Partnercontainer</span>
-                      <strong>{{ customerName(entry.rows[0]) }}</strong>
-                      <span class="sales-container__meta" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
-                      <span class="sales-container__badges">
-                        @for (status of entry.summary.statuses; track status.label) {
-                          <span [class]="'so-status-mini so-status-mini--' + status.cls"
-                                [class.sales-container__status--concept]="status.concept">
-                            <i aria-hidden="true"></i>{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }
-                          </span>
-                        }
-                        @if (entry.summary.attentionCount) { <span class="so-status-mini so-status-mini--warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
-                      </span>
-                    </span>
-                    <span class="sales-container__totals">
-                      <small>Getoonde facturen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong>
-                      @if (entry.summary.draftCount && entry.summary.issuedCount) { <small>Waarvan concept {{ entry.summary.draftEur | eur }}</small> }
-                      @if (entry.summary.issuedCount) { <small>{{ entry.summary.receivedEur | eur }} ontvangen · {{ entry.summary.remainingEur | eur }} open incl. btw</small> }
-                      @if (entry.summary.creditEur > 0) { <small>{{ entry.summary.creditEur | eur }} credit incl. btw</small> }
-                    </span>
-                    <span class="sales-container__chevron" aria-hidden="true"></span>
-                  </button>
-                  </div>
-                  <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
-                       [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
-                    @if (groupOpen(entry.key)) {
-                      <div class="sales-container__tools"><span>De facturen hieronder volgen je huidige filters.</span><a [routerLink]="['/purchasing', entry.purchaseOrderId]" [queryParams]="{ section: 'payments' }">Container en betaalafspraken ›</a></div>
-                      @for (row of entry.rows; track row.order.id) {
-                        <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" />
-                      }
-                    }
-                  </div>
-                </section>
-              } @else if (entry.kind === 'SPLIT_ORDER') {
-                <section class="sales-container sales-container--split" [class.sales-container--open]="groupOpen(entry.key)">
-                  <div class="sales-container__header">
-                    <button class="sales-container__toggle" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)" [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)">
-                      <span class="sales-container__identity">
-                        <span class="sales-container__eyebrow">Gesplitste order</span><strong>{{ customerName(entry.rows[0]) }}</strong>
-                        <span class="sales-container__meta">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
-                        <span class="sales-container__badges">
-                          @if (entry.summary.unavailableCount) { <span class="so-status-mini so-status-mini--gold">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
-                          @if (entry.summary.waitingCount) { <span class="so-status-mini so-status-mini--gold"><i aria-hidden="true"></i>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
-                          @if (entry.summary.shippedCount) { <span class="so-status-mini so-status-mini--ok"><i aria-hidden="true"></i>{{ entry.summary.shippedCount }} verzonden</span> }
-                          @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="so-status-mini so-status-mini--blue"><i aria-hidden="true"></i>Leveringen gepland</span> }
-                        </span>
-                      </span>
-                      <span class="sales-container__totals"><small>Getoonde delen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong></span><span class="sales-container__chevron" aria-hidden="true"></span>
-                    </button>
-                  </div>
-                  <div class="sales-container__invoices" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
-                    @if (groupOpen(entry.key)) {
-                      <div class="sales-container__tools"><span>Elk deel heeft een eigen document- en leverstatus.</span></div>
-                      @for (row of entry.rows; track row.order.id) { <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" /> }
-                    }
-                  </div>
-                </section>
-              } @else {
-                <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: entry.row, grouped: false }" />
-              }
-            } @empty {
-              @if (loading()) {
-                <app-skeleton kind="list" [rows]="5" />
-              } @else if (loadError()) {
-                <div class="empty">
-                  <div class="empty__icon">!</div>
-                  <div class="empty__title">Orders niet geladen</div>
-                  <p class="muted">Gebruik ‘Opnieuw proberen’ bovenaan.</p>
-                </div>
-              } @else if (activeFilterCount()) {
-                <div class="empty">
-                  <div class="empty__icon">⌕</div>
-                  <div class="empty__title">Geen orders gevonden</div>
-                  <p class="muted">Pas de zoekterm of offertestatus aan.</p>
-                  <button class="btn" type="button" (click)="clearFilters()">
-                    Filters wissen
-                  </button>
-                </div>
-              } @else {
-                <div class="empty">
-                  <div class="empty__icon">▤</div>
-                  <div class="empty__title">{{ docTab() === 'OFFERTE' ? 'Nog geen offertes' : docTab() === 'FACTUUR' ? 'Nog geen facturen' : 'Het archief is leeg' }}</div>
-                  <p class="muted">{{ businessScope() === 'PARTNER' ? 'Partnerdocumenten maak je vanuit de betreffende inkoopcontainer.' : 'Hier verschijnen de documenten voor de gekozen soort verkoop.' }}</p>
-                  @if (businessScope() === 'PARTNER') { <a class="btn btn--primary" routerLink="/purchasing">Naar partnercontainers</a> } @else if (docTab() !== 'ARCHIEF') { <button class="btn btn--primary" type="button" (click)="startNew()">
-                    Nieuwe order
-                  </button> }
-                </div>
-              }
+        <!-- Only what applies: empty in daily use, so five documents stay in view. -->
+        @if (phoneChips(); as quick) {
+          <div class="ios-chips sl-ichips" role="group" aria-label="Snelfilters">
+            @if (quick.attention) {
+              <button class="ios-chip" type="button" [attr.aria-pressed]="attentionOnly()" (click)="pickAttention()">Actie vereist @if (ready()) { <span class="ios-chip__badge sl-ichip__badge--warn">{{ actionCount() }}</span> }</button>
+            }
+            @if (quick.website) {
+              <button class="ios-chip" type="button" [attr.aria-pressed]="websiteOnly()" (click)="websiteOnly.set(!websiteOnly())">Website <span class="ios-chip__badge">{{ websiteRequests().length }}</span></button>
+            }
+            @if (quick.toTake) {
+              <button class="ios-chip" type="button" [attr.aria-pressed]="toTakeOnly()" (click)="toTakeOnly.set(!toTakeOnly())">In verwerking te nemen <span class="ios-chip__badge">{{ ordersToTake().length }}</span></button>
+            }
+            @if (quick.outstanding) {
+              <button class="ios-chip" type="button" aria-pressed="true" (click)="filterOutstanding(false)">Nog te ontvangen <app-icon name="close" [size]="14" /></button>
             }
           </div>
-        </div>
+        }
+
+        @if (loadError(); as error) {
+          <app-load-error title="Verkoopoverzicht kon niet worden geladen" [message]="error" [busy]="loading()" (retry)="load()" />
+        } @else if (!ready()) {
+          <div class="sl-loading" role="status" aria-label="Verkoopdocumenten laden"><app-skeleton kind="group" [rows]="5" /></div>
+        } @else if (!customerSections().length) {
+          <ng-container *ngTemplateOutlet="emptyState" />
+        } @else {
+          <div id="sales-document-results" role="tabpanel" [attr.aria-label]="docTab() === 'OFFERTE' ? 'Offertes' : docTab() === 'FACTUUR' ? 'Facturen' : 'Archief'">
+            @for (section of customerSections(); track section.id) {
+              <section class="ios-section sl-section">
+                <div class="ios-section__head"><span class="sl-customer" role="heading" aria-level="2">{{ section.name }}</span><span class="ios-section__trail">{{ section.count }}</span></div>
+                <div class="ios-group">
+                  @for (entry of section.entries; track entry.key) {
+                    @if (entry.kind === 'PARTNER_CONTAINER') {
+                      <!-- The container inside its customer: a cell that opens its documents in place; hold it for its menu. -->
+                      <button class="ios-cell sl-phead" type="button"
+                              appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
+                              (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
+                              [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                              [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)"
+                              title="De facturen hieronder volgen je huidige filters.">
+                        <span class="ios-cell__body">
+                          <span class="sl-eyebrow">Partnercontainer</span>
+                          <span class="sl-ptitle" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</span>
+                          <span class="sl-psub">{{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
+                          <span class="sl-pbadges">
+                            @for (status of entry.summary.statuses; track status.label) {
+                              <span class="wk-pill" [class]="salesTone(status.cls)" [class.sl-pill--concept]="status.concept">{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }</span>
+                            }
+                          </span>
+                          @if (entry.summary.attentionCount) { <span class="sl-psub sl-warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
+                          @if (entry.summary.issuedCount) { <span class="sl-psub">{{ entry.summary.remainingEur | eur }} open · {{ entry.summary.receivedEur | eur }} ontvangen · incl. btw</span> }
+                          @if (entry.summary.creditEur > 0) { <span class="sl-psub sl-credit">{{ entry.summary.creditEur | eur }} credit incl. btw</span> }
+                        </span>
+                        <span class="ios-cell__trail sl-ptrail">
+                          <span class="sl-ptotal">{{ entry.summary.totalEur | eur }}</span>
+                          @if (entry.summary.draftCount && entry.summary.issuedCount) { <span class="sl-pline">waarvan concept {{ entry.summary.draftEur | eur }}</span> }
+                        </span>
+                        <app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />
+                      </button>
+                      <div class="sl-pmembers" role="group" [id]="entry.key + '-invoices'" [hidden]="!groupOpen(entry.key)" [attr.aria-labelledby]="entry.key + '-toggle'">
+                        @if (groupOpen(entry.key)) {
+                          @for (row of entry.rows; track row.order.id) {
+                            <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: row, nested: true }" />
+                          }
+                        }
+                      </div>
+                    } @else if (entry.kind === 'SPLIT_ORDER') {
+                      <button class="ios-cell sl-phead" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                              [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)"
+                              title="Elk deel heeft een eigen document- en leverstatus.">
+                        <span class="ios-cell__body">
+                          <span class="sl-eyebrow">Gesplitste order</span>
+                          <span class="sl-ptitle">{{ entry.rows[0].order.number }}</span>
+                          <span class="sl-psub">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
+                          <span class="sl-pbadges">
+                            @if (entry.summary.unavailableCount) { <span class="wk-pill tone-amber">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
+                            @if (entry.summary.waitingCount) { <span class="wk-pill tone-amber">{{ entry.summary.waitingCount }} wacht op voorraad</span> }
+                            @if (entry.summary.shippedCount) { <span class="wk-pill tone-ok">{{ entry.summary.shippedCount }} verzonden</span> }
+                            @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="wk-pill tone-blue">Leveringen gepland</span> }
+                          </span>
+                        </span>
+                        <span class="ios-cell__trail sl-ptrail"><span class="sl-ptotal">{{ entry.summary.totalEur | eur }}</span></span>
+                        <app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />
+                      </button>
+                      <div class="sl-pmembers" role="group" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" [attr.aria-labelledby]="entry.key + '-toggle'">
+                        @if (groupOpen(entry.key)) {
+                          @for (row of entry.rows; track row.order.id) {
+                            <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: row, nested: true }" />
+                          }
+                        }
+                      </div>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: entry.row, nested: false }" />
+                    }
+                  }
+                </div>
+              </section>
+            }
+          </div>
+        }
       </div>
     }
 
@@ -754,6 +529,82 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
       </div>
     </ng-template>
 
+    <!-- A phone row: the document number, its customer is the section above; the trail holds the total, the status and
+         what is open. Inhoud and marge sit in the menu's Openen hint. Drag left for the bin, drag right for the archive;
+         hold it for the same choices as a menu. -->
+    <ng-template #phoneRow let-row let-nested="nested">
+      @let attn = rowAttention(row);
+      @let status = statusOf(row);
+      @let pay = paymentOf(row);
+      @let lines = phoneLinesOf(row);
+      <div class="swipe sl-swipe" role="none" [class.sl-swipe--nested]="nested"
+           [animate.leave]="leavingId() === row.order.id ? 'mo-leave' : ''"
+           [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
+           [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
+           [class.swipe--dragging]="draggingOrderId() === row.order.id"
+           [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
+        @if (canArchive(row)) {
+          <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
+                  [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
+                  [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ') + documentLabelOf(row) + ' ' + row.order.number">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
+            </svg>
+            <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
+          </button>
+        }
+        <a class="ios-cell swipe__row sl-prow" [routerLink]="['/sales', row.order.id]"
+           appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
+           (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
+           (pointerdown)="startSwipe($event, row)"
+           (pointermove)="moveSwipe($event, row)"
+           (pointerup)="finishSwipe($event, row)"
+           (pointercancel)="cancelSwipe($event)"
+           (wheel)="wheelSwipe($event, row)"
+           (dragstart)="$event.preventDefault()"
+           (click)="blockWhenSwiped($event)">
+          <span class="ios-cell__body">
+            <span class="sl-ptitle">{{ row.order.number }}</span>
+            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested) { <span class="sl-tag">Partner</span> }</span>
+            @if (lines.facts.length) {
+              <span class="sl-psub">@for (part of lines.facts; track $index) {@if (!$first) { · }<span class="sl-part" [class]="part.cls ? salesTone(part.cls) : ''">{{ part.text }}</span>}</span>
+            }
+            @if (attn.length) {
+              <span class="sl-pattn"><b>{{ attn.length }}</b><span>{{ keepEuro(attn.join(' · ')) }}</span></span>
+            }
+          </span>
+          <span class="ios-cell__trail sl-ptrail">
+            <span class="sl-ptotal" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</span>
+            @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
+            <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.label }}</span>
+            @switch (lines.trail.kind) {
+              @case ('open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="lines.trail.overdue">{{ pay.openEur | eur }} open</span> }
+              @case ('credit') { <span class="sl-pline sl-credit">{{ lines.trail.text }}</span> }
+              @case ('day') {
+                @let day = dayParts(lines.trail.text);
+                <span class="sl-pline sl-pline--day" [class.sl-warn]="lines.trail.overdue">{{ day.lead }}<span class="sl-nw">{{ day.day }}</span></span>
+              }
+            }
+          </span>
+        </a>
+        @if (canDelete(row)) {
+          <button class="swipe__delete" type="button"
+                  [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
+                  [attr.aria-busy]="deletingOrderId() === row.order.id"
+                  (click)="remove(row)"
+                  [attr.aria-label]="documentLabelOf(row) + ' ' + row.order.number + ' verwijderen'"
+                  [title]="documentLabelOf(row) + ' verwijderen'">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true" focusable="false">
+              <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+              <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+            </svg>
+          </button>
+        }
+      </div>
+    </ng-template>
+
     <!-- The Inhoud column; below an 860 px card the same facts fold into the Document sub. -->
     <ng-template #inhoud let-row>
       @if (creditNoteRow(row)) {
@@ -784,12 +635,89 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         variant="ios" cancelLabel="Annuleren" (pick)="pickRowMenu($event, menu.row)" (closed)="rowMenu.set(null)" />
     }
 
+    <!-- The phone's Filters: what the desk subbar holds, in kit sections; the badge on the round button counts the choices made here. -->
+    @if (filtersOpen()) {
+      <app-sheet variant="ios" title="Filters" (closed)="filtersOpen.set(false)">
+        <div body class="sl-fsheet">
+          @if (ready()) { <p class="sl-fcount" aria-live="polite"><strong>{{ rows().length }}</strong> van {{ pile().length }} {{ pileWord() }}</p> }
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Soort verkoop</h2></div>
+            <div class="ios-group" role="radiogroup" aria-label="Soort verkoop">
+              @for (option of scopeOptions; track option.id) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="businessScope() === option.id" (click)="businessScope() !== option.id && switchScope(option.id)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                  @if (businessScope() === option.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+            <p class="ios-section__foot">{{ scopeHint() }}</p>
+          </section>
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Status</h2></div>
+            <div class="ios-group" role="radiogroup" aria-label="Status">
+              @for (chip of chips(); track chip.value) {
+                <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="!attentionOnly() && filter() === chip.value" (click)="selectStatus(chip.value)">
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ chip.label }}</span></span>
+                  @if (ready()) { <span class="ios-cell__value">{{ chip.count }}</span> }
+                  @if (!attentionOnly() && filter() === chip.value) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                </button>
+              }
+            </div>
+          </section>
+          @if (docTab() === 'FACTUUR') {
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Facturen</h2></div>
+              <div class="ios-group">
+                <label class="ios-cell">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Alleen nog te ontvangen</span></span>
+                  <input class="ios-switch" type="checkbox" role="switch" [checked]="outstandingOnly()" (change)="filterOutstanding($any($event.target).checked)" />
+                </label>
+              </div>
+              <p class="ios-section__foot">Inclusief openstaande facturen en creditnota’s met een tegoed in het archief.</p>
+              <div class="ios-group sl-fdocs" role="radiogroup" aria-label="Facturen of creditnota’s">
+                @for (option of docsOptions(); track option.id) {
+                  <button class="ios-cell" type="button" role="radio" [attr.aria-checked]="docsFilter() === option.id" (click)="filterDocs(option.id)">
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ option.label }}</span></span>
+                    @if (ready()) { <span class="ios-cell__value">{{ option.count }}</span> }
+                    @if (docsFilter() === option.id) { <app-icon class="ios-cell__tick" name="tick" [size]="18" /> }
+                  </button>
+                }
+              </div>
+            </section>
+          }
+          @if (customersWithOrders().length > 1 || customerFilter() !== '') {
+            <section class="ios-section">
+              <div class="ios-section__head"><h2>Klant</h2></div>
+              <div class="ios-group">
+                <label class="ios-cell">
+                  <span class="ios-cell__body"><span class="ios-cell__title">Klant</span></span>
+                  <span class="ios-cell__value sl-fvalue">{{ activeCustomerLabel() }}</span>
+                  <app-icon class="ios-cell__chev" name="chevron-down" [size]="16" />
+                  <select class="sl-select__native" aria-label="Filter op klant" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
+                    <option [ngValue]="''">Alle klanten</option>
+                    @for (customer of customersWithOrders(); track customer.id) {
+                      <option [ngValue]="customer.id">{{ customer.company }}</option>
+                    }
+                  </select>
+                </label>
+              </div>
+            </section>
+          }
+        </div>
+        <div foot style="display:contents">
+          @if (sheetFilterCount()) { <button class="btn" type="button" (click)="clearSheetFilters()">Filters wissen</button> }
+          <span class="spacer"></span>
+          <button class="btn btn--primary" type="button" (click)="filtersOpen.set(false)">Klaar</button>
+        </div>
+      </app-sheet>
+    }
+
     @if (splitRow(); as splitData) { <app-sales-split-sheet [view]="splitData" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
 
     @if (picking()) {
-      <app-sheet [title]="newDocType() === 'FACTUUR' ? 'Nieuwe factuur' : 'Nieuwe offerte'"
+      <app-sheet [title]="newDocType() === 'FACTUUR' ? 'Nieuwe factuur' : 'Nieuwe offerte'" variant="ios"
                  (closed)="picking.set(false)">
-        <div body>
+        <div body class="sl-new">
           @if (loading()) {
             <app-skeleton kind="lines" [rows]="3" />
           } @else if (!addingCustomer()) {
@@ -901,165 +829,12 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
     }
   `,
   styles: `
-    .sales-container:not(:last-child){border-bottom:1px solid var(--line)}
-    .sales-container__header{display:flex;align-items:stretch;background:var(--surface)}
-    .sales-container__toggle{display:grid;grid-template-columns:minmax(0,1fr) auto 16px;grid-template-areas:'identity totals chevron';align-items:center;gap:18px;flex:1;min-width:0;min-height:98px;padding:19px 20px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:background .18s ease}
-    .sales-container__toggle:hover,.sales-container--open>.sales-container__header{background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface))}
-    .sales-container__toggle:focus-visible{outline:3px solid var(--rose);outline-offset:-3px}
-    .sales-container__toggle{touch-action:pan-y}
-    @media(pointer:coarse){[appSalesMenu]{-webkit-touch-callout:none;user-select:none}}
-    .sales-container__identity{grid-area:identity;display:grid;gap:5px;min-width:0}
-    .sales-container__identity>strong{font-size:16px;overflow-wrap:anywhere}
-    .sales-container__eyebrow{font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--rose-dark)}
-    .sales-container__meta{font-size:12px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
-    .sales-container__badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
-    .sales-container__totals{grid-area:totals;display:grid;gap:4px;text-align:right;font-variant-numeric:tabular-nums}
-    .sales-container__totals>strong{font-size:19px;letter-spacing:-.02em}
-    .sales-container__totals>small{font-size:11px;color:var(--muted);line-height:1.4}
-    .sales-container__chevron{grid-area:chevron;width:8px;height:8px;border-right:2px solid var(--rose-dark);border-bottom:2px solid var(--rose-dark);transform:rotate(45deg);transition:transform .2s ease}
-    .sales-container--open .sales-container__chevron{transform:rotate(225deg)}
-    .sales-container__invoices:not([hidden]){border-top:1px solid var(--rose-line);animation:container-invoices-enter .18s ease-out}
-    .sales-container__tools{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:11px 20px;background:var(--surface-2);font-size:11px;line-height:1.5;color:var(--muted)}
-    .sales-container__tools a{color:var(--rose-dark);font-weight:650;text-underline-offset:3px}
-    .sales-container__invoices>.swipe:not(:last-child){border-bottom:1px solid var(--line)}
-    .swipe--grouped .list-item{border-bottom:0;padding-left:26px}
-    .swipe--grouped .list-item__title{font-size:13px}
-    @keyframes container-invoices-enter{from{opacity:.4;transform:translateY(-3px)}to{opacity:1;transform:none}}
-    @media(max-width:600px){
-      .sales-container__toggle{grid-template-columns:minmax(0,1fr) 16px;grid-template-areas:'identity chevron' 'totals totals';gap:12px;padding:16px}
-      .sales-container__totals{text-align:left;border-top:1px solid var(--line);padding-top:10px}
-      .sales-container__totals>strong{font-size:20px}
-      .sales-container__tools{padding:11px 16px}
-      .swipe--grouped .list-item{padding-left:16px}
-    }
-    @media(prefers-reduced-motion:reduce){.sales-container__toggle,.sales-container__chevron{transition:none}.sales-container__invoices:not([hidden]){animation:none}}
     .swipe--dragging { user-select:none }
     .swipe--dragging .swipe__row { transform:translateX(var(--swipe-offset, 0px));transition:none }
-    .swipe__row { touch-action:pan-y }
-    .so-status-mini { display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 9px;
-      border-radius:999px;background:color-mix(in srgb,currentColor 10%,transparent);
-      font-size:10.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
-    .so-status-mini i { width:6px;height:6px;flex:none;border-radius:50%;background:currentColor }
-    @media(max-width:600px){.list-item__end .so-status-mini{white-space:normal;text-align:left;overflow-wrap:anywhere;line-height:1.35}}
-    .so-status-mini--ok { color:var(--ok) }
-    .so-status-mini--danger { color:var(--danger) }
-    .so-status-mini--gold { color:var(--gold) }
-    .so-status-mini--rose { color:var(--rose-dark) }
-    .so-status-mini--blue { color:var(--blue) }
-    .so-status-mini--neutral { color:var(--muted) }
-    .so-status-mini--warn { color:var(--warn) }
-    .sales-container__status--concept { color:var(--ink);font-weight:700;background:var(--surface-2) }
-    .so-source-mini { display:inline-flex;align-items:center;max-width:100%;padding:4px 9px;
-      border:1px solid color-mix(in srgb,var(--rose) 38%,transparent);border-radius:999px;
-      background:var(--rose);color:#fff;font-size:10px;font-weight:780;line-height:1.2;
-      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 12px rgb(103 31 52/14%) }
-
+    .swipe__row, .sales-container__toggle, .sl-phead { touch-action:pan-y }
+    /* The long press opens the menu (the directive): no iOS callout or text selection on the way. */
+    @media(pointer:coarse){[appSalesMenu]{-webkit-touch-callout:none;user-select:none}}
     .doc-choice { margin-bottom:12px }
-    .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
-      border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,var(--surface-2));
-      box-shadow:0 5px 18px rgb(31 25 22/4%) }
-    .sales-load-error { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
-      gap:12px;margin-bottom:14px;padding:14px;border:1px solid var(--danger);border-radius:var(--r-sm);
-      background:var(--danger-soft);color:var(--danger) }
-    .sales-load-error>span { display:grid;width:38px;height:38px;place-items:center;border-radius:50%;
-      background:var(--surface);font-size:18px;font-weight:800 }
-    .sales-load-error>div { display:grid;gap:2px;min-width:0 }
-    .sales-load-error b { font-size:15px }
-    .sales-load-error small { color:var(--muted);font-size:14px;line-height:1.45 }
-    .sales-load-error .btn { min-height:48px }
-    .filter-toggle { display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 13px;border:1px solid var(--line);
-      border-radius:13px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;font-weight:650;cursor:pointer }
-    .filter-toggle--active { border-color:var(--rose-line);color:var(--rose-dark);background:var(--rose-soft) }
-    .filter-toggle svg { width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round }
-    .filter-toggle__count { display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;
-      background:var(--rose);color:#fff;font-size:10.5px }
-    .filter-toggle__chev { width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
-      transform:rotate(45deg);transition:transform .15s ease }
-    .filter-toggle__chev--open { transform:rotate(-135deg) }
-    .website-filter { display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 12px;
-      border:1px solid var(--rose-line);border-radius:13px;background:var(--rose-soft);
-      color:var(--rose-dark);font:inherit;font-size:12px;font-weight:720;cursor:pointer }
-    .website-filter b { display:grid;min-width:20px;height:20px;padding:0 5px;place-items:center;
-      border-radius:999px;background:#fff;color:var(--rose-dark);font-size:10px;font-variant-numeric:tabular-nums }
-    .website-filter--active { border-color:var(--rose);background:var(--rose);color:#fff }
-    .website-filter--active b { color:var(--rose-dark) }
-    .filter-grid { flex:1 0 100%;display:grid;gap:10px }
-    @media (min-width:680px) { .filter-grid { grid-template-columns:1fr 1fr } }
-    .filter-field__label { display:block;margin:0 0 5px 2px;color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.055em;text-transform:uppercase }
-    .filter-field__select { min-height:42px;font-size:13px;font-weight:650 }
-    .filter-summary { flex:1 0 100%;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:12px }
-    .filter-summary strong { color:var(--ink) }
-    .search-control--bar { flex:1 1 200px;min-width:0 }
-    .filter-reset {
-      display: inline-flex;
-      flex: 0 0 auto;
-      align-items: center;
-      gap: 6px;
-      min-height: 36px;
-      padding: 5px 8px 5px 10px;
-      border: 1px solid var(--rose-line);
-      border-radius: 999px;
-      background: var(--rose-soft);
-      color: var(--rose-dark);
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .filter-reset span {
-      display: grid;
-      min-width: 20px;
-      height: 20px;
-      padding: 0 5px;
-      place-items: center;
-      border-radius: 999px;
-      background: var(--rose);
-      color: white;
-      font-size: 10px;
-      font-variant-numeric: tabular-nums;
-    }
-    .filter-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
-    .search-control { position: relative; min-width: 0; }
-    .search-control > svg {
-      position: absolute;
-      top: 50%;
-      left: 14px;
-      width: 18px;
-      height: 18px;
-      transform: translateY(-50%);
-      fill: none;
-      stroke: var(--muted);
-      stroke-linecap: round;
-      stroke-width: 1.8;
-      pointer-events: none;
-    }
-    .search-control .input { padding-right: 46px; padding-left: 42px; }
-    .search-control .input::-webkit-search-cancel-button { appearance: none; }
-    .search-clear {
-      position: absolute;
-      top: 50%;
-      right: 5px;
-      display: grid;
-      width: 36px;
-      height: 36px;
-      padding: 0;
-      transform: translateY(-50%);
-      place-items: center;
-      border: 0;
-      border-radius: 50%;
-      background: transparent;
-      color: var(--muted);
-      font-size: 22px;
-      cursor: pointer;
-    }
-    .search-clear:hover { background: var(--surface-2); color: var(--ink); }
-    .empty p { margin: 5px 0 13px; font-size: 13px; }
-
-    @media (max-width: 560px) {
-      .sales-load-error { grid-template-columns:auto minmax(0,1fr) }
-      .sales-load-error .btn { grid-column:1/-1;width:100% }
-    }
-
-    .channel-tag{padding:1px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}
   `,
 })
 export class SalesList {
@@ -1121,7 +896,6 @@ export class SalesList {
   /** Facturen tab: everything, invoices only, or credit notes only (query param docs). */
   readonly docsFilter = signal<SalesDocsFilter>('all');
   readonly partner = isPartnerDocument;
-  readonly receivable = invoiceReceivable;
   readonly creditNoteRow = (row: SalesOrderView): boolean => isCreditNote(row.order);
   readonly creditReason = (row: SalesOrderView): string => creditReasonLabel(row.order.creditReason);
   /** '€ 120,20 verrekend · € 100,00 tegoed' — zero parts left out, 'afgehandeld' when nothing is open. */
@@ -1305,11 +1079,13 @@ export class SalesList {
     this.restoreFolds();
     if (typeof matchMedia === 'function') {
       const destroyRef = inject(DestroyRef);
-      const media = matchMedia('(max-width: 1100px)');
-      const follow = (): void => this.compactBar.set(media.matches);
-      follow();
-      media.addEventListener('change', follow);
-      destroyRef.onDestroy(() => media.removeEventListener('change', follow));
+      for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
+        const media = matchMedia(query);
+        const follow = (): void => target.set(media.matches);
+        follow();
+        media.addEventListener('change', follow);
+        destroyRef.onDestroy(() => media.removeEventListener('change', follow));
+      }
     }
     /* The subbar wraps on a narrow desk: the table head and the customer rows stick under its real height. */
     effect((onCleanup) => {
@@ -1473,6 +1249,7 @@ export class SalesList {
     });
   }
 
+  /** The phone's Filters sheet (Soort verkoop, Status, Klant, the Facturen choices). */
   readonly filtersOpen = signal(false);
   readonly customerFilter = signal<number | ''>('');
 
@@ -1507,10 +1284,6 @@ export class SalesList {
     this.outstandingOnly.set(false);
     this.docsFilter.set('all');
     this.rememberNavigation();
-  }
-
-  statusCount(status: QuoteStatus | ''): number {
-    return status ? this.statusCounts().get(status) ?? 0 : this.searched().length;
   }
 
   customerName(row: SalesOrderView): string {
@@ -1812,9 +1585,6 @@ export class SalesList {
   readonly channelCode = channelCode;
   readonly channelLabel = channelLabel;
 
-  /** What is waiting on us; the same source as the bell and the dot. */
-  readonly openWork = this.work.actions;
-
   /** The order marker remains visible in filters and rows, independent of a
       personally dismissed bell item. What still waits for a first look:
       website requests, and website orders nobody took into processing yet. */
@@ -1824,23 +1594,12 @@ export class SalesList {
   /** Website orders the customer can still change; staff take them with the button on the document. */
   readonly ordersToTake = computed(() => this.all().filter((row) =>
     !row.order.archivedAt && (row.order.docType ?? 'OFFERTE') === 'OFFERTE' && customerCanStillChange(row)));
-  readonly attentionCount = computed(() => this.openWork().length);
   readonly websiteRequest = isWebsiteQuoteRequest;
   readonly webOrder = isWebOrder;
 
   /** Where a website order stands between the customer and us; one pill, the first that applies. */
   readonly webOrderPill = webOrderListPill;
 
-  workIcon(kind: string): string {
-    switch (kind) {
-      case 'WEBSITE_AANVRAAG': return '↗';
-      case 'LEVERTERMIJN': return '◷';
-      case 'VRACHT': return '▤';
-      case 'VOORSTEL': return '⇄';
-      case 'OPNIEUW_VERSTUREN': return '↻';
-      default: return '◉';
-    }
-  }
   /** What we still must do with this document, or nothing. A voorschotfactuur (noGoods) has nothing to ship. */
   todo = (order: SalesOrder, awaitingResend = false, fullyCredited = false, noGoods = false): string | null => {
     if (order.docType === 'CREDITNOTA') return null;
@@ -1916,7 +1675,7 @@ export class SalesList {
       `Order ${view.order.number} is aangemaakt. Open hem vanuit het overzicht.`, 'err');
   }
 
-  /* ---- the desk list (Inkoop recipe, 2026-10-19): tabs, chips, customer groups, sums --------------------------- */
+  /* ---- the list (Inkoop recipe, 2026-10-19): tabs, chips, customer groups, sums --------------------------------- */
 
   /** The documents are known: before the first answer, or after a failed load, no count or sum shows (never a false '0'); a reload keeps them. */
   readonly ready = computed(() => !this.loadError() && (!this.loading() || this.all().length > 0));
@@ -1924,7 +1683,10 @@ export class SalesList {
   readonly attentionOnly = signal(false);
   /** Up to 1100px wide the toolbar is tight: the search gets a shorter placeholder so neither it nor the title is cut. */
   readonly compactBar = signal(false);
+  /** Phones under 375px: the phone search reads like the compact desk, the full placeholder would lose its last letters. */
+  readonly smallPhone = signal(false);
   readonly keepEuro = keepEuro;
+  readonly dayParts = dayParts;
   readonly salesTone = salesTone;
 
   readonly tabOptions = computed<SegmentOption[]>(() => {
@@ -1950,7 +1712,7 @@ export class SalesList {
     const open = this.docTab() === 'OFFERTE' ? 0 : (narrowed ? this.shownMoney() : this.pileMoney()).openEur;
     return listCaption(this.docTab(), this.rows().length, this.pile().length, narrowed, open);
   });
-  /** The word after 'n van m' on the phone's filter line. */
+  /** The word after 'n van m' in the phone's Filters sheet. */
   readonly pileWord = computed(() => this.docTab() === 'OFFERTE' ? 'offertes' : this.docTab() === 'ARCHIEF' ? 'in het archief'
     : this.docsFilter() === 'cn' ? 'creditnota’s' : 'facturen');
 
@@ -1981,7 +1743,7 @@ export class SalesList {
   readonly shownMoney = computed(() => listMoney(this.rows(), invoiceReceivable, todayIso()));
   private readonly pileMoney = computed(() => listMoney(this.pile(), invoiceReceivable, todayIso()));
 
-  /** One block per customer on the desk, on top of the container and split groups (they stay per customer inside it). */
+  /** One block per customer (a desk group, a phone section), on top of the container and split groups (they stay per customer inside it). */
   readonly customerSections = computed(() =>
     customerSections(this.groupedRows(), (id) => this.customerCompany(id), invoiceReceivable, todayIso()));
   private customerCompany(id: number | null): string {
@@ -1997,7 +1759,7 @@ export class SalesList {
     }
     return titles;
   });
-  /** The amber line of a desk row: what waits on us, and the bell's website items for this document. */
+  /** The amber line of a row: what waits on us, and the bell's website items for this document. */
   rowAttention(row: SalesOrderView): string[] {
     const items = [...(this.attention(row) ?? [])];
     for (const title of this.webWork().get(row.order.id) ?? []) if (!items.includes(title)) items.push(title);
@@ -2031,6 +1793,45 @@ export class SalesList {
   paymentOf(row: SalesOrderView): PaymentCell {
     return paymentCell(row.order, invoiceReceivable(row), this.overdue(row.order));
   }
+  /** The phone row's facts line and third trailing line (sales-list-model phoneLines). */
+  phoneLinesOf(row: SalesOrderView): PhoneLines {
+    return phoneLines(this.statusPartsOf(row), this.paymentOf(row), isCreditNote(row.order) ? this.creditLine(row) : null);
+  }
+
+  /* ---- the phone list: the round filter button and its sheet, the chips that apply ---------------------------- */
+  readonly scopeOptions: { id: SalesScope; label: string }[] = [
+    { id: 'ALL', label: 'Alles' }, { id: 'STANDARD', label: 'Reguliere verkoop' }, { id: 'PARTNER', label: 'Partnercontainers' },
+  ];
+  /** Within Facturen: everything, the invoices or the credit notes, with their counts. */
+  readonly docsOptions = computed<{ id: SalesDocsFilter; label: string; count: number }[]>(() => {
+    const counts = this.docsCounts();
+    return [{ id: 'all', label: 'Alle', count: counts.f + counts.cn }, { id: 'f', label: 'Facturen', count: counts.f },
+      { id: 'cn', label: 'Creditnota’s', count: counts.cn }];
+  });
+  /** The phone's chips row, only what applies: Actie vereist, the website toggles on Offertes, Nog te ontvangen once it is on. Null: no row. */
+  readonly phoneChips = computed(() => {
+    const tab = this.docTab();
+    const chips = {
+      attention: this.actionCount() > 0 || this.attentionOnly(),
+      website: tab === 'OFFERTE' && (this.websiteRequests().length > 0 || this.websiteOnly()),
+      toTake: tab === 'OFFERTE' && (this.ordersToTake().length > 0 || this.toTakeOnly()),
+      outstanding: tab === 'FACTUUR' && this.outstandingOnly(),
+    };
+    return chips.attention || chips.website || chips.toTake || chips.outstanding ? chips : null;
+  });
+  /** The filter button's badge: how many of the sheet's choices stand off their default. */
+  readonly sheetFilterCount = computed(() => (this.businessScope() !== 'ALL' ? 1 : 0) + (this.filter() ? 1 : 0)
+    + (this.customerFilter() !== '' ? 1 : 0)
+    + (this.docTab() === 'FACTUUR' ? (this.outstandingOnly() ? 1 : 0) + (this.docsFilter() !== 'all' ? 1 : 0) : 0));
+  /** The sheet's Filters wissen: its own choices back to their default; the search and the chips row stay as they are. */
+  clearSheetFilters(): void {
+    this.filter.set('');
+    this.customerFilter.set('');
+    this.outstandingOnly.set(false);
+    this.docsFilter.set('all');
+    if (this.businessScope() !== 'ALL') this.switchScope('ALL');
+    else this.rememberNavigation();
+  }
 
   /* ---- the row menu: Openen, the linked documents, Order splitsen, Archiveren, Verwijderen… */
   rowMenuTitle(row: SalesOrderView): string {
@@ -2041,8 +1842,10 @@ export class SalesList {
     const order = row.order;
     const credit = isCreditNote(order);
     const total = `${credit ? '− ' : ''}${new EurPipe().transform(row.priced.totals.total, row.fulfillment || this.partner(order) ? 2 : 0)}`;
+    /* The phone row has no Inhoud and no Betaling column: there the hint also carries the m³, the margin and the money facts. */
+    const facts = this.desktop.active() ? [this.inhoudText(row)] : [this.inhoudText(row, true), ...this.phoneMoneyFacts(row)];
     const items: ContextMenuItem[] = [{ id: 'open', label: 'Openen', iconName: 'chevron-right',
-      hint: [this.customerName(row), statusOf(row).label, total, this.inhoudText(row)].filter(Boolean).join(' · ') }];
+      hint: [this.customerName(row), statusOf(row).label, total, ...facts].filter(Boolean).join(' · ') }];
     if (order.sourceQuoteId && row.sourceQuoteNumber) items.push({ id: 'quote', label: `Naar offerte ${row.sourceQuoteNumber}`, iconName: 'document' });
     if (row.invoicedAsId && row.invoicedAs) items.push({ id: 'invoice', label: `Naar factuur ${row.invoicedAs}`, iconName: 'receipt' });
     if (credit && row.creditedInvoiceId && row.creditedInvoiceNumber) {
@@ -2075,15 +1878,35 @@ export class SalesList {
     else if (item.id === 'delete') this.remove(row);
   }
 
-  /** The Inhoud column in a few words, for the Openen hint: the phone row has no Inhoud. */
-  private inhoudText(row: SalesOrderView): string {
+  /**
+   * The Inhoud column in a few words, for the Openen hint. Full on the phone, which has no Inhoud column: the m³ and the
+   * margin too (never on a credit note or a partner document), a credit note's parts, a partner document's line.
+   */
+  private inhoudText(row: SalesOrderView, full = false): string {
     const num = (value: number): string => new NumPipe().transform(value);
     const totals = row.priced.totals;
-    if (isCreditNote(row.order)) return row.priced.lines.length ? `${num(totals.pieces)} st` : '';
-    if (this.partner(row.order)) return '';
+    if (isCreditNote(row.order)) {
+      const lines = row.priced.lines.length, amounts = (row.order.extraLines ?? []).length;
+      if (!full) return lines ? `${num(totals.pieces)} st` : '';
+      return [lines ? `${num(totals.pieces)} st · ${countText(lines, 'regel', 'regels')}` : '', amounts ? countText(amounts, 'bedrag', 'bedragen') : '']
+        .filter(Boolean).join(' · ');
+    }
+    if (this.partner(row.order)) return full ? row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' : '';
+    const loose = row.order.loadMode === 'LOOSE_CARTONS';
     const pallets = totals.palletsManual || totals.palletsStrict;
-    return `${num(totals.pieces)} st · ${row.order.loadMode === 'LOOSE_CARTONS'
-      ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${pallets === 1 ? 'pallet' : 'pallets'}`}`;
+    const parts = [`${num(totals.pieces)} st`, loose ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${pallets === 1 ? 'pallet' : 'pallets'}`];
+    if (full && loose) parts.push(new CbmPipe().transform(totals.cbm));
+    if (full && totals.marginPct) parts.push(`marge ${new PctPipe().transform(totals.marginPct, 0)}`);
+    return parts.join(' · ');
+  }
+
+  /** What the phone row leaves to the menu: the due day behind '€ x open', what came in and what was credited. */
+  private phoneMoneyFacts(row: SalesOrderView): string[] {
+    const eur = (value: number): string => new EurPipe().transform(value);
+    const pay = this.paymentOf(row);
+    const invoice = pay.state === 'open' || pay.state === 'settled';
+    return [this.phoneLinesOf(row).unshown, invoice && pay.receivedEur > 0 ? `${eur(pay.receivedEur)} ontvangen` : null,
+      invoice && row.creditedEur ? `${eur(row.creditedEur)} gecrediteerd` : null].filter((fact): fact is string => !!fact);
   }
 
   /* ---- customer groups folded shut, remembered on this device ---------- */
