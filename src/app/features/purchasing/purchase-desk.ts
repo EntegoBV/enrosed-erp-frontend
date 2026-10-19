@@ -50,7 +50,7 @@ import { Icon } from '../../shared/icon';
 import { elementWidth } from '../../shared/workspace-layout';
 import { containerNumberHint } from './container-name';
 import { PAYEE_LABEL } from './purchase-payment-ledger';
-import { costsSupersededFor, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
+import { calculationMadeOn, costsSupersededFor, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
@@ -563,7 +563,9 @@ export class PurchaseDeskStyles {}
                     </div>
                     <div class="field">
                       <label for="dk-number">Ordernummer</label>
-                      <input class="input" id="dk-number" autocomplete="off" [ngModel]="data.order.number" (ngModelChange)="$event?.trim() && patch({ number: $event.trim() })" />
+                      <input class="input" id="dk-number" autocomplete="off" [ngModel]="data.order.number" [disabled]="numberLocked()"
+                             (ngModelChange)="$event?.trim() && !numberLocked() && patch({ number: $event.trim() })" />
+                      @if (numberLocked()) { <span class="hint">Ligt vast sinds de bestelling: de kostprijzen op de productkaarten verwijzen ernaar.</span> }
                     </div>
                     <div class="desk-form__duo">
                       <div class="field">
@@ -940,13 +942,14 @@ export class PurchaseDeskStyles {}
                         </div>
                       }
                     }
-                    @if (nextStep(); as step) {
-                      <button class="btn btn--primary btn--block desk-done__cta" type="button" (click)="advanceStatus()">{{ step.action }} ›</button>
-                    } @else if (isReceived() && !(data.order.stockBooked ?? true)) {
-                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="booking()" (click)="bookStock()">{{ booking() ? 'Bezig…' : 'Voorraad bijboeken ›' }}</button>
+                    <!-- The same step as the Volgende stap tile (readNextStep), so the two never disagree (I-B7). -->
+                    @if (readStep(); as step) {
+                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : STEP_BUTTON[step] + ' ›' }}</button>
                     }
                     <div class="desk-actions">
-                      <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                      @if (readStep() !== 'KOSTPRIJZEN') {
+                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                      }
                       <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)"><span><b>{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</b><small>{{ data.order.partnerCustomerId ? 'Eén conceptfactuur per voorschottermijn, nog niet verstuurd.' : 'Dezelfde producten en aantallen op een nieuwe offerte voor een klant.' }}</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" (click)="pdfOpen.set(true)"><span><b>PDF maken</b><small>Voor de leverancier, controleur of als intern dossier.</small></span><i aria-hidden="true">›</i></button>
@@ -1731,8 +1734,8 @@ export class PurchaseDesk extends PurchaseEditor {
     const index = this.stepIndex(order.status);
     const booked = order.stockBooked === true;
     const steps = [
-      /* The same days as the summary card's steps (F7): the calculation from its creation, Besteld from the order date. */
-      { key: 'made', label: 'Calculatie gemaakt', done: true, date: data.createdAt ?? order.orderDate, text: this.creatorName(data) },
+      /* The same days as the summary card's steps (F7, I-B22): the calculation from its creation (else the order date), Besteld from the order date. */
+      { key: 'made', label: 'Calculatie gemaakt', done: true, date: calculationMadeOn(data.createdAt, order.orderDate), text: this.creatorName(data) },
       { key: 'ordered', label: 'Besteld', done: index >= 1, date: index >= 1 ? order.orderDate || null : null as string | null,
         text: index >= 1 ? 'aantallen en prijzen liggen vast' : 'nog een concept' },
       { key: 'shipped', label: 'Vertrokken', done: index >= 2, date: order.shippedOn ?? null,

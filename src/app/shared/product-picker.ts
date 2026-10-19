@@ -67,7 +67,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe],
   template: `
-    <app-sheet [title]="heading()" [wide]="groupByFamily()" (closed)="cancelled.emit()">
+    <app-sheet [title]="heading()" [wide]="groupByFamily()" [variant]="variant()" (closed)="cancelled.emit()">
       <div body>
         @if (!createMode()) {
         <div class="search-bar">
@@ -753,6 +753,8 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
   `,
 })
 export class ProductPicker implements OnDestroy {
+  /** 'ios' on the phone (the bottom sheet with the iOS look); the desk keeps the dialog. */
+  readonly variant = input<'default' | 'ios'>('default');
   readonly salesPhotoUrl = salesPhotoUrl;
   /** The product's own unit ("Aantal bowls"); the host screen loads the unit names. */
   readonly salesUnit = productSalesUnit;

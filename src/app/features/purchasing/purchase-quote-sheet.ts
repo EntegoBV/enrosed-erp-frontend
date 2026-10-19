@@ -39,7 +39,7 @@ export type PurchaseQuotePricing = 'CUSTOMER' | 'COST';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, NumPipe, EurPipe, EurUpPipe, WeekNlPipe, WeekField, QuoteAdvanceTerms],
   template: `
-    <app-sheet [title]="partner() ? 'Conceptvoorschotfacturen' : 'Reguliere verkoopofferte'" (closed)="closed.emit()">
+    <app-sheet [title]="partner() ? 'Conceptvoorschotfacturen' : 'Reguliere verkoopofferte'" [variant]="variant()" (closed)="closed.emit()">
       <div body class="pq">
         <div class="per-toggle" role="group" aria-label="Soort verkoop"><button type="button" [class.on]="!partner()" (click)="setPurpose(false)">Reguliere verkoop</button><button type="button" [class.on]="partner()" (click)="setPurpose(true)">Partnercontainer</button></div>
         <p class="pq__hint">{{ partner() ? 'Maak direct één conceptfactuur per voorschottermijn. Er wordt niets verstuurd of uitgegeven. Na de veiling volgt de slotfactuur met de afrekening en ons aandeel in het resultaat.' : 'Een gewone verkoop aan deze klant, ook als hij daarnaast partnercontainers heeft. Klantprijzen en normale verkoopvoorwaarden gelden.' }}</p>
@@ -263,6 +263,8 @@ export class PurchaseQuoteSheet {
   private readonly ui = inject(Ui);
 
   readonly order = input.required<PurchaseOrder>();
+  /** 'ios' where the phone opens it (I-B25): the kit's iOS sheet below 680 px; desks see no difference. */
+  readonly variant = input<'default' | 'ios'>('default');
   readonly lines = input<PurchaseQuoteLine[]>([]);
   readonly reconciliation = input<PurchaseReconciliation | null | undefined>(undefined);
   /** Exact purchase total including separately listed costs; never reconstructed from rounded unit prices. */

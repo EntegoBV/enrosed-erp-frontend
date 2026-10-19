@@ -21,8 +21,8 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER' | 'INSPECTION';
   imports: [FormsModule, Sheet],
   template: `
     <app-sheet [title]="inspectionOpen() ? 'Inspectiedossier instellen' : portraitOpen() ? 'Staande PDF instellen' : 'Inkooporder exporteren'"
-               (closed)="close()">
-      <div body>
+               [variant]="variant()" (closed)="close()">
+      <div body class="pdf-body">
         @if (dirty()) {
           <div class="save-warning" role="status">
             <span aria-hidden="true">!</span>
@@ -371,6 +371,8 @@ export class PurchasePdfSheet {
   @ViewChild('inspectionChoice') private inspectionChoice?: ElementRef<HTMLButtonElement>;
 
   readonly orderId = input.required<number>();
+  /** 'ios' where the phone opens it (I-B25): the kit's iOS sheet below 680 px; desks see no difference. */
+  readonly variant = input<'default' | 'ios'>('default');
   readonly orderNumber = input.required<string>();
   readonly dirty = input(false);
   readonly saving = input(false);

@@ -140,6 +140,15 @@ app-purchase-desk .desk-table--editing .c-cartons{width:84px}
 app-purchase-desk .desk-table--editing .c-price{width:152px}
 app-purchase-desk .desk-table--editing .c-money{width:120px}
 app-purchase-desk .desk-table--editing .c-act{width:40px}
+/* I-COL (2026-10-19): just above the dock threshold (windows of about 1368-1415 px) the docked panel leaves the products
+   736-779 px; the editing table's 780 px minimum then scrolled the remove column out of its card. There the table fits
+   its card instead: no minimum, the carton and price tracks a little narrower (140 still holds the 128 px price field). */
+app-purchase-desk .pdk-body--docked .desk-table-wrap{container:pdk-lines/inline-size}
+@container pdk-lines (max-width:779px){
+  app-purchase-desk .desk-table--editing{min-width:0}
+  app-purchase-desk .desk-table--editing .c-cartons{width:76px}
+  app-purchase-desk .desk-table--editing .c-price{width:140px}
+}
 /* The landed cell's second line in words ('per display · € 1,997 per stuk ›', 'kostopbouw ›'), no capitals; it may wrap. */
 app-purchase-desk .desk-total small{display:block;margin-top:1px;color:var(--muted);font-size:10.5px;font-weight:600;line-height:1.3;text-align:right;white-space:normal}
 /* The build-up row opens on the user's click only. */

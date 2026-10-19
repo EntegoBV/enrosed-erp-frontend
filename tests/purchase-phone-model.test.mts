@@ -7,7 +7,8 @@ import type { LedgerSummary, PayeeLedger } from '../src/app/features/purchasing/
 import type { NacalcHeadline } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import {
-  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance, parseTab,
+  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, calculationMadeOn, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance,
+  nextStepCard, orderNumberLocked, parseTab,
   countWords, lineCount, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
   type ActionsMenuState, type AskedStep, type PhoneTab, type StepHandoff,
@@ -113,10 +114,22 @@ test('the progress shows four steps with the day each was reached and the expect
   assert.deepEqual(steps('ONDERWEG', { shippedOn: undefined }).map((s) => [s.state, s.date]), [
     ['done', '2026-09-18T08:00:00Z'], ['done', '2026-09-22'], ['now', null], ['todo', '2026-11-20']]);
   assert.deepEqual(steps('ONDERWEG').map((s) => s.date), ['2026-09-18T08:00:00Z', '2026-09-22', '2026-10-10', '2026-11-20']);
+  // An order from before the logbook has no creation day: the calculation counts from the order date, as Afronden says (I-B22).
   const received = steps('ONTVANGEN', {}, null);
   assert.deepEqual(received.map((s) => [s.state, s.date, s.prefix]), [
-    ['done', null, null], ['done', '2026-09-22', null], ['done', '2026-10-10', null], ['done', '2026-11-14', null]]);
+    ['done', '2026-09-22', null], ['done', '2026-09-22', null], ['done', '2026-10-10', null], ['done', '2026-11-14', null]]);
   assert.deepEqual(steps('BESTELD', { expectedArrival: undefined }).at(-1), { label: 'Ontvangen', state: 'todo', date: null, prefix: null });
+});
+
+test('one rule for the day the calculation was made: its creation, else the order date (I-B22)', () => {
+  assert.equal(seen(calculationMadeOn('2026-09-18T08:00:00Z', '2026-09-22')), '2026-09-18T08:00:00Z');
+  assert.equal(seen(calculationMadeOn(null, '2026-09-22')), '2026-09-22');
+  assert.equal(seen(calculationMadeOn(undefined, '')), null);
+});
+
+test('the Ordernummer is fixed from Besteld on: the applied cost prices point at it (I-B5)', () => {
+  assert.deepEqual((['CONCEPT', 'BESTELD', 'ONDERWEG', 'ONTVANGEN'] as const).map((status) => seen(orderNumberLocked(status))), [false, true, true, true]);
+  assert.equal(orderNumberLocked(null), false, 'nothing loaded yet');
 });
 
 const payee = (kind: string, extra: Partial<PayeeLedger> = {}) =>
@@ -220,6 +233,24 @@ test('the read view offers the status road, then the shelf, then the catalogue c
   assert.equal(read('ONTVANGEN', { costsApplied: true }), null);
   assert.equal(read('ONTVANGEN', { superseded: true }), null, 'a newer container\'s costs are never pushed aside');
   for (const status of ['CONCEPT', 'BESTELD', 'ONDERWEG', 'ONTVANGEN'] as const) assert.equal(read(status, { lineCount: 0 }), null);
+});
+
+test('the Overzicht card names the dock\'s step: never \'afgerond\' while Kostprijzen toepassen is still offered (I-B6)', () => {
+  const card = (status: PurchaseOrder['status'], extra: Partial<Parameters<typeof readNextStep>[0]> = {}) => {
+    const s = { status, lineCount: 3, stockBooked: null, costsApplied: false, ...extra };
+    return seen(nextStepCard(readNextStep(s), s.lineCount)).title;
+  };
+  assert.equal(card('CONCEPT'), 'Klaar om te bestellen?');
+  assert.equal(card('BESTELD'), 'Is de container vertrokken?');
+  assert.equal(card('ONDERWEG'), 'Klaar voor ontvangst?');
+  assert.equal(card('ONTVANGEN', { stockBooked: false }), 'Klaar voor de volgende stap?');
+  assert.match(nextStepCard('BIJBOEKEN', 3).text, /nog niet bijgeboekt/);
+  // Received and booked, costs never applied: the dock says Kostprijzen toepassen, so the card does not say afgerond.
+  assert.equal(card('ONTVANGEN', { stockBooked: true }), 'Klaar voor de volgende stap?');
+  assert.match(nextStepCard('KOSTPRIJZEN', 3).text, /gelande kost op de productkaarten/);
+  assert.equal(card('ONTVANGEN', { stockBooked: true, costsApplied: true }), 'Container afgerond');
+  assert.equal(card('ONTVANGEN', { superseded: true }), 'Container afgerond');
+  for (const status of ['CONCEPT', 'BESTELD', 'ONDERWEG', 'ONTVANGEN'] as const) assert.equal(card(status, { lineCount: 0 }), 'Voeg eerst producten toe');
 });
 
 test('the editor offers the status road and the shelf; Kostprijzen stays under Acties', () => {

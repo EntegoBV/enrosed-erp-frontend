@@ -124,6 +124,24 @@ export function statusTone(status: PurchaseOrder['status']): 'tone-grey' | 'tone
 
 export interface ProgressStep { label: string; state: 'done' | 'now' | 'todo'; date: string | null; prefix: 'verwacht' | null }
 
+/**
+ * The day the calculation was made: its creation, else (an order from before
+ * the logbook) the order date. One rule for the summary steps and the desk's
+ * Afronden 'Calculatie gemaakt' (I-B22).
+ */
+export function calculationMadeOn(createdAt: string | null | undefined, orderDate: string | null | undefined): string | null {
+  return createdAt || orderDate || null;
+}
+
+/**
+ * The Ordernummer is fixed once the container is ordered: 'Kostprijzen
+ * toepassen' writes it on the product cards (landedCostSource), so a later
+ * rename would orphan the applied state (I-B5).
+ */
+export function orderNumberLocked(status: PurchaseOrder['status'] | null | undefined): boolean {
+  return !!status && status !== 'CONCEPT';
+}
+
 /** Concept, Besteld, Vertrokken, Ontvangen with the day each was reached; the arrival is 'verwacht' until it happened. */
 export function progressSteps(
   order: Pick<PurchaseOrder, 'status' | 'orderDate' | 'shippedOn' | 'receivedOn' | 'expectedArrival'>,
@@ -134,7 +152,7 @@ export function progressSteps(
   const state = (index: number): ProgressStep['state'] => received || index < current ? 'done' : index === current ? 'now' : 'todo';
   const expected = !received && order.expectedArrival ? order.expectedArrival : null;
   return [
-    { label: 'Concept', state: state(0), date: createdAt || null, prefix: null },
+    { label: 'Concept', state: state(0), date: calculationMadeOn(createdAt, order.orderDate), prefix: null },
     { label: 'Besteld', state: state(1), date: current >= 1 ? order.orderDate || null : null, prefix: null },
     { label: 'Vertrokken', state: state(2), date: current >= 2 ? order.shippedOn || null : null, prefix: null },
     { label: 'Ontvangen', state: state(3), date: received ? order.receivedOn || null : expected, prefix: expected ? 'verwacht' : null },
@@ -282,6 +300,31 @@ export function readNextStep(s: {
   if (s.status === 'ONDERWEG') return 'ONTVANGEN';
   if (s.stockBooked === false) return 'BIJBOEKEN';
   return !s.costsApplied && !s.superseded ? 'KOSTPRIJZEN' : null;
+}
+
+/**
+ * The Overzicht card under 'Volgende stap', in words: it follows the dock's
+ * readNextStep, so the card never says 'afgerond' while the dock still
+ * offers a step (I-B6). Null means the road is done.
+ */
+export function nextStepCard(step: PhoneStep | null, lineCount: number): { title: string; text: string } {
+  if (lineCount <= 0) {
+    return { title: 'Voeg eerst producten toe', text: 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.' };
+  }
+  switch (step) {
+    case 'BESTELLEN':
+      return { title: 'Klaar om te bestellen?', text: 'Controleer lading, containerruimte en kosten voordat je de bestelling vastlegt.' };
+    case 'VERTROKKEN':
+      return { title: 'Is de container vertrokken?', text: 'Zet de order op Vertrokken zodra het schip vaart; dan valt de volgende betaling en start de tracking.' };
+    case 'ONTVANGEN':
+      return { title: 'Klaar voor ontvangst?', text: 'Controleer bij aankomst de werkelijk ontvangen aantallen voordat je de voorraad bijboekt.' };
+    case 'BIJBOEKEN':
+      return { title: 'Klaar voor de volgende stap?', text: 'Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.' };
+    case 'KOSTPRIJZEN':
+      return { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
+    default:
+      return { title: 'Container afgerond', text: 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.' };
+  }
 }
 
 /** The editor's save-bar step; Kostprijzen stays under Acties there. */

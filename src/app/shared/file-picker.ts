@@ -17,7 +17,7 @@ import { Sheet, Ui } from './ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, Sheet, AuthImage],
   template: `
-    <app-sheet [title]="title()" [wide]="true" (closed)="closed.emit()">
+    <app-sheet [title]="title()" [wide]="true" [variant]="variant()" (closed)="closed.emit()">
       <div body class="fp">
         <div class="fp__bar">
           <input class="input fp__search" type="search" autocomplete="off" placeholder="Zoek op naam of bestandsnaam…"
@@ -87,6 +87,8 @@ import { Sheet, Ui } from './ui';
   `],
 })
 export class FilePicker {
+  /** 'ios' on the phone (the bottom sheet with the iOS look); the desk keeps the dialog. */
+  readonly variant = input<'default' | 'ios'>('default');
   readonly media = inject(MediaApi);
   private readonly ui = inject(Ui);
 

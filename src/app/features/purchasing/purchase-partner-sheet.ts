@@ -17,7 +17,7 @@ import { STATUS_LABEL } from '../sales/quote-status';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, EurPipe, DateNlPipe],
   template: `
-    <app-sheet title="Bestaande factuur koppelen" (closed)="closed.emit()">
+    <app-sheet title="Bestaande factuur koppelen" [variant]="variant()" (closed)="closed.emit()">
       <div body class="pp">
         <p class="pp__intro">Welke factuur hoort bij de partner voor {{ order().alias || order().number }}? Na het koppelen telt deze container als partnercontainer in de analyses.</p>
         <div class="field">
@@ -78,6 +78,8 @@ export class PurchasePartnerSheet {
   private readonly ui = inject(Ui);
 
   readonly order = input.required<PurchaseOrder>();
+  /** 'ios' where the phone opens it (I-B25): the kit's iOS sheet below 680 px; desks see no difference. */
+  readonly variant = input<'default' | 'ios'>('default');
   /** Share the container already runs on, when a document is linked. */
   readonly currentShare = input<number | null>(null);
   readonly closed = output<void>();

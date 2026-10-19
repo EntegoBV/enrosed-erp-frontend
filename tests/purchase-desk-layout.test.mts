@@ -71,3 +71,23 @@ test('edit mode keeps its words in the 340-380 px panel: name and number, and th
   assert.ok(money >= 120, String(money));
   assert.match(partial, /app-purchase-desk \.purchase-payment-plan-trigger\{[^}]*white-space:normal/);
 });
+
+test('Afronden\'s CTA is the Volgende stap tile\'s step (readNextStep), never the old status-only nextStep (I-B7)', () => {
+  const done = /<div class="desk-done pdk-sec">([\s\S]*?)<div class="desk-actions">/.exec(template)?.[1] ?? '';
+  assert.match(done, /@if \(readStep\(\); as step\) \{\s*<button class="btn btn--primary btn--block desk-done__cta" type="button" \[disabled\]="step === 'BIJBOEKEN' && booking\(\)" \(click\)="runNextStep\(\)">/);
+  assert.doesNotMatch(done, /nextStep\(\)|advanceStatus\(\)|bookStock\(\)/);
+  assert.equal(count(template, 'desk-done__cta'), 1);
+  // While the CTA says Kostprijzen toepassen, the action list does not offer the same button a second time.
+  assert.match(template, /@if \(readStep\(\) !== 'KOSTPRIJZEN'\) \{\s*<button class="desk-action" type="button" \(click\)="apply\(\)">/);
+});
+
+test('Calculatie gemaakt follows the summary steps\' rule: createdAt, else the order date (I-B22)', () => {
+  assert.match(desk, /\{ key: 'made', label: 'Calculatie gemaakt', done: true, date: calculationMadeOn\(data\.createdAt, order\.orderDate\),/);
+  assert.doesNotMatch(desk, /data\.createdAt \?\? order\.orderDate/);
+});
+
+test('the desk Ordernummer is fixed from Besteld on, with a short note (I-B5)', () => {
+  const form = /<section class="pdk-sec" aria-label="Order bewerken">([\s\S]*?)<\/section>/.exec(template)?.[1] ?? '';
+  assert.match(form, /<input class="input" id="dk-number" autocomplete="off" \[ngModel\]="data\.order\.number" \[disabled\]="numberLocked\(\)"\s*\(ngModelChange\)="\$event\?\.trim\(\) && !numberLocked\(\) && patch\(\{ number: \$event\.trim\(\) \}\)" \/>/);
+  assert.match(form, /@if \(numberLocked\(\)\) \{ <span class="hint">Ligt vast sinds de bestelling: de kostprijzen op de productkaarten verwijzen ernaar\.<\/span> \}/);
+});

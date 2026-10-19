@@ -36,6 +36,9 @@ import { containerCellSub, containerCounts, supplierOverview, type SupplierConta
 })
 export class SupplierListStyles {}
 
+/** A subtitle while the list is not known yet: keeps the line's height and says nothing (no false '0'), as the Inkoop list does. */
+const NOT_KNOWN_YET = '\u00a0';
+
 function blank(): Supplier {
   return {
     id: null, name: '', country: 'CN', addressLine1: null, addressLine2: null,
@@ -57,7 +60,7 @@ function blank(): Supplier {
   imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, DateNlPipe],
   template: `
     <app-supplier-list-styles />
-    <app-page-header [showBack]="true" backTo="/more" title="Leveranciers" [subtitle]="suppliers().length + ' leveranciers'">
+    <app-page-header [showBack]="true" backTo="/more" title="Leveranciers" [subtitle]="subtitle()">
       @if (desktop.active()) {
         <div class="wk-search sup-search">
           <app-icon name="search" [size]="16" />
@@ -533,6 +536,9 @@ export class SupplierList {
   readonly loading = signal(true);
   /** The suppliers could not load (B2): app-load-error with 'Opnieuw proberen'. */
   readonly loadError = signal<string | null>(null);
+  /** The count once the list is known; while it loads (or failed) a blank line of the same height, never a false '0 leveranciers' (I-B14). */
+  readonly subtitle = computed(() => (this.loading() && !this.suppliers().length) || this.loadError()
+    ? NOT_KNOWN_YET : `${this.suppliers().length} leveranciers`);
   readonly saving = signal(false);
   readonly saveAttempted = signal(false);
   /** The desk's chosen supplier (the detail below the table). */

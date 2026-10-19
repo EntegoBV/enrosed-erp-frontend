@@ -31,7 +31,7 @@ export interface AuctionSheetLine {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, RouterLink, EurPipe, NumPipe],
   template: `
-    <app-sheet [title]="finalBatch() ? 'Resterende container afrekenen' : 'Deelveiling afrekenen'" (closed)="closed.emit()">
+    <app-sheet [title]="finalBatch() ? 'Resterende container afrekenen' : 'Deelveiling afrekenen'" [variant]="variant()" (closed)="closed.emit()">
       <div body class="as">
         <p class="as__intro">Vul per product in wat het netto op de veiling opbracht, na veilingkosten, uit het overzicht van {{ customerName() || 'de partner' }}@if (reference()) { voor {{ phrase(reference()) }} }.
           Elke afrekening bevat alleen de stuks van deze veiling, hun externe kost en ons winst- of verliesaandeel. Het bijbehorende voorschot wordt evenredig verrekend; de laatste afrekening neemt het resterende saldo mee.</p>
@@ -169,6 +169,8 @@ export interface AuctionSheetLine {
   `,
 })
 export class AuctionSettlementSheet {
+  /** 'ios' on the phone (the bottom sheet with the iOS look); the desk keeps the dialog. */
+  readonly variant = input<'default' | 'ios'>('default');
   private readonly sales = inject(SalesApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);

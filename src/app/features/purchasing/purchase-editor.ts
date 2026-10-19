@@ -109,7 +109,7 @@ import { landedRangeText, purchaseLineSections } from './purchase-product-line-g
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
-  STEP_BUTTON, actionsMenu, countWords, editNextStep, lineCount, linePriceText, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  STEP_BUTTON, actionsMenu, countWords, editNextStep, lineCount, linePriceText, orderNumberLocked, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -248,9 +248,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <div class="ios-section__head"><h2 id="mpo-order-title">Order</h2></div>
                 <div class="ios-group">
                   <label class="ios-cell mpo-field-row" for="po-number">
-                    <span class="ios-cell__body"><span class="ios-cell__title">Ordernummer</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">Ordernummer</span>
+                      @if (numberLocked()) { <span class="ios-cell__sub mpo-wrap">Ligt vast sinds de bestelling</span> }</span>
                     <input #numberInput class="mpo-input mpo-input--wide" id="po-number" type="text" autocomplete="off" enterkeyhint="done"
-                           [value]="data.order.number" (change)="setNumber(numberInput)" />
+                           [value]="data.order.number" [disabled]="numberLocked()" (change)="setNumber(numberInput)" />
                   </label>
                   <label class="ios-cell mpo-field-row mpo-field-row--stack" for="po-alias">
                     <span class="ios-cell__body"><span class="ios-cell__title">Herkenbare naam</span>
@@ -976,20 +977,20 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (quoteOpen()) {
         @if (view(); as data) {
-          <app-purchase-quote-sheet [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
+          <app-purchase-quote-sheet variant="ios" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLines()" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
         }
       }
       @if (extraSplitOpen()) {
-        <app-purchase-extra-split [order]="data.order" [costing]="data.costing" [sequence]="lineOrder()"
+        <app-purchase-extra-split variant="ios" [order]="data.order" [costing]="data.costing" [sequence]="lineOrder()"
                                   (shareChange)="setExtraShare($event.productId, $event.raw)" (targetChange)="setTargetUnitFor($event.productId, $event.raw)"
                                   (fill)="fillExtraSplit($event)" (rest)="extraSplitRestToLast()"
                                   (automatic)="endManualSplit(); extraSplitOpen.set(false)" (closed)="closeExtraSplit()" />
       }
       @if (partnerSheetOpen()) {
-        <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
+        <app-purchase-partner-sheet variant="ios" [order]="data.order" [currentShare]="partnerShare()" (closed)="partnerSheetOpen.set(false)" (linked)="onPartnerLinked()" />
       }
       @if (auctionOpen()) {
-        <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
+        <app-auction-settlement-sheet variant="ios" [lines]="auctionLines()" [customerId]="auctionCustomerId()" [customerName]="partnerCompany()"
                                       [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                       (funding)="jumpToSection('purchase-partner-section')" (closed)="auctionOpen.set(false)" />
@@ -997,6 +998,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 
       @if (picking()) {
         <app-product-picker
+          variant="ios"
           heading="Product toevoegen aan de container"
           [products]="available()"
           [categories]="categories()"
@@ -1102,7 +1104,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
 
       @if (libraryOpen()) {
-        <app-file-picker title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
+        <app-file-picker variant="ios" title="Document uit de bibliotheek" (picked)="pickLibraryDocument($event)" (closed)="libraryOpen.set(false)" />
       }
       @if (addingDocument(); as doc) {
         <app-sheet title="Document toevoegen" variant="ios" (closed)="closeDocument()">
@@ -1295,7 +1297,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                         (confirm)="confirmApply()" (cancel)="closeApply()" />
       }
       @if (pdfOpen()) {
-        <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
+        <app-purchase-pdf-sheet variant="ios" [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 [dirty]="dirty()" [saving]="saving()"
                                 [separateCosts]="hasSeparateCosts(data.order)"
                                 (saveRequested)="save()" (closed)="pdfOpen.set(false)" />
@@ -1514,10 +1516,14 @@ export class PurchaseEditor {
   readonly amountModes: SegmentOption[] = [{ id: 'total', label: 'Totaal' }, { id: 'piece', label: 'Per stuk' }];
   readonly lineModes: SegmentOption[] = [{ id: 'piece', label: 'Per stuk' }, { id: 'total', label: 'Totaal' }];
 
-  /** Ordernummer, written when the field is left; an emptied field keeps the number it had. */
+  /** From Besteld on the Ordernummer is fixed: the applied cost prices on the product cards point at it (I-B5). */
+  readonly numberLocked = computed(() => orderNumberLocked(this.view()?.order.status));
+
+  /** Ordernummer, written when the field is left; an emptied field keeps the number it had. Fixed once ordered. */
   setNumber(field: HTMLInputElement): void {
     const value = field.value.trim();
-    if (value && value !== this.view()?.order.number) this.patch({ number: value });
+    if (this.numberLocked()) field.value = this.view()?.order.number ?? '';
+    else if (value && value !== this.view()?.order.number) this.patch({ number: value });
     else if (!value) field.value = this.view()?.order.number ?? '';
   }
 

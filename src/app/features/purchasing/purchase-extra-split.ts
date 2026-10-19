@@ -29,7 +29,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, EurPipe, EurUpPipe, NumPipe],
   template: `
-    <app-sheet title="Enrosed kost per product" [wide]="true" (closed)="closed.emit()">
+    <app-sheet title="Enrosed kost per product" [wide]="true" [variant]="variant()" (closed)="closed.emit()">
       <div body class="xs" [class.xs--over]="remainder() < -0.004" [class.xs--done]="remainder() >= -0.004 && remainder() <= 0.004">
         <div class="xs__bar">
           <div class="xs__sum">
@@ -135,6 +135,8 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 })
 export class PurchaseExtraSplit {
   readonly order = input.required<PurchaseOrder>();
+  /** 'ios' where the phone opens it (I-B25): the kit's iOS sheet below 680 px; desks see no difference. */
+  readonly variant = input<'default' | 'ios'>('default');
   readonly costing = input<LandedCost | null>(null);
   /** Product ids in the order the product list shows them; the window keeps that order. */
   readonly sequence = input<number[]>([]);

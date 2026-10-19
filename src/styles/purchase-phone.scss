@@ -267,4 +267,7 @@ body:has(app-purchase-view .mpo-dock, app-purchase-editor .mpo-savebar) .toasts{
    the dock and the scroll padding follow --tabbar-h down to the bottom. One rule, its own commit: the easiest to undo. */
 body:has(app-purchase-view .mpo-dock){--tabbar-h:0px}
 body:has(app-purchase-view .mpo-dock) .tabbar{display:none}
+/* I-B25 (2026-10-19): the quote, partner, Enrosed kost and PDF sheets open as iOS sheets here; the iOS body has no side
+   padding of its own, so their plain content keeps a 16 px gutter. */
+:is(app-purchase-view,app-purchase-editor) .sheet--ios :is(.pq,.pp,.xs,.pdf-body){padding:0 var(--ios-inset,16px)}
 }

@@ -60,7 +60,7 @@ import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
 import {
-  STEP_BUTTON, costsAppliedFor, costsSupersededFor, countWords, landedTile, lineCount, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
+  STEP_BUTTON, costsAppliedFor, costsSupersededFor, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -205,13 +205,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
             <section class="ios-section" id="purchase-actions-section" tabindex="-1" aria-labelledby="mpo-actions-title">
               <div class="ios-section__head"><h2>Volgende stap</h2></div>
               <div class="ios-card mpo-next">
-                @if (data.order.status === 'ONTVANGEN' && data.order.stockBooked === false) {
-                  <h3 id="mpo-actions-title">Klaar voor de volgende stap?</h3>
-                  <p>Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.</p>
-                } @else {
-                  <h3 id="mpo-actions-title">{{ actionTitle(data.order.status, data.costing.lines.length) }}</h3>
-                  <p>{{ actionDescription(data.order.status, data.costing.lines.length) }}</p>
-                }
+                <!-- The dock's step in words (readNextStep): the card and the dock never name two different steps (I-B6). -->
+                @let card = nextStepCard(readStep(), data.costing.lines.length);
+                <h3 id="mpo-actions-title">{{ card.title }}</h3>
+                <p>{{ card.text }}</p>
               </div>
               <div class="ios-group">
                 <a class="ios-cell" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="editQuery()">
@@ -655,13 +652,13 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
         </app-sheet>
       }
       @if (quoteOpen()) {
-        <app-purchase-quote-sheet [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLinesOf(data)" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
+        <app-purchase-quote-sheet variant="ios" [advanceBasisEur]="data.costing.totals.totalWithSeparateCostsEur ?? null" [reconciliation]="data.reconciliation" [order]="data.order" [lines]="quoteLinesOf(data)" [presetCustomerId]="data.order.partnerCustomerId ?? null" [presetCostPct]="data.order.partnerCostPct ?? null" [presetSharePct]="data.order.partnerSharePct ?? null" (closed)="quoteOpen.set(false)" />
       }
       @if (partnerSheetOpen()) {
-        <app-purchase-partner-sheet [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
+        <app-purchase-partner-sheet variant="ios" [order]="data.order" [currentShare]="partnerDocs()[0]?.order?.partnerSharePct ?? null" (closed)="partnerSheetOpen.set(false)" (linked)="reloadPartnerDocs()" />
       }
       @if (auctionOpen()) {
-        <app-auction-settlement-sheet [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
+        <app-auction-settlement-sheet variant="ios" [lines]="auctionLines()" [customerId]="partnerDocs()[0]?.order?.customerId ?? data.order.partnerCustomerId ?? null" [customerName]="partnerCompany()"
                                       [purchaseOrderId]="data.order.id" [reference]="containerName(data.order)" [sourceId]="auctionSourceId()"
                                       [costSharePct]="auctionCostShare()" [separateUnitEur]="separateUnitEur()" [profitSharePct]="auctionProfitShare()"
                                       (funding)="scrollToCard('purchase-partner-section', 'purchase-payments-section')" (closed)="auctionOpen.set(false)" />
@@ -670,7 +667,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
         <app-sales-credit-note-sheet [purchaseOrderId]="data.order.id" (closed)="creditNoteOpen.set(false)" />
       }
       @if (pdfOpen()) {
-        <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number"
+        <app-purchase-pdf-sheet variant="ios" [orderId]="data.order.id" [orderNumber]="data.order.number"
                                 [separateCosts]="hasSeparateCosts(data.order)"
                                 (closed)="pdfOpen.set(false)" />
       }
@@ -1336,30 +1333,6 @@ export class PurchaseView {
     return 'Concept';
   }
 
-  actionTitle(status: string, lineCount: number): string {
-    if (!lineCount) return 'Voeg eerst producten toe';
-    if (status === 'ONTVANGEN') return 'Container afgerond';
-    if (status === 'ONDERWEG') return 'Klaar voor ontvangst?';
-    if (status === 'BESTELD') return 'Is de container vertrokken?';
-    return 'Klaar om te bestellen?';
-  }
-
-  actionDescription(status: string, lineCount: number): string {
-    if (!lineCount) {
-      return 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.';
-    }
-    if (status === 'ONTVANGEN') {
-      return 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.';
-    }
-    if (status === 'ONDERWEG') {
-      return 'Controleer bij aankomst de werkelijk ontvangen aantallen voordat je de voorraad bijboekt.';
-    }
-    if (status === 'BESTELD') {
-      return 'Zet de order op Vertrokken zodra het schip vaart; dan valt de volgende betaling en start de tracking.';
-    }
-    return 'Controleer lading, containerruimte en kosten voordat je de bestelling vastlegt.';
-  }
-
   fillWidth(percent: number): number {
     return Math.min(100, Math.max(0, percent));
   }
@@ -1434,6 +1407,7 @@ export class PurchaseView {
   /* ---- the next step: asked here, run by the editor --------------------- */
 
   readonly STEP_BUTTON = STEP_BUTTON;
+  readonly nextStepCard = nextStepCard;
   private readonly costsApplied = computed(() => {
     const data = this.view();
     return !!data && costsAppliedFor(data.costing.lines, this.products(), data.order.number);
