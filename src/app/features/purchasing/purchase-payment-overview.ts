@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import type { PurchaseDocument, PurchaseInvoice, PurchasePayment } from '../../core/api/models';
+import type { PurchaseDocument, PurchaseInvoice, PurchaseInvoiceFile, PurchasePayment } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -14,7 +14,7 @@ import {
 } from './purchase-payment-ledger';
 import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
-import { invoiceCoverage, invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
+import { invoiceCoverage, invoiceFileKind, invoiceFileText, invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -170,6 +170,13 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                           <span class="ios-cell__sub">{{ coverageText(item, invoice) }}</span></span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                       </button>
+                    } @else if (item.invoiceFiles[0]; as file) {
+                      <!-- A PI or invoice file without data is on file: no 'Nog geen factuur' (as the desk); its data goes in from Leverancier. -->
+                      <button class="ios-cell pp-term pp-invoice" type="button" (click)="openPayee.set('SUPPLIER')">
+                        <span class="ios-cell__lead"></span>
+                        <span class="ios-cell__body"><span class="ios-cell__title">{{ fileKind(file) }}</span><span class="ios-cell__sub">{{ file.originalFilename }}</span></span>
+                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                      </button>
                     } @else if (mode() === 'edit' && roundOnServer()) {
                       <button class="ios-cell pp-term pp-invoice" type="button" [disabled]="busy()" (click)="invoice.emit({ payee: 'SUPPLIER' })">
                         <span class="ios-cell__lead"></span>
@@ -306,7 +313,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                 @for (document of row.invoiceFiles; track document.id) {
                   <button class="ios-cell" type="button" (click)="download.emit(document)">
                     <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="document" [size]="17" /></span></span>
-                    <span class="ios-cell__body"><span class="ios-cell__title">{{ document.originalFilename }} · zonder gegevens</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ fileText(document) }}</span></span>
                     <app-icon class="ios-cell__chev" name="download" [size]="18" />
                   </button>
                 }
@@ -431,6 +438,10 @@ export class PurchasePaymentOverview {
 
   /** The supplier's primary invoice, shown under its card. */
   supplierInvoice(item: PayeeLedger): PurchaseInvoice | null { return primaryInvoice(item.invoices, 'SUPPLIER'); }
+  /** 'Proforma (PI)', else 'Factuurbestand zonder gegevens'. */
+  fileKind(file: PurchaseInvoiceFile): string { return invoiceFileKind(file); }
+  /** 'Proforma (PI) · PI CULINAN.xlsx', else '{file} · zonder gegevens'. */
+  fileText(file: Pick<PurchaseDocument, 'kind' | 'originalFilename'>): string { return invoiceFileText(file); }
 
   /** '20/08/2026 · € 31.048,04 · gelijk aan de afspraak'. */
   invoiceSubText(item: PayeeLedger, invoice: PurchaseInvoice): string {

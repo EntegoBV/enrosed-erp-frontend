@@ -101,6 +101,10 @@ test("the Factuur of one payee: invoices and files (a PI too); 'Nog geen factuur
   assert.deepEqual([own.invoices.map(item => item.number), own.viaSupplier], [['INS-1'], false], 'its own invoice first');
   const lab = payeeInvoices({ order, invoices: [invoice(7)], invoiceFiles: [] }, 'SEPARATE');
   assert.deepEqual([lab.invoices, lab.viaSupplier, lab.missing], [[], false, true], 'a lab fee paid apart keeps its own invoice');
+  // A bank line's own answer (viaSupplier of its payment) wins over the flag.
+  const apart = payeeInvoices({ order: { inspectionViaSupplier: true }, invoices: [invoice(7)], invoiceFiles: [] }, 'SEPARATE', false);
+  assert.deepEqual([apart.invoices, apart.viaSupplier, apart.missing], [[], false, true]);
+  assert.equal(payeeInvoices({ order, invoices: [invoice(7)], invoiceFiles: [] }, 'SEPARATE', true).viaSupplier, true);
 });
 
 test('the inspection counts as paid via the supplier only with the flag, on the goods\' bank line or not on the bank yet', () => {

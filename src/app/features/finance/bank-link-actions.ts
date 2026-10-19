@@ -87,12 +87,21 @@ export async function runLink(apis: LinkApis, line: BankStatementLine, target: L
   }
 }
 
+/** A Transactiekosten payment that bank-part made on this line for a purchase payment: not the payment itself, and not there before the link. */
+function createdFee(payment: PurchasePayment, lineId: number, paymentId: number, known: ReadonlySet<number>): boolean {
+  return payment.id !== paymentId && !known.has(payment.id) && payment.payee === 'OTHER' && payment.label === 'Transactiekosten'
+    && payment.bankStatementLineId === lineId;
+}
+
 /**
  * "Ongedaan maken" on the toast: unlinks, and deletes the payment(s) the link
- * created for a new cost or container term. Old amounts are never restored
- * (the toast says so when the payment had followed the bank).
+ * created for a new cost or container term, or the Transactiekosten bank-part
+ * made beside a purchase payment (the server keeps them on unlink; `known` are
+ * the payment ids from before the link). Old amounts are never restored (the
+ * toast says so when the payment had followed the bank).
  */
-export async function undoLink(apis: LinkApis, line: BankStatementLine, target: LinkTarget, created: { costPaymentId?: number | null; purchase?: readonly PurchasePayment[] }): Promise<void> {
+export async function undoLink(apis: LinkApis, line: BankStatementLine, target: LinkTarget,
+  created: { costPaymentId?: number | null; purchase?: readonly PurchasePayment[]; known?: ReadonlySet<number> }): Promise<void> {
   if (target.kind === 'sales-new' || target.kind === 'sales-existing') {
     await apis.banking.unallocate(line.id);
     return;
@@ -100,4 +109,9 @@ export async function undoLink(apis: LinkApis, line: BankStatementLine, target: 
   await apis.banking.unlinkPayments(line.id);
   if (target.kind === 'cost-new' && created.costPaymentId) await apis.finance.deleteCostPayment(target.costId, created.costPaymentId);
   if (target.kind === 'term-new') for (const payment of created.purchase ?? []) await apis.sourcing.deletePayment(payment.orderId, payment.id);
+  if (target.kind === 'purchase-existing' && created.known) {
+    for (const payment of created.purchase ?? []) {
+      if (createdFee(payment, line.id, target.paymentId, created.known)) await apis.sourcing.deletePayment(payment.orderId, payment.id);
+    }
+  }
 }

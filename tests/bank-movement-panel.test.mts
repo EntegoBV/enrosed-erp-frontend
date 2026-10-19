@@ -1449,6 +1449,10 @@ test('Factuur of uitgave: "Waarvan transactiekosten" makes the goods the rest an
   assert.equal(panel.localFeeOffered(), true);
   panel.purchaseInspectionInput.set('300'); panel.purchaseFeeInput.set('25');
   assert.equal(panel.canLinkLocal(), true);
+  // Review 2026-10-20: the preview counts only the goods on the term; the inspection and the fee stand beside it.
+  const shown = panel.localPreview()!;
+  assert.deepEqual([shown.paymentEur, shown.inspectionEur, shown.feeEur, shown.differenceEur], [-10000, 300, 25, 0]);
+  assert.equal(shown.remainingEur, Math.max(0, Math.round(shown.openEur * 100) - 1_000_000) / 100);
   await panel.linkLocalDocument();
   assert.deepEqual(parts().map((part: any[]) => part.slice(0, 5)), [['SUPPLIER', 10000, 'EUR', null, 'ORDERED'], ['SEPARATE', 300, 'EUR', null, null],
     ['OTHER', 25, 'EUR', null, null]]);

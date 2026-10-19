@@ -59,17 +59,18 @@ type Mode = 'AFSPRAAK' | 'EQUAL' | null;
           <label class="fin-split__pick"><input type="checkbox" [checked]="parts.length > 0" [disabled]="state.linking() !== null" (change)="toggle(container)" />
             <span><b>{{ container.number }}{{ container.alias ? ' · ' + container.alias : '' }}</b><small>{{ container.supplier || 'Leverancier onbekend' }}
               @if (parts.length && otherSupplier(container)) { <span class="fin-split__warn"> · andere leverancier dan {{ supplierName() }}</span> }</small></span></label>
-          @for (row of parts; track row.id; let first = $first) {
-            <!-- The shown choice follows the row's key per option: a select's [value] set before its options exist shows the first one. -->
-            <select class="select fin-split__term" [attr.aria-label]="'Betaling voor ' + container.number" [disabled]="state.linking() !== null" (change)="setTerm(container, row.id, $any($event.target).value)">
+          @for (row of parts; track row.id; let first = $first, i = $index) {
+            <!-- The shown choice follows the row's key per option: a select's [value] set before its options exist shows the first one. Several parts are named by number. -->
+            @let part = parts.length > 1 ? ' deel ' + (i + 1) : '';
+            <select class="select fin-split__term" [attr.aria-label]="'Betaling' + part + ' voor ' + container.number" [disabled]="state.linking() !== null" (change)="setTerm(container, row.id, $any($event.target).value)">
               @for (choice of choicesOf(container, row); track choice.key) {
                 <option [value]="choice.key" [selected]="choice.key === row.key">{{ choiceText(container, choice, row.key) }}</option>
               }
             </select>
-            <input class="input fin-split__amount" inputmode="decimal" [attr.aria-label]="'Bedrag voor ' + container.number" [disabled]="state.linking() !== null" [value]="row.amountInput" (input)="setAmount(row.id, $any($event.target).value)" />
-            <small class="fin-split__effect">{{ effectOf(container, row) }}@if (!first) { · <button class="wk-link" type="button" [disabled]="state.linking() !== null" (click)="dropPart(row.id)">weghalen</button> }</small>
+            <input class="input fin-split__amount" inputmode="decimal" [attr.aria-label]="'Bedrag' + part + ' voor ' + container.number" [disabled]="state.linking() !== null" [value]="row.amountInput" (input)="setAmount(row.id, $any($event.target).value)" />
+            <small class="fin-split__effect">{{ effectOf(container, row) }}@if (!first) { · <button class="wk-link" type="button" [attr.aria-label]="'Deel ' + (i + 1) + ' van ' + container.number + ' weghalen'" [disabled]="state.linking() !== null" (click)="dropPart(row.id)">weghalen</button> }</small>
           }
-          @if (parts.length) { <button class="wk-link fin-split__add" type="button" [disabled]="state.linking() !== null" (click)="addPart(container)">+ Deel</button> }
+          @if (parts.length) { <button class="wk-link fin-split__add" type="button" [attr.aria-label]="'Deel toevoegen aan ' + container.number" [disabled]="state.linking() !== null" (click)="addPart(container)">+ Deel</button> }
         </div>
       } @empty { <p class="fin-hint">Geen container met een open termijn{{ query() ? ' gevonden' : ' van deze leverancier' }}.</p> }
     </div>

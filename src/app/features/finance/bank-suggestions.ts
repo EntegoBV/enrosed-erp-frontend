@@ -202,8 +202,8 @@ function costPattern(line: BankStatementLine, input: SuggestionInput, day: strin
 
 /** A fee is small: a bank's charge on one transfer, never a part of the goods. */
 export const FEE_MAX_EUR = 100;
-/** Bank words for a charge, in the languages the bank texts come in (kosten also inside 'transactiekosten'). */
-const FEE_WORDS = /kosten|\b(fees?|charges?|commission|swift|our|sha|frais|gebuhr(en)?)\b/;
+/** Bank words for a transfer's charge, in the languages the bank texts come in: kosten alone or as transactie-, transfer-, overschrijvings- or betalingskosten, never every '…kosten' (Beheerskosten is the account's). */
+const FEE_WORDS = /\b(transactie|transfer|overschrijvings?|betalings?)?kosten\b|\b(fees?|charges?|commission|swift|our|sha|frais|gebuhr(en)?)\b/;
 
 /** The bank text says it is a charge. */
 export function feeText(line: Pick<BankStatementLine, 'counterparty' | 'reference'>): boolean {
@@ -249,8 +249,8 @@ function containerFee(line: BankStatementLine, input: SuggestionInput, day: (lin
 /**
  * The best match per unlinked line: SUGGESTED from 70 points with a matching
  * amount, exact when one text signal backs it and no other candidate reaches
- * 50; else, for an outgoing line, a container's Transactiekosten or the cost
- * pattern (never exact).
+ * 50; else, for an outgoing line, the cost pattern or a container's
+ * Transactiekosten (never exact).
  */
 export function lineSuggestions(input: SuggestionInput): Map<number, LineSuggestion> {
   const result = new Map<number, LineSuggestion>();
@@ -268,10 +268,11 @@ export function lineSuggestions(input: SuggestionInput): Map<number, LineSuggest
         exact: !rival && !best.changesAmount && best.reasons.some((reason) => TEXT_REASONS.has(reason)), changesAmount: best.changesAmount, others: ranked.slice(1, 4) });
       continue;
     }
-    const fee = containerFee(line, input, (row) => input.lineDay ? input.lineDay(row) : row.bookedAt.slice(0, 10));
-    if (fee) { result.set(line.id, { lineId: line.id, target: fee, score: SUGGESTED_SCORE, reasons: ['kosten in mededeling', 'naast betaling leverancier'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) }); continue; }
+    // A charge that went to company costs before stays one, also beside a supplier transfer.
     const pattern = costPattern(line, input, day, byId);
-    if (pattern) result.set(line.id, { lineId: line.id, target: pattern, score: SUGGESTED_SCORE, reasons: ['zoals vorige keren'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) });
+    if (pattern) { result.set(line.id, { lineId: line.id, target: pattern, score: SUGGESTED_SCORE, reasons: ['zoals vorige keren'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) }); continue; }
+    const fee = containerFee(line, input, (row) => input.lineDay ? input.lineDay(row) : row.bookedAt.slice(0, 10));
+    if (fee) result.set(line.id, { lineId: line.id, target: fee, score: SUGGESTED_SCORE, reasons: ['kosten in mededeling', 'naast betaling leverancier'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) });
   }
   return result;
 }

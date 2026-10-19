@@ -3,12 +3,12 @@ import { ChangeDetectionStrategy, Component, Injector, computed, effect, inject,
 import type { BankPurchasePaymentPart, BankStatementLine } from '../../core/api/banking-api';
 import { messageOf } from '../../core/api/errors';
 import type { MediaAssetSummary } from '../../core/api/media-models';
-import type { Currency, Payee, PurchaseDocument, PurchaseInvoiceFile } from '../../core/api/models';
+import type { Currency, Payee, PurchaseDocument, PurchaseInvoice, PurchaseInvoiceFile } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
-import { invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices } from '../purchasing/purchase-invoices';
+import { invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices, viaSupplier } from '../purchasing/purchase-invoices';
 import { PurchaseInvoiceSheet, type InvoiceSheetAction, type InvoiceSheetSubmit } from '../purchasing/purchase-invoice-sheet';
 import { surplusQuestion } from '../purchasing/purchase-payment-links';
 import { BankAllocationSteps } from './bank-allocation-steps';
@@ -41,6 +41,8 @@ interface InvoiceRow {
   file: { orderId: number; documentId: number; name: string } | { asset: MediaAssetSummary } | null;
   /** "Gegevens invullen" on a container's invoice file without data. */
   fill: { orderId: number; file: PurchaseInvoiceFile } | null;
+  /** "Aanpassen" on a container's invoice with data (the CI correcting the PI's data). */
+  edit?: { orderId: number; invoice: PurchaseInvoice } | null;
 }
 /**
  * What "Factuur" shows for one linked part (Emre, 2026-10-19): a container
@@ -146,6 +148,7 @@ interface InvoiceBlock {
                     <p class="fin-txd__line fin-txd__invoice"><span>{{ invoice.text }}</span>
                       @if (invoice.file) { <button class="wk-link" type="button" (click)="openInvoiceFile(invoice)">Bestand ↗</button> }
                       @if (invoice.fill; as fill) { <button class="wk-link" type="button" [disabled]="invoiceBusy()" (click)="fillInvoice(fill)">Gegevens invullen</button> }
+                      @if (invoice.edit; as edit) { <button class="wk-link" type="button" [disabled]="invoiceBusy()" (click)="editInvoice(edit)">Aanpassen</button> }
                       @if (invoice.coverage) { <small>{{ invoice.coverage }}</small> }</p>
                   }
                   @if (block.missing || block.add) {
@@ -202,6 +205,9 @@ interface InvoiceBlock {
                       <span class="fin-txd__part-amount">{{ amountOf(other.target) | eur }}@if (!isNewTarget(other.target)) { <small>volgt bank</small> }</span></button>
                   }
                 </section>
+              } @else {
+                <!-- No other candidate: the steps (Factuur of uitgave, Al genoteerd, Nog te registreren) stay one click away. -->
+                <section class="wk-section"><button class="wk-link" type="button" (click)="searchAll()">Zoek in ENROSED ›</button></section>
               }
             } @else {
               <section class="wk-section fin-txd__steps">
@@ -215,8 +221,8 @@ interface InvoiceBlock {
               </section>
             }
             @if (view() !== 'containers') {
-              @if (row.amountEur < 0) {
-                <!-- Outgoing only: an incoming line has its invoice (Emre, 2026-10-19). An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). -->
+              @if (row.amountEur < 0 && !splitAsked()) {
+                <!-- Outgoing only: an incoming line has its invoice (Emre, 2026-10-19). An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). The larger transaction's question offers it itself. -->
                 <section class="wk-section fin-txd__offer">
                   <div><b>Splitsen</b><small>Over containers, termijnen of transactiekosten</small></div>
                   <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="openSplit(null)">Splitsen…</button>
@@ -261,7 +267,7 @@ interface InvoiceBlock {
           <div class="fin-txd__radios" role="radiogroup" [attr.aria-label]="surplusQuestion(change.differenceEur)">
             <b>{{ surplusQuestion(change.differenceEur) }}</b>
             @if (state.cashRound()) {
-              <label><input type="radio" name="surplus" [checked]="false" (change)="openSplit(target)" /><span>Verdelen over containers<small>Deze transactie betaalde ook andere containers</small></span></label>
+              <label><input type="radio" name="surplus" [checked]="false" (change)="openSplit(target)" /><span>Splitsen…<small>Over containers, termijnen of transactiekosten</small></span></label>
             }
             <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" /><span>Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</span></label>
             @if (target.hasInspectionAfspraak) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" /><span>Rest als inspectie via leverancier</span></label> }
@@ -328,7 +334,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly keepAs = signal<KeepAs>('TRANSACTIEKOSTEN');
   /** A larger transaction on a purchase payment: nothing chosen beforehand (null), the link waits for the answer. */
   readonly surplus = signal<'ADJUST' | 'INSPECTION' | 'FEE' | null>(null);
-  /** "Verdelen over containers" chosen as that answer: the split starts on this payment's container and payment. */
+  /** "Splitsen…" chosen as that answer: the split starts on this payment's container and payment. */
   readonly splitFrom = signal<{ orderId: number; paymentId: number } | null>(null);
   readonly surplusQuestion = surplusQuestion;
   /** Another candidate picked under "Andere mogelijkheden"; the best match otherwise. */
@@ -367,8 +373,12 @@ export class TransactionDetail extends BankMovementPanel {
   readonly pattern = computed(() => { const target = this.suggestion()?.target; return target?.kind === 'cost-pattern' || target?.kind === 'container-fee' ? target.label : null; });
   readonly preview = computed(() => {
     const row = this.line(), target = this.best();
-    return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST', this.feeFor(target)) : null;
+    if (!row || !target) return null;
+    // A new term books its fee and euro inspection (Details) as payments of their own: its Bedrag is the rest (termParts).
+    const term = target.kind === 'term-new';
+    return changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
+      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST', term ? this.purchaseFee() : this.feeFor(target),
+      term && target.payable.payee === 'SUPPLIER' && this.purchaseCurrency() === 'EUR' ? this.purchaseInspection() : null);
   });
   /** 'Waarvan transactiekosten (€)' counts for a USD/CNY purchase payment that follows the bank (a euro one takes "Rest als transactiekosten"). */
   foreignFeeAsked(target: LinkTarget): boolean { return target.kind === 'purchase-existing' && target.currency !== 'EUR' && this.follow(); }
@@ -514,11 +524,11 @@ export class TransactionDetail extends BankMovementPanel {
   /**
    * "Factuur" of a linked line, one block per part: the sales invoice; per
    * container and payee its invoices (the primary with round 2's "Geldt voor
-   * alle betalingen van …") and its files without data, a PI too
-   * (payeeInvoices: an inspection via the supplier falls back to the
-   * supplier's); per cost its documents. An inspection via the supplier on
-   * the same line as the goods has no block of its own: the goods' invoice is
-   * it, never shown twice.
+   * alle betalingen van …") and its files without data, a PI too; per cost
+   * its documents. An inspection is via the supplier only on this line beside
+   * the goods (viaSupplier, the server's rule) and then has no block of its
+   * own: the goods' invoice is it, never shown twice. A lab fee in its own
+   * transfer keeps its own invoice.
    */
   readonly invoiceBlocks = computed<InvoiceBlock[]>(() => {
     const row = this.line();
@@ -533,13 +543,15 @@ export class TransactionDetail extends BankMovementPanel {
     for (const orderId of new Set(linked.map((payment) => payment.orderId))) {
       const view = this.state.purchaseViews().find((item) => item.order.id === orderId);
       if (!view) continue;
-      const payees = [...new Set(linked.filter((payment) => payment.orderId === orderId).map((payment) => payment.payee ?? 'SUPPLIER'))];
+      const ofOrder = linked.filter((payment) => payment.orderId === orderId);
+      const payees = [...new Set(ofOrder.map((payment) => payment.payee ?? 'SUPPLIER'))];
       for (const payee of payees) {
-        const found = payeeInvoices(view, payee);
+        const via = payee === 'SEPARATE' && ofOrder.some((payment) => payment.payee === 'SEPARATE' && viaSupplier(payment, ofOrder, view.order.inspectionViaSupplier));
+        const found = payeeInvoices(view, payee, via);
         if (found.viaSupplier && payees.includes('SUPPLIER')) continue;
         const branch = this.state.containerTree(view).find((item) => item.payee === payee);
         const nodes = branch ? [...branch.terms.flatMap((term) => term.payments), ...branch.payments] : [];
-        const rows: InvoiceRow[] = found.invoices.map((invoice, index) => ({ key: `i${invoice.id}`, text: invoiceLine(invoice), fill: null,
+        const rows: InvoiceRow[] = found.invoices.map((invoice, index) => ({ key: `i${invoice.id}`, text: invoiceLine(invoice), fill: null, edit: { orderId, invoice },
           file: invoice.documentId != null ? { orderId, documentId: invoice.documentId, name: invoice.documentName || invoice.number } : null,
           coverage: found.viaSupplier ? 'via de leverancier' : index > 0 ? 'extra factuur' : invoice.paymentIds !== undefined
             ? invoiceCoverage(invoice, nodes.map((node) => ({ parts: node.parts.length ? node.parts : [{ id: node.id }] })), PAYEE_LABEL[payee]).text : null }));
@@ -583,6 +595,10 @@ export class TransactionDetail extends BankMovementPanel {
   /** "Gegevens invullen" on an invoice file without data (a PI): it becomes the invoice with data, its file kept. */
   fillInvoice(fill: { orderId: number; file: PurchaseInvoiceFile }): void {
     if (!this.invoiceBusy()) this.invoicing.set({ orderId: fill.orderId, action: { payee: fill.file.payee, file: fill.file } });
+  }
+  /** "Aanpassen" on an invoice with data: the same sheet on that invoice (PUT), so the CI corrects the PI's data instead of adding a second. */
+  editInvoice(edit: { orderId: number; invoice: PurchaseInvoice }): void {
+    if (!this.invoiceBusy()) this.invoicing.set({ orderId: edit.orderId, action: { payee: edit.invoice.payee, invoice: edit.invoice } });
   }
   openInvoiceFile(row: InvoiceRow): void {
     const file = row.file;
@@ -628,8 +644,8 @@ export class TransactionDetail extends BankMovementPanel {
   });
 
   /**
-   * Where a container split starts: the payment 'Verdelen over containers'
-   * was chosen for, else the best match's container on its payment or term,
+   * Where a container split starts: the payment 'Splitsen…' was chosen
+   * for, else the best match's container on its payment or term,
    * else the counterparty's supplier.
    */
   readonly supplierHint = computed(() => {
@@ -641,11 +657,16 @@ export class TransactionDetail extends BankMovementPanel {
     if (target?.kind === 'term-new') return { orderId: target.orderId, termKey: target.payable.key, counterparty };
     return { orderId: null, counterparty };
   });
+  /** The larger transaction's question shows (its 'Splitsen…' radio): the offer below steps aside, one way to the same view. */
+  readonly splitAsked = computed(() => {
+    const best = this.best(), target = best ?? this.engineTarget(), change = best ? this.preview() : this.enginePreview();
+    return this.state.cashRound() && !!target && !!change && change.mode === 'higher' && target.kind === 'purchase-existing' && target.currency === 'EUR' && this.follow();
+  });
   /** A larger transaction on one euro purchase payment that follows the bank, and nothing chosen yet: the question waits for its answer. */
   surplusAsked(change: ChangePreview, target: LinkTarget): boolean {
     return change.mode === 'higher' && target.kind === 'purchase-existing' && target.currency === 'EUR' && this.follow() && this.surplus() === null;
   }
-  /** "Verdelen over containers": from a larger transaction's choice (that payment ticked), or the offer below (the best match's container). */
+  /** "Splitsen…": from a larger transaction's choice (that payment ticked), or the offer below (the best match's container). */
   openSplit(target: LinkTarget | null): void {
     this.splitFrom.set(target?.kind === 'purchase-existing' ? { orderId: target.orderId, paymentId: target.paymentId } : null);
     this.view.set('containers');

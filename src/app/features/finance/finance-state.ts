@@ -2318,6 +2318,8 @@ export class FinanceState {
     const preview = changePreview(target, { amountEur: line.amountEur, day: this.lineDay(line), accountLabel: this.accountLabel(line.account) }, choice.follow, choice.keepAs,
       choice.surplus, choice.feeEur);
     const parts = options.parts ?? (target.kind === 'term-new' ? [this.termPart(line, target)] : []);
+    /* "Ongedaan maken" removes only the Transactiekosten this link made, never one that was there already. */
+    const known = new Set(this.payments().map((row) => row.id));
     this.linking.set(line.id);
     try {
       const outcome = await runLink({ banking: this.banking, sourcing: this.sourcing, finance: this.finance }, line, target, choice, parts);
@@ -2326,10 +2328,11 @@ export class FinanceState {
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', ...(purchase ? ['containers' as const] : [])])]);
       this.flash(line.id);
       if (options.toast !== false) {
+        // Amount or day followed the bank, also a payment kept with its difference as Transactiekosten (bank-part moves its day).
         const followed = preview.rows.some((row) => (row.label === 'Bedrag' || row.label === 'Betaald op' || row.label === 'Ontvangen op') && row.changed)
-          && !['sales-new', 'cost-new', 'term-new'].includes(target.kind) && preview.primaryLabel === 'Koppelen en aanpassen';
+          && !['sales-new', 'cost-new', 'term-new'].includes(target.kind);
         const notice = outcome.serverNotice ? `Gekoppeld aan ${target.title}. ${outcome.serverNotice}` : preview.notice;
-        this.ui.toast(notice, 'ok', { label: 'Ongedaan maken', run: () => void this.undoLinkLine(line, target, outcome, followed) });
+        this.ui.toast(notice, 'ok', { label: 'Ongedaan maken', run: () => void this.undoLinkLine(line, target, outcome, followed, known) });
       }
       return '';
     } catch (failure: unknown) {
@@ -2342,13 +2345,13 @@ export class FinanceState {
   }
 
   /** "Ongedaan maken" after a link: unlinks, removes what the link created; never restores old amounts (the toast says so). */
-  private async undoLinkLine(line: BankStatementLine, target: LinkTarget, outcome: LinkOutcome, followed: boolean): Promise<void> {
+  private async undoLinkLine(line: BankStatementLine, target: LinkTarget, outcome: LinkOutcome, followed: boolean, known: ReadonlySet<number>): Promise<void> {
     if (this.linking() !== null) { this.ui.toast('Even wachten: er loopt nog een actie.'); return; }
     const costPaymentId = target.kind === 'cost-new'
       ? this.costs().find((cost) => cost.id === target.costId)?.payments?.find((payment) => payment.bankStatementLineId === line.id)?.id ?? null : null;
     this.linking.set(line.id);
     try {
-      await undoLink({ banking: this.banking, sourcing: this.sourcing, finance: this.finance }, line, target, { costPaymentId, purchase: outcome.purchasePayments });
+      await undoLink({ banking: this.banking, sourcing: this.sourcing, finance: this.finance }, line, target, { costPaymentId, purchase: outcome.purchasePayments, known });
       await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
       this.flash(line.id);
       const paid = target.kind === 'purchase-existing' ? this.payments().find((row) => row.id === target.paymentId)
@@ -2375,8 +2378,8 @@ export class FinanceState {
       const result = await this.banking.addPurchasePayment(line.id, parts[0].purchaseOrderId!, parts);
       this.bankStatements.update((rows) => rows.map((row) => (row.id === result.line.id ? result.line : row)));
       await Promise.all([this.refreshBank(), this.reload(['payments', 'containers'])]);
-      // Several parts of one container ('Splitsen'): its name, else the containers.
-      const text = numbers.length === 1 ? `Gekoppeld aan ${numbers[0]} (${parts.length} delen).` : `Gekoppeld aan ${numbers.length} containers (${numbers.join(', ')}).`;
+      // One container ('Splitsen'): its name, with its parts when there are several; else the containers.
+      const text = numbers.length === 1 ? `Gekoppeld aan ${numbers[0]}${parts.length > 1 ? ` (${parts.length} delen)` : ''}.` : `Gekoppeld aan ${numbers.length} containers (${numbers.join(', ')}).`;
       this.ui.toast(text, 'ok', { label: 'Ongedaan maken', run: () => void this.undoContainers(line, result.payments) });
       return '';
     } catch (failure: unknown) {

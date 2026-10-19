@@ -433,7 +433,7 @@ export class BankMovementPanel {
       else if (paymentLinked) explanation = 'De geregistreerde betaling heeft al een bankkoppeling. Open die eerdere koppeling en maak ze eerst los als je deze betaling wilt hergebruiken.';
       else explanation = 'Deze kost is al betaald. De bestaande betaling wordt hergebruikt; er wordt geen extra betaling aangemaakt.';
       return { paymentEur, openEur: 0, remainingEur: 0, differenceEur, overpaidEur: 0, eligible: false,
-        paymentKind: payment ? 'existing' as const : 'choose-existing' as const, paymentLinked, explanation };
+        paymentKind: payment ? 'existing' as const : 'choose-existing' as const, paymentLinked, explanation, feeEur: null, inspectionEur: null };
     }
     const payment = target.kind === 'purchase' ? (this.purchaseCurrency() === 'EUR' ? -(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0) : bank.amountEur)
       : bankAmountsMatch(bank.amountEur, open) ? open : bank.amountEur;
@@ -442,9 +442,14 @@ export class BankMovementPanel {
       || (inspection !== null && cents(inspection) < cents(parsePurchasePaymentAmount(this.purchaseAmountInput()) ?? 0));
     const amountValid = target.kind === 'purchase' ? !!parsePurchasePaymentAmount(this.purchaseAmountInput()) && bankAmountsMatch(bank.amountEur, payment) && inspectionValid && this.purchaseFeeValid()
       : sameDirection && (Math.abs(bank.amountEur) <= Math.abs(open) || bankAmountsMatch(bank.amountEur, open) || (target.kind === 'sales' && bank.amountEur > 0));
-    return { paymentEur: payment, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(payment))) / 100,
-      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(payment)) - cents(Math.abs(open))) / 100,
-      eligible: amountValid && (target.kind === 'purchase' || open !== 0), paymentKind: 'new' as const, paymentLinked: null, explanation: null };
+    // The term's own part (linkLocalDocument): the fee is its own Transactiekosten payment, a euro inspection its own payment too.
+    const fee = target.kind === 'purchase' && this.purchaseFeeValid() ? this.purchaseFee() ?? 0 : 0;
+    const split = this.purchaseCurrency() === 'EUR' && inspectionValid ? inspection ?? 0 : 0;
+    const part = Math.sign(payment) * Math.max(0, Math.abs(cents(payment)) - cents(fee) - cents(split)) / 100;
+    return { paymentEur: part, openEur: Math.abs(open), remainingEur: Math.max(0, cents(Math.abs(open)) - cents(Math.abs(part))) / 100,
+      differenceEur: bankAmountDifference(bank.amountEur, payment), overpaidEur: Math.max(0, cents(Math.abs(part)) - cents(Math.abs(open))) / 100,
+      eligible: amountValid && (target.kind === 'purchase' || open !== 0), paymentKind: 'new' as const, paymentLinked: null, explanation: null,
+      feeEur: fee || null, inspectionEur: split || null };
   });
   readonly localBankProblem = computed(() => {
     const selected = this.selected(); if (!selected) return '';

@@ -114,6 +114,8 @@ import { dayMonthYear, signedEur } from './finance-format';
                     @if (document.kind === 'cost') { <div><dt>Factuurtotaal</dt><dd>{{ document.totalEur | eur }}</dd></div><div><dt>Nog open op de kost</dt><dd>{{ preview.openEur | eur }}</dd></div> }
                     <div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div>
                     <div><dt>{{ preview.paymentKind === 'new' ? 'Toe te passen betaling' : 'Geregistreerde betaling' }}</dt><dd>{{ signed(preview.paymentEur) }}</dd></div>
+                    @if (preview.inspectionEur) { <div><dt>Inspectie via leverancier</dt><dd>{{ signed(-preview.inspectionEur) }}</dd></div> }
+                    @if (preview.feeEur) { <div><dt>Transactiekosten</dt><dd>{{ signed(-preview.feeEur) }}</dd></div> }
                     @if (preview.paymentKind === 'new') { <div><dt>{{ document.estimated ? 'Daarna nog verwacht' : 'Daarna nog open' }}</dt><dd>{{ preview.remainingEur | eur }}</dd></div> }
                     <div><dt>Verschil bank − betaling</dt><dd>{{ signed(preview.differenceEur) }}</dd></div>
                     @if (preview.paymentLinked !== null) { <div><dt>Bestaande bankkoppeling</dt><dd>{{ preview.paymentLinked ? 'Al gekoppeld' : 'Nog geen' }}</dd></div> }
@@ -235,7 +237,7 @@ import { dayMonthYear, signedEur } from './finance-format';
                   <p class="fin-hint fin-hint--warn"><b>{{ p.outgoingSurplusText() }}</b></p>
                   <div class="bank-alloc-choices" role="group" [attr.aria-label]="p.outgoingSurplusText()">
                     @if (p.containerSplitOffered()) {
-                      <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.openContainerSplit(part.row)"><b>Verdelen over containers</b><span>Deze transactie betaalde ook andere containers</span></button>
+                      <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.openContainerSplit(part.row)"><b>Splitsen…</b><span>Over containers, termijnen of transactiekosten</span></button>
                     }
                     <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'ADJUST'" (click)="p.chooseOutgoingSurplus('ADJUST')">
                       <b>Bedrag aanpassen naar {{ p.abs(row.amountEur) | eur }}</b><span>{{ p.outgoingAdjustText() }}</span></button>
@@ -259,9 +261,9 @@ import { dayMonthYear, signedEur } from './finance-format';
               </section>
               }
             } @else if (p.allocationMode() === 'expense' && p.chosenOutgoing().length) {
-              <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ -p.outgoingTotal() | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.outgoingDifference()) }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
+              <section class="bank-alloc-preview"><h3>{{ p.chosenOutgoing().length }} bestaande {{ p.chosenOutgoing().length === 1 ? 'betaling' : 'betalingen' }}</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betalingen</dt><dd>{{ signed(-p.outgoingTotal()) }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.outgoingDifference()) }}</dd></div></dl><p class="fin-hint">Maximaal € 0,02 verschil. De betalingen en oorspronkelijke bedragen blijven behouden.</p></section>
             } @else { @if (p.choice(); as payment) {
-              <section class="bank-alloc-preview"><h3>{{ payment.number }} · bestaande betaling</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betaling</dt><dd>{{ p.existingSalesAmount(payment) | eur }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.matchDifference(payment)) }}</dd></div></dl><p class="fin-hint">De bestaande ontvangst of terugbetaling wordt hergebruikt.</p></section>
+              <section class="bank-alloc-preview"><h3>{{ payment.number }} · bestaande betaling</h3><dl class="bank-alloc-amounts"><div><dt>Banktransactie</dt><dd>{{ signed(row.amountEur) }}</dd></div><div><dt>Bestaande betaling</dt><dd>{{ signed(p.existingSalesAmount(payment)) }}</dd></div><div><dt>Verschil</dt><dd>{{ signed(p.matchDifference(payment)) }}</dd></div></dl><p class="fin-hint">De bestaande ontvangst of terugbetaling wordt hergebruikt.</p></section>
             } }
           }
           @if (p.error()) { <p class="fin-error" role="alert">{{ p.error() }}</p> }

@@ -22,7 +22,7 @@ export type LinkTarget =
       currency: 'EUR' | 'USD' | 'CNY'; amount: number; account: string | null; proofCount: number; hasInspectionAfspraak: boolean; groupSize: number };
 
 export interface ChangeRow {
-  label: 'Bedrag' | 'Betaald op' | 'Ontvangen op' | 'Rekening' | 'In USD' | 'In CNY' | 'Koers' | 'Transactiekosten' | 'Bewijs';
+  label: 'Bedrag' | 'Betaald op' | 'Ontvangen op' | 'Rekening' | 'In USD' | 'In CNY' | 'Koers' | 'Inspectie via leverancier' | 'Transactiekosten' | 'Bewijs';
   now: string;
   after: string;
   changed: boolean;
@@ -105,11 +105,13 @@ function baseEur(target: LinkTarget): number {
  * follows ('ADJUST' takes the transaction's amount, 'INSPECTION' and 'FEE'
  * keep the payment and add the rest as the inspection via the supplier or
  * as Transactiekosten). `feeEur`: 'Waarvan transactiekosten' of a USD/CNY
- * purchase payment that follows; its euro becomes the rest.
+ * purchase payment that follows; its euro becomes the rest. A new container
+ * term takes `feeEur` and `inspectionEur` (a euro inspection via the
+ * supplier) off its Bedrag: both are payments of their own on the line.
  */
 export function changePreview(
   target: LinkTarget, line: { amountEur: number; day: string; accountLabel: string }, follow: boolean, keepAs: KeepAs,
-  surplus: 'ADJUST' | 'INSPECTION' | 'FEE' = 'ADJUST', feeEur: number | null = null,
+  surplus: 'ADJUST' | 'INSPECTION' | 'FEE' = 'ADJUST', feeEur: number | null = null, inspectionEur: number | null = null,
 ): ChangePreview {
   const lineCents = Math.abs(cents(line.amountEur));
   const base = cents(baseEur(target));
@@ -126,9 +128,15 @@ export function changePreview(
   const blockedText = !effectiveFollow && mode !== 'equal' && !keep ? KEEP_ONLY_EQUAL : null;
 
   if (isNew) {
-    // A new payment takes the bank's day and account; its amount is the open amount when the line matches it, else the line.
-    const afterEur = (target.kind === 'cost-new' || target.kind === 'sales-new') && mode === 'equal' ? base / 100 : lineEur;
+    // A new payment takes the bank's day and account; its amount is the open amount when the line matches it, else the line
+    // (a term's less the fee and inspection booked beside it).
+    const fee = target.kind === 'term-new' && feeEur !== null && cents(feeEur) > 0 ? cents(feeEur) : 0;
+    const inspection = target.kind === 'term-new' && inspectionEur !== null && cents(inspectionEur) > 0 ? cents(inspectionEur) : 0;
+    const apart = fee + inspection < lineCents ? fee + inspection : 0;
+    const afterEur = (target.kind === 'cost-new' || target.kind === 'sales-new') && mode === 'equal' ? base / 100 : (lineCents - apart) / 100;
     const rows = [row('Bedrag', '—', eur(afterEur)), row(dateLabel, '—', dayMon(line.day)), row('Rekening', '—', line.accountLabel || '—')];
+    if (apart && inspection) rows.push(row('Inspectie via leverancier', '—', `${eur(inspection / 100)} op dezelfde transactie`));
+    if (apart && fee) rows.push(row('Transactiekosten', '—', `${eur(fee / 100)} op dezelfde transactie`));
     if (!sales) rows.push(row('Bewijs', '—', 'deze transactie'));
     return {
       mode, differenceEur: difference / 100, rows, followText: followText(target, afterEur), keepAllowed: false, restText: null, blockedText: null,

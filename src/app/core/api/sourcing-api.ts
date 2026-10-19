@@ -20,6 +20,9 @@ export type {
   NormalizedPurchasePdfOptions, PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions,
 } from './purchase-pdf-options';
 
+/** A Proforma (PI) upload on a server that does not know the kind yet (backend B1, 2026-10-19). */
+export const PROFORMA_PENDING = 'Proforma (PI) kan zodra de server bijgewerkt is.';
+
 @Injectable({ providedIn: 'root' })
 export class SourcingApi {
   private readonly http = inject(HttpClient);
@@ -330,7 +333,14 @@ export class SourcingApi {
     if (label) form.append('label', label);
     if (paymentId !== null) form.append('paymentId', String(paymentId));
     return firstValueFrom(this.http.post<PurchaseDocument>(api(`/api/purchase-orders/${orderId}/documents`), form))
-      .then((doc) => ({ ...doc, orderId }));
+      .then(async (doc) => {
+        // A server before backend B1 (2026-10-19) stores the PI as OTHER without a word: taken back, and said, never an 'Andere' file nobody finds.
+        if (kind === 'PROFORMA_INVOICE' && doc.kind !== 'PROFORMA_INVOICE') {
+          await this.deleteDocument(orderId, doc.id).catch(() => undefined);
+          throw Object.assign(new Error(PROFORMA_PENDING), { error: { message: PROFORMA_PENDING } });
+        }
+        return { ...doc, orderId };
+      });
   }
 
   documentFile(orderId: number, documentId: number): Promise<Blob> {

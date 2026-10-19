@@ -113,3 +113,16 @@ test('round 2\'s notice wording, copied: amount and date, amount only, date only
   assert.equal(followNotice({ amountEur: 10250, paidOn: '2026-01-03' }, { amountEur: 10250, paidOn: '2026-01-05' }), 'Datum gevolgd van de transactie: 05/01/2026 (was 03/01/2026).');
   assert.equal(followNotice({ amountEur: 1, paidOn: '2026-01-03' }, { amountEur: 1, paidOn: '2026-01-03' }), null);
 });
+
+test('a new container term keeps the fee and the inspection booked beside it off its Bedrag', () => {
+  // Review 2026-10-20: 'Wat verandert' said € 3.525,00 while the term got € 3.500,00 and Transactiekosten € 25,00.
+  const term = { kind: 'term-new', orderId: 5, title: 'PO-2026-005 · 70% bij verzending',
+    payable: { key: 'container:5:SUPPLIER:SHIPPED', payee: 'SUPPLIER', remainingEur: 7000, plannedEur: 7000, paidEur: 0 } } as unknown as LinkTarget;
+  const debit = { amountEur: -3525, day: '2026-10-14', accountLabel: 'KBC' };
+  assert.deepEqual(rows(changePreview(term, debit, true, 'TRANSACTIEKOSTEN', 'ADJUST', 25)).filter(([label]) => label === 'Bedrag' || label === 'Transactiekosten'),
+    [['Bedrag', '—', '€ 3.500,00', true], ['Transactiekosten', '—', '€ 25,00 op dezelfde transactie', true]]);
+  assert.deepEqual(rows(changePreview(term, debit, true, 'TRANSACTIEKOSTEN', 'ADJUST', 25, 300)).slice(0, 1), [['Bedrag', '—', '€ 3.200,00', true]]);
+  assert.equal(rows(changePreview(term, debit, true, 'TRANSACTIEKOSTEN', 'ADJUST', 25, 300)).some(([label]) => label === 'Inspectie via leverancier'), true);
+  assert.deepEqual(rows(changePreview(term, debit, true, 'TRANSACTIEKOSTEN', 'ADJUST', 3525)).slice(0, 1), [['Bedrag', '—', '€ 3.525,00', true]], 'never the whole line');
+  assert.deepEqual(rows(changePreview(term, debit, true, 'TRANSACTIEKOSTEN')).map(([label]) => label), ['Bedrag', 'Betaald op', 'Rekening', 'Bewijs'], 'no fee: as before');
+});

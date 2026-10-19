@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import type { PurchaseInvoice, PurchaseInvoiceFile, PurchaseOrderView, PurchasePaymentRow } from '../src/app/core/api/models.ts';
-import { invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices } from '../src/app/features/purchasing/purchase-invoices.ts';
+import { invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices, viaSupplier } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { containerName } from '../src/app/features/purchasing/container-name.ts';
 
 /*
@@ -16,7 +16,7 @@ import { containerName } from '../src/app/features/purchasing/container-name.ts'
  */
 const read = (path: string) => readFile(new URL(path, import.meta.url), 'utf8');
 const source = await read('../src/app/features/finance/transaction-detail.ts');
-const MEMBERS = ['invoiceBlocks', 'invoicing', 'invoiceBusy', 'invoicingView', 'invoicingAgreed', 'addInvoice', 'fillInvoice', 'openInvoiceFile', 'closeInvoice', 'submitInvoice'];
+const MEMBERS = ['invoiceBlocks', 'invoicing', 'invoiceBusy', 'invoicingView', 'invoicingAgreed', 'addInvoice', 'fillInvoice', 'editInvoice', 'openInvoiceFile', 'closeInvoice', 'submitInvoice'];
 const Detail = (() => {
   const parsed = ts.createSourceFile('transaction-detail.ts', source, ts.ScriptTarget.Latest, true);
   const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'TransactionDetail')!;
@@ -27,7 +27,7 @@ const Detail = (() => {
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [...words, isolated])),
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
-  vm.runInNewContext(js, { exports, computed, signal, Intl, invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices, containerName,
+  vm.runInNewContext(js, { exports, computed, signal, Intl, invoiceCoverage, invoiceDocumentKind, invoiceFileText, invoiceLine, payeeInvoices, viaSupplier, containerName,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   return exports.TransactionDetail;
 })();
@@ -96,13 +96,16 @@ test("Transactiekosten (Bijkomende kosten) never read 'Nog geen factuur'; an inv
   same(shape(instance.invoiceBlocks()), [{ title: null, rows: [], missing: null, add: { orderId: 39, payee: 'OTHER' } }]);
 });
 
-test("an inspection via the supplier falls back to the supplier's invoice; beside the goods on the same line it is not shown twice", () => {
+test("an inspection is via the supplier only beside the goods on the same line, and then not shown twice; in its own transfer it keeps its own invoice", () => {
   const supplierInvoice = invoice(7);
+  // Review 2026-10-20: with the flag on, a lab fee on its own line showed the supplier's invoice and added the lab's as a second CI.
   const alone = detail({ payments: [pay(6, 'SEPARATE')], views: [view({ flag: true, invoices: [supplierInvoice] })] }).instance;
-  same(shape(alone.invoiceBlocks()), [{ title: null, missing: null, add: { orderId: 39, payee: 'SUPPLIER' },
-    rows: [['Factuur CI-2026-118 · 20/08/2026 · € 31.048,04', 'via de leverancier', true, false]] }]);
+  same(shape(alone.invoiceBlocks()), [{ title: null, rows: [], missing: 'Nog geen factuur', add: { orderId: 39, payee: 'SEPARATE' } }]);
   const covers = detail({ payments: [pay(6, 'SEPARATE')], views: [view({ invoices: [invoice(7, { coversInspection: true })] })] }).instance;
-  assert.equal(shape(covers.invoiceBlocks())[0].rows[0][1], 'via de leverancier', 'the supplier invoice covers the inspection');
+  same(shape(covers.invoiceBlocks()).map((block) => [block.missing, block.add]), [['Nog geen factuur', { orderId: 39, payee: 'SEPARATE' }]], 'as the server resolves it: no invoice');
+  const ownFile = detail({ payments: [pay(6, 'SEPARATE')], views: [view({ flag: true, invoices: [supplierInvoice],
+    invoiceFiles: [{ ...piFile, documentId: 9, kind: 'INVOICE', originalFilename: 'lab.pdf', payee: 'SEPARATE' }] })] }).instance;
+  same(shape(ownFile.invoiceBlocks())[0].rows, [['lab.pdf · zonder gegevens', null, true, true]], 'its own file, never the supplier\'s');
   const both = detail({ payments: [pay(3, 'SUPPLIER'), pay(6, 'SEPARATE')], views: [view({ flag: true, invoices: [supplierInvoice] })] }).instance;
   same(both.invoiceBlocks().map((block: any) => block.key), ['p39:SUPPLIER']);
   const lab = detail({ payments: [pay(6, 'SEPARATE')], views: [view({ invoices: [supplierInvoice] })] }).instance;
@@ -163,6 +166,21 @@ test("'Gegevens invullen' on the PI makes it the invoice with its own file; a ne
   assert.equal(fresh.instance.invoicing(), null);
 });
 
+test("'Aanpassen' on an invoice with data opens the sheet on that invoice and saves it in place (the CI corrects the PI)", async () => {
+  // Review 2026-10-20: 'Factuur toevoegen…' was the only way and added the CI as a second supplier invoice.
+  const pi = invoice(7, { number: 'PI-0513', amount: 56360, currency: 'USD', amountEur: 50723.9, documentId: 1, documentName: 'PI CULINAN.xlsx' });
+  const { instance, calls } = detail({ payments: [pay(3, 'SUPPLIER')], views: [view({ invoices: [pi] })] });
+  const [block] = instance.invoiceBlocks();
+  same(block.rows[0].edit, { orderId: 39, invoice: JSON.parse(JSON.stringify(pi)) });
+  instance.editInvoice(block.rows[0].edit);
+  same(instance.invoicing(), { orderId: 39, action: { payee: 'SUPPLIER', invoice: JSON.parse(JSON.stringify(pi)) } });
+  const body = { payee: 'SUPPLIER', number: 'CI-2026-118', invoiceDate: '2026-08-20', amount: 56360, currency: 'USD', amountEur: null, documentId: 1, notes: null };
+  await instance.submitInvoice({ invoiceId: 7, body, file: null });
+  same(calls, [['updateInvoice', 39, 7, body], ['reload', ['containers']]], 'PUT on the PI, never a second invoice');
+  const template = source.slice(source.indexOf('@if (invoiceBlocks().length) {'), source.indexOf("@if (linkedOrder(); as view) {"));
+  assert.match(template, /@if \(invoice\.edit; as edit\) \{ <button class="wk-link" type="button" \[disabled\]="invoiceBusy\(\)" \(click\)="editInvoice\(edit\)">Aanpassen<\/button> \}/);
+});
+
 test('templates: the Factuur blocks with their actions and the hosted sheet; "Zelf opladen…" on the first tab, the third tab Peppol / Odoo only', async () => {
   const factuur = source.slice(source.indexOf('@if (invoiceBlocks().length) {'), source.indexOf("@if (linkedOrder(); as view) {"));
   assert.match(factuur, /@for \(block of invoiceBlocks\(\); track block\.key\)/);
@@ -188,4 +206,11 @@ test("the PI is an upload choice wherever a container document goes up; the desk
   assert.match(workbench, /@if \(item\.payee === 'SUPPLIER' && roundOnServer\(\) && !item\.invoiceFiles\.length\) \{/);
   assert.match(workbench, /<span class="pw-invoice__text">\{\{ fileText\(file\) \}\}<\/span>/);
   assert.match(await read('../src/app/features/purchasing/purchase-payee-sheet.ts'), /<span class="ios-cell__sub">\{\{ fileKind\(file\) \}\}<\/span>/);
+  // Review 2026-10-20: the phone's payment overview agrees with the desk.
+  const phone = await read('../src/app/features/purchasing/purchase-payment-overview.ts');
+  const supplier = phone.slice(phone.indexOf('@if (supplierInvoice(item); as invoice) {'), phone.indexOf('<span class="ios-cell__title">Nog geen factuur</span>'));
+  assert.match(supplier, /\} @else if \(item\.invoiceFiles\[0\]; as file\) \{/, "a file on hand comes before 'Nog geen factuur'");
+  assert.match(supplier, /<span class="ios-cell__title">\{\{ fileKind\(file\) \}\}<\/span>/);
+  assert.match(phone, /<span class="ios-cell__title">\{\{ fileText\(document\) \}\}<\/span>/);
+  assert.equal(phone.includes('}} · zonder gegevens'), false);
 });

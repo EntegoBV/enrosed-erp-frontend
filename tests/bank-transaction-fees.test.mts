@@ -140,8 +140,21 @@ test('a small charge near a supplier transfer on the same account: "Transactieko
 });
 
 test('the charge words: kosten, fee, charge, commission, SWIFT, OUR, SHA, frais, Gebühr; never inside another word', () => {
-  for (const reference of ['Transactiekosten', 'SWIFT fee', 'Charges', 'Commission', 'OUR', 'sha', 'Frais de transfert', 'Gebühr']) assert.equal(feeText({ counterparty: '', reference }), true, reference);
-  for (const reference of ['Four seasons', 'Shanghai', 'Coffee', 'PO-2026-005']) assert.equal(feeText({ counterparty: '', reference }), false, reference);
+  for (const reference of ['Transactiekosten', 'Kosten buitenlandse betaling', 'Overschrijvingskosten', 'SWIFT fee', 'Charges', 'Commission', 'OUR', 'sha', 'Frais de transfert', 'Gebühr']) {
+    assert.equal(feeText({ counterparty: '', reference }), true, reference);
+  }
+  // Review 2026-10-20: every '…kosten' made the account's own charges a container's Transactiekosten.
+  for (const reference of ['Four seasons', 'Shanghai', 'Coffee', 'PO-2026-005', 'Beheerskosten zichtrekening', 'Verzendkosten']) assert.equal(feeText({ counterparty: '', reference }), false, reference);
+});
+
+test('a charge that went to company costs twice stays a cost pattern beside a supplier transfer', () => {
+  const charge = (id: number, day: string) => line(id, -9.95, { counterparty: 'KBC', reference: 'Kosten zichtrekening', allocated: true, bookedAt: `${day}T09:00:00Z` });
+  const fee = line(111, -9.95, { counterparty: 'KBC', reference: 'Kosten zichtrekening', bookedAt: '2026-10-14T09:00:00Z' });
+  const linked = [{ lineId: 101, costId: 7, category: 'BANKKOSTEN', party: 'KBC', description: 'Kosten zichtrekening', date: '2026-08-14' },
+    { lineId: 102, costId: 8, category: 'BANKKOSTEN', party: 'KBC', description: 'Kosten zichtrekening', date: '2026-09-14' }];
+  const suggestion = lineSuggestions(input([goods, charge(101, '2026-08-14'), charge(102, '2026-09-14'), fee], { costPaymentsLinkedLines: linked })).get(111)!;
+  assert.equal(suggestion.target.kind, 'cost-pattern');
+  assert.equal(lineSuggestions(input([goods, fee])).get(111)?.target.kind, 'container-fee', 'without that history: the container');
 });
 
 test('Bij een container…: the supplier transfers within five days of this line first, then the counterparty, then by PO; the search', () => {
@@ -203,6 +216,24 @@ test('a fee booked at a container: one OTHER payment on the line via …/purchas
   state.banking.addPurchasePayment = async () => { throw new Error('Deze transactie is al gekoppeld.'); };
   assert.equal(await state.bookContainerFee(fee, 39, false), 'Deze transactie is al gekoppeld.');
   assert.equal(toasts.length, 1);
+});
+
+test("Splitsen on one container: 'Gekoppeld aan PO-… (n delen).' only with several parts", async () => {
+  // Review 2026-10-20: one ticked term read '(1 delen)'.
+  const State = await selectedClass('../src/app/features/finance/finance-state.ts', 'FinanceState', ['linkContainers'], { messageOf, SERVER_PENDING: 'pending' });
+  const toasts: string[] = [];
+  const goodsLine = line(120, -3070.2);
+  const state = new State();
+  Object.assign(state, {
+    cashRound: () => true, linking: signal<number | null>(null), bankStatements: signal([goodsLine]), refreshBank: async () => {}, reload: async () => {}, undoContainers: async () => {},
+    banking: { addPurchasePayment: async () => ({ line: { ...goodsLine, allocated: true }, payments: [] }) },
+    ui: { toast: (message: string) => toasts.push(message) },
+  });
+  const part = { purchaseOrderId: 39, paidOn: '2026-10-14', amount: 3070.2, currency: 'EUR', amountEur: null, label: '30%', payee: 'SUPPLIER', instalmentDue: 'ORDERED', settles: false };
+  assert.equal(await state.linkContainers(goodsLine, [part], ['PO-2026-005']), '');
+  assert.equal(await state.linkContainers(goodsLine, [part, feePaymentPart('2026-10-14', 25, 39)], ['PO-2026-005']), '');
+  assert.equal(await state.linkContainers(goodsLine, [part, { ...part, purchaseOrderId: 40 }], ['PO-2026-005', 'PO-2026-006']), '');
+  assert.deepEqual(toasts, ['Gekoppeld aan PO-2026-005.', 'Gekoppeld aan PO-2026-005 (2 delen).', 'Gekoppeld aan 2 containers (PO-2026-005, PO-2026-006).']);
 });
 
 test('Boeken als › Bankkosten: "Algemene bankkost" stays a cost; "Bij een container…" starts on the nearest transfer and books it there', async () => {

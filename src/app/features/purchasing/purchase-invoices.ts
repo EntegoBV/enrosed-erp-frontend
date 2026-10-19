@@ -199,20 +199,24 @@ export function invoiceFileText(file: { kind?: DocumentKind | null; originalFile
  * detail, 2026-10-19): its invoices with data (the primary first) and its
  * invoice files without data (a PI too). An inspection paid via the supplier
  * with nothing of its own takes the supplier's (as Te betalen does);
- * `viaSupplier` says so. `missing` is 'Nog geen factuur' where an invoice
- * is expected: never for Bijkomende kosten (Transactiekosten, a courier).
+ * `viaSupplier` says so. Without `via` the flag or a supplier invoice that
+ * covers the inspection decides; a bank line passes its own answer
+ * (viaSupplier above: a lab fee in its own transfer keeps its own invoice).
+ * `missing` is 'Nog geen factuur' where an invoice is expected: never for
+ * Bijkomende kosten (Transactiekosten, a courier).
  */
 export function payeeInvoices(
-  view: Pick<PurchaseOrderView, 'invoices' | 'invoiceFiles'> & { order: Pick<PurchaseOrder, 'inspectionViaSupplier'> }, payee: Payee,
+  view: Pick<PurchaseOrderView, 'invoices' | 'invoiceFiles'> & { order: Pick<PurchaseOrder, 'inspectionViaSupplier'> }, payee: Payee, via?: boolean,
 ): { invoices: PurchaseInvoice[]; files: PurchaseInvoiceFile[]; viaSupplier: boolean; missing: boolean } {
   const all = view.invoices ?? [];
   const filesOf = (who: Payee) => (view.invoiceFiles ?? []).filter(file => file.payee === who);
-  let invoices = invoicesOf(all, payee), files = filesOf(payee), via = false;
-  if (payee === 'SEPARATE' && !invoices.length && !files.length && (!!view.order.inspectionViaSupplier || !!primaryInvoice(all, 'SUPPLIER')?.coversInspection)) {
+  let invoices = invoicesOf(all, payee), files = filesOf(payee), taken = false;
+  const fallback = via ?? (!!view.order.inspectionViaSupplier || !!primaryInvoice(all, 'SUPPLIER')?.coversInspection);
+  if (payee === 'SEPARATE' && !invoices.length && !files.length && fallback) {
     const supplier = primaryInvoice(all, 'SUPPLIER');
-    invoices = supplier ? [supplier] : []; files = supplier ? [] : filesOf('SUPPLIER'); via = true;
+    invoices = supplier ? [supplier] : []; files = supplier ? [] : filesOf('SUPPLIER'); taken = true;
   }
-  return { invoices, files, viaSupplier: via, missing: payee !== 'OTHER' && !invoices.length && !files.length };
+  return { invoices, files, viaSupplier: taken, missing: payee !== 'OTHER' && !invoices.length && !files.length };
 }
 
 /** The amount of an invoice: the euro, or the foreign amount with its euro. */

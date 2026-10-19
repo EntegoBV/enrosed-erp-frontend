@@ -104,11 +104,12 @@ test("the split's select shows the row its own choice; the modes and each part's
   assert.match(split, /effectOf\(container, row\)/);
 });
 
-test("Kosten & bank's larger-transaction question offers 'Verdelen over containers' first and chooses nothing beforehand", async () => {
+test("Kosten & bank's larger-transaction question offers 'Splitsen…' first and chooses nothing beforehand", async () => {
   const detail = await readFile(new URL('../src/app/features/finance/transaction-detail.ts', import.meta.url), 'utf8');
   const radios = detail.slice(detail.indexOf('class="fin-txd__radios"'), detail.indexOf('</div>', detail.indexOf('class="fin-txd__radios"')));
-  assert.ok(radios.indexOf('Verdelen over containers<small>Deze transactie betaalde ook andere containers</small>') > 0);
-  assert.ok(radios.indexOf('Verdelen over containers') < radios.indexOf('Bedrag aanpassen naar'), 'Verdelen first');
+  // Review 2026-10-20: one name for the one split view, as the offer below calls it.
+  assert.ok(radios.indexOf('Splitsen…<small>Over containers, termijnen of transactiekosten</small>') > 0);
+  assert.ok(radios.indexOf('Splitsen…') < radios.indexOf('Bedrag aanpassen naar'), 'Splitsen first');
   assert.match(radios, /\(change\)="openSplit\(target\)"/);
   assert.match(detail, /readonly surplus = signal<'ADJUST' \| 'INSPECTION' \| 'FEE' \| null>\(null\);/, "no 'Bedrag aanpassen' beforehand");
   assert.equal(/this\.surplus\.set\('ADJUST'\)/.test(detail), false, 'never reset to it either');
@@ -116,8 +117,8 @@ test("Kosten & bank's larger-transaction question offers 'Verdelen over containe
 
   const steps = await readFile(new URL('../src/app/features/finance/bank-allocation-steps.ts', import.meta.url), 'utf8');
   const choices = steps.slice(steps.indexOf('class="bank-alloc-choices"'), steps.indexOf('Niet koppelen'));
-  assert.ok(choices.indexOf('<b>Verdelen over containers</b><span>Deze transactie betaalde ook andere containers</span>') > 0);
-  assert.ok(choices.indexOf('Verdelen over containers') < choices.indexOf('Bedrag aanpassen naar'));
+  assert.ok(choices.indexOf('<b>Splitsen…</b><span>Over containers, termijnen of transactiekosten</span>') > 0);
+  assert.ok(choices.indexOf('Splitsen…') < choices.indexOf('Bedrag aanpassen naar'));
 });
 
 /* ---- Splitsen (Emre, 2026-10-19): several parts per container, Transactiekosten, one payment never twice */
@@ -159,7 +160,7 @@ test("'Volgens afspraak' and 'Gelijk verdelen' share the transaction less the Tr
 test("Splitsen: one button on an outgoing transaction, '+ Deel' per container, Transactiekosten in both calls; 'Al genoteerd' only with something", async () => {
   const detail = await readFile(new URL('../src/app/features/finance/transaction-detail.ts', import.meta.url), 'utf8');
   const offers = detail.slice(detail.indexOf("@if (view() !== 'containers') {"), detail.indexOf('<b>Geen factuur of kost?</b>'));
-  assert.match(offers, /@if \(row\.amountEur < 0\) \{/, 'an incoming line has its invoice: no Splitsen');
+  assert.match(offers, /@if \(row\.amountEur < 0 && !splitAsked\(\)\) \{/, 'an incoming line has its invoice: no Splitsen; the question offers it itself');
   assert.match(offers, /<b>Splitsen<\/b><small>Over containers, termijnen of transactiekosten<\/small>/);
   assert.equal((offers.match(/Splitsen…<\/button>/g) ?? []).length, 1);
   assert.match(offers, /\(click\)="openSplit\(null\)">Splitsen…<\/button>/);
@@ -174,8 +175,14 @@ test("Splitsen: one button on an outgoing transaction, '+ Deel' per container, T
   assert.match(detail, /Waarvan transactiekosten \(€\)/);
 
   const split = await readFile(new URL('../src/app/features/finance/container-split.ts', import.meta.url), 'utf8');
-  assert.match(split, /@for \(row of parts; track row\.id; let first = \$first\)/, 'rows by their own id');
+  assert.match(split, /@for \(row of parts; track row\.id; let first = \$first, i = \$index\)/, 'rows by their own id');
   assert.match(split, />\+ Deel<\/button>/);
+  // Review 2026-10-20: every part's controls say which part of which container they are.
+  assert.match(split, /@let part = parts\.length > 1 \? ' deel ' \+ \(i \+ 1\) : '';/);
+  assert.match(split, /\[attr\.aria-label\]="'Betaling' \+ part \+ ' voor ' \+ container\.number"/);
+  assert.match(split, /\[attr\.aria-label\]="'Bedrag' \+ part \+ ' voor ' \+ container\.number"/);
+  assert.match(split, /\[attr\.aria-label\]="'Deel ' \+ \(i \+ 1\) \+ ' van ' \+ container\.number \+ ' weghalen'"/);
+  assert.match(split, /\[attr\.aria-label\]="'Deel toevoegen aan ' \+ container\.number"/);
   assert.match(split, /if \(row\.key === SPLIT_FEE_KEY\) return feeSharePart\(row\.orderId, amountEur\);/);
   assert.match(split, /if \(row\.key === SPLIT_FEE_KEY\) return feePaymentPart\(this\.lineDay\(\), parse\(row\.amountInput\)!, row\.orderId\);/);
   assert.match(split, /new Set\(payments\)\.size === payments\.length/, 'Koppelen waits while one payment is chosen twice');
@@ -186,6 +193,18 @@ test("Splitsen: one button on an outgoing transaction, '+ Deel' per container, T
   assert.match(steps, /\{\{ signed\(-payment\.amountEur\) \}\}/, '− € 20.289,56, never € -20.289,56');
   const noted = steps.slice(steps.indexOf('Al genoteerd in Inkoop of Kosten'), steps.indexOf('Geen betaling gevonden voor deze zoekterm.'));
   assert.equal(noted.includes('| eur }}'), false, 'every amount on the tab signed');
+  // Review 2026-10-20: the preview of the payments chosen there is signed as well.
+  assert.match(steps, /<dt>Bestaande betalingen<\/dt><dd>\{\{ signed\(-p\.outgoingTotal\(\)\) \}\}<\/dd>/);
+  assert.match(steps, /<dt>Bestaande betaling<\/dt><dd>\{\{ signed\(p\.existingSalesAmount\(payment\)\) \}\}<\/dd>/);
   assert.match(steps, /<b>Rest als transactiekosten<\/b>/);
   assert.match(steps, /Waarvan transactiekosten \(€\)/);
+});
+
+test('a best match without other candidates still leads to the steps: "Zoek in ENROSED ›" under it', async () => {
+  // Review 2026-10-20: the search view was reachable only from "Andere mogelijkheden", which hides when it is empty.
+  const detail = await readFile(new URL('../src/app/features/finance/transaction-detail.ts', import.meta.url), 'utf8');
+  const after = detail.slice(detail.indexOf('@if (alternatives().length) {'), detail.indexOf("@if (view() !== 'containers') {"));
+  assert.equal((after.match(/\(click\)="searchAll\(\)">Zoek in ENROSED ›<\/button>/g) ?? []).length, 2, 'with and without alternatives');
+  assert.match(after, /\} @else \{\s*<!--[^>]*-->\s*<section class="wk-section"><button class="wk-link" type="button" \(click\)="searchAll\(\)">/);
+  assert.match(detail, /if \(this\.view\(\) === 'search' \|\| this\.status\(\) !== 'SUGGESTED'\) return null;/, 'the search view drops the best match');
 });
