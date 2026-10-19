@@ -1,11 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
-
-export type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
-export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
-/** Within Facturen: everything, only invoices, or only credit notes. */
-export type SalesDocsFilter = 'all' | 'f' | 'cn';
+import type { SalesDocsFilter, SalesScope, SalesTab } from './sales-list-model';
 
 /** Scope chooses the business context; the tabs choose documents within it. */
 @Component({

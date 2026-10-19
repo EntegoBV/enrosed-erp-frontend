@@ -69,3 +69,9 @@ test('Instellingen saves its open view with ⌘S (company area)', () => {
   assert.deepEqual(pageShortcutsFor('/settings?sectie=company').map((row) => row.text), ['Opslaan']);
   assert.deepEqual(pageShortcutsFor('/settings/deleted-items'), []);
 });
+
+test('the Verkoop list lists its row keys, the document screens do not', () => {
+  assert.deepEqual(pageShortcutsFor('/sales?tab=FACTUUR').map((row) => row.text),
+    ['Vorig of volgend document', 'Acties voor het document', 'Nieuwe offerte of factuur']);
+  assert.deepEqual(pageShortcutsFor('/sales/79').map((row) => row.text), []);
+});

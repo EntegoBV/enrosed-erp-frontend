@@ -391,6 +391,7 @@ test('the read view takes, sends and cancels with its own revision and handles t
 
 const List = await isolate('features/sales/sales-list', 'SalesList', [
   'canArchive', 'canDelete', 'toggleArchive', 'actionFailed', 'websiteRequests', 'ordersToTake', 'webOrderPill', 'archivingOrderId', 'containerDeletingId', 'openRow', 'rowMenu',
+  'leavingId',
 ], { webOrderListPill: status.webOrderListPill });
 
 test('the list never archives an order the customer can still change, deletes only a closed one and reloads on a conflict', async () => {

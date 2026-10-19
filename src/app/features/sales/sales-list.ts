@@ -11,7 +11,9 @@ import { SalesContainerMenu } from './sales-container-menu';
 import { SalesMenuTrigger } from './sales-menu-trigger';
 import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
 import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
-import { ChangeDetectionStrategy, Component, HostListener, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
@@ -20,11 +22,18 @@ import { PageHeader } from '../../shared/page-header';
 import { WorkQueue } from '../../core/api/work-queue';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
+import { Icon } from '../../shared/icon';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { LoadError } from '../../shared/load-error';
+import { keyContext } from '../../shared/key-context';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { CbmPipe, DateNlPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { channelCode, channelLabel } from './sales-channels';
 import {
-  STATUS_LABEL, actionNeeded, countsAsNewWebsiteItem, customerCanStillChange,
-  isWebOrder, isWebOrderConflict, isWebsiteQuoteRequest, statusClass, statusOf, webOrderDeletable, webOrderListPill,
+  actionNeeded, countsAsNewWebsiteItem, customerCanStillChange,
+  isWebOrder, isWebOrderConflict, isWebsiteQuoteRequest, statusOf, webOrderDeletable, webOrderListPill,
   webOrderRevision,
 } from './quote-status';
 import { messageOf } from '../../core/api/errors';
@@ -38,374 +47,729 @@ import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
 } from '../../shared/row-actions';
+import { keepEuro } from '../purchasing/purchase-list-model';
+import {
+  countText, customerSections, documentSub, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, salesTone, statusParts,
+  type LinePart, type PaymentCell, type SalesDocsFilter, type SalesScope, type SalesTab,
+} from './sales-list-model';
 
-import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } from './sales-document-navigation';
+import { SalesDocumentNavigation } from './sales-document-navigation';
+
+/**
+ * The list's area stylesheet (Verkoop on the Inkoop recipe, 2026-10-19):
+ * styles/sales-list.scss stays global CSS with every rule under
+ * app-sales-list, loaded with this screen's lazy chunk instead of
+ * styles.scss (the initial bundle's 1 MB error budget). Encapsulation None
+ * keeps the selectors as written; renders nothing.
+ */
+@Component({
+  selector: 'app-sales-list-styles',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  encapsulation: ViewEncapsulation.None,
+  host: { hidden: '' },
+  template: '',
+  styleUrl: '../../../styles/sales-list.scss',
+})
+export class SalesListStyles {}
+
+/** A subtitle or caption while the list is not known yet: keeps the line's height and says nothing (no false '0'). */
+const NOT_KNOWN_YET = '\u00a0';
+
+/** Today as the server writes due dates ('YYYY-MM-DD'). */
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
 @Component({
   selector: 'app-sales-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet,
+  imports: [RouterLink, FormsModule, PageHeader, Sheet, Skeleton, NgTemplateOutlet, Icon, Segmented, ContextMenu, LoadError, SalesListStyles,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesDocumentNavigation, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
   template: `
-    <app-page-header title="Verkoop" [subtitle]="rows().length + ' orders'">
-      <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="startNew()">
-        {{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Nieuw' }}
-      </button>
+    <app-sales-list-styles />
+    <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
+      @if (desktop.active()) {
+        <app-segmented class="sl-tabs" label="Documenten" semantics="tabs" controls="sales-document-results" [options]="tabOptions()"
+                       [value]="docTab()" (changed)="switchTab($any($event))" />
+        <div class="wk-search sl-search">
+          <app-icon name="search" [size]="16" />
+          <input #searchField id="sales-search" type="search" data-page-search [placeholder]="compactBar() ? 'Zoek klant of nummer' : 'Zoek klant, factuur of container'"
+                 aria-label="Zoek klant, documentnummer of containerreferentie" autocomplete="off"
+                 [value]="query()" (input)="query.set($any($event.target).value)" (keydown.escape)="escapeSearch($event)" />
+          <kbd class="wk-kbd" aria-hidden="true">/</kbd>
+          <button class="wk-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="query.set('')"><app-icon name="close" [size]="14" /></button>
+        </div>
+        <button class="btn btn--primary btn--sm" type="button" (click)="startNew()">
+          @if (businessScope() === 'PARTNER') { Container kiezen } @else { <app-icon name="plus" [size]="16" />Nieuw }
+        </button>
+      }
     </app-page-header>
 
-    <div class="content">
-      @if (loadError()) {
-        <section class="sales-load-error" role="alert">
-          <span aria-hidden="true">!</span>
-          <div><b>Verkoopoverzicht kon niet worden vernieuwd</b><small>{{ loadError() }}</small></div>
-          <button class="btn" type="button" [disabled]="loading()" (click)="load()">
-            {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
-          </button>
-        </section>
-      }
-      <!-- What waits on us sits at the top, not tucked under Meer: this is
-           the list you keep up with, not something you go look up. -->
-      @if (attentionCount()) {
-        <!-- The card appears and disappears; without its own bottom margin it
-             lands right on top of the search bar. -->
-        <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
-          <div class="card__head">
-            <h2>Klant wacht op ons</h2>
-            <span class="spacer"></span>
-            <span class="badge badge--todo">{{ attentionCount() }}</span>
+    <p id="sales-menu-help" class="sr-only">Acties: houd de rij ingedrukt op een aanraakscherm, gebruik de rechtermuisknop of druk op Shift+F10.</p>
+
+    @if (desktop.active()) {
+      <div class="content sl">
+        <!-- Soort verkoop, the status chips with their counts (they follow the search), the tab's own toggles, the customer;
+             at the end what the shown documents still hold. -->
+        <div #subbar class="wk-subbar sl-subbar">
+          <span class="wk-chip sl-select" [class.is-on]="businessScope() !== 'ALL'" [attr.title]="scopeHint()">
+            <span class="sl-select__label">{{ scopeLabel() }}</span><app-icon name="chevron-down" [size]="12" />
+            <select class="sl-select__native" aria-label="Soort verkoop" (change)="switchScope($any($event.target).value)">
+              <option value="ALL" [selected]="businessScope() === 'ALL'">Alles</option>
+              <option value="STANDARD" [selected]="businessScope() === 'STANDARD'">Reguliere verkoop</option>
+              <option value="PARTNER" [selected]="businessScope() === 'PARTNER'">Partnercontainers</option>
+            </select>
+          </span>
+          <div class="wk-chips" role="group" aria-label="Filter op status">
+            @for (chip of chips(); track chip.value) {
+              <button class="wk-chip" type="button" [attr.aria-pressed]="!attentionOnly() && filter() === chip.value"
+                      (click)="selectStatus(chip.value)">{{ chip.label }} @if (ready()) { <span class="wk-seg__count">{{ chip.count }}</span> }</button>
+            }
+            <button class="wk-chip" type="button" [class.tone-warn]="actionCount() > 0" [attr.aria-pressed]="attentionOnly()"
+                    [disabled]="!actionCount() && !attentionOnly()" (click)="pickAttention()">Actie vereist @if (ready()) { <span class="wk-seg__count">{{ actionCount() }}</span> }</button>
           </div>
-          <div class="card__body card__body--flush">
-            <div class="list">
-              @for (item of openWork(); track $index) {
-                <a class="list-item" [routerLink]="['/sales', item.orderId]">
-                  <span class="thumb thumb--placeholder">{{ workIcon(item.kind) }}</span>
-                  <div class="list-item__body">
-                    <div class="list-item__title">{{ item.title }}</div>
-                    <div class="list-item__meta">
-                      {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
-                    </div>
-                  </div>
-                  <span class="list-item__chev">›</span>
-                </a>
+          @if (docTab() === 'OFFERTE' && (websiteRequests().length || ordersToTake().length || websiteOnly() || toTakeOnly())) {
+            <div class="wk-chips" role="group" aria-label="Websitebestellingen">
+              @if (websiteRequests().length || websiteOnly()) {
+                <button class="wk-chip" type="button" [attr.aria-pressed]="websiteOnly()" (click)="websiteOnly.set(!websiteOnly())">Website <span class="wk-seg__count">{{ websiteRequests().length }}</span></button>
+              }
+              @if (ordersToTake().length || toTakeOnly()) {
+                <button class="wk-chip" type="button" [attr.aria-pressed]="toTakeOnly()" (click)="toTakeOnly.set(!toTakeOnly())">In verwerking te nemen <span class="wk-seg__count">{{ ordersToTake().length }}</span></button>
               }
             </div>
-          </div>
-        </div>
-      }
-
-      <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
-        [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()" [docs]="docsFilter()" [docsCounts]="docsCounts()"
-        (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" (docsChange)="filterDocs($event)" />
-
-      <!-- One quiet row: search grows, two pills open native pickers,
-           the count sits at the end - no card, no grid of chips. -->
-      <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
-      <div class="sales-filterbar">
-        <div class="search-control search-control--bar">
-          <svg aria-hidden="true" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="6.5"></circle>
-            <path d="m16 16 4 4"></path>
-          </svg>
-          <input class="input" id="sales-search" type="search" inputmode="search"
-                 autocomplete="off" aria-label="Zoek klant, documentnummer of containerreferentie" placeholder="Zoek klant, factuur of container…"
-                 [ngModel]="query()" (ngModelChange)="query.set($event)" />
-          @if (query()) {
-            <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
-                    (click)="query.set('')">×</button>
+          } @else if (docTab() === 'FACTUUR') {
+            <div class="wk-chips" role="group" aria-label="Facturen of creditnota’s">
+              <button class="wk-chip" type="button" [attr.aria-pressed]="outstandingOnly()" title="Inclusief openstaande facturen en creditnota’s met een tegoed in het archief."
+                      (click)="filterOutstanding(!outstandingOnly())">Nog te ontvangen</button>
+              <button class="wk-chip" type="button" [attr.aria-pressed]="docsFilter() === 'f'" (click)="filterDocs(docsFilter() === 'f' ? 'all' : 'f')">Facturen @if (ready()) { <span class="wk-seg__count">{{ docsCounts().f }}</span> }</button>
+              <button class="wk-chip" type="button" [attr.aria-pressed]="docsFilter() === 'cn'" (click)="filterDocs(docsFilter() === 'cn' ? 'all' : 'cn')">Creditnota’s @if (ready()) { <span class="wk-seg__count">{{ docsCounts().cn }}</span> }</button>
+            </div>
           }
-        </div>
-        <button class="filter-toggle" type="button" aria-label="Filters tonen of verbergen"
-                [class.filter-toggle--active]="activeFilterCount() > 0"
-                [attr.aria-expanded]="filtersOpen()"
-                (click)="filtersOpen.set(!filtersOpen())">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-          <span class="hide-mobile">Filters</span>
-          @if (activeFilterCount(); as n) { <b class="filter-toggle__count">{{ n }}</b> }
-          <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
-        </button>
-        @if (docTab() === 'OFFERTE' && websiteRequests().length) {
-          <button class="website-filter" type="button"
-                  [class.website-filter--active]="websiteOnly()"
-                  [attr.aria-pressed]="websiteOnly()"
-                  (click)="websiteOnly.set(!websiteOnly())">
-            <span>Website</span>
-            <b>{{ websiteRequests().length }}</b>
-          </button>
-        }
-        @if (docTab() === 'OFFERTE' && ordersToTake().length) {
-          <button class="website-filter" type="button"
-                  [class.website-filter--active]="toTakeOnly()"
-                  [attr.aria-pressed]="toTakeOnly()"
-                  (click)="toTakeOnly.set(!toTakeOnly())">
-            <span>In verwerking te nemen</span>
-            <b>{{ ordersToTake().length }}</b>
-          </button>
-        }
-        @if (filtersOpen()) {
-          <div class="filter-grid">
-            <label class="filter-field">
-              <span class="filter-field__label">Status</span>
-              <select class="select filter-field__select" [ngModel]="filter()" (ngModelChange)="selectStatus($event)">
-                @for (option of visibleFilters(); track option.value) {
-                  <option [ngValue]="option.value">{{ option.label }} ({{ statusCount(option.value) }})</option>
-                }
-              </select>
-            </label>
-            <label class="filter-field">
-              <span class="filter-field__label">Klant</span>
-              <select class="select filter-field__select" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
+          @if (customersWithOrders().length > 1 || customerFilter() !== '') {
+            <span class="wk-chip sl-select" [class.is-on]="customerFilter() !== ''">
+              <span class="sl-select__label">{{ activeCustomerLabel() }}</span><app-icon name="chevron-down" [size]="12" />
+              <select class="sl-select__native" aria-label="Filter op klant" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
                 <option [ngValue]="''">Alle klanten</option>
                 @for (customer of customersWithOrders(); track customer.id) {
                   <option [ngValue]="customer.id">{{ customer.company }}</option>
                 }
               </select>
-            </label>
+            </span>
+          }
+          <!-- The counts and sums only once the list is known: while it loads or failed they would read '0' and '€ 0'. -->
+          @if (ready()) {
+            <span class="wk-subbar__end sl-subbar__end">{{ rows().length }} van {{ pile().length }}@if (docTab() === 'OFFERTE') { · Waarde <b>{{ shownMoney().offerEur | eur: 0 }}</b> excl. btw } @else { · Nog te ontvangen <b [class.sl-warn]="shownMoney().overdueEur > 0">{{ shownMoney().openEur | eur: 0 }}</b>@if (shownMoney().overdueEur > 0) { · Vervallen <span class="sl-warn sl-nw">{{ shownMoney().overdueEur | eur: 0 }}</span> }@if (shownMoney().tegoedEur > 0) { · Tegoeden <span class="sl-nw">{{ shownMoney().tegoedEur | eur: 0 }}</span> } }</span>
+          }
+          @if (activeFilterCount()) {
+            <button class="wk-btn wk-btn--ghost wk-btn--sm sl-clear" type="button" (click)="clearFilters()">Filters wissen</button>
+          }
+        </div>
+
+        @if (loadError(); as error) {
+          <div class="wk-card"><app-load-error title="Verkoopoverzicht kon niet worden geladen" [message]="error" [busy]="loading()" (retry)="load()" /></div>
+        } @else if (!ready()) {
+          <div class="wk-card sl-card" role="status" aria-label="Verkoopdocumenten laden"><app-skeleton kind="table" [rows]="8" /></div>
+        } @else if (!customerSections().length) {
+          <div class="wk-card">
+            <ng-container *ngTemplateOutlet="emptyState" />
           </div>
-          <div class="filter-summary">
-            <span><strong>{{ rows().length }}</strong> van {{ docCount(docTab()) }}
-              {{ docTab() === 'FACTUUR' ? 'facturen' : docTab() === 'ARCHIEF' ? 'in het archief' : 'offertes' }}</span>
-            @if (activeFilterCount()) {
-              <button class="filter-reset" type="button" (click)="clearFilters()">Filters wissen</button>
-            }
+        } @else {
+          <div class="wk-card sl-card">
+            <div class="wk-table sl-table" [class.sl-table--quotes]="docTab() === 'OFFERTE'" id="sales-document-results" role="table"
+                 [attr.aria-label]="docTab() === 'OFFERTE' ? 'Offertes' : docTab() === 'FACTUUR' ? 'Facturen' : 'Archief'">
+              <div class="wk-thead" role="row">
+                <span class="wk-th" role="columnheader">Document</span>
+                <span class="wk-th" role="columnheader" data-hide="sm">Inhoud</span>
+                <span class="wk-th" role="columnheader">Status</span>
+                @if (docTab() !== 'OFFERTE') { <span class="wk-th" role="columnheader">Betaling</span> }
+                <span class="wk-th wk-th--num" role="columnheader">Totaal excl. btw</span>
+                <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
+              </div>
+              @for (section of customerSections(); track section.id) {
+                <div class="wk-group sl-group" role="row">
+                  <span class="wk-group__label" role="rowheader">
+                    <button class="wk-group__toggle" type="button" [attr.aria-expanded]="!folded(section.id)"
+                            [attr.aria-label]="(folded(section.id) ? 'Toon de documenten van ' : 'Verberg de documenten van ') + section.name"
+                            (click)="toggleFold(section.id)"><app-icon name="chevron-down" [size]="14" /></button>
+                    <span class="sl-group__name">{{ section.name }}</span>
+                    <span class="wk-group__count">· {{ section.count }} {{ section.count === 1 ? 'document' : 'documenten' }}@if (section.money.openEur > 0) { · <span class="sl-nw" [class.sl-warn]="section.money.overdueCount > 0">{{ section.money.openEur | eur: 0 }} open</span> }</span>
+                  </span>
+                </div>
+                @if (!folded(section.id)) {
+                  @for (entry of section.entries; track entry.key) {
+                    @if (entry.kind === 'PARTNER_CONTAINER') {
+                      <!-- The container inside its customer: every figure of the old card on the columns; hold, right-click or ⋯ for its menu. -->
+                      <div class="sl-head-wrap" role="none">
+                        <div class="wk-tr wk-tr--sub sl-head" role="row">
+                          <span class="sl-head__cell" role="rowheader">
+                            <button class="sales-container__toggle" type="button"
+                                    appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
+                                    (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
+                                    [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                                    [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)"
+                                    title="De facturen hieronder volgen je huidige filters.">
+                              <span class="sl-cell">
+                                <span class="sl-eyebrow"><app-icon name="chevron-down" [size]="12" />Partnercontainer</span>
+                                <b class="sl-name" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</b>
+                                <span class="sl-sub">{{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) {<span class="sl-inhoud-inline"> · {{ entry.summary.containerPieces | num }} stuks in container</span>}</span>
+                              </span>
+                              <span class="sl-cell" data-hide="sm">@if (entry.summary.containerPieces !== null) { <span class="sl-main">{{ entry.summary.containerPieces | num }} stuks in container</span> }</span>
+                              <span class="sl-cell sl-badges">
+                                @for (status of entry.summary.statuses; track status.label) {
+                                  <span class="wk-pill" [class]="salesTone(status.cls)" [class.sl-pill--concept]="status.concept">{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }</span>
+                                }
+                                @if (entry.summary.attentionCount) { <span class="sl-sub sl-warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
+                              </span>
+                              @if (docTab() !== 'OFFERTE') {
+                                <span class="sl-cell">
+                                  @if (entry.summary.issuedCount) {
+                                    <span class="sl-main sl-nw">{{ entry.summary.remainingEur | eur }} open</span>
+                                    <span class="sl-sub sl-nw">{{ entry.summary.receivedEur | eur }} ontvangen · incl. btw</span>
+                                  }
+                                  @if (entry.summary.creditEur > 0) { <span class="sl-sub sl-credit sl-nw">{{ entry.summary.creditEur | eur }} credit incl. btw</span> }
+                                </span>
+                              }
+                              <span class="sl-cell sl-total">
+                                <span>{{ entry.summary.totalEur | eur }}</span>
+                                @if (entry.summary.draftCount && entry.summary.issuedCount) { <small class="sl-sub">waarvan concept {{ entry.summary.draftEur | eur }}</small> }
+                              </span>
+                              <span class="sl-cell" aria-hidden="true"></span>
+                            </button>
+                          </span>
+                        </div>
+                        <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon sl-more" type="button" aria-haspopup="dialog"
+                                [attr.aria-label]="'Acties voor container ' + entry.purchaseOrderName" (click)="openContainerMenu($event, entry)"><app-icon name="more" [size]="16" /></button>
+                      </div>
+                      <div class="sl-members" role="rowgroup" [id]="entry.key + '-invoices'" [hidden]="!groupOpen(entry.key)" [attr.aria-labelledby]="entry.key + '-toggle'">
+                        @if (groupOpen(entry.key)) {
+                          @for (row of entry.rows; track row.order.id) {
+                            <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: row, nested: true }" />
+                          }
+                        }
+                      </div>
+                    } @else if (entry.kind === 'SPLIT_ORDER') {
+                      <div class="sl-head-wrap" role="none">
+                        <div class="wk-tr wk-tr--sub sl-head" role="row">
+                          <span class="sl-head__cell" role="rowheader">
+                            <button class="sales-container__toggle" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                                    [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)"
+                                    title="Elk deel heeft een eigen document- en leverstatus.">
+                              <span class="sl-cell">
+                                <span class="sl-eyebrow"><app-icon name="chevron-down" [size]="12" />Gesplitste order</span>
+                                <b class="sl-name">{{ entry.rows[0].order.number }}</b>
+                                <span class="sl-sub">{{ entry.summary.parts }} van 2 delen in dit overzicht<span class="sl-inhoud-inline"> · {{ entry.summary.pieces | num }} stuks</span></span>
+                              </span>
+                              <span class="sl-cell" data-hide="sm"><span class="sl-main">{{ entry.summary.pieces | num }} stuks</span></span>
+                              <span class="sl-cell sl-badges">
+                                @if (entry.summary.unavailableCount) { <span class="wk-pill tone-amber">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
+                                @if (entry.summary.waitingCount) { <span class="wk-pill tone-amber"><span class="wk-pill__dot" aria-hidden="true"></span>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
+                                @if (entry.summary.shippedCount) { <span class="wk-pill tone-ok"><span class="wk-pill__dot" aria-hidden="true"></span>{{ entry.summary.shippedCount }} verzonden</span> }
+                                @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="wk-pill tone-blue"><span class="wk-pill__dot" aria-hidden="true"></span>Leveringen gepland</span> }
+                              </span>
+                              @if (docTab() !== 'OFFERTE') { <span class="sl-cell" aria-hidden="true"></span> }
+                              <span class="sl-cell sl-total"><span>{{ entry.summary.totalEur | eur }}</span></span>
+                              <span class="sl-cell" aria-hidden="true"></span>
+                            </button>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="sl-members" role="rowgroup" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" [attr.aria-labelledby]="entry.key + '-toggle'">
+                        @if (groupOpen(entry.key)) {
+                          @for (row of entry.rows; track row.order.id) {
+                            <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: row, nested: true }" />
+                          }
+                        }
+                      </div>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="deskRow; context: { $implicit: entry.row, nested: false }" />
+                    }
+                  }
+                }
+              }
+            </div>
           </div>
         }
       </div>
-
-      <p id="sales-menu-help" class="sr-only">Acties: houd de rij ingedrukt op een aanraakscherm, gebruik de rechtermuisknop of druk op Shift+F10.</p>
-      <ng-template #documentRow let-row let-grouped="grouped">
-            <!-- Drag left for the bin, drag right for the archive; hold the
-                 row (or right-click it) for the same choices as a menu. -->
-            <div class="swipe" [class.swipe--grouped]="grouped"
-                 [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
-                 [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
-                 [class.swipe--dragging]="draggingOrderId() === row.order.id"
-                 [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
-            @if (canArchive(row)) {
-            <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
-                    [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
-                    [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ')
-                      + documentLabel(row.order) + ' ' + row.order.number">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
-              </svg>
-              <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
+    } @else {
+      <div class="content sl--phone">
+        @if (loadError()) {
+          <section class="sales-load-error" role="alert">
+            <span aria-hidden="true">!</span>
+            <div><b>Verkoopoverzicht kon niet worden vernieuwd</b><small>{{ loadError() }}</small></div>
+            <button class="btn" type="button" [disabled]="loading()" (click)="load()">
+              {{ loading() ? 'Laden…' : 'Opnieuw proberen' }}
             </button>
-            }
-            <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
-               appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
-               (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
-               (pointerdown)="startSwipe($event, row)"
-               (pointermove)="moveSwipe($event, row)"
-               (pointerup)="finishSwipe($event, row)"
-               (pointercancel)="cancelSwipe($event)"
-               (wheel)="wheelSwipe($event, row)"
-               (dragstart)="$event.preventDefault()"
-               (click)="blockWhenSwiped($event)">
-              <div class="list-item__body">
-                <div class="list-item__title">{{ grouped ? row.order.number : customerName(row) }}</div>
-                <!-- No country chip: it repeats what the customer name already
-                     implies and pushed the date into "18/0...". -->
-                <div class="list-item__meta list-item__meta--wrap">
-                  {{ documentLabel(row.order) }} ·
-                  @if (!grouped) { {{ row.order.number }} · }{{ row.order.orderDate | dateNl }}
-                  @if (row.order.sourceQuoteId && row.sourceQuoteNumber) {
-                    · uit <a class="so-link" [routerLink]="['/sales', row.order.sourceQuoteId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Offerte ' + row.sourceQuoteNumber + ' openen'">{{ row.sourceQuoteNumber }}</a>
-                  }
-                  @if (row.invoicedAs && row.invoicedAsId) {
-                    · factuur <a class="so-link" [routerLink]="['/sales', row.invoicedAsId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.invoicedAs + ' openen'">{{ row.invoicedAs }}</a>
-                  }
-                  @if (creditNoteRow(row) && row.creditedInvoiceNumber) {
-                    · op <a class="so-link" [routerLink]="['/sales', row.creditedInvoiceId]" (click)="$event.stopPropagation()" [attr.aria-label]="'Factuur ' + row.creditedInvoiceNumber + ' openen'">{{ row.creditedInvoiceNumber }}</a>
-                    · {{ creditReason(row) }}
-                  }
-                  @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
-                  @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate && !creditNoteRow(row)) {
-                    · vervalt {{ row.order.invoiceDueDate | dateNl }}
-                  }
-                </div>
-                <div class="list-item__meta list-item__meta--wrap">
-                  @if (creditNoteRow(row)) {
-                    <!-- Only what the note holds: an amount-only note read "0 st · 0 regels · 1 bedrag". -->
-                    @if (row.priced.lines.length) { {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }} }@if (row.priced.lines.length && (row.order.extraLines ?? []).length) { · }@if ((row.order.extraLines ?? []).length) { {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
-                  } @else if (partner(row.order)) {
-                    {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
-                  } @else {
-                  {{ row.priced.totals.pieces | num }} st ·
-                  @if (row.order.loadMode === 'LOOSE_CARTONS') {
-                    {{ row.priced.totals.cartons | num }}
-                    {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
-                    {{ row.priced.totals.cbm | cbm }}
-                  } @else {
-                    {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
-                    {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
-                        ? 'pallet' : 'pallets' }}
-                  }
-                  @if (!partner(row.order) && row.priced.totals.marginPct) {
-                    · marge {{ row.priced.totals.marginPct | pct: 0 }}
-                  }
-                  }
-                </div>
-              </div>
-              <div class="list-item__end list-item__end--stacked">
-                @if (webOrder(row)) {
-                  <span class="so-source-mini">Websitebestelling</span>
-                  @if (webOrderPill(row); as pill) {
-                    <span [class]="'so-status-mini so-status-mini--' + pill.cls"><i aria-hidden="true"></i>{{ pill.label }}</span>
-                  }
-                } @else if (websiteRequest(row.order)) {
-                  <span class="so-source-mini">Websiteaanvraag</span>
-                }
-                <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
-                @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
-                @if (creditNoteRow(row) && row.order.status !== 'CONCEPT') {
-                  <small class="so-credit-tegoed">{{ creditLine(row) }}</small>
-                } @else if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
-                  <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
-                  @if (row.creditedEur) { <small class="so-credited">{{ row.creditedEur | eur }} gecrediteerd</small> }
-                }
-                <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
-                  <i aria-hidden="true"></i>{{ statusOf(row).label }}
-                </span>
-                @if (unavailableCount(row); as count) {
-                  <span class="so-status-mini so-status-mini--gold">{{ count }} {{ count === 1 ? 'product' : 'producten' }} niet beschikbaar</span>
-                }
-                @if (fulfillmentStatus(row); as delivery) {
-                  <span [class]="'so-status-mini so-status-mini--' + delivery.cls"><i aria-hidden="true"></i>Deel {{ row.fulfillment?.part }} · {{ delivery.label }}</span>
-                }
-                @if (row.order.goodsShippedAt && !row.fulfillment) {
-                  <span class="so-status-mini so-status-mini--ok">
-                    <i aria-hidden="true"></i>Bestelling verzonden
-                  </span>
-                }
-                @if (attention(row); as attn) {
-                  <span class="so-status-mini so-status-mini--warn" [attr.title]="attn.join(' · ')">
-                    <i aria-hidden="true"></i>{{ attn[0] }}{{ attn.length > 1 ? ' +' + (attn.length - 1) : '' }}
-                  </span>
-                }
-              </div>
-              <span class="list-item__chev">›</span>
-            </a>
-            @if (canDelete(row)) {
-              <button class="swipe__delete" type="button"
-                      [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
-                      [attr.aria-busy]="deletingOrderId() === row.order.id"
-                      (click)="remove(row)"
-                      [attr.aria-label]="documentLabel(row.order) + ' ' + row.order.number + ' verwijderen'"
-                      [title]="documentLabel(row.order) + ' verwijderen'">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-                     aria-hidden="true" focusable="false">
-                  <path d="M4 7h16" /><path d="M9 7V5h6v2" />
-                  <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
-                </svg>
-              </button>
-            }
+          </section>
+        }
+        <!-- What waits on us sits at the top, not tucked under Meer: this is
+             the list you keep up with, not something you go look up. -->
+        @if (attentionCount()) {
+          <!-- The card appears and disappears; without its own bottom margin it
+               lands right on top of the search bar. -->
+          <div class="card" style="border-color:var(--rose-line);margin-bottom:14px">
+            <div class="card__head">
+              <h2>Klant wacht op ons</h2>
+              <span class="spacer"></span>
+              <span class="badge badge--todo">{{ attentionCount() }}</span>
             </div>
-      </ng-template>
+            <div class="card__body card__body--flush">
+              <div class="list">
+                @for (item of openWork(); track $index) {
+                  <a class="list-item" [routerLink]="['/sales', item.orderId]">
+                    <span class="thumb thumb--placeholder">{{ workIcon(item.kind) }}</span>
+                    <div class="list-item__body">
+                      <div class="list-item__title">{{ item.title }}</div>
+                      <div class="list-item__meta">
+                        {{ item.orderNumber }}@if (item.customer) { · {{ item.customer }} }
+                      </div>
+                    </div>
+                    <span class="list-item__chev">›</span>
+                  </a>
+                }
+              </div>
+            </div>
+          </div>
+        }
 
-      <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
-        <div class="list">
-          @for (entry of groupedRows(); track entry.key) {
-            @if (entry.kind === 'PARTNER_CONTAINER') {
-              <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
-                <div class="sales-container__header">
-                <button class="sales-container__toggle" type="button"
-                        appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
-                        (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
-                        [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
-                        [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
-                  <span class="sales-container__identity">
-                    <span class="sales-container__eyebrow">Partnercontainer</span>
-                    <strong>{{ customerName(entry.rows[0]) }}</strong>
-                    <span class="sales-container__meta" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
-                    <span class="sales-container__badges">
-                      @for (status of entry.summary.statuses; track status.label) {
-                        <span [class]="'so-status-mini so-status-mini--' + status.cls"
-                              [class.sales-container__status--concept]="status.concept">
-                          <i aria-hidden="true"></i>{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }
-                        </span>
-                      }
-                      @if (entry.summary.attentionCount) { <span class="so-status-mini so-status-mini--warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
-                    </span>
-                  </span>
-                  <span class="sales-container__totals">
-                    <small>Getoonde facturen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong>
-                    @if (entry.summary.draftCount && entry.summary.issuedCount) { <small>Waarvan concept {{ entry.summary.draftEur | eur }}</small> }
-                    @if (entry.summary.issuedCount) { <small>{{ entry.summary.receivedEur | eur }} ontvangen · {{ entry.summary.remainingEur | eur }} open incl. btw</small> }
-                    @if (entry.summary.creditEur > 0) { <small>{{ entry.summary.creditEur | eur }} credit incl. btw</small> }
-                  </span>
-                  <span class="sales-container__chevron" aria-hidden="true"></span>
-                </button>
-                </div>
-                <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
-                     [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
-                  @if (groupOpen(entry.key)) {
-                    <div class="sales-container__tools"><span>De facturen hieronder volgen je huidige filters.</span><a [routerLink]="['/purchasing', entry.purchaseOrderId]" [queryParams]="{ section: 'payments' }">Container en betaalafspraken ›</a></div>
-                    @for (row of entry.rows; track row.order.id) {
-                      <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" />
-                    }
-                  }
-                </div>
-              </section>
-            } @else if (entry.kind === 'SPLIT_ORDER') {
-              <section class="sales-container sales-container--split" [class.sales-container--open]="groupOpen(entry.key)">
-                <div class="sales-container__header">
-                  <button class="sales-container__toggle" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)" [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)">
-                    <span class="sales-container__identity">
-                      <span class="sales-container__eyebrow">Gesplitste order</span><strong>{{ customerName(entry.rows[0]) }}</strong>
-                      <span class="sales-container__meta">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
-                      <span class="sales-container__badges">
-                        @if (entry.summary.unavailableCount) { <span class="so-status-mini so-status-mini--gold">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
-                        @if (entry.summary.waitingCount) { <span class="so-status-mini so-status-mini--gold"><i aria-hidden="true"></i>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
-                        @if (entry.summary.shippedCount) { <span class="so-status-mini so-status-mini--ok"><i aria-hidden="true"></i>{{ entry.summary.shippedCount }} verzonden</span> }
-                        @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="so-status-mini so-status-mini--blue"><i aria-hidden="true"></i>Leveringen gepland</span> }
-                      </span>
-                    </span>
-                    <span class="sales-container__totals"><small>Getoonde delen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong></span><span class="sales-container__chevron" aria-hidden="true"></span>
-                  </button>
-                </div>
-                <div class="sales-container__invoices" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
-                  @if (groupOpen(entry.key)) {
-                    <div class="sales-container__tools"><span>Elk deel heeft een eigen document- en leverstatus.</span></div>
-                    @for (row of entry.rows; track row.order.id) { <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" /> }
-                  }
-                </div>
-              </section>
-            } @else {
-              <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: entry.row, grouped: false }" />
+        <app-sales-document-navigation [scope]="businessScope()" [tab]="docTab()"
+          [counts]="documentCounts()" [loading]="loading()" [outstandingOnly]="outstandingOnly()" [docs]="docsFilter()" [docsCounts]="docsCounts()"
+          (scopeChange)="switchScope($event)" (tabChange)="switchTab($event)" (outstandingChange)="filterOutstanding($event)" (docsChange)="filterDocs($event)" />
+
+        <!-- One quiet row: search grows, two pills open native pickers,
+             the count sits at the end - no card, no grid of chips. -->
+        <!-- One Filter button; the choices unfold underneath, catalogue-style. -->
+        <div class="sales-filterbar">
+          <div class="search-control search-control--bar">
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="6.5"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+            <input class="input" id="sales-search" type="search" inputmode="search"
+                   autocomplete="off" aria-label="Zoek klant, documentnummer of containerreferentie" placeholder="Zoek klant, factuur of container…"
+                   [ngModel]="query()" (ngModelChange)="query.set($event)" />
+            @if (query()) {
+              <button class="search-clear" type="button" aria-label="Zoekopdracht wissen"
+                      (click)="query.set('')">×</button>
             }
-          } @empty {
-            @if (loading()) {
-              <app-skeleton kind="list" [rows]="5" />
-            } @else if (loadError()) {
-              <div class="empty">
-                <div class="empty__icon">!</div>
-                <div class="empty__title">Orders niet geladen</div>
-                <p class="muted">Gebruik ‘Opnieuw proberen’ bovenaan.</p>
-              </div>
-            } @else if (activeFilterCount()) {
-              <div class="empty">
-                <div class="empty__icon">⌕</div>
-                <div class="empty__title">Geen orders gevonden</div>
-                <p class="muted">Pas de zoekterm of offertestatus aan.</p>
-                <button class="btn" type="button" (click)="clearFilters()">
-                  Filters wissen
-                </button>
-              </div>
-            } @else {
-              <div class="empty">
-                <div class="empty__icon">▤</div>
-                <div class="empty__title">{{ docTab() === 'OFFERTE' ? 'Nog geen offertes' : docTab() === 'FACTUUR' ? 'Nog geen facturen' : 'Het archief is leeg' }}</div>
-                <p class="muted">{{ businessScope() === 'PARTNER' ? 'Partnerdocumenten maak je vanuit de betreffende inkoopcontainer.' : 'Hier verschijnen de documenten voor de gekozen soort verkoop.' }}</p>
-                @if (businessScope() === 'PARTNER') { <a class="btn btn--primary" routerLink="/purchasing">Naar partnercontainers</a> } @else if (docTab() !== 'ARCHIEF') { <button class="btn btn--primary" type="button" (click)="startNew()">
-                  Nieuwe order
-                </button> }
-              </div>
-            }
+          </div>
+          <button class="filter-toggle" type="button" aria-label="Filters tonen of verbergen"
+                  [class.filter-toggle--active]="activeFilterCount() > 0"
+                  [attr.aria-expanded]="filtersOpen()"
+                  (click)="filtersOpen.set(!filtersOpen())">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+            <span class="hide-mobile">Filters</span>
+            @if (activeFilterCount(); as n) { <b class="filter-toggle__count">{{ n }}</b> }
+            <i class="filter-toggle__chev" [class.filter-toggle__chev--open]="filtersOpen()"></i>
+          </button>
+          @if (docTab() === 'OFFERTE' && websiteRequests().length) {
+            <button class="website-filter" type="button"
+                    [class.website-filter--active]="websiteOnly()"
+                    [attr.aria-pressed]="websiteOnly()"
+                    (click)="websiteOnly.set(!websiteOnly())">
+              <span>Website</span>
+              <b>{{ websiteRequests().length }}</b>
+            </button>
+          }
+          @if (docTab() === 'OFFERTE' && ordersToTake().length) {
+            <button class="website-filter" type="button"
+                    [class.website-filter--active]="toTakeOnly()"
+                    [attr.aria-pressed]="toTakeOnly()"
+                    (click)="toTakeOnly.set(!toTakeOnly())">
+              <span>In verwerking te nemen</span>
+              <b>{{ ordersToTake().length }}</b>
+            </button>
+          }
+          @if (filtersOpen()) {
+            <div class="filter-grid">
+              <label class="filter-field">
+                <span class="filter-field__label">Status</span>
+                <select class="select filter-field__select" [ngModel]="filter()" (ngModelChange)="selectStatus($event)">
+                  @for (option of visibleFilters(); track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }} ({{ statusCount(option.value) }})</option>
+                  }
+                </select>
+              </label>
+              <label class="filter-field">
+                <span class="filter-field__label">Klant</span>
+                <select class="select filter-field__select" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
+                  <option [ngValue]="''">Alle klanten</option>
+                  @for (customer of customersWithOrders(); track customer.id) {
+                    <option [ngValue]="customer.id">{{ customer.company }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+            <div class="filter-summary">
+              <span><strong>{{ rows().length }}</strong> van {{ pile().length }} {{ pileWord() }}</span>
+              @if (activeFilterCount()) {
+                <button class="filter-reset" type="button" (click)="clearFilters()">Filters wissen</button>
+              }
+            </div>
           }
         </div>
+
+        <ng-template #documentRow let-row let-grouped="grouped">
+              <!-- Drag left for the bin, drag right for the archive; hold the
+                   row (or right-click it) for the same choices as a menu. -->
+              <div class="swipe" [class.swipe--grouped]="grouped"
+                   [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
+                   [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
+                   [class.swipe--dragging]="draggingOrderId() === row.order.id"
+                   [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null">
+              @if (canArchive(row)) {
+              <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
+                      [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
+                      [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ')
+                        + documentLabelOf(row) + ' ' + row.order.number">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
+                </svg>
+                <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
+              </button>
+              }
+              <a class="list-item swipe__row" [routerLink]="['/sales', row.order.id]"
+                 appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
+                 (salesMenu)="openRowMenu(null, row)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
+                 (pointerdown)="startSwipe($event, row)"
+                 (pointermove)="moveSwipe($event, row)"
+                 (pointerup)="finishSwipe($event, row)"
+                 (pointercancel)="cancelSwipe($event)"
+                 (wheel)="wheelSwipe($event, row)"
+                 (dragstart)="$event.preventDefault()"
+                 (click)="blockWhenSwiped($event)">
+                <div class="list-item__body">
+                  <div class="list-item__title">{{ grouped ? row.order.number : customerName(row) }}</div>
+                  <!-- No country chip: it repeats what the customer name already
+                       implies and pushed the date into "18/0...". -->
+                  <div class="list-item__meta list-item__meta--wrap">
+                    {{ documentLabelOf(row) }} ·
+                    @if (!grouped) { {{ row.order.number }} · }{{ row.order.orderDate | dateNl }}
+                    @if (row.order.sourceQuoteId && row.sourceQuoteNumber) { · uit {{ row.sourceQuoteNumber }} }
+                    @if (row.invoicedAs && row.invoicedAsId) { · factuur {{ row.invoicedAs }} }
+                    @if (creditNoteRow(row) && row.creditedInvoiceNumber) { · op {{ row.creditedInvoiceNumber }} · {{ creditReason(row) }} }
+                    @if (!grouped && channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { · <span class="channel-tag">{{ channelLabel(row.order.salesChannel) }}</span> }
+                    @if (docTab() === 'FACTUUR' && row.order.invoiceDueDate && !creditNoteRow(row)) {
+                      · vervalt {{ row.order.invoiceDueDate | dateNl }}
+                    }
+                  </div>
+                  <div class="list-item__meta list-item__meta--wrap">
+                    @if (creditNoteRow(row)) {
+                      <!-- Only what the note holds: an amount-only note read "0 st · 0 regels · 1 bedrag". -->
+                      @if (row.priced.lines.length) { {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }} }@if (row.priced.lines.length && (row.order.extraLines ?? []).length) { · }@if ((row.order.extraLines ?? []).length) { {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }
+                    } @else if (partner(row.order)) {
+                      {{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}
+                    } @else {
+                    {{ row.priced.totals.pieces | num }} st ·
+                    @if (row.order.loadMode === 'LOOSE_CARTONS') {
+                      {{ row.priced.totals.cartons | num }}
+                      {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} ·
+                      {{ row.priced.totals.cbm | cbm }}
+                    } @else {
+                      {{ row.priced.totals.palletsManual || row.priced.totals.palletsStrict }}
+                      {{ (row.priced.totals.palletsManual || row.priced.totals.palletsStrict) === 1
+                          ? 'pallet' : 'pallets' }}
+                    }
+                    @if (!partner(row.order) && row.priced.totals.marginPct) {
+                      · marge {{ row.priced.totals.marginPct | pct: 0 }}
+                    }
+                    }
+                  </div>
+                </div>
+                <div class="list-item__end list-item__end--stacked">
+                  @if (webOrder(row)) {
+                    <span class="so-source-mini">Websitebestelling</span>
+                    @if (webOrderPill(row); as pill) {
+                      <span [class]="'so-status-mini so-status-mini--' + pill.cls"><i aria-hidden="true"></i>{{ pill.label }}</span>
+                    }
+                  } @else if (websiteRequest(row.order)) {
+                    <span class="so-source-mini">Websiteaanvraag</span>
+                  }
+                  <div class="strong num" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</div>
+                  @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
+                  @if (creditNoteRow(row) && row.order.status !== 'CONCEPT') {
+                    <small class="so-credit-tegoed">{{ creditLine(row) }}</small>
+                  } @else if (row.order.docType === 'FACTUUR' && row.order.status !== 'CONCEPT') {
+                    <small>{{ receivable(row).receivedEur | eur }} ontvangen · {{ receivable(row).remainingEur | eur }} open</small>
+                    @if (row.creditedEur) { <small class="so-credited">{{ row.creditedEur | eur }} gecrediteerd</small> }
+                  }
+                  <span class="so-status-mini" [class]="'so-status-mini so-status-mini--' + statusOf(row).cls">
+                    <i aria-hidden="true"></i>{{ statusOf(row).label }}
+                  </span>
+                  @if (unavailableCount(row); as count) {
+                    <span class="so-status-mini so-status-mini--gold">{{ count }} {{ count === 1 ? 'product' : 'producten' }} niet beschikbaar</span>
+                  }
+                  @if (fulfillmentStatus(row); as delivery) {
+                    <span [class]="'so-status-mini so-status-mini--' + delivery.cls"><i aria-hidden="true"></i>Deel {{ row.fulfillment?.part }} · {{ delivery.label }}</span>
+                  }
+                  @if (row.order.goodsShippedAt && !row.fulfillment) {
+                    <span class="so-status-mini so-status-mini--ok">
+                      <i aria-hidden="true"></i>Bestelling verzonden
+                    </span>
+                  }
+                  @if (attention(row); as attn) {
+                    <span class="so-status-mini so-status-mini--warn" [attr.title]="attn.join(' · ')">
+                      <i aria-hidden="true"></i>{{ attn[0] }}{{ attn.length > 1 ? ' +' + (attn.length - 1) : '' }}
+                    </span>
+                  }
+                </div>
+                <span class="list-item__chev">›</span>
+              </a>
+              @if (canDelete(row)) {
+                <button class="swipe__delete" type="button"
+                        [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
+                        [attr.aria-busy]="deletingOrderId() === row.order.id"
+                        (click)="remove(row)"
+                        [attr.aria-label]="documentLabelOf(row) + ' ' + row.order.number + ' verwijderen'"
+                        [title]="documentLabelOf(row) + ' verwijderen'">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                       stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                       aria-hidden="true" focusable="false">
+                    <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+                    <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+                  </svg>
+                </button>
+              }
+              </div>
+        </ng-template>
+
+        <div class="card" id="sales-document-results" role="tabpanel" [attr.aria-labelledby]="'sales-tab-' + docTab()" [attr.aria-busy]="loading()" tabindex="0">
+          <div class="list">
+            @for (entry of groupedRows(); track entry.key) {
+              @if (entry.kind === 'PARTNER_CONTAINER') {
+                <section class="sales-container" [class.sales-container--open]="groupOpen(entry.key)">
+                  <div class="sales-container__header">
+                  <button class="sales-container__toggle" type="button"
+                          appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
+                          (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
+                          [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
+                          [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)">
+                    <span class="sales-container__identity">
+                      <span class="sales-container__eyebrow">Partnercontainer</span>
+                      <strong>{{ customerName(entry.rows[0]) }}</strong>
+                      <span class="sales-container__meta" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }} · {{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
+                      <span class="sales-container__badges">
+                        @for (status of entry.summary.statuses; track status.label) {
+                          <span [class]="'so-status-mini so-status-mini--' + status.cls"
+                                [class.sales-container__status--concept]="status.concept">
+                            <i aria-hidden="true"></i>{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }
+                          </span>
+                        }
+                        @if (entry.summary.attentionCount) { <span class="so-status-mini so-status-mini--warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
+                      </span>
+                    </span>
+                    <span class="sales-container__totals">
+                      <small>Getoonde facturen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong>
+                      @if (entry.summary.draftCount && entry.summary.issuedCount) { <small>Waarvan concept {{ entry.summary.draftEur | eur }}</small> }
+                      @if (entry.summary.issuedCount) { <small>{{ entry.summary.receivedEur | eur }} ontvangen · {{ entry.summary.remainingEur | eur }} open incl. btw</small> }
+                      @if (entry.summary.creditEur > 0) { <small>{{ entry.summary.creditEur | eur }} credit incl. btw</small> }
+                    </span>
+                    <span class="sales-container__chevron" aria-hidden="true"></span>
+                  </button>
+                  </div>
+                  <div class="sales-container__invoices" [id]="entry.key + '-invoices'"
+                       [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
+                    @if (groupOpen(entry.key)) {
+                      <div class="sales-container__tools"><span>De facturen hieronder volgen je huidige filters.</span><a [routerLink]="['/purchasing', entry.purchaseOrderId]" [queryParams]="{ section: 'payments' }">Container en betaalafspraken ›</a></div>
+                      @for (row of entry.rows; track row.order.id) {
+                        <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" />
+                      }
+                    }
+                  </div>
+                </section>
+              } @else if (entry.kind === 'SPLIT_ORDER') {
+                <section class="sales-container sales-container--split" [class.sales-container--open]="groupOpen(entry.key)">
+                  <div class="sales-container__header">
+                    <button class="sales-container__toggle" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)" [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)">
+                      <span class="sales-container__identity">
+                        <span class="sales-container__eyebrow">Gesplitste order</span><strong>{{ customerName(entry.rows[0]) }}</strong>
+                        <span class="sales-container__meta">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
+                        <span class="sales-container__badges">
+                          @if (entry.summary.unavailableCount) { <span class="so-status-mini so-status-mini--gold">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
+                          @if (entry.summary.waitingCount) { <span class="so-status-mini so-status-mini--gold"><i aria-hidden="true"></i>{{ entry.summary.waitingCount }} wacht op voorraad</span> }
+                          @if (entry.summary.shippedCount) { <span class="so-status-mini so-status-mini--ok"><i aria-hidden="true"></i>{{ entry.summary.shippedCount }} verzonden</span> }
+                          @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="so-status-mini so-status-mini--blue"><i aria-hidden="true"></i>Leveringen gepland</span> }
+                        </span>
+                      </span>
+                      <span class="sales-container__totals"><small>Getoonde delen · excl. btw</small><strong>{{ entry.summary.totalEur | eur }}</strong></span><span class="sales-container__chevron" aria-hidden="true"></span>
+                    </button>
+                  </div>
+                  <div class="sales-container__invoices" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" role="group" [attr.aria-labelledby]="entry.key + '-toggle'">
+                    @if (groupOpen(entry.key)) {
+                      <div class="sales-container__tools"><span>Elk deel heeft een eigen document- en leverstatus.</span></div>
+                      @for (row of entry.rows; track row.order.id) { <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: row, grouped: true }" /> }
+                    }
+                  </div>
+                </section>
+              } @else {
+                <ng-container [ngTemplateOutlet]="documentRow" [ngTemplateOutletContext]="{ $implicit: entry.row, grouped: false }" />
+              }
+            } @empty {
+              @if (loading()) {
+                <app-skeleton kind="list" [rows]="5" />
+              } @else if (loadError()) {
+                <div class="empty">
+                  <div class="empty__icon">!</div>
+                  <div class="empty__title">Orders niet geladen</div>
+                  <p class="muted">Gebruik ‘Opnieuw proberen’ bovenaan.</p>
+                </div>
+              } @else if (activeFilterCount()) {
+                <div class="empty">
+                  <div class="empty__icon">⌕</div>
+                  <div class="empty__title">Geen orders gevonden</div>
+                  <p class="muted">Pas de zoekterm of offertestatus aan.</p>
+                  <button class="btn" type="button" (click)="clearFilters()">
+                    Filters wissen
+                  </button>
+                </div>
+              } @else {
+                <div class="empty">
+                  <div class="empty__icon">▤</div>
+                  <div class="empty__title">{{ docTab() === 'OFFERTE' ? 'Nog geen offertes' : docTab() === 'FACTUUR' ? 'Nog geen facturen' : 'Het archief is leeg' }}</div>
+                  <p class="muted">{{ businessScope() === 'PARTNER' ? 'Partnerdocumenten maak je vanuit de betreffende inkoopcontainer.' : 'Hier verschijnen de documenten voor de gekozen soort verkoop.' }}</p>
+                  @if (businessScope() === 'PARTNER') { <a class="btn btn--primary" routerLink="/purchasing">Naar partnercontainers</a> } @else if (docTab() !== 'ARCHIEF') { <button class="btn btn--primary" type="button" (click)="startNew()">
+                    Nieuwe order
+                  </button> }
+                </div>
+              }
+            }
+          </div>
+        </div>
       </div>
-    </div>
+    }
+
+    <ng-template #emptyState>
+      @if (query().trim()) {
+        <div [class]="desktop.active() ? 'wk-empty' : 'ios-empty'">
+          <h2 [class]="desktop.active() ? 'wk-empty__title' : 'ios-empty__title'">Niets gevonden voor “{{ query().trim() }}”</h2>
+          <p [class]="desktop.active() ? 'wk-empty__text' : 'ios-empty__text'">Zoek op klant, documentnummer of container.</p>
+          <button [class]="desktop.active() ? 'wk-btn' : 'ios-capsule ios-capsule--tinted'" type="button" (click)="query.set('')">Zoekopdracht wissen</button>
+        </div>
+      } @else if (activeFilterCount()) {
+        <div [class]="desktop.active() ? 'wk-empty' : 'ios-empty'">
+          <h2 [class]="desktop.active() ? 'wk-empty__title' : 'ios-empty__title'">Niets met deze filters</h2>
+          <button [class]="desktop.active() ? 'wk-btn' : 'ios-capsule ios-capsule--tinted'" type="button" (click)="clearFilters()">Filters wissen</button>
+        </div>
+      } @else if (docTab() === 'ARCHIEF') {
+        <div [class]="desktop.active() ? 'wk-empty' : 'ios-empty'">
+          <h2 [class]="desktop.active() ? 'wk-empty__title' : 'ios-empty__title'">Niets in het archief</h2>
+          <p [class]="desktop.active() ? 'wk-empty__text' : 'ios-empty__text'">Gearchiveerde documenten blijven hier zoals ze waren.</p>
+        </div>
+      } @else {
+        <div [class]="desktop.active() ? 'wk-empty' : 'ios-empty'">
+          <h2 [class]="desktop.active() ? 'wk-empty__title' : 'ios-empty__title'">{{ docTab() === 'OFFERTE' ? 'Nog geen offertes' : 'Nog geen facturen' }}</h2>
+          <p [class]="desktop.active() ? 'wk-empty__text' : 'ios-empty__text'">{{ businessScope() === 'PARTNER' ? 'Partnerdocumenten maak je vanuit de betreffende inkoopcontainer.' : 'Hier verschijnen de documenten voor de gekozen soort verkoop.' }}</p>
+          @if (businessScope() === 'PARTNER') {
+            <a [class]="desktop.active() ? 'wk-btn wk-btn--primary' : 'ios-capsule ios-capsule--tinted'" routerLink="/purchasing">Naar partnercontainers</a>
+          } @else {
+            <button [class]="desktop.active() ? 'wk-btn wk-btn--primary' : 'ios-capsule ios-capsule--tinted'" type="button" (click)="startNew()">{{ docTab() === 'FACTUUR' ? 'Nieuwe factuur' : 'Nieuwe offerte' }}</button>
+          }
+        </div>
+      }
+    </ng-template>
+
+    <!-- A desk row: the document number on the left, its customer is the group above. Drag left for the bin, drag right
+         for the archive; hold it, right-click it or use ⋯ for the same choices as a menu. -->
+    <ng-template #deskRow let-row let-nested="nested">
+      @let attn = rowAttention(row);
+      @let status = statusOf(row);
+      @let parts = statusPartsOf(row);
+      <div class="swipe sl-swipe" role="none" [class.sl-swipe--nested]="nested"
+           [animate.leave]="leavingId() === row.order.id ? 'mo-leave' : ''"
+           [class.swipe--open]="rowOpenSide(row.order.id) === 'end'"
+           [class.swipe--open-start]="rowOpenSide(row.order.id) === 'start'"
+           [class.swipe--dragging]="draggingOrderId() === row.order.id"
+           [style.--swipe-offset]="draggingOrderId() === row.order.id ? swipeOffset() + 'px' : null"
+           (pointerdown)="notePointer($event)">
+        @if (canArchive(row)) {
+          <button class="swipe__archive" type="button" (click)="toggleArchive(row)"
+                  [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
+                  [attr.aria-label]="(row.order.archivedAt ? 'Terugzetten uit archief: ' : 'Archiveren: ') + documentLabelOf(row) + ' ' + row.order.number">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 6h18v4H3z" /><path d="M5 10v9h14v-9" /><path d="M10 14h4" />
+            </svg>
+            <span>{{ row.order.archivedAt ? 'Terug' : 'Archief' }}</span>
+          </button>
+        }
+        <a class="wk-tr wk-tr--link swipe__row sl-row" role="row" [routerLink]="['/sales', row.order.id]"
+           appSalesMenu [appSalesMenuDisabled]="deletingOrderId() !== null || archivingOrderId() !== null || containerDeletingId() !== null"
+           (salesMenu)="openRowMenu(null, row)" aria-haspopup="menu" aria-describedby="sales-menu-help"
+           (pointerdown)="startSwipe($event, row)"
+           (pointermove)="moveSwipe($event, row)"
+           (pointerup)="finishSwipe($event, row)"
+           (pointercancel)="cancelSwipe($event)"
+           (wheel)="wheelSwipe($event, row)"
+           (dragstart)="$event.preventDefault()"
+           (click)="blockWhenSwiped($event)">
+          <span class="wk-td wk-td--wrap sl-cell" role="cell">
+            <b class="sl-name">{{ row.order.number }}</b>
+            <span class="sl-sub">{{ docSubOf(row) }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested) { <span class="sl-tag">Partner</span> }<span class="sl-inhoud-inline"> · <ng-container *ngTemplateOutlet="inhoud; context: { $implicit: row }" /></span></span>
+          </span>
+          <span class="wk-td wk-td--wrap sl-cell" role="cell" data-hide="sm"><ng-container *ngTemplateOutlet="inhoud; context: { $implicit: row }" /></span>
+          <span class="wk-td wk-td--wrap sl-cell" role="cell">
+            <span class="wk-pill" [class]="salesTone(status.cls)"><span class="wk-pill__dot" aria-hidden="true"></span>{{ status.label }}</span>
+            @if (parts.length) {
+              <span class="sl-sub">@for (part of parts; track $index) {@if (!$first) { · }<span class="sl-part" [class]="part.cls ? salesTone(part.cls) : ''">{{ part.text }}</span>}</span>
+            }
+          </span>
+          @if (docTab() !== 'OFFERTE') {
+            @let pay = paymentOf(row);
+            <span class="wk-td wk-td--wrap sl-cell" role="cell">
+              @switch (pay.state) {
+                @case ('open') {
+                  <span class="sl-main sl-nw" [class.sl-warn]="pay.overdue">{{ pay.openEur | eur }} open</span>
+                  @if (pay.receivedEur > 0) { <span class="sl-sub sl-nw">{{ pay.receivedEur | eur }} ontvangen</span> }
+                }
+                @case ('settled') { <span class="sl-main" [class.sl-ok]="pay.receivedEur > 0">{{ pay.receivedEur > 0 ? 'Betaald' : 'Niets open' }}</span> }
+                @case ('concept') { <span class="sl-main sl-muted">—</span><span class="sl-sub">nog niet uitgereikt</span> }
+                @case ('credit') { <span class="sl-main sl-credit">{{ creditLine(row) }}</span> }
+                @default { <span class="sl-main sl-muted">—</span> }
+              }
+              @if (row.creditedEur && (pay.state === 'open' || pay.state === 'settled')) { <span class="sl-sub sl-credit sl-nw">{{ row.creditedEur | eur }} gecrediteerd</span> }
+            </span>
+          }
+          <span class="wk-td wk-td--num sl-cell sl-total" role="cell"><span [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</span>@if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }</span>
+          <span class="wk-td sl-actions-cell" role="cell"></span>
+          @if (attn.length) {
+            <span class="sl-attn" [attr.title]="attn.join(' · ')">
+              <b>{{ attn.length }}</b>
+              <span>{{ keepEuro(attn[0]) }}{{ attn.length > 1 ? ' · +' + (attn.length - 1) : '' }}</span>
+            </span>
+          }
+        </a>
+        <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon sl-more" type="button" aria-haspopup="menu"
+                [attr.aria-label]="'Acties voor ' + documentLabelOf(row) + ' ' + row.order.number" (click)="openRowMenu($event, row)"><app-icon name="more" [size]="16" /></button>
+        @if (canDelete(row)) {
+          <button class="swipe__delete" type="button"
+                  [disabled]="deletingOrderId() !== null || containerDeletingId() !== null"
+                  [attr.aria-busy]="deletingOrderId() === row.order.id"
+                  (click)="remove(row)"
+                  [attr.aria-label]="documentLabelOf(row) + ' ' + row.order.number + ' verwijderen'"
+                  [title]="documentLabelOf(row) + ' verwijderen'">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true" focusable="false">
+              <path d="M4 7h16" /><path d="M9 7V5h6v2" />
+              <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
+            </svg>
+          </button>
+        }
+      </div>
+    </ng-template>
+
+    <!-- The Inhoud column; below an 860 px card the same facts fold into the Document sub. -->
+    <ng-template #inhoud let-row>
+      @if (creditNoteRow(row)) {
+        <!-- Only what the note holds: an amount-only note read "0 st · 0 regels · 1 bedrag". No margin on a credit note. -->
+        <span class="sl-main">@if (row.priced.lines.length) { {{ row.priced.totals.pieces | num }} st · {{ row.priced.lines.length }} {{ row.priced.lines.length === 1 ? 'regel' : 'regels' }} }@if (row.priced.lines.length && (row.order.extraLines ?? []).length) { · }@if ((row.order.extraLines ?? []).length) { {{ (row.order.extraLines ?? []).length }} {{ (row.order.extraLines ?? []).length === 1 ? 'bedrag' : 'bedragen' }} }</span>
+      } @else if (partner(row.order)) {
+        <span class="sl-main">{{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}</span>
+      } @else {
+        @let loose = row.order.loadMode === 'LOOSE_CARTONS';
+        @let pallets = row.priced.totals.palletsManual || row.priced.totals.palletsStrict;
+        <span class="sl-main"><span class="sl-nw">{{ row.priced.totals.pieces | num }} st</span> · <span class="sl-nw">@if (loose) { {{ row.priced.totals.cartons | num }} {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} } @else { {{ pallets }} {{ pallets === 1 ? 'pallet' : 'pallets' }} }</span></span>
+        @if (loose || row.priced.totals.marginPct) {
+          <span class="sl-sub"><span class="sl-isep"> · </span>@if (loose) { <span class="sl-nw">{{ row.priced.totals.cbm | cbm }}</span> }@if (loose && row.priced.totals.marginPct) { · }@if (row.priced.totals.marginPct) { <span class="sl-nw">marge {{ row.priced.totals.marginPct | pct: 0 }}</span> }</span>
+        }
+      }
+    </ng-template>
 
     <button class="fab" type="button" [class.fab--text]="businessScope()==='PARTNER'" (click)="startNew()">{{ businessScope() === 'PARTNER' ? 'Container kiezen' : '+ Order' }}</button>
 
@@ -415,39 +779,9 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
         (closed)="containerMenu.set(null)" (busyChange)="containerDeletingId.set($event ? menuContainer.purchaseOrderId : null)"
         (deleted)="containerDeleted($event)" />
     }
-    @if (rowMenu(); as menuRow) {
-      <app-sheet [title]="(webOrder(menuRow) ? 'Bestelling' : documentLabel(menuRow.order)) + ' ' + menuRow.order.number" (closed)="rowMenu.set(null)">
-        <div body>
-          <p class="row-menu__who">{{ customerName(menuRow) }} · {{ label(menuRow.order.status) }}
-            · {{ menuRow.priced.totals.total | eur: (menuRow.fulfillment || partner(menuRow.order) ? 2 : 0) }}</p>
-          <div class="desk-actions">
-            <a class="desk-action" [routerLink]="['/sales', menuRow.order.id]" (click)="rowMenu.set(null)">
-              <i aria-hidden="true">›</i>
-              <span><b>Openen</b><small>{{ canArchive(menuRow) ? 'Bekijken of bewerken' : 'Bekijken of in verwerking nemen' }}</small></span>
-            </a>
-            @if (!partner(menuRow.order) && !menuRow.fulfillment && !webOrder(menuRow)) {
-              <button class="desk-action" type="button" [disabled]="!!splitBlockReason(menuRow)" (click)="openSplit(menuRow)"><i aria-hidden="true">⇄</i><span><b>Order splitsen</b><small>{{ splitBlockReason(menuRow) || 'Verplaats producten naar een latere levering' }}</small></span></button>
-            }
-            @if (canArchive(menuRow)) {
-            <button class="desk-action" type="button" [disabled]="archivingOrderId() !== null || containerDeletingId() !== null"
-                    (click)="toggleArchive(menuRow)">
-              <i aria-hidden="true">▤</i>
-              <span>
-                <b>{{ menuRow.order.archivedAt ? 'Terugzetten uit archief' : 'Archiveren' }}</b>
-                <small>{{ menuRow.order.archivedAt ? 'Terug naar de werklijst' : 'Uit de werklijst, naar het tabblad Archief' }}</small>
-              </span>
-            </button>
-            }
-            @if (canDelete(menuRow)) {
-              <button class="desk-action desk-action--danger" type="button"
-                      [disabled]="deletingOrderId() !== null || containerDeletingId() !== null" (click)="rowMenu.set(null); remove(menuRow)">
-                <i aria-hidden="true">×</i>
-                <span><b>Verwijderen</b><small>Tijdelijk, na bevestiging</small></span>
-              </button>
-            }
-          </div>
-        </div>
-      </app-sheet>
+    @if (rowMenu(); as menu) {
+      <app-context-menu class="sl-menu" [title]="rowMenuTitle(menu.row)" [items]="rowMenuItems(menu.row)" [anchor]="menu.anchor"
+                        variant="ios" cancelLabel="Annuleren" (pick)="pickRowMenu($event, menu.row)" (closed)="rowMenu.set(null)" />
     }
 
     @if (splitRow(); as splitData) { <app-sales-split-sheet [view]="splitData" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
@@ -599,7 +933,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       .swipe--grouped .list-item{padding-left:16px}
     }
     @media(prefers-reduced-motion:reduce){.sales-container__toggle,.sales-container__chevron{transition:none}.sales-container__invoices:not([hidden]){animation:none}}
-    .so-link { color: var(--rose-dark); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
     .swipe--dragging { user-select:none }
     .swipe--dragging .swipe__row { transform:translateX(var(--swipe-offset, 0px));transition:none }
     .swipe__row { touch-action:pan-y }
@@ -620,9 +953,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       border:1px solid color-mix(in srgb,var(--rose) 38%,transparent);border-radius:999px;
       background:var(--rose);color:#fff;font-size:10px;font-weight:780;line-height:1.2;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 12px rgb(103 31 52/14%) }
-    .website-request-item { background:color-mix(in srgb,var(--rose-soft) 55%,var(--surface)) }
-    .website-request-item__icon { border:1px solid var(--rose-line);background:#fff!important;
-      color:var(--rose-dark);font-weight:850 }
 
     .doc-choice { margin-bottom:12px }
     .sales-filterbar { display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px;padding:12px;
@@ -659,39 +989,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
     .filter-field__select { min-height:42px;font-size:13px;font-weight:650 }
     .filter-summary { flex:1 0 100%;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:12px }
     .filter-summary strong { color:var(--ink) }
-    .filter-reset { border:0;background:transparent;color:var(--rose-dark);font-size:12px;font-weight:700;cursor:pointer }
     .search-control--bar { flex:1 1 200px;min-width:0 }
-    .sales-filterbar__count { margin-left:auto;white-space:nowrap }
-    .po-filter { position:relative;display:inline-flex;align-items:center;gap:7px;min-height:36px;max-width:46vw;
-      padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);
-      color:var(--ink-2);font-size:12.5px;font-weight:650 }
-    .po-filter span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
-    .po-filter--on { border-color:var(--rose-line);background:var(--rose-soft);color:var(--rose-dark) }
-    .po-filter svg { width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round }
-    .po-filter__native { position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px }
-    .order-finder {
-      min-width: 0;
-      margin-bottom: 14px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: var(--r);
-      background: var(--surface);
-      box-shadow: var(--shadow-sm);
-    }
-    .order-finder__head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 15px;
-    }
-    .order-finder__head h2 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
-    .order-finder__head p {
-      margin: 3px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
     .filter-reset {
       display: inline-flex;
       flex: 0 0 auto;
@@ -719,14 +1017,7 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       font-size: 10px;
       font-variant-numeric: tabular-nums;
     }
-    .filter-controls { display: grid; gap: 12px; min-width: 0; }
     .filter-field { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
-    .filter-field > label,
-    .desktop-status__label {
-      color: var(--ink-2);
-      font-size: 12px;
-      font-weight: 700;
-    }
     .search-control { position: relative; min-width: 0; }
     .search-control > svg {
       position: absolute;
@@ -761,36 +1052,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       cursor: pointer;
     }
     .search-clear:hover { background: var(--surface-2); color: var(--ink); }
-    .desktop-status { display: none; }
-    .filter-result {
-      display: flex;
-      min-width: 0;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 7px 12px;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
-      color: var(--ink-2);
-      font-size: 12px;
-    }
-    .filter-result__copy strong { color: var(--ink); font-size: 14px; }
-    .filter-result__copy span { color: var(--muted); }
-    .active-filters { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
-    .active-filters > span {
-      display: block;
-      max-width: 100%;
-      padding: 3px 8px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--rose-soft);
-      color: var(--rose-dark);
-      font-size: 11px;
-      font-weight: 650;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
     .empty p { margin: 5px 0 13px; font-size: 13px; }
 
     @media (max-width: 560px) {
@@ -798,65 +1059,6 @@ import { SalesDocumentNavigation, SalesScope, SalesTab, type SalesDocsFilter } f
       .sales-load-error .btn { grid-column:1/-1;width:100% }
     }
 
-    @media (min-width: 620px) {
-      .filter-controls { grid-template-columns: minmax(0, 1.5fr) minmax(190px, .75fr); }
-    }
-
-    @media (min-width: 680px) {
-      .order-finder { padding: 18px; }
-      .filter-controls { grid-template-columns: minmax(320px, 560px); }
-      .mobile-status { display: none; }
-      .desktop-status { display: block; margin-top: 14px; }
-      .desktop-status__label { margin-bottom: 6px; }
-      .status-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 7px;
-      }
-      .status-option {
-        display: flex;
-        min-width: 0;
-        min-height: 40px;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 8px 10px;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--surface-2);
-        color: var(--ink-2);
-        font-size: 12px;
-        font-weight: 650;
-        text-align: left;
-        cursor: pointer;
-      }
-      .status-option:hover { border-color: var(--rose-line); background: var(--rose-soft); }
-      .status-option--active {
-        border-color: var(--rose);
-        background: var(--rose);
-        color: white;
-      }
-      .status-option--active:hover { border-color: var(--rose-dark); background: var(--rose-dark); }
-      .status-option > span:first-child {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .status-option__count {
-        display: grid;
-        flex: 0 0 auto;
-        min-width: 22px;
-        height: 22px;
-        padding: 0 5px;
-        place-items: center;
-        border-radius: 999px;
-        background: rgb(0 0 0 / 6%);
-        font-size: 10px;
-        font-variant-numeric: tabular-nums;
-      }
-      .status-option--active .status-option__count { background: rgb(255 255 255 / 22%); }
-    }
     .channel-tag{padding:1px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}
   `,
 })
@@ -893,6 +1095,10 @@ export class SalesList {
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
+  readonly desktop = inject(DesktopViewport);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
+  private readonly subbar = viewChild<ElementRef<HTMLElement>>('subbar');
 
   readonly filters: { value: QuoteStatus | ''; label: string }[] = [
     { value: '', label: 'Alle orders' },
@@ -930,7 +1136,7 @@ export class SalesList {
     return parts.join(' · ');
   }
   readonly docsCounts = computed(() => {
-    const rows = this.rowsByDocument().FACTUUR;
+    const rows = this.inTab();
     const cn = rows.filter((row) => isCreditNote(row.order)).length;
     return { f: rows.length - cn, cn };
   });
@@ -953,8 +1159,11 @@ export class SalesList {
   readonly containerMenu = signal<SalesContainerGroup | null>(null);
   readonly containerDeletingId = signal<number | null>(null);
   private loadVersion = 0;
-  /** The row whose menu is open, from a long press or a right-click. */
-  readonly rowMenu = signal<SalesOrderView | null>(null);
+  /** The row whose menu is open (⋯, a long press, a right-click or Shift+F10), and where it opens on a desk. */
+  readonly rowMenu = signal<{ row: SalesOrderView; anchor: MenuPoint | null } | null>(null);
+  /** The row that is being archived or deleted: only that one leaves with a motion. */
+  readonly leavingId = signal<number | null>(null);
+  private lastPointer: (MenuPoint & { at: number }) | null = null;
   private swipeHandled = false;
   private pointerSwipe: { pointerId: number; orderId: number; startX: number; startY: number;
     startOffset: number; horizontal: boolean; row: HTMLElement } | null = null;
@@ -973,6 +1182,7 @@ export class SalesList {
     this.docTab.set(tab);
     /* Quote statuses and invoice statuses are different vocabularies. */
     this.filter.set('');
+    this.attentionOnly.set(false);
     this.websiteOnly.set(false);
     this.toTakeOnly.set(false);
     this.outstandingOnly.set(false);
@@ -1041,10 +1251,7 @@ export class SalesList {
     return (row.creditedEur ?? 0) > 0 && total > 0 && row.creditedEur! >= total - 0.005;
   }
   overdue(order: SalesOrder): boolean {
-    return (order.docType ?? 'OFFERTE') === 'FACTUUR'
-      && (order.status === 'VERZONDEN' || order.status === 'UITGEREIKT')
-      && !!order.invoiceDueDate
-      && order.invoiceDueDate < new Date().toISOString().slice(0, 10);
+    return invoiceOverdue(order, todayIso());
   }
   readonly query = signal('');
   readonly picking = signal(false);
@@ -1069,9 +1276,10 @@ export class SalesList {
     }
     return { OFFERTE: quotes, FACTUUR: invoices, ARCHIEF: archived };
   });
+  /** Per status, over what the search and the other filters leave: the chips' counts. */
   private readonly statusCounts = computed(() => {
     const counts = new Map<string, number>();
-    for (const row of this.inTab()) {
+    for (const row of this.searched()) {
       counts.set(row.order.status, (counts.get(row.order.status) ?? 0) + 1);
     }
     return counts;
@@ -1093,6 +1301,25 @@ export class SalesList {
     if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
     const docs = query.get('docs');
     if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
+    /* Before the first load answers: the folds of this device (not in load(), which also runs after every change). */
+    this.restoreFolds();
+    if (typeof matchMedia === 'function') {
+      const destroyRef = inject(DestroyRef);
+      const media = matchMedia('(max-width: 1100px)');
+      const follow = (): void => this.compactBar.set(media.matches);
+      follow();
+      media.addEventListener('change', follow);
+      destroyRef.onDestroy(() => media.removeEventListener('change', follow));
+    }
+    /* The subbar wraps on a narrow desk: the table head and the customer rows stick under its real height. */
+    effect((onCleanup) => {
+      const bar = this.subbar()?.nativeElement;
+      if (!bar || typeof ResizeObserver !== 'function') return;
+      const host = this.host.nativeElement;
+      const observer = new ResizeObserver(() => host.style.setProperty('--sl-subbar-h', `${bar.offsetHeight}px`));
+      observer.observe(bar);
+      onCleanup(() => { observer.disconnect(); host.style.removeProperty('--sl-subbar-h'); });
+    });
     void this.work.refresh();
     void this.load();
     /* The phone home's '+' lands here with ?nieuw=1: open the new-order sheet once and drop the flag so a reload does not reopen it. */
@@ -1175,12 +1402,19 @@ export class SalesList {
     }
   }
 
-  readonly rows = computed(() => {
-    const status = this.filter();
+  /** The tab's documents after the Facturen / Creditnota's choice: the m of 'n van m' (with 'Nog te ontvangen' the archive's open ones too). */
+  readonly pile = computed(() => {
+    const docs = this.docTab() === 'FACTUUR' ? this.docsFilter() : 'all';
+    const documents = this.inTab();
+    return docs === 'all' ? documents : documents.filter((row) => isCreditNote(row.order) === (docs === 'cn'));
+  });
+
+  /** Every filter but the status chips and Actie vereist: what those chips count, so their counts follow the search. */
+  readonly searched = computed(() => {
     const customer = this.customerFilter();
     const websiteOnly = this.websiteOnly();
     const toTakeOnly = this.toTakeOnly();
-    const needle = this.query().toLowerCase().trim();
+    const query = this.query().trim();
     const documents = this.inTab();
     // A container is found by our own name and by its PO number: the server's live fields, else the advance's cargo snapshot.
     const containerOf = (row: SalesOrderView): number | null =>
@@ -1198,27 +1432,30 @@ export class SalesList {
       names.forEach((name) => known.add(name));
       purchaseNames.set(purchaseId, known);
     }
-    const docs = this.docTab() === 'FACTUUR' ? this.docsFilter() : 'all';
-    return documents.filter((row) => {
+    return this.pile().filter((row) => {
       const credit = isCreditNote(row.order);
-      if (docs === 'f' && credit) return false;
-      if (docs === 'cn' && !credit) return false;
       if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status)
           || (credit ? invoiceReceivable(row).creditEur <= 0 : invoiceReceivable(row).remainingEur <= 0))) return false;
-      if (status && row.order.status !== status) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !countsAsNewWebsiteItem(row)) return false;
       if (toTakeOnly && !customerCanStillChange(row)) return false;
-      if (!needle) return true;
+      if (!query) return true;
       const purchaseId = containerOf(row);
       const names = purchaseId != null ? purchaseNames.get(purchaseId) : undefined;
       const container = purchaseId != null
         ? names ? [...names].join(' ') : `Inkoop #${purchaseId}`
         : '';
-      return (this.customerName(row) + ' ' + row.order.number + ' ' + container + ' ' + (row.creditedInvoiceNumber ?? '') + ' ' + (row.creditNotes ?? []).map((note) => note.number).join(' '))
-        .toLowerCase()
-        .includes(needle);
+      /* Every word must occur, accents folded: 'cafe 2026' finds Café Brel's ENR-2026-0041. */
+      return matchesWords(this.customerName(row) + ' ' + row.order.number + ' ' + container + ' ' + (row.creditedInvoiceNumber ?? '') + ' '
+        + (row.creditNotes ?? []).map((note) => note.number).join(' '), query);
     });
+  });
+
+  /** The shown documents: the search and the filters, then a status chip or Actie vereist. */
+  readonly rows = computed(() => {
+    const status = this.filter();
+    const attentionOnly = this.attentionOnly();
+    return this.searched().filter((row) => (!status || row.order.status === status) && (!attentionOnly || this.needsAction(row)));
   });
 
   /** Filtering remains document-based; container sections only organize the matching invoices. */
@@ -1251,19 +1488,19 @@ export class SalesList {
     this.customerById().get(this.customerFilter() as number)?.company ?? 'Alle klanten');
 
   readonly activeFilterCount = computed(() =>
-    (this.filter() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
+    (this.filter() ? 1 : 0) + (this.attentionOnly() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
       + (this.query().trim() ? 1 : 0) + (this.websiteOnly() ? 1 : 0) + (this.toTakeOnly() ? 1 : 0) + (this.outstandingOnly() ? 1 : 0) + (this.docTab() === 'FACTUUR' && this.docsFilter() !== 'all' ? 1 : 0));
 
-  readonly activeStatusLabel = computed(() =>
-    this.filters.find((option) => option.value === this.filter())?.label ?? 'Alle orders');
-
+  /** A status chip (or the phone's picker) and Actie vereist exclude each other, as on Inkoop. */
   selectStatus(status: QuoteStatus | ''): void {
     this.filter.set(status);
+    this.attentionOnly.set(false);
   }
 
   clearFilters(): void {
     this.query.set('');
     this.filter.set('');
+    this.attentionOnly.set(false);
     this.customerFilter.set('');
     this.websiteOnly.set(false);
     this.toTakeOnly.set(false);
@@ -1273,7 +1510,7 @@ export class SalesList {
   }
 
   statusCount(status: QuoteStatus | ''): number {
-    return status ? this.statusCounts().get(status) ?? 0 : this.inTab().length;
+    return status ? this.statusCounts().get(status) ?? 0 : this.searched().length;
   }
 
   customerName(row: SalesOrderView): string {
@@ -1297,6 +1534,11 @@ export class SalesList {
   documentLabel(order: SalesOrder): string {
     const row = this.all().find((item) => item.order.id === order.id);
     return billingKind(row) ?? salesDocumentKind(order, row?.settlement?.finalSettlement);
+  }
+
+  /** The same kind read off the row itself, for the template: documentLabel scans the whole list on every call (V-L5). */
+  documentLabelOf(row: SalesOrderView): string {
+    return billingKind(row) ?? salesDocumentKind(row.order, row.settlement?.finalSettlement);
   }
 
   startSwipe(event: PointerEvent, row: SalesOrderView): void {
@@ -1403,15 +1645,39 @@ export class SalesList {
     this.settleSwipe(row, offset);
   }
 
-  /** The row's choices as a menu: a long press on a phone, a right-click on a desk. */
+  /** The row's choices as a menu: ⋯, a long press on a phone, a right-click or Shift+F10 on a desk. */
   openRowMenu(event: Event | null, row: SalesOrderView): void {
     event?.preventDefault();
+    event?.stopPropagation();
     if (this.containerDeletingId() !== null) return;
     if (this.pointerSwipe) { this.releaseSwipePointer(this.pointerSwipe); this.resetPointerSwipe(); }
     this.containerMenu.set(null);
     this.openRow.set(null);
-    this.rowMenu.set(row);
+    this.rowMenu.set({ row, anchor: this.menuAnchor(event) });
   }
+
+  /**
+   * Where the desk menu opens: the click on ⋯ (or the button itself from the keyboard), else the press that just
+   * opened it (a right-click or a long press, from the directive), else under the focused row (Shift+F10).
+   */
+  private menuAnchor(event: Event | null): MenuPoint | null {
+    if (event instanceof MouseEvent && (event.clientX || event.clientY)) return { x: event.clientX, y: event.clientY };
+    if (event?.currentTarget instanceof Element) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      return { x: rect.left, y: rect.bottom };
+    }
+    const pointer = this.lastPointer;
+    if (pointer && Date.now() - pointer.at < 1500) return { x: pointer.x, y: pointer.y };
+    const focused = this.host.nativeElement.ownerDocument.activeElement;
+    if (focused instanceof HTMLElement && focused.classList.contains('sl-row')) {
+      const rect = focused.getBoundingClientRect();
+      return { x: rect.left + 24, y: rect.bottom };
+    }
+    return pointer ? { x: pointer.x, y: pointer.y } : null;
+  }
+
+  /** Where the last press on a row was: a right-click or a long press opens the menu there. */
+  notePointer(event: PointerEvent): void { this.lastPointer = { x: event.clientX, y: event.clientY, at: Date.now() }; }
 
   openContainerMenu(event: Event | null, container: SalesContainerGroup): void {
     event?.preventDefault(); event?.stopPropagation();
@@ -1448,6 +1714,7 @@ export class SalesList {
       const revision = webOrderRevision(row);
       const updated = toArchive
         ? await this.sales.archiveOrder(id, revision) : await this.sales.unarchiveOrder(id, revision);
+      this.leavingId.set(id);
       this.all.update((rows) => rows.map((candidate) => candidate.order.id === id ? updated : candidate));
       this.ui.toast(toArchive ? `${label} ${row.order.number} gearchiveerd` : `${label} ${row.order.number} terug op de lijst`);
     } catch (failure: unknown) {
@@ -1491,6 +1758,7 @@ export class SalesList {
         this.deletingOrderId.set(order.id);
         try {
           await this.sales.deleteOrder(order.id, webOrderRevision(row));
+          this.leavingId.set(order.id);
           this.all.update((orders) =>
             orders.filter((candidate) => candidate.order.id !== order.id));
           this.openRow.set(null);
@@ -1540,11 +1808,9 @@ export class SalesList {
     void this.load();
   }
 
-  label = (status: QuoteStatus) => STATUS_LABEL[status];
   statusOf = statusOf;
   readonly channelCode = channelCode;
   readonly channelLabel = channelLabel;
-  cls = statusClass;
 
   /** What is waiting on us; the same source as the bell and the dot. */
   readonly openWork = this.work.actions;
@@ -1648,5 +1914,222 @@ export class SalesList {
     this.creating.set(false);
     this.ui.toast(
       `Order ${view.order.number} is aangemaakt. Open hem vanuit het overzicht.`, 'err');
+  }
+
+  /* ---- the desk list (Inkoop recipe, 2026-10-19): tabs, chips, customer groups, sums --------------------------- */
+
+  /** The documents are known: before the first answer, or after a failed load, no count or sum shows (never a false '0'); a reload keeps them. */
+  readonly ready = computed(() => !this.loadError() && (!this.loading() || this.all().length > 0));
+  /** Actie vereist: only the documents whose amber line says something. */
+  readonly attentionOnly = signal(false);
+  /** Up to 1100px wide the toolbar is tight: the search gets a shorter placeholder so neither it nor the title is cut. */
+  readonly compactBar = signal(false);
+  readonly keepEuro = keepEuro;
+  readonly salesTone = salesTone;
+
+  readonly tabOptions = computed<SegmentOption[]>(() => {
+    const counts = this.documentCounts(), ready = this.ready(), work = this.workTabs();
+    const tab = (id: SalesTab, label: string): SegmentOption =>
+      ({ id, label, count: ready ? counts[id] : null, dot: work.has(id) ? 'warn' : null });
+    return [tab('OFFERTE', 'Offertes'), tab('FACTUUR', 'Facturen'), tab('ARCHIEF', 'Archief')];
+  });
+  /** The tabs that hold something of the bell's (the same source): their warn dot. */
+  private readonly workTabs = computed(() => {
+    const ids = new Set(this.work.actions().map((item) => item.orderId).filter((id): id is number => id != null));
+    const byDocument = this.rowsByDocument();
+    return new Set((['OFFERTE', 'FACTUUR', 'ARCHIEF'] as const).filter((tab) => byDocument[tab].some((row) => ids.has(row.order.id))));
+  });
+
+  /** The live documents of the scope (Offertes and Facturen); the per-tab counts stand on the tabs. */
+  readonly deskSubtitle = computed(() => this.ready()
+    ? countText(this.docCount('OFFERTE') + this.docCount('FACTUUR'), 'document', 'documenten') : NOT_KNOWN_YET);
+  /** The phone's large-title caption: the tab's count, on Facturen what is still to receive; narrowed, what shows of how many. */
+  readonly phoneCaption = computed(() => {
+    if (!this.ready()) return NOT_KNOWN_YET;
+    const narrowed = this.activeFilterCount() > 0;
+    const open = this.docTab() === 'OFFERTE' ? 0 : (narrowed ? this.shownMoney() : this.pileMoney()).openEur;
+    return listCaption(this.docTab(), this.rows().length, this.pile().length, narrowed, open);
+  });
+  /** The word after 'n van m' on the phone's filter line. */
+  readonly pileWord = computed(() => this.docTab() === 'OFFERTE' ? 'offertes' : this.docTab() === 'ARCHIEF' ? 'in het archief'
+    : this.docsFilter() === 'cn' ? 'creditnota’s' : 'facturen');
+
+  readonly scopeLabel = computed(() => ({ ALL: 'Alle verkoop', STANDARD: 'Reguliere verkoop', PARTNER: 'Partnercontainers' })[this.businessScope()]);
+  readonly scopeHint = computed(() => ({
+    STANDARD: 'Offertes, facturen en creditnota’s voor verkoop aan je klanten.',
+    PARTNER: 'Voorschotten, veilingafrekeningen en creditnota’s van gezamenlijke inkopen.',
+    ALL: 'Reguliere verkoop en partnerdocumenten in één overzicht.',
+  })[this.businessScope()]);
+
+  /** Status chips of the tab's vocabulary that have a count (or are chosen), with 'Alle' first; they follow the search. */
+  readonly chips = computed(() => {
+    const counts = this.statusCounts();
+    const chosen = this.filter();
+    return this.visibleFilters()
+      .filter((option) => option.value === '' || option.value === chosen || (counts.get(option.value) ?? 0) > 0)
+      .map((option) => ({ value: option.value, label: option.value === '' ? 'Alle' : option.label,
+        count: option.value === '' ? this.searched().length : counts.get(option.value) ?? 0 }));
+  });
+  readonly actionCount = computed(() => this.searched().filter((row) => this.needsAction(row)).length);
+  pickAttention(): void {
+    const on = !this.attentionOnly();
+    this.attentionOnly.set(on);
+    if (on) this.filter.set('');
+  }
+
+  /** What the shown documents still hold (the subbar's end), and the whole tab (the phone caption). */
+  readonly shownMoney = computed(() => listMoney(this.rows(), invoiceReceivable, todayIso()));
+  private readonly pileMoney = computed(() => listMoney(this.pile(), invoiceReceivable, todayIso()));
+
+  /** One block per customer on the desk, on top of the container and split groups (they stay per customer inside it). */
+  readonly customerSections = computed(() =>
+    customerSections(this.groupedRows(), (id) => this.customerCompany(id), invoiceReceivable, todayIso()));
+  private customerCompany(id: number | null): string {
+    return (id === null ? undefined : this.customerById().get(id)?.company) ?? 'Geen klant';
+  }
+
+  /** The bell's website items per document: the reasons they add to the amber line (the other kinds repeat todo()). */
+  private readonly webWork = computed(() => {
+    const titles = new Map<number, string[]>();
+    for (const item of this.work.actions()) {
+      if (item.kind !== 'WEBSITE_AANVRAAG' || item.orderId == null) continue;
+      titles.set(item.orderId, [...(titles.get(item.orderId) ?? []), item.title]);
+    }
+    return titles;
+  });
+  /** The amber line of a desk row: what waits on us, and the bell's website items for this document. */
+  rowAttention(row: SalesOrderView): string[] {
+    const items = [...(this.attention(row) ?? [])];
+    for (const title of this.webWork().get(row.order.id) ?? []) if (!items.includes(title)) items.push(title);
+    return items;
+  }
+  needsAction(row: SalesOrderView): boolean {
+    return this.rowAttention(row).length > 0;
+  }
+
+  /** 'Verkoopfactuur · 18/10/2026 · uit ENR-2026-0041': the linked documents as text, the row menu opens them. */
+  docSubOf(row: SalesOrderView): string {
+    const credit = isCreditNote(row.order);
+    return documentSub({ kind: this.documentLabelOf(row), date: row.order.orderDate,
+      sourceQuote: row.order.sourceQuoteId ? row.sourceQuoteNumber : null,
+      invoicedAs: row.invoicedAsId ? row.invoicedAs : null,
+      creditedInvoice: credit ? row.creditedInvoiceNumber : null,
+      creditReason: credit ? this.creditReason(row) : null });
+  }
+  /** The line under the status pill (sales-list-model statusParts). */
+  statusPartsOf(row: SalesOrderView): LinePart[] {
+    const delivery = this.fulfillmentStatus(row);
+    return statusParts({
+      order: row.order, invoiced: !!(row.invoicedAsId || row.invoicedAs), remainingEur: invoiceReceivable(row).remainingEur,
+      overdue: this.overdue(row.order), webOrder: this.webOrder(row), webPill: this.webOrderPill(row),
+      websiteRequest: this.websiteRequest(row.order),
+      delivery: delivery ? { part: row.fulfillment?.part ?? null, label: delivery.label, cls: delivery.cls } : null,
+      shipped: !!row.order.goodsShippedAt && !row.fulfillment, unavailable: this.unavailableCount(row),
+    });
+  }
+  /** The Betaling cell: the same receivable as Kosten & bank. */
+  paymentOf(row: SalesOrderView): PaymentCell {
+    return paymentCell(row.order, invoiceReceivable(row), this.overdue(row.order));
+  }
+
+  /* ---- the row menu: Openen, the linked documents, Order splitsen, Archiveren, Verwijderen… */
+  rowMenuTitle(row: SalesOrderView): string {
+    return `${this.webOrder(row) ? 'Bestelling' : this.documentLabelOf(row)} ${row.order.number}`;
+  }
+
+  rowMenuItems(row: SalesOrderView): ContextMenuItem[] {
+    const order = row.order;
+    const credit = isCreditNote(order);
+    const total = `${credit ? '− ' : ''}${new EurPipe().transform(row.priced.totals.total, row.fulfillment || this.partner(order) ? 2 : 0)}`;
+    const items: ContextMenuItem[] = [{ id: 'open', label: 'Openen', iconName: 'chevron-right',
+      hint: [this.customerName(row), statusOf(row).label, total, this.inhoudText(row)].filter(Boolean).join(' · ') }];
+    if (order.sourceQuoteId && row.sourceQuoteNumber) items.push({ id: 'quote', label: `Naar offerte ${row.sourceQuoteNumber}`, iconName: 'document' });
+    if (row.invoicedAsId && row.invoicedAs) items.push({ id: 'invoice', label: `Naar factuur ${row.invoicedAs}`, iconName: 'receipt' });
+    if (credit && row.creditedInvoiceId && row.creditedInvoiceNumber) {
+      items.push({ id: 'credited', label: `Naar factuur ${row.creditedInvoiceNumber}`, iconName: 'receipt', hint: this.creditReason(row) });
+    }
+    if (!this.partner(order) && !row.fulfillment && !this.webOrder(row)) {
+      const blocked = this.splitBlockReason(row);
+      items.push({ id: 'split', label: 'Order splitsen', iconName: 'exchange', hint: blocked || 'Verplaats producten naar een latere levering',
+        disabled: !!blocked || this.splitBusy() });
+    }
+    if (this.canArchive(row)) {
+      items.push({ id: 'archive', label: order.archivedAt ? 'Terugzetten uit archief' : 'Archiveren', iconName: order.archivedAt ? 'restore' : 'archive',
+        hint: order.archivedAt ? 'Terug naar de werklijst' : 'Uit de werklijst, naar het tabblad Archief',
+        disabled: this.archivingOrderId() !== null || this.containerDeletingId() !== null });
+    }
+    if (this.canDelete(row)) {
+      items.push({ id: 'delete', label: 'Verwijderen…', iconName: 'trash', hint: 'Tijdelijk, na bevestiging', danger: true, divider: true,
+        disabled: this.deletingOrderId() !== null || this.containerDeletingId() !== null });
+    }
+    return items;
+  }
+
+  pickRowMenu(item: ContextMenuItem, row: SalesOrderView): void {
+    this.rowMenu.set(null);
+    const target = item.id === 'open' ? row.order.id : item.id === 'quote' ? row.order.sourceQuoteId
+      : item.id === 'invoice' ? row.invoicedAsId : item.id === 'credited' ? row.creditedInvoiceId : null;
+    if (target != null) void this.router.navigate(['/sales', target]);
+    else if (item.id === 'split') this.openSplit(row);
+    else if (item.id === 'archive') void this.toggleArchive(row);
+    else if (item.id === 'delete') this.remove(row);
+  }
+
+  /** The Inhoud column in a few words, for the Openen hint: the phone row has no Inhoud. */
+  private inhoudText(row: SalesOrderView): string {
+    const num = (value: number): string => new NumPipe().transform(value);
+    const totals = row.priced.totals;
+    if (isCreditNote(row.order)) return row.priced.lines.length ? `${num(totals.pieces)} st` : '';
+    if (this.partner(row.order)) return '';
+    const pallets = totals.palletsManual || totals.palletsStrict;
+    return `${num(totals.pieces)} st · ${row.order.loadMode === 'LOOSE_CARTONS'
+      ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${pallets === 1 ? 'pallet' : 'pallets'}`}`;
+  }
+
+  /* ---- customer groups folded shut, remembered on this device ---------- */
+  private readonly foldedIds = signal<ReadonlySet<number>>(new Set());
+  private static readonly FOLD_KEY = 'enrosed.verkoop.folded';
+  folded(customerId: number): boolean { return this.foldedIds().has(customerId); }
+  toggleFold(customerId: number): void {
+    const next = new Set(this.foldedIds());
+    if (next.has(customerId)) next.delete(customerId); else next.add(customerId);
+    this.foldedIds.set(next);
+    try { localStorage.setItem(SalesList.FOLD_KEY, JSON.stringify([...next])); } catch { /* a convenience: without storage the fold lasts this visit */ }
+  }
+  private restoreFolds(): void {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SalesList.FOLD_KEY) ?? '[]');
+      if (Array.isArray(raw)) this.foldedIds.set(new Set(raw.filter((id): id is number => Number.isInteger(id))));
+    } catch { /* nothing remembered */ }
+  }
+
+  /* ---- keyboard (desk): / search, Esc clears then leaves, ↑/↓ between rows, N a new document; Shift+F10 is the directive's */
+  escapeSearch(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    event.preventDefault();
+    if (this.query()) this.query.set('');
+    else input.blur();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onListKey(event: KeyboardEvent): void {
+    if (!this.desktop.active() || event.metaKey || event.ctrlKey || event.altKey) return;
+    const context = keyContext(event, this.host.nativeElement);
+    if (context.typing || context.overlayOpen || !context.inScope) return;
+    if (event.key === '/') {
+      event.preventDefault();
+      this.searchField()?.nativeElement.focus();
+    } else if ((event.key === 'n' || event.key === 'N') && !event.shiftKey) {
+      event.preventDefault();
+      this.startNew();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const rows = [...this.host.nativeElement.querySelectorAll<HTMLElement>('.sl-row')];
+      if (!rows.length) return;
+      event.preventDefault();
+      const index = rows.indexOf(this.host.nativeElement.ownerDocument.activeElement as HTMLElement);
+      const next = index < 0 ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+        : Math.min(rows.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)));
+      rows[next].focus();
+    }
   }
 }
