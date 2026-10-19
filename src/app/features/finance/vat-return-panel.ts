@@ -38,7 +38,14 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => VatReturnPanel) }],
   imports: [Icon, EurPipe, Segmented, Skeleton, Sheet],
+  styles: ['@media (max-width: 679px) { .tica-vat-warning { padding: 0 16px; } }'],
   template: `
+    @if (result().ticaPendingCount || result().ticaSalesIncomplete) {
+      <p class="fin-hint fin-warn-text tica-vat-warning" role="status">TICA-btw nog onvolledig. @if (result().ticaPendingCount) { {{ result().ticaPendingCount }} afrekening(en) wachten op controle. }
+        @if (result().ticaSalesIncomplete) { Er zijn TICA-verkopen zonder bevestigde afrekening. }
+        <button class="wk-link" type="button" (click)="openTica()">TICA controleren ›</button>
+      </p>
+    }
     @if (state.desk()) {
       <div class="fin-vat">
         <div class="fin-vat__chips">
@@ -232,7 +239,7 @@ export class VatReturnPanel implements FinanceSectionApi {
   readonly amount = computed(() => (this.favour() ? this.result().totals.refundEur : this.result().totals.payableEur));
   readonly openClearances = computed(() => this.result().openClearanceCount);
   /** Everything that waits for a confirmation: derived regimes, costs without one and containers without a confirmed clearance. */
-  readonly pendingCount = computed(() => this.result().unconfirmedCount + this.result().unknown.length + this.openClearances());
+  readonly pendingCount = computed(() => this.result().unconfirmedCount + this.result().unknown.length + this.openClearances() + this.result().ticaPendingCount);
 
   readonly headline = computed(() => ({
     label: this.running() ? `Btw Q${this.period().quarter} tot nu · ${this.favour() ? 'in je voordeel' : 'te betalen'}` : this.favour() ? 'Btw terug te krijgen' : 'Btw te betalen',
@@ -240,6 +247,7 @@ export class VatReturnPanel implements FinanceSectionApi {
   }));
   readonly statusText = computed(() => {
     if (this.result().status === 'ready') return 'Klaar voor de boekhouder';
+    if (this.result().ticaSalesIncomplete) return 'Voorlopig · TICA-verkopen wachten op een bevestigde afrekening';
     const pending = this.pendingCount();
     const open = this.openClearances();
     if (pending && pending === open) return `Voorlopig · ${open} ${open === 1 ? 'inklaring' : 'inklaringen'} te bevestigen`;
@@ -310,9 +318,12 @@ export class VatReturnPanel implements FinanceSectionApi {
     return grid.kader === 'IV' || grid.kader === 'V' ? `basis ${formatEuro(row.baseEur)}` : row.vatEur ? `btw ${formatEuro(row.vatEur)}` : '';
   }
 
+  openTica(): void { this.state.openTica(); }
+
   openRow(row: GridRow): void {
     this.openGridCode.set(null);
-    if (row.kind === 'sales') this.state.openInvoice(row.id);
+    if (row.kind === 'tica') this.state.openTicaSettlement(row.id);
+    else if (row.kind === 'sales') this.state.openInvoice(row.id);
     else if (row.kind === 'container') this.state.openContainer(row.id);
     else this.pickRegime(row.id);
   }

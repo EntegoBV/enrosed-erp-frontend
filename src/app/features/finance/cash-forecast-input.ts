@@ -1,3 +1,4 @@
+import type { TicaAnalyticsDay, TicaSettlement } from '../../core/api/tica-api';
 import type { BankAccount, BankStatementLine } from '../../core/api/banking-api';
 import type {
   BankBalance, CashForecastSettings, CompanyCost, CompanyProfile, Customer, IncomingPaymentRow, PartnerAdvanceSchedule, Product,
@@ -36,6 +37,7 @@ export interface CashForecastSources {
   today: Iso;
   bankAccounts: BankAccount[]; balances: BankBalance[]; statements: BankStatementLine[]; incomingPayments: IncomingPaymentRow[];
   costs: CompanyCost[]; recurring: RecurringCost[];
+  ticaSettlements?: TicaSettlement[]; ticaSales?: TicaAnalyticsDay[];
   purchaseViews: PurchaseOrderView[]; purchasePayments: PurchasePaymentRow[]; suppliers: Supplier[];
   salesOrders: SalesOrderView[]; customers: Customer[]; advanceSchedules: PartnerAdvanceSchedule[];
   company: CompanyProfile | null; forecasts: PurchaseOrderForecast[]; settings: CashForecastSettings | null;
@@ -44,7 +46,7 @@ export interface CashForecastSources {
 }
 
 type VooruitblikSources = Pick<CashForecastSources, 'today' | 'bankAccounts' | 'balances' | 'statements'
-  | 'incomingPayments' | 'costs' | 'recurring' | 'purchaseViews' | 'salesOrders'>;
+  | 'incomingPayments' | 'costs' | 'recurring' | 'purchaseViews' | 'salesOrders' | 'ticaSettlements'>;
 
 const DEAD = new Set(['GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -81,7 +83,7 @@ export function vooruitblikOf(sources: VooruitblikSources): CashOutlook {
   const upcomingInclEur = round2(upcoming.reduce((sum, row) => sum + row.amountInclEur, 0));
   const invoices = receivableTotals(sources.salesOrders);
   const totals = payableTotals(payablesFor({ openCosts, upcoming30: upcoming, containerRows: containerPayables(sources.purchaseViews), today: sources.today }));
-  return cashOutlook(ledger.totalEur, openCostsInclEur, upcomingInclEur, invoices.totalEur, totals.containerNowEur, totals.containerLaterEur, invoices.creditNoteEur);
+  return cashOutlook(ledger.totalEur, openCostsInclEur, upcomingInclEur, invoices.totalEur + (sources.ticaSettlements ?? []).filter(row => row.status === 'OPEN').reduce((sum, row) => sum + row.netReceivable, 0), totals.containerNowEur, totals.containerLaterEur, invoices.creditNoteEur);
 }
 
 /* ---------------------------------------------------------------- accounts */
@@ -188,7 +190,7 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
     const amount = cents(line.amountEur);
     const parts: { kind: BankLineKind; cents: number }[] = [];
     if (line.classification) {
-      let kind: BankLineKind = line.classification === 'VAT' ? 'VAT' : 'OTHER';
+      let kind: BankLineKind = line.classification === 'VAT' ? 'VAT' : line.classification === 'TICA_SETTLEMENT' ? 'CUSTOMERS' : 'OTHER';
       if (line.classification === 'INTERNAL_TRANSFER') {
         const other = line.transferLineId !== null && line.transferLineId !== undefined ? lineById.get(line.transferLineId) : undefined;
         kind = other && counts(keyOf(other.account)) ? 'INTERNAL' : 'OTHER';
@@ -446,8 +448,11 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const previous = current.quarter === 1 ? { year: current.year - 1, quarter: 4 } : { year: current.year, quarter: current.quarter - 1 };
   const returnLines = sources.costs.map((row) => returnLineOf(row, true));
   const salesLines = salesDocLines(sources.salesOrders, nameOf);
+  let ticaVatPending = false;
   const vatQuarters = [previous, current].map(({ year, quarter }) => {
-    const result = vatReturn(year, quarter, returnLines, salesLines, containerLines(sources.purchaseViews, lineSettings), { importVatDeferred, today });
+    const result = vatReturn(year, quarter, returnLines, salesLines, containerLines(sources.purchaseViews, lineSettings), {
+      importVatDeferred, today, ticaSettlements: (sources.ticaSettlements ?? []).filter(row => row.documentDate <= today), ticaSales: sources.ticaSales });
+    ticaVatPending ||= result.ticaPendingCount > 0 || result.ticaSalesIncomplete;
     return { year, quarter, knownNetEur: eur(cents(result.totals.refundEur) - cents(result.totals.payableEur)) };
   });
 
@@ -462,6 +467,10 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
       recurringId: row.definition.id!, name: row.definition.name, party: row.definition.party ?? null, date: row.date,
       amountInclEur: row.amountInclEur, autoPaid: !!row.definition.autoPaid, intervalLabel: intervalLabel(row.definition.interval),
     })),
+    ticaReceivables: (sources.ticaSettlements ?? []).filter(row => row.status === 'OPEN').map(row => ({
+      id: row.id, reference: row.reference, location: row.location, dueDate: isoDay(row.dueDate), netReceivable: row.netReceivable })),
+    ticaVatIncomplete: ticaVatPending || Math.abs((sources.ticaSales ?? []).reduce((sum, day) => sum + cents(day.revenueExcl), 0)
+      - (sources.ticaSettlements ?? []).filter(row => row.status !== 'DRAFT').reduce((sum, row) => sum + cents(row.salesExcl), 0)) > 2,
     containerRows, orders, invoices, openCreditEur: receivableTotals(sources.salesOrders).creditNoteEur, advanceRows, quotes, openQuotes,
     vatQuarters, paidVatPeriods: statements.filter((line) => line.classification === 'VAT' && line.vatPeriod).map((line) => line.vatPeriod!),
     importVatDeferred, products, history, stored: sources.forecasts,

@@ -13,6 +13,7 @@ import {
   BankBalance, CashForecastSettings, CompanyCost, CompanyProfile, CostParty, CostPayment, Country, Customer, Fair, IncomingPaymentRow, PartnerAdvanceSchedule,
   PartnerFinancing, PurchaseOrderForecast, PurchaseOrderView, PurchasePaymentRow, RecurringCost, SalesOrderView, SalesPurpose, Supplier,
 } from '../../core/api/models';
+import { TicaApi, TicaAnalyticsDay, TicaSettlement } from '../../core/api/tica-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -69,17 +70,17 @@ import type { VatReturn } from './vat-return';
 /** A place the data comes from; each can fail on its own and keeps its last good value. */
 export type FinanceSource = 'costs' | 'recurring' | 'balances' | 'orders' | 'customers' | 'payments' | 'attachments'
   | 'bankAccounts' | 'incoming' | 'statements' | 'containers' | 'parties' | 'fairs' | 'countries' | 'company'
-  | 'suppliers' | 'financing' | 'forecasts' | 'cashSettings';
+  | 'suppliers' | 'financing' | 'forecasts' | 'cashSettings' | 'tica' | 'ticaSales';
 
 const SOURCE_NAMES: Readonly<Record<FinanceSource, string>> = {
   bankAccounts: 'Bankrekeningen', costs: 'Bedrijfskosten', recurring: 'Vaste kosten', balances: 'Banksaldi', orders: 'Verkoopfacturen', customers: 'Klanten',
   payments: 'Containerbetalingen', attachments: 'Kostendocumenten', incoming: 'Ontvangsten en terugbetalingen',
   statements: 'Banktransacties', containers: 'Containers', parties: 'Aan wie', fairs: 'Beurzen', countries: 'Landen', company: 'Bedrijf',
-  suppliers: 'Leveranciers', financing: 'Partnervoorschotten', forecasts: 'Prognosekeuzes', cashSettings: 'Kasbuffer',
+  suppliers: 'Leveranciers', financing: 'Partnervoorschotten', forecasts: 'Prognosekeuzes', cashSettings: 'Kasbuffer', tica: 'TICA-afrekeningen', ticaSales: 'TICA-verkopen',
 };
 /** What the Kaslijn needs beyond the main load; fetched after it, like the containers. */
 const CASH_SOURCES: readonly FinanceSource[] = ['suppliers', 'financing', 'forecasts', 'cashSettings'];
-const MAIN_SOURCES: readonly FinanceSource[] = ['bankAccounts', 'costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs', 'countries', 'company'];
+const MAIN_SOURCES: readonly FinanceSource[] = ['bankAccounts', 'costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs', 'countries', 'company', 'tica', 'ticaSales'];
 const BANK_ZONE = 'Europe/Brussels';
 /** The pause between the files of one package, so each download starts on its own. */
 const DOWNLOAD_GAP_MS = 1200;
@@ -245,6 +246,9 @@ export class FinanceState {
 
   /* -------------------------------------------------------------- data */
 
+  readonly ticaSettlements = signal<TicaSettlement[]>([]);
+  readonly ticaSales = signal<TicaAnalyticsDay[]>([]);
+  private readonly ticaApi = inject(TicaApi);
   readonly costs = signal<CompanyCost[]>([]);
   readonly recurring = signal<RecurringCost[]>([]);
   readonly balances = signal<BankBalance[]>([]);
@@ -296,7 +300,7 @@ export class FinanceState {
   }
   private readonly requests: Record<FinanceSource, number> = {
     bankAccounts: 0, costs: 0, recurring: 0, balances: 0, orders: 0, customers: 0, payments: 0, attachments: 0, incoming: 0, statements: 0, containers: 0, parties: 0, fairs: 0, countries: 0, company: 0,
-    suppliers: 0, financing: 0, forecasts: 0, cashSettings: 0,
+    suppliers: 0, financing: 0, forecasts: 0, cashSettings: 0, tica: 0, ticaSales: 0,
   };
   private loadTicket = 0;
   private containerTicket = 0;
@@ -361,6 +365,8 @@ export class FinanceState {
 
   private fetch(source: FinanceSource): Promise<unknown> {
     switch (source) {
+      case 'ticaSales': return this.ticaApi.analytics();
+      case 'tica': return this.ticaApi.settlements();
       case 'costs': return this.finance.costs();
       case 'recurring': return this.finance.recurringCosts();
       case 'bankAccounts': return this.banking.accounts();
@@ -399,6 +405,8 @@ export class FinanceState {
 
   private apply(source: FinanceSource, value: unknown): void {
     switch (source) {
+      case 'ticaSales': this.ticaSales.set(value as TicaAnalyticsDay[]); break;
+      case 'tica': this.ticaSettlements.set(value as TicaSettlement[]); break;
       case 'costs': this.costs.set(value as CompanyCost[]); break;
       case 'recurring': this.recurring.set(value as RecurringCost[]); break;
       case 'bankAccounts': this.bankAccounts.set(value as BankAccount[]); break;
@@ -560,7 +568,7 @@ export class FinanceState {
   /** The Vooruitblik: computed in one place (cash-forecast-input), so Bank, Kasprognose and Analyse never disagree. */
   readonly outlook = computed(() => vooruitblikOf({
     today: this.today(), bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.bankStatements(), incomingPayments: this.incomingPayments(),
-    costs: this.costs(), recurring: this.recurring(), purchaseViews: this.purchaseFiguresVisible() ? this.purchaseViews() : [], salesOrders: this.salesOrders(),
+    ticaSettlements: this.ticaSettlements(), costs: this.costs(), recurring: this.recurring(), purchaseViews: this.purchaseFiguresVisible() ? this.purchaseViews() : [], salesOrders: this.salesOrders(),
   }));
 
   /* ------------------------------------------------- cash: Kaslijn, running saldo */
@@ -573,9 +581,9 @@ export class FinanceState {
   /** The forecast input from everything this page loads; Kosten & bank loads complete statements and no products (no scenario). */
   readonly cashInput = computed(() => cashForecastInput({
     today: this.today(), bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.bankStatements(), incomingPayments: this.incomingPayments(),
-    costs: this.costs(), recurring: this.recurring(), purchaseViews: this.purchaseViews(), purchasePayments: this.payments(), suppliers: this.suppliers(),
+    ticaSettlements: this.ticaSettlements(), costs: this.costs(), recurring: this.recurring(), purchaseViews: this.purchaseViews(), purchasePayments: this.payments(), suppliers: this.suppliers(),
     salesOrders: this.salesOrders(), customers: this.customers(), advanceSchedules: this.advanceSchedules(), company: this.company(),
-    forecasts: this.forecasts(), settings: this.cashSettings(), products: null, statementsFrom: null,
+    ticaSales: this.ticaSales(), forecasts: this.forecasts(), settings: this.cashSettings(), products: null, statementsFrom: null,
   }));
   /** The Kaslijn span in weeks (weeks= on Bank, 8 by default). */
   readonly kaslijnWeeks = computed(() => this.location().weeks ?? 8);
@@ -628,11 +636,11 @@ export class FinanceState {
         const cost = row.cost;
         const payments = cost.payments ?? [];
         for (const payment of payments) {
-          if (!payment.id) continue;
+          if (!payment.id || payment.settlementOffset) continue;
           rows.push({ kind: 'kostbetaling' as MarkerKind, id: payment.id, paidOn: payment.paidOn, amountEur: payment.amountEur,
             linkedLineId: payment.bankStatementLineId ?? null, legacyCostId: payments.length === 1 ? cost.id : null, row, costId: cost.id });
         }
-        if (!payments.length && row.paidOn && cost.id) {
+        if (!payments.length && row.paidOn && cost.id && !cost.ticaSettlementId) {
           rows.push({ kind: 'kost' as MarkerKind, id: cost.id, paidOn: row.paidOn, amountEur: row.amountEur, linkedLineId: cost.bankStatementLineId ?? null, row, costId: cost.id });
         }
       } else if (row.payment && row.paidOn && !row.payment.creditOffset) {
@@ -1062,10 +1070,10 @@ export class FinanceState {
     const documented = this.documentedIds();
     const importVatDeferred = this.company()?.importVatDeferred ?? false;
     return vatReturn(year, quarter,
-      this.costs().map((cost) => returnLineOf(cost, cost.id !== null && documented.has(cost.id))),
+      this.costs().map((cost) => returnLineOf(cost, (cost.id !== null && documented.has(cost.id)) || !!cost.ticaSettlementId)),
       salesDocLines(this.salesOrders(), (id) => this.customerNames().get(id ?? -1) ?? ''),
       containerLines(this.purchaseViews(), { importVatDeferred, representative: this.representativeName() }),
-      { importVatDeferred, today: this.today() });
+      { importVatDeferred, today: this.today(), ticaSettlements: this.ticaSettlements(), ticaSales: this.ticaSales() });
   }
 
   /** The Btw tile's return: the same quarter as the VAT reminder and the Btw-aangifte (defaultReturnPeriod). */
@@ -1115,7 +1123,16 @@ export class FinanceState {
   }
 
   /** The row menu of a company cost: right-click on a desk, long press or 'Meer' on a phone. */
+  openTica(): void { void this.router.navigate(['/tica']); }
+
+  openTicaSettlement(id: number): void { void this.router.navigate(['/tica'], { queryParams: { settlement: id } }); }
+
   costMenu(cost: CompanyCost, anchor: MenuPoint | null): void {
+    if (cost.ticaSettlementId) {
+      this.openMenu({ title: cost.description, items: [{ id: 'tica', label: 'TICA-afrekening openen', iconName: 'document' }], anchor,
+        pick: () => this.openTicaSettlement(cost.ticaSettlementId!), cancelLabel: anchor ? '' : 'Annuleren' });
+      return;
+    }
     const open = this.inspect();
     const regimeItems: ContextMenuItem[] = !cost.vatRegime ? [{ id: 'regime-pick', label: 'Btw-regeling kiezen…', iconName: 'pencil' }]
       : !cost.vatRegimeConfirmed ? [{ id: 'regime-ok', label: 'Btw-regeling klopt', iconName: 'tick' }, { id: 'regime-pick', label: 'Btw-regeling wijzigen…', iconName: 'pencil' }] : [];
@@ -1195,6 +1212,7 @@ export class FinanceState {
 
   /** The cost form; `regime: true` opens it on the Btw-regeling disclosure. */
   openCost(cost: CompanyCost | null, files: readonly File[] = [], options: { regime?: boolean } = {}): void {
+    if (cost?.ticaSettlementId) { this.openTicaSettlement(cost.ticaSettlementId); return; }
     this.duplicating = false;
     this.costBankTransaction.set(null);
     this.costFiles.set([...files]);
@@ -1411,6 +1429,7 @@ export class FinanceState {
   }
 
   deleteCost(cost: CompanyCost): void {
+    if (cost.ticaSettlementId) { this.openTicaSettlement(cost.ticaSettlementId); return; }
     if (!cost.id) return;
     this.ui.confirm({
       title: 'Kost verwijderen',
@@ -1488,7 +1507,7 @@ export class FinanceState {
   readonly paySheet = signal<{ costs: CompanyCost[]; existingPayment?: CostPayment } | null>(null);
 
   openPay(costs: readonly CompanyCost[]): void {
-    const open = costs.filter((cost) => !!cost.id && openOf(cost) !== 0);
+    const open = costs.filter((cost) => !!cost.id && !cost.ticaSettlementId && openOf(cost) !== 0);
     if (!open.length) {
       this.ui.toast(costs.length === 1 ? 'Deze kost is al betaald' : 'Deze kosten zijn al betaald');
       return;
@@ -1498,6 +1517,7 @@ export class FinanceState {
   }
 
   openBankCostPayment(cost: CompanyCost, payment: CostPayment): void {
+    if (cost.ticaSettlementId || payment.settlementOffset) return;
     this.bankCostLinkError.set('');
     this.paySheet.set({ costs: [cost], existingPayment: payment });
   }
@@ -1524,7 +1544,7 @@ export class FinanceState {
    * manual one goes through 'Bankbeweging noteren' (2026-10-16).
    */
   async markPaid(costs: readonly CompanyCost[], options: PayOptions): Promise<boolean> {
-    const targets = costs.filter((cost) => !!cost.id && openOf(cost) !== 0);
+    const targets = costs.filter((cost) => !!cost.id && !cost.ticaSettlementId && openOf(cost) !== 0);
     if (!targets.length || this.busy()) return false;
     const done: PaidEntry[] = [];
     let firstError = '';
@@ -1684,6 +1704,7 @@ export class FinanceState {
 
   /** 'Weer open zetten': every payment goes (the bank lines stay), after a confirm; a legacy paid cost without rows just loses its date. */
   async markUnpaid(cost: CompanyCost): Promise<void> {
+    if (cost.ticaSettlementId) return;
     const payments = (cost.payments ?? []).filter((payment) => !!payment.id);
     if (!cost.id || (!payments.length && !cost.paidOn) || this.busy() || this.saving()) return;
     if (!payments.length) {
@@ -1752,20 +1773,20 @@ export class FinanceState {
   }
 
   setCategory(costs: readonly CompanyCost[], code: string): Promise<void> {
-    return this.runBulk(costs.filter((cost) => !!cost.id), async (cost) => {
+    return this.runBulk(costs.filter((cost) => !!cost.id && !cost.ticaSettlementId), async (cost) => {
       this.replaceCost(await this.finance.updateCost(cost.id!, { ...cost, category: code }));
     }, (count) => `${count} ${count === 1 ? 'kost' : 'kosten'} naar ${categoryLabel(code)}`);
   }
 
   /** 'Klopt': the derived regime of these costs stands; costs without a regime need the form instead. */
   confirmRegime(costs: readonly CompanyCost[]): Promise<void> {
-    return this.runBulk(costs.filter((cost) => !!cost.id && !!cost.vatRegime && !cost.vatRegimeConfirmed), async (cost) => {
+    return this.runBulk(costs.filter((cost) => !!cost.id && !cost.ticaSettlementId && !!cost.vatRegime && !cost.vatRegimeConfirmed), async (cost) => {
       this.replaceCost(await this.finance.updateCost(cost.id!, { ...cost, vatRegimeConfirmed: true }));
     }, (count) => `${count} ${count === 1 ? 'btw-regeling' : 'btw-regelingen'} bevestigd`);
   }
 
   deleteCosts(costs: readonly CompanyCost[]): void {
-    const targets = costs.filter((cost) => !!cost.id);
+    const targets = costs.filter((cost) => !!cost.id && !cost.ticaSettlementId);
     if (!targets.length) return;
     if (targets.length === 1) { this.deleteCost(targets[0]); return; }
     this.ui.confirm({
@@ -2440,6 +2461,7 @@ export class FinanceState {
 
   /** "Ongedaan maken" of "Boeken als…" (both legs of an internal transfer). */
   async unclassifyLine(line: BankStatementLine): Promise<void> {
+    if (line.ticaSettlementId) { this.openTicaSettlement(line.ticaSettlementId); return; }
     if (this.linking() !== null) return;
     this.linking.set(line.id);
     try {

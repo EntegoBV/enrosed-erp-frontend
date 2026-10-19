@@ -69,8 +69,8 @@ test('invalid values fall back to the default', () => {
   assert.equal(parse('open=ja').openQuotesOn, false);
 });
 
-test('uit is a comma list of the six rule words, unknown ones dropped, written in a fixed order', () => {
-  assert.deepEqual(Object.values(RULE_PARAM), ['facturen', 'offertes', 'partner', 'containers', 'kosten', 'btw']);
+test('uit is a comma list of the seven rule words, unknown ones dropped, written in a fixed order', () => {
+  assert.deepEqual(Object.values(RULE_PARAM), ['tica', 'facturen', 'offertes', 'partner', 'containers', 'kosten', 'btw']);
   assert.deepEqual(parse('uit=btw,kosten,onzin,facturen,btw').rulesOff, ['invoices', 'costs', 'vat']);
   assert.deepEqual(parse('uit=offertes,partner,containers').rulesOff, ['quotes', 'partner', 'containers']);
   assert.deepEqual(parse('uit=').rulesOff, []);

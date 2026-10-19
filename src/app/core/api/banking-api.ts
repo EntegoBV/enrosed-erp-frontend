@@ -43,7 +43,7 @@ export interface BankAccount {
   countsInCash?: boolean;
 }
 /** "Boeken als…": a bank transaction that pays no invoice or cost. Plain text on the server (spec D3). */
-export type BankClassification = 'INTERNAL_TRANSFER' | 'VAT' | 'LOAN' | 'CAPITAL' | 'PRIVATE' | 'OTHER';
+export type BankClassification = 'INTERNAL_TRANSFER' | 'VAT' | 'LOAN' | 'CAPITAL' | 'PRIVATE' | 'OTHER' | 'TICA_SETTLEMENT';
 export interface BankClassificationRequest { classification: BankClassification; note: string | null; transferLineId: number | null; vatPeriod: string | null; }
 /**
  * One part of POST …/{id}/purchase-payment. `purchaseOrderId` lets one
@@ -77,6 +77,9 @@ export interface BankStatementLine {
   salesPaymentId: number | null; salesOrderId: number | null; allocatedAt: string | null; allocationCreatedPayment: boolean;
   source?: 'ODOO' | null; sourceId?: string | null; sourceUpdatedAt?: string | null; sourceReconciled?: boolean | null;
   allocated?: boolean; allocationLabel?: string | null;
+  /** A TICA settlement receipt is already allocated and cannot be reused elsewhere. */
+  ticaSettlementId?: number | null;
+  ticaSettlementAmountEur?: number | null;
   allocatedAmountEur?: number | null; allocationDifferenceEur?: number | null;
   /** "Boeken als…" (2026-10-16; missing = null). A classified line is allocated. */
   classification?: BankClassification | null; classificationNote?: string | null; transferLineId?: number | null;

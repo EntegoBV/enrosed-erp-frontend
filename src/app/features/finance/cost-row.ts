@@ -62,7 +62,7 @@ import { daysBetween } from './payables';
             @switch (status()) {
               @case ('paid') {
                 @if (overpaid() > 0) { <span class="wk-pill tone-blue">Te veel betaald · {{ overpaid() | eur }}</span> }
-                @else { <span class="wk-amount--muted">{{ credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }}</span> }
+                @else { <span class="wk-amount--muted">{{ row.ticaSettlementId ? 'Verrekend' : credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }}</span> }
               }
               @case ('partial') {
                 <span class="wk-pill tone-warn fin-status__open">Deels</span><span class="wk-amount--muted fin-status__open">nog {{ open() | eur }}</span>
@@ -77,7 +77,7 @@ import { daysBetween } from './payables';
         }
       </div>
     } @else {
-      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() !== 0 ? 1 : 0" [swipeEnd]="2" swipeFull="start"
+      <div class="ios-swipe" appSwipeActions #sw="swipeActions" [swipeStart]="open() !== 0 ? 1 : 0" [swipeEnd]="row.ticaSettlementId ? 1 : 2" swipeFull="start"
            (swipeCommit)="$event === 'start' && state.swipePay(row)">
         @if (open() !== 0) {
           <div class="ios-swipe__actions ios-swipe__actions--start">
@@ -85,7 +85,7 @@ import { daysBetween } from './payables';
           </div>
         }
         <div class="ios-swipe__actions ios-swipe__actions--end">
-          <button class="ios-swipe__btn tone-danger" type="button" (click)="state.deleteCost(row); sw.close()"><app-icon name="trash" [size]="20" />Verwijder</button>
+          @if (!row.ticaSettlementId) { <button class="ios-swipe__btn tone-danger" type="button" (click)="state.deleteCost(row); sw.close()"><app-icon name="trash" [size]="20" />Verwijder</button> }
           <button class="ios-swipe__btn tone-grey" type="button" (click)="state.costMenu(row, null); sw.close()"><app-icon name="more" [size]="20" />Meer</button>
         </div>
         <div class="ios-swipe__row">
@@ -103,7 +103,7 @@ import { daysBetween } from './payables';
             <span class="fin-cost-cell__status">
               <span [class.fin-warn-text]="status() !== 'paid'">
                 @switch (status()) {
-                  @case ('paid') { @if (overpaid() > 0) { {{ credit() ? 'Te veel terugbetaald' : 'Te veel betaald' }} · {{ overpaid() | eur }} } @else { {{ credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }} } }
+                  @case ('paid') { @if (overpaid() > 0) { {{ credit() ? 'Te veel terugbetaald' : 'Te veel betaald' }} · {{ overpaid() | eur }} } @else { {{ row.ticaSettlementId ? 'Verrekend' : credit() ? 'Terugbetaald' : 'Betaald' }} {{ paid() }} } }
                   @case ('partial') { {{ credit() ? 'Deels terugbetaald' : 'Deels betaald' }} · nog {{ abs(open()) | eur }} }
                   @default { {{ credit() ? 'Terug te ontvangen' : 'Open' }} }
                 }

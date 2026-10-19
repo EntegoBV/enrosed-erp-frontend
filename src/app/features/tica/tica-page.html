@@ -1,0 +1,148 @@
+<app-page-header title="TICA verkopen" subtitle="Verkopen via het TICA-portaal">
+  <button class="btn btn--icon-mobile" type="button" (click)="settingsOpen.set(true)" aria-label="TICA-meldingen instellen">
+    <app-icon name="bell" [size]="17" /><span>Meldingen</span>
+  </button>
+</app-page-header>
+
+<div class="content tica-content">
+  <section class="tica-connection" aria-labelledby="tica-connection-title" [attr.aria-busy]="syncBusy()">
+    <div class="tica-connection-main">
+      <span class="tica-mark" aria-hidden="true"><app-icon name="exchange" [size]="22" /></span>
+      <div class="tica-connection-text">
+        <div class="tica-connection-heading"><h2 id="tica-connection-title">TICA · Beeyond</h2>
+          <span class="tica-status" [class.tica-status--warn]="status()?.syncState === 'ERROR' || status()?.syncState === 'NOT_CONFIGURED'"
+                [class.tica-status--ready]="status()?.syncState === 'READY'">{{ connectionLabel() }}</span>
+        </div>
+        <p>Laatste geslaagde import: <strong>{{ moment(status()?.lastSuccessAt ?? null) }}</strong></p>
+      </div>
+      <button class="btn btn--primary tica-sync" type="button" [disabled]="!canSync()" (click)="sync()">
+        <app-icon name="refresh" [size]="16" />{{ syncBusy() ? 'Ophalen…' : 'Nu ophalen' }}
+      </button>
+    </div>
+    @if (status()?.syncState === 'DISABLED' || status()?.syncState === 'NOT_CONFIGURED') {
+      <p class="tica-connection-hint">{{ status()?.syncState === 'DISABLED' ? 'Automatisch ophalen is nog niet ingeschakeld. Eerder opgehaalde verkopen blijven hieronder zichtbaar.' : 'De TICA-verbinding moet nog worden ingesteld voordat verkopen automatisch binnenkomen.' }}</p>
+    }
+    @if (status()?.lastError; as error) {
+      <div class="tica-notice tica-notice--error" role="alert"><app-icon name="alert" [size]="16" /><span>{{ error }}
+        @if (status()?.lastAttemptAt; as attempted) { <small>Laatste poging: {{ moment(attempted) }}</small> }
+      </span></div>
+    }
+    @if (statusError(); as error) {
+      <div class="tica-notice tica-notice--error" role="alert"><span>{{ error }}</span><button class="btn btn--sm" type="button" (click)="loadStatus()">Opnieuw proberen</button></div>
+    }
+    @if (syncError(); as error) { <p class="tica-notice tica-notice--error" role="alert">{{ error }}</p> }
+    <div class="tica-notification-summary">
+      <app-icon name="bell" [size]="16" />
+      <span><strong>{{ notificationLabel() }}</strong>
+        @if (settings() && settings()!.notificationMode !== 'NONE') { <small>Brusselse tijd · alleen bij verkopen</small> }
+      </span>
+      <button class="tica-text-button" type="button" (click)="settingsOpen.set(true)">Aanpassen <app-icon name="chevron-right" [size]="14" /></button>
+    </div>
+    @if (status()?.pushSubscriptions === 0 && settings() && settings()!.notificationMode !== 'NONE') {
+      <p class="tica-device-warning"><app-icon name="info" [size]="15" /><span>Er is nog geen toestel aangemeld voor pushmeldingen. <a routerLink="/settings" [queryParams]="{ sectie: 'notifications' }">Meldingen op dit toestel aanzetten</a></span></p>
+    }
+  </section>
+
+  <section class="tica-register" aria-labelledby="tica-register-title" [attr.aria-busy]="loading()">
+    <div class="tica-section-heading"><div><h2 id="tica-register-title">Verkoopoverzicht</h2><p>{{ day(from()) }}{{ from() === to() ? '' : ' t/m ' + day(to()) }} · Brusselse tijd</p></div>
+      <span class="tica-source">Bron: TICA</span>
+    </div>
+    <form class="tica-filters" (ngSubmit)="applyRange()">
+      <div class="tica-date-fields">
+        <label class="field"><span>Van</span><input class="input" type="date" name="from" required [ngModel]="draftFrom()" (ngModelChange)="draftFrom.set($event)" /></label>
+        <label class="field"><span>Tot en met</span><input class="input" type="date" name="to" required [ngModel]="draftTo()" (ngModelChange)="draftTo.set($event)" /></label>
+        <button class="btn" type="submit" [disabled]="loading()">Tonen</button>
+      </div>
+      <div class="tica-presets" role="group" aria-label="Periode kiezen">
+        <button type="button" (click)="preset('today')">Vandaag</button>
+        <button type="button" (click)="preset('week')">7 dagen</button>
+        <button type="button" (click)="preset('month')">Deze maand</button>
+      </div>
+    </form>
+    @if (formError(); as error) { <p class="tica-inline-error" role="alert">{{ error }}</p> }
+    @if (salesError(); as error) {
+      <div class="tica-notice tica-notice--error" role="alert"><span>{{ error }}</span><button class="btn btn--sm" type="button" [disabled]="loading()" (click)="loadSales()">Opnieuw proberen</button></div>
+    }
+    @if (sales(); as result) {
+      <dl class="tica-metrics">
+        <div><dt>Bruto vóór korting · excl. btw</dt><dd>{{ euro(result.grossTotal) }}</dd></div>
+        <div><dt>Omzet na korting · excl. btw</dt><dd>{{ euro(result.netTotal) }}</dd></div>
+        <div><dt>Stuks</dt><dd>{{ count(result.quantity) }}</dd></div>
+        <div><dt>Transacties</dt><dd>{{ count(result.transactionCount) }}</dd></div>
+      </dl>
+      @if (result.unmatchedLineCount > 0) {
+        <p class="tica-matching-note"><app-icon name="info" [size]="16" /><span>{{ result.unmatchedLineCount }} {{ result.unmatchedLineCount === 1 ? 'verkoopregel is' : 'verkoopregels zijn' }} nog niet herkend als ERP-product. Ze tellen wel mee in dit overzicht.</span></p>
+      }
+      @if (result.lines.length) {
+        <div class="tica-table-wrap">
+          <table class="tica-table"><caption class="sr-only">TICA-verkoopregels van {{ day(result.from) }} tot en met {{ day(result.to) }}</caption>
+            <thead><tr><th scope="col">Datum & vestiging</th><th scope="col">Artikel</th><th scope="col" class="right">Stuks</th><th scope="col" class="right">Vóór korting<small>excl. btw</small></th><th scope="col" class="right">Na korting<small>excl. btw</small></th></tr></thead>
+            <tbody>
+              @for (line of result.lines; track line.id) {
+                <tr><td><strong>{{ moment(line.soldAt) }}</strong><span>{{ line.location || 'Onbekende vestiging' }}</span><small>Transactie {{ line.transactionNumber }} · regel {{ line.lineNumber }}</small></td>
+                  <td><strong>{{ line.description || 'Artikel zonder omschrijving' }}</strong>
+                    <span class="tica-article-code">{{ line.sku || line.beeyondArticleNumber || 'Geen artikelcode' }}</span>
+                    @if (line.productId && line.mappingStatus === 'MATCHED') { <a [routerLink]="['/products', line.productId]" class="tica-product-link">ERP-product <app-icon name="chevron-right" [size]="12" /></a> }
+                    @else { <small class="tica-unmatched">Product nog niet herkend</small> }
+                  </td>
+                  <td class="right num">{{ count(line.quantity) }}</td><td class="right num">{{ euro(line.grossTotal) }}</td><td class="right num">{{ euro(line.netTotal) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <ul class="tica-mobile-sales" aria-label="TICA-verkoopregels">
+          @for (line of result.lines; track line.id) {
+            <li class="tica-sale">
+              <div class="tica-sale-meta"><span>{{ moment(line.soldAt) }}</span><span>{{ line.location || 'Onbekende vestiging' }}</span></div>
+              <div class="tica-sale-heading"><div><strong>{{ line.description || 'Artikel zonder omschrijving' }}</strong><span>{{ line.sku || line.beeyondArticleNumber || 'Geen artikelcode' }}</span></div><b>{{ count(line.quantity) }} st.</b></div>
+              <dl class="tica-sale-values"><div><dt>Vóór korting</dt><dd>{{ euro(line.grossTotal) }}</dd></div><div><dt>Na korting</dt><dd>{{ euro(line.netTotal) }}</dd></div></dl>
+              <div class="tica-sale-foot"><small>Transactie {{ line.transactionNumber }} · regel {{ line.lineNumber }}</small>
+                @if (line.productId && line.mappingStatus === 'MATCHED') { <a [routerLink]="['/products', line.productId]" class="tica-product-link">ERP-product <app-icon name="chevron-right" [size]="12" /></a> }
+                @else { <small class="tica-unmatched">Product nog niet herkend</small> }
+              </div>
+            </li>
+          }
+        </ul>
+        <div class="tica-list-foot"><p>{{ count(result.lines.length) }} van {{ count(result.totalLines) }} verkoopregels</p>
+          @if (hasMore()) { <button class="btn" type="button" [disabled]="loading()" (click)="loadSales(true)">{{ loading() ? 'Laden…' : 'Meer verkopen tonen' }}</button> }
+        </div>
+      } @else {
+        <div class="tica-empty"><span><app-icon name="receipt" [size]="28" /></span><h3>Geen verkopen in deze periode</h3><p>Er zijn nog geen TICA-verkoopregels geïmporteerd voor de gekozen datums.</p></div>
+      }
+    } @else if (loading()) { <div class="tica-loading"><app-skeleton kind="list" [rows]="4" /></div> }
+    <p class="tica-source-note">Alle bedragen zijn exclusief btw. Bruto is vóór korting; omzet na korting is het nettobedrag uit TICA en telt mee in kanaal TICA. Er worden geen extra verkoopfacturen of voorraadboekingen aangemaakt.</p>
+  </section>
+  <app-tica-settlements />
+</div>
+
+@if (settingsOpen()) {
+  <app-sheet title="TICA-meldingen" variant="ios" (closed)="closeSettings()">
+    <div body class="tica-settings">
+      <p class="tica-settings-intro">Kies wanneer je een melding wilt ontvangen op de aangemelde toestellen.</p>
+      @if (settingsError(); as error) { <p class="tica-notice tica-notice--error" role="alert">{{ error }}</p> }
+      @if (settingsLoading()) { <app-skeleton kind="list" [rows]="3" /> }
+      @else if (settings()) {
+        <fieldset class="tica-mode-options" [disabled]="saving()"><legend class="sr-only">Wanneer een TICA-melding ontvangen</legend>
+          @for (mode of notificationModes; track mode.value) {
+            <label class="tica-mode"><input type="radio" name="notificationMode" [value]="mode.value" [ngModel]="draftMode()" (ngModelChange)="draftMode.set($event)" /><span><strong>{{ mode.label }}</strong><small>{{ mode.hint }}</small></span></label>
+          }
+        </fieldset>
+        @if (hasDaily()) {
+          <label class="field tica-time"><span>Tijdstip dagoverzicht</span><input class="input" type="time" required [ngModel]="draftTime()" (ngModelChange)="draftTime.set($event)" [disabled]="saving()" /></label>
+          <p class="tica-settings-hint">Europe/Brussels · zomer- en wintertijd volgen automatisch. Zonder verkopen ontvang je geen dagoverzicht.</p>
+        }
+        @if (draftMode() === 'SALES' || draftMode() === 'SALES_AND_DAILY') { <p class="tica-settings-hint">Een verkoopmelding volgt zodra de verkoop uit het portaal is opgehaald. Dat kan later zijn dan de verkoop zelf.</p> }
+      } @else { <button class="btn" type="button" (click)="loadSettings()">Opnieuw proberen</button> }
+      <a class="tica-device-link" routerLink="/settings" [queryParams]="{ sectie: 'notifications' }"><app-icon name="bell" [size]="18" /><span>Meldingen op dit toestel instellen</span><app-icon name="chevron-right" [size]="16" /></a>
+      @if (status()?.pushSubscriptions === 0) { <p class="tica-settings-hint warn-text">Er is nog geen toestel aangemeld. Zet toestelmeldingen aan om TICA-meldingen te ontvangen.</p> }
+      @if (deliveryLabel(); as delivery) {
+        <p class="tica-settings-hint">Laatste melding: {{ delivery }}.
+          @if (status()?.lastNotificationAt; as at) { {{ moment(at) }}. }
+          @if (status()?.lastNotificationStatus === 'ACCEPTED' || status()?.lastNotificationStatus === 'PARTIAL') { Dit bevestigt niet of de melding op het toestel is getoond. }
+        </p>
+      }
+    </div>
+    <div foot class="tica-settings-foot"><button class="btn" type="button" [disabled]="saving()" (click)="closeSettings()">Sluiten</button><button class="btn btn--primary" type="button" [disabled]="saving() || !dirty() || !settings()" (click)="saveSettings()">{{ saving() ? 'Opslaan…' : 'Opslaan' }}</button></div>
+  </app-sheet>
+}

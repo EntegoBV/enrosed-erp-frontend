@@ -1,0 +1,87 @@
+<section class="settlements" aria-labelledby="tica-settlements-title" [attr.aria-busy]="loading() || uploading()">
+  <header class="settlements-head"><div><h2 id="tica-settlements-title">Afrekeningen & ontvangsten</h2><p>TICA-creditnota’s uit Odoo, commissie en bankuitbetaling.</p></div>
+    <div class="settlements-actions"><button class="btn btn--primary" type="button" [disabled]="uploading()" (click)="pdfInput.click()"><app-icon name="upload" [size]="16" />{{ uploading() ? 'Creditnota lezen…' : 'Creditnota toevoegen' }}</button>
+      <button class="btn" type="button" [disabled]="uploading()" (click)="startNew()">Handmatig toevoegen</button>
+      <input #pdfInput class="sr-only" type="file" accept="application/pdf,.pdf" (change)="upload($event)" aria-label="TICA-creditnota uploaden" />
+    </div>
+  </header>
+  <div class="settlement-import"><app-odoo-import-monitor kind="tica" /></div>
+  @if (error(); as message) { <div class="settlement-alert" role="alert"><span>{{ message }}</span><button class="btn btn--sm" type="button" [disabled]="loading()" (click)="reload()">Vernieuwen</button></div> }
+  @if (loading()) { <div class="settlement-loading"><app-skeleton kind="list" [rows]="3" /></div> }
+  @else if (rows().length) {
+    <dl class="settlement-metrics"><div><dt>Te ontvangen incl. btw</dt><dd>{{ euro(openTotal()) }}</dd></div><div><dt>Ontvangen via bank</dt><dd>{{ euro(paidTotal()) }}</dd></div><div><dt>Geboekte commissie excl. btw</dt><dd>{{ euro(commissionTotal()) }}</dd></div></dl>
+    <ul class="settlement-list">
+      @for (row of rows(); track row.id) {
+        <li><button class="settlement-row" type="button" (click)="show(row)"><span class="settlement-icon"><app-icon name="document" [size]="20" /></span>
+          <span class="settlement-main"><strong>{{ row.reference }}</strong><span>{{ row.location }} · {{ day(row.periodFrom) }} t/m {{ day(row.periodTo) }}</span><small>Creditnota van {{ day(row.documentDate) }}@if (row.sourceKey) { · Odoo }</small></span>
+          <span class="settlement-value"><strong>{{ euro(row.netReceivable) }}</strong><span class="settlement-status" [class.is-paid]="row.status === 'PAID'">{{ statusLabel(row) }}</span></span><app-icon name="chevron-right" [size]="16" />
+        </button></li>
+      }
+    </ul>
+  } @else if (!error()) { <div class="settlement-empty"><app-icon name="document" [size]="28" /><h3>Nog geen afrekeningen</h3><p>Creditnota’s worden via de Odoo-verbinding opgehaald. Je kunt ook een PDF toevoegen. Controleer daarna omzet en commissie en koppel de bankontvangst.</p></div> }
+  <p class="settlement-footnote">De verkopen tellen als omzet in kanaal TICA. Een afrekening boekt de commissie als kost; de uitbetaling is een ontvangst van die afrekening.</p>
+</section>
+
+@if (editing()) {
+  <app-sheet [title]="selected() ? 'Afrekening wijzigen' : 'TICA-creditnota controleren'" variant="ios" (closed)="close()">
+    <div body class="settlement-editor">
+      <p class="settlement-intro">Neem de bedragen over van de creditnota. Opslaan maakt eerst een concept; daarna kun je de omzetcontrole bekijken en de commissie boeken.</p>
+      @for (warning of previewWarnings(); track $index) { <p class="settlement-warning">{{ warning }}</p> }
+      @if (actionError(); as message) { <p class="settlement-alert" role="alert">{{ message }}</p> }
+      @if (draft().sourceDocumentUrl) { <button class="btn btn--sm" type="button" [disabled]="downloading()" (click)="download(draft())"><app-icon name="download" [size]="15" />{{ downloading() ? 'Downloaden…' : 'Broncreditnota bekijken' }}</button> }
+      <fieldset [disabled]="busy()" class="settlement-fields">
+        <label class="field"><span>Creditnotanummer</span><input class="input" type="text" [ngModel]="draft().reference" (ngModelChange)="patch('reference', $event)" required /></label>
+        <label class="field"><span>Vestiging</span><input class="input" type="text" [ngModel]="draft().location" (ngModelChange)="patch('location', $event)" required /></label>
+        <div class="settlement-field-pair"><label class="field"><span>Documentdatum</span><input class="input" type="date" [ngModel]="draft().documentDate" (ngModelChange)="patch('documentDate', $event)" required /></label><label class="field"><span>Verwacht op <small>optioneel</small></span><input class="input" type="date" [ngModel]="draft().dueDate" (ngModelChange)="patch('dueDate', $event || null)" /></label></div>
+        <div class="settlement-field-pair"><label class="field"><span>Verkoopperiode van</span><input class="input" type="date" [ngModel]="draft().periodFrom" (ngModelChange)="patch('periodFrom', $event)" required /></label><label class="field"><span>Tot en met</span><input class="input" type="date" [ngModel]="draft().periodTo" (ngModelChange)="patch('periodTo', $event)" required /></label></div>
+        <div class="settlement-amount-fields">
+          @for (field of amountFields; track field.key) { <label class="field"><span>{{ field.label }}</span><input class="input" type="number" step="0.01" inputmode="decimal" [ngModel]="draft()[field.key]" (ngModelChange)="patch(field.key, $event)" required /></label> }
+        </div>
+        <p class="settlement-equation" [class.has-difference]="difference() !== null && difference() !== 0">Omzet + btw − commissie − btw op commissie = te ontvangen.
+          @if (difference() !== null) { <strong>{{ difference() === 0 ? 'De bedragen sluiten aan.' : 'Verschil: ' + euro(difference()!) }}</strong> }
+        </p>
+        <label class="field"><span>Notitie <small>optioneel</small></span><textarea class="textarea" rows="2" [ngModel]="draft().documentNote" (ngModelChange)="patch('documentNote', $event || null)"></textarea></label>
+      </fieldset>
+    </div>
+    <div foot class="settlement-sheet-actions"><button class="btn" type="button" [disabled]="busy()" (click)="close()">Sluiten</button><button class="btn btn--primary" type="button" [disabled]="busy()" (click)="saveDraft()">{{ busy() ? 'Opslaan…' : 'Concept opslaan' }}</button></div>
+  </app-sheet>
+} @else if (selected(); as row) {
+  <app-sheet [title]="'TICA · ' + row.reference" variant="ios" (closed)="close()">
+    <div body class="settlement-detail">
+      <p class="settlement-intro">{{ row.location }} · {{ day(row.periodFrom) }} t/m {{ day(row.periodTo) }}<br />Creditnota {{ day(row.documentDate) }}@if (row.dueDate) { · verwacht {{ day(row.dueDate) }} }</p>
+      @if (row.sourceKey) { <p class="settlement-small">Bron: Odoo. De bedragen volgen het ontvangen brondocument.</p> }
+      @if (actionError(); as message) { <p class="settlement-alert" role="alert">{{ message }}</p> }
+      <dl class="settlement-breakdown"><div><dt>Omzet na korting excl. btw</dt><dd>{{ euro(row.salesExcl) }}</dd></div><div><dt>Btw op omzet</dt><dd>+ {{ euro(row.salesVat) }}</dd></div><div><dt>Commissie excl. btw</dt><dd>− {{ euro(row.commissionExcl) }}</dd></div><div><dt>Btw op commissie</dt><dd>− {{ euro(row.commissionVat) }}</dd></div><div class="settlement-total"><dt>{{ row.status === 'PAID' ? 'Ontvangen via bank' : 'Netto te ontvangen' }}</dt><dd>{{ euro(row.netReceivable) }}</dd></div></dl>
+      <div class="settlement-check" [class.has-difference]="row.reconciliationDifference !== 0"><app-icon [name]="row.reconciliationDifference === 0 ? 'check' : 'alert'" [size]="20" /><div><strong>Controle met de TICA-verkopen</strong><span>{{ euro(row.importedRevenueExcl) }} geïmporteerde omzet excl. btw · verschil {{ euro(row.reconciliationDifference) }}</span></div></div>
+      @if (row.status === 'DRAFT') {
+        <p class="settlement-intro">Dit is een concept. Na boeken staat de commissie één keer bij de bedrijfskosten en is ze verrekend met de TICA-uitbetaling.</p>
+        @if (!canConfirm(row)) { <p class="settlement-warning">Boeken kan zodra de bedragen en de geïmporteerde omzet aansluiten, met maximaal € 0,02 verschil. Controleer de periode, vestiging en bedragen.</p> }
+      }
+      @if (row.commissionCostId) { <a class="settlement-link" routerLink="/costs" [queryParams]="{ view: 'costs', tab: 'company', cost: row.commissionCostId }"><app-icon name="receipt" [size]="17" />Geboekte commissie bekijken<app-icon name="chevron-right" [size]="15" /></a> }
+      @if (row.bankStatementLineId) { <a class="settlement-link" routerLink="/costs" [queryParams]="{ view: 'bank', tab: 'movements', line: row.bankStatementLineId }"><app-icon name="bank" [size]="17" />Gekoppelde bankontvangst<app-icon name="chevron-right" [size]="15" /></a>
+        @if (row.paidAt) { <p class="settlement-small">Ontvangen: {{ moment(row.paidAt) }}</p> }
+      }
+      @if (row.sourceDocumentUrl) { <button class="settlement-link" type="button" [disabled]="downloading()" (click)="download(row)"><app-icon name="download" [size]="17" />{{ downloading() ? 'Downloaden…' : 'Broncreditnota downloaden' }}</button> }
+      @if (row.documentNote) { <p class="settlement-note">{{ row.documentNote }}</p> }
+      @if (bankOpen() && row.status === 'OPEN') {
+        <div class="settlement-bank"><h3>Bankontvangst kiezen</h3><p>Alleen nog niet gekoppelde ontvangsten binnen € 0,02 van {{ euro(row.netReceivable) }}.</p>
+          @if (bankError(); as message) { <p class="settlement-alert" role="alert">{{ message }}</p><button class="btn btn--sm" type="button" (click)="reloadBank()">Opnieuw proberen</button> }
+          @if (bankLoading()) { <app-skeleton kind="list" [rows]="2" /> } @else {
+            <label class="field"><span>Zoek in de ontvangsten</span><input class="input" type="search" placeholder="Tegenpartij, referentie of rekening" [ngModel]="bankSearch()" (ngModelChange)="bankSearch.set($event); bankChoice.set(null)" /></label>
+            <fieldset class="settlement-bank-options" [disabled]="busy()"><legend class="sr-only">Ontvangst selecteren</legend>
+              @for (line of candidates(); track line.id) { <label><input type="radio" name="ticaBankLine" [value]="line.id" [ngModel]="bankChoice()" (ngModelChange)="bankChoice.set($event)" /><span><strong>{{ euro(line.amountEur) }} · {{ line.counterparty || 'Onbekende tegenpartij' }}</strong><span>{{ day(line.bookedAt.slice(0, 10)) }} · {{ line.account }}</span><small>{{ line.reference || 'Geen referentie' }}</small></span></label> }
+              @empty { <p class="settlement-small">Geen passende ontvangst gevonden. Banktransacties worden elke 12 uur opgehaald wanneer de automatische Odoo-verbinding actief is.</p><a routerLink="/costs" [queryParams]="{ view: 'bank' }">Bankverbinding bekijken</a> }
+            </fieldset>
+          }
+        </div>
+      }
+    </div>
+    <div foot class="settlement-sheet-actions">
+      @if (row.status === 'DRAFT') { @if (!row.sourceKey) { <button class="btn" type="button" [disabled]="busy()" (click)="edit()">Wijzigen</button> } @else { <button class="btn" type="button" [disabled]="busy()" (click)="close()">Sluiten</button> }<button class="btn btn--primary" type="button" [disabled]="busy() || !canConfirm(row)" (click)="confirm()">{{ busy() ? 'Boeken…' : 'Afrekening boeken' }}</button> }
+      @else if (row.status === 'OPEN') { <button class="btn" type="button" [disabled]="busy()" (click)="close()">Sluiten</button>
+        @if (bankOpen()) { <button class="btn btn--primary" type="button" [disabled]="busy() || !selectedBank()" (click)="linkBank()">{{ busy() ? 'Koppelen…' : 'Ontvangst koppelen' }}</button> }
+        @else { <button class="btn btn--primary" type="button" (click)="openBank()">Bankontvangst koppelen</button> }
+      } @else { <button class="btn" type="button" [disabled]="busy()" (click)="unlinkBank()">Loskoppelen</button><button class="btn btn--primary" type="button" [disabled]="busy()" (click)="close()">Sluiten</button> }
+    </div>
+  </app-sheet>
+}

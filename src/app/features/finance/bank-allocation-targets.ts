@@ -17,7 +17,7 @@ export function bankAllocationTargets(bankAmount: number, costs: readonly Compan
   const direction = Math.sign(bankAmount), rows: BankAllocationTarget[] = [];
   for (const cost of costs) {
     const total = cash(cost), remainder = open(cost);
-    if (!cost.id || !total || -Math.sign(total) !== direction) continue;
+    if (!cost.id || cost.ticaSettlementId || !total || -Math.sign(total) !== direction) continue;
     rows.push({ key: `cost:${cost.id}`, kind: 'cost', id: cost.id, title: cost.description, party: cost.party ?? '', reference: cost.reference ?? '', date: cost.date,
       totalEur: total, openBankEur: -remainder, paidEur: total - remainder,
       label: total < 0 ? 'Creditnota leverancier' : 'Factuur / uitgave', estimated: false });
