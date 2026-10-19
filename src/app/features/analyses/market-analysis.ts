@@ -388,7 +388,7 @@ const STORAGE_KEY = 'enrosed.market';
     </div>
 
     @if (addOpen()) {
-      <app-sheet title="Vrachttarief noteren" (closed)="closeAdd()">
+      <app-sheet title="Vrachttarief noteren" [variant]="desk.active() ? 'default' : 'ios'" (closed)="closeAdd()">
         <div body>
           <div class="field">
             <label for="market-rate-route">Route</label>

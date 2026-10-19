@@ -289,6 +289,15 @@ const CLOSED_QUOTE_STATUSES = new Set<SalesOrderView['order']['status']>([
 ]);
 
 /**
+ * The pipeline: regular quotes still in an open status (partner funding is
+ * container financing, not a sale). Overzicht counts every year (what is open
+ * today); Verkoop the quotes created in its period.
+ */
+export function openPipelineQuotes(orders: readonly SalesOrderView[]): SalesOrderView[] {
+  return orders.filter((row) => docType(row) === 'OFFERTE' && !isPartnerFundingDocument(row) && OPEN_QUOTE_STATUSES.has(row.order.status));
+}
+
+/**
  * A cohort analysis of sales documents created in the selected period.
  *
  * Values deliberately carry a `calculated` name: the current endpoint prices
@@ -310,7 +319,7 @@ export function salesAnalysis(
   /* Issued credit notes take their claim, revenue and pieces back off the invoices. */
   const creditNotes = selected.filter((row) => docType(row) === 'CREDITNOTA' && isIssuedClaim(row));
 
-  const pipelineRows = quotes.filter((row) => OPEN_QUOTE_STATUSES.has(row.order.status));
+  const pipelineRows = openPipelineQuotes(quotes);
   const acceptedRows = quotes.filter((row) => row.order.status === 'GEACCEPTEERD');
   const sentCount = quotes.filter((row) => !!row.order.sentAt).length;
   const viewedCount = quotes.filter((row) => !!row.order.viewedAt || row.order.viewCount > 0).length;

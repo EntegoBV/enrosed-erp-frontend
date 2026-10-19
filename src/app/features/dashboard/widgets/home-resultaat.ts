@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { resultAnalysis } from '../../analyses/analysis-metrics';
+import { type ResultOptions, resultAnalysis } from '../../analyses/analysis-metrics';
+import { costChargeIn, openOf } from '../../finance/finance-metrics';
 import { HomeData } from '../home-data';
 import { dayMonthShort } from '../home-figures';
 import { HomeWidget, amount } from './home-w';
@@ -39,10 +40,15 @@ export class HomeResultaat {
   readonly variant = input<'desk' | 'phone'>('desk');
   readonly state = computed(() => this.data.combined('verkoop', 'inkoop', 'kosten'));
   readonly whole = amount;
+  /* The options of Analyses › Resultaat (investments charge their depreciation, open amounts read the payments): one figure in both places. */
   readonly year = computed(() => resultAnalysis(this.data.salesOrders(), this.data.purchases(), this.data.costs(),
-    { from: this.data.windows().yearStart, to: this.data.today() }));
+    { from: this.data.windows().yearStart, to: this.data.today(), ...this.money() }));
   readonly monthCosts = computed(() => resultAnalysis([], [], this.data.costs(),
-    { from: this.data.windows().monthStart, to: this.data.today() }).costsEur);
+    { from: this.data.windows().monthStart, to: this.data.today(), ...this.money() }).costsEur);
+  private money(): ResultOptions {
+    const today = this.data.today();
+    return { costCharge: (cost, from, to) => costChargeIn(cost, from, to, today), openEur: openOf, today };
+  }
   /** "1 jan – 16 okt". */
   readonly period = computed(() => `${dayMonthShort(this.data.windows().yearStart)} – ${dayMonthShort(this.data.today())}`);
   /** "okt": the phone's "Kosten okt". */

@@ -12,6 +12,7 @@ import type {
 } from '../src/app/core/api/models.ts';
 import {
   inventoryAnalysis,
+  openPipelineQuotes,
   partnerFinancingAnalysis,
   piecesSoldByProduct,
   resultAnalysis,
@@ -608,4 +609,32 @@ test('Resultaat counts a credit note apart, per channel too, and shows every mon
   assert.deepEqual(allYears.monthly.map((row) => row.month), ['2026-03', '2026-04', '2026-05'], 'all years: from the first data month');
   const plain = resultAnalysis([invoice, second], [], [], { from: '2026-01-01', to: '2026-06-15' });
   assert.deepEqual(plain.monthly.map((row) => row.month), ['2026-03', '2026-05'], 'without today only the months with data, as before');
+});
+
+test('A-M4: one pipeline: open regular quotes; Overzicht counts every year, Verkoop its period', () => {
+  const funding = salesRow({ id: 4, status: 'VERZONDEN', total: 5_000, date: '2026-03-01' });
+  funding.order = { ...funding.order, purpose: 'PARTNER_ADVANCE' } as SalesOrderView['order'];
+  const rows = [
+    salesRow({ id: 1, status: 'CONCEPT', total: 100, date: '2026-03-01' }),
+    salesRow({ id: 2, status: 'WIJZIGING_GEVRAAGD', total: 200, date: '2025-11-20' }),
+    salesRow({ id: 3, status: 'GEACCEPTEERD', total: 300, date: '2026-03-01' }),
+    funding,
+    salesRow({ id: 5, docType: 'FACTUUR', status: 'VERZONDEN', total: 400, date: '2026-03-01' }),
+  ];
+  assert.deepEqual(openPipelineQuotes(rows).map((row) => row.order.id), [1, 2], 'no partner funding, no closed quote, no invoice');
+  const all = salesAnalysis(rows, [], { today: '2026-10-19' });
+  assert.equal(all.pipeline.count, openPipelineQuotes(rows).length, 'Verkoop on Alle jaren = the Overzicht count');
+  assert.equal(all.pipeline.calculatedValueEur, 300);
+  const year = salesAnalysis(rows, [], { from: '2026-01-01', to: '2026-10-19', today: '2026-10-19' });
+  assert.equal(year.pipeline.count, 1, 'Dit jaar: only the quotes created in the period');
+});
+
+test('A-M1: the home Resultaat options give the Analyses figure (an investment charges its depreciation)', () => {
+  const invoice = salesRow({ id: 1, docType: 'FACTUUR', status: 'VERZONDEN', date: '2026-03-05', total: 10_000, margin: 4_000 });
+  const laptop = { id: 1, date: '2026-01-10', amountExclEur: 3_000, vatPct: 21, category: 'IT', costKind: 'INVESTMENT', depreciationYears: 3 } as CompanyCost;
+  const options = { from: '2026-01-01', to: '2026-10-19', today: '2026-10-19' };
+  const analyses = resultAnalysis([invoice], [], [laptop], { ...options, costCharge: (cost, from, to) => costChargeIn(cost, from, to, '2026-10-19'), openEur: openOf });
+  const bare = resultAnalysis([invoice], [], [laptop], options);
+  assert.ok(analyses.costsEur < 3_000 && analyses.costsEur > 0, 'depreciation, not the purchase');
+  assert.notEqual(bare.resultEur, analyses.resultEur, 'without the options the home showed another Resultaat');
 });

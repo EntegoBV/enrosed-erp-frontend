@@ -91,7 +91,8 @@
 .cf-register{overflow:hidden}
 .cf-register__tools{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px 10px}
 .cf-chip-count{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
-.cf-table{--wk-cols:78px minmax(0,1.1fr) minmax(0,1fr) 108px 104px;--wk-pad-x:16px;--wk-gap:10px}
+/* Bedrag and Saldo fit a seven-digit amount with cents ("− € 1.686.595,64" is 113 px) instead of cutting it. */
+.cf-table{--wk-cols:78px minmax(0,1.1fr) minmax(0,1fr) 116px 116px;--wk-pad-x:16px;--wk-gap:10px}
 .cf-table .wk-thead{position:static}
 .cf-table .wk-th{padding-block:5px;line-height:1.25;white-space:normal}
 .cf-table .wk-tr{min-height:44px;align-items:start}

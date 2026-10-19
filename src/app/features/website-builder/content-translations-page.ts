@@ -92,7 +92,7 @@ const LANGUAGE_COUNT = WEBSITE_LANGUAGE_ORDER.length;
               <span class="wk-kbd" aria-hidden="true">/</span>
             </label>
             @if (seoMode) {
-              <a class="wk-btn" routerLink="/analyses/website">Zoekcijfers ›</a>
+              <a class="wk-btn" routerLink="/analyses/website" [queryParams]="{ source: 'SEARCH_CONSOLE' }">Zoekcijfers ›</a>
             } @else {
               <button class="wk-btn wk-btn--ghost" type="button" [attr.aria-pressed]="advanced()" (click)="advanced.set(!advanced())">
                 <app-icon name="settings" [size]="15" />Geavanceerd

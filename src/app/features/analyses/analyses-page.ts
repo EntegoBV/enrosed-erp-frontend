@@ -23,7 +23,7 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
@@ -177,6 +177,8 @@ function storedMarketMonths(): Months {
     return months === 1 || months === 3 || months === 6 || months === 12 ? months : 6;
   } catch { return 6; }
 }
+/** Open offertes counts every year: Verkoop opens on Alle jaren, so its pipeline is the same count. */
+const OPEN_QUOTES_QUERY: Record<string, string> = { periode: 'alle' };
 const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op hun documentdatum, ontvangsten op hun betaaldatum.';
 
 /** Company-wide analysis with durable receipt losses as its operational drill-down. */
@@ -427,19 +429,19 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             <div class="an-kpi" data-kpi="incoming">
               <span class="an-kpi__label">Besteld en onderweg</span>
               <span class="an-kpi__value">{{ failed('inkoop') ? '—' : whole(incomingValue()) }}</span>
-              <span class="an-kpi__sub">{{ incomingPieces() | num }} st in {{ plural(incomingOrders().length, 'container', 'containers') }} · externe kost</span>
+              <span class="an-kpi__sub">vandaag · {{ incomingPieces() | num }} st in {{ plural(incomingOrders().length, 'container', 'containers') }} · externe kost</span>
               <span class="an-kpi__foot">{{ orderedCount() }} besteld · {{ sailingCount() }} vertrokken</span>
             </div>
             <div class="an-kpi" data-kpi="stock">
               <span class="an-kpi__label">Voorraadwaarde</span>
               <span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(inventoryPurchaseValue()) }}</span>
-              <span class="an-kpi__sub">{{ inventoryValuedPieces() | num }} st met kost@if (inventoryUnvaluedPieces()) { · {{ inventoryUnvaluedPieces() | num }} zonder kost }@if (inventoryUnknownSkuCount()) { · {{ plural(inventoryUnknownSkuCount(), 'SKU', 'SKU’s') }} zonder betrouwbare stand }</span>
+              <span class="an-kpi__sub">vandaag · {{ inventoryValuedPieces() | num }} st met kost@if (inventoryUnvaluedPieces()) { · {{ inventoryUnvaluedPieces() | num }} zonder kost }@if (inventoryUnknownSkuCount()) { · {{ plural(inventoryUnknownSkuCount(), 'SKU', 'SKU’s') }} zonder betrouwbare stand }</span>
               <span class="an-kpi__foot">Verkoopwaarde {{ whole(inventorySalesValue()) }} · {{ inventoryUplift() === null ? 'kostdekking onvolledig' : signedWhole(inventoryUplift()!) }}</span>
             </div>
             <div class="an-kpi" data-kpi="pipeline">
               <span class="an-kpi__label">Verkooppijplijn</span>
               <span class="an-kpi__value">{{ failed('verkoop') ? '—' : whole(pipelineValue()) }}</span>
-              <span class="an-kpi__sub">{{ plural(openSales().length, 'open offerte', 'open offertes') }}@if (pipelineMissingCostLines()) { · {{ plural(pipelineMissingCostLines(), 'productregel', 'productregels') }} zonder kost }</span>
+              <span class="an-kpi__sub">vandaag · {{ plural(openSales().length, 'open offerte', 'open offertes') }}@if (pipelineMissingCostLines()) { · {{ plural(pipelineMissingCostLines(), 'productregel', 'productregels') }} zonder kost }</span>
               @if (pipelineMissingCostLines()) {
                 <span class="an-kpi__foot is-warn">Brutomarge — · nog niet alle kosten bekend</span>
               } @else {
@@ -564,7 +566,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               <span class="an-kpi__sub">incl. btw · {{ plural(incoming().count, 'betaling', 'betalingen') }} op ontvangstdatum</span>
               <span class="an-kpi__foot">klanten {{ whole(incoming().standardEur) }} · voorschot {{ whole(incoming().partnerAdvanceEur) }} · afrekening {{ whole(incoming().partnerSettlementEur) }}</span></a>
             <div class="an-kpi" data-kpi="pipeline"><span class="an-kpi__label">Reguliere pijplijn</span><span class="an-kpi__value">{{ whole(m.pipeline.calculatedValueEur) }}</span>
-              <span class="an-kpi__sub">excl. btw · {{ plural(m.pipeline.count, 'open offerte', 'open offertes') }} · {{ m.pipeline.pieces | num }} st</span><span class="an-kpi__foot"></span></div>
+              <span class="an-kpi__sub">excl. btw · {{ plural(m.pipeline.count, 'open offerte', 'open offertes') }} in de periode · {{ m.pipeline.pieces | num }} st</span><span class="an-kpi__foot"></span></div>
             <div class="an-kpi" data-kpi="accepted"><span class="an-kpi__label">Geaccepteerd</span><span class="an-kpi__value">{{ whole(m.accepted.calculatedValueEur) }}</span>
               <span class="an-kpi__sub">excl. btw · {{ plural(m.accepted.count, 'offerte', 'offertes') }} in de periode</span><span class="an-kpi__foot"></span></div>
             <div class="an-kpi" data-kpi="open"><span class="an-kpi__label">Open facturen</span><span class="an-kpi__value">{{ whole(inv.outstandingValueEur) }}</span>
@@ -1429,9 +1431,8 @@ export class AnalysesPage {
     return this.inventorySalesValue() - cost;
   });
 
-  readonly openSales = computed(() => this.salesOrders().filter((row) =>
-    (row.order.docType ?? 'OFFERTE') === 'OFFERTE'
-    && ['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAAGD'].includes(row.order.status)));
+  /** What is open today, every year: the pipeline of Verkoop (partner funding left out), not bound to its period. */
+  readonly openSales = computed(() => openPipelineQuotes(this.salesOrders()));
   readonly pipelineValue = computed(() => this.openSales()
     .reduce((sum, row) => sum + row.priced.totals.total, 0));
   readonly pipelineMargin = computed(() => this.openSales()
@@ -1530,8 +1531,9 @@ export class AnalysesPage {
     if (!monthly.some((point) => point.invoicedEur > 0 || point.acceptedEur > 0)) return [];
     const dates = monthly.map((point) => `${point.month}-01`);
     return [
-      { label: 'Gefactureerd', dates, values: monthly.map((point) => point.invoicedEur), tone: 'accent' },
-      { label: 'Geaccepteerde offertes', dates, values: monthly.map((point) => point.acceptedEur), tone: 'muted' },
+      /* Two VAT bases on one chart: each series says its own (claims incl., quotes excl.). */
+      { label: 'Gefactureerd incl. btw', dates, values: monthly.map((point) => point.invoicedEur), tone: 'accent' },
+      { label: 'Geaccepteerde offertes excl. btw', dates, values: monthly.map((point) => point.acceptedEur), tone: 'muted' },
     ];
   });
 
@@ -1595,7 +1597,8 @@ export class AnalysesPage {
   readonly plural = plural;
   readonly openContainersLine = openContainersLine;
   readonly paymentResultLine = paymentResultLine;
-  private readonly marketMonths = storedMarketMonths();
+  /* Read again on every tab switch: a period picked on Markt (same page instance) shows on Overzicht. */
+  private readonly marketMonths = computed(() => { this.section(); return storedMarketMonths(); });
   readonly yearStartDay = computed(() => yearStart(this.today()));
   /** Year to date for the Verkoop and Resultaat rows. */
   readonly ytdSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), {
@@ -1618,8 +1621,9 @@ export class AnalysesPage {
   readonly marketDigest = computed(() => {
     const series = this.fx.series();
     if (!series) return null;
-    const change = changeOverMonths({ dates: series.dates, values: series.usd }, this.marketMonths);
-    return { lines: marketLines(series.latestCny, change?.pct ?? null, this.marketMonths, !this.desk.active()), dollar: dollarValue(series.latestUsd) };
+    const months = this.marketMonths();
+    const change = changeOverMonths({ dates: series.dates, values: series.usd }, months);
+    return { lines: marketLines(series.latestCny, change?.pct ?? null, months, !this.desk.active()), dollar: dollarValue(series.latestUsd) };
   });
   readonly attention = computed<AttentionRow[]>(() => {
     const missing = this.pipelineMissingCostLines();
@@ -1639,7 +1643,7 @@ export class AnalysesPage {
     const terms = financing.rows.map((row) => ({ name: containerName({ id: row.purchaseOrderId, number: row.number, alias: row.alias }), terms: row.unbilledAdvanceCount, nextDue: row.nextAdvanceDueDate }));
     const plain = { value: null, valueTone: null, meta: null, metaTone: null, query: null } as const;
     return [
-      { ...plain, key: 'quotes', count: this.openSales().length, tone: null, title: 'Open offertes', link: '/analyses/sales',
+      { ...plain, key: 'quotes', count: this.openSales().length, tone: null, title: 'Open offertes', link: '/analyses/sales', query: OPEN_QUOTES_QUERY,
         sub: `${this.whole(this.pipelineValue())} in de pijplijn${missing ? ` · ${plural(missing, 'regel', 'regels')} zonder kost` : ''}` },
       { ...plain, key: 'overdue', count: invoices.overdue, tone: 'danger', title: 'Vervallen facturen', link: '/analyses/sales', sub: overdueSub(invoices.overdue),
         value: this.whole(invoices.overdueValueEur), valueTone: invoices.overdue ? 'danger' : null },
@@ -1739,7 +1743,9 @@ export class AnalysesPage {
       untracked(() => {
         const get = (key: string) => params.get(key);
         if (!['deel', 'orderId', 'leverancier', ...Object.values(RECEIPT_PERIOD_KEYS)].some((key) => params.has(key))) {
-          this.writeParams(this.inkoopParams());
+          /* The default state has no keys: no second navigation then. */
+          const state = this.inkoopParams();
+          if (Object.values(state).some((value) => value !== null)) this.writeParams(state);
           return;
         }
         const focus = parseOrderId(get);
@@ -1965,7 +1971,8 @@ export class AnalysesPage {
   private partsWith(labels: Record<InkoopPart, string>, desk: boolean): SegmentOption[] {
     const financing = this.financing();
     const warn = financing.awaitingSettlement > 0 || financing.overdueUnbilledAdvanceEur > 0;
-    const affected = this.report().totals.affectedOrders;
+    /* Every order with variances in the receipt filter, never only the focused one (?orderId). */
+    const affected = this.qualityReport().totals.affectedOrders;
     return (['kosten', 'kwaliteit', 'partners', 'afwijkingen'] as const).map((id) => ({
       id, label: labels[id],
       dot: id === 'partners' && warn ? (financing.overdueUnbilledAdvanceEur > 0 ? 'danger' : 'warn') : null,
@@ -2067,7 +2074,7 @@ export class AnalysesPage {
     this.savingValue.set(key);
     try {
       await this.sourcing.setReceiptLineValue(row.orderId, row.lineId, value);
-      this.ui.toast(value === null ? 'Ontvangstwaarde gewist' : 'Ontvangstwaarde bewaard', 'ok');
+      this.ui.toast('Ontvangstwaarde bewaard', 'ok');
       await this.loadVariances();
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ontvangstwaarde bewaren mislukt'), 'err');

@@ -632,7 +632,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
           <section class="pdk-card pd-issues" id="pd-issues" aria-labelledby="pd-issues-title">
             <div class="pdk-card__head">
               <div><h2 id="pd-issues-title">Eerdere leveringen met schade of tekort</h2><p>Staat als waarschuwing op de volgende leveranciersorder van dit product, met wat we noteerden</p></div>
-              <a class="linklike" [routerLink]="['/analyses', 'purchasing']">Ontvangstanalyse ›</a>
+              <a class="linklike" [routerLink]="['/analyses', 'purchasing']" [queryParams]="{ deel: 'afwijkingen' }">Ontvangstanalyse ›</a>
             </div>
             <ul class="pd-issues__list">
               @for (issue of receiptIssues(); track issue.orderId) {

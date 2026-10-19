@@ -20,7 +20,7 @@ const OPEN_QUOTE = new Set(['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'WIJZIGING_GEVRAA
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, HomeWidget],
   template: `
-    <app-home-w [variant]="variant()" kind="verkoop" title="Verkoop" icon="sales" tone="green" link="/analyses/sales" [wide]="true"
+    <app-home-w [variant]="variant()" kind="verkoop" title="Verkoop" icon="sales" tone="green" link="/analyses/sales" [query]="monthQuery" [wide]="true"
                 [sub]="data.windows().monthName + ' · gefactureerd incl. btw'" [state]="state()">
       @if (state() === 'ready') {
         <div class="home-w__split">
@@ -62,6 +62,8 @@ export class HomeVerkoop {
   readonly state = computed(() => this.data.combined('verkoop'));
   readonly whole = amount;
   readonly counted = counted;
+  /** Verkoop on "Deze maand": its Gefactureerd is this block's figure. */
+  readonly monthQuery = { periode: 'maand' };
 
   readonly month = computed(() => {
     const window = this.data.windows();
@@ -98,6 +100,6 @@ export class HomeVerkoop {
 
   /** The month bars sit above the card's stretched link (their amount on hover); a click on them still opens the card. */
   openCard(): void {
-    void this.router.navigateByUrl('/analyses/sales');
+    void this.router.navigate(['/analyses/sales'], { queryParams: this.monthQuery });
   }
 }
