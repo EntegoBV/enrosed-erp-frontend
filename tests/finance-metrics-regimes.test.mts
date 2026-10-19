@@ -112,8 +112,16 @@ test('quarters, filing deadlines and the default period', () => {
   assert.deepEqual(quarterRange(2028, 1), { from: '2028-01-01', to: '2028-03-31' });
   assert.deepEqual([1, 2, 3, 4].map((quarter) => filingDeadline(2026, quarter)), ['2026-04-25', '2026-07-25', '2026-10-25', '2027-01-25']);
   assert.deepEqual(defaultReturnPeriod('2026-10-12'), { year: 2026, quarter: 3 });
-  assert.deepEqual(defaultReturnPeriod('2026-02-10'), { year: 2025, quarter: 4 });
   assert.deepEqual(defaultReturnPeriod('2026-04-01'), { year: 2026, quarter: 1 });
+  assert.deepEqual(defaultReturnPeriod('2026-01-20'), { year: 2025, quarter: 4 });
+});
+
+test('one VAT quarter (F-B2): the closed quarter until its filing day included, then the running one', () => {
+  assert.deepEqual(defaultReturnPeriod('2026-10-25'), { year: 2026, quarter: 3 }, 'the filing day itself still shows the closed quarter');
+  assert.deepEqual(defaultReturnPeriod('2026-10-26'), { year: 2026, quarter: 4 }, 'the day after, the running quarter');
+  assert.deepEqual(defaultReturnPeriod('2026-12-31'), { year: 2026, quarter: 4 });
+  assert.deepEqual(defaultReturnPeriod('2027-01-25'), { year: 2026, quarter: 4 }, 'Q4 is due on 25 January of the next year');
+  assert.deepEqual(defaultReturnPeriod('2026-02-10'), { year: 2026, quarter: 1 }, 'after 25 January the year\'s first quarter runs');
 });
 
 test('the investment suggestion: from € 250 excl., not yet an investment, in a regime with a base grid', () => {

@@ -11,8 +11,9 @@ import { bankTextOf } from './bank-text';
 import { dayEndBalances } from './cash-forecast';
 import { containerName, containerNumberHint } from '../purchasing/container-name';
 import type { CostLedgerRow } from './cost-ledger';
-import { AttentionItem, AttentionKind } from './finance-attention';
+import { AttentionItem, AttentionKind, costLateDays } from './finance-attention';
 import { dayMonth, syncMoment } from './finance-format';
+import { expenseOf, quarterOf } from './finance-metrics';
 import { periodRange } from './finance-sections';
 import { FinanceState } from './finance-state';
 import { KaslijnCard } from './kaslijn-card';
@@ -20,6 +21,7 @@ import { OdooSyncState } from './odoo-sync-state';
 import { VooruitblikEquation } from './vooruitblik-equation';
 
 const ATTENTION_ROWS = 7;
+const PHONE_ATTENTION_ROWS = 3;
 /** One icon per kind of attention row (critique N9). */
 const ATTENTION_ICON: Readonly<Record<AttentionKind, string>> = {
   'vat-deadline': 'calendar', 'unlinked-incoming': 'link', 'old-receivables': 'arrow-in', 'receipts-without-account': 'arrow-in',
@@ -104,7 +106,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
           <button class="fin-geld__cell" type="button" (click)="state.go({ view: 'incoming' }, 'push')">
             <span class="fin-geld__label">Te ontvangen<app-icon name="chevron-right" [size]="14" /></span>
             <strong class="fin-geld__value">{{ state.openInvoices().totalEur | eur }}</strong>
-            <span class="fin-geld__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().receivedEur | eur }} ontvangen deze maand</span>
+            <span class="fin-geld__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().grossReceivedEur | eur }} ontvangen deze maand</span>
             @if (state.openInvoices().creditNoteEur > 0) { <span class="fin-geld__sub fin-geld__sub--credit">{{ state.openInvoices().creditNoteEur | eur: 0 }} tegoed af te handelen</span> }
           </button>
           <button class="fin-geld__cell" type="button" (click)="state.go({ view: 'costs', period: 'month' }, 'push')">
@@ -113,7 +115,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
             <span class="fin-geld__sub">excl. btw · {{ spent().yearEur | eur }} dit jaar</span>
           </button>
           <button class="fin-geld__cell" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
-            <span class="fin-geld__label">Btw dit kwartaal<app-icon name="chevron-right" [size]="14" /></span>
+            <span class="fin-geld__label">{{ vatTile().label }}<app-icon name="chevron-right" [size]="14" /></span>
             <strong class="fin-geld__value">{{ vatTile().amount | eur }}</strong>
             <span class="fin-geld__sub" [class.is-warn]="vatTile().pending > 0">{{ vatTile().sub }}</span>
           </button>
@@ -142,7 +144,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
                     </li>
                   }
                 </ul>
-                @if (state.attention().length > limit()) { <button class="wk-link fin-attention__more" type="button" (click)="expanded.set(true)">Toon alle {{ state.attention().length }}</button> }
+                @if (state.attention().length > attentionRows) { <button class="wk-link fin-attention__more" type="button" [attr.aria-expanded]="expanded()" (click)="expanded.set(!expanded())">{{ expanded() ? 'Toon minder' : 'Toon alle ' + state.attention().length }}</button> }
               } @else {
                 <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="tick" [size]="22" /></span><p class="wk-empty__title">Alles bijgewerkt</p><p class="wk-empty__text">Niets vraagt nu je aandacht.</p></div>
               }
@@ -219,7 +221,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
         <button class="ios-widget" type="button" (click)="state.go({ view: 'incoming' }, 'push')">
           <span class="ios-widget__label"><span class="ios-tile ios-tile--soft tone-ok"><app-icon name="arrow-in" [size]="14" /></span>Te ontvangen</span>
           <span class="ios-widget__value fin-widget__value">{{ state.openInvoices().totalEur | eur }}</span>
-          <span class="fin-widget__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().receivedEur | eur: 0 }} ontvangen deze maand@if (state.openInvoices().creditNoteEur > 0) { · {{ state.openInvoices().creditNoteEur | eur: 0 }} tegoed af te handelen }</span>
+          <span class="fin-widget__sub">{{ state.openInvoices().count }} {{ state.openInvoices().count === 1 ? 'factuur' : 'facturen' }} · {{ state.incomingThisMonth().grossReceivedEur | eur: 0 }} ontvangen deze maand@if (state.openInvoices().creditNoteEur > 0) { · {{ state.openInvoices().creditNoteEur | eur: 0 }} tegoed af te handelen }</span>
         </button>
         <button class="ios-widget" type="button" (click)="state.go({ view: 'costs', period: 'month' }, 'push')">
           <span class="ios-widget__label"><span class="ios-tile ios-tile--soft tone-teal"><app-icon name="receipt" [size]="14" /></span>Uitgegeven</span>
@@ -227,7 +229,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
           <span class="fin-widget__sub">deze maand excl. btw · {{ spent().yearEur | eur: 0 }} dit jaar</span>
         </button>
         <button class="ios-widget" type="button" (click)="state.openVatReturn(vatTile().year, vatTile().quarter)">
-          <span class="ios-widget__label"><span class="ios-tile ios-tile--soft tone-plum"><app-icon name="analytics" [size]="14" /></span>Btw dit kwartaal</span>
+          <span class="ios-widget__label"><span class="ios-tile ios-tile--soft tone-plum"><app-icon name="analytics" [size]="14" /></span>{{ vatTile().label }}</span>
           <span class="ios-widget__value fin-widget__value">{{ vatTile().amount | eur }}</span>
           <span class="fin-widget__sub" [class.fin-warn-text]="vatTile().pending > 0">{{ vatTile().sub }}</span>
         </button>
@@ -236,7 +238,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
         <div class="ios-section__head"><h2>Vraagt aandacht</h2></div>
         <div class="ios-group ios-group--icons fin-attention-phone">
           @for (item of phoneAttention(); track item.id) {
-            <button class="ios-cell ios-cell--tall" type="button" [disabled]="item.action === 'book' && state.booking()" (click)="act(item)">
+            <button class="ios-cell ios-cell--tall" type="button" (click)="open(item)">
               <span class="ios-cell__lead"><span [class]="'ios-tile ios-tile--lg ios-tile--soft ' + toneClass(item)"><app-icon [name]="iconOf(item)" [size]="18" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">{{ item.title }}</span><span class="ios-cell__sub fin-wrap">{{ item.split ? splitText(item) : item.detail }}</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value">{{ phoneTrail(item) }}</span></span>
@@ -245,7 +247,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
           } @empty {
             <div class="ios-cell"><span class="ios-cell__lead"><span class="ios-tile ios-tile--lg tone-ok"><app-icon name="tick" [size]="18" /></span></span><span class="ios-cell__body"><span class="ios-cell__title">Alles bijgewerkt</span></span></div>
           }
-          @if (state.attention().length > phoneLimit()) { <button class="ios-cell ios-cell--action" type="button" (click)="expanded.set(true)">Toon alle {{ state.attention().length }}</button> }
+          @if (state.attention().length > phoneRows) { <button class="ios-cell ios-cell--action" type="button" [attr.aria-expanded]="expanded()" (click)="expanded.set(!expanded())">{{ expanded() ? 'Toon minder' : 'Toon alle ' + state.attention().length }}</button> }
         </div>
       </section>
       <app-kaslijn-card />
@@ -305,9 +307,12 @@ export class BankCockpit {
   private readonly sync = inject(OdooSyncState);
   private readonly router = inject(Router);
   readonly movementPanel = viewChild(BankMovementPanel);
+  /** "Toon alle n" unfolds the list; "Toon minder" folds it back to the first rows. */
   readonly expanded = signal(false);
+  readonly attentionRows = ATTENTION_ROWS;
+  readonly phoneRows = PHONE_ATTENTION_ROWS;
   readonly limit = computed(() => (this.expanded() ? Infinity : ATTENTION_ROWS));
-  readonly phoneLimit = computed(() => (this.expanded() ? Infinity : 3));
+  readonly phoneLimit = computed(() => (this.expanded() ? Infinity : PHONE_ATTENTION_ROWS));
   readonly attention = computed(() => this.state.attention().slice(0, this.limit()));
   readonly phoneAttention = computed(() => this.state.attention().slice(0, this.phoneLimit()));
 
@@ -385,28 +390,41 @@ export class BankCockpit {
     }
     return { today: day / 100, week: week / 100 };
   });
-  readonly payWarn = computed(() => (this.state.payableTotals().oldestCostAgeDays ?? 0) > 30);
+  /** An open cost past its due day (its own Vervalt op, else 30 days after its date): the attention row's rule. */
+  readonly payWarn = computed(() => this.state.openCosts().some((cost) => cost.openEur > 0 && costLateDays(cost, this.state.today()) > 0));
   readonly spent = computed(() => {
     const today = this.state.today();
     const month = periodRange('month', today).from;
     const year = periodRange('year', today).from;
+    /* What Rapportage › Kosten counts (expenseOf: excl. plus the VAT that is not deductible), so the two months agree. */
     const sum = (from: string): number => Math.round(this.state.costs().filter((cost) => cost.date >= from && cost.date <= today)
-      .reduce((total, cost) => total + (cost.amountExclEur || 0) * 100, 0)) / 100;
+      .reduce((total, cost) => total + expenseOf(cost) * 100, 0)) / 100;
     return { monthEur: sum(month), yearEur: sum(year) };
   });
-  /** The running quarter's return, in today's words: "{in je voordeel|te betalen} · Q{q} · indienen vóór {d mmm}{ · {n} te bevestigen}". */
+  /**
+   * The return the attention row and the Btw-aangifte open on (the closed quarter until its filing day, then the
+   * running one), in today's words: "{in je voordeel|te betalen} · Q{q} · indienen vóór {d mmm}{ · {n} te bevestigen}";
+   * "Btw vorig kwartaal" while that is the closed quarter.
+   */
   readonly vatTile = computed(() => {
     const result = this.state.vatReturnCurrent();
     const favour = result.totals.refundEur > 0;
     const pending = result.unconfirmedCount + result.unknown.length + result.openClearanceCount;
+    const running = quarterOf(this.state.today());
     return {
       year: result.year, quarter: result.quarter, pending,
+      label: running.year === result.year && running.quarter === result.quarter ? 'Btw dit kwartaal' : 'Btw vorig kwartaal',
       amount: favour ? result.totals.refundEur : result.totals.payableEur,
       sub: `${favour ? 'in je voordeel' : 'te betalen'} · Q${result.quarter} · indienen vóór ${dayMonth(result.filingDeadline)}${pending ? ` · ${pending} te bevestigen` : ''}`,
     };
   });
-  /** Company costs and container payments dated today or earlier, newest first. */
-  readonly recent = computed(() => this.state.ledger().filter((row) => row.date <= this.state.today()).slice(0, 6));
+  /**
+   * Company costs and container payments dated today or earlier, the last booked first: a cost by when it was booked
+   * (createdAt), a container payment (no booking moment) by its day; the ledger's own order breaks ties.
+   */
+  readonly recent = computed(() => this.state.ledger().filter((row) => row.date <= this.state.today())
+    .map((row, index) => ({ row, index, at: Date.parse(row.cost?.createdAt ?? '') || Date.parse(`${row.date}T00:00:00Z`) || 0 }))
+    .sort((a, b) => b.at - a.at || a.index - b.index).slice(0, 6).map(({ row }) => row));
 
   /* the transactions beside the rail */
   readonly activeLines = computed(() => this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line)));
@@ -486,17 +504,18 @@ export class BankCockpit {
     return item.action === 'book' ? 'Nu boeken' : item.action === 'link' ? 'Koppel' : item.action === 'check' ? 'Controleer' : item.actionLabel;
   }
   /**
-   * The phone row's trail: the verb of a row that does something (book, link, check, fill); null for a row that only
-   * opens its list (no action, or 'unbanked'), which shows its figure there as before (the whole row stays the button).
+   * The phone row's trail: the verb of a row that does something (link, check, fill); null for a row that only
+   * opens its list (no action, 'unbanked', or 'book': a tap opens Vaste kosten, whose banner books after a confirm),
+   * which shows its figure there as before (the whole row stays the button).
    */
   phoneVerb(item: AttentionItem): string | null {
-    return item.action === null || item.action === 'unbanked' ? null : this.phoneLabel(item);
+    return item.action === null || item.action === 'unbanked' || item.action === 'book' ? null : this.phoneLabel(item);
   }
   /** A desk row's own button: only a row whose action does something (Koppelen, Nu boeken, Controleren, Saldo invullen). */
   trailVerb(item: AttentionItem): string | null {
     return item.action === 'link' ? 'Koppelen' : item.action === 'book' ? 'Nu boeken' : item.action === 'check' ? 'Controleren' : item.action === 'fill' ? 'Saldo invullen' : null;
   }
-  /** The whole row: it opens the row's list (a booking row opens Vaste kosten; its button books). */
+  /** The whole row (desk) and the phone cell: it opens the row's list (a booking row opens Vaste kosten; only the desk row's own button books). */
   open(item: AttentionItem): void {
     if (item.action === 'book') this.state.go(item.target, 'push');
     else this.act(item);

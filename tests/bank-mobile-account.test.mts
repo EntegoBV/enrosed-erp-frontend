@@ -131,3 +131,31 @@ test('archived accounts with a checkpoint never claim that no balance was entere
   assert.equal(panel.freshLabel({ reading: { id: 1 }, ageDays: null }), 'Historische saldocontrole');
   assert.equal(panel.freshLabel({ reading: null, ageDays: null }), 'Nog geen saldo');
 });
+
+const Check = await selectedClass('finance-state.ts', 'FinanceState', ['checkOrFill', 'closingCheck'], {
+  addDays: (day: string, count: number) => new Date(Date.parse(`${day}T00:00:00Z`) + count * 86_400_000).toISOString().slice(0, 10),
+});
+const CheckSheet = await selectedClass('account-check-sheet.ts', 'AccountCheckSheet', ['account', 'closing', 'expected', 'entered', 'value', 'ready', 'differenceCents', 'save']);
+
+test('F-B8: "Saldo controleren" on an Odoo account opens "Klopt het saldo?" on yesterday\'s closing balance, never the blank form', () => {
+  const calls: unknown[] = [];
+  const views = [{ account: 'BE123', source: 'ODOO', reading: { id: 1 }, currentEur: 1500 }, { account: 'BE456', source: 'MANUAL', reading: { id: 2 }, currentEur: 80 },
+    { account: 'NEW', source: 'ODOO', reading: null, currentEur: null }];
+  const state = new Check();
+  Object.assign(state, { accountsView: () => views, today: () => '2026-10-19', dayEndEur: (day: string, key: string) => (key === 'BE123' && day === '2026-10-18' ? 1420.5 : null),
+    accountCheck: { set: (value: unknown) => calls.push(['check', value]) }, openBank: (_: unknown, key: string) => calls.push(['blank', key]) });
+  assert.deepEqual({ ...state.closingCheck('BE123') }, { day: '2026-10-18', expectedEur: 1420.5 });
+  assert.equal(state.closingCheck('BE456'), null, 'a manual account is checked on its balance now');
+  state.checkOrFill('BE123'); state.checkOrFill('BE456'); state.checkOrFill('NEW');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['check', { key: 'BE123' }], ['check', { key: 'BE456' }], ['blank', 'NEW']], 'without a reading: the first balance');
+
+  const saved: unknown[] = [];
+  const sheet = new CheckSheet();
+  sheet.state = { accountsView: () => views, accountCheck: () => ({ key: 'BE123' }), closingCheck: state.closingCheck.bind(state),
+    checkAccount: (...args: unknown[]) => { saved.push(JSON.parse(JSON.stringify(args))); return Promise.resolve(true); } };
+  assert.equal(sheet.expected(), 1420.5, 'Volgens Enrosed: the end of yesterday, not the balance now');
+  sheet.entered.set(1425.5);
+  assert.equal(sheet.differenceCents(), 500);
+  sheet.save();
+  assert.deepEqual(saved, [['BE123', 1425.5, { day: '2026-10-18', expectedEur: 1420.5 }]], 'saved as the closing balance of that day');
+});

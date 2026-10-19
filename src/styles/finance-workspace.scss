@@ -32,7 +32,8 @@
   .fin-chev { color: var(--muted-2); }
   .fin-age { margin-left: 4px; }
   /* a container's PO number as small print beside its name (containerNumberHint) */
-  .fin-hint-number { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* inline-block: a line may break before the number (no space precedes it), so a long name never pushes "PO-2026-004" past its cell */
+  .fin-hint-number { display: inline-block; margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .fin-foot-link { margin: 20px 0 0; text-align: right; }
   .fin-pay-line { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; padding: 6px 0;
     border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; font: inherit; font-size: 13px; text-align: left;
@@ -145,7 +146,9 @@
   .fin-vat__chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .fin-vat__kaders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; .wk-card + .wk-card { margin-top: 0; } }
   .fin-vat__column { display: grid; gap: 16px; }
-  .fin-table--grids { --wk-cols: 64px minmax(160px, 1fr) 132px; }
+  .fin-table--grids { --wk-cols: 64px minmax(160px, 1fr) 132px;
+    /* "Handelsgoederen, grond- en hulpstoffen · 4 documenten" keeps its count: the label wraps */
+    .wk-td:nth-child(2) { white-space: normal; } }
   .fin-vat__code { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
   .fin-vat__rows { margin: 0; padding: 0 var(--wk-pad-x) 10px; list-style: none; }
   .fin-vat__row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 108px 96px; align-items: center; gap: 2px 10px; min-height: 36px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 12.5px;
@@ -211,7 +214,8 @@
    */
   /* Te betalen: no Soort column (the kind is the icon before the description); the last column keeps Betaald… and Bewerken (critique B4). */
   .fin-table--payables { --wk-cols: 28px 112px minmax(220px, 1fr) minmax(0, 190px) 40px 124px 116px; --wk-group-span: 6; .fin-group__sum { grid-column: 6; } }
-  .fin-when { display: grid; line-height: 1.25; b { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; } small { color: var(--muted); font-size: 11.5px; } }
+  /* "bij aankomst · gepland 18 sep" is wider than the 112 px track: it takes a second line rather than an ellipsis over the date. */
+  .fin-when { display: grid; line-height: 1.25; white-space: normal; b { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; } small { color: var(--muted); font-size: 11.5px; } }
   .fin-what { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 8px; align-items: start; line-height: 1.3; white-space: normal;
     > app-icon { margin-top: 1px; color: var(--tone, var(--muted)); } b { font-weight: 600; overflow-wrap: anywhere; } small { grid-column: 2; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; } }
   .fin-regime-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; vertical-align: 2px; }
@@ -256,6 +260,8 @@
   .fin-status__pay { display: none; }
   .fin-row:hover .fin-status__pay, .fin-row:focus-within .fin-status__pay { display: inline-flex; }
   .fin-row:hover .fin-status__open, .fin-row:focus-within .fin-status__open { display: none; }
+  /* A touch desk (an iPad) has no hover: its rows always show Betaald… as a hovered row does. */
+  @media (hover: none) { .fin-row .fin-status__pay { display: inline-flex; } .fin-row .fin-status__open { display: none; } }
   .fin-pending { padding: 8px var(--wk-pad-x); }
 
   /* ---- Uitgaven › Containers: the unfolded row */

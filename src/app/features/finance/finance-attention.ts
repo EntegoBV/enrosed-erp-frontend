@@ -55,8 +55,8 @@ export interface AttentionInput {
   today: string;
   /** Issued credit notes whose tegoed is not yet offset or refunded. */
   openCredits?: { count: number; eur: number };
-  /** Open company costs: their date and what is still to pay. */
-  openCosts: readonly { date: string; openEur: number }[];
+  /** Open company costs: their date, what is still to pay and, optionally, their own due date (Vervalt op). */
+  openCosts: readonly { date: string; openEur: number; dueDate?: string | null }[];
   /** Costs of this year whose regime was only derived from the rate, or is unknown. */
   unconfirmedRegimes: { count: number };
   dueNowCount: number;
@@ -88,6 +88,14 @@ const dayMonth = (day: string): string => `${Number(day.slice(8, 10))} ${MONTHS[
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const addDays = (day: string, count: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + count * 86_400_000).toISOString().slice(0, 10);
 
+/**
+ * Days an open cost is past its due day: its own dueDate (Vervalt op) when set, else 30 days after the cost date; 0 or
+ * less while it is not late. The attention row, the age pills and the Geld tile's old-cost dot share it.
+ */
+export function costLateDays(cost: { date: string; dueDate?: string | null }, today: string): number {
+  return days(cost.dueDate || addDays(cost.date, OVERDUE_COST_DAYS), today);
+}
+
 export function financeAttention(input: AttentionInput): AttentionItem[] {
   const { today } = input;
   const items: AttentionItem[] = [];
@@ -111,12 +119,17 @@ export function financeAttention(input: AttentionInput): AttentionItem[] {
       target: { view: 'open', tab: 'containers' } });
   }
 
-  const overdue = input.openCosts.filter((cost) => days(cost.date, today) > OVERDUE_COST_DAYS);
+  /* Late by the cost's own due date (Vervalt op); without one, 30 days after the cost date (the old rule). */
+  const overdue = input.openCosts.filter((cost) => costLateDays(cost, today) > 0);
   if (overdue.length) {
+    const n = overdue.length;
+    const dated = overdue.some((cost) => !!cost.dueDate);
     const oldest = Math.max(...overdue.map((cost) => days(cost.date, today)));
-    add({ kind: 'overdue-costs', tone: 'danger', count: overdue.length, amountEur: eur(overdue.map((cost) => cost.openEur)),
-      title: `${overdue.length} open ${plural(overdue.length, 'kost', 'kosten')} ouder dan ${OVERDUE_COST_DAYS} dagen`,
-      detail: `De oudste staat er al ${oldest} dagen`, action: null, actionLabel: 'Bekijken', target: { view: 'open', tab: 'costs' } });
+    const late = Math.max(...overdue.map((cost) => costLateDays(cost, today)));
+    add({ kind: 'overdue-costs', tone: 'danger', count: n, amountEur: eur(overdue.map((cost) => cost.openEur)),
+      title: dated ? `${n} open ${plural(n, 'kost', 'kosten')} over de vervaldag` : `${n} open ${plural(n, 'kost', 'kosten')} ouder dan ${OVERDUE_COST_DAYS} dagen`,
+      detail: dated ? `De oudste ${late} ${plural(late, 'dag', 'dagen')} te laat` : `De oudste staat er al ${oldest} dagen`,
+      action: null, actionLabel: 'Bekijken', target: { view: 'open', tab: 'costs' } });
   }
 
   for (const account of input.accounts.filter((row) => !row.hasReading)) {

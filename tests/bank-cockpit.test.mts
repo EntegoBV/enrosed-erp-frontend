@@ -7,6 +7,7 @@ import { computed, signal } from '@angular/core';
 import { dayMon, dayMonth, eur, weekdayDayMonth } from '../src/app/features/finance/cash-format.ts';
 import { CERTAINTY_LABEL } from '../src/app/features/finance/cash-forecast.ts';
 import { parseFinanceLocation, patchLocation } from '../src/app/features/finance/finance-url.ts';
+import { dayMonth as financeDayMonth } from '../src/app/features/finance/finance-format.ts';
 
 /* Bank as the home of Kosten & bank (spec-bank-forecast §3.1-§3.3): the total tile's words, what moved, the Kaslijn's facts and banner. */
 async function selectedClass(file: string, name: string, members: string[], extra: Record<string, unknown> = {}) {
@@ -97,8 +98,70 @@ test('phone "Vraagt aandacht": a row that only opens its list keeps its figure a
   const item = (action: string | null, actionLabel = 'Bekijken') => ({ action, actionLabel });
   assert.equal(rows.phoneVerb(item('unbanked')), null, 'the unbanked row opens Transacties: its amount stays in the trail');
   assert.equal(rows.phoneVerb(item(null)), null);
-  assert.deepEqual(['book', 'link', 'check'].map((action) => rows.phoneVerb(item(action))), ['Nu boeken', 'Koppel', 'Controleer']);
+  assert.equal(rows.phoneVerb(item('book')), null, 'F-B1: a tap on the booking row opens Vaste kosten, so its trail shows no verb');
+  assert.deepEqual(['link', 'check'].map((action) => rows.phoneVerb(item(action))), ['Koppel', 'Controleer']);
   assert.equal(rows.phoneVerb(item('fill', 'Saldo invullen')), 'Saldo invullen');
+});
+
+const Rows = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['open', 'act']);
+
+test('F-B1: the whole attention row (desk and phone) opens the booking row\'s list; only the desk row\'s own button books', () => {
+  const calls: unknown[] = [];
+  const rows = new Rows();
+  rows.state = { go: (target: any, mode: string) => calls.push(['go', target.view, target.tab, mode]), bookNow: () => calls.push(['book']) };
+  const recurring = { kind: 'recurring-due', action: 'book', target: { view: 'costs', tab: 'recurring' } };
+  rows.open(recurring);
+  assert.deepEqual(calls, [['go', 'costs', 'recurring', 'push']], 'a tap never writes data');
+  rows.act(recurring);
+  assert.deepEqual(calls.at(-1), ['book'], 'the desk trail button still books at once');
+});
+
+const Fold = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['expanded', 'limit', 'phoneLimit', 'attention', 'phoneAttention'], { ATTENTION_ROWS: 7, PHONE_ATTENTION_ROWS: 3 });
+
+test('F-B23: "Toon alle n" unfolds the attention list and "Toon minder" folds it back', () => {
+  const fold = new Fold();
+  fold.state = { attention: signal(Array.from({ length: 9 }, (_, index) => ({ id: String(index) }))) };
+  assert.equal(fold.attention().length, 7); assert.equal(fold.phoneAttention().length, 3);
+  fold.expanded.set(!fold.expanded());
+  assert.equal(fold.attention().length, 9); assert.equal(fold.phoneAttention().length, 9);
+  fold.expanded.set(!fold.expanded());
+  assert.equal(fold.attention().length, 7, 'folded back'); assert.equal(fold.phoneAttention().length, 3);
+});
+
+const quarterOfDay = (date: string) => ({ year: Number(date.slice(0, 4)), quarter: Math.floor((Number(date.slice(5, 7)) - 1) / 3) + 1 });
+const Geld = await selectedClass('bank-cockpit.ts', 'BankCockpit', ['vatTile', 'spent', 'recent', 'payWarn'], {
+  quarterOf: quarterOfDay, dayMonth: financeDayMonth, expenseOf: (cost: any) => cost.expense,
+  periodRange: (period: string, today: string) => ({ from: period === 'month' ? `${today.slice(0, 7)}-01` : `${today.slice(0, 4)}-01-01` }),
+  costLateDays: (cost: any, today: string) => Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${cost.dueDate || cost.date}T00:00:00Z`)) / 86_400_000) - (cost.dueDate ? 0 : 30),
+});
+const vatResult = (year: number, quarter: number) => ({ year, quarter, filingDeadline: `${year}-10-25`, totals: { refundEur: 120, payableEur: 0 }, unconfirmedCount: 0, unknown: [], openClearanceCount: 0 });
+
+test('F-B2: the Btw tile names the quarter it shows: "Btw vorig kwartaal" until the 25th, "Btw dit kwartaal" for the running one', () => {
+  const geld = new Geld();
+  geld.state = { today: () => '2026-10-17', vatReturnCurrent: () => vatResult(2026, 3) };
+  assert.equal(geld.vatTile().label, 'Btw vorig kwartaal');
+  assert.equal(geld.vatTile().sub, 'in je voordeel · Q3 · indienen vóór 25 okt');
+  const running = new Geld();
+  running.state = { today: () => '2026-10-26', vatReturnCurrent: () => vatResult(2026, 4) };
+  assert.equal(running.vatTile().label, 'Btw dit kwartaal');
+});
+
+test('F-B9 / F-B28 / F-B3: Uitgegeven counts expenseOf, Laatst geboekt follows the booking moment, the old-cost dot follows the due day', () => {
+  const geld = new Geld();
+  const costs = [{ date: '2026-10-02', expense: 121, amountExclEur: 100 }, { date: '2026-09-30', expense: 50, amountExclEur: 50 }, { date: '2026-10-20', expense: 9, amountExclEur: 9 }];
+  geld.state = { today: () => '2026-10-17', costs: () => costs };
+  assert.deepEqual({ ...geld.spent() }, { monthEur: 121, yearEur: 171 }, 'excl. plus the VAT that is not deductible, as Rapportage counts; a future cost is not spent yet');
+  const row = (key: string, date: string, createdAt: string | null) => ({ key, date, cost: createdAt === undefined ? null : { createdAt } });
+  const recent = new Geld();
+  recent.state = { today: () => '2026-10-17', ledger: () => [row('a', '2026-10-15', '2026-10-15T08:00:00Z'), row('b', '2026-09-28', '2026-10-17T09:30:00Z'),
+    { key: 'c', date: '2026-10-16', cost: null }, row('d', '2026-10-18', '2026-10-17T10:00:00Z')] };
+  assert.deepEqual([...recent.recent().map((r: any) => r.key)], ['b', 'c', 'a'], 'booked today with a September invoice date leads; a future-dated cost stays out');
+  const dueLater = new Geld();
+  dueLater.state = { today: () => '2026-10-17', openCosts: () => [{ date: '2026-08-01', dueDate: '2026-11-01', openEur: 100 }] };
+  assert.equal(dueLater.payWarn(), false, '77 days old but due on 1 Nov');
+  const undated = new Geld();
+  undated.state = { today: () => '2026-10-17', openCosts: () => [{ date: '2026-09-01', dueDate: null, openEur: 100 }] };
+  assert.equal(undated.payWarn(), true, 'no due date: late after 30 days');
 });
 
 const euroFormat = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });

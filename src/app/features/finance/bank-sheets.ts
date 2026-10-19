@@ -6,6 +6,7 @@ import { Icon } from '../../shared/icon';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import type { LinkTarget } from './bank-change-preview';
+import { bankTextOf } from './bank-text';
 import { dayMonth } from './finance-format';
 import { FinanceState, formatEuro } from './finance-state';
 import { OdooConnectionPanel } from './odoo-connection-panel';
@@ -31,7 +32,7 @@ const amountOf = (target: LinkTarget): number => target.kind === 'cost-new' || t
         <ul class="fin-exact__list">
           @for (row of rows(); track row.line.id) {
             <li><label><input type="checkbox" [checked]="ticked().has(row.line.id)" [disabled]="busy()" (change)="toggle(row.line.id)" />
-              <span><b>{{ row.line.counterparty || row.line.reference || 'Banktransactie' }} {{ signedEur(row.line.amountEur) }}</b>
+              <span><b>{{ title(row.line) }} {{ signedEur(row.line.amountEur) }}</b>
                 <span>⇄ {{ row.target.title }} {{ eur(amount(row.target)) }}</span>
                 @if (row.follows) { <small>datum volgt de bank</small> }</span></label></li>
           } @empty { <li class="fin-hint">Geen exacte suggesties meer.</li> }
@@ -76,7 +77,7 @@ export class ExactLinksSheet {
       for (const row of rows) {
         const failure = await this.state.linkLine(row.line, row.target, { toast: false });
         if (failure) {
-          this.ui.toast(`Gestopt bij ${row.line.counterparty || row.line.reference || 'een transactie'} ${formatEuro(Math.abs(row.line.amountEur))}: ${failure}. ${done} van ${rows.length} gekoppeld.`, 'err');
+          this.ui.toast(`Gestopt bij ${row.line.counterparty || row.line.reference ? this.title(row.line) : 'een transactie'} ${formatEuro(Math.abs(row.line.amountEur))}: ${failure}. ${done} van ${rows.length} gekoppeld.`, 'err');
           return;
         }
         done += 1;
@@ -88,6 +89,8 @@ export class ExactLinksSheet {
     }
   }
   amount(target: LinkTarget): number { return amountOf(target); }
+  /** The line's clean title (bankTextOf), as its row on Transacties reads. */
+  title(line: BankStatementLine): string { return bankTextOf(line).title; }
   eur(value: number): string { return formatEuro(value); }
   signedEur(value: number): string { return signed(value); }
 }

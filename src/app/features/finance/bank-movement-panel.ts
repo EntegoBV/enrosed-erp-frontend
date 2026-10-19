@@ -90,7 +90,7 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
             @if (!compact()) { <span class="wk-th fin-col-link" role="columnheader">Koppeling</span> }
             @else { <span class="wk-th fin-col-act" role="columnheader"><span class="fin-sr">Actie</span></span> }
             <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
-            @if (!compact()) { <span class="wk-th wk-th--num fin-col-saldo" role="columnheader">Saldo</span> }
+            @if (!compact() && one()) { <span class="wk-th wk-th--num fin-col-saldo" role="columnheader">Saldo</span> }
             <span class="wk-th" role="columnheader"><span class="fin-sr">Acties</span></span>
           </div>
           @for (group of dayGroups(); track group.day) {
@@ -128,7 +128,7 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
                 }
                 <span class="wk-td wk-td--num" role="gridcell"><b [class.wk-amount--in]="row.amountEur > 0">{{ row.amountEur > 0 ? '+' : '−' }} {{ abs(row.amountEur) | eur }}</b>
                   @if (row.allocationDifferenceEur) { <span class="wk-td__sub">{{ verschil(row) }}</span> }</span>
-                @if (!compact()) { <span class="wk-td wk-td--num fin-tx__saldo fin-col-saldo" role="gridcell" [attr.title]="saldoText(row)">{{ saldoText(row) }}</span> }
+                @if (!compact() && one()) { <span class="wk-td wk-td--num fin-tx__saldo fin-col-saldo" role="gridcell" [attr.title]="saldoText(row)">{{ saldoText(row) }}</span> }
                 <span class="wk-td fin-td-end" role="gridcell">
                   <button class="wk-btn wk-btn--ghost wk-btn--icon wk-btn--sm" type="button" [attr.aria-label]="'Meer acties voor ' + titleOf(row)" (click)="$event.stopPropagation(); lineMenu(row, point($event))"><app-icon name="more" [size]="16" /></button>
                 </span>
@@ -1429,18 +1429,19 @@ export class BankMovementPanel {
     if (this.busy() || !this.allocated(row)) return;
     if (!row.salesPaymentId) {
       this.ui.confirm({ title: 'Koppeling losmaken',
-        message: `${escapeHtml(row.counterparty || row.reference || 'Bankbeweging')} · ${euro.format(row.amountEur)}. De betaling op je uitgave blijft bewaard. Alleen de koppeling met deze banktransactie verdwijnt.`,
+        message: `${escapeHtml(this.titleOf(row))} · ${euro.format(row.amountEur)}. De betaling op je uitgave blijft bewaard. Alleen de koppeling met deze banktransactie verdwijnt.`,
         confirmLabel: 'Koppeling losmaken', danger: true },
         () => this.run(async () => { await this.api.unlinkPayments(row.id); await this.state.refreshBank(); await this.state.reload(['costs', 'payments']); }));
       return;
     }
-    this.ui.confirm({ title: 'Koppeling losmaken', message: `${escapeHtml(row.counterparty || row.reference || 'Bankbeweging')} · ${euro.format(row.amountEur)}. `
+    this.ui.confirm({ title: 'Koppeling losmaken', message: `${escapeHtml(this.titleOf(row))} · ${euro.format(row.amountEur)}. `
       + (row.allocationCreatedPayment ? 'De vanuit deze bankbeweging aangemaakte factuurbetaling wordt ingetrokken. De bankbeweging zelf blijft bewaard.' : 'De bestaande factuurbetaling blijft bewaard; alleen de koppeling met deze bankbeweging verdwijnt.'),
       confirmLabel: 'Koppeling losmaken', danger: true }, () => this.run(async () => { await this.api.unallocate(row.id); await this.state.refreshBank(); }));
   }
   remove(row: BankStatementLine): void {
     if (this.busy() || !this.canRemove(row)) return;
-    const what = [row.account, euro.format(row.amountEur), row.counterparty, row.reference || 'Geen referentie'].filter(Boolean).map(part => escapeHtml(part)).join(' · ');
+    const text = this.textOf(row);
+    const what = [row.account, euro.format(row.amountEur), text.title, text.sub || 'Geen referentie'].filter(Boolean).map(part => escapeHtml(part)).join(' · ');
     /* The outcome does not depend on where Intrekken was picked (the list's ⋯, the phone sheet's ⋯): a failure is a toast, and the open detail of the withdrawn line closes. */
     this.ui.confirm({ title: 'Transactie intrekken', message: `${what}. Ze telt niet meer mee in het saldo. Het logboek houdt de wijziging bij.`, confirmLabel: 'Intrekken', danger: true },
       () => this.run(async () => {

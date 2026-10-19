@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { CompanyCost, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import { costLedger, filterCostLedger } from '../src/app/features/finance/cost-ledger.ts';
 import { containerPayables } from '../src/app/features/finance/payables.ts';
-import { financeAttention } from '../src/app/features/finance/finance-attention.ts';
+import { costLateDays, financeAttention } from '../src/app/features/finance/finance-attention.ts';
 import type { AttentionInput } from '../src/app/features/finance/finance-attention.ts';
 
 const clear: AttentionInput = {
@@ -36,6 +36,20 @@ test('old costs count only when strictly older than 30 days', () => {
   assert.equal(item.title, '2 open kosten ouder dan 30 dagen');
   assert.equal(item.amountEur, 15.5, 'what is still open, not the invoice total');
   assert.equal(financeAttention({ ...clear, openCosts: [{ date: '2026-08-01', openEur: 5 }] })[0].title, '1 open kost ouder dan 30 dagen');
+});
+
+test('a cost with its own due date is late from that day, not from day 30 (F-B3)', () => {
+  // today 2026-09-24: a cost of 1 Aug with 60-day terms (Vervalt op 30 Sep) is not late; one due on 20 Sep is 4 days late.
+  assert.deepEqual(kinds({ openCosts: [{ date: '2026-08-01', openEur: 100, dueDate: '2026-09-30' }] }), [], '54 days old but not yet due');
+  assert.deepEqual(kinds({ openCosts: [{ date: '2026-09-20', openEur: 100, dueDate: '2026-09-24' }] }), [], 'due today is not late');
+  const [item] = financeAttention({ ...clear, openCosts: [{ date: '2026-09-10', openEur: 40, dueDate: '2026-09-20' }, { date: '2026-08-01', openEur: 5, dueDate: null }] });
+  assert.equal(item.kind, 'overdue-costs');
+  assert.equal(item.count, 2, 'one late by its due date, one by the old 30-day rule');
+  assert.equal(item.amountEur, 45);
+  assert.equal(item.title, '2 open kosten over de vervaldag');
+  assert.equal(item.detail, 'De oudste 24 dagen te laat', '1 Aug + 30 = 31 Aug, 24 days before 24 Sep');
+  assert.equal(costLateDays({ date: '2026-08-24' }, '2026-09-24'), 1, 'without a due date: day 31 is the first late day');
+  assert.equal(costLateDays({ date: '2026-08-01', dueDate: '2026-09-30' }, '2026-09-24'), -6);
 });
 
 test('a reading goes stale after 14 days; accounts without one ask for a balance', () => {

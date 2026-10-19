@@ -239,10 +239,14 @@ export function filingDeadline(year: number, quarter: number): string {
   return quarter === 4 ? isoOf(year + 1, 1, 25) : isoOf(year, quarter * 3 + 1, 25);
 }
 
-/** The return to open without a period in the address: the last closed quarter. */
+/**
+ * The return that is due next, the one rule of the Btw tile, the VAT reminder and the Btw-aangifte without a period in
+ * the address: the last closed quarter until its filing day (the 25th) included, then the running quarter.
+ */
 export function defaultReturnPeriod(today: string): { year: number; quarter: number } {
   const { year, quarter } = quarterOf(today);
-  return quarter === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: quarter - 1 };
+  const closed = quarter === 1 ? { year: year - 1, quarter: 4 } : { year, quarter: quarter - 1 };
+  return today <= filingDeadline(closed.year, closed.quarter) ? closed : { year, quarter };
 }
 
 /* -------------------------------------------------------- return lines */

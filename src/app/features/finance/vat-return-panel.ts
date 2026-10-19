@@ -167,7 +167,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
           <div class="ios-group">
             @for (container of result().notReceived; track container.id) {
               <button class="ios-cell" type="button" (click)="state.openContainer(container.id)">
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ containerName(container) }}@if (containerHint(container); as number) { <small class="fin-hint-number">{{ number }}</small> }</span><span class="ios-cell__sub">Telt mee in het kwartaal van ontvangst</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ containerName(container) }}@if (containerHint(container); as number) { <small class="fin-hint-number">{{ number }}</small> }</span><span class="ios-cell__sub fin-wrapall">Telt mee in het kwartaal van ontvangst</span></span>
                 <span class="ios-cell__trail"><span class="ios-cell__value">{{ container.goodsEur | eur }}</span></span>
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
@@ -178,7 +178,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
       @if (state.containersLoading()) { <div class="ios-card"><app-skeleton kind="list" [rows]="2" /></div> }
       <div class="ios-group fin-ios-single">
         <div class="ios-cell">
-          <span class="ios-cell__body"><span class="ios-cell__title">Boekhouderspakket</span><span class="ios-cell__sub">Kosten, btw-aangifte (CSV) en documenten van Q{{ period().quarter }} {{ period().year }}</span></span>
+          <span class="ios-cell__body"><span class="ios-cell__title">Boekhouderspakket</span><span class="ios-cell__sub fin-wrapall">Kosten, btw-aangifte (CSV) en documenten van Q{{ period().quarter }} {{ period().year }}</span></span>
           <button class="ios-capsule ios-capsule--tinted ios-capsule--sm" type="button" (click)="state.openPackage(period())">Pakket</button>
         </div>
       </div>
@@ -213,7 +213,7 @@ export class VatReturnPanel implements FinanceSectionApi {
   /** The grid whose documents are open in the phone sub-sheet. */
   readonly openGridCode = signal<GridCode | null>(null);
 
-  /** The address, or the last closed quarter; a past year without a quarter opens on its Q4. */
+  /** The address, or the return due next (defaultReturnPeriod); a past year without a quarter opens on its Q4. */
   readonly period = computed(() => {
     const { year, quarter } = this.state.location();
     const today = this.state.today();

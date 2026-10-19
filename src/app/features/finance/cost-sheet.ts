@@ -156,10 +156,10 @@ const storedIncl = (cost: CompanyCost): number => (Number.isFinite(cost.amountIn
               <div class="fin-field"><span>Betaald op</span><app-date-field fieldId="k-paid" [value]="draft().paidOn ?? payments()[0].paidOn" (valueChange)="patch({ paidOn: $event || null })" /></div>
             }
           } @else {
-            <label class="fin-field fin-field--switch fin-field--wide"><span>Betaald<small>{{ draft().paidOn ? 'Op ' + (draft().paidOn ?? '') : 'Nog open: staat bij Te betalen' }}</small></span>
+            <label class="fin-field fin-field--switch fin-field--wide"><span>Betaald<small>{{ draft().paidOn ? 'Op ' + (draft().paidOn | dateNl) : 'Nog open: staat bij Te betalen' }}</small></span>
               <input [class]="state.desk() ? 'fin-checkbox' : 'ios-switch'" type="checkbox" role="switch" [checked]="!!draft().paidOn" (change)="togglePaid($any($event.target).checked)" /></label>
             @if (draft().paidOn) {
-              <div class="fin-field"><span>Betaald op</span>@if (selectedBank() && becomingPaid()) { <span>{{ draft().paidOn }}</span> } @else { <app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /> }</div>
+              <div class="fin-field"><span>Betaald op</span>@if (selectedBank() && becomingPaid()) { <span>{{ draft().paidOn | dateNl }}</span> } @else { <app-date-field fieldId="k-paid" [value]="draft().paidOn ?? ''" (valueChange)="patch({ paidOn: $event || null })" /> }</div>
             }
           }
           @if (becomingPaid()) {

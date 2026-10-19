@@ -4,6 +4,7 @@ import { BankingApi } from '../../core/api/banking-api';
 import { messageOf } from '../../core/api/errors';
 import { Sheet, Ui } from '../../shared/ui';
 import { legDistance, transferCandidates, vatPeriods } from './bank-suggestions';
+import { bankTextOf } from './bank-text';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { FinanceState, formatEuro } from './finance-state';
 
@@ -26,7 +27,7 @@ const NONE = 'none';
     @if (line(); as row) {
       <app-sheet variant="ios" title="Boeken als…" (closed)="close()">
         <div body class="fin-sheet fin-bookas">
-          <p class="fin-bookas__line"><b>{{ row.counterparty || row.reference || 'Banktransactie' }}</b><span>{{ signed(row.amountEur) }} · {{ state.accountLabel(row.account) }} · {{ day(row) }}</span></p>
+          <p class="fin-bookas__line"><b>{{ title(row) }}</b><span>{{ signed(row.amountEur) }} · {{ state.accountLabel(row.account) }} · {{ day(row) }}</span></p>
           <div class="fin-bookas__options" role="radiogroup" aria-label="Boeken als">
             @for (option of options(); track option.id) {
               <label class="fin-bookas__option" [class.is-on]="choice() === option.id"><input type="radio" name="book-as" [checked]="choice() === option.id" (change)="choice.set(option.id)" />
@@ -157,5 +158,7 @@ export class BookAsSheet {
   }
   periodText(period: string): string { return `Q${period.slice(6)} ${period.slice(0, 4)}`; }
   signed(value: number): string { return `${value > 0 ? '+' : '−'} ${formatEuro(Math.abs(value))}`; }
+  /** The line's clean title (bankTextOf), as its row on Transacties reads. */
+  title(row: BankStatementLine): string { return bankTextOf(row).title; }
   day(row: BankStatementLine): string { const day = this.state.lineDay(row); return `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`; }
 }

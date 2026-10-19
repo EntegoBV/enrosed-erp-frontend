@@ -267,7 +267,7 @@ export class FinanceToolbar {
           ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : [])] : []),
         ...(this.transactions() && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
           label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
-        { id: 'csv', label: 'Exporteer CSV', iconName: 'download', divider: bank },
+        { id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download', divider: bank },
         { id: 'package', label: 'Boekhouderspakket…', iconName: 'archive' },
         { id: 'keys', label: 'Sneltoetsen', hint: '?', iconName: 'list' },
       ],

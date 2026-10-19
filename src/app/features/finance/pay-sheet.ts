@@ -30,7 +30,7 @@ type PaidChoice = 'today' | 'yesterday' | 'cost' | 'other';
       <div body class="fin-sheet">
         @if (!single()) { <p class="fin-hint">Bestaande banktransacties koppel je per kost. Open daarvoor de betaling bij die kost.</p> }
         @if (single()) {
-          @if (existingPayment(); as payment) { <p class="fin-sheet__lead">{{ single()!.description }} · {{ payment.amountEur | eur }} betaald op {{ payment.paidOn }}</p> }
+          @if (existingPayment(); as payment) { <p class="fin-sheet__lead">{{ single()!.description }} · {{ payment.amountEur | eur }} betaald op {{ dayMonthYear(payment.paidOn) }}</p> }
           <app-bank-transaction-picker [direction]="total() < 0 ? 'INCOMING' : 'OUTGOING'" [amount]="abs(existingPayment()?.amountEur ?? amount())" [selected]="selectedBank()" [disabled]="state.saving() || !!state.bankCostLinkPending()" (selectedChange)="selectedBank.set($event)" />
         }
         @if (state.bankCostLinkError()) { <p class="fin-hint fin-hint--warn" role="alert">{{ state.bankCostLinkError() }}</p> }
@@ -108,6 +108,8 @@ export class PaySheet {
     }
   });
   readonly paidLabel = computed(() => dayMonthYear(this.paidOn()));
+  /** '14 okt 2026': the app's date words, never the ISO day. */
+  readonly dayMonthYear = dayMonthYear;
   /** Less than the remainder, the remainder, or more: the button says which. */
   readonly amountState = computed<'rest' | 'part' | 'over' | 'none'>(() => {
     if (!this.single()) return 'rest';

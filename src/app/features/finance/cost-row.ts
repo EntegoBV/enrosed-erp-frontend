@@ -7,6 +7,7 @@ import { SwipeActions } from '../../shared/swipe-actions';
 import { categoryLabel, categoryTone } from './cost-categories';
 import { dayMonth } from './finance-format';
 import { cashTotalOf, openOf, paidOf, regimeLabel, regimeToConfirm, reverseChargeOf, vatOf } from './finance-metrics';
+import { costLateDays } from './finance-attention';
 import { FinanceState } from './finance-state';
 import { daysBetween } from './payables';
 
@@ -38,7 +39,7 @@ import { daysBetween } from './payables';
         </span>
         @if (columns() === 'payable') {
           <span class="wk-td" role="gridcell">{{ date() }}
-            @if (age() !== null && age()! > 0) { <span class="wk-pill fin-age" [class.tone-warn]="age()! > 30 && age()! <= 60" [class.tone-danger]="age()! > 60">{{ age() }} d</span> }
+            @if (age() !== null && age()! > 0) { <span class="wk-pill fin-age" [class.tone-warn]="late() > 0 && late() <= 30" [class.tone-danger]="late() > 30">{{ age() }} d</span> }
           </span>
           <span class="wk-td fin-what" role="gridcell"><app-icon class="tone-teal" name="receipt" [size]="16" /><b>{{ row.description }}@if (regimeNote()) { <i class="wk-dot tone-warn fin-regime-dot" role="img" [attr.title]="regimeNote()" [attr.aria-label]="regimeNote()"></i> }</b>@if (row.party) { <small>{{ row.party }}</small> }</span>
           <span class="wk-td wk-td--wrap" role="gridcell"><span [class]="'wk-dot tone-' + tone()"></span> {{ category() }}</span>
@@ -169,6 +170,8 @@ export class CostRow {
     const cost = this.cost();
     return cost.date <= this.state.today() ? daysBetween(cost.date, this.state.today()) : null;
   });
+  /** Days past the due day (its own Vervalt op, else 30 days after the cost date): the age pill warns from 1, turns red after 30. */
+  readonly late = computed(() => costLateDays(this.cost(), this.state.today()));
   readonly channel = (code: string): string => this.state.channelName(code);
 
   dragOver(event: DragEvent): void {

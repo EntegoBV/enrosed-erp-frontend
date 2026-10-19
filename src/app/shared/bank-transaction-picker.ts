@@ -3,6 +3,7 @@ import { BankingApi, type BankStatementLine } from '../core/api/banking-api';
 import { messageOf } from '../core/api/errors';
 import { bankTransactionAllocated, bankTransactionDay, bankTransactionOptions, type BankDirection } from './bank-transaction-options';
 import { bankAmountDifference } from './bank-transaction-options';
+import { bankTextOf, type BankText } from '../features/finance/bank-text';
 import { EurPipe } from './pipes';
 import { Skeleton } from './skeleton';
 
@@ -23,7 +24,7 @@ const accountKey = (value: string): string => {
         <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : heading() === 'Banktransactie koppelen' ? 'Transactie kiezen' : 'Kiezen' }}</button>
       </header>
       @if (selected(); as row) {
-        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || 'Geen tegenpartij' }}</span><small>{{ row.reference || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
+        <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || row.reference ? text(row).title : 'Geen tegenpartij' }}</span><small>{{ text(row).sub || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
           <button type="button" class="btn btn--sm" [disabled]="disabled()" (click)="selectedChange.emit(null)">Selectie wissen</button></div>
       }
       @if (expanded()) {
@@ -39,7 +40,7 @@ const accountKey = (value: string): string => {
           <div class="bank-picker__results" role="group" aria-label="Banktransacties">
             @for (row of matches(); track row.id) {
               <button class="bank-picker__row" type="button" [disabled]="disabled() || allocated(row)" [attr.aria-pressed]="selected()?.id === row.id" (click)="choose(row)">
-                <span class="bank-picker__main"><b>{{ row.counterparty || row.reference || 'Banktransactie' }}</b><small>{{ day(row) }} · {{ row.reference || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }}</small></span>
+                <span class="bank-picker__main"><b>{{ text(row).title }}</b><small>{{ day(row) }} · {{ text(row).sub || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }}</small></span>
                 <span class="bank-picker__money"><b>{{ row.amountEur | eur }}</b><small>{{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small><small>{{ allocated(row) ? (row.allocationLabel || 'Al gekoppeld') : 'Vrij om te koppelen' }}</small></span>
               </button>
             } @empty { <p class="bank-picker__empty">{{ rows().length ? 'Geen transacties bij deze filters. Pas de zoekterm of het bedragfilter aan.' : 'Er zijn nog geen banktransacties beschikbaar. Synchroniseer bij Kosten & bank of registreer de betaling handmatig.' }}</p> }
@@ -85,6 +86,8 @@ export class BankTransactionPicker implements OnInit {
   });
   ngOnInit(): void { if (this.startOpen()) { this.expanded.set(true); void this.load(); } }
   readonly allocated = bankTransactionAllocated;
+  /** The clean words Kosten & bank shows for a line (bankTextOf), never the bank's raw Odoo text. */
+  text(row: BankStatementLine): BankText { return bankTextOf(row); }
   difference(row: BankStatementLine): number | null { const amount = this.amount(); return amount != null && amount > 0 ? bankAmountDifference(row.amountEur, Math.sign(row.amountEur) * amount) : null; }
   day(row: BankStatementLine): string { return bankTransactionDay(row).split('-').reverse().join('/'); }
   toggle(): void { this.expanded.update(open => !open); if (this.expanded()) void this.load(); }

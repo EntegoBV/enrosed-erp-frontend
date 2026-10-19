@@ -314,9 +314,10 @@
    */
   .fin-table--tx { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .fin-table--full.fin-table--one { --wk-cols: minmax(220px, 1fr) 108px minmax(240px, 1.2fr) 128px 120px 36px; }
-  .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(210px, 1fr) 108px minmax(240px, 1.2fr) 128px 120px 36px; }
+  /* Several accounts: no Saldo column (a running total over interleaved accounts reads as one account's balance); the day heads keep Saldo einde dag. */
+  .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(210px, 1fr) 108px minmax(240px, 1.2fr) 128px 36px; }
   .wk-body--split .fin-table--full.fin-table--one { --wk-cols: minmax(200px, 1fr) 108px 124px 116px 36px; }
-  .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(190px, 1fr) 108px 124px 116px 36px; }
+  .wk-body--split .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(190px, 1fr) 108px 124px 36px; }
   .wk-body--split .fin-table--full .fin-col-link { display: none; }
   .fin-table--tx-compact { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
   .fin-table--tx-compact { --fin-act-w: 88px; &.fin-table--no-act { --fin-act-w: 0px; } }
@@ -329,7 +330,7 @@
   .fin-th-short { display: none; }
   @container wk-pane (max-width: 1023.98px) {
     .wk-body:not(.wk-body--split) .fin-table--full.fin-table--one { --wk-cols: minmax(170px, 1fr) minmax(170px, 1.25fr) 116px 112px 36px; }
-    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(160px, 1fr) minmax(160px, 1.25fr) 116px 112px 36px; }
+    .wk-body:not(.wk-body--split) .fin-table--full:not(.fin-table--one) { --wk-cols: 10px minmax(160px, 1fr) minmax(160px, 1.25fr) 116px 36px; }
     .wk-body:not(.wk-body--split) .fin-table--full { .fin-col-status { display: none; } .fin-tx__dot { display: block; } }
   }
   @container wk-pane (max-width: 719.98px) {

@@ -44,7 +44,7 @@ type SortKey = 'date' | 'title' | 'amount';
           <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="state.booking()" (click)="state.bookNow()">{{ state.booking() ? 'Bezig…' : 'Nu boeken' }}</button></span>
         </div>
       } @else {
-        <div class="ios-banner"><span>{{ dueNowText() }}</span><button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="state.booking()" (click)="state.bookNow()">Boek nu</button></div>
+        <div class="ios-banner"><span>{{ dueNowText() }}</span><button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="state.booking()" (click)="state.confirmBookNow()">Boek nu</button></div>
       }
     }
 

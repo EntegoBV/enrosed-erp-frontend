@@ -48,7 +48,7 @@ import { financeAttention } from './finance-attention';
 import type { VatDueInput } from './finance-attention';
 import { FinanceIntake } from './finance-intake';
 import {
-  addDays, cashTotalOf, costRegimeCells, defaultReturnPeriod, occurrencesBetween, openOf, previewBacklog, quarterOf, returnLineOf, returnVatOf, upcomingRecurring,
+  addDays, cashTotalOf, costRegimeCells, defaultReturnPeriod, occurrencesBetween, openOf, previewBacklog, returnLineOf, returnVatOf, upcomingRecurring,
 } from './finance-metrics';
 import { blankBalance, blankCost, blankCostParty, blankFair, blankRecurring, FINANCE_TABS, financeSection, localIsoDay, periodRange } from './finance-sections';
 import type { PeriodId } from './finance-sections';
@@ -81,6 +81,9 @@ const SOURCE_NAMES: Readonly<Record<FinanceSource, string>> = {
 const CASH_SOURCES: readonly FinanceSource[] = ['suppliers', 'financing', 'forecasts', 'cashSettings'];
 const MAIN_SOURCES: readonly FinanceSource[] = ['bankAccounts', 'costs', 'recurring', 'balances', 'orders', 'customers', 'payments', 'attachments', 'incoming', 'statements', 'parties', 'fairs', 'countries', 'company'];
 const BANK_ZONE = 'Europe/Brussels';
+/** The pause between the files of one package, so each download starts on its own. */
+const DOWNLOAD_GAP_MS = 1200;
+const downloadPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, DOWNLOAD_GAP_MS));
 const INACTIVE = new Set(['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN']);
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
@@ -700,7 +703,7 @@ export class FinanceState {
     .filter((row) => !this.receiptAccountKey(row as IncomingPaymentRow)));
 
   /**
-   * The closed quarter's return for the VAT reminder: its deadline, figures and pending lines; booked when a VAT
+   * The return due next (defaultReturnPeriod: the closed quarter until its filing day) for the VAT reminder: its deadline, figures and pending lines; booked when a VAT
    * payment of the quarter is on the bank (the forecast's own rule, cashInput().paidVatPeriods).
    */
   readonly vatDue = computed<VatDueInput>(() => {
@@ -717,7 +720,7 @@ export class FinanceState {
     const unbanked = this.unbanked();
     return financeAttention({
       today: this.today(),
-      openCosts: this.openCosts().map((cost) => ({ date: cost.date, openEur: cost.openEur })),
+      openCosts: this.openCosts().map((cost) => ({ date: cost.date, openEur: cost.openEur, dueDate: cost.dueDate ?? null })),
       unconfirmedRegimes: { count: this.unconfirmedRegimeCount() },
       dueNowCount: this.dueNow().length,
       containerNow: { count: containersNow.length, eur: round2(containersNow.reduce((sum, row) => sum + row.remainingEur, 0)) },
@@ -1065,9 +1068,9 @@ export class FinanceState {
       { importVatDeferred, today: this.today() });
   }
 
-  /** The running quarter's return: the Overzicht tile. */
+  /** The Btw tile's return: the same quarter as the VAT reminder and the Btw-aangifte (defaultReturnPeriod). */
   readonly vatReturnCurrent = computed(() => {
-    const { year, quarter } = quarterOf(this.today());
+    const { year, quarter } = defaultReturnPeriod(this.today());
     return this.vatReturnFor(year, quarter);
   });
 
@@ -1795,6 +1798,9 @@ export class FinanceState {
     saveBlob(new Blob(['﻿' + costLedgerCsv(rows, this.categoryName, undefined, this.channelName, returnVatOf, costRegimeCells)], { type: 'text/csv;charset=utf-8' }), filename);
   }
 
+  /** The menu item of exportThisYear, named for what it exports: "Exporteer kosten 2026 (CSV)". */
+  exportThisYearLabel(): string { return `Exporteer kosten ${this.today().slice(0, 4)} (CSV)`; }
+
   /** 'Exporteer CSV' where a section has no list of its own: every cost and container payment of this year. */
   exportThisYear(): void {
     const year = this.today().slice(0, 4);
@@ -1813,11 +1819,15 @@ export class FinanceState {
     const rows = this.ledger().filter((row) => row.date >= from && row.date <= to);
     const names = (row: CostLedgerRow): string => this.attachmentsFor(row.cost?.id).map((asset) => asset.originalFilename || asset.name).join(', ');
     saveBlob(new Blob(['﻿' + costLedgerCsv(rows, this.categoryName, names, this.channelName, returnVatOf, costRegimeCells)], { type: 'text/csv;charset=utf-8' }), `kosten-${year}-Q${quarter}.csv`);
+    /* One download after another: mobile Safari keeps only the first of several started at once. */
+    await downloadPause();
     saveBlob(new Blob(['﻿' + vatReturnCsv(this.vatReturnFor(year, quarter))], { type: 'text/csv;charset=utf-8' }), `btw-aangifte-${year}-Q${quarter}.csv`);
     const ids = [...new Set(rows.flatMap((row) => this.attachmentsFor(row.cost?.id).map((asset) => asset.id)))];
     if (!ids.length) return;
     try {
-      saveBlob(await this.media.downloadZip(ids, 'original'), `kosten-${year}-Q${quarter}-documenten.zip`);
+      const zip = await this.media.downloadZip(ids, 'original');
+      await downloadPause();
+      saveBlob(zip, `kosten-${year}-Q${quarter}-documenten.zip`);
     } catch {
       this.ui.toast('Documenten downloaden mislukt; de CSV is bewaard.', 'err');
     }
@@ -1929,6 +1939,14 @@ export class FinanceState {
         this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
       }
     });
+  }
+
+  /** The phone's "Boek nu": a tap writes data, so it asks first; the desk's "Nu boeken" button books at once. */
+  confirmBookNow(): void {
+    if (this.booking()) return;
+    const n = this.dueNow().length;
+    this.ui.confirm({ title: 'Vaste kosten boeken', message: `${n} vaste ${n === 1 ? 'kost' : 'kosten'} nu boeken? Daarna staan ze bij Te betalen.`, confirmLabel: 'Nu boeken' },
+      () => void this.bookNow());
   }
 
   async bookNow(): Promise<void> {
@@ -2084,12 +2102,24 @@ export class FinanceState {
     this.bankDraft.set(balance ? { ...balance } : blankBalance(account?.source === 'ODOO' ? addDays(this.today(), -1) : this.today(), key ? this.canonicalAccount(key) : ''));
   }
 
-  /** 'Klopt het saldo?' for an account with a reading; the first reading otherwise. */
+  /** 'Klopt het saldo?' for an account with a reading (an Odoo account on yesterday's closing balance); the first reading otherwise. */
   checkOrFill(key: string): void {
     const account = this.accountsView().find((row) => row.account === key);
-    if (account?.source === 'ODOO') this.openBank(null, key);
-    else if (account?.reading) this.accountCheck.set({ key });
+    if (account?.reading && (account.source !== 'ODOO' || this.closingCheck(key))) this.accountCheck.set({ key });
     else this.openBank(null, key);
+  }
+
+  /**
+   * An Odoo account is checked on a closing balance: Odoo hands over booking days without a clock, so its checkpoints
+   * are the end of a past day (the Saldo invullen rule). Yesterday and Enrosed's figure at its end; null for another
+   * account or while that figure is not known.
+   */
+  closingCheck(key: string): { day: string; expectedEur: number } | null {
+    const account = this.accountsView().find((row) => row.account === key);
+    if (account?.source !== 'ODOO') return null;
+    const day = addDays(this.today(), -1);
+    const expectedEur = this.dayEndEur(day, key);
+    return expectedEur === null ? null : { day, expectedEur };
   }
 
   async saveBank(draft: BankBalance): Promise<boolean> {
@@ -2110,16 +2140,19 @@ export class FinanceState {
     }
   }
 
-  /** Writes what the bank app says as a reading taken now; the difference goes into its notes. */
-  async checkAccount(key: string, balanceEur: number): Promise<boolean> {
+  /**
+   * Writes what the bank app says as a reading taken now (an Odoo account: as the closing balance of the day it was
+   * checked on, closingCheck); the difference goes into its notes.
+   */
+  async checkAccount(key: string, balanceEur: number, closing: { day: string; expectedEur: number } | null = null): Promise<boolean> {
     const account = this.accountsView().find((row) => row.account === key);
     if (!account || this.saving() || !Number.isFinite(balanceEur)) return false;
-    const difference = Math.round(balanceEur * 100) - Math.round((account.currentEur ?? 0) * 100);
-    const asOfAt = new Date().toISOString();
+    const difference = Math.round(balanceEur * 100) - Math.round((closing ? closing.expectedEur : account.currentEur ?? 0) * 100);
+    const asOfAt = closing ? null : new Date().toISOString();
     this.saving.set(true);
     try {
       const saved = await this.finance.createBankBalance({
-        id: null, account: account.account, date: receiptLocalParts(asOfAt, BANK_ZONE).day, asOfAt, timeZone: BANK_ZONE,
+        id: null, account: account.account, date: closing ? closing.day : receiptLocalParts(asOfAt!, BANK_ZONE).day, asOfAt, timeZone: closing ? null : BANK_ZONE,
         balanceEur: round2(balanceEur),
         notes: difference === 0 ? 'Gecontroleerd met bankapp' : `Gecontroleerd; verschil ${formatEuro(difference / 100)} met berekend saldo`,
       });

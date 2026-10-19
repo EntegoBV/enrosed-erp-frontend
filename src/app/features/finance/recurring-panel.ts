@@ -35,7 +35,7 @@ type GroupId = 'active' | 'paused' | 'ended';
           <span class="wk-banner__text">{{ dueText() }}</span>
           <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="state.booking()" (click)="state.bookNow()">{{ state.booking() ? 'Bezig…' : 'Nu boeken' }}</button></span></div>
       } @else {
-        <div class="ios-banner"><span>{{ dueText() }}</span><button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="state.booking()" (click)="state.bookNow()">Boek nu</button></div>
+        <div class="ios-banner"><span>{{ dueText() }}</span><button class="ios-capsule ios-capsule--sm ios-capsule--accent" type="button" [disabled]="state.booking()" (click)="state.confirmBookNow()">Boek nu</button></div>
       }
     }
     @if (state.desk()) {
@@ -88,16 +88,16 @@ type GroupId = 'active' | 'paused' | 'ended';
             <div class="wk-empty"><span class="wk-empty__icon"><app-icon name="repeat" [size]="22" /></span><p class="wk-empty__title">Nog geen vaste kosten</p>
               <p class="wk-empty__text">Huur, de boekhouder, software, verzekering: stel ze één keer in, de boekingen volgen vanzelf.</p>
               <div class="wk-empty__actions"><button class="wk-btn wk-btn--primary" type="button" (click)="state.openRecurring(null)">Vaste kost instellen</button></div></div>
-            @if (candidates().length) {
-              <!-- Costs booked by hand that come back: set one up from its rhythm, starting at the next expected booking (critique B12). -->
-              <section class="wk-card fin-candidates" aria-labelledby="fin-candidates-title">
-                <header class="wk-card__head"><h2 class="wk-card__title" id="fin-candidates-title">Lijkt te herhalen</h2></header>
-                @for (candidate of candidates(); track candidate.party) {
-                  <div class="fin-candidate"><span><b>{{ candidate.party }}</b><small>{{ candidateText(candidate) }}</small></span>
-                    <button class="wk-btn wk-btn--sm" type="button" (click)="setUp(candidate)">Instellen…</button></div>
-                }
-              </section>
-            }
+          }
+          @if (candidates().length) {
+            <!-- Costs booked by hand that come back, also once other vaste kosten exist: set one up from its rhythm, starting at the next expected booking (critique B12). -->
+            <section class="wk-card fin-candidates" aria-labelledby="fin-candidates-title">
+              <header class="wk-card__head"><h2 class="wk-card__title" id="fin-candidates-title">Lijkt te herhalen</h2></header>
+              @for (candidate of candidates(); track candidate.party) {
+                <div class="fin-candidate"><span><b>{{ candidate.party }}</b><small>{{ candidateText(candidate) }}</small></span>
+                  <button class="wk-btn wk-btn--sm" type="button" (click)="setUp(candidate)">Instellen…</button></div>
+              }
+            </section>
           }
         </div>
         @if (agenda().length) {
@@ -154,19 +154,19 @@ type GroupId = 'active' | 'paused' | 'ended';
         <div class="ios-empty"><span class="ios-empty__icon"><app-icon name="repeat" [size]="26" /></span><p class="ios-empty__title">Nog geen vaste kosten</p>
           <p class="ios-empty__text">Stel ze één keer in, de boekingen volgen vanzelf.</p>
           <button class="ios-capsule ios-capsule--tinted" type="button" (click)="state.openRecurring(null)">Vaste kost instellen</button></div>
-        @if (candidates().length) {
-          <section class="ios-section">
-            <div class="ios-section__head"><h2>Lijkt te herhalen</h2></div>
-            <div class="ios-group">
-              @for (candidate of candidates(); track candidate.party) {
-                <button class="ios-cell ios-cell--tall" type="button" (click)="setUp(candidate)">
-                  <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ candidate.party }}</span><span class="ios-cell__sub fin-wrapall">{{ candidateText(candidate) }}</span></span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value">Instellen…</span></span>
-                </button>
-              }
-            </div>
-          </section>
-        }
+      }
+      @if (candidates().length) {
+        <section class="ios-section">
+          <div class="ios-section__head"><h2>Lijkt te herhalen</h2></div>
+          <div class="ios-group">
+            @for (candidate of candidates(); track candidate.party) {
+              <button class="ios-cell ios-cell--tall" type="button" (click)="setUp(candidate)">
+                <span class="ios-cell__body"><span class="ios-cell__title fin-wrapall">{{ candidate.party }}</span><span class="ios-cell__sub fin-wrapall">{{ candidateText(candidate) }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value">Instellen…</span></span>
+              </button>
+            }
+          </div>
+        </section>
       }
       @if (agenda().length) {
         <section class="ios-section">
@@ -228,8 +228,11 @@ export class RecurringPanel implements FinanceSectionApi {
       { label: 'Volgende', value: next ? `${next.definition.name} op ${dayMonth(next.date)}` : '—', tone: 'muted' },
     ];
   });
-  /** "Lijkt te herhalen": hand-booked costs to one party that come back (recurring-candidates.ts). */
-  readonly candidates = computed(() => this.state.recurring().length ? [] : recurringCandidates(this.state.costs(),
+  /**
+   * "Lijkt te herhalen": hand-booked costs to one party that come back (recurring-candidates.ts), also once vaste kosten
+   * exist; the parties those already pay are left out.
+   */
+  readonly candidates = computed(() => recurringCandidates(this.state.costs(),
     this.state.recurring().map((definition) => definition.party ?? definition.name), this.state.today()));
   /** "6 boekingen sinds mrt · laatst € 363,00 · maandelijks" ("sinds okt 2025" for a start in another year). */
   candidateText(candidate: RecurringCandidate): string {

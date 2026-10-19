@@ -409,7 +409,7 @@ export class CostsPage {
         ...(this.state.hasOdooAccounts() ? [{ id: 'sync', label: this.sync.syncing() ? 'Ophalen…' : 'Transacties ophalen', iconName: 'exchange', disabled: this.sync.busy() || !this.sync.ready() }] : []),
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
         { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
-        { id: 'csv', label: 'Exporteer CSV', iconName: 'download' },
+        { id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download' },
         { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
         { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },

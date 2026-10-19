@@ -4,6 +4,7 @@ import { intervalOfGap, recurringCandidates, recurringPartyKey } from '../src/ap
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { computed } from '@angular/core';
 import { blankRecurring } from '../src/app/features/finance/finance-sections.ts';
 import { monthShort } from '../src/app/features/finance/finance-format.ts';
 import { cashTotalOf, intervalLabel } from '../src/app/features/finance/finance-metrics.ts';
@@ -48,16 +49,16 @@ test('legal suffixes, punctuation and "&" merge; a party with a definition and b
 
 /* The panel's "Lijkt te herhalen" row and its "Instellen…" (review 2026-10-17): the app's short month, and no blind regime confirmation. */
 
-async function panelClass() {
+async function panelClass(members = ['candidateText', 'setUp']) {
   const file = 'recurring-panel.ts';
   const source = await readFile(new URL(`../src/app/features/finance/${file}`, import.meta.url), 'utf8');
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const cls = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'RecurringPanel')!;
-  const kept = cls.members.filter((member) => member.name && ['candidateText', 'setUp'].includes(member.name.getText(parsed)));
+  const kept = cls.members.filter((member) => member.name && members.includes(member.name.getText(parsed)));
   const isolated = ts.factory.updateClassDeclaration(cls, cls.modifiers?.filter((m) => !ts.isDecorator(m)), cls.name, undefined, undefined, kept);
   const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   const exports: any = {};
-  vm.runInNewContext(js, { exports, blankRecurring, monthShort, cashTotalOf, intervalLabel, formatEuro: (value: number) => `€ ${value.toFixed(2)}` });
+  vm.runInNewContext(js, { exports, blankRecurring, monthShort, cashTotalOf, intervalLabel, recurringCandidates, computed, formatEuro: (value: number) => `€ ${value.toFixed(2)}` });
   return exports.RecurringPanel;
 }
 
@@ -92,4 +93,17 @@ test('the phone shows the € 0 figures only once a vaste kost exists, as the de
   assert.match(source.slice(figures - 200, figures), /\} @else \{[\s\S]*@if \(strip\(\)\) \{\s*$/, 'the phone figures sit behind the strip\'s own guard');
   assert.match(source, /readonly strip = computed<StripItem\[\] \| null>\(\(\) => \{\s*if \(!this\.state\.recurring\(\)\.length\) return null;/, 'no definitions: no strip');
   assert.ok(source.indexOf('ios-empty__title">Nog geen vaste kosten') > figures, 'the empty state and "Lijkt te herhalen" follow below');
+});
+
+test('F-B7: "Lijkt te herhalen" keeps suggesting new repeating parties once a first vaste kost exists, below the table too', async () => {
+  const Panel = await panelClass(['candidates']);
+  const panel = new Panel();
+  panel.state = { today: () => TODAY, costs: () => [...linc, ...railway, ...action], recurring: () => [{ id: 1, name: 'Boekhouding', party: 'Linc & Partners' }] };
+  assert.deepEqual(panel.candidates().map((row: any) => row.party), ['Railway'], 'the party a vaste kost already pays is left out, a new one is still offered');
+  const source = await readFile(new URL('../src/app/features/finance/recurring-panel.ts', import.meta.url), 'utf8');
+  const table = source.indexOf('class="wk-table fin-table fin-table--recurring"');
+  const card = source.indexOf('class="wk-card fin-candidates"');
+  const empty = source.indexOf('wk-empty__title">Nog geen vaste kosten');
+  assert.ok(table > 0 && card > empty && empty > table, 'the desk card follows the table and the empty state alike');
+  assert.doesNotMatch(source, /recurring\(\)\.length \? \[\] :/, 'no definition count gates the suggestions');
 });
