@@ -5,9 +5,12 @@ import { containerName } from '../purchasing/container-name';
 import { containerStanding } from '../purchasing/purchase-also-containers';
 import { shareEffect } from '../purchasing/purchase-payment-links';
 import { splitCents } from '../purchasing/purchase-payment-share';
-import { splitChoiceText, splitChoices, splitRowPayee, splitStart, splitTarget, splitWeight, type SplitChoice, type SplitContainer } from './container-split-rows';
+import {
+  SPLIT_FEE_KEY, splitChoiceText, splitChoices, splitNextPart, splitRowPayee, splitSpread, splitStart, splitTarget, splitWeight, type SplitChoice, type SplitContainer,
+} from './container-split-rows';
 import { FinanceState } from './finance-state';
 import type { ContainerPayable } from './payables';
+import { FEE_LABEL, feePaymentPart, feeSharePart } from './transaction-fees';
 
 const cents = (value: number): number => Math.round(value * 100);
 const normal = (text: string | null | undefined): string => (text ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -20,47 +23,53 @@ const amountText = (value: number): string => value.toLocaleString('nl-BE', { mi
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const PAYEE_WORD: Record<ContainerPayable['payee'], string> = { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten' };
 
-/** key: a term's key, or 'p:{id}' for an open payment. */
-interface Row { orderId: number; key: string; amountInput: string; }
+/** One part of the transaction, by its own id (a container holds several); key: a term's key, 'p:{id}' for an open payment, 'fee' for Transactiekosten. */
+interface Row { id: number; orderId: number; key: string; amountInput: string; }
 /** How the amounts were set: by Afspraak, equally (1/n), or typed (null). */
 type Mode = 'AFSPRAAK' | 'EQUAL' | null;
 
 /**
- * "Verdelen over containers" (owner addition 2026-10-15): one supplier
- * transfer that paid a term of several containers at once. The containers of
- * the same supplier come first (others through the search); each ticked one
- * starts on what the transfer paid there (container-split-rows: an open
- * payment of the transfer's payee on its term, else that open term), the
- * amounts follow 'Volgens afspraak' (or 'Gelijk verdelen') and stay
- * editable, and one "Koppelen" books every part on its own container, all on
- * this transaction (one atomic call). Emre, 2026-10-16: a container whose
- * instalment is already noted (not on the bank) starts on that payment
- * ('Bestaand') and it is linked with its part through POST …/purchase-share,
- * never a second one; under each row what the part does to it.
+ * "Splitsen" of an outgoing transaction (owner addition 2026-10-15, real
+ * split 2026-10-19): one transfer that paid several containers, several
+ * terms or payees of one container, or the goods with their Transactiekosten.
+ * The containers of the same supplier come first (others through the
+ * search); each ticked one starts on what the transfer paid there
+ * (container-split-rows: an open payment of the transfer's payee on its
+ * term, else that open term), '+ Deel' adds a part to it (another term,
+ * Douane & transport, Transactiekosten), the amounts follow 'Volgens
+ * afspraak' (or 'Gelijk verdelen') and stay editable, and one "Koppelen"
+ * books every part, all on this transaction (one atomic call).
+ * Transactiekosten is a new Bijkomende kosten payment (transaction-fees.ts):
+ * it keeps its typed amount and the modes share the rest. Emre, 2026-10-16: a
+ * container whose instalment is already noted (not on the bank) starts on
+ * that payment ('Bestaand') and it is linked with its part through POST
+ * …/purchase-share, never a second one (nor twice); under each row what the
+ * part does to it.
  */
 @Component({
   selector: 'app-container-split',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [EurPipe],
   template: `
-    <p class="fin-hint">Kies de containers die deze transactie betaalde. Elk deel wordt een betaling op zijn container, op dezelfde banktransactie; een betaling die al genoteerd is, wordt gekoppeld.</p>
+    <p class="fin-hint">Elk deel wordt een betaling op zijn container, op deze transactie.</p>
     <div class="fin-split">
       @for (container of shown(); track container.orderId) {
-        @let row = rowOf(container.orderId);
-        <div class="fin-split__row" [class.is-on]="!!row">
-          <label class="fin-split__pick"><input type="checkbox" [checked]="!!row" [disabled]="state.linking() !== null" (change)="toggle(container)" />
+        @let parts = rowsOf(container.orderId);
+        <div class="fin-split__row" [class.is-on]="parts.length > 0">
+          <label class="fin-split__pick"><input type="checkbox" [checked]="parts.length > 0" [disabled]="state.linking() !== null" (change)="toggle(container)" />
             <span><b>{{ container.number }}{{ container.alias ? ' · ' + container.alias : '' }}</b><small>{{ container.supplier || 'Leverancier onbekend' }}
-              @if (row && otherSupplier(container)) { <span class="fin-split__warn"> · andere leverancier dan {{ supplierName() }}</span> }</small></span></label>
-          @if (row) {
+              @if (parts.length && otherSupplier(container)) { <span class="fin-split__warn"> · andere leverancier dan {{ supplierName() }}</span> }</small></span></label>
+          @for (row of parts; track row.id; let first = $first) {
             <!-- The shown choice follows the row's key per option: a select's [value] set before its options exist shows the first one. -->
-            <select class="select fin-split__term" [attr.aria-label]="'Betaling voor ' + container.number" [disabled]="state.linking() !== null" (change)="setTerm(container, $any($event.target).value)">
-              @for (choice of choicesOf(container, row.key); track choice.key) {
+            <select class="select fin-split__term" [attr.aria-label]="'Betaling voor ' + container.number" [disabled]="state.linking() !== null" (change)="setTerm(container, row.id, $any($event.target).value)">
+              @for (choice of choicesOf(container, row); track choice.key) {
                 <option [value]="choice.key" [selected]="choice.key === row.key">{{ choiceText(container, choice, row.key) }}</option>
               }
             </select>
-            <input class="input fin-split__amount" inputmode="decimal" [attr.aria-label]="'Bedrag voor ' + container.number" [disabled]="state.linking() !== null" [value]="row.amountInput" (input)="setAmount(container.orderId, $any($event.target).value)" />
-            <small class="fin-split__effect">{{ effectOf(container, row) }}</small>
+            <input class="input fin-split__amount" inputmode="decimal" [attr.aria-label]="'Bedrag voor ' + container.number" [disabled]="state.linking() !== null" [value]="row.amountInput" (input)="setAmount(row.id, $any($event.target).value)" />
+            <small class="fin-split__effect">{{ effectOf(container, row) }}@if (!first) { · <button class="wk-link" type="button" [disabled]="state.linking() !== null" (click)="dropPart(row.id)">weghalen</button> }</small>
           }
+          @if (parts.length) { <button class="wk-link fin-split__add" type="button" [disabled]="state.linking() !== null" (click)="addPart(container)">+ Deel</button> }
         </div>
       } @empty { <p class="fin-hint">Geen container met een open termijn{{ query() ? ' gevonden' : ' van deze leverancier' }}.</p> }
     </div>
@@ -85,6 +94,7 @@ export class ContainerSplit {
 
   readonly query = signal('');
   readonly rows = signal<Row[]>([]);
+  private nextId = 1;
   readonly error = signal('');
   /** 'Volgens afspraak' from the second container on; a typed amount makes it null (the amounts then stay as typed). */
   readonly mode = signal<Mode>('AFSPRAAK');
@@ -133,7 +143,11 @@ export class ContainerSplit {
   private readonly lineDay = computed(() => this.state.lineDay(this.line()));
   readonly total = computed(() => this.rows().reduce((sum, row) => sum + cents(parse(row.amountInput) ?? 0), 0) / 100);
   readonly matches = computed(() => this.rows().length > 0 && Math.abs(cents(this.total()) - cents(this.lineEur())) <= 2);
-  readonly ready = computed(() => this.matches() && this.rows().every((row) => parse(row.amountInput) !== null) && this.state.linking() === null);
+  /** Every part filled, together the transaction, and no open payment chosen twice. */
+  readonly ready = computed(() => {
+    const payments = this.rows().filter((row) => row.key.startsWith('p:')).map((row) => row.key);
+    return this.matches() && this.rows().every((row) => parse(row.amountInput) !== null) && new Set(payments).size === payments.length && this.state.linking() === null;
+  });
 
   constructor() {
     /* The best match's container starts ticked, on the payment (or term) the transaction was matched to. */
@@ -144,11 +158,13 @@ export class ContainerSplit {
     });
   }
 
-  rowOf(orderId: number): Row | null { return this.rows().find((row) => row.orderId === orderId) ?? null; }
+  rowsOf(orderId: number): Row[] { return this.rows().filter((row) => row.orderId === orderId); }
   otherSupplier(container: SplitContainer): boolean { return this.supplierId() !== null && container.supplierId !== this.supplierId(); }
+  /** The open payments the other rows stand on: never a second time. */
+  private taken(rowId: number | null): string[] { return this.rows().filter((row) => row.id !== rowId && row.key.startsWith('p:')).map((row) => row.key); }
 
-  /** The row's select in order: its payee's open payments, the open terms, other payees' open payments. */
-  choicesOf(container: SplitContainer, key: string): SplitChoice[] { return splitChoices(container, key); }
+  /** The row's select in order: its payee's open payments, the open terms, other payees' open payments, Transactiekosten. */
+  choicesOf(container: SplitContainer, row: Row): SplitChoice[] { return splitChoices(container, row.key, this.taken(row.id)); }
   choiceText(container: SplitContainer, choice: SplitChoice, key: string): string {
     return splitChoiceText(choice, splitChoices(container, key), splitRowPayee(container, key));
   }
@@ -158,6 +174,7 @@ export class ContainerSplit {
    * 'nieuwe betaling · 30% bij bestelling · open € 3.070,20'.
    */
   effectOf(container: SplitContainer, row: Row): string {
+    if (row.key === SPLIT_FEE_KEY) return `nieuwe betaling · ${FEE_LABEL} bij Bijkomende kosten`;
     const part = parse(row.amountInput);
     const view = this.state.purchaseViews().find((item) => item.order.id === container.orderId);
     const payment = container.open.find((item) => 'p:' + item.id === row.key);
@@ -177,64 +194,91 @@ export class ContainerSplit {
   /**
    * A container ticked: it starts on what the transfer paid there (the first
    * row's payee and term; the matched payment or term for the best match's
-   * container); from the second container on the amounts follow the mode.
+   * container); from the second row on the amounts follow the mode. Unticked:
+   * every part of it goes.
    */
   toggle(container: SplitContainer, prefer?: { paymentId?: number | null; termKey?: string | null }): void {
-    if (this.rowOf(container.orderId)) { this.withMode(this.rows().filter((row) => row.orderId !== container.orderId)); return; }
+    if (this.rowsOf(container.orderId).length) { this.withMode(this.rows().filter((row) => row.orderId !== container.orderId)); return; }
     const first = this.rows()[0];
     const start = splitStart(container, first ? splitTarget(this.containers(), first.key) : null, prefer);
-    if (!start) return;
-    this.withMode([...this.rows(), { orderId: container.orderId, key: start.key, amountInput: amountText(start.amountEur) }]);
+    if (!start || this.taken(null).includes(start.key)) return;
+    this.withMode([...this.rows(), { id: this.nextId++, orderId: container.orderId, key: start.key, amountInput: amountText(start.amountEur) }]);
   }
-  setTerm(container: SplitContainer, key: string): void {
-    const weight = splitWeight(container, key);
-    if (weight === null) return;
-    this.withMode(this.rows().map((row) => row.orderId === container.orderId ? { ...row, key, amountInput: amountText(weight) } : row));
+  /** '+ Deel': the next part of this container (splitNextPart), on what is left of the transaction. */
+  addPart(container: SplitContainer): void {
+    const own = this.rowsOf(container.orderId);
+    if (!own.length) return;
+    const key = splitNextPart(container, own.map((row) => row.key), this.rows().map((row) => row.key));
+    this.withMode([...this.rows(), { id: this.nextId++, orderId: container.orderId, key, amountInput: this.startAmount(container, key, null) }]);
+  }
+  dropPart(rowId: number): void { this.withMode(this.rows().filter((row) => row.id !== rowId)); }
+  setTerm(container: SplitContainer, rowId: number, key: string): void {
+    if (key !== SPLIT_FEE_KEY && splitWeight(container, key) === null) return;
+    this.withMode(this.rows().map((row) => row.id === rowId ? { ...row, key, amountInput: this.startAmount(container, key, rowId) } : row));
+  }
+  /**
+   * A part's amount on its new choice: Transactiekosten take what is left of
+   * the transaction (else empty); another part its open payment or term, or
+   * when added with the amounts typed (no mode) what is left.
+   */
+  private startAmount(container: SplitContainer, key: string, rowId: number | null): string {
+    const others = this.rows().filter((row) => row.id !== rowId).reduce((sum, row) => sum + cents(parse(row.amountInput) ?? 0), 0);
+    const rest = cents(this.lineEur()) - others;
+    if (key === SPLIT_FEE_KEY) return rest > 0 ? amountText(rest / 100) : '';
+    return amountText(rowId === null && this.mode() === null && rest > 0 ? rest / 100 : splitWeight(container, key) ?? 0);
   }
   /** 'Volgens afspraak' (each part by its open payment or open term) or 'Gelijk verdelen' (1/n), to the cent, together the transaction. */
   setMode(mode: Exclude<Mode, null>): void {
     this.mode.set(mode);
     this.withMode(this.rows());
   }
-  /** The rows, their amounts by the mode once there are two (one row keeps its own amount; a missing weight keeps them as they are). */
+  /**
+   * The rows, their amounts by the mode once there are two (one row keeps its
+   * own amount; a missing weight keeps them as they are). Transactiekosten
+   * keep what was typed; the other parts share the rest (splitSpread).
+   */
   private withMode(rows: Row[]): void {
     const mode = this.mode();
     if (!mode || rows.length < 2) { this.rows.set(rows); return; }
-    const weights = rows.map((row) => {
-      if (mode === 'EQUAL') return 1;
+    const amounts = splitSpread(this.lineEur(), rows.map((row) => {
       const container = this.containers().find((item) => item.orderId === row.orderId);
-      return container ? splitWeight(container, row.key) : null;
-    });
-    const split = weights.every((weight): weight is number => weight !== null) ? splitCents(this.lineEur(), weights) : null;
-    this.rows.set(split ? rows.map((row, index) => ({ ...row, amountInput: amountText(split[index]) })) : rows);
+      const fee = row.key === SPLIT_FEE_KEY;
+      return { fee, amountEur: parse(row.amountInput), weight: fee ? null : mode === 'EQUAL' ? 1 : container ? splitWeight(container, row.key) : null };
+    }), splitCents);
+    this.rows.set(amounts ? rows.map((row, index) => row.key === SPLIT_FEE_KEY ? row : { ...row, amountInput: amountText(amounts[index]) }) : rows);
   }
-  /** A typed amount: the amounts stay as typed from now on. */
-  setAmount(orderId: number, text: string): void {
+  /** A typed amount: the amounts stay as typed from now on; typed Transactiekosten keep the mode, the other parts share the rest. */
+  setAmount(rowId: number, text: string): void {
+    const rows = this.rows().map((row) => row.id === rowId ? { ...row, amountInput: text } : row);
+    if (rows.find((row) => row.id === rowId)?.key === SPLIT_FEE_KEY && this.mode()) { this.withMode(rows); return; }
     this.mode.set(null);
-    this.rows.update((rows) => rows.map((row) => row.orderId === orderId ? { ...row, amountInput: text } : row));
+    this.rows.set(rows);
   }
 
   async link(): Promise<void> {
     if (!this.ready()) return;
     const line = this.line();
     const terms = this.containers().flatMap((container) => container.terms);
-    const numbers = this.rows().map((row) => this.containers().find((container) => container.orderId === row.orderId)?.number ?? '#' + row.orderId);
+    const numbers = [...new Set(this.rows().map((row) => this.containers().find((container) => container.orderId === row.orderId)?.number ?? '#' + row.orderId))];
     this.error.set('');
     let failure: string;
     if (this.rows().some((row) => row.key.startsWith('p:'))) {
       // An open payment is linked with its part (it follows the line), the others are new: one purchase-share call.
       const open = this.containers().flatMap((container) => container.open);
       const parts: BankPurchaseSharePart[] = this.rows().map((row) => {
+        const amountEur = parse(row.amountInput)!;
+        if (row.key === SPLIT_FEE_KEY) return feeSharePart(row.orderId, amountEur);
         const payment = open.find((item) => 'p:' + item.id === row.key);
-        if (payment) return { paymentId: payment.id, amountEur: parse(row.amountInput)!, expectedAmountEur: payment.amountEur };
+        if (payment) return { paymentId: payment.id, amountEur, expectedAmountEur: payment.amountEur };
         const term = terms.find((item) => item.key === row.key)!;
-        return { purchaseOrderId: term.orderId, amountEur: parse(row.amountInput)!, payee: term.payee, instalmentDue: term.due, label: term.termLabel || 'Bankbetaling', settles: false };
+        return { purchaseOrderId: term.orderId, amountEur, payee: term.payee, instalmentDue: term.due, label: term.termLabel || 'Bankbetaling', settles: false };
       });
       const names = this.rows().map((row) => { const container = this.containers().find((item) => item.orderId === row.orderId);
         return containerName({ id: row.orderId, number: container?.number, alias: container?.alias }); });
       failure = await this.state.shareContainers(line, parts, this.rows().map((row, index) => ({ name: names[index], amountEur: parse(row.amountInput)! })));
     } else {
       const parts: BankPurchasePaymentPart[] = this.rows().map((row) => {
+        if (row.key === SPLIT_FEE_KEY) return feePaymentPart(this.lineDay(), parse(row.amountInput)!, row.orderId);
         const term = terms.find((item) => item.key === row.key)!;
         return { ...this.state.termPart(line, { kind: 'term-new', orderId: term.orderId, payable: term, title: term.orderNumber }), amount: parse(row.amountInput)!, purchaseOrderId: term.orderId };
       });

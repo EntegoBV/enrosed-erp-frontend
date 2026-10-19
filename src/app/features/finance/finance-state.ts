@@ -62,6 +62,7 @@ import { containerPaymentTree, type PayeeBranch } from './container-payment-tree
 import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation-metrics';
 import { shareToast } from '../purchasing/purchase-payment-share';
 import { containerName } from '../purchasing/container-name';
+import { feePaymentPart } from './transaction-fees';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -610,6 +611,8 @@ export class FinanceState {
       lines, costs: this.costs(), sales: this.salesOrders(), containers, purchasePayments: this.payments(),
       customerName: (id) => this.customerNames().get(id ?? -1) ?? '', costPaymentsLinkedLines: this.costPaymentLines(),
       accountLabel: (key) => this.accountLabel(key), categoryLabel, lineDay: (line) => this.lineDay(line), today: this.today(),
+      accountKey: (key) => this.canonicalAccount(key),
+      supplierOf: (orderId) => supplierNames.get(this.purchaseViews().find((view) => view.order.id === orderId)?.order.supplierId ?? -1) ?? '',
       targets: (line) => bankAllocationTargets(line.amountEur, this.costs(), this.salesOrders(), containers, (id) => this.customerNames().get(id ?? -1) ?? '',
         cashTotalOf, openOf, (id) => {
           const order = this.purchaseViews().find((view) => view.order.id === id)?.order;
@@ -2284,6 +2287,8 @@ export class FinanceState {
   private searchedQuery: string | null = null;
   /** "Boeken als…" on this line. */
   readonly bookAsLine = signal<BankStatementLine | null>(null);
+  /** "Splitsen…" from the list (⋯, key S): the detail opens this line in its split, then clears it. */
+  readonly splitOnOpen = signal<number | null>(null);
   /** "{k} exacte suggesties koppelen". */
   readonly exactLinksOpen = signal(false);
   /** ⋯ › "Gearchiveerde rekeningen". */
@@ -2302,13 +2307,15 @@ export class FinanceState {
    * refreshed (and the containers when a purchase payment was touched), and
    * the notice as a toast with "Ongedaan maken". Returns the refusal, or ''.
    */
-  async linkLine(line: BankStatementLine, target: LinkTarget, options: { follow?: boolean; keepAs?: KeepAs; surplus?: 'ADJUST' | 'INSPECTION';
-    parts?: BankPurchasePaymentPart[]; toast?: boolean; confirmNew?: boolean } = {}): Promise<string> {
+  async linkLine(line: BankStatementLine, target: LinkTarget, options: { follow?: boolean; keepAs?: KeepAs; surplus?: 'ADJUST' | 'INSPECTION' | 'FEE';
+    feeEur?: number | null; parts?: BankPurchasePaymentPart[]; toast?: boolean; confirmNew?: boolean } = {}): Promise<string> {
     if (this.linking() !== null) return 'Er loopt al een koppeling.';
     /* An existing cost payment or receipt follows the bank only on a server that knows followBank; the preview and toast say what really happens. */
     const follow = (options.follow ?? true) && (target.kind === 'purchase-existing' || this.cashRound());
-    const choice = { follow, keepAs: options.keepAs ?? 'BANKKOSTEN' as KeepAs, surplus: options.surplus ?? 'ADJUST' as const, cashRound: this.cashRound(), confirmNew: options.confirmNew === true };
-    const preview = changePreview(target, { amountEur: line.amountEur, day: this.lineDay(line), accountLabel: this.accountLabel(line.account) }, choice.follow, choice.keepAs, choice.surplus);
+    const choice = { follow, keepAs: options.keepAs ?? 'TRANSACTIEKOSTEN' as KeepAs, surplus: options.surplus ?? 'ADJUST', feeEur: options.feeEur ?? null,
+      cashRound: this.cashRound(), confirmNew: options.confirmNew === true };
+    const preview = changePreview(target, { amountEur: line.amountEur, day: this.lineDay(line), accountLabel: this.accountLabel(line.account) }, choice.follow, choice.keepAs,
+      choice.surplus, choice.feeEur);
     const parts = options.parts ?? (target.kind === 'term-new' ? [this.termPart(line, target)] : []);
     this.linking.set(line.id);
     try {
@@ -2367,7 +2374,9 @@ export class FinanceState {
       const result = await this.banking.addPurchasePayment(line.id, parts[0].purchaseOrderId!, parts);
       this.bankStatements.update((rows) => rows.map((row) => (row.id === result.line.id ? result.line : row)));
       await Promise.all([this.refreshBank(), this.reload(['payments', 'containers'])]);
-      this.ui.toast(`Gekoppeld aan ${numbers.length} containers (${numbers.join(', ')}).`, 'ok', { label: 'Ongedaan maken', run: () => void this.undoContainers(line, result.payments) });
+      // Several parts of one container ('Splitsen'): its name, else the containers.
+      const text = numbers.length === 1 ? `Gekoppeld aan ${numbers[0]} (${parts.length} delen).` : `Gekoppeld aan ${numbers.length} containers (${numbers.join(', ')}).`;
+      this.ui.toast(text, 'ok', { label: 'Ongedaan maken', run: () => void this.undoContainers(line, result.payments) });
       return '';
     } catch (failure: unknown) {
       return messageOf(failure, 'Koppelen mislukt');
@@ -2391,12 +2400,44 @@ export class FinanceState {
       const result = await this.banking.sharePurchasePayment(line.id, parts);
       this.bankStatements.update((items) => items.map((row) => (row.id === result.line.id ? result.line : row)));
       await Promise.all([this.refreshBank(), this.reload(['payments', 'containers'])]);
-      this.ui.toast(shareToast(rows.map((row, index) => ({ name: row.name, amountEur: result.parts[index]?.amountEur ?? row.amountEur }))), 'ok');
+      // One amount per container: the parts of one container ('Splitsen': goods + Transactiekosten) add up.
+      const byName = new Map<string, number>();
+      rows.forEach((row, index) => byName.set(row.name, (byName.get(row.name) ?? 0) + Math.round((result.parts[index]?.amountEur ?? row.amountEur) * 100)));
+      this.ui.toast(shareToast([...byName].map(([name, amount]) => ({ name, amountEur: amount / 100 }))), 'ok');
       return '';
     } catch (failure: unknown) {
       const response = failure as { status?: number; error?: { message?: unknown } | null } | null;
       const reason = typeof response?.error?.message === 'string' && response.error.message.trim();
       return (response?.status === 404 || response?.status === 405) && !reason ? 'Verdelen over containers kan zodra de server bijgewerkt is.' : messageOf(failure, 'Koppelen mislukt');
+    } finally {
+      this.linking.set(null);
+    }
+  }
+
+  /**
+   * Transactiekosten on a bank line of their own, booked on a container
+   * (Boeken als › Bankkosten › Bij een container, or the suggestion; Emre
+   * 2026-10-19): a new Bijkomende kosten payment (transaction-fees.ts) on the
+   * line, in the container's nacalculatie, never a company cost. The toast's
+   * "Ongedaan maken" unlinks and removes it. Returns the refusal, or ''.
+   */
+  async bookContainerFee(line: BankStatementLine, orderId: number, toastFailure = true): Promise<string> {
+    if (this.linking() !== null) return 'Er loopt al een koppeling.';
+    const view = this.purchaseViews().find((item) => item.order.id === orderId);
+    const name = containerName({ id: orderId, number: view?.order.number, alias: view?.order.alias });
+    this.linking.set(line.id);
+    try {
+      const result = await this.banking.addPurchasePayment(line.id, orderId, [feePaymentPart(this.lineDay(line), Math.abs(line.amountEur))]);
+      this.bankStatements.update((rows) => [result.line, ...rows.filter((row) => row.id !== result.line.id)]);
+      await this.refreshBank(); await this.reload(['costs', 'payments', 'containers']);
+      this.flash(line.id);
+      this.ui.toast(`Transactiekosten ${formatEuro(Math.abs(line.amountEur))} bij ${name} (Bijkomende kosten)`, 'ok',
+        { label: 'Ongedaan maken', run: () => void this.undoContainers(line, result.payments) });
+      return '';
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Boeken mislukt');
+      if (toastFailure) this.ui.toast(message, 'err');
+      return message;
     } finally {
       this.linking.set(null);
     }

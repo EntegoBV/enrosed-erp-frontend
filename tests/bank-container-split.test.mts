@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
-  splitChoiceText, splitChoices, splitRowPayee, splitStart, splitTarget, splitWeight, type SplitContainer, type SplitOpenPayment,
+  splitChoiceText, splitChoices, splitNextPart, splitRowPayee, splitSpread, splitStart, splitTarget, splitWeight, type SplitContainer, type SplitOpenPayment,
 } from '../src/app/features/finance/container-split-rows.ts';
 import type { ContainerPayable } from '../src/app/features/finance/payables.ts';
+import { splitCents } from '../src/app/features/purchasing/purchase-payment-share.ts';
 
 /*
  * Kosten & bank "Verdelen over containers" (Emre, 2026-10-16): a ticked
@@ -72,15 +73,16 @@ test("the row's select: its payee's noted payments, the open terms, other payees
     [pay(380, 'LOGISTICS', null, 300, 'Transport voorschot', '2026-09-01'), pay(381, 'SUPPLIER', 'SHIPPED', 900, null, '2026-09-20'), pay(382, 'SUPPLIER', 'ORDERED', 3070.2, null, '2026-09-25')]);
   const key = 'container:38:SUPPLIER:ORDERED';
   const choices = splitChoices(po38, key);
-  assert.deepEqual(choices.map((choice) => choice.key), ['p:382', 'p:381', key, 'container:38:LOGISTICS', 'p:380'], 'ORDERED before SHIPPED, the transport payment last');
+  assert.deepEqual(choices.map((choice) => choice.key), ['p:382', 'p:381', key, 'container:38:LOGISTICS', 'p:380', 'fee'], 'ORDERED before SHIPPED, the transport payment, then Transactiekosten last');
   const texts = choices.map((choice) => plain(splitChoiceText(choice, choices, splitRowPayee(po38, key))));
-  assert.deepEqual(texts, ['Bestaand 25/09: € 3.070,20', 'Bestaand 20/09: € 900,00', 'Nieuw: 30% bij bestelling', 'Nieuw: Transport', 'Transport: € 300,00 (bestaand)']);
+  assert.deepEqual(texts, ['Bestaand 25/09: € 3.070,20', 'Bestaand 20/09: € 900,00', 'Nieuw: 30% bij bestelling', 'Nieuw: Transport', 'Transport: € 300,00 (bestaand)',
+    'Nieuw: Transactiekosten']);
   assert.ok(texts.every((text) => text.length <= 30), 'whole in the 424 px inspector and on a phone');
   const one = container(39, [term(39, 'SUPPLIER', 'SHIPPED', 7163.8)], [pay(392, 'SUPPLIER', 'ORDERED', 3070.2)]);
   const oneChoices = splitChoices(one, 'p:392');
-  assert.deepEqual(oneChoices.map((choice) => plain(splitChoiceText(choice, oneChoices, 'SUPPLIER'))), ['Bestaand: € 3.070,20', 'Nieuw: 70% bij vertrek']);
+  assert.deepEqual(oneChoices.map((choice) => plain(splitChoiceText(choice, oneChoices, 'SUPPLIER'))), ['Bestaand: € 3.070,20', 'Nieuw: 70% bij vertrek', 'Nieuw: Transactiekosten']);
   // A row on the transport stream lists the transport payment first.
-  assert.deepEqual(splitChoices(po38, 'container:38:LOGISTICS').map((choice) => choice.key), ['p:380', key, 'container:38:LOGISTICS', 'p:381', 'p:382']);
+  assert.deepEqual(splitChoices(po38, 'container:38:LOGISTICS').map((choice) => choice.key), ['p:380', key, 'container:38:LOGISTICS', 'p:381', 'p:382', 'fee']);
 });
 
 test("'Volgens afspraak' weighs a noted payment by its euro and a term by what is open on it (its Afspraak when nothing is)", () => {
@@ -108,7 +110,7 @@ test("Kosten & bank's larger-transaction question offers 'Verdelen over containe
   assert.ok(radios.indexOf('Verdelen over containers<small>Deze transactie betaalde ook andere containers</small>') > 0);
   assert.ok(radios.indexOf('Verdelen over containers') < radios.indexOf('Bedrag aanpassen naar'), 'Verdelen first');
   assert.match(radios, /\(change\)="openSplit\(target\)"/);
-  assert.match(detail, /readonly surplus = signal<'ADJUST' \| 'INSPECTION' \| null>\(null\);/, "no 'Bedrag aanpassen' beforehand");
+  assert.match(detail, /readonly surplus = signal<'ADJUST' \| 'INSPECTION' \| 'FEE' \| null>\(null\);/, "no 'Bedrag aanpassen' beforehand");
   assert.equal(/this\.surplus\.set\('ADJUST'\)/.test(detail), false, 'never reset to it either');
   assert.match(detail, /preview\.blockedText \|\| this\.surplusAsked\(preview, target\)/, 'the link waits for the answer');
 
@@ -116,4 +118,74 @@ test("Kosten & bank's larger-transaction question offers 'Verdelen over containe
   const choices = steps.slice(steps.indexOf('class="bank-alloc-choices"'), steps.indexOf('Niet koppelen'));
   assert.ok(choices.indexOf('<b>Verdelen over containers</b><span>Deze transactie betaalde ook andere containers</span>') > 0);
   assert.ok(choices.indexOf('Verdelen over containers') < choices.indexOf('Bedrag aanpassen naar'));
+});
+
+/* ---- Splitsen (Emre, 2026-10-19): several parts per container, Transactiekosten, one payment never twice */
+
+test("'+ Deel' adds the next part of the container: its payee's next term, then Transactiekosten, then another payee", () => {
+  const po = container(39, [term(39, 'SUPPLIER', 'ORDERED', 3070.2), term(39, 'SUPPLIER', 'SHIPPED', 7163.8), term(39, 'LOGISTICS', null, 1300)], []);
+  assert.equal(splitNextPart(po, ['container:39:SUPPLIER:ORDERED']), 'container:39:SUPPLIER:SHIPPED', '30 % + 70 %');
+  assert.equal(splitNextPart(po, ['container:39:SUPPLIER:ORDERED', 'container:39:SUPPLIER:SHIPPED']), 'fee', 'goods + Transactiekosten');
+  assert.equal(splitNextPart(po, ['container:39:SUPPLIER:ORDERED', 'container:39:SUPPLIER:SHIPPED', 'fee']), 'container:39:LOGISTICS', 'goods + Douane & transport');
+  // A row on the noted part of the 30 %: never a new payment on that same term beside it.
+  const noted = container(40, [term(40, 'SUPPLIER', 'ORDERED', 500, 3070.2), term(40, 'SUPPLIER', 'SHIPPED', 7163.8)], [pay(401, 'SUPPLIER', 'ORDERED', 2570.2)]);
+  assert.equal(splitNextPart(noted, ['p:401']), 'container:40:SUPPLIER:SHIPPED');
+  assert.equal(splitRowPayee(po, 'fee'), 'OTHER', 'Transactiekosten are Bijkomende kosten');
+  const choices = splitChoices(po, 'fee');
+  assert.equal(plain(splitChoiceText(choices.at(-1)!, choices, 'OTHER')), 'Nieuw: Transactiekosten');
+});
+
+test('a payment chosen twice: another row\'s open payment is not a choice, its own stays; + Deel takes the free one', () => {
+  const two = container(41, [], [pay(411, 'SUPPLIER', 'ORDERED', 1000), pay(412, 'SUPPLIER', 'SHIPPED', 2000)]);
+  assert.deepEqual(splitChoices(two, 'p:412', ['p:411']).map((choice) => choice.key), ['p:412', 'fee']);
+  assert.deepEqual(splitChoices(two, 'p:411', ['p:411']).map((choice) => choice.key), ['p:411', 'p:412', 'fee'], "a row's own payment stays in its select");
+  assert.equal(splitNextPart(two, ['p:411']), 'p:412');
+  assert.equal(splitNextPart(two, ['p:411', 'p:412']), 'fee');
+});
+
+test("'Volgens afspraak' and 'Gelijk verdelen' share the transaction less the Transactiekosten; those keep what was typed", () => {
+  const goods = (weight: number | null, amountEur: number | null = null) => ({ fee: false, amountEur, weight });
+  const fee = (amountEur: number | null) => ({ fee: true, amountEur, weight: null });
+  assert.deepEqual(splitSpread(3100, [goods(3070.2, 3070.2), fee(29.8)], splitCents), [3070.2, 29.8]);
+  assert.deepEqual(splitSpread(-3100, [goods(5000, 5000), fee(25)], splitCents), [3075, 25], 'one goods row takes the rest');
+  assert.deepEqual(splitSpread(10259, [goods(3070.2), goods(7163.8), fee(25)], splitCents), [3070.2, 7163.8, 25], '30 % + 70 % + the fee');
+  assert.deepEqual(splitSpread(100.01, [goods(1), goods(1), fee(0.01)], splitCents), [50, 50, 0.01], 'Gelijk verdelen');
+  assert.deepEqual(splitSpread(3100, [goods(5000, 5000), fee(null)], splitCents), [3100, 0], 'a fee not typed yet counts as nothing');
+  assert.equal(splitSpread(3100, [fee(25)], splitCents), null, 'nothing to share it over');
+  assert.equal(splitSpread(25, [goods(1), fee(25)], splitCents), null, 'nothing left');
+  assert.equal(splitSpread(3100, [goods(null), fee(25)], splitCents), null, 'a weight missing');
+});
+
+test("Splitsen: one button on an outgoing transaction, '+ Deel' per container, Transactiekosten in both calls; 'Al genoteerd' only with something", async () => {
+  const detail = await readFile(new URL('../src/app/features/finance/transaction-detail.ts', import.meta.url), 'utf8');
+  const offers = detail.slice(detail.indexOf("@if (view() !== 'containers') {"), detail.indexOf('<b>Geen factuur of kost?</b>'));
+  assert.match(offers, /@if \(row\.amountEur < 0\) \{/, 'an incoming line has its invoice: no Splitsen');
+  assert.match(offers, /<b>Splitsen<\/b><small>Over containers, termijnen of transactiekosten<\/small>/);
+  assert.equal((offers.match(/Splitsen…<\/button>/g) ?? []).length, 1);
+  assert.match(offers, /\(click\)="openSplit\(null\)">Splitsen…<\/button>/);
+  assert.equal(detail.includes('Verdelen over containers…</button>'), false, 'the same view once');
+  assert.match(detail, /if \(command === 'split' && open\) \{ if \(row\.amountEur < 0 && this\.state\.cashRound\(\)\) this\.openSplit\(null\); return true; \}/);
+  assert.match(detail, /if \(split === row\.id && row\.amountEur < 0 && this\.state\.cashRound\(\)\) this\.openSplit\(null\);/, "the list's Splitsen… opens the detail in it");
+  assert.match(detail, /this\.allocationStep\(\) === 'payments' && !this\.existingCount\(\) && !this\.localLoading\(\)/, 'an empty Al genoteerd falls back');
+  const radios = detail.slice(detail.indexOf('class="fin-txd__radios"'), detail.indexOf('</div>', detail.indexOf('class="fin-txd__radios"')));
+  assert.match(radios, /\(change\)="surplus\.set\('FEE'\)" \/><span>Rest als transactiekosten<small>Bijkomende kosten van de container<\/small><\/span>/);
+  assert.match(detail, /<option value="TRANSACTIEKOSTEN">Transactiekosten van de container<\/option><option value="KOERSVERSCHIL">Koersverschil<\/option>/);
+  assert.equal(detail.includes('<option value="BANKKOSTEN">'), false, 'a fee never lands twice (company cost and container)');
+  assert.match(detail, /Waarvan transactiekosten \(€\)/);
+
+  const split = await readFile(new URL('../src/app/features/finance/container-split.ts', import.meta.url), 'utf8');
+  assert.match(split, /@for \(row of parts; track row\.id; let first = \$first\)/, 'rows by their own id');
+  assert.match(split, />\+ Deel<\/button>/);
+  assert.match(split, /if \(row\.key === SPLIT_FEE_KEY\) return feeSharePart\(row\.orderId, amountEur\);/);
+  assert.match(split, /if \(row\.key === SPLIT_FEE_KEY\) return feePaymentPart\(this\.lineDay\(\), parse\(row\.amountInput\)!, row\.orderId\);/);
+  assert.match(split, /new Set\(payments\)\.size === payments\.length/, 'Koppelen waits while one payment is chosen twice');
+
+  const steps = await readFile(new URL('../src/app/features/finance/bank-allocation-steps.ts', import.meta.url), 'utf8');
+  assert.match(steps, /@if \(p\.existingCount\(\); as count\) \{ <button [^>]*>Al genoteerd \{\{ count \}\}<\/button> \}/);
+  assert.match(steps, /<p class="fin-hint">Al genoteerd in Inkoop of Kosten, nog zonder banktransactie\.<\/p>/);
+  assert.match(steps, /\{\{ signed\(-payment\.amountEur\) \}\}/, '− € 20.289,56, never € -20.289,56');
+  const noted = steps.slice(steps.indexOf('Al genoteerd in Inkoop of Kosten'), steps.indexOf('Geen betaling gevonden voor deze zoekterm.'));
+  assert.equal(noted.includes('| eur }}'), false, 'every amount on the tab signed');
+  assert.match(steps, /<b>Rest als transactiekosten<\/b>/);
+  assert.match(steps, /Waarvan transactiekosten \(€\)/);
 });

@@ -2,14 +2,17 @@ import type { Currency, Payee } from '../../core/api/models';
 import type { ContainerPayable, TermDue } from './payables';
 
 /*
- * Kosten & bank "Verdelen over containers" (container-split.ts), the rules
- * behind its rows (Emre, 2026-10-16: an instalment already noted is linked,
- * never a second payment). Which row a ticked container starts on, the
- * choices of its select in order, and each row's weight for 'Volgens
- * afspraak'. A row stands on an open payment ('p:{id}') or on an open term
- * (the term's key). The transfer paid one payee: a row never starts on
- * another payee's payment (a € 300 transport payment does not take the
- * supplier's money). Pure: type-only imports, node-tested.
+ * Kosten & bank "Splitsen" (container-split.ts), the rules behind its rows
+ * (Emre, 2026-10-16: an instalment already noted is linked, never a second
+ * payment). Which row a ticked container starts on, the choices of its
+ * select in order, and each row's weight for 'Volgens afspraak'. A row
+ * stands on an open payment ('p:{id}'), on an open term (the term's key) or
+ * on Transactiekosten ('fee', a new Bijkomende kosten payment). The transfer
+ * paid one payee: a row never starts on another payee's payment (a € 300
+ * transport payment does not take the supplier's money). Since 2026-10-19 a
+ * container holds several rows ('+ Deel': 30 % + 70 %, goods + transport,
+ * goods + Transactiekosten), and two rows never stand on one open payment.
+ * Pure: type-only imports, node-tested.
  */
 
 /** A payment of the container noted but not on the bank yet (no credit offset, more than zero). */
@@ -23,8 +26,13 @@ export interface SplitContainer {
 }
 /** The payee and term a row stands on. */
 export interface SplitTarget { payee: Payee; due: TermDue | null; }
-/** One choice of a row's select: an open payment or an open term. */
-export type SplitChoice = { key: string; payment: SplitOpenPayment; term?: undefined } | { key: string; term: ContainerPayable; payment?: undefined };
+/** One choice of a row's select: an open payment, an open term, or Transactiekosten (every container offers it). */
+export type SplitChoice = { key: string; payment: SplitOpenPayment; term?: undefined; fee?: undefined }
+  | { key: string; term: ContainerPayable; payment?: undefined; fee?: undefined }
+  | { key: string; fee: true; payment?: undefined; term?: undefined };
+
+/** The key of a Transactiekosten row: payee OTHER, EUR, no term, settling nothing (transaction-fees.ts). */
+export const SPLIT_FEE_KEY = 'fee';
 
 const TERM_ORDER: readonly (TermDue | null)[] = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED', null];
 /** PAYEE_SHORT of purchase-payment-ledger (no runtime import here): keep the two in step. */
@@ -98,14 +106,55 @@ function byDue(payments: readonly SplitOpenPayment[]): SplitOpenPayment[] {
 /**
  * The row's select: the open payments of the payee it stands on, then the
  * container's open terms, then other payees' open payments (said with their
- * payee by the screen). The shown choice is the row's key (`selected` per
- * option: a select's value set before its options exist shows the first).
+ * payee by the screen), Transactiekosten last. An open payment another row
+ * stands on (`taken`) is left out: one payment is never chosen twice. The
+ * shown choice is the row's key (`selected` per option: a select's value set
+ * before its options exist shows the first).
  */
-export function splitChoices(container: SplitContainer, key: string): SplitChoice[] {
+export function splitChoices(container: SplitContainer, key: string, taken: readonly string[] = []): SplitChoice[] {
   const payee = splitRowPayee(container, key);
-  const own = byDue(container.open.filter((item) => item.payee === payee)).map((payment) => ({ key: splitPaymentKey(payment.id), payment }));
-  const others = container.open.filter((item) => item.payee !== payee).map((payment) => ({ key: splitPaymentKey(payment.id), payment }));
-  return [...own, ...container.terms.map((term) => ({ key: term.key, term })), ...others];
+  const free = container.open.filter((item) => splitPaymentKey(item.id) === key || !taken.includes(splitPaymentKey(item.id)));
+  const own = byDue(free.filter((item) => item.payee === payee)).map((payment) => ({ key: splitPaymentKey(payment.id), payment }));
+  const others = free.filter((item) => item.payee !== payee).map((payment) => ({ key: splitPaymentKey(payment.id), payment }));
+  return [...own, ...container.terms.map((term) => ({ key: term.key, term })), ...others, { key: SPLIT_FEE_KEY, fee: true as const }];
+}
+
+/**
+ * '+ Deel' on a ticked container: the next part it most likely paid. An open
+ * payment or term of the first row's payee that no row of the container
+ * stands on yet (the 70 % after the 30 %; never the term a row already
+ * pays), else Transactiekosten, else any free choice. `taken`: the keys of
+ * every row (other containers' rows too).
+ */
+export function splitNextPart(container: SplitContainer, rowKeys: readonly string[], taken: readonly string[] = rowKeys): string {
+  const first = rowKeys[0] ?? SPLIT_FEE_KEY;
+  const payee = splitRowPayee(container, first);
+  const used = rowKeys.map((key) => targetIn(container, key)).filter((target): target is SplitTarget => target !== null);
+  const free = splitChoices(container, first, taken).filter((choice) => !choice.fee && !rowKeys.includes(choice.key) && !taken.includes(choice.key)
+    && !(choice.term && used.some((target) => target.payee === choice.term!.payee && target.due === choice.term!.due)));
+  const same = free.find((choice) => (choice.payment?.payee ?? choice.term?.payee) === payee);
+  if (same) return same.key;
+  if (!rowKeys.includes(SPLIT_FEE_KEY)) return SPLIT_FEE_KEY;
+  return free[0]?.key ?? SPLIT_FEE_KEY;
+}
+
+/**
+ * The amounts by 'Volgens afspraak' (`weight`) or 'Gelijk verdelen' (weight
+ * 1): Transactiekosten rows keep their typed amount, the other rows share
+ * what is left of the transaction, to the cent (`split`: purchase-payment-
+ * share's splitCents, handed in). Null when it cannot: no other row, nothing
+ * left, a weight missing.
+ */
+export function splitSpread(lineEur: number, rows: readonly { fee: boolean; amountEur: number | null; weight: number | null }[],
+  split: (totalEur: number, weights: readonly number[]) => number[] | null): number[] | null {
+  const fees = rows.filter((row) => row.fee).reduce((sum, row) => sum + Math.round((row.amountEur ?? 0) * 100), 0);
+  const others = rows.filter((row) => !row.fee);
+  const rest = Math.abs(Math.round(lineEur * 100)) - fees;
+  if (!others.length || rest <= 0 || others.some((row) => row.weight === null)) return null;
+  const shares = split(rest / 100, others.map((row) => row.weight!));
+  if (!shares) return null;
+  let next = 0;
+  return rows.map((row) => (row.fee ? row.amountEur ?? 0 : shares[next++]));
 }
 
 /** A row's weight 'Volgens afspraak': an open payment's euro; a term's open amount, its Afspraak when nothing is open. Null for an unknown key. */
@@ -126,6 +175,7 @@ export function splitWeight(container: SplitContainer, key: string): number | nu
  * payee without terms).
  */
 export function splitChoiceText(choice: SplitChoice, choices: readonly SplitChoice[], rowPayee: Payee): string {
+  if (choice.fee) return 'Nieuw: Transactiekosten';
   if (choice.term) return `Nieuw: ${choice.term.termLabel || PAYEE_SHORT[choice.term.payee]}`;
   const payment = choice.payment;
   if (payment.payee !== rowPayee) return `${PAYEE_SHORT[payment.payee]}: ${EURO.format(payment.amountEur)} (bestaand)`;
@@ -133,7 +183,8 @@ export function splitChoiceText(choice: SplitChoice, choices: readonly SplitChoi
   return several ? `Bestaand ${payment.paidOn.slice(8, 10)}/${payment.paidOn.slice(5, 7)}: ${EURO.format(payment.amountEur)}` : `Bestaand: ${EURO.format(payment.amountEur)}`;
 }
 
-/** The payee of a row in its container (the supplier for an unknown key). */
+/** The payee of a row in its container (Bijkomende kosten for Transactiekosten, the supplier for an unknown key). */
 export function splitRowPayee(container: SplitContainer, key: string): Payee {
+  if (key === SPLIT_FEE_KEY) return 'OTHER';
   return targetIn(container, key)?.payee ?? 'SUPPLIER';
 }

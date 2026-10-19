@@ -455,6 +455,10 @@
     .wk-btn[aria-pressed=true] { border-color: var(--rose); background: var(--rose-soft); color: var(--rose-dark); } }
   .fin-split__total { margin: 8px 0; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; &.is-ok { color: var(--ok); } }
   .fin-split__search { margin-top: 4px; }
+  /* '+ Deel': another part of the same container (another term, transport, Transactiekosten) */
+  .fin-split__add { grid-column: 1 / -1; justify-self: start; font-size: 12.5px; }
+  /* 'Waarvan transactiekosten (€)' of a USD/CNY payment in "Wat verandert" */
+  .fin-txd__fee { display: grid; gap: 4px; font-size: 13px; .input { max-width: 160px; } }
 
   /* "Boeken als…", "Exacte suggesties koppelen", the buffer */
   .fin-bookas__line { display: grid; gap: 2px; margin: 0; b { font-size: 14px; } span { color: var(--muted); font-size: 12.5px; } }

@@ -633,6 +633,25 @@ native selects styled as capsules (critique B10).
   'Waarvan inspectie via leverancier': goods + inspection become two
   payments on the line (splitTransfer, the inspection sets the flag). All
   new actions hide while `paymentRoundOnServer(purchaseViews()[0])` is false.
+- Splitsen and Transactiekosten (Emre, 2026-10-19). 'Bestaande betaling' is
+  now 'Al genoteerd {n}' (`existingCount`): shown only with something in
+  it, signed amounts, the PO number once; the detail falls back to
+  'Factuur of uitgave' when it is empty. 'Splitsen…' (outgoing lines only;
+  the detail's offer, key S, the list's ⋯ via `FinanceState.splitOnOpen`)
+  opens container-split.ts: rows by their own id, several per container
+  ('+ Deel', `splitNextPart`), never one open payment twice, and a
+  'Transactiekosten' choice per container (key 'fee'; the modes share the
+  line less the fees, `splitSpread`). A fee is a Bijkomende kosten payment
+  (payee OTHER, EUR, no term, `transaction-fees.ts`), never a company cost:
+  Boeken als › Bankkosten › 'Bij een container…' and the suggestion
+  ('Transactiekosten · PO-… (supplier)', a small charge within 3 days of a
+  supplier transfer on the same account, never exact) call
+  `FinanceState.bookContainerFee`; a new term takes 'Waarvan
+  transactiekosten (€)' (goods = the rest, `goodsAfterFee`); an open
+  payment's bank-part takes `higher: 'FEE'` ('Rest als transactiekosten')
+  or, for USD/CNY, `feeEur`; 'Betaling houden' offers Transactiekosten of
+  the container and Koersverschil (no Bankkosten: a fee never lands twice).
+  The Inkoop payment sheet has a 'Transactiekosten' chip for Bijkomend.
 
 ### Documenten & media
 - /files, `features/files`: FilesPage is a thin shell (desk or phone view,

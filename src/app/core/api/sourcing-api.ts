@@ -8,7 +8,7 @@ import {
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
   PartnerCreditProposal, PurchasePaymentWrite, SupplierCreditOffsetWrite, SupplierCreditUpdate, SupplierCreditWrite,
-  PurchaseInvoice, PurchaseInvoiceWrite, PaymentSplitResult,
+  PurchaseInvoice, PurchaseInvoiceWrite, PaymentSplitResult, BankPartHigher, PaymentPartRequest,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -289,16 +289,20 @@ export class SourcingApi {
    * smaller one carves the line's part out of it. A larger one needs the
    * owner's choice, sent as `higher`: ADJUST (the payment takes the
    * transaction's amount) or INSPECTION (the rest becomes the inspection paid
-   * via the supplier on the same transaction); without it the server refuses.
-   * `withPaymentIds`: other open payments of the container on the same
-   * transfer (the inspection paid with the goods) keep their amounts and take
-   * the line's day. The answer's `notice` says what followed.
+   * via the supplier on the same transaction) or FEE (the rest becomes
+   * Transactiekosten of the container on the same transaction); without it
+   * the server refuses. `withPaymentIds`: other open payments of the
+   * container on the same transfer (the inspection paid with the goods) keep
+   * their amounts and take the line's day. `feeEur`: that part of the line
+   * becomes Transactiekosten, the payment follows the rest (a USD/CNY
+   * payment its euro). The answer's `notice` says what followed.
    */
   linkPaymentPart(paymentId: number, bankStatementLineId: number, amount: number | null = null,
-    options: { higher?: 'ADJUST' | 'INSPECTION' | null; withPaymentIds?: readonly number[] } = {}): Promise<PaymentSplitResult> {
-    return firstValueFrom(this.http.post<PaymentSplitResult>(
-      api(`/api/purchase-payment-splits/${paymentId}/bank-part`), { bankStatementLineId, amount,
-        ...(options.higher ? { higher: options.higher } : {}), ...(options.withPaymentIds?.length ? { withPaymentIds: options.withPaymentIds } : {}) }));
+    options: { higher?: BankPartHigher | null; withPaymentIds?: readonly number[]; feeEur?: number | null } = {}): Promise<PaymentSplitResult> {
+    const body: PaymentPartRequest = { bankStatementLineId, amount,
+      ...(options.higher ? { higher: options.higher } : {}), ...(options.withPaymentIds?.length ? { withPaymentIds: options.withPaymentIds } : {}),
+      ...(options.feeEur ? { feeEur: options.feeEur } : {}) };
+    return firstValueFrom(this.http.post<PaymentSplitResult>(api(`/api/purchase-payment-splits/${paymentId}/bank-part`), body));
   }
 
   /** Splits the inspection paid via the supplier off a goods payment, on the same bank transaction. */

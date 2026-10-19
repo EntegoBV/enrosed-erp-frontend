@@ -1461,6 +1461,29 @@ export interface PaymentSplitResult {
   notice?: string | null;
 }
 
+/**
+ * bank-part's answer to a transaction larger than the payment: the payment
+ * takes it (ADJUST), the rest is the inspection via the supplier
+ * (INSPECTION), or the rest is Transactiekosten, a new Bijkomende kosten
+ * payment on the same line (FEE, 2026-10-19).
+ */
+export type BankPartHigher = 'ADJUST' | 'INSPECTION' | 'FEE';
+
+/** POST /api/purchase-payment-splits/{paymentId}/bank-part. */
+export interface PaymentPartRequest {
+  bankStatementLineId: number;
+  /** A USD/CNY part in the payment's own currency; null: the line as it is. */
+  amount: number | null;
+  higher?: BankPartHigher | null;
+  withPaymentIds?: readonly number[];
+  expectedAmountEur?: number | null;
+  /**
+   * That part of the line, in euro, becomes Transactiekosten (payee OTHER,
+   * EUR) on the same line; the payment follows what is left (2026-10-19).
+   */
+  feeEur?: number | null;
+}
+
 /** POST / PUT …/invoices. */
 export interface PurchaseInvoiceWrite {
   payee: Payee;

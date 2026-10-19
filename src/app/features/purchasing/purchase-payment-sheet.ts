@@ -165,6 +165,13 @@ let nextSheetId = 0;
             }
           </div>
         }
+        @if (pay.payee === 'OTHER' && !creditOffset()) {
+          <!-- The bank's charge on a container's transfer (Kosten & bank 2026-10-19): Bijkomende kosten, its words in one tap. -->
+          <div class="pay-sheet__chips" role="group" aria-label="Snel invullen">
+            <button class="pay-sheet__chip" type="button" [attr.aria-pressed]="pay.label === 'Transactiekosten'" [disabled]="busy() || !!pay.bankLinkPending"
+                    (click)="patch.emit({ label: 'Transactiekosten' })">Transactiekosten</button>
+          </div>
+        }
         @if (!pay.id) {
           @if (!bankLinked() && !creditOffset()) {
             <app-bank-transaction-picker direction="OUTGOING" heading="Transactie toevoegen" [amount]="pickerEur()" [selected]="pay.bankTransaction ?? null" [disabled]="busy() || !!pay.bankLinkPending" (selectedChange)="chooseBank($event)" />

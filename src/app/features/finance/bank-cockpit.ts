@@ -451,7 +451,7 @@ export class BankCockpit {
   capsule(line: BankStatementLine): { label: 'Koppel' | 'Bekijk' | 'Boek'; suggested: boolean; target: string } {
     const suggestion = this.state.suggestions().get(line.id);
     if (!suggestion) return { label: 'Bekijk', suggested: false, target: bankTextOf(line).sub || 'nog geen match' };
-    if (suggestion.target.kind === 'cost-pattern') return { label: 'Boek', suggested: true, target: suggestion.target.label };
+    if (suggestion.target.kind === 'cost-pattern' || suggestion.target.kind === 'container-fee') return { label: 'Boek', suggested: true, target: suggestion.target.label };
     const quick = !suggestion.changesAmount && !suggestion.others.some((other) => other.score >= 50);
     return { label: quick ? 'Koppel' : 'Bekijk', suggested: true, target: suggestion.target.title };
   }
@@ -462,6 +462,7 @@ export class BankCockpit {
     const capsule = this.capsule(line);
     if (!suggestion || capsule.label === 'Bekijk') { this.state.openLine(line.id); return; }
     if (suggestion.target.kind === 'cost-pattern') { this.state.bookPattern(line, suggestion.target.costId); return; }
+    if (suggestion.target.kind === 'container-fee') { await this.state.bookContainerFee(line, suggestion.target.orderId); return; }
     this.leaving.set(line.id);
     try { await this.state.linkLine(line, suggestion.target); } finally { if (this.leaving() === line.id) this.leaving.set(null); }
   }

@@ -22,7 +22,7 @@ export type LinkTarget =
       currency: 'EUR' | 'USD' | 'CNY'; amount: number; account: string | null; proofCount: number; hasInspectionAfspraak: boolean; groupSize: number };
 
 export interface ChangeRow {
-  label: 'Bedrag' | 'Betaald op' | 'Ontvangen op' | 'Rekening' | 'In USD' | 'In CNY' | 'Koers' | 'Bewijs';
+  label: 'Bedrag' | 'Betaald op' | 'Ontvangen op' | 'Rekening' | 'In USD' | 'In CNY' | 'Koers' | 'Transactiekosten' | 'Bewijs';
   now: string;
   after: string;
   changed: boolean;
@@ -46,8 +46,15 @@ export interface ChangePreview {
   notice: string;
 }
 
-export type KeepAs = 'BANKKOSTEN' | 'KOERSVERSCHIL';
-export const KEEP_LABEL: Readonly<Record<KeepAs, string>> = { BANKKOSTEN: 'Bankkosten', KOERSVERSCHIL: 'Koersverschil' };
+/**
+ * "Betaling houden, verschil als …": Koersverschil and Bankkosten are a
+ * company cost on the line (/links' keepDifferenceAs); for a purchase payment
+ * the detail offers Transactiekosten instead of Bankkosten (2026-10-19): a
+ * Bijkomende kosten payment of the container on the line (bank-part), so a
+ * fee never lands twice.
+ */
+export type KeepAs = 'BANKKOSTEN' | 'KOERSVERSCHIL' | 'TRANSACTIEKOSTEN';
+export const KEEP_LABEL: Readonly<Record<KeepAs, string>> = { BANKKOSTEN: 'Bankkosten', KOERSVERSCHIL: 'Koersverschil', TRANSACTIEKOSTEN: 'Transactiekosten van de container' };
 export const KEEP_ONLY_EQUAL = 'Betaling houden kan alleen als de bedragen gelijk zijn (± € 0,02).';
 
 const TOLERANCE_CENTS = 2;
@@ -95,12 +102,14 @@ function baseEur(target: LinkTarget): number {
  * (a smaller transaction on a purchase payment always follows: the line's
  * part is carved out); `keepAs` is the select beside "Betaling houden";
  * `surplus` the choice for a larger transaction on a purchase payment that
- * follows ('ADJUST' takes the transaction's amount, 'INSPECTION' keeps the
- * payment and adds the rest as the inspection via the supplier).
+ * follows ('ADJUST' takes the transaction's amount, 'INSPECTION' and 'FEE'
+ * keep the payment and add the rest as the inspection via the supplier or
+ * as Transactiekosten). `feeEur`: 'Waarvan transactiekosten' of a USD/CNY
+ * purchase payment that follows; its euro becomes the rest.
  */
 export function changePreview(
   target: LinkTarget, line: { amountEur: number; day: string; accountLabel: string }, follow: boolean, keepAs: KeepAs,
-  surplus: 'ADJUST' | 'INSPECTION' = 'ADJUST',
+  surplus: 'ADJUST' | 'INSPECTION' | 'FEE' = 'ADJUST', feeEur: number | null = null,
 ): ChangePreview {
   const lineCents = Math.abs(cents(line.amountEur));
   const base = cents(baseEur(target));
@@ -129,11 +138,17 @@ export function changePreview(
 
   const nowEur = base / 100;
   const nowDay = target.kind === 'sales-existing' ? target.receivedOn : target.paidOn;
+  // Kept with the difference as Transactiekosten: bank-part links it, so its day follows (its amount stays).
+  const keepFee = keep && keepAs === 'TRANSACTIEKOSTEN';
+  // A USD/CNY payment that follows with 'Waarvan transactiekosten': its euro is the transaction less the fee.
+  const foreignFee = purchase && target.currency !== 'EUR' && effectiveFollow && feeEur !== null && cents(feeEur) > 0 && cents(feeEur) < lineCents ? cents(feeEur) : 0;
   // Follow: the payment takes the transaction (a smaller one carves the line's part out of it; the rest stays open);
-  // a larger purchase payment whose rest is the inspection keeps its own amount.
-  const keepsAmount = !effectiveFollow || (purchase && mode === 'higher' && surplus === 'INSPECTION');
-  const afterEur = keepsAmount ? nowEur : lineEur;
-  const afterDay = effectiveFollow ? line.day : nowDay;
+  // a larger purchase payment whose rest is the inspection or Transactiekosten keeps its own amount.
+  const restFee = purchase && mode === 'higher' && effectiveFollow && surplus === 'FEE';
+  const keepsAmount = !effectiveFollow || (purchase && mode === 'higher' && (surplus === 'INSPECTION' || surplus === 'FEE'));
+  const afterEur = keepsAmount ? nowEur : (lineCents - foreignFee) / 100;
+  const afterDay = effectiveFollow || keepFee ? line.day : nowDay;
+  const feeText = keepFee || restFee ? eur(difference / 100) : foreignFee ? eur(foreignFee / 100) : null;
   const rows: ChangeRow[] = [
     row('Bedrag', eur(nowEur), eur(afterEur)),
     row(dateLabel, dayMon(nowDay), dayMon(afterDay)),
@@ -143,12 +158,14 @@ export function changePreview(
     rows.push(row(target.currency === 'USD' ? 'In USD' : 'In CNY', foreign(target.amount, target.currency), foreign(target.amount, target.currency)));
     rows.push(row('Koers', rate(target.amount, nowEur), rate(target.amount, afterEur)));
   }
+  if (feeText) rows.push(row('Transactiekosten', '—', `${feeText} op dezelfde transactie`));
   if (target.kind !== 'sales-existing') rows.push(row('Bewijs', files(target.proofCount), 'deze transactie'));
 
   const changed = cents(afterEur) !== cents(nowEur) || afterDay !== nowDay;
   const title = `Gekoppeld aan ${target.title}.`;
   let notice = title;
-  if (keep) notice = `${title} Verschil ${eur(difference / 100)} geboekt als ${KEEP_LABEL[keepAs]}.`;
+  if (keepFee) notice = `${title} Verschil ${eur(difference / 100)} als transactiekosten bij de container.`;
+  else if (keep) notice = `${title} Verschil ${eur(difference / 100)} geboekt als ${KEEP_LABEL[keepAs]}.`;
   else if (effectiveFollow) {
     const followed = followNotice({ amountEur: nowEur, paidOn: nowDay }, { amountEur: afterEur, paidOn: afterDay });
     if (followed) notice = `${title} ${followed}`;

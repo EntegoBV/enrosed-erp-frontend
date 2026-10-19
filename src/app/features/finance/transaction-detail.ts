@@ -20,6 +20,7 @@ import { ContainerSplit } from './container-split';
 import { dayMonth, signedEur as signedMoney } from './finance-format';
 import { containerName } from '../purchasing/container-name';
 import { SERVER_PENDING } from './finance-state';
+import { feePaymentPart, goodsAfterFee } from './transaction-fees';
 
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const WEEKDAY_LONG = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -134,7 +135,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
           @default {
             @if (view() === 'containers') {
               <section class="wk-section">
-                <h3 class="wk-section__title">Verdelen over containers <button class="wk-link" type="button" (click)="view.set('auto')">Terug</button></h3>
+                <h3 class="wk-section__title">Splitsen <button class="wk-link" type="button" (click)="view.set('auto')">Terug</button></h3>
                 <app-container-split [line]="row" [hint]="supplierHint()" (done)="view.set('auto')" />
               </section>
             } @else if (best(); as match) {
@@ -173,14 +174,13 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
               </section>
             }
             @if (view() !== 'containers') {
-              <section class="wk-section fin-txd__offer">
-                <div><b>Splitsen</b><small>Goederen + inspectie, of meerdere betalingen.</small></div>
-                <span class="fin-txd__offer-actions"><button class="wk-btn wk-btn--sm" type="button" (click)="splitPayments()">Splitsen…</button>
-                  @if (row.amountEur < 0) {
-                    <!-- An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). -->
-                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="openSplit(null)">Verdelen over containers…</button>
-                  }</span>
-              </section>
+              @if (row.amountEur < 0) {
+                <!-- Outgoing only: an incoming line has its invoice (Emre, 2026-10-19). An older server books every part on the first container: the split waits for the 2026-10-16 round (cashRound). -->
+                <section class="wk-section fin-txd__offer">
+                  <div><b>Splitsen</b><small>Over containers, termijnen of transactiekosten</small></div>
+                  <button class="wk-btn wk-btn--sm" type="button" [disabled]="!state.cashRound()" [attr.title]="state.cashRound() ? null : serverPending" (click)="openSplit(null)">Splitsen…</button>
+                </section>
+              }
               <section class="wk-section fin-txd__offer">
                 <div><b>Geen factuur of kost?</b><small>Overboeking, bankkosten, btw, lening, privé</small></div>
                 <button class="wk-btn wk-btn--sm" type="button" (click)="state.bookAsLine.set(row)">Boeken als…</button>
@@ -195,7 +195,7 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
 
     <!--
       "Wat verandert" (spec §3.6) of one target: the best match, or the one existing payment picked under
-      "Bestaande betaling". Rows, the switch "Betaling volgt de bank", the rest of a smaller purchase payment, the
+      "Al genoteerd". Rows, the switch "Betaling volgt de bank", the rest of a smaller purchase payment, the
       choice for a larger one, and "Betaling houden" when the switch is off.
     -->
     <ng-template #whatChanges let-change let-target="target" let-row="row">
@@ -224,11 +224,18 @@ interface LinkedPart { key: string; title: string; sub: string | null; amountEur
             }
             <label><input type="radio" name="surplus" [checked]="surplus() === 'ADJUST'" (change)="surplus.set('ADJUST')" /><span>Bedrag aanpassen naar {{ eur(abs(row.amountEur)) }}</span></label>
             @if (target.hasInspectionAfspraak) { <label><input type="radio" name="surplus" [checked]="surplus() === 'INSPECTION'" (change)="surplus.set('INSPECTION')" /><span>Rest als inspectie via leverancier</span></label> }
+            <label><input type="radio" name="surplus" [checked]="surplus() === 'FEE'" (change)="surplus.set('FEE')" /><span>Rest als transactiekosten<small>Bijkomende kosten van de container</small></span></label>
           </div>
+        }
+        @if (foreignFeeAsked(target)) {
+          <!-- USD/CNY: the bank's charge in the same debit stays off the payment's euro (B2 feeEur). -->
+          <label class="fin-txd__fee"><span>Waarvan transactiekosten (€) <span class="opt"></span></span>
+            <input class="input num" type="text" inputmode="decimal" autocomplete="off" [value]="outgoingFeeInput()" (input)="outgoingFeeInput.set($any($event.target).value)" /></label>
+          @if (outgoingFeeInvalid()) { <p class="fin-hint fin-hint--warn">De transactiekosten moeten kleiner zijn dan de transactie.</p> }
         }
         @if (!follow() && change.keepAllowed && state.cashRound()) {
           <label class="fin-txd__keep">Betaling houden, verschil {{ eur(change.differenceEur) }} als
-            <select class="select" [value]="keepAs()" (change)="keepAs.set($any($event.target).value)"><option value="BANKKOSTEN">Bankkosten</option><option value="KOERSVERSCHIL">Koersverschil</option></select></label>
+            <select class="select" [value]="keepAs()" (change)="keepAs.set($any($event.target).value)"><option value="TRANSACTIEKOSTEN">Transactiekosten van de container</option><option value="KOERSVERSCHIL">Koersverschil</option></select></label>
         } @else if (change.blockedText || (!follow() && change.keepAllowed)) { <p class="fin-hint fin-hint--warn">{{ change.blockedText || keepOnlyEqual }}</p> }
       </div>
     </ng-template>
@@ -276,9 +283,10 @@ export class TransactionDetail extends BankMovementPanel {
 
   readonly view = signal<View>('auto');
   readonly follow = signal(true);
-  readonly keepAs = signal<KeepAs>('BANKKOSTEN');
+  /** "Betaling houden, verschil als …" of a purchase payment: Transactiekosten of the container or Koersverschil (never a company Bankkosten as well). */
+  readonly keepAs = signal<KeepAs>('TRANSACTIEKOSTEN');
   /** A larger transaction on a purchase payment: nothing chosen beforehand (null), the link waits for the answer. */
-  readonly surplus = signal<'ADJUST' | 'INSPECTION' | null>(null);
+  readonly surplus = signal<'ADJUST' | 'INSPECTION' | 'FEE' | null>(null);
   /** "Verdelen over containers" chosen as that answer: the split starts on this payment's container and payment. */
   readonly splitFrom = signal<{ orderId: number; paymentId: number } | null>(null);
   readonly surplusQuestion = surplusQuestion;
@@ -297,7 +305,7 @@ export class TransactionDetail extends BankMovementPanel {
     const chosen = this.chosen();
     if (chosen) return this.enriched(chosen);
     const target = this.suggestion()?.target;
-    return target && target.kind !== 'cost-pattern' ? this.enriched(target) : null;
+    return target && target.kind !== 'cost-pattern' && target.kind !== 'container-fee' ? this.enriched(target) : null;
   });
   readonly reasons = computed(() => {
     const chosen = this.chosen();
@@ -306,18 +314,24 @@ export class TransactionDetail extends BankMovementPanel {
   });
   readonly alternatives = computed(() => {
     const suggestion = this.suggestion();
-    if (!suggestion || suggestion.target.kind === 'cost-pattern') return suggestion?.others ?? [];
+    if (!suggestion || suggestion.target.kind === 'cost-pattern' || suggestion.target.kind === 'container-fee') return suggestion?.others ?? [];
     const all = [{ target: suggestion.target, reasons: suggestion.reasons }, ...suggestion.others];
     const best = this.chosen() ?? suggestion.target;
     return all.filter((row) => row.target !== best).slice(0, 3);
   });
-  /** A cost pattern: the hint above the three ways ("Kost · Telefoon & internet · zoals de vorige 3 keer"). */
-  readonly pattern = computed(() => { const target = this.suggestion()?.target; return target?.kind === 'cost-pattern' ? target.label : null; });
+  /**
+   * A cost pattern or a container's Transactiekosten: the hint above the three ways, booked with one button
+   * ("Kost · Telefoon & internet · zoals de vorige 3 keer", "Transactiekosten · PO-2026-005 (Yunnan Pubei)").
+   */
+  readonly pattern = computed(() => { const target = this.suggestion()?.target; return target?.kind === 'cost-pattern' || target?.kind === 'container-fee' ? target.label : null; });
   readonly preview = computed(() => {
     const row = this.line(), target = this.best();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST') : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST', this.feeFor(target)) : null;
   });
+  /** 'Waarvan transactiekosten (€)' counts for a USD/CNY purchase payment that follows the bank (a euro one takes "Rest als transactiekosten"). */
+  foreignFeeAsked(target: LinkTarget): boolean { return target.kind === 'purchase-existing' && target.currency !== 'EUR' && this.follow(); }
+  private feeFor(target: LinkTarget): number | null { return this.foreignFeeAsked(target) && !this.outgoingFeeInvalid() ? this.outgoingFee() : null; }
   /** The switch as the server can carry it out: an existing cost payment or receipt follows the bank only from the 2026-10-16 round on (linkLine's rule). */
   private effectiveFollow(target: LinkTarget): boolean {
     return this.follow() && (target.kind === 'purchase-existing' || this.state.cashRound());
@@ -327,9 +341,10 @@ export class TransactionDetail extends BankMovementPanel {
     return !!target && (target.kind === 'purchase-existing' || ((target.kind === 'cost-existing' || target.kind === 'sales-existing') && this.state.cashRound()));
   }
   readonly primaryLabel = computed(() => this.preview()?.primaryLabel ?? 'Koppelen');
-  /** What may be linked as the preview stands (the best match and "Bestaande betaling" alike). */
+  /** What may be linked as the preview stands (the best match and "Al genoteerd" alike). */
   private linkAllowed(target: LinkTarget, preview: ChangePreview): boolean {
     if (this.state.linking() !== null || preview.blockedText || this.surplusAsked(preview, target)) return false;
+    if (this.foreignFeeAsked(target) && this.outgoingFeeInvalid()) return false;
     if (!this.state.cashRound() && (target.kind === 'cost-existing' || target.kind === 'sales-existing') && preview.mode !== 'equal') return false;
     if (!this.state.cashRound() && target.kind === 'purchase-existing' && !this.follow() && preview.mode !== 'equal') return false;
     return true;
@@ -363,7 +378,7 @@ export class TransactionDetail extends BankMovementPanel {
     return rows;
   });
   /**
-   * A single existing payment chosen in "Bestaande betaling" (Te koppelen): it follows the bank too, through the best
+   * A single existing payment chosen in "Al genoteerd" (Te koppelen): it follows the bank too, through the best
    * match's "Wat verandert" and call (§3.6). A purchase payment goes this way as one payment alone; round 2's own
    * table stays for what §3.6 does not cover: a USD/CNY part named in its own currency, the goods with their inspection.
    */
@@ -387,7 +402,7 @@ export class TransactionDetail extends BankMovementPanel {
   readonly enginePreview = computed(() => {
     const row = this.line(), target = this.engineTarget();
     return row && target ? changePreview(target, { amountEur: row.amountEur, day: this.state.lineDay(row), accountLabel: this.accountName(row.account) },
-      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST') : null;
+      this.effectiveFollow(target), this.keepAs(), this.surplus() ?? 'ADJUST', this.feeFor(target)) : null;
   });
   readonly canLinkEngine = computed(() => {
     const target = this.engineTarget(), preview = this.enginePreview();
@@ -518,16 +533,27 @@ export class TransactionDetail extends BankMovementPanel {
 
   constructor() {
     super();
-    /* The detail runs the old sheet's state machine on its own line: opened on arrival, closed when the line is linked or gone. */
+    /*
+     * The detail runs the old sheet's state machine on its own line: opened on arrival, closed when the line is linked or
+     * gone. "Splitsen…" from the list (its ⋯, key S) opens the line in the split (FinanceState.splitOnOpen).
+     */
     effect(() => {
       const row = this.line();
+      const split = this.state.splitOnOpen();
       untracked(() => {
+        if (split !== null && split === row?.id) this.state.splitOnOpen.set(null);
         if (!row || this.allocated(row)) { if (this.selected()) this.closeAllocation(); return; }
         if (this.selected()?.id !== row.id) {
-          this.view.set('auto'); this.chosen.set(null); this.follow.set(true); this.surplus.set(null); this.splitFrom.set(null); this.keepAs.set('BANKKOSTEN');
+          this.view.set('auto'); this.chosen.set(null); this.follow.set(true); this.surplus.set(null); this.splitFrom.set(null); this.keepAs.set('TRANSACTIEKOSTEN');
+          this.outgoingFeeInput.set('');
           void this.openAllocation(row);
         }
+        if (split === row.id && row.amountEur < 0 && this.state.cashRound()) this.openSplit(null);
       });
+    });
+    /* "Al genoteerd" shows only with something in it: an empty one falls back to "Factuur of uitgave" once the sources are in. */
+    effect(() => {
+      if (this.allocationStep() === 'payments' && !this.existingCount() && !this.localLoading() && this.selected()) untracked(() => this.allocationStep.set('documents'));
     });
     /* A best match on a document or term is chosen in the state machine too, so its preview, duplicate check and fields apply. */
     effect(() => {
@@ -541,10 +567,10 @@ export class TransactionDetail extends BankMovementPanel {
         if (document) { this.allocationStep.set('documents'); this.chooseLocalDocument(document); }
       });
     });
-    /* Another payment picked under "Bestaande betaling": the switch on, "Bedrag aanpassen", Bankkosten (as for a best match). */
+    /* Another payment picked under "Al genoteerd": the switch on, nothing chosen for a larger transaction, Transactiekosten (as for a best match). */
     effect(() => {
       if (!this.engineKey()) return;
-      untracked(() => { this.follow.set(true); this.surplus.set(null); this.keepAs.set('BANKKOSTEN'); });
+      untracked(() => { this.follow.set(true); this.surplus.set(null); this.keepAs.set('TRANSACTIEKOSTEN'); });
     });
     /* The proof files of the linked purchase payments (round 2's list). */
     effect(() => {
@@ -581,14 +607,14 @@ export class TransactionDetail extends BankMovementPanel {
   amountOf(target: LinkTarget): number {
     return target.kind === 'cost-new' || target.kind === 'sales-new' ? target.openEur : target.kind === 'term-new' ? target.payable.remainingEur : target.amountEur;
   }
-  /** "Boeken" beside a cost pattern: the cost registration prefilled from the latest cost of that pattern (the row's action). */
+  /** "Boeken" beside the hint: the cost registration prefilled from a cost pattern, or the Transactiekosten on their container (the row's action). */
   bookPattern(row: BankStatementLine): void {
     const target = this.suggestion()?.target;
     if (target?.kind === 'cost-pattern') this.state.bookPattern(row, target.costId);
+    else if (target?.kind === 'container-fee') void this.state.bookContainerFee(row, target.orderId);
   }
-  choose(target: LinkTarget): void { this.chosen.set(target); this.follow.set(true); this.surplus.set(null); }
+  choose(target: LinkTarget): void { this.chosen.set(target); this.follow.set(true); this.surplus.set(null); this.outgoingFeeInput.set(''); }
   searchAll(): void { this.view.set('search'); this.setAllocationStep('documents'); this.localSelectedKey.set(null); }
-  splitPayments(): void { this.view.set('search'); this.setAllocationStep('payments'); }
 
   openTarget(target: LinkTarget): void {
     if (target.kind === 'cost-new' || target.kind === 'cost-existing') this.state.inspectRelated({ kind: 'cost', id: target.costId });
@@ -600,21 +626,26 @@ export class TransactionDetail extends BankMovementPanel {
   async linkBest(row: BankStatementLine, target: LinkTarget): Promise<void> {
     if (!this.canLinkBest()) return;
     const parts = target.kind === 'term-new' ? this.termParts(row, target) : undefined;
-    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST', parts,
+    const failure = await this.state.linkLine(row, target, { follow: this.follow(), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST', feeEur: this.feeFor(target), parts,
       confirmNew: target.kind === 'cost-new' && this.localNewConfirmed() });
     if (!failure) this.afterLink();
   }
-  /** The purchase payment(s) of a new term from the state machine's fields (currency, amount, the inspection paid with it). */
+  /**
+   * The purchase payment(s) of a new term from the state machine's fields (currency, amount, the inspection paid with it,
+   * the Transactiekosten in the same debit: the goods take the rest, the fee is its own Bijkomende kosten payment).
+   */
   private termParts(row: BankStatementLine, target: Extract<LinkTarget, { kind: 'term-new' }>): BankPurchasePaymentPart[] {
     const amount = this.parsedAmount(), currency = this.purchaseCurrency();
     const inspection = target.payable.payee === 'SUPPLIER' ? this.purchaseInspection() : null;
+    const fee = this.purchaseFee();
     const base = this.state.termPart(row, target);
     if (amount === null) return [base];
-    if (inspection !== null) {
-      return [{ ...base, amount: Math.round((amount - inspection) * 100) / 100, currency, amountEur: currency === 'EUR' ? null : Math.abs(row.amountEur) },
-        { ...base, payee: 'SEPARATE', instalmentDue: null, amount: inspection, currency, amountEur: null, inspectionViaSupplier: true, label: `${base.label} · inspectie` }];
-    }
-    return [{ ...base, amount, currency, amountEur: currency === 'EUR' ? null : Math.abs(row.amountEur) }];
+    const goods = goodsAfterFee(amount, currency, row.amountEur, fee);
+    const parts: BankPurchasePaymentPart[] = inspection !== null
+      ? [{ ...base, amount: Math.round((goods.amount - inspection) * 100) / 100, currency, amountEur: goods.amountEur },
+        { ...base, payee: 'SEPARATE', instalmentDue: null, amount: inspection, currency, amountEur: null, inspectionViaSupplier: true, label: `${base.label} · inspectie` }]
+      : [{ ...base, ...goods, currency }];
+    return fee !== null ? [...parts, feePaymentPart(base.paidOn, fee)] : parts;
   }
   private parsedAmount(): number | null {
     const text = this.purchaseAmountInput().trim().replace(/\./g, '').replace(',', '.');
@@ -626,7 +657,7 @@ export class TransactionDetail extends BankMovementPanel {
     const target = this.engineTarget();
     if (!target) { await this.submitAllocation(); return; }
     if (!this.canLinkEngine()) return;
-    const failure = await this.state.linkLine(row, target, { follow: this.effectiveFollow(target), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST' });
+    const failure = await this.state.linkLine(row, target, { follow: this.effectiveFollow(target), keepAs: this.keepAs(), surplus: this.surplus() ?? 'ADJUST', feeEur: this.feeFor(target) });
     if (!failure) this.afterLink();
   }
   /** On a phone the sheet moves on to the next transaction still to link. */
@@ -649,19 +680,20 @@ export class TransactionDetail extends BankMovementPanel {
   }
   /**
    * S, C, U, O and L while this transaction is open (CostsPage sends them
-   * here, whatever list is behind it): S opens "Splitsen", L links the best
-   * match with the switches as they stand; the rest act as on its row.
+   * here, whatever list is behind it): S opens "Splitsen" of an outgoing
+   * transaction (an incoming one has none), L links the best match with the
+   * switches as they stand; the rest act as on its row.
    */
   override handle(command: string): boolean {
     const row = this.line();
     if (!row) return false;
     const open = this.status() !== 'LINKED' && this.status() !== 'BOOKED';
-    if (command === 'split' && open) { this.splitPayments(); return true; }
+    if (command === 'split' && open) { if (row.amountEur < 0 && this.state.cashRound()) this.openSplit(null); return true; }
     const match = this.best();
     if (command === 'link' && match) { if (this.canLinkBest()) void this.linkBest(row, match); return true; }
     return super.handle(command);
   }
-  /** "Splitsing aanpassen": unlink, then reopen "Bestaande betaling" with the parts selected. */
+  /** "Splitsing aanpassen": unlink, then reopen "Al genoteerd" with the parts selected. */
   adjustSplit(row: BankStatementLine): void {
     const keys = this.linkedPurchases().map((payment) => `purchase:${payment.id}`);
     this.state.unlinkLine(row);

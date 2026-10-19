@@ -3,18 +3,24 @@ import type { BankClassification, BankStatementLine } from '../../core/api/banki
 import { BankingApi } from '../../core/api/banking-api';
 import { messageOf } from '../../core/api/errors';
 import { Sheet, Ui } from '../../shared/ui';
-import { legDistance, transferCandidates, vatPeriods } from './bank-suggestions';
+import { feeContainers, filterFeeContainers, legDistance, transferCandidates, vatPeriods } from './bank-suggestions';
+import type { RankedFeeContainer } from './bank-suggestions';
 import { bankTextOf } from './bank-text';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { FinanceState, formatEuro } from './finance-state';
 
 type Choice = 'BANKKOSTEN' | 'RENTE' | BankClassification;
 const NONE = 'none';
+/** The containers the picker shows at once; the search finds the others. */
+const FEE_ROWS = 8;
 
 /**
  * "Boeken als…" (spec-bank-forecast §3.7): a transaction that pays no invoice
  * or cost. Bank fees and interest stay costs (the cost registration,
- * prefilled); an internal transfer (with its other leg), a VAT payment of a
+ * prefilled); bank fees of a container's transfer go "Bij een container…" as
+ * its Transactiekosten instead (Emre, 2026-10-19: Bijkomende kosten, never a
+ * company cost; the containers with a supplier transfer near this line come
+ * first). An internal transfer (with its other leg), a VAT payment of a
  * quarter, a loan, capital, private money or something else is booked on the
  * line itself, which then leaves "Te koppelen". A server without the
  * 2026-10-16 round knows only the first two.
@@ -35,6 +41,21 @@ const NONE = 'none';
             }
           </div>
           @switch (choice()) {
+            @case ('BANKKOSTEN') {
+              <fieldset class="fin-bookas__field"><legend>Bankkosten</legend>
+                <label><input type="radio" name="fee-where" [checked]="feeWhere() === 'COMPANY'" (change)="feeWhere.set('COMPANY')" />Algemene bankkost</label>
+                <label><input type="radio" name="fee-where" [checked]="feeWhere() === 'CONTAINER'" (change)="chooseContainerFee()" />Bij een container…</label>
+              </fieldset>
+              @if (feeWhere() === 'CONTAINER') {
+                <input class="input" type="search" placeholder="PO-nummer, alias of leverancier" aria-label="Container zoeken" [value]="feeQuery()" (input)="feeQuery.set($any($event.target).value)" />
+                <div class="fin-bookas__options" role="radiogroup" aria-label="Container">
+                  @for (container of feeShown(); track container.orderId) {
+                    <label class="fin-bookas__option" [class.is-on]="feeOrder() === container.orderId"><input type="radio" name="fee-container" [checked]="feeOrder() === container.orderId" (change)="feeOrder.set(container.orderId)" />
+                      <span><b>{{ container.number }}{{ container.alias ? ' · ' + container.alias : '' }}</b><small>{{ containerSub(container) }}</small></span></label>
+                  } @empty { <p class="fin-hint">Geen container gevonden.</p> }
+                </div>
+              }
+            }
             @case ('INTERNAL_TRANSFER') {
               <fieldset class="fin-bookas__field"><legend>Andere kant</legend>
                 @for (other of legs(); track other.id) {
@@ -77,13 +98,31 @@ export class BookAsSheet {
   readonly note = signal('');
   readonly busy = signal(false);
   readonly error = signal('');
+  /** Bankkosten: a company cost ("Algemene bankkost", today's) or a container's Transactiekosten. */
+  readonly feeWhere = signal<'COMPANY' | 'CONTAINER'>('COMPANY');
+  readonly feeOrder = signal<number | null>(null);
+  readonly feeQuery = signal('');
+  /** Non-concept, non-archived containers, the ones with a supplier transfer near this line first (feeContainers). */
+  readonly feeRanked = computed<RankedFeeContainer[]>(() => {
+    const row = this.line();
+    if (!row) return [];
+    const suppliers = new Map(this.state.suppliers().filter((item) => item.id != null).map((item) => [item.id!, item.name]));
+    const containers = this.state.purchaseViews().filter((view) => view.order.status !== 'CONCEPT' && !view.order.archivedAt)
+      .map((view) => ({ orderId: view.order.id, number: view.order.number, alias: view.order.alias ?? null, supplier: suppliers.get(view.order.supplierId ?? -1) ?? '' }));
+    return feeContainers(row, containers, this.state.bankStatements(), this.state.payments(), (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key));
+  });
+  readonly feeShown = computed(() => {
+    const rows = filterFeeContainers(this.feeRanked(), this.feeQuery()).slice(0, FEE_ROWS);
+    const chosen = this.feeRanked().find((row) => row.orderId === this.feeOrder());
+    return chosen && !rows.includes(chosen) ? [chosen, ...rows] : rows;
+  });
 
   readonly options = computed(() => {
     const row = this.line();
     if (!row) return [];
     const outgoing = row.amountEur < 0;
     const all: { id: Choice; label: string; sub: string; round: boolean }[] = [
-      ...(outgoing ? [{ id: 'BANKKOSTEN' as const, label: 'Bankkosten', sub: 'Wordt een kost (vrijgesteld van btw)', round: false },
+      ...(outgoing ? [{ id: 'BANKKOSTEN' as const, label: 'Bankkosten', sub: 'Een kost, of de transactiekosten van een container', round: false },
         { id: 'RENTE' as const, label: 'Rente', sub: 'Wordt een kost (vrijgesteld van btw)', round: false }] : []),
       { id: 'INTERNAL_TRANSFER', label: 'Interne overboeking', sub: 'Naar of van een andere eigen rekening', round: true },
       { id: 'VAT', label: 'Btw-betaling of -terugbetaling', sub: 'Van een kwartaal', round: true },
@@ -106,6 +145,7 @@ export class BookAsSheet {
     const choice = this.choice();
     if (!choice || this.busy()) return false;
     if (choice === 'OTHER') return !!this.note().trim();
+    if (choice === 'BANKKOSTEN' && this.feeWhere() === 'CONTAINER') return this.feeOrder() !== null;
     if (choice === 'VAT') return /^\d{4}-Q[1-4]$/.test(this.period());
     return true;
   });
@@ -115,7 +155,7 @@ export class BookAsSheet {
     effect(() => {
       const row = this.line();
       untracked(() => {
-        this.choice.set(null); this.note.set(''); this.error.set('');
+        this.choice.set(null); this.note.set(''); this.error.set(''); this.feeWhere.set('COMPANY'); this.feeOrder.set(null); this.feeQuery.set('');
         this.leg.set(this.legs()[0] ? String(this.legs()[0].id) : NONE);
         this.period.set(this.periods().preferred);
         void row;
@@ -124,10 +164,30 @@ export class BookAsSheet {
   }
 
   close(): void { if (!this.busy()) this.state.bookAsLine.set(null); }
+  /** "Bij een container…": the container with a supplier transfer nearest this line starts chosen. */
+  chooseContainerFee(): void {
+    this.feeWhere.set('CONTAINER');
+    if (this.feeOrder() === null) this.feeOrder.set(this.feeRanked().find((row) => row.near)?.orderId ?? null);
+  }
+  /** The supplier on every row, and why it comes first. */
+  containerSub(container: RankedFeeContainer): string {
+    return [container.supplier || 'Leverancier onbekend', container.near].filter(Boolean).join(' · ');
+  }
 
   async book(row: BankStatementLine): Promise<void> {
     const choice = this.choice();
     if (!choice || !this.ready()) return;
+    if (choice === 'BANKKOSTEN' && this.feeWhere() === 'CONTAINER') {
+      // Transactiekosten of the container: a Bijkomende kosten payment on this line (FinanceState.bookContainerFee says so in its toast).
+      this.busy.set(true); this.error.set('');
+      try {
+        const failure = await this.state.bookContainerFee(row, this.feeOrder()!, false);
+        if (failure) this.error.set(failure); else this.state.bookAsLine.set(null);
+      } finally {
+        this.busy.set(false);
+      }
+      return;
+    }
     if (choice === 'BANKKOSTEN' || choice === 'RENTE') {
       const gross = Math.abs(row.amountEur);
       this.state.bookAsLine.set(null);

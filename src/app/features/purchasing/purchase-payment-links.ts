@@ -37,13 +37,14 @@ const day = (iso: string): string => iso.slice(0, 10).split('-').reverse().join(
 
 /**
  * What happens with a transaction larger than the payment: the payment takes
- * its amount, or the rest becomes the inspection paid via the supplier on the
- * same transaction (round 1 D), both sent as bank-part's `surplus`; or the
- * transaction also paid other containers and is shared over them ('SHARE',
- * Emre 2026-10-16: one transfer for the 30 % of three containers), one
- * POST …/purchase-share.
+ * its amount, the rest becomes the inspection paid via the supplier on the
+ * same transaction (round 1 D), or the rest is Transactiekosten of the
+ * container (FEE, Kosten & bank 2026-10-19), all sent as bank-part's
+ * `higher`; or the transaction also paid other containers and is shared over
+ * them ('SHARE', Emre 2026-10-16: one transfer for the 30 % of three
+ * containers), one POST …/purchase-share.
  */
-export type SurplusChoice = 'ADJUST' | 'INSPECTION' | 'SHARE';
+export type SurplusChoice = 'ADJUST' | 'INSPECTION' | 'FEE' | 'SHARE';
 /** The choices bank-part itself takes (`higher`): every one but the share. */
 export type BankPartSurplus = Exclude<SurplusChoice, 'SHARE'>;
 
@@ -300,7 +301,7 @@ export interface LinkSubject {
 
 /** One row of 'Wat verandert': Betaling nu → Na koppelen. */
 export interface LinkChangeRow {
-  label: 'Bedrag' | 'Betaald op' | 'Koers' | 'Inspectie via leverancier' | 'Bewijs';
+  label: 'Bedrag' | 'Betaald op' | 'Koers' | 'Inspectie via leverancier' | 'Transactiekosten' | 'Bewijs';
   now: string;
   after: string;
   changed: boolean;
@@ -323,29 +324,36 @@ function amountText(amount: number, currency: Currency, amountEur: number): stri
  * be. A whole link (or a larger transaction taken whole) follows the
  * transaction's euro and day; a smaller one carves the line's part and leaves
  * the rest open; the surplus as inspection keeps the payment and adds the
- * inspection on the same transaction. A USD/CNY payment keeps its own amount
- * (its euro and its rate follow), or the part named in its currency is carved
- * out at the bank's euro. Empty for any other plan (a larger transaction asks
- * its question first).
+ * inspection on the same transaction, the surplus as Transactiekosten keeps
+ * it and adds the fee. A USD/CNY payment keeps its own amount (its euro and
+ * its rate follow; `feeEur` of the transaction is the fee and stays off its
+ * euro), or the part named in its currency is carved out at the bank's
+ * euro. Empty for any other plan (a larger transaction asks its question
+ * first).
  */
 export function linkChange(
-  subject: LinkSubject, line: { amountEur: number; day: string; text: string }, plan: PendingLinkPlan, companionsEur = 0,
+  subject: LinkSubject, line: { amountEur: number; day: string; text: string }, plan: PendingLinkPlan, companionsEur = 0, feeEur = 0,
 ): LinkChangeRow[] {
   if (plan.kind !== 'part') return [];
   const lineEur = Math.abs(cents(line.amountEur)) / 100;
   const foreign = subject.currency !== 'EUR';
   const row = (label: LinkChangeRow['label'], now: string, after: string): LinkChangeRow => ({ label, now, after, changed: now !== after });
   const proof = row('Bewijs', subject.proof, line.text);
+  // A USD/CNY payment's fee stays off its euro: it is its own Transactiekosten payment on the transaction.
+  const fee = foreign && cents(feeEur) > 0 && cents(feeEur) < cents(lineEur) ? cents(feeEur) : 0;
+  const feeRow = fee ? [row('Transactiekosten', '—', `${eur(fee / 100)} op dezelfde transactie`)] : [];
   if (!plan.whole && foreign && plan.amount != null) {
     // The part named in dollars takes the bank's euro; the rest stays open at the payment's booked rate (as the server splits it).
+    const partEur = (cents(lineEur) - fee) / 100;
     const partBooked = Math.round(subject.amountEur * plan.amount / subject.amount * 100) / 100;
     const restAmount = (cents(subject.amount) - cents(plan.amount)) / 100;
     const restEur = (cents(subject.amountEur) - cents(partBooked)) / 100;
     return [
       row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur),
-        `${amountText(plan.amount, subject.currency, lineEur)} op de bank + ${amountText(restAmount, subject.currency, restEur)} open`),
+        `${amountText(plan.amount, subject.currency, partEur)} op de bank + ${amountText(restAmount, subject.currency, restEur)} open`),
       row('Betaald op', day(subject.paidOn), `${day(line.day)} (deel) · rest ${day(subject.paidOn)}`),
-      row('Koers', rateText(subject.amount, subject.currency, subject.amountEur), `${rateText(plan.amount, subject.currency, lineEur)} (deel)`),
+      row('Koers', rateText(subject.amount, subject.currency, subject.amountEur), `${rateText(plan.amount, subject.currency, partEur)} (deel)`),
+      ...feeRow,
       proof,
     ];
   }
@@ -357,24 +365,25 @@ export function linkChange(
       proof,
     ];
   }
-  if (plan.surplus === 'INSPECTION') {
+  if (plan.surplus === 'INSPECTION' || plan.surplus === 'FEE') {
     const extraEur = (cents(lineEur) - cents(subject.amountEur)) / 100;
     return [
       row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur), amountText(subject.amount, subject.currency, subject.amountEur)),
       row('Betaald op', day(subject.paidOn), day(line.day)),
-      row('Inspectie via leverancier', '—', `${eur(extraEur)} op dezelfde transactie`),
+      row(plan.surplus === 'FEE' ? 'Transactiekosten' : 'Inspectie via leverancier', '—', `${eur(extraEur)} op dezelfde transactie`),
       proof,
     ];
   }
-  // With the inspection noted beside the goods, the goods take the transaction minus that inspection.
+  // With the inspection noted beside the goods, the goods take the transaction minus that inspection (and minus a USD/CNY payment's fee).
   const together = plan.withPaymentIds?.length ? cents(companionsEur) : 0;
-  const goodsEur = (cents(lineEur) - together) / 100;
+  const goodsEur = (cents(lineEur) - together - fee) / 100;
   const afterAmount = foreign ? subject.amount : goodsEur;
   return [
     row('Bedrag', amountText(subject.amount, subject.currency, subject.amountEur), amountText(afterAmount, subject.currency, goodsEur)),
     row('Betaald op', day(subject.paidOn), day(line.day)),
     ...(foreign ? [row('Koers', rateText(subject.amount, subject.currency, subject.amountEur), rateText(subject.amount, subject.currency, goodsEur))] : []),
     ...(together ? [row('Inspectie via leverancier', `${eur(together / 100)} · niet op de bank`, `${eur(together / 100)} · zelfde transactie`)] : []),
+    ...feeRow,
     proof,
   ];
 }

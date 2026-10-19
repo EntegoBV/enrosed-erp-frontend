@@ -56,7 +56,7 @@ export class ExactLinksSheet {
     const account = location.view === 'bank' && location.tab === 'movements' && location.account ? this.state.canonicalAccount(location.account) : '';
     return this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line) && (!account || this.state.canonicalAccount(line.account) === account))
       .map((line) => ({ line, suggestion: this.state.suggestions().get(line.id) }))
-      .filter((row): row is { line: BankStatementLine; suggestion: NonNullable<typeof row.suggestion> } => !!row.suggestion?.exact && row.suggestion.target.kind !== 'cost-pattern')
+      .filter((row): row is { line: BankStatementLine; suggestion: NonNullable<typeof row.suggestion> } => !!row.suggestion?.exact && row.suggestion.target.kind !== 'cost-pattern' && row.suggestion.target.kind !== 'container-fee')
       .map((row) => ({ line: row.line, target: row.suggestion.target as LinkTarget, follows: !['cost-new', 'sales-new', 'term-new'].includes(row.suggestion.target.kind) }))
       .sort((a, b) => Date.parse(a.line.bookedAt) - Date.parse(b.line.bookedAt) || a.line.id - b.line.id);
   });

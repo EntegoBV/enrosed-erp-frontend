@@ -6,11 +6,12 @@ import type { BankAllocationTarget } from './bank-allocation-targets';
 import { dayMonthYear, signedEur } from './finance-format';
 
 /**
- * Today's three ways to link a transaction, as sections of the transaction
- * detail (spec-bank-forecast §3.5): "Factuur of uitgave" (documents and
- * container terms in ENROSED, with the full preview of the old allocation
- * sheet), "Bestaande betaling" and "Nog te registreren" (received Odoo
- * invoices). The state machine is the detail's own (it is a
+ * Today's ways to link a transaction, as sections of the transaction detail
+ * (spec-bank-forecast §3.5): "Factuur of uitgave" (documents and container
+ * terms in ENROSED, with the full preview of the old allocation sheet), "Al
+ * genoteerd" (payments noted in Inkoop or Kosten without a bank line; shown
+ * only with something in it, 2026-10-19) and "Nog te registreren" (received
+ * Odoo invoices). The state machine is the detail's own (it is a
  * BankMovementPanel); `only="preview"` shows just the chosen document's
  * preview (the "Details" of a best match).
  */
@@ -27,7 +28,7 @@ import { dayMonthYear, signedEur } from './finance-format';
           @if (only() !== 'preview') {
           <div class="bank-alloc-tabs" role="group" aria-label="Wat koppel je aan deze banktransactie?">
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'documents'" (click)="p.setAllocationStep('documents')">Factuur of uitgave</button>
-            <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Bestaande betaling</button>
+            @if (p.existingCount(); as count) { <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Al genoteerd {{ count }}</button> }
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Nog te registreren</button>
           </div>
           }
@@ -96,8 +97,12 @@ import { dayMonthYear, signedEur } from './finance-format';
                       @if (p.localInspectionOffered()) {
                         <label class="bank-alloc-purchase-fields__wide"><span>Waarvan inspectie via leverancier <span class="opt"></span></span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseInspectionInput()" (input)="p.purchaseInspectionInput.set($any($event.target).value)" /></label>
                       }
+                      @if (p.localFeeOffered()) {
+                        <label class="bank-alloc-purchase-fields__wide"><span>Waarvan transactiekosten (€) <span class="opt"></span></span><input class="input" inputmode="decimal" [disabled]="p.busy()" [value]="p.purchaseFeeInput()" (input)="p.purchaseFeeInput.set($any($event.target).value)" /></label>
+                      }
                     </div>
                     @if (p.localInspectionOffered() && p.purchaseInspectionInput()) { <p class="fin-hint">Wordt een eigen betaling bij Inspectie & andere kosten op dezelfde banktransactie; de banktransactie is het betaalbewijs van beide.</p> }
+                    @if (p.purchaseFee(); as fee) { <p class="fin-hint">{{ fee | eur }} wordt Transactiekosten bij Bijkomende kosten, op dezelfde transactie.</p> }
                     @if (p.purchaseCurrency() !== 'EUR') { <p class="fin-hint">Werkelijk afgeschreven: {{ p.abs(row.amountEur) | eur }}. Vul het bijbehorende bedrag op de betaling in {{ p.purchaseCurrency() }} in.</p> }
                   }
                   <dl class="bank-alloc-amounts">
@@ -188,16 +193,16 @@ import { dayMonthYear, signedEur } from './finance-format';
               </section>
             }
           } @else {
-            <p class="fin-hint">Deze betalingen zijn al geboekt. Hergebruik ze om de banktransactie te koppelen zonder een extra betaling aan te maken. Meerdere containerdelen kunnen samen één bankbetaling vormen.</p>
+            <p class="fin-hint">Al genoteerd in Inkoop of Kosten, nog zonder banktransactie.</p>
             <label class="bank-alloc-search"><span>Zoek bestaande betalingen</span><input class="input" type="search" placeholder="Naam, factuur, container of bedrag" [value]="p.outgoingSearch()" (input)="p.outgoingSearch.set($any($event.target).value)" /></label>
             <div class="bank-alloc-list" role="group" aria-label="Bestaande betalingen">
               @for (payment of p.visibleExistingSales(); track payment.existingPaymentId) {
-                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales' && p.isChosen(payment)" (click)="p.reuseLocalSales(payment)"><span class="bank-alloc-document__identity"><small>{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Ontvangst klant' }}</small><b>{{ payment.number }}</b><span>{{ payment.reference }}</span><small>{{ p.matchStamp(payment) }}</small></span><span class="bank-alloc-document__amount"><b>{{ p.existingSalesAmount(payment) | eur }}</b><small>hergebruiken</small></span></button>
+                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'sales' && p.isChosen(payment)" (click)="p.reuseLocalSales(payment)"><span class="bank-alloc-document__identity"><small>{{ row.amountEur < 0 ? 'Terugbetaling klant' : 'Ontvangst klant' }}</small><b>{{ payment.number }}</b><span>{{ payment.reference }}</span><small>{{ p.matchStamp(payment) }}</small></span><span class="bank-alloc-document__amount"><b>{{ signed(p.existingSalesAmount(payment)) }}</b><small>hergebruiken</small></span></button>
               }
               @for (payment of p.visibleOutgoing(); track payment.key) {
-                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'expense' && p.outgoingSelected().includes(payment.key)" (click)="p.toggleExistingPayment(payment)"><span class="bank-alloc-document__identity"><small>{{ payment.kind === 'cost' ? (payment.amountEur < 0 ? 'Terugbetaling leverancier' : 'Kostenbetaling') : 'Inkoopbetaling' }}</small><b>{{ payment.title }}</b><span>{{ payment.detail }}</span><small>{{ day(payment.paidOn) }}</small></span><span class="bank-alloc-document__amount"><b>{{ -payment.amountEur | eur }}</b><small>{{ p.outgoingSelected().includes(payment.key) ? 'geselecteerd' : 'hergebruiken' }}</small></span></button>
+                <button class="bank-alloc-document" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationMode() === 'expense' && p.outgoingSelected().includes(payment.key)" (click)="p.toggleExistingPayment(payment)"><span class="bank-alloc-document__identity"><small>{{ payment.kind === 'cost' ? (payment.amountEur < 0 ? 'Terugbetaling leverancier' : 'Kostenbetaling') : 'Inkoopbetaling' }}</small><b>{{ payment.title }}</b><span>{{ payment.detail }}</span><small>{{ day(payment.paidOn) }}</small></span><span class="bank-alloc-document__amount"><b>{{ signed(-payment.amountEur) }}</b><small>{{ p.outgoingSelected().includes(payment.key) ? 'geselecteerd' : 'hergebruiken' }}</small></span></button>
               }
-              @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen vrije bestaande betaling gevonden. Kies een factuur of uitgave om daarop een betaling vast te leggen.</p> }
+              @if (!p.visibleExistingSales().length && !p.visibleOutgoing().length) { <p class="fin-hint">Geen betaling gevonden voor deze zoekterm.</p> }
             </div>
             @if (p.allocationMode() === 'expense' && p.outgoingPart(); as part) {
               <!--
@@ -214,6 +219,12 @@ import { dayMonthYear, signedEur } from './finance-format';
                            (input)="p.outgoingForeignInput.set($any($event.target).value)" /></label>
                   @if (p.outgoingForeignWarning(); as warning) { <p class="fin-hint fin-hint--warn">{{ warning }}</p> }
                   @else if (!part.carve && !p.outgoingForeignInput().trim()) { <p class="fin-hint">Leeg: de hele betaling neemt het eurobedrag van de transactie over; de koers volgt.</p> }
+                  @if (!p.ownsChange()) {
+                    <!-- The detail's own "Wat verandert" carries this field when it shows the payment (ownsChange). -->
+                    <label class="bank-alloc-search bank-alloc-foreign"><span>Waarvan transactiekosten (€) <span class="opt"></span></span>
+                      <input class="input num" type="text" inputmode="decimal" autocomplete="off" [disabled]="p.busy()" [value]="p.outgoingFeeInput()"
+                             (input)="p.outgoingFeeInput.set($any($event.target).value)" /></label>
+                  }
                 }
                 @if (part.carve && !p.ownsChange()) {
                   <p class="fin-hint">{{ p.outgoingCarveText() }}</p>
@@ -230,6 +241,8 @@ import { dayMonthYear, signedEur } from './finance-format';
                       <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'INSPECTION'" (click)="p.chooseOutgoingSurplus('INSPECTION')">
                         <b>Rest als inspectie via leverancier</b><span>{{ p.abs(row.amountEur) - part.row.amountEur | eur }} als eigen betaling op dezelfde transactie</span></button>
                     }
+                    <button class="fin-match" type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.outgoingSurplus() === 'FEE'" (click)="p.chooseOutgoingSurplus('FEE')">
+                      <b>Rest als transactiekosten</b><span>Bijkomende kosten van de container</span></button>
                     <button class="fin-match" type="button" [disabled]="p.busy()" (click)="p.toggleExistingPayment(part.row)"><b>Niet koppelen</b><span>Een andere betaling kiezen</span></button>
                   </div>
                 }

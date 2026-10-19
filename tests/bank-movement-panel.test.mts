@@ -7,6 +7,7 @@ import { containerPayables } from '../src/app/features/finance/payables.ts';
 import { amountInputText, parsePurchasePaymentAmount } from '../src/app/features/purchasing/purchase-payment-amount.ts';
 import { inspectionRestOffered, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../src/app/features/purchasing/purchase-invoices.ts';
 import { splitTransfer } from '../src/app/features/purchasing/purchase-transfer-split.ts';
+import { feeFits, feePaymentPart, goodsAfterFee } from '../src/app/features/finance/transaction-fees.ts';
 import {
   adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
 } from '../src/app/features/purchasing/purchase-payment-links.ts';
@@ -153,6 +154,7 @@ function harness() {
     exports, signal, computed, input: <T>(value: T) => () => value, bankSearchMatches, lineStatus, selectionTotals, legDistance, vatPeriodLabel, CLASSIFICATION_LABEL, bankAmountsMatch, bankAmountDifference, bankAllocationTargets, filterBankAllocationTargets, cashTotalOf, openOf, containerPayables, parsePurchasePaymentAmount, bankTransactionDay, Component: () => (value: unknown) => value, ChangeDetectionStrategy: { OnPush: 0 },
     invoiceLine, invoiceTermsLine, paymentRoundOnServer, splitTransfer, linkChange, linkNotice, surplusQuestion,
     inspectionRestOffered, carveForeignText, carveText, foreignLinkWarning, pendingLinkPlan, transferCompanions, adjustConsequence, amountInputText,
+    feeFits, feePaymentPart, goodsAfterFee,
     FormsModule: {}, RouterLink: {}, EurPipe: {}, Sheet: {}, DateField: {}, Icon: {}, SwipeActions: {}, MenuTrigger: {},
     FinanceState: tokens.state, BankingApi: tokens.api, Ui: tokens.ui, SourcingApi: tokens.sourcing, saveBlob: () => {},
     inject: (token: symbol) => {
@@ -1081,7 +1083,8 @@ test('a credit offset is never offered for a bank line; a transfer of a payment 
     { id: 20, orderId: 3, orderNumber: 'PO-3', label: 'Saldo 70%', amountEur: 50, paidOn: '2026-09-01', groupId: 20, bankStatementLineId: 9 },
     { id: 22, orderId: 3, orderNumber: 'PO-3', label: 'Verrekend tegoed INK-9', amountEur: 100, paidOn: '2026-09-08', creditOffset: true }]);
   await panel.openAllocation(movement(70, -100));
-  assert.deepEqual(JSON.parse(JSON.stringify(panel.outgoingCandidates().map(row => [row.id, row.detail]))), [[21, 'PO-3 · Saldo 70% · deel van een betaling in 2 transacties']]);
+  assert.deepEqual(JSON.parse(JSON.stringify(panel.outgoingCandidates().map(row => [row.id, row.title, row.detail]))), [[21, 'PO-3', 'Saldo 70% · deel van een betaling in 2 transacties']],
+    'the PO number once: it is the title');
 });
 
 test('Bestaande betaling: one larger payment is linked in part (Deel koppelen); a matching transfer of a group goes through bank-part too', async () => {
@@ -1406,4 +1409,147 @@ test('the cockpit list gives its action one column for all rows, or none when no
   suggestions.set(new Map([[2, suggestion]]));
   assert.equal(panel.actionOf(movement(2, -20))?.label, 'Koppelen');
   assert.equal(panel.anyAction(), true, 'one row with Koppelen: every row keeps the fixed action track');
+});
+
+/* ---- Transactiekosten and Splitsen (Emre, 2026-10-19) */
+
+const plainText = (text: string | null | undefined): string => (text ?? '').replace(/[  ]/g, ' ');
+const copy = (value: unknown): any => JSON.parse(JSON.stringify(value));
+
+test('Al genoteerd counts the payments noted without a bank line and the matching receipts; zero hides the tab', async () => {
+  const { panel, state } = harness();
+  state.purchaseViews.set([roundView()]);
+  await panel.openAllocation(movement(1, -100));
+  assert.equal(panel.existingCount(), 0);
+  state.payments.set([{ id: 3, orderId: 39, orderNumber: 'PO-2026-005', label: '40%', amountEur: 20289.56, paidOn: '2026-06-24' },
+    { id: 4, orderId: 39, orderNumber: 'PO-2026-005', label: '30%', amountEur: 15217.17, paidOn: '2026-06-24', bankStatementLineId: 9 }]);
+  assert.equal(panel.existingCount(), 1, 'the one on the bank does not count');
+  const incoming = harness();
+  incoming.state.salesOrders.set([invoice(1)]);
+  incoming.state.incomingPayments.set([receipt(11, 1)]);
+  await incoming.panel.openAllocation(movement(2, 50));
+  assert.equal(incoming.panel.existingCount(), 1, 'an incoming line keeps its receipt match');
+});
+
+test('Factuur of uitgave: "Waarvan transactiekosten" makes the goods the rest and a Transactiekosten payment on the same line', async () => {
+  const { panel, state, api } = harness();
+  const view = roundView({ order: { ...purchaseView().order, inspectionViaSupplier: true } });
+  view.reconciliation.streams.push({ payee: 'SEPARATE', status: 'UNPAID', plannedEur: 300, remainingEur: 300, paidEur: 0, finalized: false });
+  state.purchaseViews.set([view]);
+  const calls: any[] = []; (api as any).addPurchasePayment = async (...args: any[]) => { calls.push(copy(args)); return { line: { ...movement(620, -10325), allocated: true }, payments: [] }; };
+  const parts = () => calls.at(-1)[2].map((part: any) => [part.payee, part.amount, part.currency, part.amountEur ?? null, part.instalmentDue, part.label]);
+  // Euro: goods + inspection + fee in one debit.
+  const bank = movement(620, -10325);
+  await panel.openAllocation(bank);
+  panel.chooseLocalDocument(panel.localDocuments().find(row => row.container?.payee === 'SUPPLIER')!);
+  assert.equal(panel.localFeeOffered(), true);
+  panel.purchaseInspectionInput.set('300'); panel.purchaseFeeInput.set('25');
+  assert.equal(panel.canLinkLocal(), true);
+  await panel.linkLocalDocument();
+  assert.deepEqual(parts().map((part: any[]) => part.slice(0, 5)), [['SUPPLIER', 10000, 'EUR', null, 'ORDERED'], ['SEPARATE', 300, 'EUR', null, null],
+    ['OTHER', 25, 'EUR', null, null]]);
+  assert.equal(parts().at(-1).at(-1), 'Transactiekosten');
+  // USD: the dollars stay, their euro is the transaction less the fee.
+  const usd = harness();
+  usd.state.purchaseViews.set([roundView()]);
+  (usd.api as any).addPurchasePayment = (api as any).addPurchasePayment;
+  await usd.panel.openAllocation(movement(621, -1225));
+  usd.panel.chooseLocalDocument(usd.panel.localDocuments().find(row => row.container?.payee === 'SUPPLIER')!);
+  usd.panel.changePurchaseCurrency('USD'); usd.panel.purchaseAmountInput.set('1400'); usd.panel.purchaseFeeInput.set('25');
+  assert.equal(usd.panel.canLinkLocal(), true);
+  await usd.panel.linkLocalDocument();
+  assert.deepEqual(parts().map((part: any[]) => part.slice(0, 4)), [['SUPPLIER', 1400, 'USD', 1200], ['OTHER', 25, 'EUR', null]]);
+  // A fee as large as the goods is refused, with its reason.
+  const large = harness();
+  large.state.purchaseViews.set([roundView()]);
+  await large.panel.openAllocation(movement(622, -1225));
+  large.panel.chooseLocalDocument(large.panel.localDocuments().find(row => row.container?.payee === 'SUPPLIER')!);
+  large.panel.purchaseFeeInput.set('1225');
+  assert.equal(large.panel.canLinkLocal(), false);
+  assert.equal(large.panel.allocationBlockedReason(), 'De transactiekosten moeten kleiner zijn dan de goederen.');
+});
+
+test("Al genoteerd: a larger transaction's 'Rest als transactiekosten' keeps the payment and sends FEE", async () => {
+  const { panel, state, sourcing, toasts } = harness();
+  state.purchaseViews.set([roundView()]);
+  const bank = { ...movement(630, -1225), source: 'ODOO' as const };
+  state.payments.set([{ id: 501, orderId: 20, orderNumber: 'PO-20', label: 'Voorschot', amountEur: 1200, paidOn: '2026-09-01', payee: 'SUPPLIER', instalmentDue: 'ORDERED' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, amount, options.higher, options.feeEur ?? null]);
+    return { payments: [], lines: [{ ...bank, allocated: true }], notice: 'Transactiekosten € 25,00 bij PO-20 op dezelfde transactie.' };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  assert.equal(panel.outgoingPart()?.higher, true);
+  panel.chooseOutgoingSurplus('FEE');
+  assert.equal(panel.canLinkOutgoing(), true);
+  assert.deepEqual(panel.outgoingChange().map(row => [row.label, plainText(row.after)]).slice(0, 3),
+    [['Bedrag', '€ 1.200,00'], ['Betaald op', '08/09/2026'], ['Transactiekosten', '€ 25,00 op dezelfde transactie']]);
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[501, 630, null, 'FEE', null]]);
+  assert.equal(toasts.at(-1), 'Transactiekosten € 25,00 bij PO-20 op dezelfde transactie.', "the server's own sentence");
+});
+
+test('Al genoteerd: a USD payment with "Waarvan transactiekosten" sends feeEur, its euro the rest; a fee as large as the line waits', async () => {
+  const { panel, state, sourcing } = harness();
+  state.purchaseViews.set([roundView()]);
+  const bank = { ...movement(650, -10325), source: 'ODOO' as const };
+  state.payments.set([{ id: 401, orderId: 20, orderNumber: 'PO-20', label: 'Saldo 70%', amount: 12000, currency: 'USD', amountEur: 10250, paidOn: '2026-09-01',
+    payee: 'SUPPLIER', instalmentDue: 'SHIPPED' }]);
+  const calls: any[] = [];
+  (sourcing as any).linkPaymentPart = async (id: number, lineId: number, amount: number | null, options: any) => {
+    calls.push([id, lineId, amount, options.higher, options.feeEur ?? null]); return { payments: [], lines: [{ ...bank, allocated: true }] };
+  };
+  await panel.openAllocation(bank);
+  panel.setAllocationStep('payments');
+  panel.toggleOutgoing(panel.outgoingCandidates()[0]);
+  panel.outgoingFeeInput.set('10325');
+  assert.equal(panel.canLinkOutgoing(), false);
+  assert.equal(panel.allocationBlockedReason(), 'De transactiekosten moeten kleiner zijn dan de transactie.');
+  panel.outgoingFeeInput.set('25');
+  assert.equal(panel.canLinkOutgoing(), true);
+  const change = panel.outgoingChange().map(row => [row.label, plainText(row.after)]);
+  assert.deepEqual(change.filter(([label]) => label === 'Bedrag' || label === 'Transactiekosten'),
+    [['Bedrag', 'US$ 12.000,00 · € 10.300,00'], ['Transactiekosten', '€ 25,00 op dezelfde transactie']]);
+  await panel.linkOutgoing();
+  assert.deepEqual(calls, [[401, 650, null, null, 25]]);
+  assert.equal(panel.outgoingFeeInput(), '', 'cleared for the next transaction');
+});
+
+test('Splitsen… on the list: an outgoing line only; it opens the detail in its split', () => {
+  const { panel, state, menus, opened } = harness();
+  (state as any).splitOnOpen = signal<number | null>(null);
+  const out = movement(1, -100), incoming = movement(2, 100);
+  state.bankStatements.set([out, incoming]);
+  panel.lineMenu(incoming, null);
+  assert.equal(menus[0].items.some((item: any) => item.id === 'split'), false, 'an incoming line has its invoice');
+  panel.lineMenu(out, null);
+  assert.equal(menus[1].items.some((item: any) => item.id === 'split'), true);
+  menus[1].pick('split');
+  assert.deepEqual([(state as any).splitOnOpen(), opened.at(-1)], [1, { kind: 'line', id: 1 }]);
+  (state as any).splitOnOpen.set(null);
+  panel.focusId.set(2);
+  assert.equal(panel.handle('split'), true);
+  assert.deepEqual([(state as any).splitOnOpen(), opened.at(-1)], [null, { kind: 'line', id: 2 }], 'S on an incoming line only opens it');
+  panel.focusId.set(1);
+  panel.handle('split');
+  assert.equal((state as any).splitOnOpen(), 1);
+});
+
+test('the Transactiekosten suggestion is booked with one button, like a cost pattern', () => {
+  const { panel, state } = harness();
+  const fee = movement(3, -25);
+  const booked: unknown[] = [];
+  const target = { kind: 'container-fee', orderId: 39, label: 'Transactiekosten · PO-2026-005 (Yunnan Pubei)' };
+  Object.assign(state, {
+    suggestions: () => new Map([[3, { lineId: 3, target, score: 70, reasons: [], amountMatches: false, exact: false, changesAmount: false, others: [] }]]),
+    bookContainerFee: async (row: BankStatementLine, orderId: number) => { booked.push([row.id, orderId]); return ''; },
+  });
+  state.bankStatements.set([fee]);
+  assert.deepEqual(copy(panel.actionOf(fee)), { label: 'Boeken', kind: 'book' });
+  assert.equal(panel.koppeling(fee)?.text, 'Transactiekosten · PO-2026-005 (Yunnan Pubei)');
+  panel.runAction(fee);
+  assert.deepEqual(booked, [[3, 39]]);
 });
