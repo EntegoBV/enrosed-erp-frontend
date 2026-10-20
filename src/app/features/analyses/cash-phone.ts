@@ -12,11 +12,15 @@ import { CashDefaults } from './cash-defaults';
 import { CashMonths } from './cash-months';
 import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
+import { HOW_TEXTS } from './analyses-how';
 import {
   adjusted, amountText, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, parseAmount, phoneKrapBanner,
   phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, standardMarkupNote, suggestionText, underBuffer,
 } from './cash-view';
-import type { CashLink, RuleSwitch } from './cash-view';
+import type { CashLink, KpiCard, RuleSwitch } from './cash-view';
+import { cashCommittedView, cashLikelyPaidView, cashLowestView, cashRuleView, cashScenarioSalesView, cashStockPlanView } from './drill-cash';
+import type { CashDrillContext } from './drill-cash';
+import { AnDrillHost } from './drill-host';
 
 const CONTAINER_KINDS = new Set(['SUPPLIER', 'LOGISTICS', 'INSPECTION', 'OTHER_CONTAINER', 'IMPORT_VAT', 'SALES']);
 const SHOWN_ROWS = 8;
@@ -27,7 +31,8 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
  * navigation bar and the Analyses tabs as chips (the page renders neither its
  * header nor its tab row then). The bank today, the krap banner, the balance
  * per day, four figures, the scenario, the coming movements and the cells
- * that open the month table, the rules and the reconciliation.
+ * that open the month table, the rules and the reconciliation. Figures, rule
+ * amounts and the margin open the page's drill-down as an iOS sheet on top.
  */
 @Component({
   selector: 'app-cash-phone',
@@ -41,7 +46,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
             <app-icon name="bell" [size]="20" />
             @if (bellCount()) { <span class="an-badge" aria-hidden="true">{{ bellCount() > 9 ? '9+' : bellCount() }}</span> }
           </button>
-          <button class="ios-circle" type="button" aria-label="Link kopiëren" (click)="state.copyLink()"><app-icon name="share" [size]="19" /></button>
+          <button class="ios-circle" type="button" aria-label="Vernieuwen" [disabled]="state.sources.refreshing()" (click)="refresh()"><app-icon name="refresh" [size]="19" /></button>
           <button class="ios-circle" type="button" aria-label="Meer acties" (click)="sheet.set('menu')"><app-icon name="more" [size]="20" /></button>
         </div>
       </app-ios-nav>
@@ -90,7 +95,12 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
 
         <div class="ios-figures cf-phone__figs">
           @for (card of figures(); track card.id) {
-            <div [attr.data-kpi]="card.id"><small>{{ card.label }}</small><strong [attr.data-tone]="card.valueTone">{{ card.value }}</strong><span>{{ card.sub }}</span></div>
+            @if (card.id === 'scenario') {
+              <div [attr.data-kpi]="card.id"><small>{{ card.label }}</small><strong [attr.data-tone]="card.valueTone">{{ card.value }}</strong><span>{{ card.sub }}</span></div>
+            } @else {
+              <button type="button" [attr.data-kpi]="card.id" [attr.aria-haspopup]="card.id === 'end' ? null : 'dialog'" (click)="openFigure(card)">
+                <small>{{ card.label }}</small><strong [attr.data-tone]="card.valueTone">{{ card.value }}</strong><span>{{ card.sub }}</span></button>
+            }
           }
         </div>
 
@@ -104,13 +114,14 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
               <div class="ios-cell cf-src-cell" [class.is-off]="!source.included" [class.is-locked]="source.locked">
                 <button class="cf-src-cell__check" type="button" role="checkbox" [attr.aria-checked]="source.included" [disabled]="source.locked || (source.id !== 'stock' && state.choicesFailed())"
                         [attr.aria-label]="'Meetellen: ' + source.label" (click)="toggleSource(source)"><span class="ios-check" [class.is-on]="source.included"><app-icon name="tick" [size]="14" /></span></button>
-                <button class="cf-src-cell__body" type="button" [disabled]="source.id === 'stock'" (click)="openSource(source)">
+                <button class="cf-src-cell__body" type="button" [disabled]="source.id === 'stock' && !source.products?.length"
+                        [attr.aria-haspopup]="source.id === 'stock' ? 'dialog' : null" (click)="openSource(source)">
                   <span class="ios-cell__title">{{ source.label }}@if (isAdjusted(source)) { <i class="cf-dot" aria-label="aangepast"></i> }</span>
                   <span class="ios-cell__sub">{{ source.locked ? 'Partner · ' + source.lockedText : source.sub }}</span>
                 </button>
                 <span class="ios-cell__trail">
                   <span class="ios-cell__value ios-cell__value--strong">{{ source.included && !source.locked ? '+ ' + whole(source.cashInHorizonEur) : '—' }}</span>
-                  @if (source.included && !source.locked) { <span class="ios-cell__meta">tot {{ day(f.horizonEnd) }}</span> }
+                  @if (source.included && !source.locked) { <span class="ios-cell__meta">binnen tot {{ day(f.horizonEnd) }}</span> }
                 </span>
               </div>
             } @empty { <div class="ios-cell"><span class="ios-cell__sub">Geen voorraad en geen open inkooporders.</span></div> }
@@ -126,11 +137,16 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
           <p class="ios-section__foot">{{ choiceFoot() }}</p>
         </section>
 
+        <!-- "Binnen" is the figure above (Scenario binnen); the card keeps the margin and the VAT (design C.7). -->
         @if (outcome(); as o) {
           <div class="ios-card cf-phone__result">
-            <div><span>Binnen tot {{ day(f.horizonEnd) }}</span><b>{{ whole(o.inHorizonEur) }}</b></div>
+            @if (o.salesExclEur > 0) {
+              <button type="button" aria-haspopup="dialog" (click)="openScenarioSales()"><span>Marge op goederen tot {{ day(f.horizonEnd) }}</span><b>{{ whole(o.marginEur) }}</b>
+                <app-icon class="cf-phone__result-chev" name="chevron-right" [size]="16" /></button>
+            } @else {
+              <div><span>Marge op goederen tot {{ day(f.horizonEnd) }}</span><b>{{ whole(o.marginEur) }}</b></div>
+            }
             <div class="is-sub"><span>{{ o.vatEur > 0 ? '+ Btw minder naar de aangifte' : '− Btw naar de aangifte' }}</span><b>{{ whole(abs(o.vatEur)) }}</b></div>
-            <div class="is-sub"><span>Marge op goederen</span><b>{{ whole(o.marginEur) }}</b></div>
           </div>
         }
 
@@ -189,10 +205,10 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
       @case ('menu') {
         <app-sheet title="Kasprognose" variant="ios" (closed)="sheet.set(null)">
           <div body class="ios-group cf-sheet-group">
-            <button class="ios-cell" type="button" (click)="refresh()"><app-icon name="refresh" [size]="18" /><span class="ios-cell__body"><span class="ios-cell__title">Vernieuwen</span></span></button>
+            <button class="ios-cell" type="button" (click)="copyLink()"><app-icon name="share" [size]="18" /><span class="ios-cell__body"><span class="ios-cell__title">Link kopiëren</span></span></button>
             <button class="ios-cell" type="button" (click)="openBuffer()"><app-icon name="bank" [size]="18" /><span class="ios-cell__body"><span class="ios-cell__title">Buffer instellen</span>
               <span class="ios-cell__sub">nu {{ whole(buffer()) }}</span></span></button>
-            <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" /><span class="ios-cell__body"><span class="ios-cell__title">Hoe rekenen we?</span></span></button>
+            <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" /><span class="ios-cell__body"><span class="ios-cell__title">Hoe gerekend</span></span></button>
           </div>
         </app-sheet>
       }
@@ -231,7 +247,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
         </app-sheet>
       }
       @case ('how') {
-        <app-sheet title="Hoe rekenen we?" variant="ios" (closed)="sheet.set(null)">
+        <app-sheet title="Hoe gerekend" variant="ios" (closed)="sheet.set(null)">
           <div body class="cf-sheet-pad cf-how">
             @for (line of howLines; track $index) { <p>{{ line }}</p> }
           </div>
@@ -265,10 +281,16 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
         <app-sheet title="Wat telt mee" variant="ios" (closed)="sheet.set(null)">
           <div body>
             <div class="ios-group cf-sheet-group">
+              <!-- The label goes with its switch; the amount opens the items it adds up. -->
               @for (rule of rules(); track rule.rule) {
-                <label class="ios-cell cf-rule-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ rule.label }}</span>
-                  <span class="ios-cell__sub cf-wrap">{{ rule.sub }} · {{ whole(rule.totalEur) }}</span></span>
-                  <input class="ios-switch" type="checkbox" [checked]="rule.on" (change)="toggleRule(rule)" [attr.aria-label]="rule.label" /></label>
+                <div class="ios-cell cf-rule-cell" [class.is-off]="!rule.on">
+                  <label class="ios-cell__body" [for]="'cf-phone-rule-' + rule.rule"><span class="ios-cell__title">{{ rule.label }}</span>
+                    <span class="ios-cell__sub cf-wrap">{{ rule.sub }}</span></label>
+                  @if (rule.totalEur !== 0) {
+                    <button class="cf-rule-cell__eur" type="button" aria-haspopup="dialog" [attr.aria-label]="rule.label + ' ' + whole(rule.totalEur) + ': de posten'"
+                            (click)="openRule(rule)">{{ whole(rule.totalEur) }}</button>
+                  } @else { <span class="cf-rule-cell__eur">{{ whole(rule.totalEur) }}</span> }
+                  <input class="ios-switch" type="checkbox" [id]="'cf-phone-rule-' + rule.rule" [checked]="rule.on" (change)="toggleRule(rule)" [attr.aria-label]="rule.label" /></div>
               }
             </div>
             <p class="ios-section__foot">Niet in de prognose: belastingen, voorafbetalingen en leningen (tenzij als vaste kost), en aftrekbare btw op toekomstige kosten.</p>
@@ -282,7 +304,9 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
               <dl class="wk-equation cf-eq">
                 <div><dt>{{ f.reconciliation.startLabel }}</dt><dd>{{ eur(f.reconciliation.startEur) }}</dd></div>
                 @for (line of f.reconciliation.lines; track line.label) {
-                  <div class="is-sub"><dt><span class="wk-equation__op">{{ line.eur < 0 ? '−' : '+' }}</span>{{ line.label }}</dt><dd>{{ eur(abs(line.eur)) }}</dd></div>
+                  <div class="is-sub"><dt><span class="wk-equation__op">{{ line.eur < 0 ? '−' : '+' }}</span>@if (line.label.startsWith('Lijkt al betaald') && f.likelyPaid.length) {
+                    <button class="ios-section__link" type="button" aria-haspopup="dialog" (click)="openLikelyPaid(line.eur)">{{ line.label }}</button> } @else { {{ line.label }} }</dt>
+                    <dd>{{ eur(abs(line.eur)) }}</dd></div>
                 }
                 <div class="is-total"><dt><span class="wk-equation__op">=</span>{{ f.reconciliation.endLabel }}</dt><dd>{{ eur(f.reconciliation.endEur) }}</dd></div>
               </dl>
@@ -314,6 +338,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
 })
 export class CashPhone {
   readonly state = inject(CashState);
+  private readonly drill = inject(AnDrillHost);
   private readonly router = inject(Router);
   private readonly chips = viewChild<ElementRef<HTMLElement>>('chips');
 
@@ -355,8 +380,7 @@ export class CashPhone {
     const f = this.forecast();
     if (!f) return [];
     return kpiCards(f).filter((card) => card.id !== 'bank').map((card) => ({ ...card,
-      sub: card.id === 'lowest' ? weekdayDayMonth(f.lowestWith.day) : card.id === 'zero' ? (card.sub ? card.sub.replace(' vanaf die dag', '') : card.foot)
-        : card.id === 'scenario' ? 'incl. btw' : card.sub }));
+      sub: card.id === 'lowest' ? weekdayDayMonth(f.lowestWith.day) : card.id === 'zero' ? card.foot : card.id === 'scenario' ? 'incl. btw' : card.sub }));
   });
   readonly buffered = computed(() => { const f = this.forecast(); return f ? chartBuffer(f) : { bufferEur: null, tight: [] }; });
   readonly markers = computed(() => { const f = this.forecast(); return f ? forecastMarkers(f, false, true) : []; });
@@ -427,18 +451,8 @@ export class CashPhone {
     return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}${note ? ` · ${note}` : ''}. Verandert niets aan orders of betalingen.`;
   });
 
-  readonly howLines = [
-    'We vertrekken van het berekende saldo van de rekeningen die meetellen: de laatste saldocontrole plus alle banktransacties daarna.',
-    'Open facturen komen binnen op hun vervaldag, plus de dagen die de klant gewoonlijk later betaalt. Wat al vervallen is, staat op vandaag.',
-    'Geaccepteerde offertes komen binnen na de leverweek plus de betaalvoorwaarde van de klant; zonder voorwaarde rekenen we 30 dagen.',
-    'Partnervoorschotten volgen de vervaldagen van het voorschotschema.',
-    'Containertermijnen tellen met hun open bedrag: bij bestelling meteen, bij vertrek op de vertrekdatum (aankomst min de transittijd), bij aankomst op de ETA. Douane en transport volgen twee dagen na aankomst, de inspectie een week voor vertrek.',
-    'Btw bij invoer betalen we bij aankomst wanneer de container in België wordt ingeklaard, tenzij de vergunning ET 14000 aan staat.',
-    'Kosten vallen op hun vervaldag, of op de kostdatum als er geen is; vaste kosten en domiciliëringen op hun eigen dag.',
-    'De btw-aangifte valt op de 25e na het kwartaal: wat de aangifte vandaag al weet, plus de btw op de verwachte verkoop. Een tegoed schuift door naar het volgende kwartaal.',
-    'Het scenario verkoopt de aangevinkte containers en de voorraad vanaf een week na aankomst, verspreid over de gekozen weken, tegen de prijs die je kiest. Klanten betalen na de betaaltermijn.',
-    'Een banktransactie die een open post al lijkt te betalen, telt niet dubbel: die post blijft uit de prognose tot je koppelt of "Niet deze" kiest.',
-  ];
+  /** "Hoe gerekend": the one text of the tab, the desk's popover reads it too (design C.9). */
+  readonly howLines = HOW_TEXTS.cash;
 
   constructor() {
     afterNextRender(() => {
@@ -453,6 +467,11 @@ export class CashPhone {
   refresh(): void {
     this.sheet.set(null);
     this.refreshed.emit();
+  }
+
+  copyLink(): void {
+    this.sheet.set(null);
+    void this.state.copyLink();
   }
 
   setHorizon(months: number): void {
@@ -499,6 +518,34 @@ export class CashPhone {
 
   openSource(source: ScenarioSource): void {
     if (typeof source.id === 'number') this.state.openPo(source.id);
+    else if (source.products?.length) this.drill.open([cashStockPlanView(source, this.drillContext)]);
+  }
+
+  /* drill-downs (design/analyses2 §B.8): the page's iOS sheet, on top of a sheet of this page; a container closes that sheet */
+  private readonly drillContext: CashDrillContext = { day: dayMon, whole: eurWhole, itemLink, lineLink,
+    openPo: (orderId) => { this.sheet.set(null); this.state.openPo(orderId); } };
+
+  openFigure(card: KpiCard): void {
+    const f = this.forecast();
+    if (!f) return;
+    if (card.id === 'lowest') this.drill.open([cashLowestView(f, this.drillContext)]);
+    else if (card.id === 'zero') this.drill.open([cashCommittedView(f, this.drillContext)]);
+    else if (card.id === 'end') this.sheet.set('months');
+  }
+
+  openRule(rule: RuleSwitch): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashRuleView(f, rule, this.drillContext)]);
+  }
+
+  openScenarioSales(): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashScenarioSalesView(f, this.drillContext)]);
+  }
+
+  openLikelyPaid(lineEur: number): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashLikelyPaidView(f, lineEur, this.drillContext)]);
   }
 
   toggleRule(rule: RuleSwitch): void {
@@ -523,10 +570,10 @@ export class CashPhone {
     if (b?.from) this.openRowsAt(b.from);
   }
 
-  /** The full list, scrolled to the month of a day. */
+  /** The full list, scrolled to the month of a day; a day before today to the bank's group (design D-K4). */
   openRowsAt(day: string): void {
     this.sheet.set('rows');
-    const key = day.slice(0, 7);
+    const key = day < this.state.today ? 'past' : day.slice(0, 7);
     setTimeout(() => document.getElementById(`cf-phone-group-${key}`)?.scrollIntoView({ block: 'start' }), 60);
   }
 }

@@ -2,8 +2,9 @@
    Analyses · Kasprognose and the per-container sheet (spec-bank-forecast §4).
    Loaded from styles.scss. Every rule hangs on its own host class:
    .cf (desk page, app-cash-desk), .cf-phone (phone page), .cf-po (container
-   sheet), .cf-defaults (link defaults), .cf-mtable / .cf-mlist / .cf-lines
-   (Per maand), .cf-overview (Overzicht card), .sidebar__new (the pill).
+   sheet), .cf-defaults (link defaults), .cf-mtable / .cf-mlist (Per maand),
+   .sidebar__new (the pill). The lists behind a figure are the page's one
+   drill-down (analyses-drill.scss), never a layer inside .cf.
    Kit classes (wk-*, ios-*) are never restyled bare, only under these hosts.
    ========================================================================== */
 
@@ -40,8 +41,8 @@
 .cf-buffer__hint{margin:0;color:var(--muted);font-size:12px;line-height:1.4}
 .cf-buffer__error{margin:0;color:var(--danger);font-size:12px;font-weight:650}
 
-/* five figures */
-.cf-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
+/* four figures */
+.cf-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
 .cf-kpi{position:relative;display:flex;flex-direction:column;gap:3px;min-width:0;padding:14px 16px 12px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}
 .cf-kpi__label{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
 .cf-kpi__value{margin-top:3px;font-size:25px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.035em;line-height:1.1;white-space:nowrap}
@@ -52,11 +53,16 @@
 .cf-kpi__link{position:absolute;inset:0;z-index:1;border-radius:inherit}
 .cf-kpi:has(.cf-kpi__link):hover{border-color:var(--rose-line)}
 .cf-kpi__value[data-tone=ok]{color:var(--ok)}
+/* A figure that opens its list (design A.3): the tile's look, a "›" and the rose border on hover and focus. */
+button.cf-kpi{margin:0;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.cf-kpi--drill::after{content:'›';position:absolute;top:11px;right:14px;color:var(--muted-2);font-size:16px;font-weight:600;opacity:0;transition:opacity .15s}
+.cf-kpi--drill:is(:hover,:focus-visible){border-color:var(--rose-line)}.cf-kpi--drill:is(:hover,:focus-visible)::after{opacity:1}
+.cf-kpi--drill:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
 /* A value in words ("Blijft boven nul") wraps at 19 px instead of running out of the card (critique B2). */
 .cf-kpi__value[data-kind=text]{font-size:19px;letter-spacing:-.01em;white-space:normal}
 .cf-kpi--loading span,.cf-kpi--loading b,.cf-kpi--loading i{display:block;border-radius:99px;background:var(--surface-2);animation:cf-pulse 1.1s ease-in-out infinite}
 .cf-kpi--loading span{width:45%;height:10px}.cf-kpi--loading b{width:70%;height:26px;margin-top:10px}.cf-kpi--loading i{width:85%;height:9px;margin-top:14px}
-.cf-loading{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.cf-loading{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .cf-loading__chart{grid-column:1/-1;display:grid;place-items:center;min-height:300px;color:var(--muted);font-size:13px}
 @keyframes cf-pulse{50%{opacity:.45}}
 .cf-empty{display:grid;justify-items:start;gap:8px;padding:22px}
@@ -120,7 +126,6 @@
 .cf-group .wk-group__label>b{flex:none}
 .cf-group .wk-group__toggle{align-self:center}
 .cf-group__sum{min-width:0;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;line-height:1.4}
-.cf-group__sum .is-low{color:var(--warn);font-weight:700}
 .cf-register__empty{padding:20px 16px}
 
 /* scenario panel */
@@ -143,6 +148,7 @@
 .cf-src__body small>.wk-pill{height:17px;margin-right:5px;padding:0 6px;font-size:10px}
 .cf-src__body:not(:disabled):hover b{color:var(--rose-dark);text-decoration:underline;text-underline-offset:3px}
 .cf-src__amt{display:grid;justify-items:end;gap:1px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cf-src__amt>span{display:flex;align-items:baseline;gap:5px}
 .cf-src__amt b{font-size:13px}.cf-src__amt small{color:var(--muted);font-size:11px}
 .cf-src.is-off .cf-src__body b,.cf-src.is-off .cf-src__amt b{color:var(--muted)}
 .cf-src.is-locked{opacity:.75}
@@ -151,9 +157,6 @@
 .cf-eq>.is-total{font-size:14px}
 .cf-suggest{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;margin:0 12px 12px;padding:12px 14px;border:1px solid var(--rose-line);border-radius:14px;background:var(--rose-soft);color:var(--rose-dark)}
 .cf-suggest p{margin:0 0 8px;color:var(--ink);font-size:12.5px;line-height:1.45}
-.cf-panel__foot{display:grid;gap:8px;padding:12px 16px 16px;border-top:1px solid var(--line)}
-.cf-panel__foot .wk-btn{justify-self:start}
-.cf-panel__foot p{margin:0;color:var(--muted);font-size:12px;line-height:1.4}
 
 /* link defaults (desk panel and phone sheets) */
 .cf-defaults{display:grid;gap:9px}
@@ -176,13 +179,24 @@
 /* bottom row */
 .cf-bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
 .cf-bottom>.wk-card+.wk-card{margin-top:0}
-.cf-rule{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
-.cf-rule__text{min-width:0;font-size:13px;line-height:1.35}
+.cf-rule{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.cf-rule__text{min-width:0;font-size:13px;line-height:1.35;cursor:pointer}
 .cf-rule__text b{margin-right:5px;font-weight:700}.cf-rule__text small{color:var(--muted);font-size:11.5px}
 .cf-rule__eur{font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-.cf-rule.is-off .cf-rule__text,.cf-rule.is-off .cf-rule__eur{color:var(--muted)}
+.cf-rule>span.cf-rule__eur{color:var(--ink-2)}
+.cf-rule.is-off .cf-rule__text,.cf-rule.is-off>span.cf-rule__eur{color:var(--muted)}
 .cf-rules__foot{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
-.cf-quality{display:grid;gap:6px;margin:12px 0 0;padding:10px 0 0;border-top:1px solid var(--line);list-style:none}
+/* the reconciliation: a check folded under its head while it matches */
+.cf-recon__fold>summary{list-style:none;cursor:pointer}
+.cf-recon__fold>summary::-webkit-details-marker{display:none}
+.cf-recon__fold>summary{gap:6px}
+.cf-recon__state{color:var(--ok);font-size:13px;font-weight:700}.cf-recon__state.is-warn{color:var(--warn)}
+.cf-recon__chev{margin-left:auto;color:var(--muted);transition:transform .15s}.cf-recon__fold[open] .cf-recon__chev{transform:rotate(180deg)}
+.cf-recon__fold>summary:focus-visible{outline:2px solid var(--rose);outline-offset:-2px}
+.cf-recon__link{margin-top:8px}
+.cf-recon__quality{padding-top:4px}
+.cf-eq dt>.wk-link{font-size:inherit;text-align:left}
+.cf-quality{display:grid;gap:6px;margin:0;padding:10px 0 0;border-top:1px solid var(--line);list-style:none}
 .cf-quality li{display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:start;gap:8px;color:var(--ink-2);font-size:12.5px;line-height:1.4}
 .cf-quality li>app-icon{margin-top:1px;color:var(--muted)}.cf-quality li.is-warn>app-icon{color:var(--warn)}
 
@@ -203,17 +217,7 @@
 .cf-mtable tr[data-row=lowest] td,.cf-mtable tr[data-row=lowest] th{border-bottom:0;color:var(--muted)}
 .cf-mtable td.is-low{color:var(--warn)!important;font-weight:700}
 .cf-mtable td.is-neg{color:var(--danger)}
-.cf-mtable__note{margin:8px 16px 0;color:var(--muted);font-size:12px;line-height:1.45}
-
-/* lines behind a month (sheet, desk and phone) */
-.cf-lines{display:grid}
-.cf-line{display:grid;grid-template-columns:78px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:48px;padding:8px 16px;border:0;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.cf-line:hover{background:var(--surface-2)}
-.cf-line__day{color:var(--muted);font-size:12.5px;white-space:nowrap}
-.cf-line__body{display:grid;min-width:0}.cf-line__body b{font-size:13.5px;font-weight:650;line-height:1.35;overflow-wrap:anywhere}
-.cf-line__body small{color:var(--muted);font-size:12px;line-height:1.35}
-.cf-line__amt{font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}.cf-line__amt.is-in{color:var(--ok)}
-.cf-lines__empty{padding:18px 16px;color:var(--muted);font-size:13px}
+.cf-mtable__note{margin:8px 16px 0;font-size:12px}
 
 /* ============================================================== PO SHEET */
 .cf-po{display:block;min-width:0;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/4%)}
@@ -273,6 +277,7 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-flow__body{display:grid;min-width:0}.cf-flow__body b{font-size:12.5px;font-weight:650}
 .cf-flow__body small{color:var(--muted);font-size:11.5px;line-height:1.35;overflow-wrap:anywhere}
 .cf-flow__amt{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}.cf-flow__amt.is-in{color:var(--ok)}
+a.cf-flow,a.cf-product{color:inherit;text-decoration:none}a.cf-flow:hover b,a.cf-product:hover b{color:var(--rose-dark)}
 .cf-flow[data-kind=internal]{color:var(--muted)}.cf-flow[data-kind=internal] b{font-weight:600}
 .cf-flow[data-kind=likely]{border-bottom:0}
 .cf-likely{margin:0 -16px;padding:10px 16px 12px;border-bottom:1px solid var(--line);background:var(--warn-soft);color:#7c450b;font-size:12px;line-height:1.45}
@@ -332,6 +337,10 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-phone__figs strong[data-tone=warn]{color:var(--warn)}.cf-phone__figs strong[data-tone=danger]{color:var(--danger)}
 .cf-phone__figs strong{white-space:normal}
 .cf-phone__figs span{color:var(--muted);font-size:12px;line-height:1.35}
+/* a figure that opens its list: the whole cell, its chevron always there (no hover on a phone) */
+.cf-phone__figs>button{position:relative;display:grid;gap:2px;min-width:0;padding:12px 26px 12px 14px;border:0;background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.cf-phone__figs>button::after{content:'›';position:absolute;top:10px;right:12px;color:var(--muted-2);font-size:17px;font-weight:600}
+.cf-phone__figs>button:active{background:color-mix(in srgb,var(--ink) 6%,var(--surface))}
 .cf-phone .ios-section__head--prominent .ios-section__link{font-size:16px}
 .cf-src-cell{gap:10px;padding:6px 16px 6px 6px}
 .cf-src-cell__check{display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;background:none;cursor:pointer}
@@ -345,8 +354,10 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-phone__sources{margin-bottom:12px}
 .cf-phone__choices .ios-cell__value{max-width:60%;text-align:right;white-space:normal}
 .cf-phone__result{display:grid;gap:8px;padding:16px 18px}
-.cf-phone__result>div{display:flex;justify-content:space-between;gap:12px;font-size:16px;font-variant-numeric:tabular-nums}
-.cf-phone__result>div:first-child b{font-size:18px}
+.cf-phone__result>:is(div,button){display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:16px;font-variant-numeric:tabular-nums}
+.cf-phone__result>:first-child b{margin-left:auto;font-size:18px}
+.cf-phone__result>button{width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:16px;text-align:left;cursor:pointer}
+.cf-phone__result-chev{flex:none;color:var(--muted-2)}
 .cf-phone__result .is-sub{color:var(--muted);font-size:15px}.cf-phone__result .is-sub b{color:var(--ink-2);font-weight:600}
 .cf-phone__suggest{display:grid;grid-template-columns:20px minmax(0,1fr);gap:12px;background:var(--rose-soft);color:var(--rose-dark)}
 .cf-phone__suggest p{margin:0 0 10px;color:var(--ink);font-size:15px;line-height:1.4}
@@ -378,6 +389,11 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-rows-sheet{padding:0 0 12px}
 .cf-rows-sheet__head{margin:14px calc(var(--ios-inset) + 16px) 7px;color:var(--muted);font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
 .cf-rule-cell .cf-wrap{white-space:normal}
+.cf-rule-cell>label{cursor:pointer}
+.cf-rule-cell__eur{flex:none;padding:8px 4px;border:0;background:none;color:var(--ink-2);font:inherit;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
+button.cf-rule-cell__eur{color:var(--rose-dark);font-weight:650;cursor:pointer}
+.cf-rule-cell.is-off .ios-cell__title,.cf-rule-cell.is-off>span.cf-rule-cell__eur{color:var(--muted)}
+.cf-eq dt>.ios-section__link{padding:0;font-size:inherit;text-align:left}
 .cf-quality-line{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:10px 0 0;color:var(--ink-2);font-size:14px;line-height:1.4}
 .cf-quality-line.is-warn>span{color:#7c450b}
 .cf-recon__link{margin-top:16px}
@@ -392,28 +408,15 @@ label.cf-po__cell--row{cursor:pointer}
 .cf-mlist__row.is-past{background:color-mix(in srgb,var(--blue-soft) 55%,var(--surface))}
 .cf-mlist__row .is-low{color:var(--warn);font-weight:700}
 .cf-mlist__row:active{background:color-mix(in srgb,var(--ink) 6%,var(--surface))}
-
-/* ============================================================ OVERZICHT */
-.cf-overview{display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:14px 16px;border-radius:18px;color:inherit;font-size:13.5px;text-decoration:none;font-variant-numeric:tabular-nums}
-a.cf-overview:hover{border-color:var(--rose-line)}
-.cf-overview__icon{display:grid;flex:none;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--rose-soft);color:var(--rose)}
-.cf-overview__text{flex:1;min-width:0;color:var(--ink-2);line-height:1.45}
-.cf-overview__text b{color:var(--ink);font-weight:750;white-space:nowrap}
-.cf-overview__text b.is-warn{color:var(--warn)}.cf-overview__text b.is-neg{color:var(--danger)}
-.cf-overview__dot{display:none}
-.cf-overview__go{flex:none;color:var(--rose-dark);font-weight:700;white-space:nowrap}
-.cf-overview--loading .cf-overview__text,.cf-overview--failed .cf-overview__text{color:var(--muted)}
-.cf-overview__retry{flex:none;padding:6px 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cf-mlist__note{display:block;color:var(--rose-dark);text-decoration:none}
 
 /* the pill next to the new Analyses link (desk sidebar), until the end of 2026 */
 .sidebar__new{margin-left:auto;padding:1px 7px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 
 /* ================================================================ widths */
-/* Five figures in a row only when the page is at least 960 px wide; narrower 3 + 2 without a hole (critique B2). */
+/* Four figures in a row only when the page is at least 960 px wide; narrower two by two (critique B2). */
 @container cf (max-width:959.98px){
- .cf-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
- .cf-kpi{grid-column:span 2}
- .cf-kpi:nth-child(n+4){grid-column:span 3}
+ .cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:1279.98px){ .cf-kpi__value:not([data-kind=text]){font-size:21px} }
 /* Below 1120 px of page the register would be squeezed next to the scenario (Datum, two text columns, Bedrag and
@@ -438,7 +441,4 @@ a.cf-overview:hover{border-color:var(--rose-line)}
 }
 @media (max-width:679.98px){
  .cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
- .cf-kpi,.cf-kpi:nth-child(n+4){grid-column:auto}
- .cf-overview{flex-wrap:wrap;margin:0 0 14px}
- .cf-overview__go{width:100%;padding-left:46px}
 }

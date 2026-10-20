@@ -14,10 +14,13 @@ import { CashPoSheet } from './cash-po-sheet';
 import { CashState } from './cash-state';
 import { AnHow, HOW_TEXTS } from './analyses-how';
 import {
-  RegisterFilter, adjusted, amountText, bankTextShort, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummaryParts, itemLink, kpiCards,
+  RegisterFilter, adjusted, amountText, bankTextShort, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummary, itemLink, kpiCards,
   krapBanner, lineLink, monthStrip, parseAmount, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, suggestionText, underBuffer,
 } from './cash-view';
-import type { CashLink, RuleSwitch } from './cash-view';
+import type { CashLink, KpiCard, RuleSwitch } from './cash-view';
+import { cashCommittedView, cashLikelyPaidView, cashLowestView, cashRuleView, cashScenarioSalesView, cashStockPlanView } from './drill-cash';
+import type { CashDrillContext } from './drill-cash';
+import { AnDrillHost } from './drill-host';
 
 const HORIZONS: SegmentOption[] = [{ id: '3', label: '3 mnd' }, { id: '6', label: '6 mnd' }, { id: '12', label: '12 mnd' }];
 const FILTERS: { id: RegisterFilter; label: string; count: boolean }[] = [
@@ -30,10 +33,12 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 
 /**
  * Analyses › Kasprognose on the desk (spec §4.2): one page in the
- * Analyses frame with the workspace kit inside. Banner, five figures, the
+ * Analyses frame with the workspace kit inside. Banner, four figures, the
  * balance per day with its month strip, the register running forward, the
  * scenario panel (or a container's sheet) on the right, then what counts
- * and the reconciliation with the Vooruitblik.
+ * and the reconciliation with the Vooruitblik. A figure, a rule amount, the
+ * scenario outcome and a month open the page's one drill-down (AnDrillHost,
+ * design/analyses2 §B.8); none renders inside this size container.
  */
 @Component({
   selector: 'app-cash-desk',
@@ -99,15 +104,24 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 
       <div class="cf-kpis">
         @for (card of kpis(); track card.id) {
-          <article class="cf-kpi" [attr.data-kpi]="card.id">
-            @if (card.id === 'bank') {
+          @if (card.id === 'bank') {
+            <article class="cf-kpi" data-kpi="bank">
               <a class="cf-kpi__link" routerLink="/costs" aria-label="Op de bank vandaag, naar Kosten & bank"></a>
-            }
-            <span class="cf-kpi__label">{{ card.label }}</span>
-            <strong class="cf-kpi__value" [attr.data-tone]="card.valueTone" [attr.data-kind]="card.kind ?? null">{{ card.value }}</strong>
-            <span class="cf-kpi__sub">{{ card.sub }}</span>
-            <span class="cf-kpi__foot" [class.is-warn]="card.footWarn">{{ card.foot }}</span>
-          </article>
+              <span class="cf-kpi__label">{{ card.label }}</span>
+              <strong class="cf-kpi__value" [attr.data-tone]="card.valueTone" [attr.data-kind]="card.kind ?? null">{{ card.value }}</strong>
+              <span class="cf-kpi__sub">{{ card.sub }}</span>
+              <span class="cf-kpi__foot" [class.is-warn]="card.footWarn">{{ card.foot }}</span>
+            </article>
+          } @else {
+            <!-- Laagste stand and Zonder verkoop open their list; Op {d} opens Per maand below (design B.8). -->
+            <button class="cf-kpi cf-kpi--drill" type="button" [attr.data-kpi]="card.id" [attr.aria-haspopup]="card.id === 'end' ? null : 'dialog'"
+                    [attr.aria-expanded]="card.id === 'end' ? monthsOpen() : null" (click)="openKpi(card)">
+              <span class="cf-kpi__label">{{ card.label }}</span>
+              <strong class="cf-kpi__value" [attr.data-tone]="card.valueTone" [attr.data-kind]="card.kind ?? null">{{ card.value }}</strong>
+              <span class="cf-kpi__sub">{{ card.sub }}</span>
+              <span class="cf-kpi__foot" [class.is-warn]="card.footWarn">{{ card.foot }}</span>
+            </button>
+          }
         }
       </div>
 
@@ -147,10 +161,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
           </article>
 
           <article class="wk-card cf-register" #register aria-labelledby="cf-register-title">
-            <header class="wk-card__head">
-              <h3 class="wk-card__title" id="cf-register-title">Komende bewegingen</h3>
-              <span class="cf-card-sub">leest als je bankafschrift, maar dan vooruit</span>
-            </header>
+            <header class="wk-card__head"><h3 class="wk-card__title" id="cf-register-title">Komende bewegingen</h3></header>
             <div class="cf-register__tools">
               <div class="wk-chips" role="group" aria-label="Filter">
                 @for (chip of filters; track chip.id) {
@@ -192,8 +203,7 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                   <span class="wk-group__label">
                     <button class="wk-group__toggle" type="button" [attr.aria-expanded]="isOpen(group.key)" [attr.aria-label]="(isOpen(group.key) ? 'Dichtklappen: ' : 'Openklappen: ') + group.label"
                             (click)="toggleGroup(group.key)"><app-icon name="chevron-down" [size]="14" /></button>
-                    @let sum = summary(group);
-                    <b>{{ group.label }}</b><span class="cf-group__sum">{{ sum.lead }}<span [class.is-low]="group.lowWarn">{{ sum.lowest }}</span>{{ sum.end }}</span>
+                    <b>{{ group.label }}</b><span class="cf-group__sum">{{ summary(group) }}</span>
                   </span>
                 </div>
                 @if (isOpen(group.key)) {
@@ -233,12 +243,15 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                     <input class="cf-check" type="checkbox" [checked]="source.included" [disabled]="source.locked || (source.id !== 'stock' && state.choicesFailed())"
                            [attr.title]="source.id !== 'stock' && state.choicesFailed() ? 'Keuzes konden niet laden' : null" [attr.aria-label]="'Meetellen: ' + source.label"
                            (change)="toggleSource(source, $any($event.target).checked)" />
-                    <button class="cf-src__body" type="button" [disabled]="source.id === 'stock'" (click)="openSource(source)">
+                    <button class="cf-src__body" type="button" [disabled]="source.id === 'stock' && !source.products?.length"
+                            [attr.aria-haspopup]="source.id === 'stock' ? 'dialog' : null" (click)="openSource(source)">
                       <b><span class="cf-src__name">{{ source.label }}</span>@if (isAdjusted(source)) { <i class="cf-dot" title="aangepast" aria-label="aangepast"></i> }</b>
                       <small>@if (source.status === 'CONCEPT') { <span class="wk-pill tone-amber">Concept</span> }@if (source.locked) { <span class="wk-pill tone-plum">Partner</span> }{{ source.locked ? source.lockedText : source.sub }}</small>
                     </button>
-                    <span class="cf-src__amt"><b>{{ source.included && !source.locked ? whole(source.cashInHorizonEur) : '—' }}</b>
-                      @if (!source.locked) { <small>kost {{ whole(source.costEur) }}</small> }</span>
+                    <!-- Binnen is cash incl. btw up to the horizon, kost the whole plan's cost excl. btw (design D-K6). -->
+                    <span class="cf-src__amt"><span><b>{{ source.included && !source.locked ? whole(source.cashInHorizonEur) : '—' }}</b>
+                      @if (source.included && !source.locked) { <small>binnen tot {{ day(f.horizonEnd) }}</small> }</span>
+                      @if (!source.locked) { <small>kost {{ whole(source.costEur) }} excl.</small> }</span>
                   </div>
                 } @empty { <p class="cf-panel__empty">Geen voorraad en geen open inkooporders.</p> }
               </section>
@@ -250,7 +263,8 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                 <h4 class="cf-sec-title">Uitkomst tot {{ day(f.horizonEnd) }}</h4>
                 @if (outcome(); as o) {
                   <dl class="wk-equation cf-eq">
-                    <div><dt>Verkoop excl. btw</dt><dd>{{ whole(o.salesExclEur) }}</dd></div>
+                    <div><dt>@if (o.salesExclEur > 0) { <button class="wk-link" type="button" aria-haspopup="dialog" (click)="openScenarioSales()">Verkoop excl. btw</button> }
+                      @else { Verkoop excl. btw }</dt><dd>{{ whole(o.salesExclEur) }}</dd></div>
                     <div class="is-sub"><dt><span class="wk-equation__op">+</span>Btw op die verkoop</dt><dd>{{ whole(o.salesVatEur) }}</dd></div>
                     <div class="is-total"><dt><span class="wk-equation__op">=</span>Binnen op de bank</dt><dd>{{ whole(o.inHorizonEur) }}</dd></div>
                     @for (vat of o.vatRows; track vat.label) {
@@ -258,7 +272,9 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                     } @empty {
                       <div class="is-sub"><dt><span class="wk-equation__op">−</span>Btw afgedragen <small>· {{ o.vatNote }}</small></dt><dd>€ 0,00</dd></div>
                     }
-                    <div><dt>Marge op goederen{{ o.marginPct === null ? '' : ' (' + pctText(o.marginPct) + ' %)' }}</dt><dd>{{ whole(o.marginEur) }}</dd></div>
+                    @let margin = 'Marge op goederen tot ' + day(f.horizonEnd) + (o.marginPct === null ? '' : ' (' + pctText(o.marginPct) + ' %)');
+                    <div><dt>@if (o.salesExclEur > 0) { <button class="wk-link" type="button" aria-haspopup="dialog" (click)="openScenarioSales()">{{ margin }}</button> }
+                      @else { {{ margin }} }</dt><dd>{{ whole(o.marginEur) }}</dd></div>
                     <div><dt>Komt na {{ day(f.horizonEnd) }} nog binnen</dt><dd>{{ whole(o.afterHorizonEur) }}</dd></div>
                   </dl>
                 }
@@ -272,10 +288,6 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                   </div>
                 </section>
               }
-              <footer class="cf-panel__foot">
-                <button class="wk-btn wk-btn--primary" type="button" (click)="state.copyLink()"><app-icon name="share" [size]="14" />Link kopiëren</button>
-                <p>De standaard staat in de link; keuzes per container staan bij de container.</p>
-              </footer>
             </article>
           }
         </aside>
@@ -283,31 +295,45 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
 
       <div class="cf-bottom">
         <article class="wk-card cf-rules" aria-labelledby="cf-rules-title">
-          <header class="wk-card__head"><h3 class="wk-card__title" id="cf-rules-title">Wat telt mee</h3><span class="cf-card-sub">tot {{ day(f.horizonEnd) }} · ook in de link</span></header>
+          <header class="wk-card__head"><h3 class="wk-card__title" id="cf-rules-title">Wat telt mee</h3><span class="cf-card-sub">tot {{ day(f.horizonEnd) }} · incl. btw</span></header>
           <div class="wk-card__body">
+            <!-- The label goes with its switch; the amount is its own button that opens the items it adds up (design C.7). -->
             @for (rule of rules(); track rule.rule) {
-              <label class="cf-rule" [class.is-off]="!rule.on">
-                <span class="cf-rule__text"><b>{{ rule.label }}</b> <small>{{ rule.sub }}</small></span>
-                <span class="cf-rule__eur">{{ whole(rule.totalEur) }}</span>
-                <input class="cf-toggle" type="checkbox" [checked]="rule.on" (change)="toggleRule(rule)" [attr.aria-label]="rule.label" />
-              </label>
+              <div class="cf-rule" [class.is-off]="!rule.on">
+                <label class="cf-rule__text" [for]="'cf-rule-' + rule.rule"><b>{{ rule.label }}</b> <small>{{ rule.sub }}</small></label>
+                @if (rule.totalEur !== 0) {
+                  <button class="wk-link cf-rule__eur" type="button" aria-haspopup="dialog" [attr.aria-label]="rule.label + ' ' + whole(rule.totalEur) + ': de posten'"
+                          (click)="openRule(rule)">{{ whole(rule.totalEur) }}</button>
+                } @else { <span class="cf-rule__eur">{{ whole(rule.totalEur) }}</span> }
+                <input class="cf-toggle" type="checkbox" [id]="'cf-rule-' + rule.rule" [checked]="rule.on" (change)="toggleRule(rule)" [attr.aria-label]="rule.label" />
+              </div>
             }
             <p class="cf-rules__foot">Niet in de prognose: belastingen, voorafbetalingen en leningen (tenzij als vaste kost), en aftrekbare btw op toekomstige kosten.</p>
           </div>
         </article>
         <article class="wk-card cf-recon" aria-labelledby="cf-recon-title">
-          <header class="wk-card__head"><h3 class="wk-card__title" id="cf-recon-title">Aansluiting met de Vooruitblik</h3>
-            <a class="wk-link" routerLink="/costs">Kosten &amp; bank ›</a></header>
-          <div class="wk-card__body">
-            <dl class="wk-equation cf-eq">
-              <div><dt>{{ f.reconciliation.startLabel }}</dt><dd>{{ eur(f.reconciliation.startEur) }}</dd></div>
-              @for (line of f.reconciliation.lines; track line.label) {
-                <div class="is-sub"><dt><span class="wk-equation__op">{{ line.eur < 0 ? '−' : '+' }}</span>{{ line.label }}</dt><dd>{{ eur(abs(line.eur)) }}</dd></div>
-              }
-              <div class="is-total"><dt><span class="wk-equation__op">=</span>{{ f.reconciliation.endLabel }}</dt><dd>{{ eur(f.reconciliation.endEur) }}</dd></div>
-            </dl>
-            @if (!f.reconciliation.matches) { <p class="cf-recon__warn" role="alert">De aansluiting klopt niet; meld dit.</p> }
-            @if (quality().length) {
+          <!-- A check, not a business figure: folded while it matches, open when it does not (design C.7). -->
+          <details class="cf-recon__fold" [open]="!f.reconciliation.matches">
+            <summary class="wk-card__head"><h3 class="wk-card__title" id="cf-recon-title">Aansluiting met de Vooruitblik</h3>
+              <span class="cf-recon__state" [class.is-warn]="!f.reconciliation.matches">· {{ f.reconciliation.matches ? 'klopt' : 'klopt niet' }}</span>
+              <app-icon class="cf-recon__chev" name="chevron-down" [size]="14" /></summary>
+            <div class="wk-card__body">
+              <dl class="wk-equation cf-eq">
+                <div><dt>{{ f.reconciliation.startLabel }}</dt><dd>{{ eur(f.reconciliation.startEur) }}</dd></div>
+                @for (line of f.reconciliation.lines; track line.label) {
+                  <div class="is-sub"><dt><span class="wk-equation__op">{{ line.eur < 0 ? '−' : '+' }}</span>@if (likelyLine(line.label) && f.likelyPaid.length) {
+                    <button class="wk-link" type="button" aria-haspopup="dialog" (click)="openLikelyPaid(line.eur)">{{ line.label }}</button> } @else { {{ line.label }} }</dt>
+                    <dd>{{ eur(abs(line.eur)) }}</dd></div>
+                }
+                <div class="is-total"><dt><span class="wk-equation__op">=</span>{{ f.reconciliation.endLabel }}</dt><dd>{{ eur(f.reconciliation.endEur) }}</dd></div>
+              </dl>
+              @if (!f.reconciliation.matches) { <p class="cf-recon__warn" role="alert">De aansluiting klopt niet; meld dit.</p> }
+              <a class="wk-link cf-recon__link" routerLink="/costs">Kosten &amp; bank ›</a>
+            </div>
+          </details>
+          <!-- What makes the forecast less sure stays in sight, under the folded check. -->
+          @if (quality().length) {
+            <div class="wk-card__body cf-recon__quality">
               <ul class="cf-quality">
                 @for (line of quality(); track line.text) {
                   <li [class.is-warn]="line.warn"><app-icon [name]="line.warn ? 'alert' : 'info'" [size]="14" /><span>{{ line.text }}</span>
@@ -316,13 +342,13 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                   </li>
                 }
               </ul>
-            }
-          </div>
+            </div>
+          }
         </article>
       </div>
     } @else {
       <div class="cf-loading" aria-label="Kasprognose laden" aria-busy="true">
-        @for (card of [1, 2, 3, 4, 5]; track card) { <div class="cf-kpi cf-kpi--loading"><span></span><b></b><i></i></div> }
+        @for (card of [1, 2, 3, 4]; track card) { <div class="cf-kpi cf-kpi--loading"><span></span><b></b><i></i></div> }
         <div class="wk-card cf-loading__chart"><span>Banksaldo laden…</span></div>
       </div>
     }
@@ -333,6 +359,7 @@ export class CashDesk {
   readonly howLines = HOW_TEXTS.cash;
   readonly shortBank = bankTextShort;
   readonly state = inject(CashState);
+  private readonly drill = inject(AnDrillHost);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -348,7 +375,7 @@ export class CashDesk {
   readonly k = eurK;
   readonly day = dayMon;
   readonly wd = weekdayDayMonth;
-  readonly summary = groupSummaryParts;
+  readonly summary = groupSummary;
   readonly low = underBuffer;
   readonly suggestion = suggestionText;
   readonly periodLabel = periodText;
@@ -362,7 +389,8 @@ export class CashDesk {
   readonly warnings = computed(() => [...new Set([...this.pageWarnings(), ...this.state.sources.warnings()])]);
   readonly buffer = computed(() => this.state.sources.settings()?.cashBufferEur ?? DEFAULT_CASH_BUFFER_EUR);
   readonly banner = computed(() => { const f = this.forecast(); return f ? krapBanner(f) : null; });
-  readonly kpis = computed(() => { const f = this.forecast(); return f ? kpiCards(f) : []; });
+  /** Four figures: "Scenario binnen" is the panel's "Binnen op de bank" on the desk (design C.7). */
+  readonly kpis = computed(() => { const f = this.forecast(); return f ? kpiCards(f).filter((card) => card.id !== 'scenario') : []; });
   readonly series = computed(() => { const f = this.forecast(); return f ? forecastSeries(f, 42) : []; });
   readonly buffered = computed(() => { const f = this.forecast(); return f ? chartBuffer(f) : { bufferEur: null, tight: [] }; });
   readonly markers = computed(() => { const f = this.forecast(); return f ? forecastMarkers(f) : []; });
@@ -455,21 +483,61 @@ export class CashDesk {
 
   openSource(source: ScenarioSource): void {
     if (typeof source.id === 'number') this.state.openPo(source.id);
+    else if (source.products?.length) this.drill.open([cashStockPlanView(source, this.drillContext)]);
   }
 
   toggleRule(rule: RuleSwitch): void {
     this.state.toggleRule(rule.rule as ForecastRule);
   }
 
+  /* drill-downs (design/analyses2 §B.8): the dialog renders at page level, outside this size container */
+  private readonly drillContext: CashDrillContext = { day: dayMon, whole: eurWhole, itemLink, lineLink, openPo: (orderId) => this.openContainer(orderId) };
+
+  openKpi(card: KpiCard): void {
+    const f = this.forecast();
+    if (!f) return;
+    if (card.id === 'lowest') this.drill.open([cashLowestView(f, this.drillContext)]);
+    else if (card.id === 'zero') this.drill.open([cashCommittedView(f, this.drillContext)]);
+    else if (card.id === 'end') this.showMonths();
+  }
+
+  /** "Op {d}": Per maand under the chart, opened and brought into view. */
+  showMonths(): void {
+    this.monthsOpen.set(true);
+    this.scrollTo('.cf-months-wrap');
+  }
+
+  openRule(rule: RuleSwitch): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashRuleView(f, rule, this.drillContext)]);
+  }
+
+  openScenarioSales(): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashScenarioSalesView(f, this.drillContext)]);
+  }
+
+  /** The reconciliation line "Lijkt al betaald (niet dubbel geteld)". */
+  likelyLine(label: string): boolean {
+    return label.startsWith('Lijkt al betaald');
+  }
+
+  openLikelyPaid(lineEur: number): void {
+    const f = this.forecast();
+    if (f) this.drill.open([cashLikelyPaidView(f, lineEur, this.drillContext)]);
+  }
+
   openRow(row: RegisterRow): void {
     const link: CashLink | null = row.kind === 'past' ? (row.lineId !== null ? lineLink(row.lineId) : null) : row.item ? itemLink(row.item) : null;
     if (!link) return;
-    if (link.po !== null) {
-      if (this.location().po === link.po) this.revealSide();
-      else { this.revealAfterScroll = true; this.state.openPo(link.po); }
-      return;
-    }
+    if (link.po !== null) { this.openContainer(link.po); return; }
     void this.router.navigate(link.path, link.query ? { queryParams: link.query } : {});
+  }
+
+  /** A container's sheet in the side column, brought into view when the page is narrow. */
+  private openContainer(orderId: number): void {
+    if (this.location().po === orderId) this.revealSide();
+    else { this.revealAfterScroll = true; this.state.openPo(orderId); }
   }
 
   /**
