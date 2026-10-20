@@ -25,6 +25,7 @@ import {
 import { invoiceCoverage, invoiceFileText, invoiceLine, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { paymentOriginLabel } from './purchase-payment-origin';
 
 type LedgerFilter = 'ALL' | Payee | 'NO_PROOF';
 type MenuState =
@@ -414,6 +415,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                             @if (rowSubParts(row); as parts) {
                               @if (parts.length) { <span class="wk-td__sub pw-desc__sub">@for (part of parts; track $index; let last = $last) { <span class="pw-nowrap">{{ part }}</span>@if (!last) { · } }</span> }
                             }
+                            @if (rowOrigin(row); as origin) { <span class="wk-td__sub">{{ origin }}</span> }
                           </span>
                           <span class="wk-td wk-td--num wk-amount" role="gridcell" data-pw-hide="mid">@if (row.foreign) { {{ row.amount | cur: row.currency }} }</span>
                           <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }
@@ -686,6 +688,9 @@ export class PurchasePaymentWorkbench {
   rowSubParts(row: LedgerRow): string[] {
     return [row.termLabel, row.invoice ? (row.invoice.viaSupplier ? 'via factuur ' : 'factuur ') + row.invoice.number : null,
       row.actor ? this.actor(row.actor) : null].filter((part): part is string => !!part);
+  }
+  rowOrigin(row: LedgerRow): string {
+    return [...new Set(row.parts.map(part => paymentOriginLabel(part.payment.origin)).filter(Boolean))].join(' · ');
   }
   dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
 

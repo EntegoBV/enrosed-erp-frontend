@@ -10,3 +10,9 @@ export function paymentOriginLabel(origin: PurchasePaymentOrigin | null | undefi
 export function expectsBankLink(payment: { origin?: PurchasePaymentOrigin | null }): boolean {
   return payment.origin == null;
 }
+
+export function samePaymentOrigin(left: PurchasePaymentOrigin | null | undefined, right: PurchasePaymentOrigin | null | undefined): boolean {
+  return (left?.source ?? null) === (right?.source ?? null)
+    && (left?.payerName ?? null) === (right?.payerName ?? null)
+    && (left?.note ?? null) === (right?.note ?? null);
+}

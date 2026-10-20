@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import type { PurchasePayment, PurchasePaymentOrigin } from '../../core/api/models';
 import { messageOf } from '../../core/api/errors';
-import { paymentOriginLabel } from './purchase-payment-origin';
+import { paymentOriginLabel, samePaymentOrigin } from './purchase-payment-origin';
 
 /** An immediate metadata change, separate from editing a payment's amount or day. */
 @Component({
@@ -55,7 +55,7 @@ export class PurchasePaymentOriginEditor {
     payerName: this.source() === 'OTHER_COMPANY' ? this.payer().trim() : null,
     note: this.note().trim() || null,
   }));
-  readonly changedDraft = computed(() => JSON.stringify(this.request()) !== JSON.stringify(this.payment().origin ?? null));
+  readonly changedDraft = computed(() => !samePaymentOrigin(this.request(), this.payment().origin));
   async save(): Promise<void> {
     if (this.locked()) return;
     this.saving.set(true); this.error.set('');
