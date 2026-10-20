@@ -147,6 +147,7 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     outstandingValueEur: 847,
     overdueValueEur: 847,
     averageClaimEur: 907.5,
+    revenueInvoiceCount: 2,
     avgDaysToPaid: null,
     marginEur: 450,
     marginPct: 30,
@@ -162,6 +163,7 @@ test('sales analysis keeps a clear cohort funnel and current-calculation values'
     orderCount: 2,
     pieces: 55,
     calculatedValueEur: 1_815,
+    revenueExclEur: 1_500,
   }]);
   assert.deepEqual(result.topProducts, [
     {
@@ -354,14 +356,14 @@ test('sales analysis adds the month by month view, countries and the payment ter
   const result = salesAnalysis(rows, [], { from: '2026-01-01', to: '2026-04-30', today: '2026-05-01' });
 
   assert.deepEqual(result.monthly, [
-    { month: '2026-01', invoicedEur: 0, acceptedEur: 900, quotesCreated: 1, invoicesIssued: 0 },
-    { month: '2026-02', invoicedEur: 605, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 1 },
-    { month: '2026-03', invoicedEur: 484, acceptedEur: 0, quotesCreated: 1, invoicesIssued: 2 },
-    { month: '2026-04', invoicedEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 },
+    { month: '2026-01', invoicedEur: 0, revenueExclEur: 0, acceptedEur: 900, quotesCreated: 1, invoicesIssued: 0 },
+    { month: '2026-02', invoicedEur: 605, revenueExclEur: 500, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 1 },
+    { month: '2026-03', invoicedEur: 484, revenueExclEur: 400, acceptedEur: 0, quotesCreated: 1, invoicesIssued: 2 },
+    { month: '2026-04', invoicedEur: 0, revenueExclEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 },
   ]);
   assert.deepEqual(result.topCountries, [
-    { countryCode: 'DE', orderCount: 2, calculatedValueEur: 726 },
-    { countryCode: 'BE', orderCount: 1, calculatedValueEur: 363 },
+    { countryCode: 'DE', orderCount: 2, calculatedValueEur: 726, revenueExclEur: 600 },
+    { countryCode: 'BE', orderCount: 1, calculatedValueEur: 363, revenueExclEur: 300 },
   ]);
   assert.equal(result.invoices.avgDaysToPaid, 13);
   assert.equal(result.invoices.averageClaimEur, 363);

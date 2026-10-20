@@ -27,7 +27,7 @@ export function withTicaSales(base: SalesAnalysis, days: readonly TicaAnalyticsD
   if (selected.length) {
     let channel = channels.find(row => row.channel === 'TICA');
     if (!channel) {
-      channel = { channel: 'TICA', invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0, ticaTransactions: 0, ticaMissingCostLines: 0 };
+      channel = { channel: 'TICA', invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0, missingCostLines: 0, ticaTransactions: 0, ticaMissingCostLines: 0 };
       channels.push(channel);
     }
     channel.revenueExclEur = money(channel.revenueExclEur + revenue);

@@ -1,0 +1,73 @@
+/* ==========================================================================
+   Analyses drill-downs (design/analyses2/design.md §A.2, §A.3): the triggers
+   (a figure tile, a list row, a link in a table or sentence) and the one
+   dialog app-an-drill renders at page level. Loaded by AnalysesPage beside
+   analyses.scss (those three files sit at the 16 kB warning); every rule is
+   scoped under the page. Kit tokens only; keep this file under 8 kB.
+   ========================================================================== */
+
+/* ---------- triggers: a tile that opens its list looks like the others, its chevron shows on hover and focus */
+app-analyses-page button.an-kpi { width: 100%; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+app-analyses-page .an-kpi--drill::after { content: '›'; position: absolute; top: 11px; right: 14px; color: var(--muted-2); font-size: 16px; font-weight: 600; opacity: 0; }
+app-analyses-page .an-kpi--drill:hover, app-analyses-page .an-kpi--drill:focus-visible { border-color: var(--rose-line); }
+app-analyses-page .an-kpi--drill:hover::after, app-analyses-page .an-kpi--drill:focus-visible::after { opacity: 1; }
+app-analyses-page .an-kpi--drill:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+/* The phone has no hover: there the chevron always shows, muted. */
+@media (max-width: 679.98px) { app-analyses-page .an-kpi--drill::after { opacity: 1; } }
+app-analyses-page .an-kpi__sub.is-warn { color: var(--warn); }
+app-analyses-page button.an-link { padding: 0; border: 0; background: none; font-family: inherit; cursor: pointer; }
+app-analyses-page button.an-row:disabled { cursor: default; }
+app-analyses-page button.an-row:disabled:hover { background: none; }
+app-analyses-page button.an-row:focus-visible, app-analyses-page button.an-funnel__row:focus-visible, app-analyses-page .an-funnel__item:focus-visible,
+app-analyses-page .an-tica__drill:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; border-radius: 6px; }
+/* A neutral chip: Opvolgen tones only a danger reason (D-S1). */
+app-analyses-page .an-chip[data-tone=muted] { background: var(--surface-2); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Offertes: the bars and the foot items open their quotes. */
+app-analyses-page button.an-funnel__row { width: 100%; margin: 0; padding: 3px 0; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+app-analyses-page button.an-funnel__row:hover { background: var(--surface-2); }
+app-analyses-page .an-funnel__item { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+app-analyses-page .an-funnel__item:hover { color: var(--rose-dark); }
+
+/* TICA › Niet herkend: the count is the trigger. */
+app-analyses-page .an-tica__drill { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+app-analyses-page .an-tica__drill:hover { color: var(--rose-dark); }
+
+/* ---------- the dialog: desk = the wide Sheet with a kit table, phone = the iOS sheet with inset cells */
+app-an-drill .sheet__foot:empty { display: none; }
+app-an-drill .and { display: grid; gap: 10px; }
+app-an-drill .and__scope { margin: 0; color: var(--muted); font-size: 13px; }
+app-an-drill .and__summary { margin: 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+app-an-drill .and__empty, app-an-drill .and__note { margin: 0; color: var(--muted); font-size: 13px; }
+app-an-drill .and__pill { margin-left: 6px; }
+app-an-drill .is-ok { color: var(--ok); } app-an-drill .is-warn { color: var(--warn); }
+app-an-drill .is-danger { color: var(--danger); } app-an-drill .is-muted { color: var(--muted); }
+
+@media (min-width: 680px) {
+  /* The head sticks to the top of the scrolling body: no padding above it. */
+  app-an-drill .sheet__body { padding: 0 0 12px; }
+  app-an-drill .and { gap: 0; }
+  app-an-drill .and__scope, app-an-drill .and__summary, app-an-drill .and__seg, app-an-drill .and__empty, app-an-drill .and__note { margin: 0 16px; }
+  app-an-drill .and__scope { padding-top: 14px; }
+  app-an-drill .and__summary { padding-top: 6px; }
+  app-an-drill .and__seg { margin-top: 12px; justify-self: start; }
+  app-an-drill .and__empty { padding: 16px 0 6px; }
+  app-an-drill .and__note { padding-top: 10px; }
+  app-an-drill .and__table { --wk-sticky-top: 0px; margin-top: 12px; }
+  app-an-drill .and__btn { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit; text-align: left; }
+  app-an-drill .and__gap { min-height: 34px; font-size: 12.5px; }
+}
+
+@media (max-width: 679.98px) {
+  app-an-drill .and { gap: 14px; }
+  app-an-drill .and__scope, app-an-drill .and__summary, app-an-drill .and__empty, app-an-drill .and__note { margin: 0 calc(var(--ios-inset) + 4px); }
+  app-an-drill .and__seg { margin: 0 var(--ios-inset); }
+  app-an-drill .and__empty { padding: 14px 16px; border-radius: var(--ios-radius); background: var(--surface); color: var(--muted); font-size: 15px; margin: 0 var(--ios-inset); }
+  app-an-drill .ios-section { margin: 0; }
+  app-an-drill .ios-cell__title { display: flex; align-items: center; gap: 6px; }
+  app-an-drill .ios-cell__value { color: var(--ink); }
+  app-an-drill .ios-cell__value.is-danger { color: var(--danger); } app-an-drill .ios-cell__value.is-warn { color: var(--warn); }
+  app-an-drill .and__gap .ios-cell__title, app-an-drill .and__gap .ios-cell__value { color: var(--muted); }
+  app-an-drill .and__total .ios-cell__title { font-weight: 650; }
+  app-an-drill .and__foot { width: auto; margin: 0 var(--ios-inset); }
+}

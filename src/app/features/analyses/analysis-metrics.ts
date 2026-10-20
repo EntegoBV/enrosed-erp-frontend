@@ -55,8 +55,10 @@ export interface InvoiceAnalysis {
   paidValueEur: number;
   outstandingValueEur: number;
   overdueValueEur: number;
-  /** The issued claim divided by the issued count; null without invoices. */
+  /** The average claim of the regular invoices (voorschotten left out); null without one. */
   averageClaimEur: number | null;
+  /** Issued invoices that carry revenue (Omzet's "n facturen"): a voorschot is financing and counts apart. */
+  revenueInvoiceCount: number;
   /** Days from invoice date to payment, over paid invoices that carry both dates. */
   avgDaysToPaid: number | null;
   marginEur: number;
@@ -76,6 +78,8 @@ export interface SalesMonthPoint {
   /** ISO month, "2026-03". */
   month: string;
   invoicedEur: number;
+  /** Recognised revenue of the month's invoices and credit notes, excl. btw (Omzet per maand). */
+  revenueExclEur: number;
   acceptedEur: number;
   quotesCreated: number;
   invoicesIssued: number;
@@ -83,6 +87,7 @@ export interface SalesMonthPoint {
 
 export interface SalesChannelMetric {
   channel: string;
+  /** Issued invoices with revenue on this channel (voorschotten are financing and stay out). */
   invoiceCount: number;
   /** Excluding VAT: the revenue as the result analysis counts it. */
   revenueExclEur: number;
@@ -90,6 +95,8 @@ export interface SalesChannelMetric {
   goodsValueEur: number;
   marginEur: number;
   sharePct: number;
+  /** Invoice lines without a product cost on this channel: its margin is incomplete (D-O4). */
+  missingCostLines: number;
 }
 
 export interface SalesCountryMetric {
@@ -97,6 +104,8 @@ export interface SalesCountryMetric {
   orderCount: number;
   /** Issued invoice claims, including VAT. */
   calculatedValueEur: number;
+  /** Recognised revenue excl. btw: the order of the list (a voorschot is no sale, D-S5). */
+  revenueExclEur: number;
 }
 
 export interface SalesCustomerMetric {
@@ -106,6 +115,8 @@ export interface SalesCustomerMetric {
   pieces: number;
   /** Issued invoice claims, including VAT, under the current order calculation. */
   calculatedValueEur: number;
+  /** Recognised revenue excl. btw: the order of the list (a voorschot is no sale, D-S5). */
+  revenueExclEur: number;
 }
 
 export interface SalesProductMetric {
@@ -334,6 +345,8 @@ export function salesAnalysis(
   const issuedInvoices = invoices.filter(isIssuedInvoice);
   const issuedClaims = [...issuedInvoices, ...creditNotes];
   const paidInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) === 0 && invoiceClaim(row) > 0);
+  /* Regular invoices: no voorschot (partner or regular advance billing), the basis of the average claim. */
+  const regularInvoices = issuedInvoices.filter((row) => !isAdvanceInvoice(row));
   const outstandingInvoices = issuedInvoices.filter((row) => invoiceOutstanding(row) > 0);
   const overdueInvoices = overdueInvoiceRows(invoices, today);
   const invoiceGoods = issuedClaims.reduce(
@@ -380,7 +393,8 @@ export function salesAnalysis(
       paidValueEur: round2(issuedInvoices.reduce((sum, row) => sum + invoiceReceived(row), 0)),
       outstandingValueEur: round2(outstandingInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
       overdueValueEur: round2(overdueInvoices.reduce((sum, row) => sum + row.outstandingEur, 0)),
-      averageClaimEur: issuedInvoices.length ? sumInvoiceClaims(issuedInvoices) / issuedInvoices.length : null,
+      averageClaimEur: regularInvoices.length ? sumInvoiceClaims(regularInvoices) / regularInvoices.length : null,
+      revenueInvoiceCount: issuedInvoices.filter(isRevenueDocument).length,
       avgDaysToPaid: paymentDays.length
         ? Math.round(paymentDays.reduce((sum, days) => sum + days, 0) / paymentDays.length) : null,
       marginEur: round2(invoiceMargin),
@@ -389,7 +403,7 @@ export function salesAnalysis(
       creditedEur,
       creditNoteCount: creditNotes.length,
       revenueExclEur: round2(invoiceGoods),
-      advanceClaimEur: round2(sumInvoiceClaims(issuedInvoices.filter((row) => isAdvanceDocument(row) || row.advanceBilling?.stage === 'ADVANCE'))),
+      advanceClaimEur: round2(sumInvoiceClaims(issuedInvoices.filter(isAdvanceInvoice))),
     },
     topCustomers: topCustomers(issuedClaims, customerNames, limit),
     topProducts: topProducts(issuedClaims, limit),
@@ -408,9 +422,12 @@ function channelOf(order: SalesOrderView['order']): string {
 function channelMetrics(rows: readonly SalesOrderView[]): SalesChannelMetric[] {
   const buckets = new Map<string, SalesChannelMetric>();
   for (const row of rows) {
+    /* A partner voorschot is container financing: no revenue, no margin, no invoice of the channel. */
+    if (isAdvanceDocument(row)) continue;
     const channel = channelOf(row.order);
-    const bucket = buckets.get(channel) ?? { channel, invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0 };
-    if (docType(row) !== 'CREDITNOTA') bucket.invoiceCount += 1;
+    const bucket = buckets.get(channel) ?? { channel, invoiceCount: 0, revenueExclEur: 0, claimInclEur: 0, goodsValueEur: 0, marginEur: 0, sharePct: 0, missingCostLines: 0 };
+    if (docType(row) === 'FACTUUR' && isRevenueDocument(row)) bucket.invoiceCount += 1;
+    if (docType(row) === 'FACTUUR') bucket.missingCostLines += row.priced.validation.productsWithoutCost?.length ?? 0;
     bucket.revenueExclEur = round2(bucket.revenueExclEur + documentAccounting(row).recognizedRevenueEur);
     bucket.claimInclEur = round2(bucket.claimInclEur + claimSign(row) * finite(row.priced.totals.totalInclVat));
     bucket.goodsValueEur = round2(bucket.goodsValueEur + documentAccounting(row).recognizedRevenueEur);
@@ -426,14 +443,16 @@ function channelMetrics(rows: readonly SalesOrderView[]): SalesChannelMetric[] {
 function topCountries(rows: readonly SalesOrderView[], limit: number): SalesCountryMetric[] {
   const grouped = new Map<string | null, SalesCountryMetric>();
   for (const row of rows) {
-    const code = row.order.countryCode ? row.order.countryCode.toUpperCase() : null;
-    const current = grouped.get(code) ?? { countryCode: code, orderCount: 0, calculatedValueEur: 0 };
+    if (isAdvanceDocument(row)) continue;
+    const code = countryOf(row);
+    const current = grouped.get(code) ?? { countryCode: code, orderCount: 0, calculatedValueEur: 0, revenueExclEur: 0 };
     if (docType(row) !== 'CREDITNOTA') current.orderCount++;
     current.calculatedValueEur = round2(current.calculatedValueEur + claimSign(row) * invoiceClaim(row));
+    current.revenueExclEur = round2(current.revenueExclEur + documentAccounting(row).recognizedRevenueEur);
     grouped.set(code, current);
   }
   return [...grouped.values()]
-    .sort((left, right) => right.calculatedValueEur - left.calculatedValueEur || right.orderCount - left.orderCount)
+    .sort((left, right) => right.revenueExclEur - left.revenueExclEur || right.orderCount - left.orderCount)
     .slice(0, limit);
 }
 
@@ -457,7 +476,7 @@ function monthlyPoints(
   let [year, month] = first.split('-').map(Number);
   for (let guard = 0; guard < 120; guard++) {
     const key = `${year}-${String(month).padStart(2, '0')}`;
-    points.set(key, { month: key, invoicedEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 });
+    points.set(key, { month: key, invoicedEur: 0, revenueExclEur: 0, acceptedEur: 0, quotesCreated: 0, invoicesIssued: 0 });
     if (key >= last) break;
     month++;
     if (month > 12) { month = 1; year++; }
@@ -474,6 +493,7 @@ function monthlyPoints(
     const point = points.get(row.order.orderDate.slice(0, 7));
     if (!point) continue;
     point.invoicedEur = round2(point.invoicedEur + claimSign(row) * invoiceClaim(row));
+    point.revenueExclEur = round2(point.revenueExclEur + documentAccounting(row).recognizedRevenueEur);
     if (docType(row) !== 'CREDITNOTA') point.invoicesIssued++;
   }
   return [...points.values()];
@@ -956,6 +976,7 @@ function topCustomers(
 ): SalesCustomerMetric[] {
   const grouped = new Map<number | null, SalesCustomerMetric>();
   for (const row of rows) {
+    if (isAdvanceDocument(row)) continue;
     const customerId = row.order.customerId;
     const current = grouped.get(customerId) ?? {
       customerId,
@@ -963,14 +984,16 @@ function topCustomers(
       orderCount: 0,
       pieces: 0,
       calculatedValueEur: 0,
+      revenueExclEur: 0,
     };
     if (docType(row) !== 'CREDITNOTA') current.orderCount++;
     current.pieces += documentAccounting(row).recognizedQuantity;
     current.calculatedValueEur = round2(current.calculatedValueEur + claimSign(row) * invoiceClaim(row));
+    current.revenueExclEur = round2(current.revenueExclEur + documentAccounting(row).recognizedRevenueEur);
     grouped.set(customerId, current);
   }
   return [...grouped.values()]
-    .sort((left, right) => right.calculatedValueEur - left.calculatedValueEur
+    .sort((left, right) => right.revenueExclEur - left.revenueExclEur
       || compareName(left.name, right.name))
     .slice(0, limit);
 }
@@ -1179,6 +1202,20 @@ function isAdvanceDocument(view: SalesOrderView): boolean {
   return view.order.purpose === 'PARTNER_ADVANCE' || (!view.order.purpose && !!view.order.partnerPurchaseOrderId && !isSettlementDocument(view));
 }
 
+/** A voorschot of either kind: a partner advance or a regular advance invoice (advance billing). */
+function isAdvanceInvoice(view: SalesOrderView): boolean {
+  return isAdvanceDocument(view) || view.advanceBilling?.stage === 'ADVANCE';
+}
+
+/** An issued document that moves the revenue (the server's recognition): a voorschot does not. */
+function isRevenueDocument(view: SalesOrderView): boolean {
+  return documentAccounting(view).recognizedRevenueEur !== 0;
+}
+
+function countryOf(view: SalesOrderView): string | null {
+  return view.order.countryCode ? view.order.countryCode.toUpperCase() : null;
+}
+
 /** Partner funding belongs to container financing rather than the regular commercial quote funnel. */
 export function isPartnerFundingDocument(view: SalesOrderView): boolean {
   return view.order.purpose === 'PARTNER_ADVANCE' || view.order.purpose === 'PARTNER_SETTLEMENT'
@@ -1268,6 +1305,225 @@ function compareName(left: string, right: string): number {
 
 function severityRank(severity: SalesAttentionOrder['severity']): number {
   return severity === 'danger' ? 0 : severity === 'warning' ? 1 : 2;
+}
+
+/* ---------------------------------------------------------- drill-down rows */
+
+/** One sales document as the Analyses drill-downs list it (design/analyses2/design.md §B.1). */
+export interface SalesDocumentRow {
+  id: number;
+  number: string;
+  kind: 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA';
+  status: SalesOrderView['order']['status'];
+  /** A partner voorschot (container financing): no revenue and no margin until the settlement. */
+  advance: boolean;
+  /** Regular advance billing: the voorschotfactuur (ADVANCE) or its slotfactuur (FINAL). */
+  advanceStage: 'ADVANCE' | 'FINAL' | null;
+  /** A partner settlement (slotafrekening). */
+  settlement: boolean;
+  /** Partner funding (advance, settlement or their quotes): outside the regular funnel and pipeline. */
+  partnerFunding: boolean;
+  customerId: number | null;
+  customerName: string;
+  countryCode: string | null;
+  channel: string;
+  orderDate: string;
+  dueDate: string | null;
+  decidedAt: string | null;
+  validUntil: string | null;
+  viewCount: number;
+  /** Quotes: the funnel's own tests (sentAt; viewedAt or a view). */
+  sent: boolean;
+  viewed: boolean;
+  /** The server's recognition (documentAccounting), excl. btw; 0 for quotes and voorschotten. */
+  revenueExclEur: number;
+  costEur: number;
+  profitEur: number;
+  /** The recognised margin; null on a credit note and on a partner voorschot (they never show one). */
+  marginEur: number | null;
+  /** Quotes: the priced total excl. btw and its margin (null while a product has no cost); 0 / null otherwise. */
+  quoteValueExclEur: number;
+  quoteMarginEur: number | null;
+  /** The claim incl. btw: an invoice adds, a credit note subtracts, a quote is 0. */
+  claimInclEur: number;
+  /** Invoices: what is still to receive incl. btw. */
+  outstandingEur: number;
+  /** Days past the due day of an overdue invoice; null when it is not overdue. */
+  overdueDays: number | null;
+  pieces: number;
+  /** Regular issued invoices: the SKUs priced without a product cost. */
+  missingCostSkus: string[];
+  partnerContainerName: string | null;
+  partnerPurchaseOrderId: number | null;
+  invoicedAs: string | null;
+  invoicedAsId: number | null;
+}
+
+export interface SalesWindow {
+  /** Inclusive order-date bounds; empty bounds take every document. */
+  from?: string | null;
+  to?: string | null;
+  /** Decides what is overdue. */
+  today?: string;
+}
+
+/**
+ * One row per document dated in the window: every quote (any status, partner funding flagged) and every issued
+ * invoice and credit note. The drill-downs of Verkoop, Resultaat and Overzicht filter this one list with the rules
+ * their figures use (documentAccounting, invoiceClaim, invoiceOutstanding, the overdue test), so the rows of a dialog
+ * add up to the tile that opened it.
+ */
+export function salesDocumentRows(
+  orders: readonly SalesOrderView[],
+  customers: readonly Customer[],
+  window: SalesWindow = {},
+): SalesDocumentRow[] {
+  const from = isoDayOrNull(window.from);
+  const to = isoDayOrNull(window.to);
+  const today = isoDayOrNull(window.today) ?? localIsoDay();
+  const names = new Map(customers.map((customer) => [customer.id, customer.company]));
+  return orders.flatMap((view): SalesDocumentRow[] => {
+    const order = view.order;
+    const kind = docType(view);
+    if (!inOrderDateRange(order.orderDate, from, to) || (kind !== 'OFFERTE' && !isIssuedClaim(view))) return [];
+    const accounting = documentAccounting(view);
+    const advance = kind !== 'OFFERTE' && isAdvanceDocument(view);
+    const missing = view.priced.validation?.productsWithoutCost ?? [];
+    const due = isoDayOrNull(order.invoiceDueDate);
+    return [{
+      id: order.id,
+      number: order.number,
+      kind,
+      status: order.status,
+      advance,
+      advanceStage: view.advanceBilling?.stage ?? null,
+      settlement: isSettlementDocument(view),
+      partnerFunding: isPartnerFundingDocument(view),
+      customerId: order.customerId,
+      customerName: order.customerId == null ? 'Geen klant' : names.get(order.customerId) ?? '—',
+      countryCode: countryOf(view),
+      channel: channelOf(order),
+      orderDate: order.orderDate,
+      dueDate: due,
+      decidedAt: isoDayOrNull(order.decidedAt?.slice(0, 10)),
+      validUntil: isoDayOrNull(order.validUntil),
+      viewCount: finiteNonNegative(order.viewCount),
+      sent: !!order.sentAt,
+      viewed: !!order.viewedAt || order.viewCount > 0,
+      revenueExclEur: accounting.recognizedRevenueEur,
+      costEur: accounting.recognizedCostEur,
+      profitEur: accounting.recognizedProfitEur,
+      marginEur: kind === 'CREDITNOTA' || advance ? null : accounting.recognizedProfitEur,
+      quoteValueExclEur: kind === 'OFFERTE' ? finite(view.priced.totals.total) : 0,
+      quoteMarginEur: kind === 'OFFERTE' && !missing.length ? finite(view.priced.totals.marginEur) : null,
+      claimInclEur: kind === 'OFFERTE' ? 0 : claimSign(view) * invoiceClaim(view),
+      outstandingEur: kind === 'FACTUUR' ? invoiceOutstanding(view) : 0,
+      overdueDays: isOverdue(view, today) && due ? daysBetween(due, today) : null,
+      pieces: kind === 'OFFERTE' ? finiteNonNegative(view.priced.totals.pieces) : accounting.recognizedQuantity,
+      missingCostSkus: kind === 'FACTUUR' && !advance ? [...missing] : [],
+      partnerContainerName: view.partnerContainerName ?? null,
+      partnerPurchaseOrderId: order.partnerPurchaseOrderId ?? null,
+      invoicedAs: view.invoicedAs ?? null,
+      invoicedAsId: view.invoicedAsId ?? null,
+    }];
+  });
+}
+
+/** One product line of an issued invoice or credit note (Verkoop › Producten). */
+export interface SalesLineRow {
+  key: string;
+  documentId: number;
+  number: string;
+  kind: 'FACTUUR' | 'CREDITNOTA';
+  customerId: number | null;
+  orderDate: string;
+  productId: number;
+  sku: string | null;
+  description: string;
+  /** Signed: a credit note takes its pieces back. */
+  quantity: number;
+  /** The line's goods value excl. btw after the order discounts (the factor of the Producten list), signed. */
+  goodsEur: number;
+  /** The line's margin; null on a credit note. */
+  marginEur: number | null;
+}
+
+/**
+ * The lines of one product on the window's issued invoices and credit notes, voorschotten left out: the same lines
+ * and the same goods factor as the Producten list, so they add up to its figure.
+ */
+export function salesLineRows(orders: readonly SalesOrderView[], productId: number, window: Pick<SalesWindow, 'from' | 'to'> = {}): SalesLineRow[] {
+  const from = isoDayOrNull(window.from);
+  const to = isoDayOrNull(window.to);
+  return orders.flatMap((row): SalesLineRow[] => {
+    const kind = docType(row);
+    if (kind === 'OFFERTE' || !isIssuedClaim(row) || isAdvanceDocument(row) || !inOrderDateRange(row.order.orderDate, from, to)) return [];
+    const sign = claimSign(row);
+    const rawGoods = row.priced.lines.reduce((sum, line) => sum + finiteNonNegative(line.net), 0);
+    const goodsFactor = rawGoods > 0 ? finiteNonNegative(row.priced.totals.goodsTotal) / rawGoods : 0;
+    return row.priced.lines.flatMap((line, index): SalesLineRow[] => line.productId !== productId ? [] : [{
+      key: `${row.order.id}:${index}`,
+      documentId: row.order.id,
+      number: row.order.number,
+      kind,
+      customerId: row.order.customerId,
+      orderDate: row.order.orderDate,
+      productId,
+      sku: line.sku || null,
+      description: line.description || line.sku || `Product ${productId}`,
+      quantity: sign * finiteNonNegative(line.quantity),
+      goodsEur: sign * finiteNonNegative(line.net) * goodsFactor,
+      marginEur: kind === 'CREDITNOTA' ? null : finite(line.marginEur),
+    }]);
+  });
+}
+
+/** A product priced without a cost on the window's regular invoices: Brutomarge reads "—" until it has one. */
+export interface MissingCostRow {
+  key: string;
+  /** The catalogue product, when a line of the document names the SKU. */
+  productId: number | null;
+  sku: string;
+  name: string;
+  /** Documents and lines (one per SKU per document, as the margin rule counts them). */
+  documents: number;
+  lines: number;
+}
+
+/** Per product: the SKUs the server priced without a cost on regular issued invoices in the window (salesAnalysis' rule). */
+export function missingCostRows(orders: readonly SalesOrderView[], window: Pick<SalesWindow, 'from' | 'to'> = {}): MissingCostRow[] {
+  const from = isoDayOrNull(window.from);
+  const to = isoDayOrNull(window.to);
+  const grouped = new Map<string, MissingCostRow & { documentIds: Set<number> }>();
+  for (const row of orders) {
+    if (docType(row) !== 'FACTUUR' || !isIssuedInvoice(row) || isAdvanceDocument(row) || !inOrderDateRange(row.order.orderDate, from, to)) continue;
+    for (const sku of row.priced.validation?.productsWithoutCost ?? []) {
+      const line = row.priced.lines.find((candidate) => candidate.sku === sku);
+      const productId = line && Number.isInteger(line.productId) ? line.productId : null;
+      const key = productId !== null ? `p${productId}` : `s${sku}`;
+      const current = grouped.get(key) ?? { key, productId, sku, name: line?.description || sku, documents: 0, lines: 0, documentIds: new Set<number>() };
+      current.lines += 1;
+      current.documentIds.add(row.order.id);
+      current.documents = current.documentIds.size;
+      grouped.set(key, current);
+    }
+  }
+  return [...grouped.values()].map(({ documentIds: _ids, ...row }) => row)
+    .sort((left, right) => right.lines - left.lines || compareName(left.name, right.name));
+}
+
+/** The last day each product was invoiced (regular issued invoices): Nulvoorraad's order and its drill-down. */
+export function lastSoldOn(orders: readonly SalesOrderView[]): Map<number, string> {
+  const last = new Map<number, string>();
+  for (const row of orders) {
+    const day = isoDayOrNull(row.order.orderDate);
+    if (!day || !isIssuedInvoice(row) || isAdvanceDocument(row)) continue;
+    for (const line of row.priced.lines) {
+      if (!Number.isInteger(line.productId)) continue;
+      if ((last.get(line.productId) ?? '') < day) last.set(line.productId, day);
+    }
+  }
+  return last;
 }
 
 /* ------------------------------------------------------------------ result */
