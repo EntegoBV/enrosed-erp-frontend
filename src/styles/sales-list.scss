@@ -45,9 +45,10 @@ app-sales-list .sl-table{--wk-cols:minmax(240px,2.2fr) minmax(0,1.1fr) minmax(15
 app-sales-list .sl-table--quotes{--wk-cols:minmax(260px,2.4fr) minmax(0,1.2fr) minmax(170px,1.5fr) 124px 32px}
 /* The folded Inhoud is hidden by default, BEFORE the container query: the same specificity later in the file would always win. */
 app-sales-list .sl-inhoud-inline{display:none}
+/* The Totaal track keeps its 124 px in the fold: 'TOTAAL EXCL. BTW' needs 121 (116 cut its 'T'). */
 @container wk-pane (max-width:859.98px){
-  app-sales-list .sl-table{--wk-cols:minmax(220px,2.3fr) minmax(150px,1.2fr) minmax(0,1.35fr) 116px 32px}
-  app-sales-list .sl-table--quotes{--wk-cols:minmax(220px,2.6fr) minmax(170px,1.6fr) 116px 32px}
+  app-sales-list .sl-table{--wk-cols:minmax(220px,2.3fr) minmax(150px,1.2fr) minmax(0,1.35fr) 124px 32px}
+  app-sales-list .sl-table--quotes{--wk-cols:minmax(220px,2.6fr) minmax(170px,1.6fr) 124px 32px}
   app-sales-list .sl-inhoud-inline{display:inline}
 }
 /* In the fold the Inhoud cell's two lines read as one: main · sub. */
@@ -132,7 +133,9 @@ app-sales-list .sl-psub.sl-warn{color:var(--warn);font-weight:650}
 app-sales-list .sl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
 app-sales-list .sl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
 /* The trail gives way before the number and its facts (Inkoop fix round 2): both size from their content and shrink, and
-   the day line breaks before its day ('geldig tot' / '01/11/2026'). Long statuses ('Uitgereikt · niet gemaild') wrap. */
+   the trail sizes from its total: the day line breaks before its day ('geldig tot' / '01/11/2026'), a credit note's
+   tegoed line and a container's 'waarvan concept' wrap too (one line pushed the total out of the row, or squeezed the
+   name to four lines). Long statuses ('Uitgereikt · niet gemaild') wrap. */
 app-sales-list .sl-prow>.ios-cell__body,app-sales-list .sl-phead>.ios-cell__body{flex:1 1 auto}
 app-sales-list .sl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}
 app-sales-list .sl-ptrail .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;text-align:right;white-space:normal}
@@ -141,7 +144,7 @@ app-sales-list .sl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:ta
 app-sales-list .sl-pline{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap}
 app-sales-list .sl-pline--open{color:var(--ink-2);font-weight:650}
 app-sales-list .sl-pline.sl-warn{color:var(--warn);font-weight:700}
-app-sales-list .sl-pline--day{white-space:normal}
+app-sales-list .sl-pline--wrap{white-space:normal}
 @media (max-width:374px){app-sales-list .sl-ptitle{font-size:15px}}
 /* A partner container or a split order: a cell with a disclosure; its documents open one step in, below it. */
 app-sales-list .sl-phead{padding-block:10px}

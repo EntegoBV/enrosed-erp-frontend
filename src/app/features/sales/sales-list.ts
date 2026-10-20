@@ -143,7 +143,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
           }
           @if (customersWithOrders().length > 1 || customerFilter() !== '') {
             <span class="wk-chip sl-select" [class.is-on]="customerFilter() !== ''">
-              <span class="sl-select__label">{{ activeCustomerLabel() }}</span><app-icon name="chevron-down" [size]="12" />
+              <span class="sl-select__label">{{ customerFilter() === '' ? 'Klant' : activeCustomerLabel() }}</span><app-icon name="chevron-down" [size]="12" />
               <select class="sl-select__native" aria-label="Filter op klant" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
                 <option [ngValue]="''">Alle klanten</option>
                 @for (customer of customersWithOrders(); track customer.id) {
@@ -152,16 +152,26 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
               </select>
             </span>
           }
-          <!-- The counts and sums only once the list is known: while it loads or failed they would read '0' and '€ 0'. -->
+          <!-- The counts and sums only once the list is known: while it loads or failed they would read '0' and '€ 0'.
+               'n van m' only when something narrows the list (else the tab and 'Alle' say it) and 'Open' as on the rows:
+               at 1080 the Facturen subbar keeps to two lines. -->
           @if (ready()) {
-            <span class="wk-subbar__end sl-subbar__end">{{ rows().length }} van {{ pile().length }}@if (docTab() === 'OFFERTE') { · Waarde <b>{{ shownMoney().offerEur | eur: 0 }}</b> excl. btw } @else { · Nog te ontvangen <b [class.sl-warn]="shownMoney().overdueEur > 0">{{ shownMoney().openEur | eur: 0 }}</b>@if (shownMoney().overdueEur > 0) { · Vervallen <span class="sl-warn sl-nw">{{ shownMoney().overdueEur | eur: 0 }}</span> }@if (shownMoney().tegoedEur > 0) { · Tegoeden <span class="sl-nw">{{ shownMoney().tegoedEur | eur: 0 }}</span> } }</span>
+            <span class="wk-subbar__end sl-subbar__end">@if (activeFilterCount()) { {{ rows().length }} van {{ pile().length }} · }@if (docTab() === 'OFFERTE') { Waarde <b>{{ shownMoney().offerEur | eur: 0 }}</b> excl. btw } @else { Open <b [class.sl-warn]="shownMoney().overdueEur > 0">{{ shownMoney().openEur | eur: 0 }}</b>@if (shownMoney().overdueEur > 0) { · Vervallen <span class="sl-warn sl-nw">{{ shownMoney().overdueEur | eur: 0 }}</span> }@if (shownMoney().tegoedEur > 0) { · Tegoeden <span class="sl-nw">{{ shownMoney().tegoedEur | eur: 0 }}</span> } }</span>
           }
           @if (activeFilterCount()) {
             <button class="wk-btn wk-btn--ghost wk-btn--sm sl-clear" type="button" (click)="clearFilters()">Filters wissen</button>
           }
         </div>
 
-        @if (loadError(); as error) {
+        <!-- A failed refresh keeps the list it had (a banner); only a first load that failed has nothing to show. -->
+        @if (ready() && loadError(); as error) {
+          <div class="wk-banner wk-banner--danger wk-banner--inset" role="alert">
+            <app-icon name="alert" [size]="16" />
+            <span class="wk-banner__text"><b>Verkoopoverzicht kon niet worden vernieuwd</b> · {{ error }}</span>
+            <span class="wk-banner__actions"><button class="wk-btn wk-btn--sm" type="button" [disabled]="loading()" (click)="load()">Opnieuw proberen</button></span>
+          </div>
+        }
+        @if (!ready() && loadError(); as error) {
           <div class="wk-card"><app-load-error title="Verkoopoverzicht kon niet worden geladen" [message]="error" [busy]="loading()" (retry)="load()" /></div>
         } @else if (!ready()) {
           <div class="wk-card sl-card" role="status" aria-label="Verkoopdocumenten laden"><app-skeleton kind="table" [rows]="8" /></div>
@@ -218,16 +228,17 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                               </span>
                               @if (docTab() !== 'OFFERTE') {
                                 <span class="sl-cell">
+                                  <!-- The head's cells do not clip (no wk-td): only the amounts stay whole, the words wrap in the column. -->
                                   @if (entry.summary.issuedCount) {
-                                    <span class="sl-main sl-nw">{{ entry.summary.remainingEur | eur }} open</span>
-                                    <span class="sl-sub sl-nw">{{ entry.summary.receivedEur | eur }} ontvangen · incl. btw</span>
+                                    <span class="sl-main"><span class="sl-nw">{{ entry.summary.remainingEur | eur }}</span> open</span>
+                                    <span class="sl-sub"><span class="sl-nw">{{ entry.summary.receivedEur | eur }}</span> ontvangen · incl. btw</span>
                                   }
-                                  @if (entry.summary.creditEur > 0) { <span class="sl-sub sl-credit sl-nw">{{ entry.summary.creditEur | eur }} credit incl. btw</span> }
+                                  @if (entry.summary.creditEur > 0) { <span class="sl-sub sl-credit"><span class="sl-nw">{{ entry.summary.creditEur | eur }}</span> credit incl. btw</span> }
                                 </span>
                               }
                               <span class="sl-cell sl-total">
                                 <span>{{ entry.summary.totalEur | eur }}</span>
-                                @if (entry.summary.draftCount && entry.summary.issuedCount) { <small class="sl-sub">waarvan concept {{ entry.summary.draftEur | eur }}</small> }
+                                @if (entry.summary.draftCount && entry.summary.issuedCount) { <small class="sl-sub">waarvan concept <span class="sl-nw">{{ entry.summary.draftEur | eur }}</span></small> }
                               </span>
                               <span class="sl-cell" aria-hidden="true"></span>
                             </button>
@@ -326,7 +337,13 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
           </div>
         }
 
-        @if (loadError(); as error) {
+        @if (ready() && loadError(); as error) {
+          <div class="ios-banner ios-banner--danger" role="alert">
+            <span><b>Verkoopoverzicht kon niet worden vernieuwd</b><br />{{ error }}</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="loading()" (click)="load()">Opnieuw proberen</button>
+          </div>
+        }
+        @if (!ready() && loadError(); as error) {
           <app-load-error title="Verkoopoverzicht kon niet worden geladen" [message]="error" [busy]="loading()" (retry)="load()" />
         } @else if (!ready()) {
           <div class="sl-loading" role="status" aria-label="Verkoopdocumenten laden"><app-skeleton kind="group" [rows]="5" /></div>
@@ -362,7 +379,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         </span>
                         <span class="ios-cell__trail sl-ptrail">
                           <span class="sl-ptotal">{{ entry.summary.totalEur | eur }}</span>
-                          @if (entry.summary.draftCount && entry.summary.issuedCount) { <span class="sl-pline">waarvan concept {{ entry.summary.draftEur | eur }}</span> }
+                          @if (entry.summary.draftCount && entry.summary.issuedCount) { <span class="sl-pline sl-pline--wrap">waarvan concept <span class="sl-nw">{{ entry.summary.draftEur | eur }}</span></span> }
                         </span>
                         <app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />
                       </button>
@@ -579,10 +596,10 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
             <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.label }}</span>
             @switch (lines.trail.kind) {
               @case ('open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="lines.trail.overdue">{{ pay.openEur | eur }} open</span> }
-              @case ('credit') { <span class="sl-pline sl-credit">{{ lines.trail.text }}</span> }
+              @case ('credit') { <span class="sl-pline sl-pline--wrap sl-credit">{{ lines.trail.text }}</span> }
               @case ('day') {
                 @let day = dayParts(lines.trail.text);
-                <span class="sl-pline sl-pline--day" [class.sl-warn]="lines.trail.overdue">{{ day.lead }}<span class="sl-nw">{{ day.day }}</span></span>
+                <span class="sl-pline sl-pline--wrap" [class.sl-warn]="lines.trail.overdue">{{ day.lead }}<span class="sl-nw">{{ day.day }}</span></span>
               }
             }
           </span>
@@ -990,9 +1007,9 @@ export class SalesList {
     return this.rowsByDocument()[tab].length;
   }
 
-  /** Rows of the active tab, before search and filters. */
-  private inTab(): SalesOrderView[] {
-    if (this.docTab() === 'FACTUUR' && this.outstandingOnly()) {
+  /** Rows of the active tab, before search and filters; on Facturen `withArchive` (Nog te ontvangen) adds the archive's invoices and credit notes. */
+  private inTab(withArchive = this.outstandingOnly()): SalesOrderView[] {
+    if (this.docTab() === 'FACTUUR' && withArchive) {
       const grouped = this.rowsByDocument();
       return [...grouped.FACTUUR, ...grouped.ARCHIEF.filter((row) => (row.order.docType ?? 'OFFERTE') !== 'OFFERTE')];
     }
@@ -1079,7 +1096,7 @@ export class SalesList {
     this.restoreFolds();
     if (typeof matchMedia === 'function') {
       const destroyRef = inject(DestroyRef);
-      for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
+      for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 389px)', this.smallPhone]] as const) {
         const media = matchMedia(query);
         const follow = (): void => target.set(media.matches);
         follow();
@@ -1179,19 +1196,28 @@ export class SalesList {
   }
 
   /** The tab's documents after the Facturen / Creditnota's choice: the m of 'n van m' (with 'Nog te ontvangen' the archive's open ones too). */
-  readonly pile = computed(() => {
+  readonly pile = computed(() => this.ofDocs(this.inTab()));
+  /** The Facturen / Creditnota's choice over `documents`. */
+  private ofDocs(documents: SalesOrderView[]): SalesOrderView[] {
     const docs = this.docTab() === 'FACTUUR' ? this.docsFilter() : 'all';
-    const documents = this.inTab();
     return docs === 'all' ? documents : documents.filter((row) => isCreditNote(row.order) === (docs === 'cn'));
-  });
+  }
 
   /** Every filter but the status chips and Actie vereist: what those chips count, so their counts follow the search. */
   readonly searched = computed(() => {
+    const keep = this.narrowing(this.inTab(), this.outstandingOnly());
+    return this.pile().filter(keep);
+  });
+
+  /**
+   * Every filter but the status chips and Actie vereist as one test: the customer, the website toggles, Nog te
+   * ontvangen (`outstanding`) and the search, which also finds a container by the names its `documents` carry.
+   */
+  private narrowing(documents: readonly SalesOrderView[], outstanding: boolean): (row: SalesOrderView) => boolean {
     const customer = this.customerFilter();
     const websiteOnly = this.websiteOnly();
     const toTakeOnly = this.toTakeOnly();
     const query = this.query().trim();
-    const documents = this.inTab();
     // A container is found by our own name and by its PO number: the server's live fields, else the advance's cargo snapshot.
     const containerOf = (row: SalesOrderView): number | null =>
       (isPartnerDocument(row.order) ? row.order.partnerPurchaseOrderId : row.order.sourcePurchaseOrderId) ?? null;
@@ -1208,9 +1234,9 @@ export class SalesList {
       names.forEach((name) => known.add(name));
       purchaseNames.set(purchaseId, known);
     }
-    return this.pile().filter((row) => {
+    return (row) => {
       const credit = isCreditNote(row.order);
-      if (this.outstandingOnly() && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status)
+      if (outstanding && (['CONCEPT', 'GEANNULEERD', 'AFGEWEZEN', 'VERLOPEN'].includes(row.order.status)
           || (credit ? invoiceReceivable(row).creditEur <= 0 : invoiceReceivable(row).remainingEur <= 0))) return false;
       if (customer !== '' && row.order.customerId !== customer) return false;
       if (websiteOnly && !countsAsNewWebsiteItem(row)) return false;
@@ -1224,14 +1250,27 @@ export class SalesList {
       /* Every word must occur, accents folded: 'cafe 2026' finds Café Brel's ENR-2026-0041. */
       return matchesWords(this.customerName(row) + ' ' + row.order.number + ' ' + container + ' ' + (row.creditedInvoiceNumber ?? '') + ' '
         + (row.creditNotes ?? []).map((note) => note.number).join(' '), query);
-    });
-  });
+    };
+  }
 
   /** The shown documents: the search and the filters, then a status chip or Actie vereist. */
-  readonly rows = computed(() => {
+  readonly rows = computed(() => this.searched().filter((row) => this.chipKeeps(row)));
+  /** The status chip and Actie vereist let the row through. */
+  private chipKeeps(row: SalesOrderView): boolean {
     const status = this.filter();
-    const attentionOnly = this.attentionOnly();
-    return this.searched().filter((row) => (!status || row.order.status === status) && (!attentionOnly || this.needsAction(row)));
+    return (!status || row.order.status === status) && (!this.attentionOnly() || this.needsAction(row));
+  }
+
+  /**
+   * The documents the sums read. On Facturen the archive's open invoices and credit notes count too, Nog te ontvangen
+   * on or off: Home and Kosten & bank count them (receivableTotals has no archive filter), so the list never reads less
+   * open than they do. These are exactly the rows Nog te ontvangen shows; a document with nothing open adds nothing.
+   */
+  private readonly moneyRows = computed(() => {
+    if (this.docTab() !== 'FACTUUR' || this.outstandingOnly()) return this.rows();
+    const documents = this.inTab(true);
+    const keep = this.narrowing(documents, true);
+    return this.ofDocs(documents).filter((row) => keep(row) && this.chipKeeps(row));
   });
 
   /** Filtering remains document-based; container sections only organize the matching invoices. */
@@ -1677,13 +1716,16 @@ export class SalesList {
 
   /* ---- the list (Inkoop recipe, 2026-10-19): tabs, chips, customer groups, sums --------------------------------- */
 
-  /** The documents are known: before the first answer, or after a failed load, no count or sum shows (never a false '0'); a reload keeps them. */
-  readonly ready = computed(() => !this.loadError() && (!this.loading() || this.all().length > 0));
+  /**
+   * The documents are known: before the first answer, or after a failed first load, no count or sum shows (never a
+   * false '0'). A reload keeps them, and so does a failed one: the list stays with a banner above it.
+   */
+  readonly ready = computed(() => this.all().length > 0 || (!this.loading() && !this.loadError()));
   /** Actie vereist: only the documents whose amber line says something. */
   readonly attentionOnly = signal(false);
   /** Up to 1100px wide the toolbar is tight: the search gets a shorter placeholder so neither it nor the title is cut. */
   readonly compactBar = signal(false);
-  /** Phones under 375px: the phone search reads like the compact desk, the full placeholder would lose its last letters. */
+  /** Phones under 390px: the phone search reads like the compact desk; at 375 the full placeholder (228 px) lost its last letters. */
   readonly smallPhone = signal(false);
   readonly keepEuro = keepEuro;
   readonly dayParts = dayParts;
@@ -1708,9 +1750,8 @@ export class SalesList {
   /** The phone's large-title caption: the tab's count, on Facturen what is still to receive; narrowed, what shows of how many. */
   readonly phoneCaption = computed(() => {
     if (!this.ready()) return NOT_KNOWN_YET;
-    const narrowed = this.activeFilterCount() > 0;
-    const open = this.docTab() === 'OFFERTE' ? 0 : (narrowed ? this.shownMoney() : this.pileMoney()).openEur;
-    return listCaption(this.docTab(), this.rows().length, this.pile().length, narrowed, open);
+    const open = this.docTab() === 'OFFERTE' ? 0 : this.shownMoney().openEur;
+    return listCaption(this.docTab(), this.rows().length, this.pile().length, this.activeFilterCount() > 0, open);
   });
   /** The word after 'n van m' in the phone's Filters sheet. */
   readonly pileWord = computed(() => this.docTab() === 'OFFERTE' ? 'offertes' : this.docTab() === 'ARCHIEF' ? 'in het archief'
@@ -1739,9 +1780,8 @@ export class SalesList {
     if (on) this.filter.set('');
   }
 
-  /** What the shown documents still hold (the subbar's end), and the whole tab (the phone caption). */
-  readonly shownMoney = computed(() => listMoney(this.rows(), invoiceReceivable, todayIso()));
-  private readonly pileMoney = computed(() => listMoney(this.pile(), invoiceReceivable, todayIso()));
+  /** What the shown documents still hold, on Facturen with the archive's open ones (moneyRows): the subbar's end and the phone caption. */
+  readonly shownMoney = computed(() => listMoney(this.moneyRows(), invoiceReceivable, todayIso()));
 
   /** One block per customer (a desk group, a phone section), on top of the container and split groups (they stay per customer inside it). */
   readonly customerSections = computed(() =>

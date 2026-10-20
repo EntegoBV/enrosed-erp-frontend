@@ -35,8 +35,10 @@ test('the phone branch is the kit list: segmented tabs, one search row with the 
     '<div class="ios-group">']) {
     assert.ok(phone.includes(piece), piece);
   }
-  assert.doesNotMatch(phone.slice(0, phone.indexOf('@if (loadError()')), /<select/, 'no native picker or filter row above the documents');
-  assert.match(source, /\['\(max-width: 374px\)', this\.smallPhone\]/);
+  assert.ok(phone.includes('@if (ready() && loadError(); as error)'));
+  assert.doesNotMatch(phone.slice(0, phone.indexOf('@if (ready() && loadError()')), /<select/, 'no native picker or filter row above the documents');
+  /* The full placeholder needs 228 px; at 375 the field leaves 219, at 390 it fits. */
+  assert.match(source, /\['\(max-width: 389px\)', this\.smallPhone\]/);
 });
 
 test('the old card list is gone: no "Klant wacht op ons", no navigation component, no card rows', async () => {
@@ -105,21 +107,27 @@ test('the phone row: the number, kind · date and tags, the facts and the amber 
   }
   assert.doesNotMatch(link.slice(2), /<a\s|<button\s/, 'nothing interactive inside the row link');
   assert.match(link, /@case \('open'\) \{ <span class="sl-pline sl-pline--open" \[class\.sl-warn\]="lines\.trail\.overdue">\{\{ pay\.openEur \| eur \}\} open<\/span> \}/);
-  assert.match(link, /@case \('credit'\) \{ <span class="sl-pline sl-credit">\{\{ lines\.trail\.text \}\}<\/span> \}/);
-  assert.match(link, /@let day = dayParts\(lines\.trail\.text\);\s*<span class="sl-pline sl-pline--day"[^>]*>\{\{ day\.lead \}\}<span class="sl-nw">\{\{ day\.day \}\}<\/span><\/span>/);
+  assert.match(link, /@case \('credit'\) \{ <span class="sl-pline sl-pline--wrap sl-credit">\{\{ lines\.trail\.text \}\}<\/span> \}/);
+  assert.match(link, /@let day = dayParts\(lines\.trail\.text\);\s*<span class="sl-pline sl-pline--wrap"[^>]*>\{\{ day\.lead \}\}<span class="sl-nw">\{\{ day\.day \}\}<\/span><\/span>/);
   assert.doesNotMatch(link, /marge|cbm|sl-more/, 'Inhoud and marge leave the phone row; no ⋯ on the phone');
   assert.match(phoneRow, /@if \(canArchive\(row\)\) \{\s*<button class="swipe__archive"/);
   assert.match(phoneRow, /@if \(canDelete\(row\)\) \{\s*<button class="swipe__delete"/);
   assert.match(member('phoneLinesOf'), /phoneLines\(this\.statusPartsOf\(row\), this\.paymentOf\(row\), isCreditNote\(row\.order\) \? this\.creditLine\(row\) : null\)/);
 });
 
-test('the trail gives way before the number; only the day line wraps; small phones get a 15 px number', () => {
+test('the trail gives way before the number and sizes from its total: the day, tegoed and concept lines wrap; small phones get a 15 px number', () => {
   assert.ok(partial.includes('app-sales-list .sl--phone{--ios-inset:4px}'));
   assert.ok(partial.includes('app-sales-list .sl-prow>.ios-cell__body,app-sales-list .sl-phead>.ios-cell__body{flex:1 1 auto}'));
   assert.ok(partial.includes('app-sales-list .sl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}'));
   const nowrap = partial.indexOf('app-sales-list .sl-pline{');
-  const wraps = partial.indexOf('app-sales-list .sl-pline--day{white-space:normal}');
-  assert.ok(nowrap >= 0 && wraps > nowrap, 'the day rule comes after the nowrap rule of the same specificity');
+  const wraps = partial.indexOf('app-sales-list .sl-pline--wrap{white-space:normal}');
+  assert.ok(nowrap >= 0 && wraps > nowrap, 'the wrap rule comes after the nowrap rule of the same specificity');
+  /* '€ 200,60 verrekend · € 1.300,40 tegoed' (233 px) and 'waarvan concept € 9.876,54' (167 px) on one line held the trail
+     at its 48 % cap: the total and the pill slid out of the row, or the container name went to four lines. */
+  const plines = [...template.matchAll(/<span class="sl-pline( [^"]*)?"/g)].map((match) => match[1] ?? '');
+  assert.ok(plines.length >= 4);
+  for (const classes of plines) assert.match(classes, /sl-pline--(wrap|open)/, `every trail line but the open amount wraps: ${classes}`);
+  assert.ok(template.includes('<span class="sl-pline sl-pline--wrap">waarvan concept <span class="sl-nw">{{ entry.summary.draftEur | eur }}</span></span>'));
   assert.ok(partial.includes('@media (max-width:374px){app-sales-list .sl-ptitle{font-size:15px}}'));
   assert.ok(partial.includes('app-sales-list .sl-ptrail .wk-pill{max-width:100%;height:auto;'), 'a long status wraps in the trail');
 });

@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   HostListener,
   afterRenderEffect,
@@ -132,8 +133,20 @@ export class ContextMenu {
   readonly position = signal<MenuPoint>({ x: 8, y: 8 });
   private readonly menu = viewChild<ElementRef<HTMLElement>>('menu');
   private focused = false;
+  /** What had focus when the menu opened (a row from Shift+F10, ⋯): the desk popover gives it back on close, as a sheet does. */
+  private readonly opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+    ? document.activeElement : null;
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      const opener = this.opener;
+      /* The phone sheet restores focus itself. A choice that opened a dialog or moved focus elsewhere keeps it there. */
+      if (!opener || !this.desktop.active()) return;
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        if (opener.isConnected && (!active || active === document.body)) opener.focus({ preventScroll: true });
+      });
+    });
     afterRenderEffect(() => {
       const element = this.menu()?.nativeElement;
       const anchor = this.anchor();

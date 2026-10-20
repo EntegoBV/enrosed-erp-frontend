@@ -1768,10 +1768,16 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   tab's vocabulary with a count (they follow the search: `statusCounts` over
   `searched`), Actie vereist (`attentionOnly`, exclusive with a status),
   Website / In verwerking te nemen (Offertes), Nog te ontvangen and Facturen /
-  Creditnota's (Facturen), the end 'n van m · Nog te ontvangen · Vervallen ·
-  Tegoeden' (Offertes: 'Waarde … excl. btw') and Filters wissen. The subbar's
-  measured height (`--sl-subbar-h`) keeps the sticky head under it when it
-  wraps.
+  Creditnota's (Facturen), the end 'Open · Vervallen · Tegoeden' (Offertes:
+  'Waarde … excl. btw'), 'n van m · ' in front only while something narrows
+  the list, and Filters wissen; the Klant chip reads 'Klant' until one is
+  chosen (two subbar lines at 1080). On Facturen the sums read `moneyRows`:
+  the rows Nog te ontvangen shows, so archived open invoices and tegoeden
+  count with the toggle off too, as Home and Kosten & bank count them
+  (`receivableTotals` has no archive filter); the phone caption reads the
+  same. The customer head's '€ x open' stays the sum of its shown documents.
+  The subbar's measured height (`--sl-subbar-h`) keeps the sticky head under
+  it when it wraps.
 - Table per tab: Document · Inhoud · Status · Betaling (not on Offertes) ·
   Totaal excl. btw · ⋯; below an 860 px card the Inhoud (`#inhoud` template)
   folds into the Document sub. A `wk-group` per customer
@@ -1793,7 +1799,11 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   `statusParts`, `paymentCell`, `phoneLines`, `documentSub`, `listCaption`,
   `matchesWords` (accents folded, every word). `pile` (the tab after the
   docs filter) is the m of 'n van m'; `ready` holds every count and sum until
-  the first load answers (a reload keeps them).
+  the first load answers. A reload keeps them, and so does a failed one: the
+  list stays under a 'Verkoopoverzicht kon niet worden vernieuwd' banner;
+  only a failed first load shows the `app-load-error` card. The desk row menu
+  (`app-context-menu`, desk popover) gives focus back to the row or ⋯ it came
+  from when it closes (Inkoop's too).
 - Phone (below 680 px, `.content.sl--phone`): large title with the
   ready-guarded `phoneCaption` ('n offertes', 'n facturen · € x te
   ontvangen', 'n in het archief'; narrowed 'n van m · € x open'),
@@ -1811,7 +1821,8 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   channel / Partner tag, a muted facts line only for web and delivery facts,
   the amber line; trail = total ('− ', decimals, `excl. vracht`), status pill,
   third line `phoneLines` ('€ x open', warn when overdue; a credit note's
-  tegoed line; else 'geldig tot' split by `dayParts`). Inhoud, m³, marge (never
+  tegoed line; else 'geldig tot' split by `dayParts`); every trail line but
+  '€ x open' wraps (`sl-pline--wrap`), so the trail sizes from its total. Inhoud, m³, marge (never
   on credit notes or partner documents), the due day behind '€ x open',
   ontvangen and gecrediteerd move into the menu's Openen hint
   (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner containers and split

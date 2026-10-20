@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+import ts from 'typescript';
+import { computed, signal } from '@angular/core';
 import { parseTemplate } from '@angular/compiler';
 
 /*
@@ -44,7 +47,7 @@ test('the desk is the kit list: toolbar tabs and search, the subbar, one table w
 });
 
 test('no count or sum before the documents are known (V-L1), and no "orders" for offertes and facturen', () => {
-  assert.match(source, /readonly ready = computed\(\(\) => !this\.loadError\(\) && \(!this\.loading\(\) \|\| this\.all\(\)\.length > 0\)\);/);
+  assert.match(source, /readonly ready = computed\(\(\) => this\.all\(\)\.length > 0 \|\| \(!this\.loading\(\) && !this\.loadError\(\)\)\);/);
   assert.match(source, /const NOT_KNOWN_YET = '\\u00a0';/);
   assert.match(template, /<app-page-header title="Verkoop" \[subtitle\]="desktop\.active\(\) \? deskSubtitle\(\) : phoneCaption\(\)">/);
   assert.doesNotMatch(source, /' orders'/);
@@ -54,6 +57,8 @@ test('no count or sum before the documents are known (V-L1), and no "orders" for
   const end = /@if \(ready\(\)\) \{\s*<span class="wk-subbar__end sl-subbar__end">([\s\S]*?)<\/span>\s*\}\n/.exec(desk);
   assert.ok(end, 'the end of the subbar sits inside @if (ready())');
   for (const figure of ['rows().length', 'pile().length', 'shownMoney().offerEur', 'shownMoney().openEur', 'shownMoney().overdueEur']) assert.ok(end[1].includes(figure), figure);
+  assert.ok(end[1].startsWith('@if (activeFilterCount()) { {{ rows().length }} van {{ pile().length }} · }'), "'n van m' only when something narrows the list");
+  assert.match(end[1], /\} @else \{ Open <b \[class\.sl-warn\]="shownMoney\(\)\.overdueEur > 0">/, "'Open' as on the rows: the Facturen subbar keeps to two lines at 1080");
   assert.equal(template.split('shownMoney()').length - 1, end[1].split('shownMoney()').length - 1, 'no sum outside the guarded end');
   assert.match(desk, /\{\{ chip\.label \}\} @if \(ready\(\)\) \{ <span class="wk-seg__count">\{\{ chip\.count \}\}<\/span> \}/);
 });
@@ -138,4 +143,54 @@ test('the desk keys: / the search, N a new document, ↑/↓ between the rows; S
   assert.match(keys, /event\.key === 'n' \|\| event\.key === 'N'[\s\S]*?this\.startNew\(\)/);
   assert.match(keys, /querySelectorAll<HTMLElement>\('\.sl-row'\)/);
   assert.doesNotMatch(source, /active\.hold = setTimeout/);
+});
+
+test('a failed refresh keeps the list it had under a banner; only a failed first load shows the error card', () => {
+  const phone = template.slice(template.indexOf('<div class="content sl--phone">'));
+  for (const branch of [desk, phone]) {
+    assert.match(branch, /@if \(ready\(\) && loadError\(\); as error\) \{\s*<div class="(wk|ios)-banner \1-banner--danger[^"]*" role="alert">[\s\S]*?Verkoopoverzicht kon niet worden vernieuwd[\s\S]*?\(click\)="load\(\)"/);
+    assert.match(branch, /@if \(!ready\(\) && loadError\(\); as error\) \{\s*(<div class="wk-card">)?<app-load-error title="Verkoopoverzicht kon niet worden geladen"/);
+  }
+  const parsed = ts.createSourceFile('sales-list.ts', source, ts.ScriptTarget.Latest, true);
+  const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesList');
+  assert.ok(original);
+  const members = original.members.filter((node) => node.name && ts.isIdentifier(node.name) && node.name.text === 'ready');
+  const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter((modifier) => !ts.isDecorator(modifier)), original.name, undefined, undefined, members);
+  const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports: any = {};
+  vm.runInNewContext(js, { exports, computed, signal });
+  const screen = new exports.SalesList();
+  Object.assign(screen, { all: signal([]), loading: signal(true), loadError: signal(null) });
+  assert.equal(screen.ready(), false, 'the first load runs');
+  screen.loading.set(false); screen.loadError.set('Geen verbinding');
+  assert.equal(screen.ready(), false, 'the first load failed: the error card, no counts');
+  screen.loadError.set(null);
+  assert.equal(screen.ready(), true, 'loaded, even with no documents at all');
+  screen.all.set([{ order: { id: 1 } }]); screen.loading.set(true);
+  assert.equal(screen.ready(), true, 'a reload keeps the list');
+  screen.loading.set(false); screen.loadError.set('Geen verbinding');
+  assert.equal(screen.ready(), true, 'a failed reload keeps it too, under the banner');
+});
+
+test('on Facturen the sums read the archive’s open documents too: the subbar and the phone caption match Home', () => {
+  assert.match(source, /readonly shownMoney = computed\(\(\) => listMoney\(this\.moneyRows\(\), invoiceReceivable, todayIso\(\)\)\);/);
+  assert.match(member('phoneCaption = computed'), /const open = this\.docTab\(\) === 'OFFERTE' \? 0 : this\.shownMoney\(\)\.openEur;/);
+  assert.doesNotMatch(source, /pileMoney/);
+});
+
+test('the folded Totaal keeps its 124 px track, and the container head lets its Betaling words wrap', () => {
+  const fold = partial.slice(partial.indexOf('@container wk-pane (max-width:859.98px){'));
+  assert.match(fold, /app-sales-list \.sl-table\{--wk-cols:[^}]* 124px 32px\}/);
+  assert.match(fold, /app-sales-list \.sl-table--quotes\{--wk-cols:[^}]* 124px 32px\}/);
+  const head = desk.slice(desk.indexOf("@if (entry.kind === 'PARTNER_CONTAINER')"), desk.indexOf("} @else if (entry.kind === 'SPLIT_ORDER')"));
+  assert.ok(head.includes('<span class="sl-sub"><span class="sl-nw">{{ entry.summary.receivedEur | eur }}</span> ontvangen · incl. btw</span>'));
+  assert.ok(head.includes('<span class="sl-sub sl-credit"><span class="sl-nw">{{ entry.summary.creditEur | eur }}</span> credit incl. btw</span>'));
+  assert.doesNotMatch(head, /class="sl-(main|sub)[^"]*sl-nw"/, 'no whole line kept on one line in a head cell that does not clip');
+});
+
+test('the desk row menu gives focus back to the row or ⋯ it came from when it closes', async () => {
+  const menu = await readFile(new URL('../src/app/shared/context-menu.ts', import.meta.url), 'utf8');
+  assert.match(menu, /private readonly opener = document\.activeElement instanceof HTMLElement && document\.activeElement !== document\.body/);
+  assert.match(menu, /inject\(DestroyRef\)\.onDestroy\(\(\) => \{[\s\S]*?if \(!opener \|\| !this\.desktop\.active\(\)\) return;[\s\S]*?if \(opener\.isConnected && \(!active \|\| active === document\.body\)\) opener\.focus\(\{ preventScroll: true \}\);/);
 });
