@@ -246,6 +246,19 @@ stays the accessible name) and the bar narrows beside it (9.5 px labels).
 `.fab--text` keeps an action's words ("Container kiezen", Partner scope) as
 a labelled pill above the bar. Staff screens use `--bg` #f2efeb on the
 phone, as the status-bar theme-color and the manifest do.
+Long press (2026-10-20, `core/platform/tab-menu.ts` + App): about 450 ms
+on Verkoop, Inkoop or Producten (cancelled past 10 px; Android's own
+contextmenu may open it a little sooner) opens a glass `role=menu` above
+that tab, centred on it and kept within the bar: the tab root in full
+("Verkooporders") first, then Meer's rows for that group (short labels,
+counts, the current page in the accent pill). Tap a row or slide onto it
+and let go; a tap outside (the backdrop, z 70, leaves the bar's strip
+free), Escape (focus back to the tab), a route change or a page scroll
+closes it. The click that ends a long press is swallowed in the capture
+phase, before RouterLink; a plain tap still goes to the tab root. The bar
+has no callout, selection or link drag, and the three tabs are
+`touch-action: none`. Shift+F10 / ContextMenu opens it from a focused tab.
+Home and Meer get none; the desk is unchanged.
 
 **Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
 "Aangemeld als …", the bell) over the kit's inset groups rendered from
@@ -293,6 +306,9 @@ never shows the form again.
   'truck' are the same lorry; Douane has 'customs', a stamp).
 - `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
   `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
+- `tab-menu.ts`: the long press's rows (`tabMenuFor`), press decisions
+  (`startTabPress`, `pressWandered`, `clickGuardAfter`), keys
+  (`isMenuKey`, `menuFocusIndex`) and `tabMenuPlacement`.
 - `page-parent.ts`: `parentOf(url)` → `{label, url, phoneLabel}` or null.
 - `nav-history.ts` (stack keyed by navigation id) and the injectable
   `NavHistory` (`nav-history-service.ts`, created by App): `below()`,
