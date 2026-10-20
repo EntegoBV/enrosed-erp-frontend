@@ -147,7 +147,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
               <select class="sl-select__native" aria-label="Filter op klant" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
                 <option [ngValue]="''">Alle klanten</option>
                 @for (customer of customersWithOrders(); track customer.id) {
-                  <option [ngValue]="customer.id">{{ customer.company }}</option>
+                  <option [ngValue]="customer.id">{{ customerLabel(customer.id) }}</option>
                 }
               </select>
             </span>
@@ -492,7 +492,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
            (click)="blockWhenSwiped($event)">
           <span class="wk-td wk-td--wrap sl-cell" role="cell">
             <b class="sl-name">{{ row.order.number }}</b>
-            <span class="sl-sub">{{ docSubOf(row) }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested) { <span class="sl-tag">Partner</span> }<span class="sl-inhoud-inline"> · <ng-container *ngTemplateOutlet="inhoud; context: { $implicit: row }" /></span></span>
+            <span class="sl-sub">{{ docSubOf(row) }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }<span class="sl-inhoud-inline"> · <ng-container *ngTemplateOutlet="inhoud; context: { $implicit: row }" /></span></span>
           </span>
           <span class="wk-td wk-td--wrap sl-cell" role="cell" data-hide="sm"><ng-container *ngTemplateOutlet="inhoud; context: { $implicit: row }" /></span>
           <span class="wk-td wk-td--wrap sl-cell" role="cell">
@@ -582,7 +582,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
            (click)="blockWhenSwiped($event)">
           <span class="ios-cell__body">
             <span class="sl-ptitle">{{ row.order.number }}</span>
-            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested) { <span class="sl-tag">Partner</span> }</span>
+            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }</span>
             @if (lines.facts.length) {
               <span class="sl-psub">@for (part of lines.facts; track $index) {@if (!$first) { · }<span class="sl-part" [class]="part.cls ? salesTone(part.cls) : ''">{{ part.text }}</span>}</span>
             }
@@ -713,7 +713,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                   <select class="sl-select__native" aria-label="Filter op klant" [ngModel]="customerFilter()" (ngModelChange)="customerFilter.set($event)">
                     <option [ngValue]="''">Alle klanten</option>
                     @for (customer of customersWithOrders(); track customer.id) {
-                      <option [ngValue]="customer.id">{{ customer.company }}</option>
+                      <option [ngValue]="customer.id">{{ customerLabel(customer.id) }}</option>
                     }
                   </select>
                 </label>
@@ -1301,7 +1301,25 @@ export class SalesList {
   });
 
   readonly activeCustomerLabel = computed(() =>
-    this.customerById().get(this.customerFilter() as number)?.company ?? 'Alle klanten');
+    this.customerFilter() === '' ? 'Alle klanten' : this.customerLabel(this.customerFilter() as number));
+
+  /** The company, with its city when another customer carries the same name (two "Entego"s: Mol and Tessenderlo-Ham). */
+  private readonly customerLabels = computed(() => {
+    const byName = new Map<string, number>();
+    for (const customer of this.customers()) {
+      const name = customer.company.trim().toLowerCase();
+      byName.set(name, (byName.get(name) ?? 0) + 1);
+    }
+    const labels = new Map<number, string>();
+    for (const customer of this.customers()) {
+      const twin = (byName.get(customer.company.trim().toLowerCase()) ?? 0) > 1;
+      labels.set(customer.id, twin && customer.city ? customer.company + ' · ' + customer.city : customer.company);
+    }
+    return labels;
+  });
+  customerLabel(id: number): string {
+    return this.customerLabels().get(id) ?? this.customerById().get(id)?.company ?? 'Geen klant';
+  }
 
   readonly activeFilterCount = computed(() =>
     (this.filter() ? 1 : 0) + (this.attentionOnly() ? 1 : 0) + (this.customerFilter() !== '' ? 1 : 0)
@@ -1787,7 +1805,7 @@ export class SalesList {
   readonly customerSections = computed(() =>
     customerSections(this.groupedRows(), (id) => this.customerCompany(id), invoiceReceivable, todayIso()));
   private customerCompany(id: number | null): string {
-    return (id === null ? undefined : this.customerById().get(id)?.company) ?? 'Geen klant';
+    return id === null ? 'Geen klant' : this.customerLabel(id);
   }
 
   /** The bell's website items per document: the reasons they add to the amber line (the other kinds repeat todo()). */

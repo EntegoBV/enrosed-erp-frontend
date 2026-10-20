@@ -194,3 +194,11 @@ test('the desk row menu gives focus back to the row or ⋯ it came from when it 
   assert.match(menu, /private readonly opener = document\.activeElement instanceof HTMLElement && document\.activeElement !== document\.body/);
   assert.match(menu, /inject\(DestroyRef\)\.onDestroy\(\(\) => \{[\s\S]*?if \(!opener \|\| !this\.desktop\.active\(\)\) return;[\s\S]*?if \(opener\.isConnected && \(!active \|\| active === document\.body\)\) opener\.focus\(\{ preventScroll: true \}\);/);
 });
+
+test('two customers with one name read with their city, and a partner document carries one partner tag', () => {
+  assert.equal((template.match(/<option \[ngValue\]="customer\.id">\{\{ customerLabel\(customer\.id\) \}\}<\/option>/g) ?? []).length, 2, 'desk chip and phone Filters sheet');
+  assert.match(source, /labels\.set\(customer\.id, twin && customer\.city \? customer\.company \+ ' · ' \+ customer\.city : customer\.company\);/);
+  assert.match(source, /return id === null \? 'Geen klant' : this\.customerLabel\(id\);/, 'the customer head uses the same label');
+  assert.equal((template.match(/@if \(partner\(row\.order\) && !nested && channelCode\(row\.order\.salesChannel\) !== 'PARTNER'\) \{ <span class="sl-tag">Partner<\/span> \}/g) ?? []).length, 2,
+    'no "Partner" tag beside the "Partner & veiling" channel tag, desk and phone');
+});
