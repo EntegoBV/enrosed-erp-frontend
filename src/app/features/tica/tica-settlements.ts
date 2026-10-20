@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, computed, inject, input, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TicaApi, TicaSettlement, TicaSettlementWrite } from '../../core/api/tica-api';
 import { BankingApi, BankStatementLine } from '../../core/api/banking-api';
 import { messageOf } from '../../core/api/errors';
@@ -10,8 +10,12 @@ import { OdooImportMonitor } from '../finance/odoo-import-monitor';
 import { Icon } from '../../shared/icon';
 import { Sheet, Ui, confirmLeave } from '../../shared/ui';
 import { Skeleton } from '../../shared/skeleton';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { LoadError } from '../../shared/load-error';
 import { ticaDate, ticaMoment, ticaRangeError, ticaToday, validTicaDay } from './tica-format';
 import { SettlementAmounts, settlementDifference, ticaBankCandidates, ticaSettlementReady } from './tica-settlement-rules';
+import { settlementNote, settlementPeriod, settlementSections, settlementStatus, type SettlementFilter } from './tica-list-model';
 
 type SettlementDraft = Omit<TicaSettlementWrite, keyof SettlementAmounts> & SettlementAmounts;
 const emptyDraft = (): SettlementDraft => ({ reference: '', location: 'TICA - Brussel', documentDate: ticaToday(), dueDate: null,
@@ -21,13 +25,20 @@ const emptyDraft = (): SettlementDraft => ({ reference: '', location: 'TICA - Br
 @Component({
   selector: 'app-tica-settlements',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, Sheet, Skeleton, OdooImportMonitor],
+  imports: [FormsModule, RouterLink, Icon, Sheet, Skeleton, ContextMenu, LoadError, OdooImportMonitor],
   templateUrl: './tica-settlements.html',
   styleUrl: './tica-settlements.scss',
 })
 export class TicaSettlements {
+  /** The page's layout, search and status filter; the list shows only on the Afrekeningen tab, the sheets always. */
+  readonly desk = input(true);
+  readonly query = input('');
+  readonly filter = input<SettlementFilter>('all');
+  readonly showList = input(true);
+  private readonly pdfInput = viewChild<ElementRef<HTMLInputElement>>('pdfInput');
   private readonly api = inject(TicaApi);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly banking = inject(BankingApi);
   private readonly ui = inject(Ui);
   private readonly destroyRef = inject(DestroyRef);
@@ -42,6 +53,7 @@ export class TicaSettlements {
   readonly draft = signal<SettlementDraft>(emptyDraft());
   readonly previewWarnings = signal<string[]>([]);
   readonly uploading = signal(false);
+  readonly uploadError = signal<string | null>(null);
   readonly downloading = signal(false);
   readonly bankLoading = signal(false);
   readonly bankError = signal<string | null>(null);
@@ -53,9 +65,12 @@ export class TicaSettlements {
   readonly difference = computed(() => settlementDifference(this.draft()));
   readonly candidates = computed(() => ticaBankCandidates(this.bankLines(), this.selected()?.netReceivable ?? 0, this.bankSearch()));
   readonly selectedBank = computed(() => this.candidates().find(line => line.id === this.bankChoice()) ?? null);
-  readonly openTotal = computed(() => this.rows().filter(row => row.status === 'OPEN').reduce((total, row) => total + row.netReceivable, 0));
-  readonly paidTotal = computed(() => this.rows().filter(row => row.status === 'PAID').reduce((total, row) => total + row.netReceivable, 0));
-  readonly commissionTotal = computed(() => this.rows().filter(row => row.status !== 'DRAFT').reduce((total, row) => total + row.commissionExcl, 0));
+  /** The first load answered (also when it failed): counts and sums may show. */
+  readonly ready = signal(false);
+  readonly sections = computed(() => settlementSections(this.rows(), this.query(), this.filter()));
+  readonly rowMenu = signal<{ row: TicaSettlement; point: MenuPoint | null } | null>(null);
+  readonly status = settlementStatus;
+  readonly period = settlementPeriod;
   readonly euro = (amount: number) => new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(amount);
   readonly day = ticaDate;
   readonly moment = ticaMoment;
@@ -91,7 +106,38 @@ export class TicaSettlements {
       if (id && !this.editing() && !this.selected()) { const row = rows.find(row => row.id === id); if (row) this.show(row); }
     } }
     catch (failure) { if (!this.destroyRef.destroyed) this.error.set(messageOf(failure, 'De TICA-afrekeningen konden niet worden geladen.')); }
-    finally { if (!this.destroyRef.destroyed) this.loading.set(false); }
+    finally { if (!this.destroyRef.destroyed) { this.loading.set(false); this.ready.set(true); } }
+  }
+  /** "Creditnota toevoegen" in the page's toolbar or menu: the PDF picker of this component. */
+  pickDocument(): void {
+    if (!this.uploading()) this.pdfInput()?.nativeElement.click();
+  }
+  note(row: TicaSettlement): { text: string; tone: string | null } | null {
+    return settlementNote(row, ticaSettlementReady(row), ticaToday());
+  }
+  openMenu(event: MouseEvent | null, row: TicaSettlement): void {
+    event?.stopPropagation();
+    const rect = (event?.currentTarget as HTMLElement | undefined)?.getBoundingClientRect();
+    this.rowMenu.set({ row, point: rect ? { x: Math.max(8, rect.right - 260), y: rect.bottom + 4 } : null });
+  }
+  menuItems(row: TicaSettlement): ContextMenuItem[] {
+    return [
+      { id: 'open', label: 'Openen', hint: `${this.statusLabel(row)} · ${this.euro(row.netReceivable)}`, iconName: 'document' },
+      ...(row.sourceDocumentUrl ? [{ id: 'download', label: 'Broncreditnota downloaden', iconName: 'download' }] : []),
+      ...(row.status === 'DRAFT' && !row.sourceKey ? [{ id: 'edit', label: 'Wijzigen', iconName: 'pencil' }] : []),
+      ...(row.status === 'DRAFT' ? [{ id: 'confirm', label: 'Afrekening boeken', iconName: 'tick', disabled: !this.canConfirm(row) }] : []),
+      ...(row.status === 'OPEN' ? [{ id: 'bank', label: 'Bankontvangst koppelen', iconName: 'bank' }] : []),
+      ...(row.commissionCostId ? [{ id: 'cost', label: 'Geboekte commissie', iconName: 'receipt' }] : []),
+    ];
+  }
+  pick(row: TicaSettlement, id: string): void {
+    this.rowMenu.set(null);
+    if (id === 'download') { void this.download(row); return; }
+    this.show(row);
+    if (id === 'edit') this.edit();
+    else if (id === 'confirm') this.confirm();
+    else if (id === 'bank') void this.openBank();
+    else if (id === 'cost') void this.router.navigate(['/costs'], { queryParams: { view: 'costs', tab: 'company', cost: row.commissionCostId } });
   }
   startNew(): void {
     this.selected.set(null); this.actionError.set(null); this.previewWarnings.set([]);
@@ -114,7 +160,7 @@ export class TicaSettlements {
   async upload(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement, file = input.files?.[0]; input.value = '';
     if (!file || this.uploading() || this.busy()) return;
-    this.uploading.set(true); this.error.set(null);
+    this.uploading.set(true); this.uploadError.set(null);
     try {
       const preview = await this.api.previewSettlementDocument(file);
       if (this.destroyRef.destroyed) return;
@@ -123,7 +169,7 @@ export class TicaSettlements {
       this.draft.set({ ...emptyDraft(), ...values, documentNote: null });
       this.previewWarnings.set(preview.warnings ?? []);
     } catch (failure) {
-      if (!this.destroyRef.destroyed) this.error.set(messageOf(failure, 'De creditnota kon niet worden ingelezen. Voeg de afrekening handmatig toe.'));
+      if (!this.destroyRef.destroyed) this.uploadError.set(messageOf(failure, 'De creditnota kon niet worden ingelezen. Voeg de afrekening handmatig toe.'));
     } finally { if (!this.destroyRef.destroyed) this.uploading.set(false); }
   }
   async saveDraft(): Promise<boolean> {

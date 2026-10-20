@@ -19,6 +19,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'Voorschotten blijven financiering tot de slotafrekening. Oude documenten kunnen nog actuele productprijzen gebruiken.',
     'Omzet, marge, pijplijn en geaccepteerd zijn excl. btw; gefactureerd, ontvangen, open en vervallen incl. btw.',
     'TICA telt apart mee als verkoopkanaal, op de verkoopdatum en na korting excl. btw. De afrekening en bankontvangst tellen niet opnieuw als omzet. TICA-marges gebruiken de huidige productkost; bij ontbrekende productkosten is de marge onvolledig.',
+    'De TICA-kaart telt niets op: gemiddelden, korting en producten komen uit de TICA-regels van dezelfde periode (hoogstens de laatste 366 dagen).',
   ],
   inventory: [
     'Een actuele momentopname uit de productkaart en open inkooporders; het tempo komt van de facturen van de laatste 90 dagen.',

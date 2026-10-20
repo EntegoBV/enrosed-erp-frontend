@@ -26,6 +26,7 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
+import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
@@ -701,6 +702,59 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             </div>
           </section>
         </div>
+        <!-- TICA: what its channel row cannot say (averages, discount, products, vestigingen); omzet stays in Omzet per kanaal. -->
+        @if (!loading() && ticaLines()) {
+          @let tc = ticaCard();
+          <section class="an-card an-tica" aria-labelledby="an-tica-title">
+            <header class="an-card__head"><h2 class="an-card__title" id="an-tica-title">TICA</h2><span class="an-card__sub">na korting excl. btw</span>
+              <span class="an-card__trail"><a class="an-link" routerLink="/tica" [queryParams]="ticaQuery()">TICA verkopen ›</a></span></header>
+            <div class="an-card__body">
+              @if (tc.state === 'loading') {
+                <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" />
+              } @else if (tc.state === 'failed' || !tc.data) {
+                <p class="an-empty">TICA-regels konden niet worden geladen.</p>
+                <button class="an-more" type="button" (click)="loadTicaCard(ticaLines()!)">Opnieuw proberen</button>
+              } @else {
+                @let t = tc.data;
+                <dl class="an-tica__figs">
+                  <div><dt>Gem. per stuk</dt><dd>{{ t.perPieceEur === null ? '—' : (t.perPieceEur | eur) }}</dd><dd class="an-tica__sub">{{ t.pieces | num }} st</dd></div>
+                  <div><dt>Gem. per verkoop</dt><dd>{{ t.perSaleEur === null ? '—' : (t.perSaleEur | eur) }}</dd><dd class="an-tica__sub">{{ plural(t.transactions, 'verkoop', 'verkopen') }}</dd></div>
+                  <div><dt>Korting</dt><dd>{{ whole(t.discountEur) }}</dd><dd class="an-tica__sub">op {{ whole(t.netEur + t.discountEur) }} bruto</dd></div>
+                  <div [class.is-warn]="t.unmatchedLines > 0"><dt>Niet herkend</dt><dd>{{ plural(t.unmatchedLines, 'regel', 'regels') }}</dd><dd class="an-tica__sub">zonder ERP-product</dd></div>
+                </dl>
+                <div class="an-tica__lists" [class.an-tica__lists--two]="t.locations.length > 1">
+                  <div>
+                    <h3 class="an-tica__h">Producten</h3>
+                    @for (product of take('tica', t.products); track product.key) {
+                      <a class="an-row" [class.an-row--chev]="!!product.productId" [class.mo-fade]="$index >= listLimit()"
+                         [routerLink]="product.productId ? ['/products', product.productId] : '/tica'" [queryParams]="product.productId ? null : ticaQuery()">
+                        <span class="an-rank">{{ $index + 1 }}</span>
+                        <span class="an-row__body"><span class="an-row__title">{{ product.name }}</span>
+                          <span class="an-row__sub">{{ product.pieces | num }} st · gem. {{ product.perPieceEur === null ? '—' : (product.perPieceEur | eur) }}@if (!product.productId) { · niet herkend }</span></span>
+                        <span class="an-row__end"><span class="an-row__value">{{ whole(product.netEur) }}</span></span>
+                        @if (product.productId) { <span class="an-row__chev" aria-hidden="true">›</span> }
+                      </a>
+                    } @empty { <p class="an-empty">Geen TICA-regels in deze periode.</p> }
+                    <ng-container *ngTemplateOutlet="more; context: { key: 'tica', total: t.products.length }" />
+                    @if (!t.complete) { <p class="an-empty">Producten uit de nieuwste 5.000 regels.</p> }
+                  </div>
+                  @if (t.locations.length > 1) {
+                    <div>
+                      <h3 class="an-tica__h">Vestigingen</h3>
+                      @for (place of t.locations; track place.location) {
+                        <div class="an-row an-row--nolead">
+                          <span class="an-row__body"><span class="an-row__title">{{ place.location }}</span>
+                            <span class="an-row__sub">{{ plural(place.transactions, 'verkoop', 'verkopen') }} · {{ place.pieces | num }} st</span></span>
+                          <span class="an-row__end"><span class="an-row__value">{{ whole(place.netEur) }}</span></span>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          </section>
+        }
       }
 
       @if (section() === 'inventory') {
@@ -1341,6 +1395,13 @@ export class AnalysesPage {
   readonly stockProducts = computed(() => { const levels = this.stockLevels(); return levels ? withAllLocations(this.products(), levels) : this.products(); });
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly ticaDays = signal<TicaAnalyticsDay[]>([]);
+  /**
+   * Verkoop's TICA card: the period's lines (loaded when the tab shows and TICA sold in the period), keyed by their
+   * range so a newer period wins; omzet and transacties stay in Omzet per kanaal.
+   */
+  readonly ticaLines = computed(() => (this.section() === 'sales' && !this.loading()
+    ? ticaLineRange(this.salesFromDate(), this.salesToDate(), this.ticaDays(), this.today()) : null));
+  readonly ticaCard = signal<{ key: string; state: 'loading' | 'ready' | 'failed'; data: TicaBreakdown | null }>({ key: '', state: 'loading', data: null });
   readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
   readonly partnerSummaries = signal<PartnerFinancing[]>([]);
   readonly customers = signal<Customer[]>([]);
@@ -1685,6 +1746,10 @@ export class AnalysesPage {
 
   constructor() {
     this.cashState.attach(this.cashPage, this.loading, this.today, this.schedulesNeeded);
+    effect(() => {
+      const range = this.ticaLines();
+      if (range && untracked(this.ticaCard).key !== `${range.from}|${range.to}`) untracked(() => void this.loadTicaCard(range));
+    });
     /* The page's data load the first time a data tab shows; Markt and Bezoekers never trigger it (critique B6). */
     effect(() => {
       const section = this.section();
@@ -1833,6 +1898,22 @@ export class AnalysesPage {
   dataTab(section: AnalysisSection): boolean { return DATA_TABS.has(section); }
   /** A source whose last load failed: its figures read "—" instead of zero. */
   failed(label: string): boolean { return this.dataWarnings().includes(label); }
+
+  async loadTicaCard(range: { from: string; to: string }): Promise<void> {
+    const key = `${range.from}|${range.to}`;
+    this.ticaCard.set({ key, state: 'loading', data: null });
+    try {
+      const page = await this.tica.allSales(range.from, range.to, 5000);
+      if (this.ticaCard().key === key) this.ticaCard.set({ key, state: 'ready', data: ticaBreakdown(page, page.lines, page.complete) });
+    } catch {
+      if (this.ticaCard().key === key) this.ticaCard.set({ key, state: 'failed', data: null });
+    }
+  }
+  /** TICA verkopen for the same period ('Alle' and periods past 366 days open at the card's own range). */
+  ticaQuery(): Record<string, string> {
+    const range = this.ticaLines();
+    return range ? { from: range.from, to: range.to } : {};
+  }
   signedWhole(value: number): string { return value < 0 ? this.whole(value) : `+\u00a0${this.whole(value)}`; }
   /** A purchase order by its container name (containerName()), from the loaded orders or the report row. */
   containerOf(orderId: number, number: string, alias: string | null): string {
@@ -1920,6 +2001,9 @@ export class AnalysesPage {
       this.loadedAt.set(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
     } finally {
       this.data.set('ready');
+      /* Vernieuwen: a TICA card already on screen loads its lines again (a first load starts it from the effect). */
+      const range = this.ticaLines();
+      if (range && this.ticaCard().key === `${range.from}|${range.to}`) void this.loadTicaCard(range);
     }
   }
 

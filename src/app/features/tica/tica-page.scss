@@ -1,149 +1,109 @@
-:host { display: block; min-width: 0; }
-.tica-content { max-width: 1440px; }
-.tica-connection, .tica-register { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.tica-connection { margin-bottom: 24px; }
-.tica-connection-main { display: flex; align-items: center; gap: 14px; padding: 20px; }
-.tica-mark { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; background: var(--rose-soft); color: var(--rose-dark); }
-.tica-connection-text { flex: 1; min-width: 0; }
-.tica-connection-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.tica-connection-heading h2, .tica-section-heading h2 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
-.tica-connection-text p { margin-top: 6px; color: var(--muted); font-size: 12px; }
-.tica-connection-text p strong { font-weight: 500; color: var(--ink-2); }
-.tica-status { padding: 3px 8px; background: var(--surface-2); color: var(--muted); border-radius: 20px; font-size: 11px; font-weight: 600; }
-.tica-status--ready { color: var(--rose-dark); background: var(--rose-soft); }
-.tica-status--warn { color: var(--warn); background: var(--warn-soft); }
-.tica-sync { flex: none; }
-.tica-connection-hint { margin: -4px 20px 18px 78px; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.tica-notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 20px 16px; padding: 12px 14px; border-radius: var(--r-sm); font-size: 13px; overflow-wrap: anywhere; }
-.tica-notice app-icon { flex: none; align-self: flex-start; margin-top: 2px; }
-.tica-notice span { flex: 1; min-width: 0; }
-.tica-notice small { display: block; margin-top: 4px; }
-.tica-notice--error { color: var(--danger); background: var(--danger-soft); }
-.tica-notification-summary { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding: 13px 20px; color: var(--muted); }
-.tica-notification-summary > span { flex: 1; min-width: 0; }
-.tica-notification-summary strong { color: var(--ink-2); font-size: 12px; font-weight: 600; }
-.tica-notification-summary small { font-size: 11px; margin-left: 10px; }
-.tica-text-button { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 8px 0 8px 8px; border: 0; background: transparent; color: var(--rose-dark); font-size: 12px; font-weight: 600; cursor: pointer; }
-.tica-device-warning { display: flex; gap: 8px; padding: 0 20px 16px; font-size: 12px; color: var(--warn); }
-.tica-device-warning app-icon { flex: none; margin-top: 2px; }
-.tica-device-warning a { color: inherit; font-weight: 600; }
-.tica-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 20px 16px; }
-.tica-section-heading p { margin-top: 3px; color: var(--muted); font-size: 12px; }
-.tica-source { padding: 5px 9px; font-size: 11px; color: var(--muted); background: var(--surface-2); border-radius: 6px; white-space: nowrap; }
-.tica-filters { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 0 20px 20px; }
-.tica-date-fields { display: flex; align-items: flex-end; gap: 10px; }
-.tica-date-fields .field { min-width: 0; margin: 0; }
-.tica-settings .field > span, .tica-date-fields .field > span { color: var(--ink-2); font-size: 12px; font-weight: 600; }
-.tica-date-fields .input { width: 162px; min-height: 40px; }
-.tica-date-fields .btn { min-height: 40px; }
-.tica-presets { display: flex; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 10px; }
-.tica-presets button { min-height: 32px; padding: 5px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 550; cursor: pointer; }
-.tica-presets button:hover { background: var(--surface); }
-.tica-inline-error { margin: -8px 20px 16px; color: var(--danger); font-size: 12px; }
-.tica-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 20px 20px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.tica-metrics > div { padding: 16px 18px; }
-.tica-metrics > div + div { border-left: 1px solid var(--line); }
-.tica-metrics dt { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
-.tica-metrics dd { font-size: clamp(19px, 2vw, 26px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.03em; white-space: nowrap; }
-.tica-metrics > div:first-child dd { color: var(--rose-dark); }
-.tica-matching-note { display: flex; align-items: flex-start; gap: 8px; margin: -2px 20px 18px; font-size: 12px; color: var(--muted); }
-.tica-matching-note app-icon { flex: none; margin-top: 1px; }
-.tica-table-wrap { overflow-x: auto; }
-.tica-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tica-table th { background: var(--surface-2); padding: 11px 20px; font-size: 11px; color: var(--muted); font-weight: 600; text-align: left; border-block: 1px solid var(--line); white-space: nowrap; }
-.tica-table th.right, .tica-table td.right { text-align: right; }
-.tica-table th small { display: block; font-size: 10px; font-weight: 400; margin-top: 2px; }
-.tica-table td { padding: 16px 20px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.tica-table td:nth-child(1) { width: 27%; min-width: 210px; }
-.tica-table td:nth-child(2) { width: 40%; min-width: 180px; overflow-wrap: anywhere; }
-.tica-table td.num { white-space: nowrap; }
-.tica-table td strong { display: block; font-size: 12px; font-weight: 650; }
-.tica-table td span, .tica-table td small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
-.tica-article-code { font-family: var(--mono); }
-.tica-product-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; margin-top: 4px; text-decoration: none; }
-.tica-product-link:hover { text-decoration: underline; }
-.tica-unmatched { color: var(--warn) !important; }
-.tica-mobile-sales { display: none; }
-.tica-list-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; }
-.tica-list-foot p { font-size: 12px; color: var(--muted); }
-.tica-empty { text-align: center; padding: 30px 20px 38px; }
-.tica-empty > span { display: inline-grid; place-items: center; width: 58px; height: 58px; background: var(--surface-2); color: var(--muted); border-radius: 18px; margin-bottom: 13px; }
-.tica-empty h3 { font-size: 15px; }
-.tica-empty p { color: var(--muted); font-size: 12px; margin-top: 5px; }
-.tica-source-note { font-size: 11px; line-height: 1.6; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--line); padding: 13px 20px; }
-.tica-loading { padding: 0 20px 20px; }
-.tica-settings-intro { font-size: 13px; line-height: 1.6; color: var(--muted); margin-bottom: 18px; }
-.tica-settings .tica-notice { margin: 0 0 16px; }
-.tica-mode-options { padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.tica-mode { display: flex; align-items: center; gap: 12px; padding: 15px; cursor: pointer; }
-.tica-mode + .tica-mode { border-top: 1px solid var(--line); }
-.tica-mode:has(input:checked) { background: var(--rose-soft); }
-.tica-mode input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--rose); }
-.tica-mode strong { display: block; font-size: 13px; font-weight: 650; }
-.tica-mode small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.tica-time { margin-top: 20px; }
-.tica-time .input { width: 150px; }
-.tica-settings-hint { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 10px; }
-.tica-device-link { display: flex; align-items: center; gap: 10px; padding: 16px 0 4px; margin-top: 16px; border-top: 1px solid var(--line); font-size: 13px; text-decoration: none; }
-.tica-device-link span { flex: 1; }
-.tica-settings-foot { display: flex; width: 100%; justify-content: flex-end; gap: 10px; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
-@media (max-width: 679px) {
-  .tica-settings { padding: 8px 16px 20px; }
-  .tica-connection { margin-bottom: 22px; }
-  .tica-connection-main { padding: 16px; gap: 12px; flex-wrap: wrap; }
-  .tica-mark { width: 40px; height: 40px; }
-  .tica-connection-text { flex-basis: calc(100% - 52px); }
-  .tica-connection-heading { gap: 5px; flex-direction: column; align-items: flex-start; }
-  .tica-connection-heading h2 { font-size: 15px; }
-  .tica-connection-text p { font-size: 11px; }
-  .tica-connection-text p strong { display: block; margin-top: 2px; }
-  .tica-sync { width: 100%; min-height: 44px; margin-top: 2px; }
-  .tica-connection-hint { margin: -2px 16px 16px; }
-  .tica-notification-summary { padding: 12px 16px; gap: 9px; }
-  .tica-notification-summary small { display: block; margin: 3px 0 0; }
-  .tica-text-button { min-height: 44px; font-size: 11px; }
-  .tica-device-warning { padding: 0 16px 16px; font-size: 11px; }
-  .tica-section-heading { padding: 16px; align-items: flex-start; }
-  .tica-section-heading h2 { font-size: 15px; }
-  .tica-section-heading p { font-size: 11px; }
-  .tica-source { font-size: 10px; padding: 4px 7px; }
-  .tica-filters { display: block; padding: 0 16px 16px; }
-  .tica-date-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .tica-date-fields .input { width: 100%; max-width: 100%; min-width: 0; min-height: 44px; padding-inline: 8px; }
-  .tica-date-fields .btn { grid-column: 1 / -1; min-height: 44px; }
-  .tica-presets { margin-top: 12px; }
-  .tica-presets button { flex: 1; min-height: 36px; padding: 5px 7px; }
-  .tica-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 16px 16px; }
-  .tica-metrics > div { padding: 13px; }
-  .tica-metrics > div:nth-child(3) { border-left: 0; }
-  .tica-metrics > div:nth-child(n+3) { border-top: 1px solid var(--line); }
-  .tica-metrics dd { font-size: 23px; }
-  .tica-matching-note { margin: 0 16px 16px; font-size: 11px; }
-  .tica-table-wrap { display: none; }
-  .tica-mobile-sales { display: block; list-style: none; padding: 0; margin: 0; }
-  .tica-sale { padding: 16px; border-top: 1px solid var(--line); }
-  .tica-sale-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; font-size: 10px; color: var(--muted); margin-bottom: 9px; }
-  .tica-sale-heading { display: flex; align-items: flex-start; gap: 12px; }
-  .tica-sale-heading > div { flex: 1; min-width: 0; }
-  .tica-sale-heading strong { display: block; font-size: 13px; line-height: 1.5; font-weight: 650; overflow-wrap: anywhere; }
-  .tica-sale-heading span { display: block; font-family: var(--mono); color: var(--muted); font-size: 11px; margin-top: 3px; overflow-wrap: anywhere; }
-  .tica-sale-heading > b { flex: none; border-radius: 8px; background: var(--surface-2); padding: 4px 7px; font-size: 11px; font-weight: 600; }
-  .tica-sale-values { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 0; }
-  .tica-sale-values > div { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
-  .tica-sale-values dt { color: var(--muted); font-size: 11px; }
-  .tica-sale-values dd { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .tica-sale-foot { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
-  .tica-sale-foot small { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
-  .tica-sale-foot .tica-product-link { min-height: 32px; align-items: center; margin: -8px 0; }
-  .tica-list-foot { padding: 12px 16px 16px; flex-wrap: wrap; border-top: 1px solid var(--line); }
-  .tica-list-foot .btn { width: 100%; min-height: 44px; }
-  .tica-source-note { padding: 12px 16px; font-size: 10px; }
-  .tica-notice { margin-inline: 16px; font-size: 12px; flex-wrap: wrap; }
-  .tica-notice .btn { min-height: 40px; }
-  .tica-inline-error { margin-inline: 16px; }
-  .tica-settings-foot > .btn { flex: 1; }
-  .tica-mode { padding: 16px 14px; }
-  .tica-mode strong { font-size: 14px; }
-  .tica-device-link { min-height: 48px; }
+/* ==========================================================================
+   TICA verkopen (/tica) on the list recipe of Inkoop and Verkoop (2026-10-20).
+   Desk: tabs, search and the import state in the toolbar, chips and sums in
+   the subbar, one kit table per tab (sales per day, settlements per state).
+   Phone: segmented, one search row with the filter button, quick chips,
+   inset sections. Encapsulation is off: every rule hangs on app-tica-page and
+   kit classes are never restyled bare. The settlement sheets keep their own
+   component styles (tica-settlements.scss).
+   ========================================================================== */
+
+app-tica-page{display:block;min-width:0}
+app-tica-page .tl-warn{color:var(--warn);font-weight:650}
+app-tica-page .tl-ok{color:var(--ok);font-weight:650}
+app-tica-page .tl-link{color:var(--rose-dark);font-size:12.5px;font-weight:650;text-decoration:none;white-space:nowrap}
+app-tica-page .tl-link:hover{text-decoration:underline;text-underline-offset:2px}
+app-tica-page .tl-foot{margin:12px 4px 0;color:var(--muted);font-size:12px;line-height:1.45}
+app-tica-page .tl-busy{margin:10px 4px 0;color:var(--muted);font-size:12.5px}
+app-tica-page .tl-import{margin-top:16px}
+
+/* ---- desk toolbar: the search gives way first; the import state is one pill with its refresh button */
+app-tica-page .tl-search{flex:none;width:260px;min-width:0}
+@media (max-width:1180px){app-tica-page .tl-search{width:170px}}
+@media (min-width:680px) and (max-width:1279.98px){app-tica-page .tl-wide{display:none}}
+app-tica-page .tl-sync{flex:none;gap:6px;padding-right:3px;white-space:nowrap}
+app-tica-page .tl-sync__go{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
+app-tica-page .tl-sync__go:hover:not(:disabled){background:color-mix(in srgb,currentColor 12%,transparent)}
+app-tica-page .tl-sync__go:disabled{opacity:.45;cursor:default}
+app-tica-page .tl-sync__go:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
+@media (min-width:680px) and (max-width:1099.98px){app-tica-page .tl-sync__text{display:none}}
+
+/* ---- subbar: wraps on a narrow desk; the table head sticks under its measured height */
+app-tica-page .tl-subbar{flex-wrap:wrap;row-gap:6px;padding-block:4px}
+app-tica-page .tl-subbar~*{--wk-sticky-top:calc(var(--appbar-h,0px) + var(--tl-subbar-h,var(--wk-subbar-h,48px)))}
+app-tica-page .tl-subbar__end{white-space:nowrap}
+app-tica-page .tl-subbar__end b{color:var(--ink);font-weight:700}
+app-tica-page .tl-clear{flex:none;color:var(--rose-dark)}
+app-tica-page .tl-period{left:0;right:auto;width:300px}
+app-tica-page .tl-period__fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+app-tica-page .tl-period .field{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--ink-2)}
+app-tica-page .tl-period .input{min-width:0;padding-inline:8px}
+app-tica-page .tl-select{position:relative;max-width:220px}
+app-tica-page .tl-select__label{min-width:0;overflow:hidden;text-overflow:ellipsis}
+app-tica-page .tl-select__native{position:absolute;inset:0;width:100%;height:100%;opacity:0;font:inherit;cursor:pointer}
+app-tica-page .tl-select:has(>.tl-select__native:focus-visible){outline:2px solid var(--rose);outline-offset:2px}
+
+/* ---- desk tables: Artikel · Product · Stuks · Omzet · ⋯ and Creditnota · Status · Commissie · Netto · ⋯ */
+app-tica-page .tl-card{container:wk-pane/inline-size}
+app-tica-page .tl-table{--wk-cols:minmax(240px,3fr) minmax(110px,1fr) 64px 124px 32px}
+app-tica-page .tl-table--settle{--wk-cols:minmax(240px,2.4fr) minmax(170px,1.4fr) 140px 132px 32px}
+app-tica-page .tl-fold{display:none}
+@container wk-pane (max-width:859.98px){
+  app-tica-page .tl-table{--wk-cols:minmax(220px,1fr) 56px 124px 32px}
+  app-tica-page .tl-table--settle{--wk-cols:minmax(200px,1.6fr) minmax(160px,1fr) 132px 32px}
+  app-tica-page .tl-fold{display:inline}
 }
+app-tica-page .tl-group__name{color:var(--ink);font-weight:700}
+app-tica-page .tl-rowwrap{position:relative}
+app-tica-page .tl-row{width:100%;min-height:52px;align-items:center;padding-block:0;border-inline:0;border-top:0;font:inherit;text-align:left;text-decoration:none}
+app-tica-page button.tl-row{cursor:pointer}
+app-tica-page button.tl-row:hover{background:color-mix(in srgb,var(--surface-2) 60%,var(--surface))}
+app-tica-page button.tl-row:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+app-tica-page .tl-cell{display:grid;align-content:center;justify-items:start;gap:2px;min-width:0;padding-block:8px}
+app-tica-page .tl-name{font-size:13.5px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+app-tica-page .tl-sub{color:var(--muted);font-size:12px;font-weight:500;line-height:1.35}
+app-tica-page .tl-num{justify-items:end;font-size:13px;font-weight:600}
+app-tica-page .tl-total{justify-items:end;font-size:14px;font-weight:720;text-align:right;white-space:nowrap}
+app-tica-page .tl-total small{font-size:11.5px}
+app-tica-page .tl-cell .wk-pill{max-width:100%;height:auto;min-height:20px;padding-block:2px;line-height:1.3;white-space:normal}
+/* ⋯ over the last column, outside the row (no button in a button); always there on touch. */
+app-tica-page .tl-more{position:absolute;top:12px;right:var(--wk-pad-x,16px);z-index:2;opacity:0;transition:opacity var(--dur-1,120ms) var(--ease-out,ease-out)}
+app-tica-page .tl-rowwrap:hover .tl-more,app-tica-page .tl-rowwrap:focus-within .tl-more{opacity:1}
+@media (pointer:coarse){app-tica-page .tl-more{opacity:1}}
+app-tica-page .tl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
+
+/* ---- phone: segmented, search with the filter circle, quick chips, then inset sections */
+app-tica-page .tl--phone{--ios-inset:4px}
+app-tica-page .tl--phone>.tl-tabs{margin:0 var(--ios-inset) 10px}
+app-tica-page .tl-isearch{margin:0 var(--ios-inset) 8px}
+app-tica-page .tl-ichips{margin-bottom:8px}
+app-tica-page .tl-ichip__badge--warn{background:var(--warn)}
+app-tica-page .ios-chip[aria-pressed=true] .tl-ichip__badge--warn{background:#fff;color:var(--warn)}
+app-tica-page .tl-filter{position:relative;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-2);cursor:pointer;-webkit-tap-highlight-color:transparent}
+app-tica-page .tl-filter--on{background:var(--rose-soft);color:var(--rose-dark)}
+app-tica-page .tl-filter:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+app-tica-page .tl-filter__badge{position:absolute;top:2px;right:0;display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--rose);box-shadow:0 0 0 2px var(--surface);color:#fff;font-size:10.5px;font-weight:800}
+app-tica-page .tl-loading{margin:0 var(--ios-inset)}
+app-tica-page .tl-section{margin-bottom:18px}
+app-tica-page .tl-shead{color:var(--ink-2);font-size:14px;font-weight:700;line-height:1.3}
+app-tica-page .tl-prow{width:100%;align-items:flex-start;gap:10px;padding-block:9px;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+app-tica-page .tl-prow>.ios-cell__body{flex:1 1 auto;min-width:0}
+app-tica-page .tl-ptitle{display:block;font-size:15.5px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+app-tica-page .tl-psub{display:block;color:var(--muted);font-size:13px;line-height:1.35}
+app-tica-page .tl-ptrail{display:grid;flex:0 1 auto;justify-items:end;gap:3px;max-width:46%}
+app-tica-page .tl-ptrail .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;text-align:right;white-space:normal}
+app-tica-page .tl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+app-tica-page .tl-pline{color:var(--muted);font-size:12.5px;white-space:nowrap}
+app-tica-page .tl--phone .tl-foot{margin-inline:calc(var(--ios-inset) + 16px)}
+app-tica-page .tl--phone .tl-import{margin:4px var(--ios-inset) 0}
+
+/* ---- the iOS sheets (Filters, Meldingen) */
+app-tica-page .tl-fcount{margin:0 calc(var(--ios-inset,16px) + 16px) 12px;color:var(--muted);font-size:13px}
+app-tica-page .tl-fcount strong{color:var(--ink);font-weight:700}
+app-tica-page .tl-fdates{margin-top:12px}
+app-tica-page .tl-fdate{flex:none;max-width:52%;border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:16px;text-align:right}
+app-tica-page .tl-fapply .ios-cell__title{color:var(--rose-dark);font-weight:650}
+app-tica-page .tl-fnote{margin-top:-6px}
+app-tica-page .tl-sheet-error{margin:0 calc(var(--ios-inset,16px) + 16px) 12px;color:var(--danger);font-size:13px}
+app-tica-page .tl-sheet-foot{display:flex;justify-content:flex-end;gap:10px;width:100%}
+@media (max-width:679.98px){app-tica-page .tl-sheet-foot .btn{flex:1;min-height:44px}}

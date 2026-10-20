@@ -1887,6 +1887,39 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   old `sales-document-navigation` component is deleted (its types live in the
   model). Tests: `tests/sales-list-phone.test.mts`.
 
+### TICA verkopen (list recipe, 2026-10-20)
+Emre: "Die tica scherm ui ux kan beter alsook mobiel etc en desktop. Maak een betere scherm. En ook analytics niet vergeten."
+Codex's integration (205415d, fcc6084: portal import, settlements from Odoo, finance status) rebuilt on the Inkoop/Verkoop
+recipe; every function stayed, the logic of `TicaSettlements` and its sheets is unchanged.
+- Desk (`tica-page.*`, encapsulation off, every rule under `app-tica-page`): toolbar = tabs Verkopen · Afrekeningen
+  (counts; warn dot while a settlement is a draft), `wk-search` (`/`, Esc), on Verkopen the import state as one pill with
+  its refresh button ("Bijgewerkt 14:05", `syncLine`; the words hide below 1100 px), on Afrekeningen the primary
+  "Creditnota toevoegen" ("Creditnota" below 1280), and ⋯ (Nu ophalen on Afrekeningen, Afrekening handmatig toevoegen,
+  Meldingen). Subbar Verkopen: Vandaag · 7 dagen · Deze maand · Vorige maand · Periode (popover with two dates), Niet
+  herkend n, Vestiging (only with more than one), end = ready-guarded sums of what shows. Table Artikel · Product · Stuks ·
+  Omzet excl. btw · ⋯ grouped per Brussels day (sums only with more than one day); below an 860 px card Product folds into
+  the sub. Row menu: Product openen, Bon n tonen, Alle verkopen van dit artikel. The period loads whole
+  (`TicaApi.allSales`, pages of 200, at most 10 000 lines; past the cap the sums are the server's and a warn line says so).
+  Banners: status failed, ERROR with its last attempt and Opnieuw ophalen, DISABLED / NOT_CONFIGURED (info), a failed
+  start, a failed reload over kept lines.
+- Afrekeningen: status chips Alle · Te boeken · Te ontvangen · Ontvangen, end Te ontvangen · Ontvangen · Commissie (the
+  old three metrics); table Creditnota · Status · Commissie · Netto incl. btw · ⋯ grouped Te boeken / Te ontvangen /
+  Ontvangen. The status cell names what a draft still needs (`settlementNote`: Broncreditnota ontbreekt, Omzet wijkt € x
+  af, Bedragen sluiten niet aan, Klaar om te boeken), an open one's expected day, a paid one's day. Row click = Codex's
+  detail sheet; ⋯ = Openen, Broncreditnota downloaden, Wijzigen, Afrekening boeken (disabled until ready), Bankontvangst
+  koppelen, Geboekte commissie. The Odoo import monitor stays under the table. `TicaSettlements` stays mounted on both tabs
+  (`showList`) for `?settlement=` links (they open the tab) and the unsaved-change guard; upload errors have their own
+  banner with "Handmatig toevoegen".
+- Phone: large title with the caption ('7 dagen · 25 verkopen · € 1.979' / '€ x te ontvangen'), ⋯ glass circle (Nu
+  ophalen, Creditnota toevoegen, Handmatig, Meldingen), iOS segmented, search + filter circle (Filters sheet: period
+  presets and dates, Alleen niet herkend, Vestiging), period chips and Niet herkend (Verkopen) / Te boeken (Afrekeningen),
+  inset sections per day or state with one trail figure and one status. Meldingen is an iOS sheet of cells (mode, time,
+  the device link with "Nog geen toestel aangemeld", the last delivery).
+- Pure `tica-list-model.ts` (tests/tica-list-model.test.mts). Analyses › Verkoop has a TICA card (`tica-breakdown.ts`,
+  tests/tica-breakdown.test.mts): Gem. per stuk, Gem. per verkoop, Korting, Niet herkend, Producten (ERP product by id,
+  else by article code) and Vestigingen; omzet and transacties stay in Omzet per kanaal, the card adds to no total. Its
+  lines load for the period (an open start begins at the first TICA day, at most the last 366 days, 5 000 lines).
+
 ### Purchasing
 - List rows swipe left (iOS pattern) to a confirm-guarded delete; the
   buttons under a row only show while it is open, dragged or focused.

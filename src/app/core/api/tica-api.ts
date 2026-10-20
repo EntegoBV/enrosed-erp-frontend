@@ -105,10 +105,26 @@ export class TicaApi {
   status(): Promise<TicaStatus> {
     return firstValueFrom(this.http.get<TicaStatus>(api('/api/tica/status')));
   }
-  sales(from: string, to: string, page = 0): Promise<TicaSalesPage> {
+  sales(from: string, to: string, page = 0, size = 100): Promise<TicaSalesPage> {
     return firstValueFrom(this.http.get<TicaSalesPage>(api('/api/tica/sales'), {
-      params: { from, to, page, size: 100 },
+      params: { from, to, page, size },
     }));
+  }
+  /**
+   * Every line of a period (at most 366 days), in pages of the server's 200 cap: the first page's totals with all
+   * lines (by id, newest first). `complete` is false when `maxLines` stopped the paging first.
+   */
+  async allSales(from: string, to: string, maxLines = 10_000): Promise<TicaSalesPage & { complete: boolean }> {
+    const first = await this.sales(from, to, 0, 200);
+    const lines = new Map(first.lines.map((line) => [line.id, line]));
+    let page = 0;
+    while (lines.size < first.totalLines && lines.size < maxLines) {
+      const next = await this.sales(from, to, ++page, 200);
+      if (!next.lines.length) break;
+      for (const line of next.lines) lines.set(line.id, line);
+    }
+    const all = [...lines.values()].slice(0, maxLines);
+    return { ...first, lines: all, complete: all.length >= first.totalLines };
   }
   settings(): Promise<TicaSettings> {
     return firstValueFrom(this.http.get<TicaSettings>(api('/api/tica/settings')));

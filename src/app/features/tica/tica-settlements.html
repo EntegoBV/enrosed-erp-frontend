@@ -1,26 +1,100 @@
-<section class="settlements" aria-labelledby="tica-settlements-title" [attr.aria-busy]="loading() || uploading()">
-  <header class="settlements-head"><div><h2 id="tica-settlements-title">Afrekeningen & ontvangsten</h2><p>TICA-creditnota’s uit Odoo, commissie en bankuitbetaling.</p></div>
-    <div class="settlements-actions"><button class="btn btn--primary" type="button" [disabled]="uploading()" (click)="pdfInput.click()"><app-icon name="upload" [size]="16" />{{ uploading() ? 'Creditnota lezen…' : 'Creditnota toevoegen' }}</button>
-      <button class="btn" type="button" [disabled]="uploading()" (click)="startNew()">Handmatig toevoegen</button>
-      <input #pdfInput class="sr-only" type="file" accept="application/pdf,.pdf" (change)="upload($event)" aria-label="TICA-creditnota uploaden" />
+<input #pdfInput class="sr-only" type="file" accept="application/pdf,.pdf" (change)="upload($event)" aria-label="TICA-creditnota uploaden" tabindex="-1" />
+@if (showList()) {
+  @if (ready() && error(); as message) {
+    @if (rows().length) {
+      <div [class]="desk() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
+        <span [class.wk-banner__text]="desk()"><b>Afrekeningen konden niet worden vernieuwd</b> · {{ message }}</span>
+        <button [class]="desk() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" [disabled]="loading()" (click)="reload()">Opnieuw proberen</button>
+      </div>
+    }
+  }
+  @if (uploading()) { <p class="tl-busy" role="status">Creditnota lezen…</p> }
+  @if (uploadError(); as message) {
+    <div [class]="desk() ? 'wk-banner wk-banner--warn wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
+      <span [class.wk-banner__text]="desk()">{{ message }}</span>
+      <button [class]="desk() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" (click)="uploadError.set(null); startNew()">Handmatig toevoegen</button>
     </div>
-  </header>
-  <div class="settlement-import"><app-odoo-import-monitor kind="tica" /></div>
-  @if (error(); as message) { <div class="settlement-alert" role="alert"><span>{{ message }}</span><button class="btn btn--sm" type="button" [disabled]="loading()" (click)="reload()">Vernieuwen</button></div> }
-  @if (loading()) { <div class="settlement-loading"><app-skeleton kind="list" [rows]="3" /></div> }
-  @else if (rows().length) {
-    <dl class="settlement-metrics"><div><dt>Te ontvangen incl. btw</dt><dd>{{ euro(openTotal()) }}</dd></div><div><dt>Ontvangen via bank</dt><dd>{{ euro(paidTotal()) }}</dd></div><div><dt>Geboekte commissie excl. btw</dt><dd>{{ euro(commissionTotal()) }}</dd></div></dl>
-    <ul class="settlement-list">
-      @for (row of rows(); track row.id) {
-        <li><button class="settlement-row" type="button" (click)="show(row)"><span class="settlement-icon"><app-icon name="document" [size]="20" /></span>
-          <span class="settlement-main"><strong>{{ row.reference }}</strong><span>{{ row.location }} · {{ day(row.periodFrom) }} t/m {{ day(row.periodTo) }}</span><small>Creditnota van {{ day(row.documentDate) }}@if (row.sourceKey) { · Odoo }</small></span>
-          <span class="settlement-value"><strong>{{ euro(row.netReceivable) }}</strong><span class="settlement-status" [class.is-paid]="row.status === 'PAID'">{{ statusLabel(row) }}</span></span><app-icon name="chevron-right" [size]="16" />
-        </button></li>
-      }
-    </ul>
-  } @else if (!error()) { <div class="settlement-empty"><app-icon name="document" [size]="28" /><h3>Nog geen afrekeningen</h3><p>Creditnota’s worden via de Odoo-verbinding opgehaald. Je kunt ook een PDF toevoegen. Controleer daarna omzet en commissie en koppel de bankontvangst.</p></div> }
-  <p class="settlement-footnote">De verkopen tellen als omzet in kanaal TICA. Een afrekening boekt de commissie als kost; de uitbetaling is een ontvangst van die afrekening.</p>
-</section>
+  }
+  @if (!ready()) {
+    <div [class]="desk() ? 'wk-card' : 'tl-loading'" role="status" aria-label="Afrekeningen laden"><app-skeleton [kind]="desk() ? 'table' : 'group'" [rows]="4" /></div>
+  } @else if (error() && !rows().length) {
+    <div [class.wk-card]="desk()"><app-load-error title="Afrekeningen konden niet worden geladen" [message]="error()" [busy]="loading()" (retry)="reload()" /></div>
+  } @else if (!sections().length) {
+    <div [class]="desk() ? 'wk-card' : ''">
+      <div [class]="desk() ? 'wk-empty' : 'ios-empty'">
+        @if (rows().length) {
+          <h2 [class]="desk() ? 'wk-empty__title' : 'ios-empty__title'">Niets gevonden</h2>
+        } @else {
+          <h2 [class]="desk() ? 'wk-empty__title' : 'ios-empty__title'">Nog geen afrekeningen</h2>
+          <p [class]="desk() ? 'wk-empty__text' : 'ios-empty__text'">Creditnota’s komen automatisch uit Odoo. Je kunt ook een PDF toevoegen.</p>
+          <button [class]="desk() ? 'wk-btn wk-btn--primary' : 'ios-capsule ios-capsule--tinted'" type="button" (click)="pickDocument()">Creditnota toevoegen</button>
+        }
+      </div>
+    </div>
+  } @else if (desk()) {
+    <div class="wk-card tl-card">
+      <div class="wk-table tl-table tl-table--settle" role="table" aria-label="TICA-afrekeningen">
+        <div class="wk-thead" role="row">
+          <span class="wk-th" role="columnheader">Creditnota</span>
+          <span class="wk-th" role="columnheader">Status</span>
+          <span class="wk-th wk-th--num" role="columnheader" data-hide="sm" title="Commissie excl. btw">Commissie</span>
+          <span class="wk-th wk-th--num" role="columnheader">Netto incl. btw</span>
+          <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
+        </div>
+        @for (section of sections(); track section.id) {
+          <div class="wk-group" role="row">
+            <span class="wk-group__label" role="rowheader"><span class="tl-group__name">{{ section.label }}</span>
+              <span class="wk-group__count">· {{ section.rows.length }} · {{ euro(section.netEur) }}</span></span>
+          </div>
+          @for (row of section.rows; track row.id) {
+            @let state = status(row);
+            @let rowNote = note(row);
+            <div class="tl-rowwrap" role="none">
+              <button class="wk-tr wk-tr--link tl-row" type="button" role="row" (click)="show(row)" (contextmenu)="$event.preventDefault(); openMenu($event, row)">
+                <span class="wk-td wk-td--wrap tl-cell" role="cell"><b class="tl-name">{{ row.reference }}</b>
+                  <span class="tl-sub">{{ period(row.periodFrom, row.periodTo) }} · {{ row.location }}@if (row.sourceKey) { · Odoo }</span></span>
+                <span class="wk-td wk-td--wrap tl-cell" role="cell"><span class="wk-pill" [class]="'tone-' + state.tone"><span class="wk-pill__dot" aria-hidden="true"></span>{{ state.label }}</span>
+                  @if (rowNote) { <span class="tl-sub" [class.tl-warn]="rowNote.tone === 'warn'" [class.tl-ok]="rowNote.tone === 'ok'">{{ rowNote.text }}</span> }</span>
+                <span class="wk-td wk-td--num tl-cell tl-num" role="cell" data-hide="sm">{{ row.status === 'DRAFT' ? '—' : euro(row.commissionExcl) }}</span>
+                <span class="wk-td wk-td--num tl-cell tl-total" role="cell">{{ euro(row.netReceivable) }}</span>
+                <span class="wk-td" role="cell"></span>
+              </button>
+              <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon tl-more" type="button" aria-haspopup="menu"
+                      [attr.aria-label]="'Acties voor ' + row.reference" (click)="openMenu($event, row)"><app-icon name="more" [size]="16" /></button>
+            </div>
+          }
+        }
+      </div>
+    </div>
+  } @else {
+    @for (section of sections(); track section.id) {
+      <section class="ios-section tl-section">
+        <div class="ios-section__head"><span class="tl-shead" role="heading" aria-level="2">{{ section.label }}</span><span class="ios-section__trail">{{ euro(section.netEur) }}</span></div>
+        <div class="ios-group">
+          @for (row of section.rows; track row.id) {
+            @let state = status(row);
+            @let rowNote = note(row);
+            <button class="ios-cell tl-prow" type="button" (click)="show(row)" (contextmenu)="$event.preventDefault(); openMenu(null, row)">
+              <span class="ios-cell__body"><span class="tl-ptitle">{{ row.reference }}</span>
+                <span class="tl-psub">{{ period(row.periodFrom, row.periodTo) }}@if (row.sourceKey) { · Odoo }</span>
+                @if (rowNote && rowNote.tone === 'warn') { <span class="tl-psub tl-warn">{{ rowNote.text }}</span> }</span>
+              <span class="ios-cell__trail tl-ptrail"><span class="tl-ptotal">{{ euro(row.netReceivable) }}</span>
+                <span class="wk-pill" [class]="'tone-' + state.tone">{{ state.label }}</span></span>
+              <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+            </button>
+          }
+        </div>
+      </section>
+    }
+  }
+  <div class="tl-import"><app-odoo-import-monitor kind="tica" /></div>
+  <p class="tl-foot">Commissie telt één keer als kost; de uitbetaling is een ontvangst, geen tweede omzet.</p>
+}
+
+@if (rowMenu(); as menu) {
+  <app-context-menu class="tl-menu" [title]="menu.row.reference" [items]="menuItems(menu.row)" [anchor]="menu.point"
+                    [variant]="desk() ? 'default' : 'ios'" cancelLabel="Annuleren" (pick)="pick(menu.row, $event.id)" (closed)="rowMenu.set(null)" />
+}
 
 @if (editing()) {
   <app-sheet [title]="selected() ? 'Afrekening wijzigen' : 'TICA-creditnota controleren'" variant="ios" (closed)="close()">
