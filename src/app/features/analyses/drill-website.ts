@@ -81,11 +81,19 @@ export function websiteProductsView(rows: readonly WebsiteProductPageRow[], cont
   /** Σ views of the PRODUCT kind (`report.kinds`): the figure the rows add up to. */
   productViews: number;
   catalog: ReadonlyMap<string, CatalogProductMatch>;
+  /**
+   * Opened from the funnel step, whose figure is sessions: the summary names both counts, so the clicked figure
+   * shows beside the views the rows add up to.
+   */
+  productSessions?: number | null;
 }): DrillView {
+  const sessions = context.productSessions;
   return {
     id: 'website.products',
     title: 'Bekeken producten',
     scope: context.scope,
+    summary: sessions === null || sessions === undefined ? null
+      : `${sessions.toLocaleString('nl-BE')} ${sessions === 1 ? 'sessie opende' : 'sessies openden'} een productpagina · ${context.productViews.toLocaleString('nl-BE')} weergaven`,
     columns: PRODUCT_COLUMNS,
     rows: rows.map((row): DrillRow => {
       const match = context.catalog.get(row.handle.toLowerCase()) ?? null;

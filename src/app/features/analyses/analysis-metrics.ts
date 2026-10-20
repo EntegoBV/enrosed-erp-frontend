@@ -429,7 +429,7 @@ export function salesAnalysis(
       paidValueEur: round2(issuedInvoices.reduce((sum, row) => sum + invoiceReceived(row), 0)),
       outstandingValueEur: round2(outstandingInvoices.reduce((sum, row) => sum + invoiceOutstanding(row), 0)),
       overdueValueEur: round2(overdueInvoices.reduce((sum, row) => sum + row.outstandingEur, 0)),
-      averageClaimEur: regularInvoices.length ? sumInvoiceClaims(regularInvoices) / regularInvoices.length : null,
+      averageClaimEur: regularInvoices.length ? regularInvoices.reduce((sum, row) => sum + grossClaim(row), 0) / regularInvoices.length : null,
       revenueInvoiceCount: issuedInvoices.filter(isRevenueDocument).length,
       avgDaysToPaid: paymentDays.length
         ? Math.round(paymentDays.reduce((sum, days) => sum + days, 0) / paymentDays.length) : null,
@@ -1291,6 +1291,15 @@ export function documentAccounting(view: SalesOrderView): SalesAccounting {
 
 function sumInvoiceClaims(rows: readonly SalesOrderView[]): number {
   return rows.reduce((sum, row) => sum + invoiceClaim(row), 0);
+}
+
+/**
+ * An invoice's claim before its voorschotten came off: a slotfactuur adds the deducted amount back, with btw at its
+ * own rate (the deduction carries the balance's regime), so "gem. per gewone factuur" reads the whole sale.
+ */
+function grossClaim(row: SalesOrderView): number {
+  const deducted = row.advanceBilling?.stage === 'FINAL' ? finiteNonNegative(row.advanceBilling.amountExclEur) : 0;
+  return invoiceClaim(row) + deducted * (1 + finiteNonNegative(row.priced.totals.vatRatePct) / 100);
 }
 
 function missingCostLines(rows: readonly SalesOrderView[]): number {

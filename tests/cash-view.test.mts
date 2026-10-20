@@ -258,6 +258,12 @@ test('data quality, rule switches and the reconciliation note', () => {
   /* The note under Per maand is the link to what is still to link; the rest is in "Hoe gerekend" (design C.7). */
   assert.equal(plain(view.monthTableNote(exampleB(), base)), '1 nog te koppelen (− € 9.000)');
   assert.equal(view.monthTableNote(exampleB({ bankLines: BANK_LINES.map((row) => ({ ...row, allocated: true })) }), base), '');
+  /* Its link opens the list it counts: the same days (the first past month shown up to today) on the one counted account. */
+  const pastStart = base.months.find((month) => month.past)!.key.slice(0, 7);
+  assert.deepEqual(view.monthTableNoteQuery(exampleB(), base),
+    { view: 'bank', tab: 'movements', link: 'unlinked', from: `${pastStart}-01`, to: TODAY, account: K });
+  const two = exampleB({ accounts: [...accounts(), { ...accounts()[0], key: 'BE00', label: 'Spaarrekening' }] });
+  assert.equal(view.monthTableNoteQuery(two, base)['account'], undefined, 'two counted accounts: the list keeps every account');
 });
 
 test('Per maand: rows, cells and the lines behind a month', () => {

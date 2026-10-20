@@ -132,6 +132,10 @@ test('Eigen kosten: grouped in Kosten per categorie order, the open column adds 
     assert.equal(query['cat'], category.category === 'AFSCHRIJVINGEN' ? undefined : category.category, 'Kosten & bank opens on the category; Afschrijvingen has none there');
   }
   assert.equal(costsView([], [], 0, ctx).empty, 'Geen kosten in deze periode.');
+  /* A cost's charge holds the btw we cannot deduct (expenseOf): the column and the scope say so, never "excl.". */
+  assert.equal(view.columns.find((column) => column.key === 'amount')?.label, 'Kost');
+  assert.equal(view.scope, `${ctx.period} · zonder aftrekbare btw`);
+  assert.equal(generalCostsView(rows, 0, ctx).scope, `${ctx.period} · zonder aftrekbare btw`);
 });
 
 test('a month: its documents, TICA and costs add up to its result; a credit note shows none and is the gap', () => {

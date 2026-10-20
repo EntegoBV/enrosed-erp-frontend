@@ -99,6 +99,10 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
         } }
       }
     </div>
+    <!-- Phone: the tiles' ▲/▼ need their basis and the report's time too (the desk says it in the tool row). -->
+    @if (!desk.active() && source() === 'INTERNAL') { @if (report(); as r) {
+      <p class="ios-caption wa__basis">{{ compare() }} · bijgewerkt {{ timeLabel(r.generatedAt) }}</p>
+    } }
 
     @if (source() !== 'INTERNAL') {
       <app-google-website-analytics [source]="source() === 'GA4' ? 'GA4' : 'SEARCH_CONSOLE'" [days]="days()" [refreshKey]="googleRefresh()" (loadingChanged)="googleBusy.set($event)" />
@@ -347,6 +351,7 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
     .wa__live--on{border-color:color-mix(in srgb,var(--ok) 40%,var(--line));color:var(--ok)}
     .wa__live--on i{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
     .wa__state{margin:0;padding:18px;color:var(--muted);font-size:13px}.wa__state--error{color:var(--danger)}
+    .wa__basis{margin:-4px 4px 0;color:var(--muted)}
     .wa__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .wa__card{min-width:0;padding:14px 16px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
     .wa__card--wide{grid-column:1/-1}
@@ -597,7 +602,8 @@ export class WebsiteAnalytics {
 
   /** A drill funnel step: the product pages or the requests. */
   openStep(drill: 'products' | 'requests'): void {
-    if (drill === 'products') void this.openProducts();
+    /* The step counts sessions, the dialog views: it names both (rule A.4). */
+    if (drill === 'products') void this.openProducts(this.report()?.funnel.productSessions ?? null);
     else this.openRequests();
   }
 
@@ -613,7 +619,7 @@ export class WebsiteAnalytics {
   }
 
   /** Productpagina's (kind tile and funnel step): the views per product over every language (website.products). */
-  async openProducts(): Promise<void> {
+  async openProducts(productSessions: number | null = null): Promise<void> {
     const report = this.report();
     if (!report || this.productsBusy()) return;
     this.productsBusy.set(true);
@@ -624,7 +630,7 @@ export class WebsiteAnalytics {
       this.drill.open([websiteProductsView(productPageRows(report.pages), {
         scope: `${this.range().label} · ${periodRange(report.from, report.to)} · eigen meting`,
         productViews: report.kinds.find((kind) => kind.kind === 'PRODUCT')?.visits ?? 0,
-        catalog,
+        catalog, productSessions,
       })]);
     } finally {
       this.productsBusy.set(false);

@@ -511,28 +511,72 @@ const cents = (value: number): number => Math.round((Number.isFinite(value) ? va
 
 export interface UsdContainerRow {
   id: number; number: string; alias: string | null; status: PurchaseOrderView['order']['status'];
-  goodsUsd: number;
+  /** The open goods priced in dollar, and those priced in yuan (in yuan); euro prices carry no rate risk and stay out. */
+  goodsUsd: number; goodsCny: number;
+  /** The part of the supplier's goods still to pay (0–1): a paid term went at its own rate. */
+  openShare: number;
   /** The order's goods rate as dollars for € 1 (the page's direction); null without a rate. */
   orderRate: number | null;
-  /** The goods in euro as the order computed them, and at today's ECB rate; diff = today − order. */
+  /** Those goods in euro as the order computed them, and at today's ECB rate; diff = today − order. */
   eurOrder: number; eurToday: number; diffEur: number;
+}
+
+export interface TodayRates {
+  /** Dollars for € 1 (ECB). */
+  usdPerEur: number;
+  /** Yuan for € 1 (ECB); without it a yuan price follows the dollar, as the order converted it. */
+  cnyPerEur?: number | null;
+}
+
+const share = (open: number, planned: number): number | null =>
+  Number.isFinite(open) && Number.isFinite(planned) && planned > 0 ? Math.min(1, Math.max(0, open / planned)) : null;
+
+/** What is still to pay the supplier, as a share of the agreed: its terms, else its payment stream, else everything. */
+function openSupplierShare(view: PurchaseOrderView): number {
+  const reconciliation = view.reconciliation;
+  if (!reconciliation) return 1;
+  const terms = reconciliation.supplierInstalments ?? [];
+  const byTerms = terms.length ? share(terms.reduce((sum, term) => sum + term.remainingEur, 0), terms.reduce((sum, term) => sum + term.plannedEur, 0)) : null;
+  if (byTerms !== null) return byTerms;
+  const stream = reconciliation.streams.find((candidate) => candidate.payee === 'SUPPLIER');
+  return (stream ? share(stream.remainingEur, stream.plannedEur) : null) ?? 1;
 }
 
 /**
  * Koopkracht › "Open containers": every open container (concept, ordered, on
- * the way; not archived) with goods in dollar, at the order's rate and at
- * today's ECB rate (`latestUsdPerEur`, dollars for € 1). Cents.
+ * the way; not archived) with goods priced in dollar or yuan, at the order's
+ * rate and at today's ECB rate. Each line in its own price currency, as the
+ * server prices it (LandedCostCalculator: the line's currency, else the
+ * product's, else dollar; `productCurrency` gives the product's). A euro line
+ * has no rate risk. Only what is still to pay the supplier counts. Cents.
  */
-export function usdContainerRows(views: readonly PurchaseOrderView[], latestUsdPerEur: number): UsdContainerRow[] {
-  if (!(latestUsdPerEur > 0)) return [];
+export function usdContainerRows(views: readonly PurchaseOrderView[], today: number | TodayRates,
+  productCurrency: (productId: number) => string | null | undefined = () => null): UsdContainerRow[] {
+  const rates: TodayRates = typeof today === 'number' ? { usdPerEur: today } : today;
+  if (!(rates.usdPerEur > 0)) return [];
   return views.filter((view) => !view.order.archivedAt && OPEN_STATUSES.has(view.order.status) && (view.costing?.totals?.goodsUsd ?? 0) > 0)
-    .map((view) => {
-      const goodsUsd = view.costing.totals.goodsUsd;
-      const eurOrder = cents(view.costing.totals.goodsEur);
-      const eurToday = cents(goodsUsd / latestUsdPerEur);
-      const rate = view.order.usdToEurGoods;
-      return { id: view.order.id, number: view.order.number, alias: view.order.alias, status: view.order.status, goodsUsd,
-        orderRate: rate > 0 ? 1 / rate : null, eurOrder: eurOrder / 100, eurToday: eurToday / 100, diffEur: (eurToday - eurOrder) / 100 };
+    .flatMap((view): UsdContainerRow[] => {
+      const order = view.order;
+      const lines = view.costing.lines ?? [];
+      /* The dollar value per currency; an older answer without lines reads as one dollar price. */
+      let usd = lines.length ? 0 : view.costing.totals.goodsUsd, cnyAsUsd = 0;
+      for (const line of lines) {
+        const own = (order.lines ?? []).find((candidate) => candidate.productId === line.productId)?.exwCurrency;
+        const currency = own ?? productCurrency(line.productId) ?? 'USD';
+        if (currency === 'USD') usd += line.goodsUsd;
+        else if (currency === 'CNY') cnyAsUsd += line.goodsUsd;
+      }
+      const open = openSupplierShare(view);
+      const rate = order.usdToEurGoods;
+      const cnyToUsd = order.cnyToUsd;
+      const goodsCny = cnyAsUsd > 0 && cnyToUsd > 0 ? cnyAsUsd / cnyToUsd : 0;
+      const eurOrder = cents((usd + cnyAsUsd) * open * (rate > 0 ? rate : 0));
+      const cnyToday = goodsCny > 0 && (rates.cnyPerEur ?? 0) > 0 ? goodsCny / rates.cnyPerEur! : cnyAsUsd / rates.usdPerEur;
+      const eurToday = cents((usd / rates.usdPerEur + cnyToday) * open);
+      if (eurOrder === 0 && eurToday === 0) return [];
+      return [{ id: order.id, number: order.number, alias: order.alias, status: order.status,
+        goodsUsd: Math.round(usd * open * 100) / 100, goodsCny: Math.round(goodsCny * open * 100) / 100, openShare: open,
+        orderRate: rate > 0 ? 1 / rate : null, eurOrder: eurOrder / 100, eurToday: eurToday / 100, diffEur: (eurToday - eurOrder) / 100 }];
     });
 }
 
@@ -542,27 +586,33 @@ export interface FreightContainerRow {
   /** The day it sailed, else the order date (`shipped` false). */
   day: string; shipped: boolean;
   freightUsd: number;
-  /** Drewry that week (marketOnOrBefore); null when it published nothing in the 14 days before. */
+  /** Drewry that week (marketOnOrBefore); null when it published nothing in the 14 days before, or for a 20 ft / LCL box. */
   marketUsd: number | null; marketOn: string | null;
   /** + 36,3 = we paid 36,3 % above the market of that week. */
   diffPct: number | null;
+  /** False for a 20 ft or LCL shipment: Drewry quotes per 40 ft, so there is no comparison. */
+  forty: boolean;
 }
+
+/** Drewry WCI quotes a 40 ft box; a 20 ft or groupage shipment has no market figure to compare with. */
+const NOT_FORTY: ReadonlySet<string> = new Set(['TWENTY_GP', 'LCL']);
 
 /**
  * Zeevracht › "Per container": every container with sea freight of our own
  * in dollar (not via the supplier, not archived) against the market of its
- * week, newest first.
+ * week, newest first; only a 40 ft box is compared.
  */
 export function freightContainerRows(views: readonly PurchaseOrderView[], market: DatedSeries, maxDays = 14): FreightContainerRow[] {
   return views.filter((view) => !view.order.archivedAt && !view.order.freightViaSupplier && view.order.freightUsd > 0)
     .map((view) => {
       const order = view.order;
       const day = (order.shippedOn || order.orderDate).slice(0, 10);
-      const point = marketOnOrBefore(market, day, maxDays);
+      const forty = !NOT_FORTY.has(order.containerType);
+      const point = forty ? marketOnOrBefore(market, day, maxDays) : null;
       return { id: order.id, number: order.number, alias: order.alias, status: order.status,
         route: [order.departurePort, order.destinationPort].filter(Boolean).join(' → '), day, shipped: !!order.shippedOn,
         freightUsd: order.freightUsd, marketUsd: point?.value ?? null, marketOn: point?.date ?? null,
-        diffPct: point ? quoteVsMarketPct(order.freightUsd, point.value) : null };
+        diffPct: point ? quoteVsMarketPct(order.freightUsd, point.value) : null, forty };
     })
     .sort((left, right) => right.day.localeCompare(left.day) || right.id - left.id);
 }

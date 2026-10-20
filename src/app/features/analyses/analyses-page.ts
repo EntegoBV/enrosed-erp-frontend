@@ -850,7 +850,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                       <span class="an-row__end"><span class="an-row__meta" [attr.data-tone]="(row.weeksLeft ?? 0) >= 4 ? 'ok' : 'warn'">{{ weeksLabel(row.weeksLeft) }}</span></span>
                       <span class="an-row__chev" aria-hidden="true">›</span>
                     </a>
-                  } @empty { <p class="an-empty">Niets raakt binnen {{ im.reorder.horizonWeeks }} weken op, of er werd nog niets gefactureerd.</p> }
+                  } @empty { <p class="an-empty">{{ failed('verkoop') ? 'Verkoop niet geladen: tempo onbekend.' : 'Niets raakt binnen ' + im.reorder.horizonWeeks + ' weken op, of er werd nog niets gefactureerd.' }}</p> }
                   <ng-container *ngTemplateOutlet="more; context: { key: 'reorder', total: im.reorder.rows.length }" />
                 }
               </div>
@@ -880,7 +880,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @if (!merged && !loading()) {
           <section class="an-card" aria-labelledby="an-slow-title">
             <header class="an-card__head"><h2 class="an-card__title" id="an-slow-title">Trage verkopers</h2>
-              <span class="an-card__trail">{{ whole(im.slowMovers.valueEur) }} in {{ plural(im.slowMovers.count, 'SKU', 'SKU’s') }}</span></header>
+              <span class="an-card__trail">{{ failed('verkoop') ? '—' : whole(im.slowMovers.valueEur) + ' in ' + plural(im.slowMovers.count, 'SKU', 'SKU’s') }}</span></header>
             <div class="an-card__body">
               @for (row of take('slow', im.slowMovers.rows); track row.productId) {
                 <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
@@ -889,7 +889,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <span class="an-row__end"><span class="an-row__value">{{ whole(row.costValueEur) }}</span></span>
                   <span class="an-row__chev" aria-hidden="true">›</span>
                 </a>
-              } @empty { <p class="an-empty">Elke gewaardeerde voorraadpositie verkocht in de laatste {{ im.velocity.days }} dagen.</p> }
+              } @empty { <p class="an-empty">{{ failed('verkoop') ? 'Verkoop niet geladen: tempo onbekend.' : 'Elke gewaardeerde voorraadpositie verkocht in de laatste ' + im.velocity.days + ' dagen.' }}</p> }
               <ng-container *ngTemplateOutlet="more; context: { key: 'slow', total: im.slowMovers.rows.length }" />
             </div>
           </section>
@@ -1657,7 +1657,8 @@ export class AnalysesPage {
       { key: 'accepted', label: 'Geaccepteerd', value: salesDown ? '—' : this.whole(m.accepted.calculatedValueEur), tone: null,
         sub: `excl. btw · ${plural(m.accepted.count, 'offerte', 'offertes')}`, foot: '', drill: !salesDown && m.accepted.count > 0 },
       { key: 'openInvoices', label: 'Open facturen', value: salesDown ? '—' : this.whole(all.outstandingValueEur), tone: null,
-        sub: `vandaag · ${plural(all.outstanding, 'factuur', 'facturen')}`, foot: inv.avgDaysToPaid === null ? '' : `betaaltermijn gem. ${plural(inv.avgDaysToPaid, 'dag', 'dagen')}`,
+        /* The days from invoice to payment, over every year like the tile (not the agreed term). */
+        sub: `vandaag · ${plural(all.outstanding, 'factuur', 'facturen')}`, foot: all.avgDaysToPaid === null ? '' : `betaald na gem. ${plural(all.avgDaysToPaid, 'dag', 'dagen')}`,
         drill: !salesDown && all.outstanding > 0 },
       { key: 'overdue', label: 'Vervallen', value: salesDown ? '—' : this.whole(all.overdueValueEur), tone: !salesDown && all.overdue > 0 ? 'danger' : null,
         sub: `vandaag · ${plural(all.overdue, 'factuur', 'facturen')}`, foot: '', drill: !salesDown && all.overdue > 0 },
@@ -1710,7 +1711,8 @@ export class AnalysesPage {
         drill: !stockDown && im.stock.salesValueEur !== 0 },
       { key: 'incoming', label: 'Onderweg', value: buyDown ? '—' : this.whole(this.incomingValue()), tone: null,
         sub: orders.length ? `${plural(orders.length, 'container', 'containers')}${first ? ` · eerst ${this.dayText(first)}` : ''}` : 'niets besteld',
-        foot: orders.length ? `${this.orderedCount()} besteld · ${this.sailingCount()} vertrokken` : '', drill: !buyDown && orders.length > 0 },
+        /* Its basis on the tile: external cost, no Enrosed-kost, beside a Kostwaarde that has it. */
+        foot: orders.length ? `externe kost · ${this.orderedCount()} besteld · ${this.sailingCount()} vertrokken` : '', drill: !buyDown && orders.length > 0 },
       { key: 'reorder', label: 'Raakt op', value: paceDown ? '—' : wholeNumber(reorder), unit: paceDown ? '' : reorder === 1 ? 'SKU' : 'SKU’s',
         tone: !paceDown && reorder > 0 ? 'danger' : null, sub: `binnen ${im.reorder.horizonWeeks} weken`,
         foot: paceDown ? '' : `tempo ${wholeNumber(im.velocity.weeklyPieces)} per week`, drill: !paceDown && reorder > 0 },
@@ -1835,9 +1837,13 @@ export class AnalysesPage {
   }), this.ticaDays()));
   /** All years: what waits, whatever period Verkoop shows (overdue invoices). */
   readonly allSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), { today: this.today(), topLimit: 1 }));
-  /** The Inkoop digest row: the active containers of Containerkost (same helpers, same filter); "op n" counts those with something open (D-O2). */
+  /**
+   * The Inkoop digest row: what Containerkost opens on, its default filter "Nog niet volledig afgerekend" (same
+   * helpers, same filter), so the row and the tab it links to show one payment result; "op n" counts those with
+   * something open (D-O2). A settled container's result is on the tab under "Alle containers".
+   */
   readonly containerDigest = computed(() => {
-    const rows = containerCostRows(this.purchases(), 'active', '').map((row) => ({ ...row, paymentResult: purchasePaymentResult(row.view) }));
+    const rows = containerCostRows(this.purchases(), 'open', '').map((row) => ({ ...row, paymentResult: purchasePaymentResult(row.view) }));
     return { openCount: rows.filter((row) => row.reconciliation.totals.remainingEur > 0).length, totals: containerCostTotals(rows), payment: containerPaymentResultTotals(rows) };
   });
   readonly marketDigest = computed(() => {
@@ -2156,13 +2162,15 @@ export class AnalysesPage {
     switch (key) {
       case 'cost': case 'sales':
         this.drillHost.open([stockValueView(im.capital, im.gapRows.unvalued,
-          { costValueEur: im.stock.costValueEur, salesValueEur: im.stock.salesValueEur, upliftEur: im.stock.potentialUpliftEur }, key, unit, this.whole)]); break;
+          { costValueEur: im.stock.costValueEur, salesValueEur: im.stock.salesValueEur, upliftEur: im.stock.potentialUpliftEur,
+            saleablePieces: im.physicalStock.saleablePieces, partnerPieces: im.physicalStock.partnerPieces }, key, unit, this.whole)]); break;
       case 'incoming':
         this.drillHost.open([incomingView(this.incomingOrders(), this.incomingValue(), { container: (view) => containerName(view.order),
           supplier: (id) => this.supplierName(id), cost: purchaseExternalCost }, `${this.orderedCount()} besteld · ${this.sailingCount()} vertrokken`)]); break;
       case 'reorder': {
         const supplierOf = (id: number | null) => { const supplier = this.suppliers().find((row) => row.id === id); return supplier ? { name: supplier.name, leadTimeDays: supplier.leadTimeDays } : null; };
-        this.drillHost.open([reorderView(im.reorder.rows, im.reorder.count, this.today(), supplierOf, unit, im.velocity.days)]); break;
+        this.drillHost.open([reorderView(im.reorder.rows, im.reorder.count, this.today(), supplierOf, unit, im.velocity.days,
+          { pieces: im.velocity.piecesSold, skus: im.velocity.skuCount })]); break;
       }
     }
   }
@@ -2171,7 +2179,7 @@ export class AnalysesPage {
   openQuality(index: number): void {
     const im = this.inventoryMetrics(), gaps = im.dataGaps;
     this.drillHost.open(qualityViews(im.gapRows, { unknown: gaps.unknownStockSkuCount, unvalued: gaps.unvaluedStockSkuCount, missingCarton: gaps.missingCartonSkuCount,
-      negative: gaps.negativeStockSkuCount }, (id, count) => this.unitWords(id, count)), Math.max(0, Math.min(index, QUALITY_KEYS.length - 1)));
+      negative: gaps.negativeStockSkuCount }, (id, count) => this.unitWords(id, count), gaps.unvaluedStockPieces), Math.max(0, Math.min(index, QUALITY_KEYS.length - 1)));
   }
 
   /* ---------- Inkoop › Kwaliteit, Partners, Afwijkingen (§B.6) */

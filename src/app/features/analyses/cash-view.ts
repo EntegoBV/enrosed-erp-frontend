@@ -529,6 +529,19 @@ export function monthTableNote(input: CashForecastInput, forecast: CashForecast)
   return keepAmounts(`${open.length} nog te koppelen (${eurWhole(euros(open.reduce((sum, line) => sum + cents(line.amountEur), 0)))})`);
 }
 
+/**
+ * Where that note leads: Kosten & bank › Te koppelen over the same days (the first past month shown up to today),
+ * on the one counted account when there is one, so the list it opens is the list it counts.
+ */
+export function monthTableNoteQuery(input: CashForecastInput, forecast: CashForecast): Record<string, string> {
+  const query: Record<string, string> = { view: 'bank', tab: 'movements', link: 'unlinked' };
+  const pastStart = forecast.months.find((month) => month.past)?.key.slice(0, 7);
+  if (pastStart) { query['from'] = `${pastStart}-01`; query['to'] = forecast.today; }
+  const counted = [...countedKeys(input)];
+  if (counted.length === 1) query['account'] = counted[0];
+  return query;
+}
+
 /** One line behind a month: a bank line (`lineId`) or a forecast item. */
 export interface MonthLine { day: Iso; title: string; sub: string; amountEur: number; lineId: number | null; item: ForecastItem | null; }
 

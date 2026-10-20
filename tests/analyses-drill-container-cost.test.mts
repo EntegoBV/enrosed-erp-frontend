@@ -165,13 +165,16 @@ test('the card lines add up to the net difference with Tegoed leverancier and Ov
     .some((item) => item.id === 'other'), false);
 });
 
-test('each difference line opens its containers, which add up to the line', () => {
-  const expect = { overpaid: [['PO-2026-2', 100]], saving: [['Rozen zomer', 200]], additional: [['Rozen zomer', 75]], credit: [['Rozen zomer', 500]] } as const;
-  const figure = { overpaid: total.overpaidEur, saving: total.settledSavingEur, additional: total.additionalEur, credit: total.supplierCreditEur };
+test('each difference line opens its containers, which add up to the line with its sign (the card\'s own figure)', () => {
+  const expect = { overpaid: [['PO-2026-2', 100]], saving: [['Rozen zomer', -200]], additional: [['Rozen zomer', 75]], credit: [['Rozen zomer', -500]] } as const;
+  /* The figure the card shows on each line: a saving and a credit read minus, and so do their dialogs. */
+  const lines = varianceLines(total);
+  const figure = (part: string) => lines.find((item) => item.id === part)!.amountEur;
   for (const part of ['overpaid', 'saving', 'additional', 'credit'] as const) {
     const view = costVarianceView(part, rows, total, context);
     assert.equal(view.id, `cost.variance.${part}`);
-    assert.deepEqual(check(view, figure[part]), { sum: figure[part], gap: 0 });
+    assert.deepEqual(check(view, figure(part)), { sum: figure(part), gap: 0 });
+    assert.deepEqual(view.sort, { key: 'amount', dir: figure(part) < 0 ? 'asc' : 'desc' }, 'the largest amount first, also below zero');
     assert.deepEqual(view.rows.map((row) => [row.cells['name'], row.cells['amount']]), expect[part]);
     assert.deepEqual(view.rows[0].link, { path: ['/purchasing', view.rows[0].key === '1' ? 1 : 2], query: { section: 'payment-result' } });
     assert.equal(view.rows[0].cells['state'], 'Voorlopig');
@@ -219,6 +222,13 @@ test('Containerkost: default filter, tiles and the merged card as the design nam
   assert.equal(template.match(/id="cc-diff-title">Verschil met de afspraak</g)?.length, 1, 'one card');
   assert.doesNotMatch(template, /Extra opbrengst uit betalingen|ENROSED|<details|Interne Enrosed opslag/);
   assert.match(template, /Enrosed-kost \{\{ payment\.internalMarkupEur/);
+  /* The payment result's own parts (settled only) stay on screen beside the variance lines, which count every stream. */
+  assert.match(template, /minder betaald, definitief vereffend \{\{ payment\.settledSavingsEur \| eur: 2 \}\}/);
+  assert.match(template, /meer betaald, definitief vereffend \{\{ payment\.settledOverrunsEur/);
+  assert.match(template, /extra uitgaven \{\{ payment\.additionalCostsEur/);
+  assert.match(template, /\{\{ payment\.finalizedCount \| num \}\} volledig afgerekend/);
+  /* Under the default filter nothing is settled: the fourth tile counts what is provisional. */
+  assert.match(template, /total\.finalizedCount \? plural\(total\.finalizedCount, 'container', 'containers'\) \+ ' volledig afgerekend' : plural\(total\.provisionalCount, 'container', 'containers'\) \+ ' voorlopig'/);
   assert.match(template, /class="wk-link cc-range" aria-haspopup="dialog" \(click\)="openUnit\(row\)"/);
   assert.match(template, /@if \(!isZero\(row\.reconciliation\.totals\.varianceEur\)\)/, 'the phone meta only when not 0');
   assert.match(source, /private readonly drill = inject\(AnDrillHost\)/);

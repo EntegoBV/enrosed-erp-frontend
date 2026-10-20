@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import type { ForecastMonth } from '../finance/cash-forecast';
 import { dayMon, eurWhole } from '../finance/cash-format';
 import { CashState } from './cash-state';
-import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole, tableCell, underBuffer } from './cash-view';
+import { itemLink, lineLink, monthLines, monthTable, monthTableNote, monthTableNoteQuery, signedWhole, tableCell, underBuffer } from './cash-view';
 import { cashMonthView } from './drill-cash';
 import type { CashDrillContext } from './drill-cash';
 import { AnDrillHost } from './drill-host';
@@ -48,7 +48,7 @@ import { AnDrillHost } from './drill-host';
             </tbody>
           </table>
         </div>
-        @if (note(); as text) { <a class="wk-link cf-mtable__note" routerLink="/costs" [queryParams]="unlinked">{{ text }} ›</a> }
+        @if (note(); as text) { <a class="wk-link cf-mtable__note" routerLink="/costs" [queryParams]="unlinked()">{{ text }} ›</a> }
       } @else {
         <div class="ios-group cf-mlist" role="table" aria-label="Per maand">
           <div class="cf-mlist__head" role="row"><span role="columnheader">Maand</span><span role="columnheader">Laagste</span><span role="columnheader">Einde</span><span role="columnheader">±</span></div>
@@ -61,7 +61,7 @@ import { AnDrillHost } from './drill-host';
             </button>
           }
         </div>
-        @if (note(); as text) { <a class="ios-section__foot cf-mlist__note" routerLink="/costs" [queryParams]="unlinked">{{ text }} ›</a> }
+        @if (note(); as text) { <a class="ios-section__foot cf-mlist__note" routerLink="/costs" [queryParams]="unlinked()">{{ text }} ›</a> }
       }
     }
   `,
@@ -71,8 +71,12 @@ export class CashMonths {
   private readonly drill = inject(AnDrillHost);
   readonly variant = input<'desk' | 'ios'>('desk');
   readonly ios = computed(() => this.variant() === 'ios');
-  /** The note's link: the bank movements still to link (the data-quality line's "Koppelen"). */
-  readonly unlinked = { view: 'bank', tab: 'movements', link: 'unlinked' };
+  /** The note's link: the bank movements still to link, over the days and account the note counts. */
+  readonly unlinked = computed(() => {
+    const input = this.state.input();
+    const forecast = this.state.forecast();
+    return input && forecast ? monthTableNoteQuery(input, forecast) : { view: 'bank', tab: 'movements', link: 'unlinked' };
+  });
   private readonly drillContext: CashDrillContext = { day: dayMon, whole: eurWhole, itemLink, lineLink, openPo: (orderId) => this.state.openPo(orderId) };
 
   readonly table = computed(() => {

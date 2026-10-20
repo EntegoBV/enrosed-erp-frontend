@@ -55,6 +55,11 @@ export interface DrillTable {
   valueColumn: string;
   /** The columns whose numbers add up in group and total rows. */
   summed: string[];
+  /**
+   * The column that carries a row's pill and the gap and total labels: the phone title column (the row's name), else
+   * the first. A list that opens on its date (Kasprognose) keeps them out of the narrow date cell.
+   */
+  labelColumn: string;
   total: DrillTableTotal | null;
   /** Shown only when the rows miss the figure by € 0,50 or more (or by a row). */
   gap: DrillTableGap | null;
@@ -68,13 +73,34 @@ export function isNumericFormat(format: DrillFormat): boolean {
   return format !== 'text' && format !== 'day';
 }
 
-/** The A.1 defaults: the first column 1.6fr, text 1fr, days and dates 84 px, money and numbers 112 px. */
+/**
+ * The width a header needs, in px: its longest word (the dialog lets a header wrap between words) in 11 px bold
+ * capitals with .06em spacing (the kit's wk-thead), plus the 12 px sort chevron, its 4 px gap and 6 px to spare. An
+ * estimate per character class, measured on the drill headers (Vervaldatum 92,7 px, Verkoopwaarde 113,1 px,
+ * Doorlooptijd 98,5 px); it errs on the wide side.
+ */
+export function headerWidth(label: string): number {
+  const wordWidth = (word: string): number => [...word].reduce((sum, char) =>
+    sum + ('.,/·:'.includes(char) || char === 'I' ? 4 : char === 'M' || char === 'W' ? 12 : 8.4), 0);
+  const longest = Math.max(0, ...label.toLocaleUpperCase('nl-BE').split(/\s+/).map(wordWidth));
+  return Math.ceil(longest) + 22;
+}
+
+/**
+ * The A.1 defaults: the first column 1.6fr, text 1fr, days and dates 84 px, money and numbers 112 px. A fixed track
+ * (a default or a px width) grows to its header's longest word, so a label and its sort chevron are never cut
+ * ("Vervaldatum" in 84 px); a header of several words wraps instead (analyses-drill.scss).
+ */
 export function columnTrack(column: DrillColumn, index: number): string {
-  if (column.width) return column.width;
+  const fixed = (px: number): string => `${Math.max(px, headerWidth(column.label))}px`;
+  if (column.width) {
+    const px = /^(\d+(?:\.\d+)?)px$/.exec(column.width);
+    return px ? fixed(Number(px[1])) : column.width;
+  }
   if (index === 0) return 'minmax(0,1.6fr)';
   if (column.format === 'text') return 'minmax(0,1fr)';
-  if (column.format === 'day' || column.format === 'days') return '84px';
-  return '112px';
+  if (column.format === 'day' || column.format === 'days') return fixed(84);
+  return fixed(112);
 }
 
 /** The first click on a header: numbers and days from high to low, text from A to Z. */
@@ -156,16 +182,24 @@ export function drillTable(view: DrillView, sort: DrillSort = view.sort): DrillT
   }
   const gap = drillGap(view);
   const total = view.total;
+  const valueColumn = view.valueKey ?? (total?.of === 'rows' ? '' : view.columns.at(-1)?.key ?? '');
   return {
     columns,
     tracks: columns.map((column) => column.track).join(' '),
     sections,
-    valueColumn: view.valueKey ?? (total?.of === 'rows' ? '' : view.columns.at(-1)?.key ?? ''),
+    valueColumn,
     summed,
+    labelColumn: labelColumnOf(view, valueColumn),
     total: total ? { label: total.label || 'Totaal', value: total.value, format: total.format, sums: sums(view.rows) } : null,
     gap: gap?.show ? { label: gap.label, value: gap.value, format: gap.format } : null,
     rowCount: view.rows.length,
   };
+}
+
+/** The phone title column when it is not the figure's own column, else the first column. */
+function labelColumnOf(view: Pick<DrillView, 'columns'>, valueColumn: string): string {
+  const title = view.columns.find((column) => column.phone === 'title')?.key;
+  return title && title !== valueColumn ? title : view.columns[0]?.key ?? '';
 }
 
 /** What a row or foot link does; the template switches on this instead of testing keys with `in`. */

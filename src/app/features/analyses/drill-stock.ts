@@ -42,6 +42,20 @@ export interface StockValueFigure {
   salesValueEur: number;
   /** Verkoopwaarde minus the cost of the same stock; null while a saleable product has no cost. */
   upliftEur: number | null;
+  /** The physical pieces of the active sales products (physicalStock.saleablePieces), and those already invoiced to a partner. */
+  saleablePieces?: number;
+  partnerPieces?: number;
+}
+
+const count = (value: number): string => value.toLocaleString('nl-BE');
+
+/** "1.240 fysieke stuks van actieve verkoopproducten · partner: 300 stuks al gefactureerd, nog te verzenden." */
+function piecesNote(figure: StockValueFigure): string | null {
+  const parts = [
+    figure.saleablePieces !== undefined ? `${count(figure.saleablePieces)} fysieke stuks van actieve verkoopproducten` : null,
+    figure.partnerPieces ? `partner: ${count(figure.partnerPieces)} stuks al gefactureerd, nog te verzenden` : null,
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(' · ')}.` : null;
 }
 
 /**
@@ -62,6 +76,7 @@ export function stockValueView(capital: readonly InventoryCapitalMetric[], unval
   return {
     id: 'stock.cost', title: by === 'cost' ? 'Kostwaarde' : 'Verkoopwaarde', scope: 'Vandaag · excl. btw · over alle locaties',
     summary: figure.upliftEur === null ? 'kostdekking onvolledig' : `marge op voorraad ${amount(figure.upliftEur)}`,
+    note: piecesNote(figure),
     rows, groups: unvalued.length ? [{ key: 'unvalued', label: 'Zonder kostprijs' }] : [],
     columns: [PRODUCT, SKU, { key: 'units', label: 'Voorraad', format: 'text', phone: 'sub' }, { key: 'unitCost', label: 'Kost/eenheid', format: 'eur2', phone: 'none' },
       { key: 'sales', label: 'Verkoopwaarde', format: 'eur', phone: 'none', sum: true }, { key: 'share', label: 'Aandeel', format: 'pct', phone: 'none', width: '84px' },
@@ -100,7 +115,7 @@ function addDays(day: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** "Bestel vóór": the day the shelf runs dry minus the supplier's lead time; null without a lead time. */
+/** "Bestel vóór": the day the stock runs dry minus the supplier's lead time; null without a lead time. */
 export function orderByDay(today: string, weeksLeft: number | null, leadTimeDays: number | null): string | null {
   if (weeksLeft === null || !leadTimeDays || leadTimeDays <= 0) return null;
   return addDays(today, Math.floor(weeksLeft * 7) - leadTimeDays);
@@ -108,17 +123,21 @@ export function orderByDay(today: string, weeksLeft: number | null, leadTimeDays
 
 /**
  * Raakt op: every product that runs out within the horizon on the pace of the last invoices, the latest order day
- * first (without a lead time last). The figure is reorder.count.
+ * first (without a lead time last). "Bestel vóór" counts what is on the water in, as the list itself does. The figure
+ * is reorder.count.
  */
 export function reorderView(rows: readonly ReorderRow[], figure: number, today: string, supplierOf: (id: number | null) => { name: string; leadTimeDays: number } | null,
-  unitText: UnitText, days: number): DrillView {
+  unitText: UnitText, days: number, sold?: { pieces: number; skus: number }): DrillView {
   return {
     id: 'stock.reorder', title: 'Raakt op', scope: 'Vandaag · binnen 8 weken op, met wat onderweg is',
-    summary: `tempo over ${days} dagen, zonder TICA`,
+    /* The pace behind it (the old Verkooptempo sub): what was invoiced in those days, over how many SKU's. */
+    summary: sold ? `${count(sold.pieces)} gefactureerd in ${days} dagen · ${count(sold.skus)} ${sold.skus === 1 ? 'SKU' : 'SKU’s'} · zonder TICA`
+      : `tempo over ${days} dagen, zonder TICA`,
     rows: rows.map((row) => {
       const supplier = supplierOf(row.supplierId);
       const lead = supplier && supplier.leadTimeDays > 0 ? supplier.leadTimeDays : null;
-      const orderBy = orderByDay(today, row.weeksLeft, lead);
+      /* The next order: when the shelf and what is on the water run out (a container on its way already covers the shelf). */
+      const orderBy = orderByDay(today, row.weeksLeftWithIncoming ?? row.weeksLeft, lead);
       return {
         key: `p${row.productId}`, link: productLink(row.productId), tone: orderBy !== null && orderBy <= today ? 'danger' as const : null,
         cells: { product: productName(row), supplier: supplier?.name ?? null, units: unitText(row.productId, row.stockPieces),
@@ -144,10 +163,14 @@ const QUALITY: readonly { key: QualityKey; tab: string; empty: string }[] = [
 ];
 export const QUALITY_KEYS: readonly QualityKey[] = QUALITY.map((item) => item.key);
 
-/** Datakwaliteit: one segment per count, the products it counts by name; each count is its list's length (dataGaps). */
-export function qualityViews(gaps: InventoryGapRows, counts: Readonly<Record<QualityKey, number>>, unitText: UnitText): DrillView[] {
+/**
+ * Datakwaliteit: one segment per count, the products it counts by name; each count is its list's length (dataGaps).
+ * Zonder kostprijs also says how many pieces it holds (dataGaps.unvaluedStockPieces, once on the Overzicht).
+ */
+export function qualityViews(gaps: InventoryGapRows, counts: Readonly<Record<QualityKey, number>>, unitText: UnitText, unvaluedPieces?: number): DrillView[] {
   return QUALITY.map((item) => ({
     id: `stock.quality.${item.key}`, tab: item.tab, title: 'Datakwaliteit', scope: 'Vandaag · uit de productkaart',
+    summary: item.key === 'unvalued' && unvaluedPieces ? `${count(unvaluedPieces)} ${unvaluedPieces === 1 ? 'stuk' : 'stuks'} zonder kost` : null,
     rows: gaps[item.key].map((row, index) => ({
       key: `p${row.productId ?? `i${index}`}`, link: productLink(row.productId),
       cells: { product: productName(row), sku: row.sku,

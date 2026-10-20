@@ -1,8 +1,9 @@
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Segmented } from '../../shared/segmented';
 import type { SegmentOption } from '../../shared/segmented';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import { Fx } from '../../core/api/fx';
 import type { FreightRate, MarketSourceStatus, PurchaseOrderView } from '../../core/api/models';
@@ -17,7 +18,7 @@ import { AnDrillHost } from './drill-host';
 import { freightContainersView, usdContainersView } from './drill-market';
 import type { MarketDrillContext } from './drill-market';
 import {
-  DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, alignedQuoteVsMarket, changeOverMonths, crossOf, freightContainerRows, fxInsight,
+  DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, alignedQuoteVsMarket, changeOverMonths, crossOf, freightContainerRows, freightNarrative, fxInsight,
   invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, usdContainerRows, weeklyRows, windowOf,
 } from './market-math';
 
@@ -334,6 +335,7 @@ const STORAGE_KEY = 'enrosed.market';
                              [ariaLabel]="d.definition.label + ', verloop over ' + periodWords(months())"
                              [emptyText]="d.all.dates.length ? 'Slechts één notering in deze periode · kies een langere periode' : (d.definition.group === 'own' ? 'Nog geen offerte genoteerd voor deze route' : 'Nog geen meetpunten van deze bron')" />
 
+            @if (d.trend) { <p class="fr-trend">{{ d.trend }}</p> }
             <div class="fr-horizons" aria-label="Verschil per periode">
               @for (horizon of d.horizons; track horizon.months) {
                 <div class="fr-horizon">
@@ -519,7 +521,7 @@ const STORAGE_KEY = 'enrosed.market';
     .fr-detail__head h3{margin:0;font-size:15px}.fr-detail__head p{margin:3px 0 0;color:var(--muted);font-size:11.5px}
     .fr-detail__now{display:grid;justify-items:end;text-align:right}.fr-detail__now strong{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.fr-detail__now span{color:var(--muted);font-size:11.5px}
     .fr-reference{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2);font-size:12px;cursor:pointer}.fr-reference input{accent-color:var(--rose)}
-    .fr-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .fr-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.fr-trend{margin:0;color:var(--ink-2);font-size:12.5px}
     .fr-horizon{display:grid;gap:2px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .fr-horizon span{color:var(--muted);font-size:10px;font-weight:700}.fr-horizon b{font-size:15px;font-variant-numeric:tabular-nums}.fr-horizon small{color:var(--muted);font-size:10px}
     .fr-vs__link{margin-left:6px;font-size:12.5px}.fr-source-line{margin:0;color:var(--muted);font-size:11.5px}.fr-source-line a{color:var(--rose-dark);font-weight:700}
@@ -589,6 +591,7 @@ const STORAGE_KEY = 'enrosed.market';
 })
 export class MarketAnalysis {
   private readonly sourcing = inject(SourcingApi);
+  private readonly catalog = inject(CatalogApi);
   private readonly ui = inject(Ui);
   private readonly drill = inject(AnDrillHost);
   readonly fx = inject(Fx);
@@ -633,6 +636,10 @@ export class MarketAnalysis {
   /** The purchase orders behind the two drill-downs: fetched on the first open, kept for the visit (Markt never loads the page). */
   private readonly purchases = signal<PurchaseOrderView[] | null>(null);
   readonly purchasesLoading = signal(false);
+  /** The price currency of each product, for the lines that follow their product's price (loaded with the orders). */
+  private productCurrency = new Map<number, string>();
+  /** False once the tab went: a late answer never opens a dialog over another tab or a later visit. */
+  private alive = true;
   private readonly drillContext: MarketDrillContext = { containerName: (po) => containerName(po), day: (day) => this.dayText(day) };
 
   private readonly ratesByRoute = computed(() => {
@@ -732,6 +739,8 @@ export class MarketAnalysis {
       definition, all, window, chart, referenceAvailable,
       latest: rows[rows.length - 1] ?? null,
       step: lastStep(all),
+      /* The one line of the old narrative that is neither the step nor a horizon: the last four notations. */
+      trend: all.dates.length > 1 ? freightNarrative(all, definition.unit)[0] ?? null : null,
       horizons: sparseHorizons(all),
       source: this.sourceByCode().get(code) ?? null,
       history,
@@ -744,6 +753,7 @@ export class MarketAnalysis {
   });
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => { this.alive = false; });
     this.restorePreferences();
     void this.load();
   }
@@ -794,28 +804,39 @@ export class MarketAnalysis {
   async openUsdContainers(): Promise<void> {
     const rates = this.fx.series();
     const views = rates ? await this.ensurePurchases() : null;
-    if (!rates || !views) return;
-    this.drill.open([usdContainersView(usdContainerRows(views, rates.latestUsd), { usdPerEur: rates.latestUsd, asOf: rates.asOf }, this.drillContext)]);
+    // The tab went while the orders loaded: nothing opens over another tab or a later visit.
+    if (!rates || !views || !this.alive) return;
+    const today = { usdPerEur: rates.latestUsd, cnyPerEur: rates.latestCny };
+    this.drill.open([usdContainersView(usdContainerRows(views, today, (id) => this.productCurrency.get(id)), { ...today, asOf: rates.asOf }, this.drillContext)]);
   }
 
   /** Zeevracht › "Per container ›": our freight per container against Drewry of that week. */
   async openFreightContainers(): Promise<void> {
     const views = await this.ensurePurchases();
-    if (views) this.drill.open([freightContainersView(freightContainerRows(views, toSeries(this.ratesByRoute().get(REFERENCE_CODE) ?? [])), this.drillContext)]);
+    if (views && this.alive) this.drill.open([freightContainersView(freightContainerRows(views, toSeries(this.ratesByRoute().get(REFERENCE_CODE) ?? [])), this.drillContext)]);
   }
 
-  /** The existing purchase-order list, once per visit; a failure says so and opens nothing. */
+  /**
+   * The existing purchase-order list, once per visit, with the catalogue for the price currency of a line that
+   * follows its product; a failure of the orders says so and opens nothing (without the catalogue such a line reads
+   * as dollar, the server's own fallback).
+   */
   private async ensurePurchases(): Promise<PurchaseOrderView[] | null> {
     const known = this.purchases();
     if (known) return known;
     if (this.purchasesLoading()) return null;
     this.purchasesLoading.set(true);
     try {
-      const views = await this.sourcing.purchaseOrders();
-      this.purchases.set(views);
-      return views;
+      const [views, products] = await Promise.allSettled([this.sourcing.purchaseOrders(), this.catalog.products()] as const);
+      if (views.status === 'rejected') throw views.reason;
+      if (products.status === 'fulfilled') {
+        this.productCurrency = new Map(products.value.flatMap((product) =>
+          (product.id !== null && product.exwCurrency ? [[product.id, product.exwCurrency] as const] : [])));
+      }
+      this.purchases.set(views.value);
+      return views.value;
     } catch {
-      this.ui.toast('Containers konden niet laden', 'err');
+      if (this.alive) this.ui.toast('Containers konden niet laden', 'err');
       return null;
     } finally {
       this.purchasesLoading.set(false);

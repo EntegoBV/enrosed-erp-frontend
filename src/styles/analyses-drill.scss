@@ -12,8 +12,8 @@ app-analyses-page .an-kpi--drill::after { content: '›'; position: absolute; to
 app-analyses-page .an-kpi--drill:hover, app-analyses-page .an-kpi--drill:focus-visible { border-color: var(--rose-line); }
 app-analyses-page .an-kpi--drill:hover::after, app-analyses-page .an-kpi--drill:focus-visible::after { opacity: 1; }
 app-analyses-page .an-kpi--drill:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
-/* The phone has no hover: there the chevron always shows, muted. */
-@media (max-width: 679.98px) { app-analyses-page .an-kpi--drill::after { opacity: 1; } }
+/* No hover (the phone, a tablet or a phone on its side in the desk layout): there the chevron always shows, muted. */
+@media (max-width: 679.98px), (hover: none) { app-analyses-page .an-kpi--drill::after { opacity: 1; } }
 app-analyses-page .an-kpi__sub.is-warn { color: var(--warn); }
 app-analyses-page button.an-link { padding: 0; border: 0; background: none; font-family: inherit; cursor: pointer; }
 app-analyses-page button.an-row:disabled { cursor: default; }
@@ -53,6 +53,9 @@ app-an-drill .and__scope { margin: 0; color: var(--muted); font-size: 13px; }
 app-an-drill .and__summary { margin: 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 app-an-drill .and__empty, app-an-drill .and__note { margin: 0; color: var(--muted); font-size: 13px; }
 app-an-drill .and__pill { margin-left: 6px; }
+/* A header of several words wraps (its track fits the longest word, drill-table.ts); a wrapped header keeps its side. */
+app-an-drill .and__table .wk-th { white-space: normal; line-height: 1.2; }
+app-an-drill .and__table .wk-th__btn { text-align: inherit; }
 app-an-drill .is-ok { color: var(--ok); } app-an-drill .is-warn { color: var(--warn); }
 app-an-drill .is-danger { color: var(--danger); } app-an-drill .is-muted { color: var(--muted); }
 
@@ -77,7 +80,10 @@ app-an-drill .is-danger { color: var(--danger); } app-an-drill .is-muted { color
   app-an-drill .and__seg { margin: 0 var(--ios-inset); }
   app-an-drill .and__empty { padding: 14px 16px; border-radius: var(--ios-radius); background: var(--surface); color: var(--muted); font-size: 15px; margin: 0 var(--ios-inset); }
   app-an-drill .ios-section { margin: 0; }
-  app-an-drill .ios-cell__title { display: flex; align-items: center; gap: 6px; }
+  /* The text truncates with "…" in its own span; the pill never shrinks out of view. */
+  app-an-drill .ios-cell__title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  app-an-drill .and__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  app-an-drill .ios-cell__title .and__pill { flex: none; margin-left: 0; }
   app-an-drill .ios-cell__value { color: var(--ink); }
   app-an-drill .ios-cell__value.is-danger { color: var(--danger); } app-an-drill .ios-cell__value.is-warn { color: var(--warn); }
   app-an-drill .and__gap .ios-cell__title, app-an-drill .and__gap .ios-cell__value { color: var(--muted); }

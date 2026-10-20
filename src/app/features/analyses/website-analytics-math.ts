@@ -99,7 +99,10 @@ export interface WebsiteRequestRow {
  * The requests the website brought in, counted in the ERP (design §B.10): a
  * document with website origin (`isWebsite`, passed in so this module needs
  * no runtime import), never a credit note, never an invoice made from a quote
- * (that quote counted already), dated in the report's window.
+ * (that quote counted already), dated in the report's window. A document the
+ * server derives from a request keeps its channel but is no new request: a
+ * voorschot- or slotfactuur (it belongs to advanceBilling.quoteId) and the
+ * later part of a split (part 2; part 1 is the original document).
  */
 export function websiteRequestRows(
   views: readonly SalesOrderView[],
@@ -111,7 +114,7 @@ export function websiteRequestRows(
   const rows: WebsiteRequestRow[] = [];
   for (const view of views) {
     const order = view.order;
-    if (order.docType === 'CREDITNOTA' || order.sourceQuoteId) continue;
+    if (order.docType === 'CREDITNOTA' || order.sourceQuoteId || view.advanceBilling || view.fulfillment?.part === 2) continue;
     const day = isoDay(order.orderDate);
     if (!day || day < options.from || day > options.to || !options.isWebsite(view)) continue;
     const products: string[] = [];

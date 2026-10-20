@@ -24,18 +24,22 @@ const whole = (value: number): string => `€ ${Math.round(Math.abs(value)).toL
 const toneOf = (value: number | null): DrillTone | null => (value === null || Math.abs(value) < 0.005 ? null : value > 0 ? 'warn' : 'ok');
 
 /** Koopkracht › "Open containers ›": their goods at the order's rate and at today's ECB rate (`market.usdContainers`). */
-export function usdContainersView(rows: readonly UsdContainerRow[], ecb: { usdPerEur: number; asOf: string }, ctx: MarketDrillContext): DrillView {
+export function usdContainersView(rows: readonly UsdContainerRow[], ecb: { usdPerEur: number; cnyPerEur?: number | null; asOf: string }, ctx: MarketDrillContext): DrillView {
   const ordered = [...rows].sort((left, right) => Math.abs(right.diffEur) - Math.abs(left.diffEur) || right.id - left.id);
   const totalCents = ordered.reduce((sum, row) => sum + Math.round(row.diffEur * 100), 0);
+  /* A yuan column only when a container has goods priced in yuan. */
+  const yuan = ordered.some((row) => row.goodsCny > 0);
+  const cnyRate = yuan && (ecb.cnyPerEur ?? 0) > 0 ? ` · ¥ ${rate(ecb.cnyPerEur!)}` : '';
   return {
-    id: 'market.usdContainers', title: 'Open containers in dollar',
-    scope: `ECB ${ctx.day(ecb.asOf)}: $ ${rate(ecb.usdPerEur)} voor € 1 · goederen volgens de order`,
+    id: 'market.usdContainers', title: yuan ? 'Open containers in dollar en yuan' : 'Open containers in dollar',
+    scope: `ECB ${ctx.day(ecb.asOf)}: $ ${rate(ecb.usdPerEur)}${cnyRate} voor € 1 · nog te betalen aan de leverancier`,
     summary: totalCents === 0 ? null : `Aan de koers van vandaag ${whole(totalCents / 100)} ${totalCents > 0 ? 'duurder' : 'goedkoper'} dan in de orders`,
-    note: 'Al betaalde termijnen gingen aan hun eigen koers.',
+    note: 'Al betaalde termijnen gingen aan hun eigen koers; een prijs in euro loopt geen koersrisico.',
     columns: [
       { key: 'name', label: 'Container', format: 'text', phone: 'title' },
       { key: 'status', label: 'Status', format: 'text', phone: 'sub', width: '96px' },
       { key: 'usd', label: 'Goederen $', format: 'usd', phone: 'sub' },
+      ...(yuan ? [{ key: 'cny', label: 'Goederen ¥', format: 'int', phone: 'sub' } as const] : []),
       { key: 'rate', label: 'Koers order', format: 'rate', phone: 'none', width: '96px' },
       { key: 'eurOrder', label: '€ volgens order', format: 'eur', phone: 'none', sum: true },
       { key: 'eurToday', label: '€ aan ECB vandaag', format: 'eur', phone: 'none', sum: true },
@@ -44,7 +48,8 @@ export function usdContainersView(rows: readonly UsdContainerRow[], ecb: { usdPe
     rows: ordered.map((row): DrillRow => ({
       key: `po:${row.id}`, tone: toneOf(row.diffEur), link: { path: ['/purchasing', row.id] },
       /* absDiff is no column: the list opens with the largest difference either way. */
-      cells: { name: ctx.containerName(row), status: STATUS[row.status] ?? row.status, usd: row.goodsUsd, rate: row.orderRate, eurOrder: row.eurOrder,
+      cells: { name: ctx.containerName(row), status: STATUS[row.status] ?? row.status, usd: row.goodsUsd > 0 ? row.goodsUsd : null,
+        cny: row.goodsCny > 0 ? Math.round(row.goodsCny) : null, rate: row.orderRate, eurOrder: row.eurOrder,
         eurToday: row.eurToday, diff: row.diffEur, absDiff: Math.abs(row.diffEur) },
     })),
     valueKey: 'diff', total: { value: totalCents / 100, format: 'eurSigned', of: 'sum', label: 'Verschil vandaag' },
@@ -61,7 +66,8 @@ export function freightContainersView(rows: readonly FreightContainerRow[], ctx:
     scope: 'Onze zeevracht in USD per container · Drewry WCI Shanghai → Rotterdam van die week',
     summary: mean === null ? 'Geen Drewry-notering in die weken'
       : `gemiddeld ${mean > 0 ? '+ ' : mean < 0 ? '− ' : ''}${String(Math.abs(mean)).replace('.', ',')} % t.o.v. Drewry`,
-    note: 'Vertrek: de vertrekdag, anders de besteldatum.',
+    note: rows.some((row) => !row.forty) ? 'Vertrek: de vertrekdag, anders de besteldatum. Drewry noteert per 40 ft: 20 ft en LCL vergelijken we niet.'
+      : 'Vertrek: de vertrekdag, anders de besteldatum.',
     columns: [
       { key: 'name', label: 'Container', format: 'text', phone: 'title' },
       { key: 'route', label: 'Route', format: 'text', phone: 'sub' },
@@ -72,7 +78,8 @@ export function freightContainersView(rows: readonly FreightContainerRow[], ctx:
     ],
     rows: rows.map((row): DrillRow => ({
       key: `po:${row.id}`, pill: row.status === 'CONCEPT' ? 'Concept' : null, tone: toneOf(row.diffPct), link: { path: ['/purchasing', row.id] },
-      cells: { name: ctx.containerName(row), route: row.route || null, day: row.day, freight: row.freightUsd, market: row.marketUsd, diff: row.diffPct },
+      cells: { name: ctx.containerName(row), route: row.route || null, day: row.day, freight: row.freightUsd,
+        market: row.forty ? row.marketUsd : 'geen 40 ft', diff: row.diffPct },
     })),
     valueKey: null, total: null, sort: { key: 'day', dir: 'desc' }, empty: 'Geen containers met eigen zeevracht in dollar.',
   };

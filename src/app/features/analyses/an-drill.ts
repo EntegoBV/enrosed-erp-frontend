@@ -39,7 +39,7 @@ function signed(text: string, value: number): string {
   template: `
     @if (view(); as view) {
       @let t = table()!;
-      <app-sheet [title]="view.title" [wide]="desk.active()" [variant]="desk.active() ? 'default' : 'ios'" (closed)="host.close()">
+      <app-sheet [title]="view.title" [wide]="desk.active()" [variant]="desk.active() ? 'default' : 'ios'" [backdropCloses]="true" (closed)="host.close()">
         <div body class="and" [class.and--phone]="!desk.active()">
           <p class="and__scope" [class.ios-caption]="!desk.active()">{{ view.scope }}</p>
           @if (view.summary) { <p class="and__summary">{{ view.summary }}</p> }
@@ -71,23 +71,23 @@ function signed(text: string, value: number): string {
                   @switch (kind(row.link)) {
                     @case ('route') {
                       @let to = route(row.link)!;
-                      <a class="wk-tr wk-tr--link" role="row" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="host.close()">
-                        @for (column of t.columns; track column.key; let first = $first) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, first }" /> }
+                      <a class="wk-tr wk-tr--link" role="row" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="closeOnPlain($event)">
+                        @for (column of t.columns; track column.key) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, label: column.key === t.labelColumn }" /> }
                       </a>
                     }
                     @case ('href') {
-                      <a class="wk-tr wk-tr--link" role="row" [href]="href(row.link)" target="_blank" rel="noopener" (click)="host.close()">
-                        @for (column of t.columns; track column.key; let first = $first) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, first }" /> }
+                      <a class="wk-tr wk-tr--link" role="row" [href]="href(row.link)" target="_blank" rel="noopener" (click)="closeOnPlain($event)">
+                        @for (column of t.columns; track column.key) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, label: column.key === t.labelColumn }" /> }
                       </a>
                     }
                     @case ('run') {
                       <button class="wk-tr wk-tr--link and__btn" type="button" role="row" (click)="follow(row.link)">
-                        @for (column of t.columns; track column.key; let first = $first) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, first }" /> }
+                        @for (column of t.columns; track column.key) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, label: column.key === t.labelColumn }" /> }
                       </button>
                     }
                     @default {
                       <div class="wk-tr" role="row">
-                        @for (column of t.columns; track column.key; let first = $first) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, first }" /> }
+                        @for (column of t.columns; track column.key) { <ng-container [ngTemplateOutlet]="cell" [ngTemplateOutletContext]="{ $implicit: row, column, label: column.key === t.labelColumn }" /> }
                       </div>
                     }
                   }
@@ -95,15 +95,17 @@ function signed(text: string, value: number): string {
               }
               @if (t.gap; as gap) {
                 <div class="wk-tr wk-tr--muted and__gap" role="row">
-                  @for (column of t.columns; track column.key; let first = $first) {
-                    <span class="wk-td" [class.wk-td--num]="column.numeric && !first" role="cell">{{ first ? labelled(gap.label, gap.value, gap.format, t.valueColumn) : column.key === t.valueColumn ? format(gap.value, gap.format) : '' }}</span>
+                  @for (column of t.columns; track column.key) {
+                    @let label = column.key === t.labelColumn;
+                    <span class="wk-td" [class.wk-td--num]="column.numeric && !label" role="cell">{{ label ? labelled(gap.label, gap.value, gap.format, t.valueColumn) : column.key === t.valueColumn ? format(gap.value, gap.format) : '' }}</span>
                   }
                 </div>
               }
               @if (t.total; as total) {
                 <div class="wk-tr wk-tr--total" role="row">
-                  @for (column of t.columns; track column.key; let first = $first) {
-                    <span class="wk-td" [class.wk-td--num]="column.numeric && !first" role="cell">{{ first ? labelled(total.label, total.value, total.format, t.valueColumn)
+                  @for (column of t.columns; track column.key) {
+                    @let label = column.key === t.labelColumn;
+                    <span class="wk-td" [class.wk-td--num]="column.numeric && !label" role="cell">{{ label ? labelled(total.label, total.value, total.format, t.valueColumn)
                       : column.key === t.valueColumn ? format(total.value, total.format)
                       : total.sums[column.key] !== undefined ? format(total.sums[column.key], column.format) : '' }}</span>
                   }
@@ -123,11 +125,11 @@ function signed(text: string, value: number): string {
                     @switch (kind(row.link)) {
                       @case ('route') {
                         @let to = route(row.link)!;
-                        <a class="ios-cell" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="host.close()">
+                        <a class="ios-cell" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="closeOnPlain($event)">
                           <ng-container [ngTemplateOutlet]="phoneCell" [ngTemplateOutletContext]="{ $implicit: row, parts, linked: true }" /></a>
                       }
                       @case ('href') {
-                        <a class="ios-cell" [href]="href(row.link)" target="_blank" rel="noopener" (click)="host.close()">
+                        <a class="ios-cell" [href]="href(row.link)" target="_blank" rel="noopener" (click)="closeOnPlain($event)">
                           <ng-container [ngTemplateOutlet]="phoneCell" [ngTemplateOutletContext]="{ $implicit: row, parts, linked: true }" /></a>
                       }
                       @case ('run') {
@@ -161,19 +163,19 @@ function signed(text: string, value: number): string {
             @switch (kind(foot.link)) {
               @case ('route') {
                 @let to = route(foot.link)!;
-                <a class="ios-capsule ios-capsule--accent ios-capsule--block and__foot" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="host.close()">{{ foot.label }}</a>
+                <a class="ios-capsule ios-capsule--accent ios-capsule--block and__foot" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="closeOnPlain($event)">{{ foot.label }}</a>
               }
-              @case ('href') { <a class="ios-capsule ios-capsule--accent ios-capsule--block and__foot" [href]="href(foot.link)" target="_blank" rel="noopener" (click)="host.close()">{{ foot.label }}</a> }
+              @case ('href') { <a class="ios-capsule ios-capsule--accent ios-capsule--block and__foot" [href]="href(foot.link)" target="_blank" rel="noopener" (click)="closeOnPlain($event)">{{ foot.label }}</a> }
               @default { <button class="ios-capsule ios-capsule--accent ios-capsule--block and__foot" type="button" (click)="follow(foot.link)">{{ foot.label }}</button> }
             }
           }
         </div>
         <!-- One root element per block, so each is projected into the Sheet's foot. -->
         @if (footRoute(); as to) {
-          <a foot class="wk-btn" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="host.close()">{{ deskFoot()?.label }}</a>
+          <a foot class="wk-btn" [routerLink]="to.path" [queryParams]="to.query ?? null" (click)="closeOnPlain($event)">{{ deskFoot()?.label }}</a>
         }
         @if (footHref(); as url) {
-          <a foot class="wk-btn" [href]="url" target="_blank" rel="noopener" (click)="host.close()">{{ deskFoot()?.label }}</a>
+          <a foot class="wk-btn" [href]="url" target="_blank" rel="noopener" (click)="closeOnPlain($event)">{{ deskFoot()?.label }}</a>
         }
         @if (footRun()) {
           <button foot class="wk-btn" type="button" (click)="follow(deskFoot()?.link)">{{ deskFoot()?.label }}</button>
@@ -181,14 +183,14 @@ function signed(text: string, value: number): string {
       </app-sheet>
     }
 
-    <ng-template #cell let-row let-column="column" let-first="first">
+    <ng-template #cell let-row let-column="column" let-label="label">
       <span class="wk-td" [class.wk-td--num]="column.numeric" role="cell" [class]="column.key === table()?.valueColumn ? toneClass(row) : ''"
-        >{{ text(row.cells[column.key], column.format) }}@if (first && row.pill) { <span class="wk-pill and__pill">{{ row.pill }}</span> }</span>
+        >{{ text(row.cells[column.key], column.format) }}@if (label && row.pill) { <span class="wk-pill and__pill">{{ row.pill }}</span> }</span>
     </ng-template>
 
     <ng-template #phoneCell let-row let-parts="parts" let-linked="linked">
       <span class="ios-cell__body">
-        <span class="ios-cell__title">{{ parts.title ? text(row.cells[parts.title], formatOf(parts.title)) : '' }}@if (row.pill) { <span class="wk-pill and__pill">{{ row.pill }}</span> }</span>
+        <span class="ios-cell__title"><span class="and__title">{{ parts.title ? text(row.cells[parts.title], formatOf(parts.title)) : '' }}</span>@if (row.pill) { <span class="wk-pill and__pill">{{ row.pill }}</span> }</span>
         @if (subOf(row, parts.subs); as sub) { <span class="ios-cell__sub">{{ sub }}</span> }
       </span>
       @if (parts.value) { <span class="ios-cell__value" [class]="toneClass(row)">{{ text(row.cells[parts.value], formatOf(parts.value)) }}</span> }
@@ -244,6 +246,14 @@ export class AnDrill {
   kind(link: DrillLink | null | undefined) { return linkKind(link); }
   route(link: DrillLink | null | undefined) { return link && linkKind(link) === 'route' ? link as Extract<DrillLink, { path: unknown }> : null; }
   href(link: DrillLink | null | undefined): string | null { return link && linkKind(link) === 'href' ? (link as Extract<DrillLink, { href: string }>).href : null; }
+
+  /**
+   * A route or page link: a plain click closes the dialog and follows it; a Cmd, Ctrl, Shift or Alt click (or the
+   * middle button) opens a tab, as RouterLink lets the browser do, and the list stays open for the next row.
+   */
+  closeOnPlain(event: MouseEvent): void {
+    if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) this.host.close();
+  }
 
   /** A row or foot action: the dialog closes first, then the action runs (the PO sheet opens over the page). */
   follow(link: DrillLink | null | undefined): void {

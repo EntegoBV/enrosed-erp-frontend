@@ -212,9 +212,11 @@ export function marginViews(docs: readonly SalesDocumentRow[], tica: readonly Ti
   const summary = figure.missingCostLines
     ? `Onvolledig: ${figure.missingCostLines} ${figure.missingCostLines === 1 ? 'regel' : 'regels'} zonder kost` : pct;
   const gapLabel = marginGap(revenue, tica);
+  /* With lines without a cost the tile shows "—": the rows stand without a total, as Resultaat's month and channel views. */
   const perDocument: DrillView = {
     id: 'sales.margin', tab: 'Per document', title: 'Brutomarge', scope, summary, ...documentsWithTica(revenue, tica, ctx, to),
-    columns: [COL.doc, COL.customer, COL.date, aside(COL.revenue, true), COL.margin], valueKey: 'margin', total, gapLabel,
+    columns: [COL.doc, COL.customer, COL.date, aside(COL.revenue, true), COL.margin], valueKey: 'margin',
+    total: figure.missingCostLines ? null : total, gapLabel,
     sort: { key: 'margin', dir: 'desc' }, empty: 'Geen omzet in deze periode.',
   };
   if (!figure.missingCostLines) {

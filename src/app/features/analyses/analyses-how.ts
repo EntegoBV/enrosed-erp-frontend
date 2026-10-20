@@ -31,7 +31,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   sales: [
     'De periode volgt de documentdatum; ontvangsten tellen op hun betaaldatum. Open offertes, open en vervallen facturen zijn de stand van vandaag, over alle jaren.',
     'Omzet, marge, open offertes en geaccepteerd zijn excl. btw; gefactureerd, ontvangen, open en vervallen incl. btw. Omzet is hetzelfde cijfer als op Resultaat.',
-    'Voorschotten blijven financiering tot de slotafrekening; ze tellen niet als omzet en niet in het aantal facturen. Een creditnota toont geen marge. Oude documenten kunnen nog actuele productprijzen gebruiken.',
+    'Partnervoorschotten blijven financiering tot de afrekening: geen omzet en niet in het aantal facturen bij Omzet. Een gewone voorschotfactuur telt als omzet op haar datum; de slotfactuur trekt ze weer af. Gefactureerd telt elke factuur, voorschotten ook. Een creditnota toont geen marge. Oude documenten kunnen nog actuele productprijzen gebruiken.',
     'TICA telt apart mee als verkoopkanaal, op de verkoopdatum en na korting excl. btw. De afrekening en bankontvangst tellen niet opnieuw als omzet. TICA-marges gebruiken de huidige productkost; bij ontbrekende productkosten is de marge onvolledig.',
     'De TICA-kaart telt niets op: gemiddelden, korting en producten komen uit de TICA-regels van dezelfde periode (hoogstens de laatste 366 dagen).',
   ],
@@ -39,6 +39,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'Momentopname uit de productkaart en de open inkooporders, over alle locaties, in de verkoopeenheid van elk product (stuks of displays).',
     'Kostwaarde: tegen kostprijs met Enrosed-kost, excl. btw. Verkoopwaarde: lijstprijs excl. btw, vóór staffelkorting. Voor de boekhouding: Jaarinventaris.',
     'Het tempo komt van de facturen van de laatste 90 dagen; TICA-verkopen tellen daar nog niet in mee. Raakt op: binnen 8 weken op, met wat onderweg is.',
+    'Onderweg: de externe kost van de bestelde en vertrokken containers, zonder Enrosed-kost; tel die niet zomaar bij de kostwaarde op.',
   ],
   'purchasing-kosten': [
     'Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.',
@@ -52,6 +53,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   'purchasing-partners': [
     'De partner financiert de afgesproken kosten vooraf of samen met ons. Elke termijn krijgt een eigen voorschotfactuur. Het resultaat volgt uit uitgegeven deel- en slotafrekeningen, naar de werkelijk afgerekende hoeveelheden.',
     'Netto ontvangen: ontvangsten min terugbetalingen. Eigen kasinleg: betaalde containerkosten min ontvangen partnergeld. Voorschotten zijn geen winst.',
+    'Nog te ontvangen: open uitgegeven facturen, na deelbetalingen. Credit voor partners: op creditnota’s en afrekeningen, te verrekenen of terug te betalen. Kosten partnercontainers: werkelijke kosten en nog open verplichtingen.',
   ],
   'purchasing-afwijkingen': [
     'Tekorten en schade blijven hier staan, ook nadat de container is afgerond.',
@@ -59,7 +61,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   ],
   result: [
     'De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten.',
-    'Verkoop telt op de factuurdatum, kosten op hun datum; een investering met haar afschrijving van de periode. Alles excl. btw.',
+    'Verkoop telt op de factuurdatum, kosten op hun datum; een investering met haar afschrijving van de periode. Omzet excl. btw; kosten zonder de btw die we aftrekken (niet-aftrekbare btw telt als kost).',
     'TICA-verkopen tellen op de verkoopdatum, na korting excl. btw. De huidige productkost bepaalt de TICA-marge. Bevestigde TICA-commissie staat één keer bij de bedrijfskosten; de afrekening en uitbetaling voegen geen tweede omzet toe.',
     'Algemene kosten: kosten zonder verkoopkanaal, zodat de kanalen optellen tot het resultaat.',
     'Containers ontvangen telt niet in het resultaat: goederen worden kost wanneer ze verkocht zijn.',

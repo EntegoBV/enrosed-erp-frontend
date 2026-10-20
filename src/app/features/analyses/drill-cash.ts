@@ -227,24 +227,25 @@ export function cashMonthView(month: ForecastMonth, lines: readonly MonthLine[],
 
 /**
  * Aansluiting › "Lijkt al betaald (niet dubbel geteld)": the open items an unlinked bank line seems to have paid
- * (`cash.likelyPaid`). The line adds them back to the Vooruitblik, so its figure is minus their sum; a match that
- * another line counts (a VAT return, a fixed cost, a quote) is the gap.
+ * (`cash.likelyPaid`). The line adds them back to the Vooruitblik, so its figure is minus their sum; each row shows
+ * what it adds back (a paid cost of − € 500 reads + € 500), so the dialog repeats the line's own figure and sign.
+ * A match that another line counts (a VAT return, a fixed cost, a quote) is the gap.
  */
 export function cashLikelyPaidView(forecast: CashForecast, lineEur: number, ctx: CashDrillContext): DrillView {
   const rows = forecast.likelyPaid.map((match): DrillRow => ({
     key: `${match.lineId}:${match.itemKey}`, link: drillLinkOf(ctx.lineLink(match.lineId), ctx),
-    cells: { title: match.title, bank: [match.account, match.counterparty].filter(Boolean).join(' · '), day: match.day, amount: match.amountEur },
+    cells: { title: match.title, bank: [match.account, match.counterparty].filter(Boolean).join(' · '), day: match.day, amount: euros(-cents(match.amountEur)) },
   }));
   return {
     id: 'cash.likelyPaid', title: 'Lijkt al betaald', scope: 'Niet gekoppelde banklijnen van de laatste 90 dagen · incl. btw',
-    note: 'Tot je de banklijn koppelt, telt de post niet nog eens mee.',
+    note: 'Een betaalde kost telt plus: de prognose rekent hem niet nog eens af, tot je de banklijn koppelt.',
     columns: [
       { key: 'title', label: 'Omschrijving', format: 'text', phone: 'title' },
       { key: 'bank', label: 'Banklijn', format: 'text', phone: 'sub' },
       { key: 'day', label: 'Dag', format: 'day', phone: 'sub', width: '84px' },
-      { key: 'amount', label: 'Bedrag', format: 'eurSigned', phone: 'value' },
+      { key: 'amount', label: 'Effect', format: 'eurSigned', phone: 'value' },
     ],
-    rows, valueKey: 'amount', total: { value: euros(-cents(lineEur)), format: 'eurSigned', of: 'sum', label: 'Niet dubbel geteld' },
+    rows, valueKey: 'amount', total: { value: euros(cents(lineEur)), format: 'eurSigned', of: 'sum', label: 'Niet dubbel geteld' },
     gapLabel: 'Telt in een andere regel', sort: { key: 'day', dir: 'asc' }, empty: 'Geen banklijn die een open post lijkt te betalen.',
   };
 }

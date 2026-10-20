@@ -80,7 +80,8 @@ import { AnDrillHost } from './drill-host';
           @if (isZero(total.remainingEur)) { <div class="an-kpi"><ng-container *ngTemplateOutlet="openFigure" /></div> }
           @else { <button type="button" class="an-kpi an-kpi--drill" aria-haspopup="dialog" (click)="openRemaining()"><ng-container *ngTemplateOutlet="openFigure" /></button> }
           <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">{{ total.provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><span class="cc-narrow">{{ total.provisionalCount ? 'Verwachte kost' : 'Definitieve kost' }}</span></span><span class="an-kpi__value">{{ total.forecastEur | eur }}</span>
-            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(total.finalizedCount, 'container', 'containers') }} volledig afgerekend</span><span class="an-kpi__foot"></span></div>
+            <!-- Under the default filter nothing is settled: the sub then counts what is still provisional. -->
+            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ total.finalizedCount ? plural(total.finalizedCount, 'container', 'containers') + ' volledig afgerekend' : plural(total.provisionalCount, 'container', 'containers') + ' voorlopig' }}</span><span class="an-kpi__foot"></span></div>
         </div>
         <!-- One card (D-C4): the parts add up to the net with the supplier credit (D-C1); the payment result under the divider. -->
         <section class="an-card cc-diff" aria-labelledby="cc-diff-title">
@@ -104,6 +105,9 @@ import { AnDrillHost } from './drill-host';
               @if (payment.eligibleCount) {
                 <p class="cc-diff__sum"><span>Enrosed-kost {{ payment.internalMarkupEur | eur: 2 }} · Betaalresultaat {{ signed(payment.netResultEur) }} = <b>{{ payment.markupWithResultEur | eur: 2 }}</b></span>
                   <span class="wk-pill" [class.tone-warn]="payment.provisionalCount" [class.tone-ok]="!payment.provisionalCount">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></p>
+                <!-- Its parts count only once settled (purchasePaymentResult), so they can differ from the lines above. -->
+                <p class="cc-diff__note">Betaalresultaat = minder betaald, definitief vereffend {{ payment.settledSavingsEur | eur: 2 }} − meer betaald, definitief vereffend {{ payment.settledOverrunsEur | eur: 2 }}
+                  − extra uitgaven {{ payment.additionalCostsEur | eur: 2 }} · {{ plural(payment.eligibleCount, 'container', 'containers') }}, {{ payment.finalizedCount | num }} volledig afgerekend</p>
                 @if (payment.unsettledOverrunsEur > 0) { <p class="cc-diff__pending" role="note">{{ payment.unsettledOverrunsEur | eur: 2 }} meer betaald, nog te beoordelen.</p> }
               } @else {
                 <p class="cc-diff__note">Nog geen betaalresultaat voor deze selectie.</p>

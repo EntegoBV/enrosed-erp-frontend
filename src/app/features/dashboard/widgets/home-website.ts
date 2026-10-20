@@ -23,7 +23,7 @@ import { HomeWidget, count, counted } from './home-w';
         <div class="home-w__split">
           <div class="home-w__lead">
             <span class="home-w__value">{{ count(web.totals.visitors) }}</span>
-            <span class="home-w__line">{{ web.totals.visitors === 1 ? 'bezoeker' : 'bezoekers' }} · {{ counted(web.totals.visits, 'bezoek', 'bezoeken') }}</span>
+            <span class="home-w__line">{{ web.totals.visitors === 1 ? 'bezoeker' : 'bezoekers' }} · {{ counted(web.totals.visits, 'paginaweergave', 'paginaweergaven') }}</span>
           </div>
           <div class="home-w__bars home-w__bars--days home-w__raise" role="img" [attr.aria-label]="barsLabel()" (click)="openCard()">
             @for (bar of days(); track bar.key) {
@@ -66,7 +66,7 @@ export class HomeWebsite {
     const perDay = this.data.website()?.perDay ?? [];
     const last = perDay.at(-1)?.date;
     return bars(perDay.map((day) => ({ key: day.date, label: shortDate(day.date).slice(0, 2), value: day.visitors })), last)
-      .map((bar, index) => ({ ...bar, title: `${shortDate(perDay[index].date)}: ${perDay[index].visitors} bezoekers, ${perDay[index].visits} bezoeken` }));
+      .map((bar, index) => ({ ...bar, title: `${shortDate(perDay[index].date)}: ${perDay[index].visitors} bezoekers, ${perDay[index].visits} paginaweergaven` }));
   });
   readonly barsLabel = computed(() => `Bezoekers per dag: ${this.days().map((bar) => `${bar.label} ${bar.value}`).join(', ')}`);
   readonly todayVisitors = computed(() => this.data.website()?.perDay.at(-1)?.visitors ?? 0);

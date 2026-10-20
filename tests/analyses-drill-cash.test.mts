@@ -260,7 +260,8 @@ test('Lijkt al betaald: the matched items, the total is minus the reconciliation
   const likely = cashLikelyPaidView(base, line.eur, ctx);
   assert.equal(likely.id, 'cash.likelyPaid');
   assert.equal(likely.rows.length, base.likelyPaid.length);
-  assert.equal(likely.total!.value, -line.eur);
+  assert.equal(likely.total!.value, line.eur, 'the line\'s own figure and sign: the equation reads "+ € x"');
+  assert.ok(line.eur > 0 && likely.rows.every((row) => (row.cells['amount'] as number) > 0), 'a paid outflow reads plus: what the line adds back');
   assert.equal(sum(likely), cents(likely.total!.value), 'every match is a container term: no gap');
   assert.deepEqual(likely.rows[0].link, { path: ['/costs'], query: { view: 'bank', tab: 'movements', line: 103 } });
   assert.match(String(likely.rows[0].cells['bank']), /Yunnan Pubei/);

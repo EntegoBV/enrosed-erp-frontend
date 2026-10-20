@@ -42,6 +42,9 @@ export interface ResultRowFigure {
 
 const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'] as const;
 const INCOMPLETE = 'Onvolledig: productkosten ontbreken';
+/* Costs count without the btw we deduct; non-deductible btw is part of the cost (costChargeIn → expenseOf). */
+const COST_BASIS = 'zonder aftrekbare btw';
+const FLOW_BASIS = 'omzet excl. btw · kosten zonder aftrekbare btw';
 
 const COL = {
   date: { key: 'date', label: 'Datum', format: 'day', width: '84px', phone: 'sub' },
@@ -49,7 +52,8 @@ const COL = {
   party: { key: 'party', label: 'Aan wie', format: 'text', phone: 'sub' },
   channel: { key: 'channel', label: 'Kanaal', format: 'text', phone: 'none' },
   open: { key: 'open', label: 'Open incl.', format: 'eur', phone: 'none', sum: true },
-  amount: { key: 'amount', label: 'Bedrag excl.', format: 'eur', phone: 'value' },
+  /* A cost's charge (expenseOf): excl. btw plus the btw we cannot deduct, so not an "excl." amount. */
+  amount: { key: 'amount', label: 'Kost', format: 'eur', phone: 'value' },
   revenue: { key: 'revenue', label: 'Omzet excl.', format: 'eur', phone: 'none', sum: true },
   result: { key: 'result', label: 'Resultaat', format: 'eurSigned', phone: 'value' },
 } as const satisfies Record<string, DrillColumn>;
@@ -59,8 +63,8 @@ const FLOW_COLUMNS: readonly DrillColumn[] = [COL.what, COL.date, COL.revenue, C
 const FLOW_GROUPS: readonly DrillGroup[] = [{ key: 'sales', label: 'Verkoop' }, { key: 'tica', label: 'TICA' }, { key: 'costs', label: 'Kosten' }];
 
 /**
- * A cost part as a row. Outside the category groups an investment's part says so: a pill where the description is
- * the first column, else after the description (the pill sits in the first column, here the date).
+ * A cost part as a row. Outside the category groups an investment's part says so: a pill (the dialog sets it after
+ * the row's name) in the month and channel views, the word after the description in Algemene kosten.
  */
 function costRow(row: ResultCostRow, ctx: ResultDrillContext, options: { group?: string; mark?: 'pill' | 'text'; sign?: 1 | -1 } = {}): DrillRow {
   const what = row.description || ctx.categoryName(row.categoryKey);
@@ -82,7 +86,7 @@ export function costsView(rows: readonly ResultCostRow[], order: readonly string
   /* A category that only holds an open cost of € 0 (import VAT) has no row of its own there: it goes last. */
   const keys = [...new Set([...order, ...rows.map((row) => row.categoryKey)])].filter((key) => rows.some((row) => row.categoryKey === key));
   return {
-    id: 'result.costs', title: 'Eigen kosten', scope: `${ctx.period} · excl. btw`,
+    id: 'result.costs', title: 'Eigen kosten', scope: `${ctx.period} · ${COST_BASIS}`,
     rows: rows.map((row) => costRow(row, ctx, { group: row.categoryKey })),
     groups: keys.map((key) => ({ key, label: ctx.categoryName(key) })),
     columns: COST_COLUMNS, valueKey: 'amount', total: { value: figure, format: 'eur', of: 'sum' },
@@ -94,7 +98,7 @@ export function costsView(rows: readonly ResultCostRow[], order: readonly string
 /** One row of Kosten per categorie: its cost parts; Kosten & bank opens on the category (Afschrijvingen has none there). */
 export function categoryView(code: string, rows: readonly ResultCostRow[], figure: number, ctx: ResultDrillContext): DrillView {
   return {
-    id: `result.category.${code}`, title: ctx.categoryName(code), scope: `${ctx.period} · excl. btw`,
+    id: `result.category.${code}`, title: ctx.categoryName(code), scope: `${ctx.period} · ${COST_BASIS}`,
     rows: rows.filter((row) => row.categoryKey === code).map((row) => costRow(row, ctx)),
     columns: COST_COLUMNS, valueKey: 'amount', total: { value: figure, format: 'eur', of: 'sum' },
     sort: { key: 'amount', dir: 'desc' }, empty: 'Geen kosten in deze categorie.',
@@ -163,7 +167,7 @@ function flowCostRow(row: ResultCostRow, ctx: ResultDrillContext): DrillRow {
 export function monthView(month: string, label: string, docs: readonly SalesDocumentRow[], tica: readonly ResultTicaMonth[], costs: readonly ResultCostRow[],
   figure: ResultRowFigure, ctx: ResultDrillContext): DrillView {
   return {
-    id: `result.month.${month}`, title: label, scope: `${ctx.period} · excl. btw`,
+    id: `result.month.${month}`, title: label, scope: `${ctx.period} · ${FLOW_BASIS}`,
     summary: figure.complete ? null : INCOMPLETE,
     rows: [
       ...docs.filter((doc) => resultDocument(doc) && doc.orderDate.startsWith(month)).map(documentRow),
@@ -180,7 +184,7 @@ export function monthView(month: string, label: string, docs: readonly SalesDocu
 export function channelView(code: string, docs: readonly SalesDocumentRow[], tica: readonly ResultTicaMonth[], costs: readonly ResultCostRow[],
   figure: ResultRowFigure, ctx: ResultDrillContext): DrillView {
   return {
-    id: `result.channel.${code}`, title: ctx.channelName(code), scope: `${ctx.period} · excl. btw`,
+    id: `result.channel.${code}`, title: ctx.channelName(code), scope: `${ctx.period} · ${FLOW_BASIS}`,
     summary: figure.complete ? null : INCOMPLETE,
     rows: [
       ...docs.filter((doc) => resultDocument(doc) && doc.channel === code).map(documentRow),
@@ -197,7 +201,7 @@ export function channelView(code: string, docs: readonly SalesDocumentRow[], tic
 /** Algemene kosten: the cost parts booked on no channel, as minus, so the channel rows add up to Resultaat (D-O5). */
 export function generalCostsView(costs: readonly ResultCostRow[], figure: number, ctx: ResultDrillContext): DrillView {
   return {
-    id: 'result.channel.none', title: 'Algemene kosten', scope: `${ctx.period} · excl. btw`,
+    id: 'result.channel.none', title: 'Algemene kosten', scope: `${ctx.period} · ${COST_BASIS}`,
     rows: costs.filter((row) => row.channel === null && row.amountEur !== 0).map((row) => costRow(row, ctx, { mark: 'text', sign: -1 })),
     columns: [COL.date, COL.what, COL.party, COL.open, { ...COL.amount, format: 'eurSigned' }], valueKey: 'amount',
     total: { value: -figure, format: 'eurSigned', of: 'sum' }, sort: { key: 'amount', dir: 'asc' },

@@ -82,6 +82,8 @@ export class Sheet implements AfterViewInit, OnDestroy {
   readonly wide = input(false);
   readonly closeLabel = input('Sluiten');
   readonly variant = input<'default' | 'ios'>('default');
+  /** A read-only dialog (nothing to lose): a click on the dimmed area closes it on the desk too. */
+  readonly backdropCloses = input(false);
   readonly closed = output<void>();
 
   readonly headingId = `sheet-heading-${++Sheet.nextId}`;
@@ -279,8 +281,9 @@ export class Sheet implements AfterViewInit, OnDestroy {
     /* Desktop: a stray click beside a half-filled form must not throw the
        work away - the cross, Annuleren and Escape remain the ways out.
        Phone: tapping the dimmed area is the natural way to dismiss a
-       bottom sheet, so there it still closes. */
-    if (window.innerWidth >= 680) return;
+       bottom sheet, so there it still closes. A read-only dialog
+       (backdropCloses) has no work to lose: it closes on the desk too. */
+    if (window.innerWidth >= 680 && !this.backdropCloses()) return;
     this.requestClose();
   }
 

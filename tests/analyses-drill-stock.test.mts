@@ -89,6 +89,10 @@ test('Kostwaarde / Verkoopwaarde: valued products plus a "Zonder kostprijs" grou
   assert.deepEqual(stockValueView(result.capital, [], { ...figure, upliftEur: 12 }, 'sales', unit, (value) => `€ ${value}`).sort, { key: 'sales', dir: 'desc' });
   assert.equal(stockValueView(result.capital, [], { ...figure, upliftEur: 12 }, 'sales', unit, (value) => `€ ${value}`).summary, 'marge op voorraad € 12');
   assert.deepEqual(view.foot?.link, { path: ['/stock', 'inventaris'] });
+  /* The pieces the old tiles named (saleable, partner) moved here, not away. */
+  const pieces = stockValueView(result.capital, [], { ...figure, saleablePieces: 1240, partnerPieces: 300 }, 'cost', unit, String);
+  assert.equal(pieces.note, '1.240 fysieke stuks van actieve verkoopproducten · partner: 300 stuks al gefactureerd, nog te verzenden.');
+  assert.equal(view.note, null, 'without the counts no note');
 });
 
 test('Onderweg: the ordered and sailing containers add up to their external cost; without an ETA last', () => {
@@ -107,7 +111,7 @@ test('Onderweg: the ordered and sailing containers add up to their external cost
   assert.deepEqual(view.rows[0].link, { path: ['/purchasing', 1] });
 });
 
-test('Raakt op: every row, "Bestel vóór" = today + the shelf weeks − the lead time; without a lead time none', () => {
+test('Raakt op: every row, "Bestel vóór" = today + the weeks with what is on the water − the lead time; without a lead time none', () => {
   assert.equal(orderByDay('2026-10-20', 2, 10), '2026-10-24');
   assert.equal(orderByDay('2026-10-20', 1, 30), '2026-09-27', 'already past: order now');
   assert.equal(orderByDay('2026-10-20', 3, 0), null);
@@ -122,9 +126,17 @@ test('Raakt op: every row, "Bestel vóór" = today + the shelf weeks − the lea
   const view = reorderView(result.reorder.rows, result.reorder.count, '2026-10-20', (id) => suppliers.get(id ?? 0) ?? null, unit, 90);
   assert.equal(drillGap(view)?.show, false, 'the rows are the count');
   assert.equal(view.summary, 'tempo over 90 dagen, zonder TICA');
+  const sold = reorderView(result.reorder.rows, result.reorder.count, '2026-10-20', () => null, unit, 90, { pieces: result.velocity.piecesSold, skus: result.velocity.skuCount });
+  assert.equal(sold.summary, `${result.velocity.piecesSold} gefactureerd in 90 dagen · ${result.velocity.skuCount} SKU’s · zonder TICA`, 'the old Verkooptempo sub');
   const one = view.rows.find((row) => row.key === 'p1')!;
   assert.deepEqual([one.cells['supplier'], one.cells['lead'], one.cells['incoming'], one.cells['eta']], ['Yunnan', 35, '1 st van 1', '2026-11-15']);
-  assert.equal(one.tone, 'danger', 'the order day has passed');
+  const row1 = result.reorder.rows.find((row) => row.productId === 1)!;
+  assert.ok(row1.weeksLeftWithIncoming! > row1.weeksLeft!, 'something is on the water');
+  assert.equal(one.cells['orderBy'], orderByDay('2026-10-20', row1.weeksLeftWithIncoming, 35), 'the next order counts what is on the water in');
+  assert.equal(one.tone, String(one.cells['orderBy']) <= '2026-10-20' ? 'danger' : null, 'danger only once that day has passed');
+  /* The finding's case: the shelf lasts 2 weeks, the container on its way brings it to 7,9; lead time 30 days. */
+  assert.equal(orderByDay('2026-10-20', 2, 30), '2026-10-04', 'on the shelf alone: 16 days ago, a false alarm');
+  assert.equal(orderByDay('2026-10-20', 7.9, 30), '2026-11-14', 'with what is on the water: 25 days ahead');
   assert.equal(view.rows.find((row) => row.key === 'p9')?.cells['orderBy'], null, 'no lead time: no order day');
   assert.deepEqual(view.sort, { key: 'orderBy', dir: 'asc' });
 });
@@ -138,6 +150,9 @@ test('Datakwaliteit: each count is its list (D-V5: an inactive or demo product i
   const counts = { unknown: gaps.unknownStockSkuCount, unvalued: gaps.unvaluedStockSkuCount, missingCarton: gaps.missingCartonSkuCount, negative: gaps.negativeStockSkuCount };
   const views = qualityViews(result.gapRows, counts, unit);
   assert.deepEqual(views.map((view) => view.tab), ['Onbekend', 'Zonder kostprijs', 'Zonder omdoos', 'Negatief']);
+  const pieces = qualityViews(result.gapRows, counts, unit, gaps.unvaluedStockPieces);
+  assert.equal(pieces[1].summary, `${gaps.unvaluedStockPieces} ${gaps.unvaluedStockPieces === 1 ? 'stuk' : 'stuks'} zonder kost`, 'the Overzicht\'s old "n stuks zonder kost"');
+  assert.deepEqual(pieces.filter((view) => view.summary).map((view) => view.tab), ['Zonder kostprijs']);
   for (const view of views) assert.equal(drillGap(view)?.show, false, `${view.id}: the rows are the count`);
   assert.equal(views[0].rows[0].cells['units'], 'onbekend');
   assert.equal(views[3].rows[0].cells['units'], '-2 st van 7');
@@ -164,4 +179,12 @@ test('empty states, and the page reads the rules (source): omdoos, no pace on a 
   assert.match(page, /sales: this\.failed\('verkoop'\) \? undefined : this\.salesOrders\(\)/, 'D-V4');
   assert.match(page, /weeksLabel\(row\.weeksLeft\)/, 'D-V6: the shelf weeks, not the weeks with what is on the water');
   assert.doesNotMatch(page, /st\/week/, 'D-V3');
+  /* A failed sales load says the pace is unknown, never "every valued product sold" or "nothing runs out". */
+  assert.equal(page.match(/failed\('verkoop'\) \? 'Verkoop niet geladen: tempo onbekend\.'/g)?.length, 2);
+  assert.match(page, /failed\('verkoop'\) \? '—' : whole\(im\.slowMovers\.valueEur\)/);
+  /* Onderweg names its basis beside Kostwaarde; the Open facturen foot is the payment delay over every year, like the tile. */
+  assert.match(page, /`externe kost · \$\{this\.orderedCount\(\)\} besteld/);
+  assert.match(page, /foot: all\.avgDaysToPaid === null \? '' : `betaald na gem\./);
+  /* Overzicht › Inkoop reads what Containerkost opens on (its default filter), so both show one payment result. */
+  assert.match(page, /containerCostRows\(this\.purchases\(\), 'open', ''\)/);
 });

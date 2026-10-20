@@ -153,13 +153,17 @@ export function costOpenView(rows: readonly ContainerCostRow[], total: Container
   };
 }
 
-/** A line of "Verschil met de afspraak": the containers with a share in it, the largest first. */
+/**
+ * A line of "Verschil met de afspraak": the containers with a share in it, the largest first. Rows and total carry
+ * the line's sign (PART_SIGN), so the dialog repeats the figure the card shows: a saving and a credit read minus.
+ */
 export function costVarianceView(part: VariancePart, rows: readonly ContainerCostRow[], total: ContainerCostTotals,
   context: ContainerCostDrillContext): DrillView {
+  const sign = PART_SIGN[part];
   const drillRows = rows.flatMap(({ view, reconciliation }): DrillRow[] => {
     const amount = containerPart(reconciliation, part);
     return isZero(amount) ? [] : [{ key: String(view.order.id), link: order(view, 'payment-result'), cells: {
-      name: context.name(view), state: reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig', amount: cents(amount),
+      name: context.name(view), state: reconciliation.totals.finalized ? 'Afgerekend' : 'Voorlopig', amount: cents(sign * amount),
     } }];
   }).sort((left, right) => Math.abs(Number(right.cells['amount'])) - Math.abs(Number(left.cells['amount'])));
   return {
@@ -170,8 +174,9 @@ export function costVarianceView(part: VariancePart, rows: readonly ContainerCos
       { key: 'amount', label: 'Bedrag', format: 'eur2', phone: 'value' },
     ],
     rows: drillRows, valueKey: 'amount',
-    total: { value: partFigure(total, part), format: 'eur2', of: 'sum' },
-    sort: { key: 'amount', dir: 'desc' },
+    total: { value: cents(sign * partFigure(total, part)), format: 'eur2', of: 'sum' },
+    /* The largest amount first, also when the line reads minus. */
+    sort: { key: 'amount', dir: sign > 0 ? 'desc' : 'asc' },
     empty: 'Geen containers met dit verschil.',
   };
 }

@@ -58,6 +58,8 @@ button.cf-kpi{margin:0;color:inherit;font:inherit;text-align:left;cursor:pointer
 .cf-kpi--drill::after{content:'›';position:absolute;top:11px;right:14px;color:var(--muted-2);font-size:16px;font-weight:600;opacity:0;transition:opacity .15s}
 .cf-kpi--drill:is(:hover,:focus-visible){border-color:var(--rose-line)}.cf-kpi--drill:is(:hover,:focus-visible)::after{opacity:1}
 .cf-kpi--drill:focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+/* A touch screen in the desk layout (a tablet, a phone on its side) has no hover: the chevron always shows there. */
+@media (hover:none){.cf-kpi--drill::after{opacity:1}}
 /* A value in words ("Blijft boven nul") wraps at 19 px instead of running out of the card (critique B2). */
 .cf-kpi__value[data-kind=text]{font-size:19px;letter-spacing:-.01em;white-space:normal}
 .cf-kpi--loading span,.cf-kpi--loading b,.cf-kpi--loading i{display:block;border-radius:99px;background:var(--surface-2);animation:cf-pulse 1.1s ease-in-out infinite}

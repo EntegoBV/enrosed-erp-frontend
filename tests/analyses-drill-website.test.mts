@@ -52,6 +52,21 @@ test('a request is a website document in the window: never a credit note, never 
   assert.deepEqual(websiteRequestRows(views, customers, { ...window, from: '2026-10-21' }).map((row) => row.id), [9], 'Vandaag: today only');
 });
 
+test('a document the server derives from a request is no new request: a voorschot- or slotfactuur, the later part of a split', () => {
+  const quote = doc(20, { orderDate: '2026-10-02' }, {}, [[1, 'Rozenbox rood']], 100_000);
+  /* The voorschotfactuur keeps the quote's channel and has no sourceQuoteId (SalesAdvanceBillingService). */
+  const advance = doc(21, { orderDate: '2026-10-05', docType: 'FACTUUR' }, { advanceBilling: { stage: 'ADVANCE', quoteId: 20, quoteNumber: 'D-20', percentage: 30, amountExclEur: 30_000 } },
+    [[1, 'Rozenbox rood']], 30_000);
+  /* A split's second part: a copy with the channel, without the quote link (SalesSplits); part 1 is the original document. */
+  const later = doc(22, { orderDate: '2026-10-06', docType: 'FACTUUR' }, { fulfillment: { groupId: 'g', rootOrderId: 20, part: 2, status: 'WAITING_FOR_STOCK', siblingId: 23,
+    siblingNumber: 'D-23', financialsLocked: true } }, [[2, 'Glazen stolp']], 4_000);
+  const first = doc(23, { orderDate: '2026-10-06', docType: 'FACTUUR' }, { fulfillment: { groupId: 'g', rootOrderId: 20, part: 1, status: 'PLANNED', siblingId: 22,
+    siblingNumber: 'D-22', financialsLocked: true } }, [[1, 'Rozenbox rood']], 6_000);
+  const rows = websiteRequestRows([quote, advance, later, first], customers, window);
+  assert.deepEqual(rows.map((row) => row.id), [20, 23], 'the quote and an invoice without a quote link; never the voorschot or part 2');
+  assert.equal(rows.reduce((sum, row) => sum + row.valueExclEur, 0), 106_000, 'the tile\'s € no longer adds the voorschot');
+});
+
 test('the requests view counts its rows, links each document and adds up the amounts (A.4)', () => {
   const rows = websiteRequestRows(views, customers, window);
   const view = websiteRequestsView(rows, { scope: '30 dagen · 22 sep – 21 okt 2026 · op documentdatum · excl. btw', count: rows.length,
@@ -159,6 +174,10 @@ test('a known product links to the ERP, an unknown handle to its page on the web
   assert.equal(retired.link && 'href' in retired.link ? retired.link.href.startsWith(WEBSITE_PRODUCT_BASE) : false, true);
   assert.equal(retired.cells['product'], 'retired heart');
   assert.equal(retired.cells['sku'], null);
+  /* From the funnel step (sessions), the summary names the clicked figure beside the views (A.4). */
+  const fromFunnel = websiteProductsView(productPageRows([]), { scope: 's', productViews: 640, catalog: new Map(), productSessions: 120 });
+  assert.equal(fromFunnel.summary, '120 sessies openden een productpagina · 640 weergaven');
+  assert.equal(viewOf(95).summary, null, 'the kind tile is views already: no summary');
   const empty = websiteProductsView([], { scope: 's', productViews: 0, catalog: new Map() });
   assert.equal(empty.empty, 'Geen productpagina’s bekeken in deze periode.');
 });

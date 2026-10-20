@@ -153,11 +153,15 @@ test('Brutomarge: with lines without a cost the list to fix comes first and coun
   assert.equal(adds(missing), 0);
   assert.deepEqual(missing.rows.map((row) => [row.cells['product'], row.cells['lines'], row.link]),
     [['Schaal', 1, { path: ['/products', 14] }], ['TICA · 1 regel', 1, { path: ['/tica'], query: { from: '2026-09-14', to: today } }]]);
-  assert.equal(adds(perDocument), 10, 'the credit note (−40) and the October TICA margin without cost (50)');
+  /* The tile reads "—" while a cost is missing: the rows stand without a total (as Resultaat's month and channel views). */
+  assert.equal(perDocument.total, null, 'no "Totaal" for a margin the tile does not show');
+  assert.equal(drillTable(perDocument).total, null);
+  assert.equal(Math.round((m.marginEur - columnSum(perDocument.rows, 'margin')) * 100) / 100, 10,
+    'what the rows miss: the credit note (−40) and the October TICA margin without cost (50)');
   assert.equal(perDocument.gapLabel, 'Creditnota’s en TICA zonder kost');
   assert.equal(perDocument.rows.find((row) => row.key === 'd3')?.cells['margin'], null, 'a credit note never shows a margin');
   assert.ok(!perDocument.columns.some((column) => column.key === 'margin' && column.sum), 'the margin is the value, never a sum column beside a credit note');
-  assert.equal(drillTable(perDocument).total?.sums['revenue'], 5300, 'the Omzet column adds up beside it');
+  assert.equal(columnSum(perDocument.rows, 'revenue'), 5300, 'the Omzet column beside it');
 });
 
 test('Brutomarge without missing costs: per document and per customer, the credit note named as the gap', () => {
@@ -183,6 +187,20 @@ test('Gefactureerd: every issued invoice (voorschot with its container) and cred
   assert.equal(m.invoices.averageClaimEur, (1210 + 500 + 363 + 484) / 4, 'the voorschot stays out of the average (D-S6)');
   assert.equal(view.summary, `gem. € ${(1210 + 500 + 363 + 484) / 4} per gewone factuur`);
   assert.equal(drillTable(view).total?.sums['outstanding'], 1210 + 5000 + 363 + 484);
+});
+
+test('a regular voorschotfactuur: omzet on its date (the server\'s recognition, as Hoe gerekend says); the average reads the slotfactuur before the deduction', () => {
+  const billing = (stage: 'ADVANCE' | 'FINAL') => ({ stage, quoteId: 30, quoteNumber: 'OFF-30', percentage: stage === 'ADVANCE' ? 30 : null, amountExclEur: 30_000 });
+  const advance = { ...doc({ id: 31, date: '2026-03-01', total: 30_000, claim: 36_300, revenue: 30_000, profit: 30_000 }), advanceBilling: billing('ADVANCE') } as SalesOrderView;
+  const final = doc({ id: 32, date: '2026-06-01', total: 70_000, claim: 84_700, revenue: 70_000, cost: 70_000, profit: 0 });
+  const slot = { ...final, priced: { ...final.priced, totals: { ...final.priced.totals, vatRatePct: 21 } }, advanceBilling: billing('FINAL') } as SalesOrderView;
+  const plain = doc({ id: 33, date: '2026-07-01', total: 10_000, claim: 12_100, revenue: 10_000, cost: 7_000, profit: 3_000 });
+  const result = salesAnalysis([advance, slot, plain], customers, { ...period, topLimit: 8 });
+  assert.ok(Math.abs(result.invoices.averageClaimEur! - (84_700 + 30_000 * 1.21 + 12_100) / 2) < 0.005,
+    'the slotfactuur counts as the whole sale (its claim plus the deducted voorschot incl. btw); the voorschotfactuur stays out');
+  assert.equal(result.invoices.advanceClaimEur, 36_300);
+  assert.equal(result.invoices.revenueExclEur, 110_000, 'omzet follows the server: the voorschot on its date, the slotfactuur net of it');
+  assert.equal(result.invoices.revenueInvoiceCount, 3);
 });
 
 test('Open offertes: today\'s open regular quotes of every year add up to the pipeline; partner funding stays out', () => {

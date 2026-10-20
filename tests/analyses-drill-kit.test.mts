@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readdir, readFile } from 'node:fs/promises';
 import type { DrillRow, DrillView } from '../src/app/features/analyses/drill-model.ts';
 import {
-  DEFAULT_GAP_LABEL, columnSum, columnTrack, compareCells, drillGap, drillTable, firstSortDir, linkKind, nextSort, phoneParts, sortRows, summedColumns,
+  DEFAULT_GAP_LABEL, columnSum, columnTrack, compareCells, drillGap, drillTable, firstSortDir, headerWidth, linkKind, nextSort, phoneParts, sortRows, summedColumns,
 } from '../src/app/features/analyses/drill-table.ts';
 
 /*
@@ -94,6 +94,30 @@ test('columns, links and phone cells', () => {
   assert.equal(columnSum(rows, 'margin'), 460);
 });
 
+test('a fixed track grows to its header\'s longest word plus the sort chevron; a header of several words wraps', () => {
+  /* Measured in the system font at 11 px bold capitals (review-layout-headers.log), + 16 px for the chevron and its gap. */
+  const measured: [string, number][] = [['Vervaldatum', 92.7], ['Doorlooptijd', 98.5], ['Ontvangen', 78.3], ['Verkoopwaarde', 113.1],
+    ['Kostwaarde', 87.1], ['Beschadigd', 82.3], ['Documenten', 88.4], ['Kost/eenheid', 91.7]];
+  for (const [label, px] of measured) assert.ok(headerWidth(label) >= px + 16, `${label}: ${headerWidth(label)} ≥ ${px + 16}`);
+  assert.equal(columnTrack({ key: 'due', label: 'Vervaldatum', format: 'day', phone: 'sub' }, 2), `${headerWidth('Vervaldatum')}px`, 'wider than 84 px');
+  assert.equal(columnTrack({ key: 'sales', label: 'Verkoopwaarde', format: 'eur', phone: 'none' }, 4), `${headerWidth('Verkoopwaarde')}px`, 'wider than 112 px');
+  assert.equal(columnTrack({ key: 'claim', label: 'Te factureren excl.', format: 'eur', phone: 'value' }, 4), '112px', 'it wraps between its words');
+  assert.equal(columnTrack({ key: 'lead', label: 'Doorlooptijd', format: 'days', phone: 'none', width: '84px' }, 3), `${headerWidth('Doorlooptijd')}px`, 'a px width too');
+  assert.equal(columnTrack({ key: 'a', label: 'Een heel lange kop', format: 'text', phone: 'sub', width: 'minmax(0,2fr)' }, 1), 'minmax(0,2fr)');
+});
+
+test('the pill and the gap and total labels sit in the row\'s name, also when a list opens on its date (Kasprognose)', () => {
+  const dated = view(rows, { columns: [
+    { key: 'date', label: 'Datum', format: 'day', phone: 'sub', width: '84px' },
+    { key: 'doc', label: 'Omschrijving', format: 'text', phone: 'title' },
+    { key: 'margin', label: 'Bedrag', format: 'eurSigned', phone: 'value' },
+  ] });
+  assert.equal(drillTable(dated).labelColumn, 'doc', 'not the 84 px date cell');
+  assert.equal(drillTable(view(rows)).labelColumn, 'doc');
+  assert.equal(drillTable(view(rows, { columns: [{ key: 'margin', label: 'Marge', format: 'eur', phone: 'title' }] })).labelColumn, 'margin',
+    'a view whose only column is its figure keeps the first column');
+});
+
 test('source: the contract has types only and every drill module imports types only (node-tested builders)', async () => {
   const model = await read('drill-model.ts');
   const code = model.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
@@ -124,4 +148,16 @@ test('source: the dialog renders once at page level, after the page sheets and o
   assert.match(drillComponent, /selector: 'app-an-drill'/);
   assert.match(drillComponent, /\(closed\)="host\.close\(\)"/);
   assert.doesNotMatch(drillComponent, /styles:/, 'no styles array: styles/analyses-drill.scss');
+  /* A read-only dialog: the dimmed area closes it on the desk too (A.2). */
+  assert.match(drillComponent, /<app-sheet [^>]*\[backdropCloses\]="true"/);
+  const sheet = await readFile(new URL('../src/app/shared/ui.ts', import.meta.url), 'utf8');
+  assert.match(sheet, /if \(window\.innerWidth >= 680 && !this\.backdropCloses\(\)\) return;/);
+  /* Cmd/Ctrl/Shift/Alt-click opens a tab and keeps the list: only a plain click closes it. */
+  assert.doesNotMatch(drillComponent, /\(click\)="host\.close\(\)"/);
+  assert.match(drillComponent, /if \(event\.button === 0 && !event\.metaKey && !event\.ctrlKey && !event\.shiftKey && !event\.altKey\) this\.host\.close\(\);/);
+  /* The pill and the gap and total labels go in the row's name column, never the narrow first (date) cell. */
+  assert.doesNotMatch(drillComponent, /let first = \$first/);
+  const styles = await readFile(new URL('../src/styles/analyses-drill.scss', import.meta.url), 'utf8');
+  assert.match(styles, /@media \(max-width: 679\.98px\), \(hover: none\)/, 'no hover: the chevron shows');
+  assert.match(styles, /app-an-drill \.and__title \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/);
 });

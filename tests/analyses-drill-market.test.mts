@@ -80,8 +80,43 @@ test('open containers in dollar: open statuses only, not archived, goods in doll
   assert.deepEqual(drill.rows.find((row) => row.key === 'po:43')!.link, { path: ['/purchasing', 43] });
   assert.equal(drill.rows.find((row) => row.key === 'po:41')!.tone, 'ok', 'cheaper today than in the order');
   assert.equal(drill.rows.find((row) => row.key === 'po:43')!.tone, 'warn', 'dearer today than in the order');
-  assert.equal(drill.note, 'Al betaalde termijnen gingen aan hun eigen koers.');
+  assert.equal(drill.note, 'Al betaalde termijnen gingen aan hun eigen koers; een prijs in euro loopt geen koersrisico.');
+  assert.equal(drill.columns.some((col) => col.key === 'cny'), false, 'no yuan column without goods in yuan');
   assert.equal(usdContainersView([], { usdPerEur: 1.12, asOf: '2026-10-20' }, ctx).empty, 'Geen open containers met goederen in dollar.');
+});
+
+test('open containers: each line in its own price currency, a euro price has no rate risk, only what is still to pay counts', () => {
+  /* One container: a line priced in dollar on the order, one that follows its product's euro price, one in yuan. */
+  const mixed = {
+    ...po(51, { usdToEurGoods: 0.9, cnyToUsd: 0.14, lines: [
+      { productId: 1, exwCurrency: 'USD' }, { productId: 2, exwCurrency: null }, { productId: 3, exwCurrency: 'CNY' },
+    ] } as unknown as Partial<PurchaseOrderView['order']>, { goodsUsd: 30_000, goodsEur: 27_000 }),
+  } as PurchaseOrderView;
+  (mixed as { costing: unknown }).costing = { totals: { goodsUsd: 30_000, goodsEur: 27_000 }, lines: [
+    { productId: 1, goodsUsd: 10_000 }, { productId: 2, goodsUsd: 10_000 }, { productId: 3, goodsUsd: 10_000 },
+  ] };
+  const currency = (id: number) => (id === 2 ? 'EUR' : 'USD');
+  const [row] = usdContainerRows([mixed], { usdPerEur: 1.1, cnyPerEur: 8 }, currency);
+  assert.equal(row.goodsUsd, 10_000, 'the dollar line only');
+  assert.equal(Math.round(row.goodsCny), Math.round(10_000 / 0.14), 'the yuan line in yuan');
+  assert.equal(row.eurOrder, 18_000, 'the euro line has no rate: dollar and yuan lines at the order rate');
+  assert.equal(row.eurToday, Math.round((10_000 / 1.1 + 10_000 / 0.14 / 8) * 100) / 100, 'the yuan line follows the yuan, not the dollar');
+  /* A euro-priced container has no row at all (finding: − € 118,58 "goedkoper" on a price fixed in euro). */
+  const euro = { ...mixed, order: { ...mixed.order, id: 52, lines: [{ productId: 2, exwCurrency: 'EUR' }] },
+    costing: { totals: { goodsUsd: 10_870, goodsEur: 10_000 }, lines: [{ productId: 2, goodsUsd: 10_870 }] } } as unknown as PurchaseOrderView;
+  assert.deepEqual(usdContainerRows([euro], 1.1), []);
+  /* 30 % of the supplier paid: only the open 70 % carries the rate risk. */
+  const paid = { ...mixed, reconciliation: { streams: [], totals: {}, lines: [], notes: [],
+    supplierInstalments: [{ plannedEur: 8_100, remainingEur: 0 }, { plannedEur: 18_900, remainingEur: 18_900 }] } } as unknown as PurchaseOrderView;
+  const [open] = usdContainerRows([paid], { usdPerEur: 1.1, cnyPerEur: 8 }, currency);
+  assert.equal(open.openShare, 0.7);
+  assert.equal(open.eurOrder, Math.round(18_000 * 0.7 * 100) / 100);
+  assert.equal(open.goodsUsd, 7_000);
+  const drill = usdContainersView([row, open], { usdPerEur: 1.1, cnyPerEur: 8, asOf: '2026-10-20' }, ctx);
+  assert.equal(drill.title, 'Open containers in dollar en yuan');
+  assert.equal(drill.columns.find((col) => col.key === 'cny')?.label, 'Goederen ¥');
+  assert.equal(drill.scope, 'ECB 2026-10-20: $ 1,1000 · ¥ 8,0000 voor € 1 · nog te betalen aan de leverancier');
+  assert.equal(cents(drill.total!.value), sum(drill), 'the rows add up to the total');
 });
 
 test('freight per container: own freight only, the day it sailed (else ordered), Drewry of that week', () => {
@@ -116,4 +151,19 @@ test('freight per container: own freight only, the day it sailed (else ordered),
   assert.deepEqual(drill.rows.find((row) => row.key === 'po:41')!.link, { path: ['/purchasing', 41] });
   assert.equal(drill.columns.find((col) => col.key === 'diff')!.phone, 'value');
   assert.equal(freightContainersView([], ctx).summary, 'Geen Drewry-notering in die weken');
+  assert.equal(drill.note, 'Vertrek: de vertrekdag, anders de besteldatum.');
+});
+
+test('freight per container: Drewry quotes a 40 ft box, so a 20 ft or LCL shipment is listed without a comparison', () => {
+  const drewry = { dates: ['2026-06-11'], values: [2600] };
+  const rows = freightContainerRows([
+    po(61, { freightUsd: 1500, shippedOn: '2026-06-12', containerType: 'TWENTY_GP' }),
+    po(62, { freightUsd: 900, shippedOn: '2026-06-12', containerType: 'LCL' }),
+    po(63, { freightUsd: 3000, shippedOn: '2026-06-12', containerType: 'FORTY_HQ' }),
+  ], drewry);
+  assert.deepEqual(rows.map((row) => [row.id, row.forty, row.marketUsd, row.diffPct]), [[63, true, 2600, 15.4], [62, false, null, null], [61, false, null, null]]);
+  const drill = freightContainersView(rows, ctx);
+  assert.equal(drill.summary, 'gemiddeld + 15,4 % t.o.v. Drewry', 'the 20 ft box no longer pulls the mean down');
+  assert.equal(drill.rows.find((row) => row.key === 'po:61')!.cells['market'], 'geen 40 ft');
+  assert.match(drill.note!, /20 ft en LCL vergelijken we niet/);
 });
