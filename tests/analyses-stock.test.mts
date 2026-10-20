@@ -11,3 +11,11 @@ test('stock counts every location; a product without level rows keeps its own fi
   assert.equal(result[2], products[2], 'untouched products are the same objects');
   assert.equal(products[0].stockQuantity, 420, 'the input is not changed');
 });
+
+test('analyses value remaining stems as an exact share of the display cost', () => {
+  const products = [{ id: 1, stockQuantity: 0, landedCostEur: 24 }];
+  const result = withAllLocations(products, [{ productId: 1, locationId: 2, quantity: 7, loosePieces: 11, piecesPerUnit: 12 }]);
+  assert.equal(result[0].stockQuantity, 95 / 12);
+  assert.equal(result[0].stockQuantity * result[0].landedCostEur, 190);
+  assert.equal(products[0].stockQuantity, 0);
+});

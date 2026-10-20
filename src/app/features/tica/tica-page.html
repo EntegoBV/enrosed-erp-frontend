@@ -43,6 +43,8 @@
     }
   </section>
 
+  <app-tica-stock-settings (changed)="loadStatus(); loadSales()" />
+
   <section class="tica-register" aria-labelledby="tica-register-title" [attr.aria-busy]="loading()">
     <div class="tica-section-heading"><div><h2 id="tica-register-title">Verkoopoverzicht</h2><p>{{ day(from()) }}{{ from() === to() ? '' : ' t/m ' + day(to()) }} · Brusselse tijd</p></div>
       <span class="tica-source">Bron: TICA</span>
@@ -84,6 +86,9 @@
                     <span class="tica-article-code">{{ line.sku || line.beeyondArticleNumber || 'Geen artikelcode' }}</span>
                     @if (line.productId && line.mappingStatus === 'MATCHED') { <a [routerLink]="['/products', line.productId]" class="tica-product-link">ERP-product <app-icon name="chevron-right" [size]="12" /></a> }
                     @else { <small class="tica-unmatched">Product nog niet herkend</small> }
+                    <small class="tica-stock-status" [class.tica-unmatched]="stockNeedsAttention(line)" [title]="line.stockMessage || ''">{{ stockLabel(line) }}</small>
+                    @if (stockNeedsAttention(line) && line.stockMessage) { <small>{{ line.stockMessage }}</small> }
+                    <a routerLink="/tica" [queryParams]="{ from: from(), to: to(), sale: line.id }" class="tica-product-link">Verkoop en voorraad ›</a>
                   </td>
                   <td class="right num">{{ count(line.quantity) }}</td><td class="right num">{{ euro(line.grossTotal) }}</td><td class="right num">{{ euro(line.netTotal) }}</td>
                 </tr>
@@ -101,6 +106,8 @@
                 @if (line.productId && line.mappingStatus === 'MATCHED') { <a [routerLink]="['/products', line.productId]" class="tica-product-link">ERP-product <app-icon name="chevron-right" [size]="12" /></a> }
                 @else { <small class="tica-unmatched">Product nog niet herkend</small> }
               </div>
+              <p class="tica-sale-stock" [class.tica-unmatched]="stockNeedsAttention(line)">{{ stockLabel(line) }}@if (stockNeedsAttention(line) && line.stockMessage) { <small>{{ line.stockMessage }}</small> }</p>
+              <a routerLink="/tica" [queryParams]="{ from: from(), to: to(), sale: line.id }" class="tica-product-link">Verkoop en voorraad ›</a>
             </li>
           }
         </ul>
@@ -111,9 +118,10 @@
         <div class="tica-empty"><span><app-icon name="receipt" [size]="28" /></span><h3>Geen verkopen in deze periode</h3><p>Er zijn nog geen TICA-verkoopregels geïmporteerd voor de gekozen datums.</p></div>
       }
     } @else if (loading()) { <div class="tica-loading"><app-skeleton kind="list" [rows]="4" /></div> }
-    <p class="tica-source-note">Alle bedragen zijn exclusief btw. Bruto is vóór korting; omzet na korting is het nettobedrag uit TICA en telt mee in kanaal TICA. Er worden geen extra verkoopfacturen of voorraadboekingen aangemaakt.</p>
+    <p class="tica-source-note">Alle bedragen zijn exclusief btw. Bruto is vóór korting; omzet na korting is het nettobedrag uit TICA en telt mee in kanaal TICA. Voorraad volgt de ingestelde koppeling; elke verwerking en correctie blijft in de geschiedenis staan.</p>
   </section>
   <app-tica-settlements />
+  <app-tica-sale-history />
 </div>
 
 @if (settingsOpen()) {

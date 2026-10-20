@@ -98,7 +98,7 @@ export interface StockMovement {
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'DAMAGED' | 'DEMO' | 'SHORTAGE';
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'DEMO' | 'SHORTAGE';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
@@ -106,6 +106,15 @@ export interface StockMovement {
   locationName: string | null;
   /** The container a damage or shortage report points at; absent on older lines. */
   purchaseOrderId?: number | null;
+  /** Imported TICA movements are immutable; corrections create another movement. */
+  ticaSaleId?: number | null;
+  sourceSoldAt?: string | null;
+  deletable?: boolean;
+  looseDelta?: number;
+  loosePiecesAfter?: number;
+  unitPieces?: number | null;
+  sourceQuantity?: number | null;
+  sourceUnit?: 'PIECE' | 'DISPLAY' | null;
 }
 
 /** A place where stock sits: the warehouse, or a sales point such as a TICA stand. */
@@ -136,6 +145,8 @@ export interface StockLevel {
   productId: number;
   locationId: number;
   quantity: number;
+  loosePieces?: number;
+  piecesPerUnit?: number;
 }
 
 /** A product's pieces at one location, with the location spelled out. */
@@ -146,6 +157,8 @@ export interface ProductStock {
   kindLabel: string;
   countsForWebsite: boolean;
   quantity: number;
+  loosePieces?: number;
+  piecesPerUnit?: number;
 }
 
 /** Gift box or display the product is sold in, with its own outer size. */

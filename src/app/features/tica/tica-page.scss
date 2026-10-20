@@ -63,6 +63,9 @@
 .tica-product-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; margin-top: 4px; text-decoration: none; }
 .tica-product-link:hover { text-decoration: underline; }
 .tica-unmatched { color: var(--warn) !important; }
+.tica-stock-status { line-height: 1.5; }
+.tica-sale-stock { margin: 10px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.tica-sale-stock small { display: block; margin-top: 3px; }
 .tica-mobile-sales { display: none; }
 .tica-list-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; }
 .tica-list-foot p { font-size: 12px; color: var(--muted); }

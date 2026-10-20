@@ -124,3 +124,8 @@ app-product-view .pph-loading { display: grid; gap: 14px; padding: 8px 16px; }
 .sheet--ios .pph-sheet .price-build__source { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
 /* A location stays with its figure and an order number stays whole: lines break only between the parts. */
 app-product-view .pph-nw { display: inline-block; }
+
+/* Complete sales units and loose contents stay readable on a narrow phone. */
+app-product-view #stock-card .ios-section__head { flex-wrap: wrap; }
+app-product-view #stock-card .ios-cell__value { max-width: 45%; white-space: normal; text-align: right; font-size: 14px; line-height: 1.35; }
+app-product-view .pph-delta { max-width: 35%; text-align: right; }

@@ -6,7 +6,10 @@
  */
 
 export type CountStatus = 'OPEN' | 'GEBOEKT' | 'GEANNULEERD';
+/** Null/absent keeps the original frozen sales-unit basis of a legacy document. */
+export type InventoryQuantityBasis = 'BASE_PIECE' | null;
 export interface CountSummary { id: number; countYear: number; locationId: number; locationName: string; status: CountStatus;
+  quantityBasis?: InventoryQuantityBasis;
   correctsCountId: number | null;   // null = full count
   note: string | null; lineCount: number; countedCount: number; differenceCount: number; missingReasonCount: number;
   startedByName: string; startedAt: string; bookedByName: string | null; bookedAt: string | null; }
@@ -22,6 +25,7 @@ export interface OpenDocument { kind: 'FACTUUR' | 'CONTAINER'; id: number;
   number: string;                   // FACTUUR: the invoice number; CONTAINER: the display name (the order number only when it has none)
   quantity: number; }
 export interface CountLine { id: number; productId: number; sku: string | null; productName: string; categoryName: string | null;
+  quantityBasis?: InventoryQuantityBasis;
   familyId: number | null; unitKey: string | null; salesUnit: 'PIECE' | 'DISPLAY'; piecesPerUnit: number | null;
   addedByHand: boolean; liveQuantity: number; expectedQuantity: number | null; countedQuantity: number | null;
   difference: number | null; reasonCode: string | null; reasonLabel: string | null; reasonNote: string | null;
@@ -48,6 +52,7 @@ export interface BookingCheck {
   checkToken: string; }
 
 export interface OpeningLayer { id: number; productId: number; sku: string | null; productName: string; quantity: number;
+  quantityBasis?: InventoryQuantityBasis; unitPieces?: number | null;
   unitValueEur: number; asOfDate: string; source: string; note: string | null; createdByName: string; createdAt: string; }
 export interface OpeningLayerWrite { asOfDate: string; source: string;
   rows: { productId: number; quantity: number; unitValueEur: number; note?: string | null }[]; }
@@ -55,6 +60,7 @@ export interface OpeningLayerWrite { asOfDate: string; source: string;
 export interface ValuationRule { method: 'FIFO_LOT'; methodLabel: string; effectiveFromYear: number; ruleVersion: string; text: string; }
 export type ClosingStatus = 'CONCEPT' | 'DEFINITIEF';
 export interface ClosingSummary { id: number; closingYear: number; versionNo: number; closingDate: string; status: ClosingStatus;
+  quantityBasis?: InventoryQuantityBasis;
   superseded: boolean; totalValueEur: number | null; estimatedEur: number | null; blockerCount: number; warningCount: number;
   correctionReason: string | null; finalizedByName: string | null; finalizedAt: string | null; hasFiles: boolean; }
 export interface ClosingOverview { rule: ValuationRule | null; closings: ClosingSummary[]; }
@@ -190,6 +196,7 @@ export interface VersionChanges { againstClosingId: number; againstVersionNo: nu
 // a list holds only the entries that differ; "before" = the replaced version, null = absent on that side
 export interface OlderInvoice { salesOrderId: number; number: string; orderDate: string; customerName: string | null; quantity: number; }
 export interface ClosingView { id: number; closingYear: number; versionNo: number; closingDate: string; cutoffAt: string;
+  quantityBasis?: InventoryQuantityBasis;
   status: ClosingStatus; superseded: boolean; supersedesId: number | null; supersededById: number | null;
   correctionReason: string | null; previousClosing: { id: number; closingYear: number; closingDate: string; versionNo: number } | null;
   previousClosingReplacedBy: { id: number; versionNo: number } | null;   // read time, 5.1

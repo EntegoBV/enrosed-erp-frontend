@@ -7,8 +7,9 @@ import type { Product } from '../../core/api/models';
  * to productSalesUnit. Its own file because it needs that helper at run time,
  * while inventory-count.ts and inventory-closing.ts stay type-imports only.
  */
-export function inventoryUnit(row: { unitKey: string | null; salesUnit: 'PIECE' | 'DISPLAY'; piecesPerUnit: number | null }) {
+export function inventoryUnit(row: { unitKey: string | null; salesUnit: 'PIECE' | 'DISPLAY'; piecesPerUnit: number | null; quantityBasis?: 'BASE_PIECE' | null }) {
+  const salesUnit = row.quantityBasis === 'BASE_PIECE' ? 'PIECE' : row.salesUnit;
   return productSalesUnit({ packaging: {
-    kind: row.salesUnit === 'DISPLAY' ? 'DISPLAY' : 'NONE', salesUnit: row.salesUnit,
+    kind: salesUnit === 'DISPLAY' ? 'DISPLAY' : 'NONE', salesUnit,
     piecesPerUnit: row.piecesPerUnit, unitKey: row.unitKey } as Product['packaging'] });
 }

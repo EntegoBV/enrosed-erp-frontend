@@ -1,5 +1,8 @@
 import { capitalize, DEFAULT_UNIT_KEY, otherBasisPrice, packagingSummary, priceBasisChange, priceBasisConfirmation, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import { ProductSalesSetup } from './product-sales-setup';
+import { ProductChannelPrice } from './product-channel-price';
+import { StockMovementSource, stockMovementDeletable } from './stock-movement-source';
+import { looseStockText, stockAmountText, stockMovementAfter, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
 import {
   ChangeDetectionStrategy,
@@ -89,7 +92,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet,
+    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource,
   ],
   template: `
     @if (!desktop.active()) {
@@ -149,7 +152,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         <div class="editor-toolbar__titles">
           <h1>{{ id() && id() !== 'new' ? 'Bewerken' : 'Nieuw product' }}</h1>
           <span class="editor-save-status" role="status" [class.is-dirty]="workspaceDirty()">
-            {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : 'Geen openstaande wijzigingen' }}
+            {{ !editorReady() ? (productLoadError() ? 'Niet geladen' : 'Laden…') : saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Niet-opgeslagen wijzigingen' : channelPrices()?.dirty() ? 'TICA-prijs apart opslaan' : 'Geen openstaande wijzigingen' }}
           </span>
         </div>
       </div>
@@ -276,7 +279,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div class="pe-strip" aria-label="Kerncijfers">
             <button class="pe-fig" type="button" (click)="showTab('stock')">
               <small>Voorraad</small>
-              <strong>{{ workspaceStockLabel() }}@if (workspaceStockLabel() !== 'Onbekend') {<em>{{ salesUnit(draft()).plural }}</em>}</strong>
+              <strong>{{ workspaceStockLabel() }}@if (workspaceStockLabel() !== 'Onbekend' && stockLevels() === null) {<em>{{ salesUnit(draft()).plural }}</em>}</strong>
               <span>{{ isNew() ? 'na aanmaken' : 'alle locaties' }}</span>
             </button>
             <button class="pe-fig" type="button" (click)="draft().id !== null ? costHistoryOpen.set(true) : showTab('purchasing')"
@@ -975,6 +978,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <dd class="num">{{ unitMargin() | eur }}</dd>
             </dl>
           </div>
+          <app-product-channel-price [product]="draft()" [editable]="true" [disabled]="formWriteBusy()" />
         </div>
       </section>
 
@@ -1013,6 +1017,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                            (keydown.enter)="$any($event.target).blur()"
                            (keydown.escape)="$any($event.target).value = level.quantity; $any($event.target).blur()"
                            (change)="quickSetStock(level, $any($event.target))" />
+                    @if (level.loosePieces) { <small>+ {{ looseText(level.loosePieces, draft()) }} · blijven behouden</small> }
                   </label>
                 }
               </div>
@@ -1062,30 +1067,31 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                            (touchend)="moveSwipeEnd(move)"
                            (touchcancel)="moveSwipeEnd(move)"
                            (click)="moveSwiped() !== null && moveSwiped.set(null)">
-                        <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta < 0">
-                          {{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}
+                        <span class="stock-history__delta num" [class.stock-history__delta--minus]="move.delta * (move.unitPieces || 1) + (move.looseDelta || 0) < 0">
+                          {{ moveDelta(move, draft()) }}
                         </span>
                         <span class="stock-history__what">
                           <b>{{ move.kindLabel }}@if (move.reference) { {{ move.kind === 'TRANSFER_OUT' || move.kind === 'TRANSFER_IN' ? '' : '·' }} {{ move.reference }}}</b>
                           <small>@if (move.locationName) { {{ move.locationName }} · }{{ move.at | dateTimeNl }} · {{ move.actor }}</small>
+                          <app-stock-movement-source [move]="move" />
                         </span>
-                        <span class="stock-history__after num">= {{ move.quantityAfter | num }}</span>
-                        <button class="stock-history__bin" type="button" title="Regel verwijderen"
+                        <span class="stock-history__after num">= {{ moveAfter(move, draft()) }}</span>
+                        @if (canDeleteMove(move)) { <button class="stock-history__bin" type="button" title="Regel verwijderen"
                                 aria-label="Regel verwijderen" (click)="deleteMove(move); $event.stopPropagation()">
                           <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M4 7h16" /><path d="M9 7V5h6v2" />
                             <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
                           </svg>
-                        </button>
+                        </button> }
                       </div>
-                      <button class="swipe__delete" type="button" [disabled]="moveDeleting() !== null"
+                      @if (canDeleteMove(move)) { <button class="swipe__delete" type="button" [disabled]="moveDeleting() !== null"
                               aria-label="Regel verwijderen" (click)="deleteMove(move)">
                         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
                              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <path d="M4 7h16" /><path d="M9 7V5h6v2" />
                           <path d="M6.5 7l1 13h9l1-13" /><path d="M10 11v6" /><path d="M14 11v6" />
                         </svg>
-                      </button>
+                      </button> }
                     </li>
                   }
                 </ol>
@@ -1404,7 +1410,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <!-- Photos are saved the moment they change: on this tab the dock says so instead of "Alles opgeslagen". -->
           <span class="product-editor-dock__context product-editor-dock__photos" role="status"><strong>Foto’s worden meteen bewaard</strong><small>Hier hoef je niet op te slaan</small></span>
         } @else {
-          <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : 'Je kunt verder bewerken' }}</small></span>
+          <span class="product-editor-dock__context" role="status"><strong>{{ saveBusy() ? saveActionLabel() : workspaceDirty() ? 'Wijzigingen klaar' : channelPrices()?.dirty() ? 'TICA-prijs apart opslaan' : 'Alles opgeslagen' }}</strong><small>{{ saveBusy() ? 'Even geduld' : workspaceDirty() ? 'Bewaar deze productvariant' : channelPrices()?.dirty() ? 'Gebruik de knop bij de TICA-prijs' : 'Je kunt verder bewerken' }}</small></span>
         }
         <button class="btn product-editor-dock__save" type="button"
                 [class.btn--primary]="workspaceDirty()"
@@ -1590,7 +1596,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
       transform: translateX(var(--swipe-offset, 0px)); transition: none; }
     .stock-history__item--leaving .swipe__row { transform: translateX(-110%); opacity: .3;
       transition: transform .2s ease, opacity .2s ease; }
-    .stock-history__row { display: grid; grid-template-columns: 64px 1fr auto auto; align-items: center;
+    .stock-history__row { display: grid; grid-template-columns: minmax(64px, 90px) minmax(0, 1fr) minmax(0, 150px) auto; align-items: center;
       gap: 10px; padding: 8px 0; }
     /* Desktop: the bin sits at the row's edge and shows on hover; a mouse
        cannot swipe. */
@@ -1608,7 +1614,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .stock-history__what { display: grid; min-width: 0; }
     .stock-history__what b { font-weight: 650; font-size: 13px; }
     .stock-history__what small { color: var(--muted); font-size: 11.5px; }
-    .stock-history__after { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+    .stock-history__after { color: var(--muted); font-size: 12.5px; text-align: right; overflow-wrap: anywhere; }
+    @media (max-width: 679px) { .stock-history__row { grid-template-columns: 64px minmax(0, 1fr) auto; } .stock-history__after { grid-column: 2; text-align: left; } }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
     .price-preview {
       display: flex; align-items: flex-end; justify-content: space-between; gap: 14px;
@@ -1678,7 +1685,8 @@ export class ProductEditor implements OnDestroy {
   readonly capitalize = capitalize;
   /** The selected editor section, shared by desktop navigation and the mobile picker. */
   readonly activeTab = signal('identity');
-  readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy());
+  readonly formWriteBusy = computed(() => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving() || this.sharedFieldsBusy() || !!this.channelPrices?.()?.saving());
+  readonly channelPrices = viewChild(ProductChannelPrice);
   readonly toolbarBusy = computed(() => this.formWriteBusy() || this.stockSaving() || this.takingCode());
   readonly mobileSectionsOpen = signal(false);
   /** Kostprijshistoriek, opened from the landed cost in the Inkoop section. */
@@ -2174,6 +2182,7 @@ export class ProductEditor implements OnDestroy {
 
   /* ---- strike a line from the stock book: swipe left, no question ---- */
   readonly moveSwiped = signal<number | null>(null);
+  readonly canDeleteMove = stockMovementDeletable;
   readonly moveDeleting = signal<number | null>(null);
   private moveTouchX = 0;
   private moveTouchY = 0;
@@ -2192,7 +2201,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   moveSwipeMove(event: TouchEvent, move: StockMovement): void {
-    if (this.moveSwipeHandled) return;
+    if (this.moveSwipeHandled || !stockMovementDeletable(move)) return;
     const dx = event.touches[0].clientX - this.moveTouchX;
     const dy = event.touches[0].clientY - this.moveTouchY;
     if (!this.moveHorizontal) {
@@ -2216,7 +2225,7 @@ export class ProductEditor implements OnDestroy {
 
   /** A history line goes only after a question: the API cannot bring it back. */
   deleteMove(move: StockMovement): void {
-    if (this.draft().id === null || this.moveDeleting() !== null) return;
+    if (this.draft().id === null || this.moveDeleting() !== null || !stockMovementDeletable(move)) return;
     this.ui.confirm({
       title: 'Regel verwijderen',
       message: 'Deze regel verdwijnt uit de geschiedenis. Het voorraadaantal verandert niet.',
@@ -2227,7 +2236,7 @@ export class ProductEditor implements OnDestroy {
 
   private async removeMove(move: StockMovement): Promise<void> {
     const productId = this.draft().id;
-    if (productId === null || this.moveDeleting() !== null) return;
+    if (productId === null || this.moveDeleting() !== null || !stockMovementDeletable(move)) return;
     this.moveDeleting.set(move.id);
     this.moveSwiped.set(null);
     try {
@@ -2244,6 +2253,10 @@ export class ProductEditor implements OnDestroy {
   /** The pieces per location; null while loading. */
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
+  readonly stockLooseTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + (level.loosePieces ?? 0), 0));
+  readonly looseText = looseStockText;
+  readonly moveDelta = stockMovementDelta;
+  readonly moveAfter = stockMovementAfter;
   /** The location being corrected, or null. */
   readonly stockEditing = signal<number | null>(null);
   readonly stockDraft = signal<number | null>(null);
@@ -2383,12 +2396,13 @@ export class ProductEditor implements OnDestroy {
   /** One shared action state for the app bar, workspace hero and mobile dock. */
   readonly saveBusy = computed(() =>
     !this.editorReady() || this.saving() || this.photoUploading() || this.agreementBusy()
-      || this.translationSaving() || this.translationDirty());
+      || this.translationSaving() || this.translationDirty() || !!this.channelPrices?.()?.saving());
   readonly workspaceDirty = computed(() =>
     this.dirty() || this.familyDirty() || this.agreementDirty() || this.translationDirty()
       || (this.photoManager()?.pendingCount() ?? 0) > 0);
   readonly saveActionLabel = computed(() => {
     if (!this.editorReady()) return this.productLoading() ? 'Product laden…' : 'Product niet geladen';
+    if (this.channelPrices?.()?.saving()) return 'TICA-prijs opslaan…';
     if (this.saving()) return 'Bezig…';
     if (this.photoUploading()) return 'Foto’s…';
     if (this.agreementBusy()) return 'Afspraken…';
@@ -2402,7 +2416,7 @@ export class ProductEditor implements OnDestroy {
   readonly workspaceStockLabel = computed(() => {
     if (this.isNew()) return '0';
     const levels = this.stockLevels();
-    if (levels !== null) return this.stockTotal().toLocaleString('nl-BE');
+    if (levels !== null) return stockAmountText({ quantity: this.stockTotal(), loosePieces: this.stockLooseTotal() }, this.draft());
     const product = this.draft();
     return product.inventoryKnown
       ? product.stockQuantity.toLocaleString('nl-BE')
@@ -2518,7 +2532,7 @@ export class ProductEditor implements OnDestroy {
               ['/products', currentId, 'edit'], { replaceUrl: true }));
             return;
           }
-          if (productId !== this.activeProductId) void this.loadProduct(productId);
+          if (productId !== this.activeProductId) void this.loadProductAfterChannelGuard(productId);
         } else {
           ++this.productLoadVersion;
           this.productLoading.set(false);
@@ -2527,6 +2541,17 @@ export class ProductEditor implements OnDestroy {
         }
       });
     });
+  }
+
+  /** Angular can reuse this editor for another variant; protect the separate channel draft there too. */
+  private async loadProductAfterChannelGuard(productId: number): Promise<void> {
+    const currentId = this.activeProductId;
+    const prices = this.channelPrices?.();
+    if (currentId !== null && currentId !== productId && prices && !(await prices.canDeactivate())) {
+      if (Number(this.id()) === productId) await this.router.navigate(['/products', currentId, 'edit'], { replaceUrl: true });
+      return;
+    }
+    if (Number(this.id()) === productId) await this.loadProduct(productId);
   }
 
   async retryProductLoad(): Promise<void> {
@@ -3430,6 +3455,7 @@ export class ProductEditor implements OnDestroy {
 
   async save(): Promise<void> {
     if (!this.editorReady()) return;
+    if (this.channelPrices?.()?.saving()) return;
     const busy = () => this.saving() || this.photoUploading() || this.agreementBusy() || this.translationSaving();
     if (busy()) return;
     /* Every reason not to save is said out loud and the screen jumps to
@@ -3505,7 +3531,9 @@ export class ProductEditor implements OnDestroy {
         this.family()?.publicationIssues.length ?? 0,
         saved.publicationIssues.length,
       );
-      this.ui.toast(publicationIssueCount
+      this.ui.toast(this.channelPrices?.()?.dirty()
+          ? 'Product opgeslagen · sla de TICA-prijs apart op bij Verkoop'
+          : publicationIssueCount
           ? `Opgeslagen · nog ${publicationIssueCount} publicatiepunt(en)`
           : (wasNew
             ? (queuedPhotoCount ? 'Product met foto’s aangemaakt' : 'Product aangemaakt')
@@ -3740,6 +3768,9 @@ export class ProductEditor implements OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    const channelPrices = this.channelPrices?.();
+    if (channelPrices?.saving()) return false;
+    if (channelPrices?.dirty()) return channelPrices.canDeactivate().then(allowed => allowed ? this.canDeactivate() : false);
     if (this.saving() || this.photoUploading() || this.translationSaving()
         || this.agreementBusy() || this.sharedFieldsBusy() || this.stockSaving() || this.takingCode()) return false;
     if (this.translationDirty() && !this.confirmDiscardTranslations()) return false;

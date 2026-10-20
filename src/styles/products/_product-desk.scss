@@ -82,7 +82,7 @@ app-product-desk .pdk-card__head p { margin: 1px 0 0; color: var(--muted); font-
 app-product-desk .pdk-card__head .linklike { flex: none; white-space: nowrap; }
 app-product-desk .pdk-card__trail { display: flex; flex: none; align-items: baseline; gap: 10px; }
 app-product-desk .pdk-card__trail small { color: var(--muted); font-size: 12px; white-space: nowrap; }
-app-product-desk .pdk-total { flex: none; font-size: 20px; font-weight: 720; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+app-product-desk .pdk-total { flex: none; font-size: 20px; font-weight: 720; letter-spacing: -.02em; font-variant-numeric: tabular-nums; max-width: 54%; text-align: right; white-space: normal; }
 app-product-desk .pdk-total em { margin-left: 4px; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 600; letter-spacing: 0; }
 app-product-desk .pdk-total.is-bad { color: var(--danger); }
 app-product-desk .pdk-more { margin-top: 6px; font-size: 12.5px; }
@@ -125,7 +125,7 @@ app-product-desk .pdk-level:hover, app-product-desk .pdk-level.on { border-color
 app-product-desk .pdk-level span { display: grid; flex: 1; min-width: 0; }
 app-product-desk .pdk-level b { font-size: 13.5px; font-weight: 650; }
 app-product-desk .pdk-level small { color: var(--muted); font-size: 11.5px; }
-app-product-desk .pdk-level strong { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+app-product-desk .pdk-level strong { max-width: 50%; text-align: right; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 app-product-desk .pdk-level strong.zero { color: var(--muted-2); font-weight: 550; }
 app-product-desk .pdk-book { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 app-product-desk .pdk-onway {
