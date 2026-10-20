@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, input, output, si
 import { RouterLink } from '@angular/router';
 import type { GoogleAnalyticsSource, GoogleSearchData, SearchPerformance } from '../../core/api/analytics-api';
 import { googleDate, googleMetric, googlePageLabel, googlePercentage, googleTimeline, visibleGoogleData } from './google-analytics-display';
-import { deriveSearchConsoleInsights, searchInsightPriorityLabel } from './search-console-insights';
+import { deriveSearchConsoleInsights, searchInsightEvidenceLine, searchInsightPriorityLabel } from './search-console-insights';
 
 type SearchMetric = 'clicks' | 'impressions';
 type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
@@ -15,7 +15,7 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
     @if (data(); as d) {
       <div class="sc-report">
         <div class="sc-kpis">
-          <article class="sc-kpi sc-kpi--clicks"><span>Klikken</span><strong>{{ metric(d.totals.clicks) }}</strong><small>Van Google naar je website</small>@if (insights().trend; as trend) { <span class="sc-change" [class.sc-change--up]="trend.clicks.delta > 0">{{ countChange(trend.clicks) }}</span><small>Vorige periode: {{ metric(trend.clicks.previous) }}</small> }</article>
+          <article class="sc-kpi sc-kpi--clicks"><span>Klikken</span><strong>{{ metric(d.totals.clicks) }}</strong><small>Van Google naar je website</small>@if (insights().trend; as trend) { <span class="sc-change" [class.sc-change--up]="trend.clicks.delta > 0">{{ countChange(trend.clicks) }}</span><small>Vorige periode: {{ metric(trend.clicks.previous) }}</small> }@if (insights().brandLine; as brand) { <small class="sc-kpi__brand">{{ brand }}</small> }</article>
           <article class="sc-kpi sc-kpi--impressions"><span>Vertoningen</span><strong>{{ metric(d.totals.impressions) }}</strong><small>Getoond in zoekresultaten</small>@if (insights().trend; as trend) { <span class="sc-change" [class.sc-change--up]="trend.impressions.delta > 0">{{ countChange(trend.impressions) }}</span><small>Vorige periode: {{ metric(trend.impressions.previous) }}</small> }</article>
           <article class="sc-kpi"><span>Klikratio</span><strong>{{ d.totals.impressions > 0 ? percentage(d.totals.ctr) : '—' }}</strong><small>Deel dat doorklikt</small>@if (insights().trend; as trend) { <span class="sc-change" [class.sc-change--up]="(trend.ctr.percentagePoints ?? 0) > 0">{{ signed(trend.ctr.percentagePoints, 2) }} procentpunt</span><small>Vorige periode: {{ trend.impressions.previous > 0 ? percentage(trend.ctr.previous) : '—' }}</small> }</article>
           <article class="sc-kpi"><span>Gemiddelde positie</span><strong>{{ d.totals.impressions > 0 ? metric(d.totals.position, 1) : '—' }}</strong><small>Lager is beter · geen vaste ranking</small>@if (insights().trend; as trend) { <span class="sc-change" [class.sc-change--up]="trend.position.direction === 'better'">{{ signed(trend.position.delta, 1) }} positie</span><small>Vorige periode: {{ trend.impressions.previous > 0 && trend.position.previous > 0 ? metric(trend.position.previous, 1) : '—' }}</small> }</article>
@@ -60,25 +60,17 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
           } @else { <p class="sc-empty">Voor deze periode is geen bruikbare dagverdeling beschikbaar.</p> }
         </section>
 
-        <section class="sc-observation" aria-labelledby="sc-observation-title">
-          <div class="sc-section-head"><div><span class="sc-eyebrow">Van cijfers naar keuzes</span><h4 id="sc-observation-title">Wat valt op</h4></div>
-            @if (insights().lowVolume) { <span class="sc-tag">Nog weinig gegevens</span> }
-          </div>
-          <p>{{ insights().summary }}</p>
-        </section>
-
         @if (insights().insights.length) {
           <section class="sc-actions" aria-labelledby="sc-actions-title">
             <div class="sc-section-head"><h4 id="sc-actions-title">Jouw aandachtspunten</h4><span class="sc-caption">Op volgorde van aandacht</span></div>
             @for (item of insights().insights; track item.id; let index = $index) {
-              <details class="sc-action" [class.sc-action--focus]="item.priority === 'focus'">
-                <summary><span class="sc-action__number" aria-hidden="true">{{ index + 1 }}</span><span><small>{{ priorityLabel(item.priority) }}</small><b>{{ item.title }}</b></span><span class="sc-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="sc-action__body"><p>{{ item.explanation }}</p><ul>@for (evidence of item.evidence; track $index) { <li>{{ evidence }}</li> }</ul>
-                  @if (item.action.routerLink) { <a class="sc-action__link" [routerLink]="item.action.routerLink">{{ item.action.label }} <span aria-hidden="true">↗</span></a> }
-                  @else if (item.action.href) { <a class="sc-action__link" [href]="item.action.href" target="_blank" rel="noopener noreferrer">{{ item.action.label }} <span aria-hidden="true">↗</span><span class="sc-sr-only"> (nieuw tabblad)</span></a> }
-                  @else { <p class="sc-action__next"><b>Volgende stap</b>{{ item.action.label }}</p> }
-                </div>
-              </details>
+              <article class="sc-action" [class.sc-action--focus]="item.priority === 'focus'">
+                <span class="sc-action__number" aria-hidden="true">{{ index + 1 }}</span>
+                <div class="sc-action__copy"><small>{{ priorityLabel(item.priority) }}</small><b>{{ item.title }}</b><p>{{ evidenceLine(item) }}</p></div>
+                @if (item.action.routerLink) { <a class="sc-action__link" [routerLink]="item.action.routerLink">{{ item.action.label }} <span aria-hidden="true">↗</span></a> }
+                @else if (item.action.href) { <a class="sc-action__link" [href]="item.action.href" target="_blank" rel="noopener noreferrer">{{ item.action.label }} <span aria-hidden="true">↗</span><span class="sc-sr-only"> (nieuw tabblad)</span></a> }
+                @else { <span class="sc-action__next">{{ item.action.label }}</span> }
+              </article>
             }
           </section>
         }
@@ -157,6 +149,7 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
     .sc-partial > div { flex: 1; min-width: 180px; }
     .sc-partial p { margin: 4px 0 0; color: var(--muted); line-height: 1.6; }
     .sc-partial button { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--sc-blue); font: inherit; cursor: pointer; }
+    .sc-kpi > .sc-kpi__brand { color: var(--ink); }
     .sc-kpi--clicks { border-top: 3px solid var(--sc-blue); }
     .sc-kpi--impressions { border-top: 3px solid var(--sc-purple); }
     .sc-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); }
@@ -181,28 +174,21 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
     .sc-day > span { color: var(--muted); }
     .sc-caption { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
     .sc-section-head > .sc-caption { margin: 0; }
-    .sc-observation { padding: 4px 2px; }
-    .sc-observation > p { margin: 10px 0 0; font-size: 14px; line-height: 1.7; max-width: 80ch; }
-    .sc-tag { display: inline-flex; padding: 6px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--surface-2); font-size: 10px; }
     .sc-actions { display: grid; gap: 10px; }
     .sc-actions > .sc-section-head { padding: 2px; }
-    .sc-action { border: 1px solid var(--line); border-radius: 19px; background: var(--surface); overflow: hidden; }
+    .sc-action { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 19px; background: var(--surface); }
     .sc-action--focus { border-color: color-mix(in srgb, var(--sc-blue) 27%, var(--line)); }
-    .sc-action > summary { display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 14px 16px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     .sc-action__number { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 11px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; }
     .sc-action--focus .sc-action__number { background: color-mix(in srgb, var(--sc-blue) 10%, var(--surface)); color: var(--sc-blue); }
-    .sc-action summary > span:nth-child(2) { min-width: 0; }
-    .sc-action summary small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
-    .sc-action summary b { display: block; font-size: 13px; line-height: 1.5; }
+    .sc-action__copy { flex: 1 1 240px; min-width: 0; }
+    .sc-action__copy small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
+    .sc-action__copy b { display: block; font-size: 13px; line-height: 1.5; }
+    .sc-action__copy p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .sc-chevron { margin-left: auto; flex: none; color: var(--muted); font-size: 18px; }
     details[open] > summary > .sc-chevron { transform: rotate(180deg); }
-    .sc-action__body { padding: 0 16px 17px; border-top: 1px solid var(--line); }
-    .sc-action__body p, .sc-action__body li { color: var(--muted); font-size: 12px; line-height: 1.65; }
-    .sc-action__body ul { padding-left: 18px; margin: 10px 0 14px; }
-    .sc-action__body li + li { margin-top: 4px; }
     .sc-action__link { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 0 13px; border-radius: 12px; background: color-mix(in srgb, var(--sc-blue) 9%, var(--surface)); color: var(--sc-blue); font-size: 12px; font-weight: 650; text-decoration: none; }
-    .sc-action__next b { display: block; margin-bottom: 3px; color: var(--ink); }
+    .sc-action__next { color: var(--muted); font-size: 12px; }
     .sc-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
     .sc-breakdown > summary { display: flex; align-items: center; gap: 12px; min-height: 48px; cursor: pointer; list-style: none; }
     .sc-breakdown summary b { font-size: 14px; }
@@ -233,8 +219,7 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
       .sc-details-grid { grid-template-columns: 1fr; }
       .sc-tools { grid-template-columns: 1fr; }
       .sc-tools input, .sc-tools select { font-size: 16px; }
-      .sc-action > summary { gap: 10px; padding: 13px; }
-      .sc-action__body { padding-inline: 13px; }
+      .sc-action { padding: 13px; }
     }
   `,
 })
@@ -277,6 +262,7 @@ export class SearchConsoleReport {
   readonly date = googleDate;
   readonly pageLabel = googlePageLabel;
   readonly priorityLabel = searchInsightPriorityLabel;
+  readonly evidenceLine = searchInsightEvidenceLine;
 
   constructor() {
     effect(() => { this.source().from; this.source().to; this.dayIndex.set(null); });

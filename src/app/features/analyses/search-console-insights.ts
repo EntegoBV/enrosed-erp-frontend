@@ -32,6 +32,8 @@ export interface SearchQueryMix {
 export interface SearchConsoleInsights {
   summary: string; lowVolume: boolean; stale: boolean; insights: SearchInsight[]; limitations: string[];
   trend: SearchTrend | null; languages: SearchLanguageSummary[]; queryMix: SearchQueryMix | null;
+  /** The one part of the summary the figures do not say: "Minstens 67,9 % via merkzoektermen" (the Klikken foot). */
+  brandLine: string | null;
 }
 
 const locales = [
@@ -50,6 +52,16 @@ const hasIssue = (data: GoogleSearchData, section: string): boolean => (data.iss
 
 export function searchInsightPriorityLabel(priority: SearchInsightPriority): string {
   return ({ focus: 'Eerst bekijken', watch: 'Volgen', info: 'Ter informatie' })[priority];
+}
+
+/**
+ * The one evidence line an aandachtspunt shows under its title (analyses2
+ * C.10): its figures, after the page's path when it is about one page.
+ */
+export function searchInsightEvidenceLine(insight: SearchInsight): string {
+  const page = insight.evidence.find(line => /^https?:\/\//i.test(line));
+  const figures = insight.evidence.find(line => !/^https?:\/\//i.test(line)) ?? insight.explanation;
+  return page ? `${new URL(page).pathname} · ${figures}` : figures;
 }
 
 /** Strip query/fragment data and never turn a reporting value into an arbitrary link. */
@@ -132,7 +144,7 @@ function comparison(source: GoogleAnalyticsSource<GoogleSearchData>, data: Googl
 
 export function deriveSearchConsoleInsights(source: GoogleAnalyticsSource<GoogleSearchData> | null | undefined): SearchConsoleInsights {
   const empty = (summary: string): SearchConsoleInsights => ({ summary, lowVolume: false, stale: false, insights: [],
-    limitations: [], trend: null, languages: languageRows(null), queryMix: null });
+    limitations: [], trend: null, languages: languageRows(null), queryMix: null, brandLine: null });
   if (!source || source.status === 'ERROR') return empty('Zoekcijfers zijn momenteel niet beschikbaar.');
   if (source.status === 'NOT_CONFIGURED') return empty('Search Console is nog niet gekoppeld.');
   if (!['CONNECTED', 'NO_DATA', 'STALE'].includes(source.status) || !performanceValid(source.data?.totals)) {
@@ -144,24 +156,25 @@ export function deriveSearchConsoleInsights(source: GoogleAnalyticsSource<Google
     summary: totals.impressions === 0 ? 'Google rapporteert voor deze periode nog geen vertoningen.'
       : `${clicks(totals.clicks)} uit ${number(totals.impressions)} vertoningen in Google${lowVolume ? '; nog weinig gegevens voor conclusies' : ''}.`,
     lowVolume, stale: source.status === 'STALE', insights: [], trend: comparison(source, data),
-    languages: languageRows(data), queryMix: queryMix(data),
-    limitations: ['Signaalgrenzen helpen kiezen wat u nakijkt; het zijn geen Google-normen en ze bewijzen geen SEO-oorzaak.',
+    languages: languageRows(data), queryMix: queryMix(data), brandLine: null,
+    limitations: ['Signaalgrenzen helpen kiezen wat je nakijkt; het zijn geen Google-normen en ze bewijzen geen SEO-oorzaak.',
       'Talen zijn afgeleid van de gerapporteerde pagina-URL’s, niet van de taal van bezoekers. Ontbrekende talen hebben onbekende cijfers.',
       'Pagina- en zoektermlijsten zijn beperkt. Anonieme of niet-teruggegeven zoektermen ontbreken; hun som is niet het sitetotaal.'],
   };
   if (result.stale) result.limitations.unshift('Dit rapport is eerder opgehaald; vernieuwen is niet gelukt.');
-  result.limitations.push('Het rapport kan historische URL’s bevatten. Controleer hun huidige bestemming voordat u inhoud aanpast; ook de taalindeling van oude URL’s kan afwijken.');
+  result.limitations.push('Het rapport kan historische URL’s bevatten. Controleer hun huidige bestemming voordat je inhoud aanpast; ook de taalindeling van oude URL’s kan afwijken.');
   if (data.periodBasis === 'UNCONFIRMED') result.limitations.push('De definitieve periodegrens is niet bevestigd; daarom wordt geen trend berekend.');
   else if (data.comparison && !result.trend) result.limitations.push('Er is geen bruikbare vergelijking met een even lange voorafgaande periode.');
   if (data.issues?.length) result.limitations.push('Een deelrapport ontbreekt. Daaruit worden geen aanbevelingen of nulwaarden afgeleid.');
   const trend = result.trend;
   if (trend && trend.clicks.previous >= SEARCH_INSIGHT_THRESHOLDS.minimumPreviousClicks && trend.clicks.percent !== null) {
     const days = day(trend.to)! - day(trend.from)! + 1;
-    result.summary = `${clicks(totals.clicks)}: ${Math.abs(trend.clicks.percent) < .05 ? 'vrijwel evenveel als' : `${number(Math.abs(trend.clicks.percent), 1)}% ${trend.clicks.percent > 0 ? 'meer' : 'minder'} dan`} in de vorige ${days} dagen.`;
+    result.summary = `${clicks(totals.clicks)}: ${Math.abs(trend.clicks.percent) < .05 ? 'vrijwel evenveel als' : `${number(Math.abs(trend.clicks.percent), 1)} % ${trend.clicks.percent > 0 ? 'meer' : 'minder'} dan`} in de vorige ${days} dagen.`;
   }
   const mix = result.queryMix;
   if (mix && mix.branded.clicks > 0 && mix.branded.clicks <= totals.clicks && mix.branded.clicks >= totals.clicks * .5) {
     result.summary += ` Minstens ${percent(mix.branded.clicks / totals.clicks)} komt via herkenbare merkzoektermen.`;
+    result.brandLine = `Minstens ${percent(mix.branded.clicks / totals.clicks)} via merkzoektermen`;
   }
   // A confirmed fall to zero is useful evidence, even though the current period
   // alone would be too small for page-level CTR recommendations.
@@ -170,13 +183,13 @@ export function deriveSearchConsoleInsights(source: GoogleAnalyticsSource<Google
     && trend.clicks.percent !== null && trend.clicks.percent <= SEARCH_INSIGHT_THRESHOLDS.clickDeclinePercent) {
     result.insights.push({ id: 'click-decline', priority: 'watch', title: 'Onderzoek de daling in klikken',
       explanation: 'Vergelijk de gerapporteerde pagina’s en zoektermen met een eerdere export. Deze daling op zichzelf toont geen technische fout of algoritmewijziging aan.',
-      evidence: [`${number(trend.clicks.previous)} → ${number(trend.clicks.current)} klikken (${number(trend.clicks.percent, 1)}%).`,
+      evidence: [`${number(trend.clicks.previous)} → ${number(trend.clicks.current)} klikken (${number(trend.clicks.percent, 1)} %).`,
         `Vergelijking met ${trend.previousFrom} – ${trend.previousTo}; evenlange aansluitende periodes.`,
-        'Signaalgrens: minstens 10 eerdere klikken en een daling van 20%.'], action: seoAction });
+        'Signaalgrens: minstens 10 eerdere klikken en een daling van 20 %.'], action: seoAction });
   }
   if (lowVolume) {
     result.insights.push({ id: 'low-volume', priority: 'info', title: 'Eerst meer waarnemingen verzamelen',
-      explanation: 'Bij weinig vertoningen kunnen enkele klikken de klikratio sterk veranderen. Vergelijk later een langere periode voordat u hieruit een inhoudelijke conclusie trekt.',
+      explanation: 'Bij weinig vertoningen kunnen enkele klikken de klikratio sterk veranderen. Vergelijk later een langere periode voordat je hieruit een inhoudelijke conclusie trekt.',
       evidence: [`${number(totals.impressions)} vertoningen; signaalgrens: minstens ${SEARCH_INSIGHT_THRESHOLDS.minimumImpressions}.`], action: seoAction });
     return result;
   }
@@ -186,7 +199,7 @@ export function deriveSearchConsoleInsights(source: GoogleAnalyticsSource<Google
   if (lowCtr) result.insights.push({ id: 'low-ctr', priority: 'focus', title: 'Controleer de zoekweergave van deze pagina',
     explanation: 'Controleer eerst de huidige bestemming: dit kan een historische URL zijn. Bekijk vervolgens of titel en omschrijving aansluiten op het aanbod. De cijfers bewijzen niet waarom mensen wel of niet doorklikken.',
     evidence: [searchConsolePageLink(lowCtr.page)!, `${clicks(lowCtr.clicks)} uit ${number(lowCtr.impressions)} vertoningen · CTR ${percent(lowCtr.ctr)} · gemiddelde positie ${number(lowCtr.position, 1)}.`,
-      'Signaalgrens: minstens 100 vertoningen, CTR onder 1% en gemiddelde positie 1–10.'], action: seoAction });
+      'Signaalgrens: minstens 100 vertoningen, CTR onder 1 % en gemiddelde positie 1–10.'], action: seoAction });
   const near = pages.find(row => row.position > SEARCH_INSIGHT_THRESHOLDS.nearFirstPageFrom && row.position <= SEARCH_INSIGHT_THRESHOLDS.nearFirstPageThrough);
   if (near) result.insights.push({ id: 'near-first-page', priority: 'watch', title: 'Bekijk deze pagina met gemiddelde positie 10–20',
     explanation: 'Controleer eerst de huidige bestemming: dit kan een historische URL zijn. Bekijk daar de productinformatie en interne verwijzingen voor inkopers. Een gemiddelde positie is geen vaste ranking of garantie op een eerste pagina.',
