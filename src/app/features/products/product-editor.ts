@@ -200,7 +200,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
 
     @if (editorReady()) {
     @if (!desktop.active()) {
-      <section class="product-mobile-identity" aria-label="Huidige productvariant">
+      <section class="product-mobile-identity" [class.has-loose-stock]="stockLooseTotal() > 0" aria-label="Huidige productvariant">
         <button class="product-mobile-photo" type="button" (click)="showTab('media')" aria-label="Productfoto’s bewerken">
           @if (heroPhoto(); as photo) { <img [appAuthSrc]="photo.url" [alt]="draft().name" /> }
           @else { <app-icon name="media" [size]="24" /> }
@@ -222,7 +222,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
         <div class="product-mobile-metrics">
           <button type="button" (click)="showTab('sales')" [attr.aria-label]="'Verkoopprijs per ' + salesUnit(draft()).singular + ': ' + (salesPrice() > 0 ? (salesPrice() | eur: 2) : 'instellen')"><small>per {{ salesUnit(draft()).singular }}</small><b>{{ salesPrice() > 0 ? (salesPrice() | eur: 2) : 'Instellen' }}</b></button>
-          <button type="button" (click)="showTab('stock')" [attr.aria-label]="'Voorraad: ' + workspaceStockLabel() + ' ' + salesUnit(draft()).plural"><small>voorraad</small><b>{{ workspaceStockLabel() }} {{ salesUnit(draft()).plural }}</b></button>
+          <button type="button" (click)="showTab('stock')" [attr.aria-label]="'Voorraad: ' + workspaceStockLabel()"><small>voorraad</small><b>{{ workspaceStockLabel() }}@if (workspaceStockLabel() !== 'Onbekend' && stockLevels() === null) { {{ salesUnit(draft()).plural }} }</b></button>
         </div>
       </section>
     }
