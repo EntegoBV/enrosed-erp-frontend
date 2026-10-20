@@ -55,7 +55,7 @@ export function navDirection(
   const next = pathOf(nextUrl);
   if (prev === next) return 'none';
   if (tabs.tabOf(prev) !== tabs.tabOf(next)) return 'tab';
-  /* Within a tab, leaving its root goes deeper (Meer → Klanten) and returning to it goes up. */
+  /* Within a tab, leaving its root goes deeper (Verkoop → Klanten) and returning to it goes up. */
   const prevRoot = tabs.isRoot(prev);
   const nextRoot = tabs.isRoot(next);
   if (prevRoot && !nextRoot) return 'push';

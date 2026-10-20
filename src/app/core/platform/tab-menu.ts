@@ -17,6 +17,8 @@ export const TAB_MENU_SLOP_PX = 10;
 export const TAB_MENU_CLICK_GUARD_MS = 700;
 /** The menu's widest width (px); on a narrower bar it takes the bar's width. */
 export const TAB_MENU_WIDTH = 248;
+/** The navigation info of a row whose page arrives as a push (nav-direction.ts; App.menuRowInfo decides). */
+export const TAB_MENU_PUSH = { nav: 'push' } as const;
 
 /** The phone tabs (phone-tabs.ts PhoneTab) that have a menu. */
 export type MenuTab = 'sales' | 'purchasing' | 'products';

@@ -56,7 +56,7 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, Icon, Sheet, ContextMenu, DateField, BrusselsDatePipe, EurPipe, NumPipe],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Jaarinventaris"
+    <app-page-header [showBack]="true" title="Jaarinventaris"
                      subtitle="Voorraadtelling en eindvoorraad met waarde, per boekjaar" />
 
     <div class="content inv-hub">

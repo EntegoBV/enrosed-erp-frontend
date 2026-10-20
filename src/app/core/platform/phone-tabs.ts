@@ -1,10 +1,13 @@
 /**
  * Which tab of the phone tab bar a screen belongs to.
  *
- * The tab follows where the screen is listed on the phone: a screen reached
- * only from Meer lights Meer, so the tab bar and the "‹ Meer" back capsule
- * agree. The desk sidebar answers a different question (which group opens);
- * see sidebarGroupForUrl. Pure and import-free: node-tested.
+ * A page the long-press menu of a tab lists (tab-menu.ts) belongs to that
+ * tab (Emre, 2026-10-20: fewer trips to Meer): Klanten lights Verkoop,
+ * Leveranciers Inkoop, Jaarinventaris Producten, and without history their
+ * back control goes up to that tab's root ("‹ Verkoop"). A screen reached
+ * only from Meer lights Meer, in agreement with its "‹ Meer". The desk
+ * sidebar answers a different question (which group opens); see
+ * sidebarGroupForUrl. Pure and import-free: node-tested.
  */
 
 export type PhoneTab = 'home' | 'sales' | 'purchasing' | 'products' | 'more';
@@ -16,6 +19,21 @@ export const PHONE_TAB_ROOTS: Readonly<Record<PhoneTab, string>> = {
   purchasing: '/purchasing',
   products: '/products',
   more: '/more',
+};
+
+/**
+ * The screens of the four work tabs, each with what lies below it: the tab
+ * root, then the pages its long-press menu lists, in menu order (a test
+ * keeps these equal to the tab-menu.ts rows). /stock holds Voorraad and
+ * Jaarinventaris; /catalog is the Catalogus PDF's texts. The menus' views
+ * of Instellingen (Kortingen, Catalogusdata: /settings?sectie=…) stay
+ * Instellingen's and light Meer with it.
+ */
+export const PHONE_TAB_PAGES: Readonly<Record<Exclude<PhoneTab, 'more'>, readonly string[]>> = {
+  home: ['/dashboard'],
+  sales: ['/sales', '/tica', '/revisions', '/customers', '/klantlogins', '/prospects', '/contactaanvragen', '/countries'],
+  purchasing: ['/purchasing', '/suppliers', '/douane'],
+  products: ['/products', '/stock', '/stock-locations', '/barcodes', '/categories', '/catalog-export', '/catalog'],
 };
 
 /** The path of a router URL, without query string or fragment. */
@@ -31,13 +49,15 @@ function under(path: string, root: string): boolean {
 
 export function phoneTabForUrl(url: string): PhoneTab {
   const path = pathOf(url);
-  if (under(path, '/dashboard')) return 'home';
-  if (under(path, '/sales')) return 'sales';
-  if (under(path, '/purchasing')) return 'purchasing';
-  if (under(path, '/products') || under(path, '/catalog-export') || under(path, '/catalog')) return 'products';
-  /* Voorraad is a button on the Producten tab (products critique B1); its sub-screens stay under Meer. */
-  if (path === '/stock' || path === '/stock/') return 'products';
+  for (const [tab, pages] of Object.entries(PHONE_TAB_PAGES)) {
+    if (pages.some((page) => under(path, page))) return tab as PhoneTab;
+  }
   return 'more';
+}
+
+/** The root of a screen's tab (/sales for Klanten, /more for Logboek): where the phone goes up to when nothing else names the way. */
+export function phoneTabRootFor(url: string): string {
+  return PHONE_TAB_ROOTS[phoneTabForUrl(url)];
 }
 
 /** True only on a tab root itself (any query), e.g. /sales?tab=facturen, never /sales/79. */

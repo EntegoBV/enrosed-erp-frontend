@@ -30,9 +30,9 @@ import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
 import {
-  TAB_MENU_HOLD_MS, clickGuardAfter, isMenuKey, menuFocusIndex, pressWandered, startTabPress, tabMenuFor, tabMenuPlacement,
+  TAB_MENU_HOLD_MS, TAB_MENU_PUSH, clickGuardAfter, isMenuKey, menuFocusIndex, pressWandered, startTabPress, tabMenuFor, tabMenuPlacement,
 } from './core/platform/tab-menu';
-import type { TabMenu, TabPress } from './core/platform/tab-menu';
+import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
 import { preloadWanted } from './core/platform/shell-loading-plan';
 
@@ -228,8 +228,8 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
                (keydown)="tabMenuKey($event)" (contextmenu)="$event.preventDefault()">
             @for (row of menu.rows; track row.item.id) {
               <a class="tabbar-menu__row" role="menuitem" [routerLink]="row.item.link" [queryParams]="row.item.query ?? null"
-                 [attr.data-tab-menu-row]="row.item.id" [class.tabbar-menu__row--hot]="tabMenuHot() === row.item.id"
-                 [class.tabbar-menu__row--current]="itemActive(row.item)" [attr.aria-current]="itemActive(row.item) ? 'page' : null"
+                 [info]="menuRowInfo(row)" [attr.data-tab-menu-row]="row.item.id" [class.tabbar-menu__row--hot]="tabMenuHot() === row.item.id"
+                 [class.tabbar-menu__row--current]="menuRowCurrent(menu, row)" [attr.aria-current]="menuRowCurrent(menu, row) ? 'page' : null"
                  (click)="closeTabMenu()">
                 <app-icon class="tabbar-menu__icon" [name]="row.item.icon" [size]="20" />
                 <span class="tabbar-menu__label">{{ row.label }}</span>
@@ -447,8 +447,9 @@ export class App {
 
   /**
    * The lit phone tab follows where a screen is listed on the phone
-   * (phone-tabs.ts): screens reached from Meer light Meer, in agreement with
-   * their "‹ Meer" back control.
+   * (phone-tabs.ts): a page of a tab's long-press menu lights that tab,
+   * a screen reached only from Meer lights Meer, in agreement with the
+   * back control's tab root ("‹ Verkoop", "‹ Meer").
    */
   readonly phoneTab = computed(() => phoneTabForUrl(this.url()));
 
@@ -494,6 +495,25 @@ export class App {
     this.desktopViewport.active();
     untracked(() => this.closeTabMenu());
   });
+
+  /**
+   * The menu marks the open page only under the lit tab, so the mark and the tab bar agree: a
+   * view of Instellingen in a menu (Kortingen, Catalogusdata) lights Meer and is no current row.
+   */
+  menuRowCurrent(menu: TabMenu, row: TabMenuRow): boolean {
+    return this.phoneTab() === menu.tab && this.itemActive(row.item);
+  }
+
+  /**
+   * How a row's page arrives (nav-direction.ts reads the navigation's info): a page of the tab you
+   * are in comes in as a push from anywhere in it (Klanten from an order would slide back as a pop,
+   * being shallower). The tab root goes up, the page you are on or under keeps its own direction,
+   * and a page of another tab (Klanten picked on Meer) is a tab switch.
+   */
+  menuRowInfo(row: TabMenuRow): typeof TAB_MENU_PUSH | null {
+    const inTab = phoneTabForUrl(navItemUrl(row.item)) === this.phoneTab();
+    return inTab && !row.item.tabRoot && !this.itemActive(row.item) ? TAB_MENU_PUSH : null;
+  }
 
   closeTabMenu(returnFocus = false): void {
     if (!this.tabMenu()) return;
@@ -624,7 +644,9 @@ export class App {
   private chooseTabMenuRow(id: string): void {
     const row = this.tabMenu()?.rows.find((candidate) => candidate.item.id === id);
     this.closeTabMenu();
-    if (row) void this.router.navigateByUrl(navItemUrl(row.item));
+    if (!row) return;
+    const info = this.menuRowInfo(row);
+    void this.router.navigateByUrl(navItemUrl(row.item), info ? { info } : undefined);
   }
 
   private watchTabMenu(on: boolean): void {

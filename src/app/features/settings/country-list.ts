@@ -17,7 +17,7 @@ function blank(): Country {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, Sheet, CarrierManager],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Landen & vracht" subtitle="Minimum order, palletvracht en staffels">
+    <app-page-header [showBack]="true" title="Landen & vracht" subtitle="Minimum order, palletvracht en staffels">
       @if (tab() === 'LANDEN') {
         <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
           + Land

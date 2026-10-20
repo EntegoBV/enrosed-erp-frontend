@@ -61,7 +61,7 @@ export class DouanePageStyles {}
   imports: [NgTemplateOutlet, RouterLink, PageHeader, Skeleton, LoadError, Icon, Sheet, ContextMenu, DouanePageStyles],
   template: `
     <app-douane-page-styles />
-    <app-page-header [showBack]="true" backTo="/more" title="Douane"
+    <app-page-header [showBack]="true" title="Douane"
                      [subtitle]="desktop.active() ? 'HS-codes en invoerrechten · ' + codes().length + ' tarieven' : 'HS-codes en invoerrechten'">
       @if (desktop.active()) {
         <div class="wk-search dt-search">

@@ -203,7 +203,8 @@ host stays inline):
   app-ios-nav), the glass bar with title over subtitle on detail screens.
   Back control: none on the five tab roots, else the screen below in the
   history ("‹ Verkoop", history back), without history the parent's label,
-  backTo's screen label, or "Meer"; over ten characters, or when the title
+  backTo's screen label, or the root of the screen's tab (`phoneTabRootFor`:
+  "‹ Verkoop" on Klanten, "‹ Meer" on a Meer-only screen); over ten characters, or when the title
   would be cut, a chevron circle; still cut, an editable title's pencil goes
   (`.appbar--tight`, the button keeps "Titel wijzigen"). "Cut" is measured
   unrounded (`textCut`: a Range over the text against its box; scrollWidth
@@ -251,7 +252,8 @@ on Verkoop, Inkoop or Producten (cancelled past 10 px; Android's own
 contextmenu may open it a little sooner) opens a glass `role=menu` above
 that tab, centred on it and kept within the bar: the tab root in full
 ("Verkooporders") first, then Meer's rows for that group (short labels,
-counts, the current page in the accent pill). Tap a row or slide onto it
+counts, the current page in the accent pill, only under the lit tab:
+`menuRowCurrent`). Tap a row or slide onto it
 and let go; a tap outside (the backdrop, z 70, covers the page and the
 '+'; the bar is raised to 71 above it while open, so another tab still
 takes a press), Escape (focus back to the tab), a route change or a page
@@ -263,9 +265,21 @@ also cancels `contextmenu`: Android's link sheet), and the three tabs are
 Space opens a row as Enter does; `data-kit-overlay` stands the page's keys
 down. It scales in on `--dur-2`, the menu token. Home and Meer get none;
 the desk is unchanged.
-Open for Emre: a page picked from the menu (Klanten, Leveranciers,
-Inventaris…) still lights Meer (`phoneTabForUrl`), while the menu marks it
-current under its tab.
+Decided by Emre (2026-10-20, fewer trips to Meer): a page that is a row of
+a tab's menu belongs to that tab. Klanten, TICA, Wijzigingen,
+Login-aanvragen, Prospects, Contactaanvragen and Landen & vracht light
+Verkoop; Leveranciers and Douane Inkoop; Voorraad, Jaarinventaris,
+Locaties, EAN-codes, Categorieën and Catalogus PDF Producten, each with
+what lies below it (`PHONE_TAB_PAGES` in phone-tabs.ts, kept equal to the
+`tabMenuFor` rows by a test). Without history their back goes up to the
+tab root ("‹ Verkoop", "‹ Inkoop", "‹ Producten"); those pages set no
+`backTo="/more"` any more. The menus' views of Instellingen (Kortingen,
+Catalogusdata: `/settings?sectie=…`) stay Instellingen's and light Meer,
+so the menu marks them current under no tab. Picked from the menu, a page
+of the lit tab arrives as a push from anywhere in it (`menuRowInfo`:
+Klanten from an order never slides back as a pop); the tab root and a
+page you are under go up; a page of another tab (Klanten picked on Meer)
+is a tab switch. One navigation per pick, so the tab pill moves once.
 
 **Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
 "Aangemeld als …", the bell) over the kit's inset groups rendered from
@@ -311,7 +325,9 @@ never shows the form again.
   `NavCountKey` names WorkQueue signals; extend it with the signal. Icons
   are unique within a group and never two look-alikes ('suppliers' and
   'truck' are the same lorry; Douane has 'customs', a stamp).
-- `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
+- `phone-tabs.ts`: `phoneTabForUrl` (a page of a tab's long-press menu
+  lights that tab, `PHONE_TAB_PAGES`; screens reached only from Meer light
+  Meer), `phoneTabRootFor` (the phone back's last fallback),
   `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
 - `tab-menu.ts`: the long press's rows (`tabMenuFor`), press decisions
   (`startTabPress`, `pressWandered`, `clickGuardAfter`), keys
@@ -2575,7 +2591,7 @@ contract `redesign/products/design.md` + `critique.md`).
   with its own value (the parts add up to the total), units per product;
   roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
   fold chevron (or kleur · SKU), line 2 the location split and the value;
-  a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock itself lights the Producten phone tab;
+  a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
   its back falls back to "‹ Producten".
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from

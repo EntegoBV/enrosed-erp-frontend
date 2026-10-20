@@ -60,7 +60,7 @@ function blank(): Supplier {
   imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, DateNlPipe],
   template: `
     <app-supplier-list-styles />
-    <app-page-header [showBack]="true" backTo="/more" title="Leveranciers" [subtitle]="subtitle()">
+    <app-page-header [showBack]="true" title="Leveranciers" [subtitle]="subtitle()">
       @if (desktop.active()) {
         <div class="wk-search sup-search">
           <app-icon name="search" [size]="16" />

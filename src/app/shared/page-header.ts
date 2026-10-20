@@ -24,7 +24,7 @@ import { DesktopViewport } from '../core/platform/desktop-viewport';
 import { NavHistory } from '../core/platform/nav-history-service';
 import { documentTitle } from '../core/platform/document-title';
 import { parentOf } from '../core/platform/page-parent';
-import { isPhoneTabRoot } from '../core/platform/phone-tabs';
+import { isPhoneTabRoot, phoneTabRootFor } from '../core/platform/phone-tabs';
 import { capsuleLabel, screenLabel } from '../core/platform/return-label';
 
 /**
@@ -73,11 +73,13 @@ export interface PageHeaderParent {
  * subtitle. [large] overrides the default (a root screen: parentOf(url) is
  * null). The back control: none on the five tab roots, always elsewhere.
  * It reads the screen below in the history ("‹ Verkoop", history back);
- * without one, the parent's label (detail screens) or backTo's, else
- * "Meer", and it navigates there. Labels over ten characters, or a title
- * that would be cut, make it a chevron circle; if the title is still cut,
- * the pencil of an editable title gives way too (the button keeps its
- * "Titel wijzigen" name). A document number is never cut for chrome.
+ * without one, the parent's label (detail screens) or backTo's, else the
+ * root of the screen's tab ("‹ Verkoop" on Klanten, phone-tabs.ts; "Meer"
+ * for a screen listed only there), and it navigates there. Labels over ten
+ * characters, or a title that would be cut, make it a chevron circle; if
+ * the title is still cut, the pencil of an editable title gives way too
+ * (the button keeps its "Titel wijzigen" name). A document number is never
+ * cut for chrome.
  * "Cut" is measured unrounded (a Range over the text against its box):
  * scrollWidth rounds a sub-pixel overflow away while the browser still
  * draws the ellipsis. Projected .btn become glass capsules (primary:
@@ -269,19 +271,24 @@ export class PageHeader {
    */
   readonly fold = signal<'full' | 'chevron' | 'none'>('full');
 
-  /** The phone back control: what it says and where it goes without history. */
+  /**
+   * The phone back control: what it says and where it goes without history.
+   * With neither backTo nor a parent it goes up to the screen's tab root, as
+   * the lit tab says: "‹ Verkoop" on Klanten, "‹ Meer" on Logboek.
+   */
   readonly backControl = computed(() => {
     if (this.desktop.active()) return null;
     const url = this.url();
     if (isPhoneTabRoot(url)) return null;
     const parent = this.resolvedParent();
     const backTo = this.backTo();
+    const tabRoot = phoneTabRootFor(url);
     let label: string;
     if (this.history.below()) label = this.history.belowLabel();
     else if (backTo) label = screenLabel(backTo) || parent?.phoneLabel || parent?.label || '';
     else if (parent) label = parent.phoneLabel ?? parent.label;
-    else label = 'Meer';
-    const fallback = backTo ?? parent?.url ?? '/more';
+    else label = screenLabel(tabRoot);
+    const fallback = backTo ?? parent?.url ?? tabRoot;
     return {
       text: this.fold() === 'full' ? capsuleLabel(label) : '',
       aria: label ? `Terug naar ${label}` : 'Terug',
